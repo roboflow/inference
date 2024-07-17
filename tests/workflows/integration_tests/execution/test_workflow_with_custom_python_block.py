@@ -6,8 +6,10 @@ import pytest
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.errors import BlockInterfaceError, \
-    WorkflowEnvironmentConfigurationError
+from inference.core.workflows.errors import (
+    DynamicBlockError,
+    WorkflowEnvironmentConfigurationError,
+)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.dynamic_blocks import block_assembler
 
@@ -776,7 +778,7 @@ async def test_workflow_with_custom_python_block_when_code_cannot_be_compiled(
     }
 
     # when
-    with pytest.raises(BlockInterfaceError):
+    with pytest.raises(DynamicBlockError):
         _ = ExecutionEngine.init(
             workflow_definition=WORKFLOW_WITH_CODE_THAT_DOES_NOT_COMPILE,
             init_parameters=workflow_init_parameters,
@@ -843,7 +845,7 @@ async def test_workflow_with_custom_python_block_when_code_does_not_define_decla
     }
 
     # when
-    with pytest.raises(BlockInterfaceError):
+    with pytest.raises(DynamicBlockError):
         _ = ExecutionEngine.init(
             workflow_definition=WORKFLOW_WITHOUT_RUN_FUNCTION,
             init_parameters=workflow_init_parameters,
@@ -916,7 +918,7 @@ async def test_workflow_with_custom_python_block_when_code_does_not_define_decla
     }
 
     # when
-    with pytest.raises(BlockInterfaceError):
+    with pytest.raises(DynamicBlockError):
         _ = ExecutionEngine.init(
             workflow_definition=WORKFLOW_WITHOUT_DECLARED_INIT_FUNCTION,
             init_parameters=workflow_init_parameters,

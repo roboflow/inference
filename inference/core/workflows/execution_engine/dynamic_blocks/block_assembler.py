@@ -13,7 +13,10 @@ from inference.core.workflows.entities.types import (
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
-from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
+from inference.core.workflows.errors import (
+    DynamicBlockError,
+    WorkflowEnvironmentConfigurationError,
+)
 from inference.core.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
 )
@@ -33,6 +36,7 @@ from inference.core.workflows.execution_engine.introspection.blocks_loader impor
     load_all_defined_kinds,
 )
 from inference.core.workflows.execution_engine.introspection.utils import (
+    build_human_friendly_block_name,
     get_full_type_name,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
@@ -46,8 +50,8 @@ def compile_dynamic_blocks(
     if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
         raise WorkflowEnvironmentConfigurationError(
             public_message="Cannot use dynamic blocks with custom Python code in this installation of `workflows`. "
-                           "This can be changed by setting environmental variable "
-                           "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
+            "This can be changed by setting environmental variable "
+            "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
             context="workflow_compilation | dynamic_blocks_compilation",
         )
     all_defined_kinds = load_all_defined_kinds()
@@ -102,7 +106,14 @@ def assembly_dynamic_block_manifest(
     )
     manifest_class = create_model(
         f"DynamicBlockManifest[{unique_identifier}]",
-        __config__=ConfigDict(extra="allow"),
+        __config__=ConfigDict(
+            extra="allow",
+            json_schema_extra={
+                "name": build_human_friendly_block_name(
+                    fully_qualified_name=manifest_description.block_type
+                )
+            },
+        ),
         name=(str, ...),
         type=(Literal[manifest_description.block_type], ...),
         **inputs_definitions,
@@ -112,6 +123,7 @@ def assembly_dynamic_block_manifest(
         kinds_lookup=kinds_lookup,
     )
     return assembly_manifest_class_methods(
+        block_type=manifest_description.block_type,
         manifest_class=manifest_class,
         outputs_definitions=outputs_definitions,
         manifest_description=manifest_description,
@@ -168,6 +180,7 @@ def build_input_field_type(
     kinds_lookup: Dict[str, Kind],
 ) -> type:
     input_type_union_elements = collect_python_types_for_selectors(
+        block_type=block_type,
         input_definition=input_definition,
         kinds_lookup=kinds_lookup,
     )
@@ -175,9 +188,10 @@ def build_input_field_type(
         input_definition=input_definition
     )
     if not input_type_union_elements:
-        raise ValueError(
-            f"There is no definition of input type found for property: {input_name} of "
-            f"dynamic block {block_type}."
+        raise DynamicBlockError(
+            public_message=f"There is no definition of input type found for property: {input_name} of "
+            f"dynamic block {block_type}.",
+            context="workflow_compilation | dynamic_block_compilation | manifest_compilation",
         )
     if len(input_type_union_elements) > 1:
         input_type = Union[tuple(input_type_union_elements)]
@@ -189,6 +203,7 @@ def build_input_field_type(
 
 
 def collect_python_types_for_selectors(
+    block_type: str,
     input_definition: DynamicInputDefinition,
     kinds_lookup: Dict[str, Kind],
 ) -> List[type]:
@@ -200,9 +215,11 @@ def collect_python_types_for_selectors(
         selector_kind = []
         for kind_name in selector_kind_names:
             if kind_name not in kinds_lookup:
-                raise ValueError(
-                    f"Could not find kind with name {kind_name} within kinds "
-                    f"recognised by Execution Engine: {list(kinds_lookup.keys())}."
+                raise DynamicBlockError(
+                    public_message=f"Could not find kind with name {kind_name} declared for dynamic block "
+                    f"`{block_type}` within kinds that would be recognised by Execution Engine knowing the "
+                    f"following kinds: {list(kinds_lookup.keys())}.",
+                    context="workflow_compilation | dynamic_block_compilation | manifest_compilation",
                 )
             selector_kind.append(kinds_lookup[kind_name])
         if selector_type is SelectorType.INPUT_IMAGE:
@@ -275,6 +292,7 @@ def collect_input_dimensionality_offsets(
 
 
 def assembly_manifest_class_methods(
+    block_type: str,
     manifest_class: Type[BaseModel],
     outputs_definitions: List[OutputDefinition],
     manifest_description: ManifestDescription,
@@ -294,7 +312,8 @@ def assembly_manifest_class_methods(
         classmethod(get_input_dimensionality_offsets),
     )
     dimensionality_reference = pick_dimensionality_reference_property(
-        inputs=manifest_description.inputs
+        block_type=block_type,
+        inputs=manifest_description.inputs,
     )
     get_dimensionality_reference_property = lambda cls: dimensionality_reference
     setattr(
@@ -316,7 +335,7 @@ def assembly_manifest_class_methods(
 
 
 def pick_dimensionality_reference_property(
-    inputs: Dict[str, DynamicInputDefinition]
+    block_type: str, inputs: Dict[str, DynamicInputDefinition]
 ) -> Optional[str]:
     references = []
     for name, definition in inputs.items():
@@ -326,4 +345,9 @@ def pick_dimensionality_reference_property(
         return None
     if len(references) == 1:
         return references[0]
-    raise ValueError("Not expected to have multiple dimensionality references")
+    raise DynamicBlockError(
+        public_message=f"For dynamic block {block_type} detected multiple inputs declared to be "
+        f"dimensionality reference: {references}, whereas at max one should be declared "
+        f"to be reference.",
+        context="workflow_compilation | dynamic_block_compilation | manifest_compilation",
+    )

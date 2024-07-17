@@ -57,6 +57,10 @@ class BlockInterfaceError(WorkflowCompilerError):
     pass
 
 
+class DynamicBlockError(WorkflowCompilerError):
+    pass
+
+
 class WorkflowDefinitionError(WorkflowCompilerError):
     pass
 

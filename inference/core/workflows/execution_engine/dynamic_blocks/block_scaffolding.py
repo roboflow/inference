@@ -2,7 +2,11 @@ import types
 from typing import List, Type
 
 from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
-from inference.core.workflows.errors import BlockInterfaceError, WorkflowEnvironmentConfigurationError
+from inference.core.workflows.errors import (
+    BlockInterfaceError,
+    DynamicBlockError,
+    WorkflowEnvironmentConfigurationError,
+)
 from inference.core.workflows.execution_engine.dynamic_blocks.entities import PythonCode
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -38,7 +42,7 @@ def assembly_custom_python_block(
         module_name=f"dynamic_module_{unique_identifier}",
     )
     if not hasattr(code_module, python_code.run_function_name):
-        raise BlockInterfaceError(
+        raise DynamicBlockError(
             public_message=f"Cannot find function: {python_code.run_function_name} in declared code for "
             f"dynamic block: `{block_type_name}`",
             context="workflow_compilation | dynamic_block_compilation | declared_symbols_fetching",
@@ -49,8 +53,8 @@ def assembly_custom_python_block(
         if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
             raise WorkflowEnvironmentConfigurationError(
                 public_message="Cannot use dynamic blocks with custom Python code in this installation of `workflows`. "
-                               "This can be changed by setting environmental variable "
-                               "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
+                "This can be changed by setting environmental variable "
+                "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
                 context="workflow_execution | step_execution | dynamic_step",
             )
         return run_function(self, *args, **kwargs)
@@ -58,7 +62,7 @@ def assembly_custom_python_block(
     if python_code.init_function_code is not None and not hasattr(
         code_module, python_code.init_function_name
     ):
-        raise BlockInterfaceError(
+        raise DynamicBlockError(
             public_message=f"Cannot find function: {python_code.init_function_name} in declared code for "
             f"dynamic block: `{block_type_name}`",
             context="workflow_compilation | dynamic_block_compilation | declared_symbols_fetching",
@@ -106,7 +110,7 @@ def create_dynamic_module(
         exec(imports + code, dynamic_module.__dict__)
         return dynamic_module
     except Exception as error:
-        raise BlockInterfaceError(
+        raise DynamicBlockError(
             public_message=f"Error of type `{type(error).__class__.__name__}` encountered while attempting to "
             f"create Python module with code for block: {block_type_name}. Error message: {error}",
             context="workflow_compilation | dynamic_block_compilation | dynamic_module_creation",

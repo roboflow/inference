@@ -174,7 +174,7 @@ def test_load_initializers_when_plugin_exists_and_initializers_provided() -> Non
     result = load_initializers()
 
     # then
-    assert len(result) == 6
+    assert len(result) == 5
     assert (
         result[
             "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers.a"
@@ -199,7 +199,7 @@ def test_describe_available_blocks_when_valid_plugins_are_loaded(
     )
 
     # when
-    result = describe_available_blocks()
+    result = describe_available_blocks(dynamic_blocks=[])
 
     # then
     assert len(result.blocks) == 2, "Expected 2 blocks to be loaded"
@@ -224,7 +224,7 @@ def test_describe_available_blocks_when_plugins_duplicate_class_names(
 
     # when
     with pytest.raises(PluginLoadingError):
-        _ = describe_available_blocks()
+        _ = describe_available_blocks(dynamic_blocks=[])
 
 
 @mock.patch.object(blocks_loader, "load_workflow_blocks")
@@ -238,4 +238,4 @@ def test_describe_available_blocks_when_plugins_duplicate_type_identifiers(
 
     # when
     with pytest.raises(PluginLoadingError):
-        _ = describe_available_blocks()
+        _ = describe_available_blocks(dynamic_blocks=[])

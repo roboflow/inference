@@ -90,11 +90,13 @@ class DiscoveredConnections:
 
 
 class BlockDescription(BaseModel):
-    manifest_class: Type[WorkflowBlockManifest] = Field(exclude=True)
-    block_class: Union[
-        Type[WorkflowBlock],
-        Callable[[Type[WorkflowBlockManifest]], Type[WorkflowBlock]],
-    ] = Field(exclude=True)
+    manifest_class: Union[Type[WorkflowBlockManifest], Type[BaseModel]] = Field(
+        exclude=True
+    )
+    # Type[BaseModel] here is to let dynamic blocks being BaseModel to pass validation - but that should be
+    # the only case for using this type in this field. Dynamic blocks implements the same interface, yet due
+    # to dynamic nature of creation - cannot be initialised as abstract class WorkflowBlockManifest
+    block_class: Type[WorkflowBlock] = Field(exclude=True)
     block_schema: dict = Field(
         description="OpenAPI specification of block manifest that "
         "can be used to create workflow step in JSON definition."

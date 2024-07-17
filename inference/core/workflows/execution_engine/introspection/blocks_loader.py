@@ -28,7 +28,9 @@ WORKFLOWS_PLUGINS_ENV = "WORKFLOWS_PLUGINS"
 WORKFLOWS_CORE_PLUGIN_NAME = "workflows_core"
 
 
-def describe_available_blocks(dynamic_blocks: List[BlockSpecification]) -> BlocksDescription:
+def describe_available_blocks(
+    dynamic_blocks: List[BlockSpecification],
+) -> BlocksDescription:
     blocks = load_workflow_blocks() + dynamic_blocks
     result = []
     for block in blocks:

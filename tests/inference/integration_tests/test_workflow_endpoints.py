@@ -30,22 +30,28 @@ def test_getting_blocks_descriptions_using_legacy_get_endpoint(server_url) -> No
     assert (
         len(response_data["primitives_connections"]) > 0
     ), "Expected some primitive parameters for steps to be declared"
-    assert "universal_query_language_description" in response_data, "Expected universal_query_language_description key to be present in response"
-    assert "dynamic_block_definition_schema" in response_data, "Expected key `dynamic_block_definition_schema` to be present in response"
+    assert (
+        "universal_query_language_description" in response_data
+    ), "Expected universal_query_language_description key to be present in response"
+    assert (
+        "dynamic_block_definition_schema" in response_data
+    ), "Expected key `dynamic_block_definition_schema` to be present in response"
 
 
-def test_getting_blocks_descriptions_using_new_post_endpoint_with_dynamic_steps(server_url) -> None:
+def test_getting_blocks_descriptions_using_new_post_endpoint_with_dynamic_steps(
+    server_url,
+) -> None:
     # given
     function_code = """
-    def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]) -> BlockResult:
-        detection_id2bbox = {
-            detection_id.item(): i for i, detection_id in enumerate(prediction.data["detection_id"])
-        }
-        results = []
-        for crop in crops:
-            parent_id = crop.parent_metadata.parent_id
-            results.append({"associated_detections": prediction[detection_id2bbox[parent_id]]})
-        return results
+def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]) -> BlockResult:
+    detection_id2bbox = {
+        detection_id.item(): i for i, detection_id in enumerate(prediction.data["detection_id"])
+    }
+    results = []
+    for crop in crops:
+        parent_id = crop.parent_metadata.parent_id
+        results.append({"associated_detections": prediction[detection_id2bbox[parent_id]]})
+    return results
     """
     dynamic_blocks_definitions = [
         {
@@ -94,7 +100,7 @@ def test_getting_blocks_descriptions_using_new_post_endpoint_with_dynamic_steps(
     # when
     response = requests.post(
         f"{server_url}/workflows/blocks/describe",
-        json={"dynamic_blocks_definitions": dynamic_blocks_definitions}
+        json={"dynamic_blocks_definitions": dynamic_blocks_definitions},
     )
 
     # then
@@ -118,8 +124,89 @@ def test_getting_blocks_descriptions_using_new_post_endpoint_with_dynamic_steps(
     assert (
         len(response_data["primitives_connections"]) > 0
     ), "Expected some primitive parameters for steps to be declared"
-    assert "universal_query_language_description" in response_data, "Expected universal_query_language_description key to be present in response"
-    assert "dynamic_block_definition_schema" in response_data, "Expected key `dynamic_block_definition_schema` to be present in response"
+    assert (
+        "universal_query_language_description" in response_data
+    ), "Expected universal_query_language_description key to be present in response"
+    assert (
+        "dynamic_block_definition_schema" in response_data
+    ), "Expected key `dynamic_block_definition_schema` to be present in response"
+    types_compatible_with_object_detection_predictions = {
+        e["manifest_type_identifier"]
+        for e in response_data["kinds_connections"][
+            "Batch[object_detection_prediction]"
+        ]
+    }
+    assert (
+        "DetectionsToCropsAssociation"
+        in types_compatible_with_object_detection_predictions
+    ), "Expected dynamic block to be manifested in connections"
+
+
+def test_getting_blocks_descriptions_using_new_post_endpoint_with_dynamic_steps_when_steps_are_malformed(
+    server_url,
+) -> None:
+    # given
+    function_code = """
+def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]) -> BlockResult:
+    pass
+    """
+    dynamic_blocks_definitions = [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "DetectionsToCropsAssociation",
+                "inputs": {
+                    "prediction": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                        "is_dimensionality_reference": True,
+                        "selector_data_kind": {
+                            "step_output": [
+                                "Batch[object_detection_prediction]",
+                                "Batch[instance_segmentation_prediction]",
+                                "Batch[keypoint_detection_prediction]",
+                            ]
+                        },
+                    },
+                    "crops": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output_image"],
+                        "is_dimensionality_reference": True,
+                        "dimensionality_offset": 1,
+                    },
+                },
+                "outputs": {
+                    "associated_detections": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": [
+                            "Batch[object_detection_prediction]",
+                            "Batch[instance_segmentation_prediction]",
+                            "Batch[keypoint_detection_prediction]",
+                        ],
+                    }
+                },
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": function_code,
+                "run_function_name": "my_function",
+            },
+        },
+    ]
+
+    # when
+    response = requests.post(
+        f"{server_url}/workflows/blocks/describe",
+        json={"dynamic_blocks_definitions": dynamic_blocks_definitions},
+    )
+
+    # then
+    assert response.status_code == 400, "Expected bad request to be manifested"
+    response_data = response.json()
+    assert (
+        "dimensionality reference" in response_data["message"]
+    ), "Expected the cause of problem being dimensionality reference declaration"
 
 
 def test_getting_dynamic_outputs(server_url: str) -> None:
@@ -206,7 +293,7 @@ def infer(self, image: WorkflowImageData) -> BlockResult:
 """
     valid_workflow_definition = {
         "version": "1.0",
-          "inputs": [
+        "inputs": [
             {"type": "WorkflowImage", "name": "image"},
         ],
         "dynamic_blocks_definitions": [
@@ -312,7 +399,7 @@ def test_compilation_endpoint_when_compilation_fails(
 
 def test_workflow_run(
     server_url: str,
-        clean_loaded_models_fixture
+    clean_loaded_models_fixture,
 ) -> None:
     # given
     valid_workflow_definition = {
@@ -374,3 +461,104 @@ def test_workflow_run(
     assert (
         len(response_data["outputs"][1]["result"]["predictions"]) == 6
     ), "Expected to see 6 predictions"
+
+
+FUNCTION_TO_GET_MAXIMUM_CONFIDENCE_FROM_BATCH_OF_DETECTIONS = """
+def run(self, predictions: Batch[sv.Detections]) -> BlockResult:
+    result = []
+    for prediction in predictions:
+        result.append({"max_confidence": np.max(prediction.confidence).item()})
+    return result
+"""
+
+WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+    ],
+    "dynamic_blocks_definitions": [
+        {
+            "type": "DynamicBlockDefinition",
+            "manifest": {
+                "type": "ManifestDescription",
+                "block_type": "MaxConfidence",
+                "inputs": {
+                    "predictions": {
+                        "type": "DynamicInputDefinition",
+                        "selector_types": ["step_output"],
+                    },
+                },
+                "outputs": {
+                    "max_confidence": {
+                        "type": "DynamicOutputDefinition",
+                        "kind": ["float_zero_to_one"],
+                    }
+                },
+                "accepts_batch_input": True,
+            },
+            "code": {
+                "type": "PythonCode",
+                "run_function_code": FUNCTION_TO_GET_MAXIMUM_CONFIDENCE_FROM_BATCH_OF_DETECTIONS,
+            },
+        },
+    ],
+    "steps": [
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "MaxConfidence",
+            "name": "confidence_aggregation",
+            "predictions": "$steps.model.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "max_confidence",
+            "selector": "$steps.confidence_aggregation.max_confidence",
+        },
+    ],
+}
+
+
+def test_workflow_run_when_dynamic_block_is_in_use(
+    server_url: str,
+    clean_loaded_models_fixture,
+) -> None:
+    # when
+    response = requests.post(
+        f"{server_url}/workflows/run",
+        json={
+            "specification": WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH,
+            "api_key": API_KEY,
+            "inputs": {
+                "image": [
+                    {
+                        "type": "url",
+                        "value": "https://media.roboflow.com/fruit.png",
+                    }
+                ]
+                * 2,
+            },
+        },
+    )
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert isinstance(
+        response_data["outputs"], list
+    ), "Expected list of elements to be returned"
+    assert (
+        len(response_data["outputs"]) == 2
+    ), "Two images submitted - two responses expected"
+    assert set(response_data["outputs"][0].keys()) == {
+        "max_confidence"
+    }, "Expected only `max_confidence` output"
+    assert set(response_data["outputs"][1].keys()) == {
+        "max_confidence"
+    }, "Expected only `max_confidence` output"

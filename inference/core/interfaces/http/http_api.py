@@ -41,8 +41,9 @@ from inference.core.entities.requests.server_state import (
     ClearModelRequest,
 )
 from inference.core.entities.requests.workflows import (
+    DescribeBlocksRequest,
     WorkflowInferenceRequest,
-    WorkflowSpecificationInferenceRequest, DescribeBlocksRequest,
+    WorkflowSpecificationInferenceRequest,
 )
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.responses.clip import (
@@ -124,7 +125,9 @@ from inference.core.exceptions import (
     WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
-from inference.core.interfaces.http.handlers.workflows import handle_describe_workflows_blocks_request
+from inference.core.interfaces.http.handlers.workflows import (
+    handle_describe_workflows_blocks_request,
+)
 from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
     serialise_workflow_result,
@@ -139,6 +142,7 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 )
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.errors import (
+    DynamicBlockError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
     ReferenceTypeError,
@@ -230,6 +234,7 @@ def with_route_exceptions(route):
             RuntimeInputError,
             InvalidInputTypeError,
             OperationTypeNotRecognisedError,
+            DynamicBlockError,
         ) as error:
             resp = JSONResponse(
                 status_code=400,
@@ -891,13 +896,15 @@ class HttpInterface(BaseInterface):
                 response_model=WorkflowsBlocksDescription,
                 summary="[EXPERIMENTAL] Endpoint to get definition of workflows blocks that are accessible",
                 description="Endpoint provides detailed information about workflows building blocks that are "
-                            "accessible in the inference server. This information could be used to programmatically "
-                            "build / display workflows. Additionally - in request body one can specify list of "
-                            "dynamic blocks definitions which will be transformed into blocks and used to generate "
-                            "schemas and definitions of connections",
+                "accessible in the inference server. This information could be used to programmatically "
+                "build / display workflows. Additionally - in request body one can specify list of "
+                "dynamic blocks definitions which will be transformed into blocks and used to generate "
+                "schemas and definitions of connections",
             )
             @with_route_exceptions
-            async def describe_workflows_blocks(request: DescribeBlocksRequest) -> WorkflowsBlocksDescription:
+            async def describe_workflows_blocks(
+                request: DescribeBlocksRequest,
+            ) -> WorkflowsBlocksDescription:
                 return handle_describe_workflows_blocks_request(
                     dynamic_blocks_definitions=request.dynamic_blocks_definitions
                 )

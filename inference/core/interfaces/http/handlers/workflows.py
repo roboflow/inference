@@ -1,18 +1,32 @@
 # TODO - for everyone: start migrating other handlers to bring relief to http_api.py
-from typing import Optional, List
+from typing import List, Optional
 
-from inference.core.entities.responses.workflows import ExternalWorkflowsBlockSelectorDefinition, \
-    ExternalBlockPropertyPrimitiveDefinition, UniversalQueryLanguageDescription, WorkflowsBlocksDescription
-from inference.core.workflows.core_steps.common.query_language.introspection.core import \
-    prepare_operations_descriptions, prepare_operators_descriptions
-from inference.core.workflows.execution_engine.dynamic_blocks.block_assembler import compile_dynamic_blocks
-from inference.core.workflows.execution_engine.dynamic_blocks.entities import DynamicBlockDefinition
-from inference.core.workflows.execution_engine.introspection.blocks_loader import describe_available_blocks
-from inference.core.workflows.execution_engine.introspection.connections_discovery import discover_blocks_connections
+from inference.core.entities.responses.workflows import (
+    ExternalBlockPropertyPrimitiveDefinition,
+    ExternalWorkflowsBlockSelectorDefinition,
+    UniversalQueryLanguageDescription,
+    WorkflowsBlocksDescription,
+)
+from inference.core.workflows.core_steps.common.query_language.introspection.core import (
+    prepare_operations_descriptions,
+    prepare_operators_descriptions,
+)
+from inference.core.workflows.execution_engine.dynamic_blocks.block_assembler import (
+    compile_dynamic_blocks,
+)
+from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
+    DynamicBlockDefinition,
+)
+from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    describe_available_blocks,
+)
+from inference.core.workflows.execution_engine.introspection.connections_discovery import (
+    discover_blocks_connections,
+)
 
 
 def handle_describe_workflows_blocks_request(
-    dynamic_blocks_definitions: Optional[List[DynamicBlockDefinition]] = None
+    dynamic_blocks_definitions: Optional[List[DynamicBlockDefinition]] = None,
 ) -> WorkflowsBlocksDescription:
     if dynamic_blocks_definitions is None:
         dynamic_blocks_definitions = []
@@ -60,5 +74,5 @@ def handle_describe_workflows_blocks_request(
         kinds_connections=kinds_connections,
         primitives_connections=primitives_connections,
         universal_query_language_description=universal_query_language_description,
-        dynamic_block_definition_schema=DynamicBlockDefinition.schema()
+        dynamic_block_definition_schema=DynamicBlockDefinition.schema(),
     )
