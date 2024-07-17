@@ -135,10 +135,10 @@ class LabelVisualizationBlock(VisualizationBlock):
                 text_color = sv.Color.from_hex(text_color)
             elif text_color.startswith("rgb"):
                 r, g, b = map(int, text_color[4:-1].split(","))
-                text_color = sv.Color.from_rgb_tuple(r, g, b)
+                text_color = sv.Color.from_rgb_tuple((r, g, b))
             elif text_color.startswith("bgr"):
                 b, g, r = map(int, text_color[4:-1].split(","))
-                text_color = sv.Color.from_bgr_tuple(b, g, r)
+                text_color = sv.Color.from_bgr_tuple((b, g, r))
             else:
                 text_color = getattr(sv.Color, text_color)
 
