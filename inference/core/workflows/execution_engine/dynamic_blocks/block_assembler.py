@@ -239,7 +239,7 @@ def collect_python_types_for_selectors(
         else:
             raise DynamicBlockError(
                 public_message=f"Could not recognise selector type `{selector_type}` declared for input `{input_name}` "
-                               f"of dynamic block `{block_type}`.",
+                f"of dynamic block `{block_type}`.",
                 context="workflow_compilation | dynamic_block_compilation | manifest_compilation",
             )
     return result
@@ -255,8 +255,8 @@ def collect_python_types_for_values(
         if value_type_name not in PYTHON_TYPES_MAPPING:
             raise DynamicBlockError(
                 public_message=f"Could not resolve Python type `{value_type_name}` declared for input `{input_name}` "
-                               f"of dynamic block `{block_type}` within types that would be recognised by Execution "
-                               f"Engine knowing the following types: {list(PYTHON_TYPES_MAPPING.keys())}.",
+                f"of dynamic block `{block_type}` within types that would be recognised by Execution "
+                f"Engine knowing the following types: {list(PYTHON_TYPES_MAPPING.keys())}.",
                 context="workflow_compilation | dynamic_block_compilation | manifest_compilation",
             )
         value_type = PYTHON_TYPES_MAPPING[value_type_name]
@@ -316,8 +316,8 @@ def collect_actual_kinds_for_output(
         if kind_name not in kinds_lookup:
             raise DynamicBlockError(
                 public_message=f"Could not find kind with name `{kind_name}` declared for output `{output_name}` "
-                               f"of dynamic block `{block_type}` within kinds that would be recognised by Execution "
-                               f"Engine knowing the following kinds: {list(kinds_lookup.keys())}.",
+                f"of dynamic block `{block_type}` within kinds that would be recognised by Execution "
+                f"Engine knowing the following kinds: {list(kinds_lookup.keys())}.",
                 context="workflow_compilation | dynamic_block_compilation | manifest_compilation",
             )
         actual_kinds.append(kinds_lookup[kind_name])
