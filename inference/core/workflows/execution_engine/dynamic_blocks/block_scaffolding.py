@@ -95,23 +95,19 @@ def assembly_custom_python_block(
 def create_dynamic_module(
     block_type_name: str, python_code: PythonCode, module_name: str
 ) -> types.ModuleType:
+    imports = "\n".join(IMPORTS_LINES) + "\n" + "\n".join(python_code.imports) + "\n\n"
+    code = python_code.run_function_code
+    if python_code.init_function_code:
+        code += "\n\n" + python_code.init_function_code
+    code = imports + code
     try:
         dynamic_module = types.ModuleType(module_name)
-        imports = (
-            "\n".join(IMPORTS_LINES)
-            + "\n"
-            + "\n".join(python_code.imports)
-            + "\n\n\n\n"
-        )
-        code = python_code.run_function_code
-        if python_code.init_function_code:
-            code += "\n\n\n" + python_code.init_function_code
-        exec(imports + code, dynamic_module.__dict__)
+        exec(code, dynamic_module.__dict__)
         return dynamic_module
     except Exception as error:
         raise DynamicBlockError(
-            public_message=f"Error of type `{type(error).__class__.__name__}` encountered while attempting to "
-            f"create Python module with code for block: {block_type_name}. Error message: {error}",
+            public_message=f"Error of type `{error.__class__.__name__}` encountered while attempting to "
+            f"create Python module with code for block: {block_type_name}. Error message: {error}. Full code:\n{code}",
             context="workflow_compilation | dynamic_block_compilation | dynamic_module_creation",
             inner_error=error,
         ) from error
