@@ -28,6 +28,7 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_IMAGE_KEY: str = "image"
 
+
 class VisualizationManifest(WorkflowBlockManifest, ABC):
     model_config = ConfigDict(
         json_schema_extra={
