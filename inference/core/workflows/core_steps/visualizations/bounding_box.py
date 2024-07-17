@@ -1,37 +1,30 @@
-from inference.core.workflows.core_steps.visualizations.base import (
-    VisualizationManifest,
-    VisualizationBlock
-)
-
 from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
-    WorkflowImageData,
+from inference.core.workflows.core_steps.visualizations.base import (
+    VisualizationBlock,
+    VisualizationManifest,
 )
+from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
+    FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
     FloatZeroToOne,
-    FLOAT_ZERO_TO_ONE_KIND,
-    WorkflowParameterSelector
+    WorkflowParameterSelector,
 )
-from inference.core.workflows.prototypes.block import (
-    BlockResult,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 OUTPUT_IMAGE_KEY: str = "image"
 
 TYPE: str = "BoundingBoxVisualization"
-SHORT_DESCRIPTION = (
-    "Draws a box around detected objects in an image."
-)
+SHORT_DESCRIPTION = "Draws a box around detected objects in an image."
 LONG_DESCRIPTION = """
 The `BoundingBoxVisualization` block draws a box around detected
 objects in an image using Supervision's `sv.RoundBoxAnnotator`.
 """
+
 
 class BoundingBoxManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
@@ -43,18 +36,19 @@ class BoundingBoxManifest(VisualizationManifest):
             "block_type": "visualization",
         }
     )
-    
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+
+    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the bounding box in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
 
-    roundness: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field( # type: ignore
+    roundness: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Roundness of the corners of the bounding box.",
         default=0.0,
         examples=[0.0, "$inputs.roundness"],
     )
+
 
 class BoundingBoxVisualizationBlock(VisualizationBlock):
     def __init__(self):
@@ -69,18 +63,14 @@ class BoundingBoxVisualizationBlock(VisualizationBlock):
         color_palette: str,
         palette_size: int,
         custom_colors: List[str],
-        color_axis:str,
-        thickness:int,
+        color_axis: str,
+        thickness: int,
         roundness: float,
     ) -> sv.annotators.base.BaseAnnotator:
-        key = "_".join(map(str, [
-            color_palette,
-            palette_size,
-            color_axis,
-            thickness,
-            roundness
-        ]))
-        
+        key = "_".join(
+            map(str, [color_palette, palette_size, color_axis, thickness, roundness])
+        )
+
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
@@ -88,16 +78,16 @@ class BoundingBoxVisualizationBlock(VisualizationBlock):
                 self.annotatorCache[key] = sv.BoxAnnotator(
                     color=palette,
                     color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
-                    thickness=thickness
+                    thickness=thickness,
                 )
             else:
                 self.annotatorCache[key] = sv.RoundBoxAnnotator(
                     color=palette,
                     color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
                     thickness=thickness,
-                    roundness=roundness
+                    roundness=roundness,
                 )
-        return self.annotatorCache[key] 
+        return self.annotatorCache[key]
 
     async def run(
         self,
@@ -122,7 +112,7 @@ class BoundingBoxVisualizationBlock(VisualizationBlock):
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
-            detections=predictions
+            detections=predictions,
         )
 
         output = WorkflowImageData(
@@ -131,6 +121,4 @@ class BoundingBoxVisualizationBlock(VisualizationBlock):
             numpy_image=annotated_image,
         )
 
-        return {
-            OUTPUT_IMAGE_KEY: output
-        }
+        return {OUTPUT_IMAGE_KEY: output}

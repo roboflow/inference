@@ -3,25 +3,18 @@ from typing import List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
-    OutputDefinition,
-    WorkflowImageData,
-)
-from inference.core.workflows.entities.types import (
-    # IMAGE_KIND,
-    # OBJECT_DETECTION_PREDICTION_KIND,
-    # INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    # KEYPOINT_DETECTION_PREDICTION_KIND,
+from inference.core.workflows.entities.base import OutputDefinition, WorkflowImageData
+from inference.core.workflows.entities.types import (  # IMAGE_KIND,; OBJECT_DETECTION_PREDICTION_KIND,; INSTANCE_SEGMENTATION_PREDICTION_KIND,; KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_IMAGES_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    INTEGER_KIND,
+    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
+    INTEGER_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -32,13 +25,12 @@ from inference.core.workflows.prototypes.block import (
 OUTPUT_IMAGE_KEY: str = "image"
 
 TYPE: str = "PixelateVisualization"
-SHORT_DESCRIPTION = (
-    "Pixelates detected objects in an image."
-)
+SHORT_DESCRIPTION = "Pixelates detected objects in an image."
 LONG_DESCRIPTION = """
 The `PixelateVisualization` block pixelates detected
 objects in an image using Supervision's `sv.PixelateAnnotator`.
 """
+
 
 class PixelateManifest(WorkflowBlockManifest):
     type: Literal[f"{TYPE}"]
@@ -68,12 +60,12 @@ class PixelateManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("image", "images"),
     )
 
-    copy_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field( # type: ignore
+    copy_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
         description="Duplicate the image contents (vs overwriting the image in place). Deselect for chained visualizations that should stack on previous ones where the intermediate state is not needed.",
-        default=True
+        default=True,
     )
-    
-    pixel_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+
+    pixel_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Size of the pixelation.",
         default=20,
         examples=[20, "$inputs.pixel_size"],
@@ -90,6 +82,7 @@ class PixelateManifest(WorkflowBlockManifest):
             ),
         ]
 
+
 class PixelateVisualizationBlock(WorkflowBlock):
     def __init__(self):
         self.annotatorCache = {}
@@ -102,15 +95,11 @@ class PixelateVisualizationBlock(WorkflowBlock):
         self,
         pixel_size: int,
     ) -> sv.annotators.base.BaseAnnotator:
-        key = "_".join(map(str, [
-            pixel_size
-        ]))
-        
+        key = "_".join(map(str, [pixel_size]))
+
         if key not in self.annotatorCache:
-            self.annotatorCache[key] = sv.PixelateAnnotator(
-                pixel_size=pixel_size
-            )
-        return self.annotatorCache[key] 
+            self.annotatorCache[key] = sv.PixelateAnnotator(pixel_size=pixel_size)
+        return self.annotatorCache[key]
 
     async def run(
         self,
@@ -125,7 +114,7 @@ class PixelateVisualizationBlock(WorkflowBlock):
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
-            detections=predictions
+            detections=predictions,
         )
 
         output = WorkflowImageData(
@@ -134,6 +123,4 @@ class PixelateVisualizationBlock(WorkflowBlock):
             numpy_image=annotated_image,
         )
 
-        return {
-            OUTPUT_IMAGE_KEY: output
-        }
+        return {OUTPUT_IMAGE_KEY: output}

@@ -79,48 +79,45 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop im
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.blur import (
-    BlurVisualizationBlock
+    BlurVisualizationBlock,
 )
 from inference.core.workflows.core_steps.visualizations.bounding_box import (
-    BoundingBoxVisualizationBlock
+    BoundingBoxVisualizationBlock,
 )
 from inference.core.workflows.core_steps.visualizations.circle import (
-    CircleVisualizationBlock
+    CircleVisualizationBlock,
 )
 from inference.core.workflows.core_steps.visualizations.color import (
-    ColorVisualizationBlock
+    ColorVisualizationBlock,
 )
 from inference.core.workflows.core_steps.visualizations.corner import (
-    CornerVisualizationBlock
+    CornerVisualizationBlock,
 )
 from inference.core.workflows.core_steps.visualizations.crop import (
-    CropVisualizationBlock
+    CropVisualizationBlock,
 )
-from inference.core.workflows.core_steps.visualizations.dot import (
-    DotVisualizationBlock
-)
+from inference.core.workflows.core_steps.visualizations.dot import DotVisualizationBlock
 from inference.core.workflows.core_steps.visualizations.ellipse import (
-    EllipseVisualizationBlock
+    EllipseVisualizationBlock,
 )
 from inference.core.workflows.core_steps.visualizations.halo import (
-    HaloVisualizationBlock
+    HaloVisualizationBlock,
 )
 from inference.core.workflows.core_steps.visualizations.label import (
-    LabelVisualizationBlock
+    LabelVisualizationBlock,
 )
 from inference.core.workflows.core_steps.visualizations.mask import (
-    MaskVisualizationBlock
+    MaskVisualizationBlock,
 )
 from inference.core.workflows.core_steps.visualizations.pixelate import (
-    PixelateVisualizationBlock
+    PixelateVisualizationBlock,
 )
 from inference.core.workflows.core_steps.visualizations.polygon import (
-    PolygonVisualizationBlock
+    PolygonVisualizationBlock,
 )
 from inference.core.workflows.core_steps.visualizations.triangle import (
-    TriangleVisualizationBlock
+    TriangleVisualizationBlock,
 )
-
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
 
@@ -154,7 +151,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PropertyDefinitionBlock,
         DimensionCollapseBlock,
         FirstNonEmptyOrDefaultBlock,
-
         BlurVisualizationBlock,
         BoundingBoxVisualizationBlock,
         CircleVisualizationBlock,

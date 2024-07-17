@@ -1,40 +1,31 @@
-from inference.core.workflows.core_steps.visualizations.base import (
-    VisualizationManifest,
-    VisualizationBlock
-)
-
 from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
-    WorkflowImageData,
+from inference.core.workflows.core_steps.visualizations.base import (
+    VisualizationBlock,
+    VisualizationManifest,
 )
+from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    FloatZeroToOne,
-    FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
+    StepOutputSelector,
     WorkflowParameterSelector,
-    StepOutputSelector
 )
-from inference.core.workflows.prototypes.block import (
-    BlockResult,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 OUTPUT_IMAGE_KEY: str = "image"
 
 TYPE: str = "PolygonVisualization"
-SHORT_DESCRIPTION = (
-    "Draws a polygon around detected objects in an image."
-)
+SHORT_DESCRIPTION = "Draws a polygon around detected objects in an image."
 LONG_DESCRIPTION = """
 The `PolygonVisualization` block uses a detections from an
 instance segmentation to draw polygons around objects using
 `sv.PolygonAnnotator`.
 """
+
 
 class PolygonManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
@@ -55,12 +46,13 @@ class PolygonManifest(VisualizationManifest):
         description="Predictions",
         examples=["$steps.instance_segmentation_model.predictions"],
     )
-    
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+
+    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the outline in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
+
 
 class PolygonVisualizationBlock(VisualizationBlock):
     def __init__(self):
@@ -78,23 +70,28 @@ class PolygonVisualizationBlock(VisualizationBlock):
         color_axis: str,
         thickness: int,
     ) -> sv.annotators.base.BaseAnnotator:
-        key = "_".join(map(str, [
-            color_palette,
-            palette_size,
-            color_axis,
-            thickness,
-        ]))
-        
+        key = "_".join(
+            map(
+                str,
+                [
+                    color_palette,
+                    palette_size,
+                    color_axis,
+                    thickness,
+                ],
+            )
+        )
+
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
             self.annotatorCache[key] = sv.PolygonAnnotator(
                 color=palette,
                 color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
-                thickness=thickness
+                thickness=thickness,
             )
 
-        return self.annotatorCache[key] 
+        return self.annotatorCache[key]
 
     async def run(
         self,
@@ -117,7 +114,7 @@ class PolygonVisualizationBlock(VisualizationBlock):
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
-            detections=predictions
+            detections=predictions,
         )
 
         output = WorkflowImageData(
@@ -126,6 +123,4 @@ class PolygonVisualizationBlock(VisualizationBlock):
             numpy_image=annotated_image,
         )
 
-        return {
-            OUTPUT_IMAGE_KEY: output
-        }
+        return {OUTPUT_IMAGE_KEY: output}

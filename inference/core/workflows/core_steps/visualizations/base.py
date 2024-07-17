@@ -4,31 +4,21 @@ from typing import List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference.core.workflows.core_steps.visualizations.utils import (
-    strToColor
-)
-
-from inference.core.workflows.entities.base import (
-    OutputDefinition,
-    WorkflowImageData,
-)
-from inference.core.workflows.entities.types import (
-    # IMAGE_KIND,
-    # OBJECT_DETECTION_PREDICTION_KIND,
-    # INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    # KEYPOINT_DETECTION_PREDICTION_KIND,
+from inference.core.workflows.core_steps.visualizations.utils import strToColor
+from inference.core.workflows.entities.base import OutputDefinition, WorkflowImageData
+from inference.core.workflows.entities.types import (  # IMAGE_KIND,; OBJECT_DETECTION_PREDICTION_KIND,; INSTANCE_SEGMENTATION_PREDICTION_KIND,; KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_IMAGES_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    INTEGER_KIND,
+    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
-    STRING_KIND,
+    INTEGER_KIND,
     LIST_OF_VALUES_KIND,
+    STRING_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -37,6 +27,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_IMAGE_KEY: str = "image"
+
 
 class VisualizationManifest(WorkflowBlockManifest, ABC):
     model_config = ConfigDict(
@@ -62,9 +53,9 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
         validation_alias=AliasChoices("image", "images"),
     )
 
-    copy_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field( # type: ignore
+    copy_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
         description="Duplicate the image contents (vs overwriting the image in place). Deselect for chained visualizations that should stack on previous ones where the intermediate state is not needed.",
-        default=True
+        default=True,
     )
 
     color_palette: Union[
@@ -72,17 +63,14 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             "DEFAULT",
             "CUSTOM",
             "ROBOFLOW",
-
             "Matplotlib Viridis",
             "Matplotlib Plasma",
             "Matplotlib Inferno",
             "Matplotlib Magma",
             "Matplotlib Cividis",
-
             # 'LinearSegmentedColormap' object has no attribute 'colors'
             # "Matplotlib Twilight",
             # "Matplotlib Twilight_Shifted",
-            
             # 'LinearSegmentedColormap' object has no attribute 'colors'
             # "Matplotlib HSV",
             # "Matplotlib Jet",
@@ -91,7 +79,6 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             # "Matplotlib gist_rainbow",
             # "Matplotlib nipy_spectral",
             # "Matplotlib gist_ncar",
-
             "Matplotlib Pastel1",
             "Matplotlib Pastel2",
             "Matplotlib Paired",
@@ -104,7 +91,6 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             "Matplotlib Tab20",
             "Matplotlib Tab20b",
             "Matplotlib Tab20c",
-
             # 'LinearSegmentedColormap' object has no attribute 'colors'
             # "Matplotlib Ocean",
             # "Matplotlib Gist_Earth",
@@ -112,7 +98,6 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             # "Matplotlib Stern",
             # "Matplotlib gnuplot",
             # "Matplotlib gnuplot2",
-
             # 'LinearSegmentedColormap' object has no attribute 'colors'
             # "Matplotlib Spring",
             # "Matplotlib Summer",
@@ -122,7 +107,6 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             # "Matplotlib Hot",
             # "Matplotlib Copper",
             # "Matplotlib Bone",
-
             # "Matplotlib Greys_R",
             # "Matplotlib Purples_R",
             # "Matplotlib Blues_R",
@@ -131,7 +115,7 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             # "Matplotlib Reds_R",
         ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
-    ] = Field( # type: ignore
+    ] = Field(  # type: ignore
         default="DEFAULT",
         description="Color palette to use for annotations.",
         examples=["DEFAULT", "$inputs.color_palette"],
@@ -140,30 +124,24 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
     palette_size: Union[
         INTEGER_KIND,
         WorkflowParameterSelector(kind=[INTEGER_KIND]),
-    ] = Field( # type: ignore
+    ] = Field(  # type: ignore
         default=10,
         description="Number of colors in the color palette. Applies when using a matplotlib `color_palette`.",
         examples=[10, "$inputs.palette_size"],
     )
 
     custom_colors: Union[
-        List[str],
-        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])
-    ] = Field( # type: ignore
+        List[str], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])
+    ] = Field(  # type: ignore
         default=[],
-        description="List of colors to use for annotations when `color_palette` is set to \"CUSTOM\".",
+        description='List of colors to use for annotations when `color_palette` is set to "CUSTOM".',
         examples=[["#FF0000", "#00FF00", "#0000FF"], "$inputs.custom_colors"],
     )
 
-
     color_axis: Union[
-        Literal[
-            "INDEX",
-            "CLASS",
-            "TRACK"
-        ],
+        Literal["INDEX", "CLASS", "TRACK"],
         WorkflowParameterSelector(kind=[STRING_KIND]),
-    ] = Field( # type: ignore
+    ] = Field(  # type: ignore
         default="CLASS",
         description="Strategy to use for mapping colors to annotations.",
         examples=["CLASS", "$inputs.color_axis"],
@@ -179,6 +157,7 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
                 ],
             ),
         ]
+
 
 class VisualizationBlock(WorkflowBlock, ABC):
     def __init__(self):
@@ -196,7 +175,9 @@ class VisualizationBlock(WorkflowBlock, ABC):
     @classmethod
     def getPalette(self, color_palette, palette_size, custom_colors):
         if color_palette == "CUSTOM":
-            return sv.ColorPalette(colors=[strToColor(color) for color in custom_colors])
+            return sv.ColorPalette(
+                colors=[strToColor(color) for color in custom_colors]
+            )
         elif hasattr(sv.ColorPalette, color_palette):
             return getattr(sv.ColorPalette, color_palette)
         else:
@@ -209,7 +190,6 @@ class VisualizationBlock(WorkflowBlock, ABC):
                 "Greens_R",
                 "Oranges_R",
                 "Reds_R",
-
                 "Wistia",
                 "Pastel1",
                 "Pastel2",

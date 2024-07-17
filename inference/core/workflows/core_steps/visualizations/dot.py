@@ -1,25 +1,19 @@
-from inference.core.workflows.core_steps.visualizations.base import (
-    VisualizationManifest,
-    VisualizationBlock
-)
-
 from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
-    WorkflowImageData,
+from inference.core.workflows.core_steps.visualizations.base import (
+    VisualizationBlock,
+    VisualizationManifest,
 )
+from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
     INTEGER_KIND,
     STRING_KIND,
-    WorkflowParameterSelector
+    WorkflowParameterSelector,
 )
-from inference.core.workflows.prototypes.block import (
-    BlockResult,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 OUTPUT_IMAGE_KEY: str = "image"
 
@@ -31,6 +25,7 @@ LONG_DESCRIPTION = """
 The `DotVisualization` block draws dots on an image at specific coordinates
 based on provided detections using Supervision's `sv.DotAnnotator`.
 """
+
 
 class DotManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
@@ -57,23 +52,24 @@ class DotManifest(VisualizationManifest):
             "CENTER_OF_MASS",
         ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
-    ] = Field( # type: ignore
+    ] = Field(  # type: ignore
         default="CENTER",
         description="The anchor position for placing the dot.",
         examples=["CENTER", "$inputs.position"],
     )
 
-    radius: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+    radius: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Radius of the dot in pixels.",
         default=4,
         examples=[4, "$inputs.radius"],
     )
-    
-    outline_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+
+    outline_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the outline of the dot in pixels.",
         default=0,
         examples=[2, "$inputs.outline_thickness"],
     )
+
 
 class DotVisualizationBlock(VisualizationBlock):
     def __init__(self):
@@ -93,15 +89,20 @@ class DotVisualizationBlock(VisualizationBlock):
         radius: int,
         outline_thickness: int,
     ) -> sv.annotators.base.BaseAnnotator:
-        key = "_".join(map(str, [
-            color_palette,
-            palette_size,
-            color_axis,
-            position,
-            radius,
-            outline_thickness,
-        ]))
-        
+        key = "_".join(
+            map(
+                str,
+                [
+                    color_palette,
+                    palette_size,
+                    color_axis,
+                    position,
+                    radius,
+                    outline_thickness,
+                ],
+            )
+        )
+
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
@@ -110,10 +111,10 @@ class DotVisualizationBlock(VisualizationBlock):
                 color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
                 position=getattr(sv.Position, position),
                 radius=radius,
-                outline_thickness=outline_thickness
+                outline_thickness=outline_thickness,
             )
 
-        return self.annotatorCache[key] 
+        return self.annotatorCache[key]
 
     async def run(
         self,
@@ -140,7 +141,7 @@ class DotVisualizationBlock(VisualizationBlock):
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
-            detections=predictions
+            detections=predictions,
         )
 
         output = WorkflowImageData(
@@ -149,6 +150,4 @@ class DotVisualizationBlock(VisualizationBlock):
             numpy_image=annotated_image,
         )
 
-        return {
-            OUTPUT_IMAGE_KEY: output
-        }
+        return {OUTPUT_IMAGE_KEY: output}

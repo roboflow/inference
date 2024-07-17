@@ -1,5 +1,6 @@
 import supervision as sv
 
+
 def strToColor(color: str) -> sv.Color:
     if color.startswith("#"):
         return sv.Color.from_hex(color)
@@ -12,4 +13,6 @@ def strToColor(color: str) -> sv.Color:
     elif hasattr(sv.Color, color.upper()):
         return getattr(sv.Color, color.upper())
     else:
-        raise ValueError(f"Invalid text color: {color}; valid formats are #RRGGBB, rgb(R, G, B), bgr(B, G, R), or a valid color name (like WHITE, BLACK, or BLUE).")
+        raise ValueError(
+            f"Invalid text color: {color}; valid formats are #RRGGBB, rgb(R, G, B), bgr(B, G, R), or a valid color name (like WHITE, BLACK, or BLUE)."
+        )

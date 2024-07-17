@@ -1,35 +1,28 @@
-from inference.core.workflows.core_steps.visualizations.base import (
-    VisualizationManifest,
-    VisualizationBlock
-)
-
 from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
-    WorkflowImageData,
+from inference.core.workflows.core_steps.visualizations.base import (
+    VisualizationBlock,
+    VisualizationManifest,
 )
+from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
     INTEGER_KIND,
-    WorkflowParameterSelector
+    WorkflowParameterSelector,
 )
-from inference.core.workflows.prototypes.block import (
-    BlockResult,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 OUTPUT_IMAGE_KEY: str = "image"
 
 TYPE: str = "EllipseVisualization"
-SHORT_DESCRIPTION = (
-    "Draws ellipses that highlight detected objects in an image."
-)
+SHORT_DESCRIPTION = "Draws ellipses that highlight detected objects in an image."
 LONG_DESCRIPTION = """
 The `EllipseVisualization` block draws ellipses that highlight detected
 objects in an image using Supervision's `sv.EllipseAnnotator`.
 """
+
 
 class EllipseManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
@@ -41,24 +34,25 @@ class EllipseManifest(VisualizationManifest):
             "block_type": "visualization",
         }
     )
-    
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+
+    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the lines in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
 
-    start_angle: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+    start_angle: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Starting angle of the ellipse in degrees.",
         default=-45,
         examples=[-45, "$inputs.start_angle"],
     )
 
-    end_angle: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+    end_angle: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Ending angle of the ellipse in degrees.",
         default=235,
         examples=[235, "$inputs.end_angle"],
     )
+
 
 class EllipseVisualizationBlock(VisualizationBlock):
     def __init__(self):
@@ -78,15 +72,20 @@ class EllipseVisualizationBlock(VisualizationBlock):
         start_angle: int,
         end_angle: int,
     ) -> sv.annotators.base.BaseAnnotator:
-        key = "_".join(map(str, [
-            color_palette,
-            palette_size,
-            color_axis,
-            thickness,
-            start_angle,
-            end_angle,
-        ]))
-        
+        key = "_".join(
+            map(
+                str,
+                [
+                    color_palette,
+                    palette_size,
+                    color_axis,
+                    thickness,
+                    start_angle,
+                    end_angle,
+                ],
+            )
+        )
+
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
@@ -95,10 +94,10 @@ class EllipseVisualizationBlock(VisualizationBlock):
                 color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
                 thickness=thickness,
                 start_angle=start_angle,
-                end_angle=end_angle
+                end_angle=end_angle,
             )
 
-        return self.annotatorCache[key] 
+        return self.annotatorCache[key]
 
     async def run(
         self,
@@ -125,7 +124,7 @@ class EllipseVisualizationBlock(VisualizationBlock):
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
-            detections=predictions
+            detections=predictions,
         )
 
         output = WorkflowImageData(
@@ -134,6 +133,4 @@ class EllipseVisualizationBlock(VisualizationBlock):
             numpy_image=annotated_image,
         )
 
-        return {
-            OUTPUT_IMAGE_KEY: output
-        }
+        return {OUTPUT_IMAGE_KEY: output}

@@ -1,30 +1,21 @@
-from inference.core.workflows.core_steps.visualizations.base import (
-    VisualizationManifest,
-    VisualizationBlock
-)
-
-from inference.core.workflows.core_steps.visualizations.utils import (
-    strToColor
-)
-
 from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
-    WorkflowImageData,
+from inference.core.workflows.core_steps.visualizations.base import (
+    VisualizationBlock,
+    VisualizationManifest,
 )
+from inference.core.workflows.core_steps.visualizations.utils import strToColor
+from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
-    INTEGER_KIND,
     FLOAT_KIND,
+    INTEGER_KIND,
     STRING_KIND,
-    WorkflowParameterSelector
+    WorkflowParameterSelector,
 )
-from inference.core.workflows.prototypes.block import (
-    BlockResult,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 OUTPUT_IMAGE_KEY: str = "image"
 
@@ -36,6 +27,7 @@ LONG_DESCRIPTION = """
 The `LabelVisualization` block draws labels on an image at specific coordinates
 based on provided detections using Supervision's `sv.LabelAnnotator`.
 """
+
 
 class LabelManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
@@ -50,15 +42,10 @@ class LabelManifest(VisualizationManifest):
 
     text: Union[
         Literal[
-            "Class",
-            "Confidence",
-            "Class and Confidence",
-            "Index",
-            "Dimensions",
-            "Area"
+            "Class", "Confidence", "Class and Confidence", "Index", "Dimensions", "Area"
         ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
-    ] = Field( # type: ignore
+    ] = Field(  # type: ignore
         default="Class",
         description="The type of text to display.",
         examples=["LABEL", "$inputs.text"],
@@ -78,41 +65,42 @@ class LabelManifest(VisualizationManifest):
             "CENTER_OF_MASS",
         ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
-    ] = Field( # type: ignore
+    ] = Field(  # type: ignore
         default="TOP_LEFT",
         description="The anchor position for placing the label.",
         examples=["CENTER", "$inputs.text_position"],
     )
 
-    text_color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field( # type: ignore
+    text_color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the text.",
         default="WHITE",
         examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.text_color"],
     )
 
-    text_scale: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field( # type: ignore
+    text_scale: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         description="Scale of the text.",
         default=1.0,
         examples=[1.0, "$inputs.text_scale"],
     )
 
-    text_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+    text_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the text characters.",
         default=1,
         examples=[1, "$inputs.text_thickness"],
     )
 
-    text_padding: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+    text_padding: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Padding around the text in pixels.",
         default=10,
         examples=[10, "$inputs.text_padding"],
     )
 
-    border_radius: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+    border_radius: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Radius of the label in pixels.",
         default=0,
         examples=[0, "$inputs.border_radius"],
     )
+
 
 class LabelVisualizationBlock(VisualizationBlock):
     def __init__(self):
@@ -135,23 +123,28 @@ class LabelVisualizationBlock(VisualizationBlock):
         text_padding: int,
         border_radius: int,
     ) -> sv.annotators.base.BaseAnnotator:
-        key = "_".join(map(str, [
-            color_palette,
-            palette_size,
-            color_axis,
-            text_position,
-            text_color,
-            text_scale,
-            text_thickness,
-            text_padding,
-            border_radius,
-        ]))
-        
+        key = "_".join(
+            map(
+                str,
+                [
+                    color_palette,
+                    palette_size,
+                    color_axis,
+                    text_position,
+                    text_color,
+                    text_scale,
+                    text_thickness,
+                    text_padding,
+                    border_radius,
+                ],
+            )
+        )
+
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
             text_color = strToColor(text_color)
-            
+
             self.annotatorCache[key] = sv.LabelAnnotator(
                 color=palette,
                 color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
@@ -160,10 +153,10 @@ class LabelVisualizationBlock(VisualizationBlock):
                 text_scale=text_scale,
                 text_thickness=text_thickness,
                 text_padding=text_padding,
-                border_radius=border_radius
+                border_radius=border_radius,
             )
 
-        return self.annotatorCache[key] 
+        return self.annotatorCache[key]
 
     async def run(
         self,
@@ -196,14 +189,15 @@ class LabelVisualizationBlock(VisualizationBlock):
         )
 
         if text == "Class":
-            labels = predictions['class_name']
+            labels = predictions["class_name"]
         elif text == "Confidence":
             labels = [f"{confidence:.2f}" for confidence in predictions.confidence]
         elif text == "Class and Confidence":
             labels = [
                 f"{class_name} {confidence:.2f}"
-                for class_name, confidence
-                in zip(predictions['class_name'], predictions.confidence)
+                for class_name, confidence in zip(
+                    predictions["class_name"], predictions.confidence
+                )
             ]
         elif text == "Index":
             labels = [str(i) for i in range(len(predictions))]
@@ -223,7 +217,7 @@ class LabelVisualizationBlock(VisualizationBlock):
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
             detections=predictions,
-            labels=labels
+            labels=labels,
         )
 
         output = WorkflowImageData(
@@ -232,6 +226,4 @@ class LabelVisualizationBlock(VisualizationBlock):
             numpy_image=annotated_image,
         )
 
-        return {
-            OUTPUT_IMAGE_KEY: output
-        }
+        return {OUTPUT_IMAGE_KEY: output}

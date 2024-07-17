@@ -1,37 +1,30 @@
-from inference.core.workflows.core_steps.visualizations.base import (
-    VisualizationManifest,
-    VisualizationBlock
-)
-
 from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
-    WorkflowImageData,
+from inference.core.workflows.core_steps.visualizations.base import (
+    VisualizationBlock,
+    VisualizationManifest,
 )
+from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
-    INTEGER_KIND,
     FLOAT_KIND,
+    INTEGER_KIND,
     STRING_KIND,
-    WorkflowParameterSelector
+    WorkflowParameterSelector,
 )
-from inference.core.workflows.prototypes.block import (
-    BlockResult,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 OUTPUT_IMAGE_KEY: str = "image"
 
 TYPE: str = "CropVisualization"
-SHORT_DESCRIPTION = (
-    "Draws scaled up crops of detections on the scene."
-)
+SHORT_DESCRIPTION = "Draws scaled up crops of detections on the scene."
 LONG_DESCRIPTION = """
 The `CropVisualization` block draws scaled up crops of detections
 on the scene using Supervision's `sv.CropAnnotator`.
 """
+
 
 class CropManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
@@ -58,23 +51,24 @@ class CropManifest(VisualizationManifest):
             "CENTER_OF_MASS",
         ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
-    ] = Field( # type: ignore
+    ] = Field(  # type: ignore
         default="TOP_CENTER",
         description="The anchor position for placing the crop.",
         examples=["CENTER", "$inputs.position"],
     )
 
-    scale_factor: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field( # type: ignore
+    scale_factor: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         description="The factor by which to scale the cropped image part. A factor of 2, for example, would double the size of the cropped area, allowing for a closer view of the detection.",
         default=2.0,
         examples=[2.0, "$inputs.scale_factor"],
     )
 
-    border_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+    border_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the outline in pixels.",
         default=2,
         examples=[2, "$inputs.border_thickness"],
     )
+
 
 class CropVisualizationBlock(VisualizationBlock):
     def __init__(self):
@@ -94,27 +88,34 @@ class CropVisualizationBlock(VisualizationBlock):
         scale_factor: float,
         border_thickness: int,
     ) -> sv.annotators.base.BaseAnnotator:
-        key = "_".join(map(str, [
-            color_palette,
-            palette_size,
-            color_axis,
-            position,
-            scale_factor,
-            border_thickness,
-        ]))
-        
+        key = "_".join(
+            map(
+                str,
+                [
+                    color_palette,
+                    palette_size,
+                    color_axis,
+                    position,
+                    scale_factor,
+                    border_thickness,
+                ],
+            )
+        )
+
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
             self.annotatorCache[key] = sv.CropAnnotator(
                 border_color=palette,
-                border_color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
+                border_color_lookup=getattr(
+                    sv.annotators.utils.ColorLookup, color_axis
+                ),
                 position=getattr(sv.Position, position),
                 scale_factor=scale_factor,
-                border_thickness=border_thickness
+                border_thickness=border_thickness,
             )
 
-        return self.annotatorCache[key] 
+        return self.annotatorCache[key]
 
     async def run(
         self,
@@ -141,7 +142,7 @@ class CropVisualizationBlock(VisualizationBlock):
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
-            detections=predictions
+            detections=predictions,
         )
 
         output = WorkflowImageData(
@@ -150,6 +151,4 @@ class CropVisualizationBlock(VisualizationBlock):
             numpy_image=annotated_image,
         )
 
-        return {
-            OUTPUT_IMAGE_KEY: output
-        }
+        return {OUTPUT_IMAGE_KEY: output}

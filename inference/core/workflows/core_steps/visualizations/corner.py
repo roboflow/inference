@@ -1,35 +1,28 @@
-from inference.core.workflows.core_steps.visualizations.base import (
-    VisualizationManifest,
-    VisualizationBlock
-)
-
 from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
-    WorkflowImageData,
+from inference.core.workflows.core_steps.visualizations.base import (
+    VisualizationBlock,
+    VisualizationManifest,
 )
+from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
     INTEGER_KIND,
-    WorkflowParameterSelector
+    WorkflowParameterSelector,
 )
-from inference.core.workflows.prototypes.block import (
-    BlockResult,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 OUTPUT_IMAGE_KEY: str = "image"
 
 TYPE: str = "CornerVisualization"
-SHORT_DESCRIPTION = (
-    "Draws the corners of detected objects in an image."
-)
+SHORT_DESCRIPTION = "Draws the corners of detected objects in an image."
 LONG_DESCRIPTION = """
 The `CornerVisualization` block draws the corners of detected
 objects in an image using Supervision's `sv.BoxCornerAnnotator`.
 """
+
 
 class CornerManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
@@ -41,18 +34,19 @@ class CornerManifest(VisualizationManifest):
             "block_type": "visualization",
         }
     )
-    
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+
+    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the lines in pixels.",
         default=4,
         examples=[4, "$inputs.thickness"],
     )
 
-    corner_length: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+    corner_length: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Length of the corner lines in pixels.",
         default=15,
         examples=[15, "$inputs.corner_length"],
     )
+
 
 class CornerVisualizationBlock(VisualizationBlock):
     def __init__(self):
@@ -71,14 +65,19 @@ class CornerVisualizationBlock(VisualizationBlock):
         thickness: int,
         corner_length: int,
     ) -> sv.annotators.base.BaseAnnotator:
-        key = "_".join(map(str, [
-            color_palette,
-            palette_size,
-            color_axis,
-            thickness,
-            corner_length,
-        ]))
-        
+        key = "_".join(
+            map(
+                str,
+                [
+                    color_palette,
+                    palette_size,
+                    color_axis,
+                    thickness,
+                    corner_length,
+                ],
+            )
+        )
+
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
@@ -86,10 +85,10 @@ class CornerVisualizationBlock(VisualizationBlock):
                 color=palette,
                 color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
                 thickness=thickness,
-                corner_length=corner_length
+                corner_length=corner_length,
             )
 
-        return self.annotatorCache[key] 
+        return self.annotatorCache[key]
 
     async def run(
         self,
@@ -114,7 +113,7 @@ class CornerVisualizationBlock(VisualizationBlock):
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
-            detections=predictions
+            detections=predictions,
         )
 
         output = WorkflowImageData(
@@ -123,6 +122,4 @@ class CornerVisualizationBlock(VisualizationBlock):
             numpy_image=annotated_image,
         )
 
-        return {
-            OUTPUT_IMAGE_KEY: output
-        }
+        return {OUTPUT_IMAGE_KEY: output}

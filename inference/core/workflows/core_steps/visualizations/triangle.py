@@ -1,36 +1,29 @@
-from inference.core.workflows.core_steps.visualizations.base import (
-    VisualizationManifest,
-    VisualizationBlock
-)
-
 from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
-    WorkflowImageData,
+from inference.core.workflows.core_steps.visualizations.base import (
+    VisualizationBlock,
+    VisualizationManifest,
 )
+from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
     INTEGER_KIND,
     STRING_KIND,
-    WorkflowParameterSelector
+    WorkflowParameterSelector,
 )
-from inference.core.workflows.prototypes.block import (
-    BlockResult,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 OUTPUT_IMAGE_KEY: str = "image"
 
 TYPE: str = "TriangleVisualization"
-SHORT_DESCRIPTION = (
-    "Draws triangle markers on an image at specific coordinates based on provided detections."
-)
+SHORT_DESCRIPTION = "Draws triangle markers on an image at specific coordinates based on provided detections."
 LONG_DESCRIPTION = """
 The `TriangleVisualization` block draws triangle markers on an image at specific coordinates
 based on provided detections using Supervision's `sv.TriangleAnnotator`.
 """
+
 
 class TriangleManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
@@ -57,29 +50,30 @@ class TriangleManifest(VisualizationManifest):
             "CENTER_OF_MASS",
         ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
-    ] = Field( # type: ignore
+    ] = Field(  # type: ignore
         default="TOP_CENTER",
         description="The anchor position for placing the triangle.",
         examples=["CENTER", "$inputs.position"],
     )
 
-    base: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+    base: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Base width of the triangle in pixels.",
         default=10,
         examples=[10, "$inputs.base"],
     )
 
-    height: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+    height: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Height of the triangle in pixels.",
         default=10,
         examples=[10, "$inputs.height"],
     )
-    
-    outline_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field( # type: ignore
+
+    outline_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the outline of the triangle in pixels.",
         default=0,
         examples=[2, "$inputs.outline_thickness"],
     )
+
 
 class TriangleVisualizationBlock(VisualizationBlock):
     def __init__(self):
@@ -100,16 +94,21 @@ class TriangleVisualizationBlock(VisualizationBlock):
         height: int,
         outline_thickness: int,
     ) -> sv.annotators.base.BaseAnnotator:
-        key = "_".join(map(str, [
-            color_palette,
-            palette_size,
-            color_axis,
-            position,
-            base,
-            height,
-            outline_thickness,
-        ]))
-        
+        key = "_".join(
+            map(
+                str,
+                [
+                    color_palette,
+                    palette_size,
+                    color_axis,
+                    position,
+                    base,
+                    height,
+                    outline_thickness,
+                ],
+            )
+        )
+
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
@@ -119,10 +118,10 @@ class TriangleVisualizationBlock(VisualizationBlock):
                 position=getattr(sv.Position, position),
                 base=base,
                 height=height,
-                outline_thickness=outline_thickness
+                outline_thickness=outline_thickness,
             )
 
-        return self.annotatorCache[key] 
+        return self.annotatorCache[key]
 
     async def run(
         self,
@@ -151,7 +150,7 @@ class TriangleVisualizationBlock(VisualizationBlock):
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
-            detections=predictions
+            detections=predictions,
         )
 
         output = WorkflowImageData(
@@ -160,6 +159,4 @@ class TriangleVisualizationBlock(VisualizationBlock):
             numpy_image=annotated_image,
         )
 
-        return {
-            OUTPUT_IMAGE_KEY: output
-        }
+        return {OUTPUT_IMAGE_KEY: output}
