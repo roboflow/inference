@@ -139,8 +139,10 @@ class LabelVisualizationBlock(VisualizationBlock):
             elif text_color.startswith("bgr"):
                 b, g, r = map(int, text_color[4:-1].split(","))
                 text_color = sv.Color.from_bgr_tuple((b, g, r))
+            elif hasattr(sv.Color, text_color.upper()):
+                text_color = getattr(sv.Color, text_color.upper())
             else:
-                text_color = getattr(sv.Color, text_color)
+                raise ValueError(f"Invalid text color: {text_color}; valid formats are #RRGGBB, rgb(R, G, B), bgr(B, G, R), or a valid color name (like WHITE, BLACK, or BLUE).")
 
             print(f"Text color: {text_color}")
 
