@@ -3,14 +3,11 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.bounding_box import (
-    BoundingBoxManifest,
-    BoundingBoxVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.polygon import (
+    PolygonManifest,
+    PolygonVisualizationBlock,
 )
 
-from inference.core.workflows.entities.base import (
-    WorkflowImageData,
-)
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -18,49 +15,53 @@ from inference.core.workflows.entities.base import (
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_bounding_box_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
+def test_polygon_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
     # given
     data = {
-      "type": "BoundingBoxVisualization",
-      "name": "square1",
-      "predictions": "$steps.od_model.predictions",
-      images_field_alias: "$inputs.image",
-      "thickness": 1,
-      "roundness": 0
+        "type": "PolygonVisualization",
+        "name": "polygon1",
+        "predictions": "$steps.od_model.predictions",
+        images_field_alias: "$inputs.image",
+        "thickness": 2
     }
 
     # when
-    result = BoundingBoxManifest.model_validate(data)
+    result = PolygonManifest.model_validate(data)
 
     # then
-    assert result == BoundingBoxManifest(
-        type="BoundingBoxVisualization",
-        name="square1",
+    assert result == PolygonManifest(
+        type="PolygonVisualization",
+        name="polygon1",
         images="$inputs.image",
         predictions="$steps.od_model.predictions",
-        thickness=1,
-        roundness=0
+        thickness=2
     )
 
-def test_bounding_box_validation_when_invalid_image_is_given() -> None:
+
+def test_polygon_validation_when_invalid_image_is_given() -> None:
     # given
     data = {
-        "type": "BoundingBoxVisualization",
-        "name": "square1",
+        "type": "PolygonVisualization",
+        "name": "polygon1",
         "images": "invalid",
         "predictions": "$steps.od_model.predictions",
-        "thickness": 1,
-        "roundness": 0
+        "thickness": 2
     }
 
     # when
     with pytest.raises(ValidationError):
-        _ = BoundingBoxManifest.model_validate(data)
+        _ = PolygonManifest.model_validate(data)
+
 
 @pytest.mark.asyncio
-async def test_bounding_box_visualization_block() -> None:
+async def test_polygon_visualization_block() -> None:
     # given
-    block = BoundingBoxVisualizationBlock()
+    block = PolygonVisualizationBlock()
+
+    mask = np.zeros((3, 1000, 1000), dtype=np.bool_)
+    mask[0, 0:20, 0:20] = True
+    mask[1, 80:120, 80:120] = True
+    mask[2, 450:550, 450:550] = True
 
     output = await block.run(
         image=WorkflowImageData(
@@ -71,18 +72,16 @@ async def test_bounding_box_visualization_block() -> None:
             xyxy=np.array(
                 [[0, 0, 20, 20], [80, 80, 120, 120], [450, 450, 550, 550]], dtype=np.float64
             ),
+            mask=mask,
             class_id=np.array([1, 1, 1]),
         ),
         copy_image=True,
-        color_palette="DEFAULT",
+        color_palette="tab10",
         palette_size=10,
-        custom_colors=None,
+        custom_colors=["#FF0000", "#00FF00", "#0000FF"],
         color_axis="CLASS",
-        thickness=1,
-        roundness=0,
+        thickness=2
     )
-
-    print("output", output)
 
     assert output is not None
     assert "image" in output
@@ -92,4 +91,3 @@ async def test_bounding_box_visualization_block() -> None:
     assert output.get("image").numpy_image.shape == (1000, 1000, 3)
     # check if the image is modified
     assert not np.array_equal(output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8))
-    

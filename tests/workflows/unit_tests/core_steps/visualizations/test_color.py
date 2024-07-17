@@ -3,64 +3,59 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.bounding_box import (
-    BoundingBoxManifest,
-    BoundingBoxVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.color import (
+    ColorManifest,
+    ColorVisualizationBlock,
 )
 
-from inference.core.workflows.entities.base import (
-    WorkflowImageData,
-)
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
 
-
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_bounding_box_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
+def test_color_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
     # given
     data = {
-      "type": "BoundingBoxVisualization",
-      "name": "square1",
-      "predictions": "$steps.od_model.predictions",
-      images_field_alias: "$inputs.image",
-      "thickness": 1,
-      "roundness": 0
+        "type": "ColorVisualization",
+        "name": "color1",
+        "predictions": "$steps.od_model.predictions",
+        images_field_alias: "$inputs.image",
+        "opacity": 0.5
     }
 
     # when
-    result = BoundingBoxManifest.model_validate(data)
+    result = ColorManifest.model_validate(data)
 
     # then
-    assert result == BoundingBoxManifest(
-        type="BoundingBoxVisualization",
-        name="square1",
+    assert result == ColorManifest(
+        type="ColorVisualization",
+        name="color1",
         images="$inputs.image",
         predictions="$steps.od_model.predictions",
-        thickness=1,
-        roundness=0
+        opacity=0.5
     )
 
-def test_bounding_box_validation_when_invalid_image_is_given() -> None:
+
+def test_color_validation_when_invalid_image_is_given() -> None:
     # given
     data = {
-        "type": "BoundingBoxVisualization",
-        "name": "square1",
+        "type": "ColorVisualization",
+        "name": "color1",
         "images": "invalid",
         "predictions": "$steps.od_model.predictions",
-        "thickness": 1,
-        "roundness": 0
+        "opacity": 0.5
     }
 
     # when
     with pytest.raises(ValidationError):
-        _ = BoundingBoxManifest.model_validate(data)
+        _ = ColorManifest.model_validate(data)
+
 
 @pytest.mark.asyncio
-async def test_bounding_box_visualization_block() -> None:
+async def test_color_visualization_block() -> None:
     # given
-    block = BoundingBoxVisualizationBlock()
+    block = ColorVisualizationBlock()
 
     output = await block.run(
         image=WorkflowImageData(
@@ -78,11 +73,8 @@ async def test_bounding_box_visualization_block() -> None:
         palette_size=10,
         custom_colors=None,
         color_axis="CLASS",
-        thickness=1,
-        roundness=0,
+        opacity=0.5,
     )
-
-    print("output", output)
 
     assert output is not None
     assert "image" in output
@@ -92,4 +84,3 @@ async def test_bounding_box_visualization_block() -> None:
     assert output.get("image").numpy_image.shape == (1000, 1000, 3)
     # check if the image is modified
     assert not np.array_equal(output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8))
-    
