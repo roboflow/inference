@@ -48,6 +48,22 @@ class LabelManifest(VisualizationManifest):
         }
     )
 
+    text: Union[
+        Literal[
+            "Class",
+            "Confidence",
+            "Class and Confidence",
+            "Index",
+            "Dimensions",
+            "Area"
+        ],
+        WorkflowParameterSelector(kind=[STRING_KIND]),
+    ] = Field( # type: ignore
+        default="Class",
+        description="The type of text to display.",
+        examples=["LABEL", "$inputs.text"],
+    )
+
     text_position: Union[
         Literal[
             "CENTER",
@@ -158,6 +174,7 @@ class LabelVisualizationBlock(VisualizationBlock):
         palette_size: Optional[int],
         custom_colors: Optional[List[str]],
         color_axis: Optional[str],
+        text: Optional[str],
         text_position: Optional[str],
         text_color: Optional[str],
         text_scale: Optional[float],
@@ -178,9 +195,35 @@ class LabelVisualizationBlock(VisualizationBlock):
             border_radius,
         )
 
+        if text == "Class":
+            labels = predictions['class_name']
+        elif text == "Confidence":
+            labels = [f"{confidence:.2f}" for confidence in predictions.confidence]
+        elif text == "Class and Confidence":
+            labels = [
+                f"{class_name} {confidence:.2f}"
+                for class_name, confidence
+                in zip(predictions['class_name'], predictions.confidence)
+            ]
+        elif text == "Index":
+            labels = [str(i) for i in range(len(predictions))]
+        elif text == "Dimensions":
+            # rounded ints: center x, center y wxh from predictions[i].xyxy
+            labels = []
+            for i in range(len(predictions)):
+                x1, y1, x2, y2 = predictions.xyxy[i]
+                cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+                w, h = x2 - x1, y2 - y1
+                labels.append(f"{int(cx)}, {int(cy)} {int(w)}x{int(h)}")
+        elif text == "Area":
+            labels = [str(int(area)) for area in predictions.area]
+        else:
+            raise ValueError(f"Invalid text type: {text}")
+
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
-            detections=predictions
+            detections=predictions,
+            labels=labels
         )
 
         output = WorkflowImageData(
