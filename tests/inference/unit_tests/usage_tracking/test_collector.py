@@ -516,7 +516,7 @@ def test_system_info():
         "exec_session_id": "exec_session_id",
         "ip_address_hash": hashlib.sha256("w.x.y.z".encode()).hexdigest()[:5],
         "api_key": None,
-        "is_gpu_available": None,
+        "is_gpu_available": False,
     }
     for k, v in expected_system_info.items():
         assert system_info[k] == v

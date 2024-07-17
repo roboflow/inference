@@ -327,7 +327,7 @@ class UsageCollector:
             "ip_address_hash": ip_address_hash_hex,
             "api_key": api_key,
             "hosted": LAMBDA,
-            "is_gpu_available": None,  # TODO
+            "is_gpu_available": False,  # TODO
             "python_version": sys.version.split()[0],
             "inference_version": inference_version,
             "enterprise": enterprise,
