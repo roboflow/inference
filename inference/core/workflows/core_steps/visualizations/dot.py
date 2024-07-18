@@ -109,7 +109,7 @@ class DotVisualizationBlock(VisualizationBlock):
 
             self.annotatorCache[key] = sv.DotAnnotator(
                 color=palette,
-                color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
+                color_lookup=getattr(sv.ColorLookup, color_axis),
                 position=getattr(sv.Position, position),
                 radius=radius,
                 outline_thickness=outline_thickness,

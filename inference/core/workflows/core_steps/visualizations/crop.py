@@ -108,9 +108,7 @@ class CropVisualizationBlock(VisualizationBlock):
 
             self.annotatorCache[key] = sv.CropAnnotator(
                 border_color=palette,
-                border_color_lookup=getattr(
-                    sv.annotators.utils.ColorLookup, color_axis
-                ),
+                border_color_lookup=getattr(sv.ColorLookup, color_axis),
                 position=getattr(sv.Position, position),
                 scale_factor=scale_factor,
                 border_thickness=border_thickness,

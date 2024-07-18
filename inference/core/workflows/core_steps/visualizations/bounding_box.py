@@ -78,13 +78,13 @@ class BoundingBoxVisualizationBlock(VisualizationBlock):
             if roundness == 0:
                 self.annotatorCache[key] = sv.BoxAnnotator(
                     color=palette,
-                    color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
+                    color_lookup=getattr(sv.ColorLookup, color_axis),
                     thickness=thickness,
                 )
             else:
                 self.annotatorCache[key] = sv.RoundBoxAnnotator(
                     color=palette,
-                    color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
+                    color_lookup=getattr(sv.ColorLookup, color_axis),
                     thickness=thickness,
                     roundness=roundness,
                 )

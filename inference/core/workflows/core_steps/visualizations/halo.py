@@ -98,7 +98,7 @@ class HaloVisualizationBlock(VisualizationBlock):
 
             self.annotatorCache[key] = sv.HaloAnnotator(
                 color=palette,
-                color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
+                color_lookup=getattr(sv.ColorLookup, color_axis),
                 opacity=opacity,
             )
 

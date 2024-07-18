@@ -92,7 +92,7 @@ class EllipseVisualizationBlock(VisualizationBlock):
 
             self.annotatorCache[key] = sv.EllipseAnnotator(
                 color=palette,
-                color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
+                color_lookup=getattr(sv.ColorLookup, color_axis),
                 thickness=thickness,
                 start_angle=start_angle,
                 end_angle=end_angle,

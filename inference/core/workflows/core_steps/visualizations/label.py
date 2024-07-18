@@ -148,7 +148,7 @@ class LabelVisualizationBlock(VisualizationBlock):
 
             self.annotatorCache[key] = sv.LabelAnnotator(
                 color=palette,
-                color_lookup=getattr(sv.annotators.utils.ColorLookup, color_axis),
+                color_lookup=getattr(sv.ColorLookup, color_axis),
                 text_position=getattr(sv.Position, text_position),
                 text_color=text_color,
                 text_scale=text_scale,
