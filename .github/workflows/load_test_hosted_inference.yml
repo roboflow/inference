@@ -16,6 +16,7 @@ on:
           - object-detection
           - instance-segmentation
           - classification
+          - workflows
 
 jobs:
   build:
@@ -49,6 +50,10 @@ jobs:
         if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'classification' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m vehicle-classification-eapcd/2 -d coco -rps 5 -br 500 -h https://classify.roboflow.com --yes --output_location test_results.json
+      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 | workflows 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'workflows' }}
+        run: |
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -wid workflows-production-test -wn paul-guerrie-tang1 -d coco -rps 5 -br 500 -h https://classify.roboflow.com --yes --output_location test_results.json
 
       - name: 🏋️‍♂️ Load test 😎 STAGING 😎 | object-detection 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'object-detection' }}
@@ -62,5 +67,9 @@ jobs:
         if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'classification' }}
         run: |
             ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m catdog/28 -d coco -rps 5 -br 500 -h https://lambda-classification.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json
+      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 | workflows 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'workflows' }}
+        run: |
+            ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -wid workflows-staging-test -wn paul-guerrie -d coco -rps 5 -br 500 -h https://lambda-classification.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json
       - name: 📈 RESULTS
         run: cat test_results.json | jq

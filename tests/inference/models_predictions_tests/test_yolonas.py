@@ -1,9 +1,7 @@
 import numpy as np
 import pytest
 
-from inference.core.entities.responses.inference import (
-    ObjectDetectionInferenceResponse,
-)
+from inference.core.entities.responses.inference import ObjectDetectionInferenceResponse
 from inference.core.env import MAX_BATCH_SIZE
 from inference.models import YOLONASObjectDetection
 

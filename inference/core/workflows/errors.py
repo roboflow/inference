@@ -33,6 +33,10 @@ class WorkflowError(Exception):
         return self._inner_error
 
 
+class WorkflowEnvironmentConfigurationError(WorkflowError):
+    pass
+
+
 class WorkflowCompilerError(WorkflowError):
     pass
 
@@ -50,6 +54,10 @@ class PluginInterfaceError(WorkflowCompilerError):
 
 
 class BlockInterfaceError(WorkflowCompilerError):
+    pass
+
+
+class DynamicBlockError(WorkflowCompilerError):
     pass
 
 

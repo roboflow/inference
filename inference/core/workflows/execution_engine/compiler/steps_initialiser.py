@@ -1,4 +1,5 @@
-from typing import Any, Callable, Dict, List, Union
+from dataclasses import replace
+from typing import Any, Callable, Dict, List, Tuple, Type, Union
 
 from inference.core.workflows.errors import (
     BlockInitParameterNotProvidedError,
@@ -8,6 +9,7 @@ from inference.core.workflows.errors import (
 from inference.core.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
     InitialisedStep,
+    ParsedWorkflowDefinition,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
