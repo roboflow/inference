@@ -55,6 +55,7 @@ from inference.core.utils.function import experimental
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
+from inference.usage_tracking.collector import usage_collector
 
 INFERENCE_PIPELINE_CONTEXT = "inference_pipeline"
 SOURCE_CONNECTION_ATTEMPT_FAILED_EVENT = "SOURCE_CONNECTION_ATTEMPT_FAILED"
@@ -558,6 +559,8 @@ class InferencePipeline:
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
+                api_key=api_key,
+                workflow_id=workflow_id,
             )
             workflow_runner = WorkflowRunner()
             on_video_frame = partial(

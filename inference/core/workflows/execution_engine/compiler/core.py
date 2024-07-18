@@ -64,6 +64,8 @@ def compile_workflow(
     dump_execution_graph(execution_graph=execution_graph)
     return CompiledWorkflow(
         workflow_definition=parsed_workflow_definition,
+        workflow_json=workflow_definition,
+        init_parameters=init_parameters,
         execution_graph=execution_graph,
         steps=steps_by_name,
         input_substitutions=input_substitutions,
