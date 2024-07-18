@@ -501,6 +501,9 @@ class UsageCollector:
         api_keys_failed = set()
         for payload in payloads:
             for api_key, workflow_payloads in payload.items():
+                if any("processed_frames" not in w for w in workflow_payloads.values()):
+                    api_keys_failed.add(api_key)
+                    continue
                 enterprise = any(
                     w.get("enterprise") for w in workflow_payloads.values()
                 )
