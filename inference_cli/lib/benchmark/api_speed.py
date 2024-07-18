@@ -305,7 +305,6 @@ def execute_workflow_api_request(
             batch_size=request_batch_size, duration=duration
         )
     except Exception as exc:
-        print(exc)
         duration = time.time() - start
         results_collector.register_inference_duration(
             batch_size=request_batch_size, duration=duration
