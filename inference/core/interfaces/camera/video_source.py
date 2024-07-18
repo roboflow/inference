@@ -888,6 +888,7 @@ class VideoConsumer:
                 buffer=buffer,
                 decoding_pace_monitor=self._decoding_pace_monitor,
                 source_id=source_id,
+                fps=declared_source_fps,
             )
         if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
             return self._process_stream_frame_dropping_oldest(
@@ -1082,6 +1083,7 @@ def decode_video_frame_to_buffer(
     buffer: Queue,
     decoding_pace_monitor: sv.FPSMonitor,
     source_id: Optional[int],
+    fps: float = 0,
 ) -> bool:
     success, image = video.retrieve()
     if not success:
@@ -1091,6 +1093,7 @@ def decode_video_frame_to_buffer(
         image=image,
         frame_id=frame_id,
         frame_timestamp=frame_timestamp,
+        fps=fps,
         source_id=source_id,
     )
     buffer.put(video_frame)

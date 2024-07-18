@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
 from inference.core.cache import cache
@@ -164,6 +165,7 @@ from inference.core.workflows.execution_engine.introspection.connections_discove
     discover_blocks_connections,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.usage_tracking.collector import usage_collector
 
 if LAMBDA:
     from inference.core.usage import trackUsage
@@ -346,6 +348,14 @@ def with_route_exceptions(route):
     return wrapped_route
 
 
+class LambdaMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        logger.info("Lambda is terminating, handle unsent usage payloads.")
+        await usage_collector.async_push_usage_payloads()
+        return response
+
+
 class HttpInterface(BaseInterface):
     """Roboflow defined HTTP interface for a general-purpose inference server.
 
@@ -393,6 +403,8 @@ class HttpInterface(BaseInterface):
             app.add_middleware(
                 ASGIMiddleware, host="https://app.metlo.com", api_key=METLO_KEY
             )
+        if LAMBDA:
+            app.add_middleware(LambdaMiddleware)
 
         if len(ALLOW_ORIGINS) > 0:
             app.add_middleware(

@@ -51,6 +51,8 @@ class CompiledWorkflow:
     execution_graph: nx.DiGraph
     steps: Dict[str, InitialisedStep]
     input_substitutions: List[InputSubstitution]
+    workflow_json: Dict[str, Any]
+    init_parameters: Dict[str, Any]
 
 
 class NodeCategory(Enum):
