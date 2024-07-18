@@ -7,7 +7,7 @@ from inference.core.workflows.core_steps.visualizations.base import (
     VisualizationBlock,
     VisualizationManifest,
 )
-from inference.core.workflows.core_steps.visualizations.utils import strToColor
+from inference.core.workflows.core_steps.visualizations.utils import str_to_color
 from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
     FLOAT_KIND,
@@ -144,7 +144,7 @@ class LabelVisualizationBlock(VisualizationBlock):
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
-            text_color = strToColor(text_color)
+            text_color = str_to_color(text_color)
 
             self.annotatorCache[key] = sv.LabelAnnotator(
                 color=palette,

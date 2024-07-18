@@ -1,7 +1,7 @@
 import supervision as sv
 
 
-def strToColor(color: str) -> sv.Color:
+def str_to_color(color: str) -> sv.Color:
     if color.startswith("#"):
         return sv.Color.from_hex(color)
     elif color.startswith("rgb"):

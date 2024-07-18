@@ -4,7 +4,7 @@ from typing import List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference.core.workflows.core_steps.visualizations.utils import strToColor
+from inference.core.workflows.core_steps.visualizations.utils import str_to_color
 from inference.core.workflows.entities.base import OutputDefinition, WorkflowImageData
 from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGES_KIND,
@@ -174,7 +174,7 @@ class VisualizationBlock(WorkflowBlock, ABC):
     def getPalette(self, color_palette, palette_size, custom_colors):
         if color_palette == "CUSTOM":
             return sv.ColorPalette(
-                colors=[strToColor(color) for color in custom_colors]
+                colors=[str_to_color(color) for color in custom_colors]
             )
         elif hasattr(sv.ColorPalette, color_palette):
             return getattr(sv.ColorPalette, color_palette)
