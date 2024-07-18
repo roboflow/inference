@@ -6,7 +6,7 @@ from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.workflows.core_steps.visualizations.utils import strToColor
 from inference.core.workflows.entities.base import OutputDefinition, WorkflowImageData
-from inference.core.workflows.entities.types import (  # IMAGE_KIND,; OBJECT_DETECTION_PREDICTION_KIND,; INSTANCE_SEGMENTATION_PREDICTION_KIND,; KEYPOINT_DETECTION_PREDICTION_KIND,
+from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGES_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
@@ -68,10 +68,9 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             "Matplotlib Inferno",
             "Matplotlib Magma",
             "Matplotlib Cividis",
-            # 'LinearSegmentedColormap' object has no attribute 'colors'
+            # TODO: Re-enable once supervision 0.23 is released with a fix
             # "Matplotlib Twilight",
             # "Matplotlib Twilight_Shifted",
-            # 'LinearSegmentedColormap' object has no attribute 'colors'
             # "Matplotlib HSV",
             # "Matplotlib Jet",
             # "Matplotlib Turbo",
@@ -91,14 +90,13 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             "Matplotlib Tab20",
             "Matplotlib Tab20b",
             "Matplotlib Tab20c",
-            # 'LinearSegmentedColormap' object has no attribute 'colors'
+            # TODO: Re-enable once supervision 0.23 is released with a fix
             # "Matplotlib Ocean",
             # "Matplotlib Gist_Earth",
             # "Matplotlib Terrain",
             # "Matplotlib Stern",
             # "Matplotlib gnuplot",
             # "Matplotlib gnuplot2",
-            # 'LinearSegmentedColormap' object has no attribute 'colors'
             # "Matplotlib Spring",
             # "Matplotlib Summer",
             # "Matplotlib Autumn",
