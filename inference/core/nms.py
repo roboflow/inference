@@ -52,7 +52,7 @@ def w_np_non_max_suppression(
     batch_predictions = []
     for np_image_i, np_image_pred in enumerate(prediction):
         filtered_predictions = []
-        np_conf_mask = (np_image_pred[:, 4] >= conf_thresh).squeeze()
+        np_conf_mask = np_image_pred[:, 4] >= conf_thresh
 
         np_image_pred = np_image_pred[np_conf_mask]
         cls_confs = np_image_pred[:, 5 : num_classes + 5]
