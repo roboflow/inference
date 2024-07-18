@@ -79,6 +79,48 @@ from inference.core.workflows.core_steps.transformations.perspective_correction 
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
 )
+
+# Visualizers
+from inference.core.workflows.core_steps.visualizations.blur import (
+    BlurVisualizationBlock,
+)
+from inference.core.workflows.core_steps.visualizations.bounding_box import (
+    BoundingBoxVisualizationBlock,
+)
+from inference.core.workflows.core_steps.visualizations.circle import (
+    CircleVisualizationBlock,
+)
+from inference.core.workflows.core_steps.visualizations.color import (
+    ColorVisualizationBlock,
+)
+from inference.core.workflows.core_steps.visualizations.corner import (
+    CornerVisualizationBlock,
+)
+from inference.core.workflows.core_steps.visualizations.crop import (
+    CropVisualizationBlock,
+)
+from inference.core.workflows.core_steps.visualizations.dot import DotVisualizationBlock
+from inference.core.workflows.core_steps.visualizations.ellipse import (
+    EllipseVisualizationBlock,
+)
+from inference.core.workflows.core_steps.visualizations.halo import (
+    HaloVisualizationBlock,
+)
+from inference.core.workflows.core_steps.visualizations.label import (
+    LabelVisualizationBlock,
+)
+from inference.core.workflows.core_steps.visualizations.mask import (
+    MaskVisualizationBlock,
+)
+from inference.core.workflows.core_steps.visualizations.pixelate import (
+    PixelateVisualizationBlock,
+)
+from inference.core.workflows.core_steps.visualizations.polygon import (
+    PolygonVisualizationBlock,
+)
+from inference.core.workflows.core_steps.visualizations.triangle import (
+    TriangleVisualizationBlock,
+)
 from inference.core.workflows.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
     BATCH_OF_BOOLEAN_KIND,
@@ -165,6 +207,20 @@ def load_blocks() -> List[
         PropertyDefinitionBlock,
         DimensionCollapseBlock,
         FirstNonEmptyOrDefaultBlock,
+        BlurVisualizationBlock,
+        BoundingBoxVisualizationBlock,
+        CircleVisualizationBlock,
+        ColorVisualizationBlock,
+        CornerVisualizationBlock,
+        CropVisualizationBlock,
+        DotVisualizationBlock,
+        EllipseVisualizationBlock,
+        HaloVisualizationBlock,
+        LabelVisualizationBlock,
+        MaskVisualizationBlock,
+        PixelateVisualizationBlock,
+        PolygonVisualizationBlock,
+        TriangleVisualizationBlock,
     ]
 
 
