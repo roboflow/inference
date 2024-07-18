@@ -167,7 +167,7 @@ class VisualizationBlock(WorkflowBlock, ABC):
         pass
 
     @abstractmethod
-    def getAnnotator(self) -> sv.annotators.base.BaseAnnotator:
+    def getAnnotator(self, *args, **kwargs) -> sv.annotators.base.BaseAnnotator:
         pass
 
     @classmethod
@@ -214,5 +214,7 @@ class VisualizationBlock(WorkflowBlock, ABC):
         palette_size: Optional[int],
         custom_colors: Optional[List[str]],
         color_axis: Optional[str],
+        *args,
+        **kwargs
     ) -> BlockResult:
         pass
