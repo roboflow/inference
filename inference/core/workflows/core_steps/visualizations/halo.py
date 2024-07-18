@@ -63,7 +63,8 @@ class HaloManifest(VisualizationManifest):
 
 
 class HaloVisualizationBlock(VisualizationBlock):
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.annotatorCache = {}
 
     @classmethod
