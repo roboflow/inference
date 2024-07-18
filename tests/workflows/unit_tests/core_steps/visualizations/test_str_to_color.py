@@ -1,6 +1,5 @@
 import pytest
 import supervision as sv
-from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.visualizations.utils import (
     str_to_color
