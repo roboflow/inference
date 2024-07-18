@@ -23,11 +23,8 @@ class ExecutionEngine:
         init_parameters: Optional[Dict[str, Any]] = None,
         max_concurrent_steps: int = 1,
         prevent_local_images_loading: bool = False,
-        api_key: Optional[str] = None,
         workflow_id: Optional[str] = None,
     ) -> "ExecutionEngine":
-        if api_key is None:
-            api_key = API_KEY
         if init_parameters is None:
             init_parameters = {}
         compiled_workflow = compile_workflow(
@@ -38,7 +35,6 @@ class ExecutionEngine:
             compiled_workflow=compiled_workflow,
             max_concurrent_steps=max_concurrent_steps,
             prevent_local_images_loading=prevent_local_images_loading,
-            api_key=api_key,
             workflow_id=workflow_id,
         )
 
@@ -47,13 +43,11 @@ class ExecutionEngine:
         compiled_workflow: CompiledWorkflow,
         max_concurrent_steps: int,
         prevent_local_images_loading: bool,
-        api_key: Optional[str] = None,
         workflow_id: Optional[str] = None,
     ):
         self._compiled_workflow = compiled_workflow
         self._max_concurrent_steps = max_concurrent_steps
         self._prevent_local_images_loading = prevent_local_images_loading
-        self._api_key = api_key
         self._workflow_id = workflow_id
 
     def run(

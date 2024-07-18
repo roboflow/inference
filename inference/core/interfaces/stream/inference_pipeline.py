@@ -563,7 +563,6 @@ class InferencePipeline:
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
-                api_key=api_key,
                 workflow_id=workflow_id,
             )
             workflow_runner = WorkflowRunner()
