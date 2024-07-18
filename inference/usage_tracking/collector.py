@@ -33,12 +33,6 @@ SystemDetails = Dict[str, Any]
 UsagePayload = Union[APIKeyUsage, ResourceDetails, SystemDetails]
 
 
-ENTERPRISE_WARNING_MESSAGE: str = """
-It seems there was a problem sending telemetry to Roboflow platform.
-If usage tracking is part of your agreement with Roboflow you are required to have your usage sent.
-"""
-
-
 class UsageCollector:
     _lock = Lock()
     _async_lock = asyncio.Lock()
@@ -162,8 +156,6 @@ class UsageCollector:
                         and len(resource_payloads) > 1
                         or list(resource_payloads.keys()) != [None]
                     ):
-                        if any(r.get("enterprise") for r in resource_payloads.values()):
-                            logger.error(ENTERPRISE_WARNING_MESSAGE)
                         logger.debug(
                             "Dropping usage payload %s due to missing API key",
                             resource_payloads,
@@ -521,14 +513,10 @@ class UsageCollector:
                         timeout=1,
                     )
                 except Exception as exc:
-                    if enterprise:
-                        logger.error(ENTERPRISE_WARNING_MESSAGE)
                     logger.debug("Failed to send usage - %s", exc)
                     api_keys_failed.add(api_key)
                     continue
                 if response.status_code != 200:
-                    if enterprise:
-                        logger.error(ENTERPRISE_WARNING_MESSAGE)
                     logger.debug(
                         "Failed to send usage - got %s status code (%s)",
                         response.status_code,
