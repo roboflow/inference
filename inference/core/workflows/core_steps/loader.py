@@ -84,6 +84,9 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop im
 from inference.core.workflows.core_steps.visualizations.blur import (
     BlurVisualizationBlock,
 )
+from inference.core.workflows.core_steps.visualizations.background_color import (
+    BackgroundColorVisualizationBlock,
+)
 from inference.core.workflows.core_steps.visualizations.bounding_box import (
     BoundingBoxVisualizationBlock,
 )
@@ -207,6 +210,7 @@ def load_blocks() -> List[
         PropertyDefinitionBlock,
         DimensionCollapseBlock,
         FirstNonEmptyOrDefaultBlock,
+        BackgroundColorVisualizationBlock,
         BlurVisualizationBlock,
         BoundingBoxVisualizationBlock,
         CircleVisualizationBlock,
