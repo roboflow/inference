@@ -3,9 +3,10 @@ from typing import List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.core_steps.visualizations.base import (
-    VisualizationBlock,
-    VisualizationManifest,
+from inference.core.workflows.core_steps.visualizations.base import OUTPUT_IMAGE_KEY
+from inference.core.workflows.core_steps.visualizations.base_colorable import (
+    ColorableVisualizationBlock,
+    ColorableVisualizationManifest,
 )
 from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
@@ -18,8 +19,6 @@ from inference.core.workflows.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-OUTPUT_IMAGE_KEY: str = "image"
-
 TYPE: str = "HaloVisualization"
 SHORT_DESCRIPTION = "Paints a halo around detected objects in an image."
 LONG_DESCRIPTION = """
@@ -29,7 +28,7 @@ from an instance segmentation to draw a halo using
 """
 
 
-class HaloManifest(VisualizationManifest):
+class HaloManifest(ColorableVisualizationManifest):
     type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
@@ -62,7 +61,7 @@ class HaloManifest(VisualizationManifest):
     )
 
 
-class HaloVisualizationBlock(VisualizationBlock):
+class HaloVisualizationBlock(ColorableVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}

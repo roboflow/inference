@@ -3,9 +3,10 @@ from typing import List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.core_steps.visualizations.base import (
-    VisualizationBlock,
-    VisualizationManifest,
+from inference.core.workflows.core_steps.visualizations.base import OUTPUT_IMAGE_KEY
+from inference.core.workflows.core_steps.visualizations.base_colorable import (
+    ColorableVisualizationBlock,
+    ColorableVisualizationManifest,
 )
 from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
@@ -15,8 +16,6 @@ from inference.core.workflows.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-OUTPUT_IMAGE_KEY: str = "image"
-
 TYPE: str = "ColorVisualization"
 SHORT_DESCRIPTION = "Paints a solid color on detected objects in an image."
 LONG_DESCRIPTION = """
@@ -25,7 +24,7 @@ objects in an image using Supervision's `sv.ColorAnnotator`.
 """
 
 
-class ColorManifest(VisualizationManifest):
+class ColorManifest(ColorableVisualizationManifest):
     type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
@@ -43,7 +42,7 @@ class ColorManifest(VisualizationManifest):
     )
 
 
-class ColorVisualizationBlock(VisualizationBlock):
+class ColorVisualizationBlock(ColorableVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}

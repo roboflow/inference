@@ -3,9 +3,10 @@ from typing import List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.core_steps.visualizations.base import (
-    VisualizationBlock,
-    VisualizationManifest,
+from inference.core.workflows.core_steps.visualizations.base import OUTPUT_IMAGE_KEY
+from inference.core.workflows.core_steps.visualizations.base_colorable import (
+    ColorableVisualizationBlock,
+    ColorableVisualizationManifest,
 )
 from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
@@ -16,8 +17,6 @@ from inference.core.workflows.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-OUTPUT_IMAGE_KEY: str = "image"
-
 TYPE: str = "PolygonVisualization"
 SHORT_DESCRIPTION = "Draws a polygon around detected objects in an image."
 LONG_DESCRIPTION = """
@@ -27,7 +26,7 @@ instance segmentation to draw polygons around objects using
 """
 
 
-class PolygonManifest(VisualizationManifest):
+class PolygonManifest(ColorableVisualizationManifest):
     type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
@@ -54,7 +53,7 @@ class PolygonManifest(VisualizationManifest):
     )
 
 
-class PolygonVisualizationBlock(VisualizationBlock):
+class PolygonVisualizationBlock(ColorableVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}
