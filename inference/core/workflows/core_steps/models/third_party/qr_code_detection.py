@@ -3,9 +3,10 @@ from uuid import uuid4
 
 import cv2
 import numpy as np
-from pydantic import AliasChoices, ConfigDict, Field
-
 import supervision as sv
+from pydantic import AliasChoices, ConfigDict, Field
+from supervision.config import CLASS_NAME_DATA_FIELD
+
 from inference.core.workflows.constants import (
     DETECTED_CODE_KEY,
     DETECTION_ID_KEY,
@@ -31,7 +32,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from supervision.config import CLASS_NAME_DATA_FIELD
 
 LONG_DESCRIPTION = """
 Detect the location of a QR code.

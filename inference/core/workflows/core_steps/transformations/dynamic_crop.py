@@ -1,9 +1,9 @@
 from dataclasses import replace
 from typing import Dict, List, Literal, Optional, Type, Union
 
+import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
-import supervision as sv
 from inference.core.workflows.constants import DETECTION_ID_KEY
 from inference.core.workflows.entities.base import (
     Batch,

@@ -2,10 +2,10 @@ import base64
 from typing import Any, Dict, List, Optional, Union
 
 import orjson
+import supervision as sv
 from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel
 
-import supervision as sv
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.utils.function import deprecated
 from inference.core.utils.image_utils import ImageType

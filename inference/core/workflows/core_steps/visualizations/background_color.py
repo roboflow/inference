@@ -1,8 +1,8 @@
 from typing import List, Literal, Optional, Type, Union
 
+import supervision as sv
 from pydantic import ConfigDict, Field
 
-import supervision as sv
 from inference.core.workflows.core_steps.visualizations.annotators.background_color import (
     BackgroundColorAnnotator,
 )

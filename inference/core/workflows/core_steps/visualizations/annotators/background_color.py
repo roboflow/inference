@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-
 from supervision.annotators.base import BaseAnnotator, ImageType
 from supervision.detection.core import Detections
 from supervision.draw.color import Color

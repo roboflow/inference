@@ -1,8 +1,8 @@
 from typing import List, Literal, Optional, Type, Union
 
+import supervision as sv
 from pydantic import ConfigDict, Field
 
-import supervision as sv
 from inference.core.workflows.core_steps.visualizations.base import OUTPUT_IMAGE_KEY
 from inference.core.workflows.core_steps.visualizations.base_colorable import (
     ColorableVisualizationBlock,

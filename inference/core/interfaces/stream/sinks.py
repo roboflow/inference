@@ -6,8 +6,9 @@ from typing import Callable, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
-
 import supervision as sv
+from supervision.annotators.base import BaseAnnotator
+
 from inference.core import logger
 from inference.core.active_learning.middlewares import ActiveLearningMiddleware
 from inference.core.interfaces.camera.entities import VideoFrame
@@ -15,7 +16,6 @@ from inference.core.interfaces.stream.entities import SinkHandler
 from inference.core.interfaces.stream.utils import wrap_in_list
 from inference.core.utils.drawing import create_tiles
 from inference.core.utils.preprocess import letterbox_image
-from supervision.annotators.base import BaseAnnotator
 
 DEFAULT_BBOX_ANNOTATOR = sv.BoundingBoxAnnotator()
 DEFAULT_LABEL_ANNOTATOR = sv.LabelAnnotator()

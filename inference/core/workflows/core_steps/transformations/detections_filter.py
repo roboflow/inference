@@ -1,8 +1,8 @@
 from typing import Any, Dict, List, Literal, Type, Union
 
+import supervision as sv
 from pydantic import ConfigDict, Field
 
-import supervision as sv
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
     OperationDefinition,

@@ -2,10 +2,11 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 from uuid import uuid4
 
 import numpy as np
+import supervision as sv
 import zxingcpp
 from pydantic import ConfigDict
+from supervision.config import CLASS_NAME_DATA_FIELD
 
-import supervision as sv
 from inference.core.workflows.constants import (
     DETECTED_CODE_KEY,
     DETECTION_ID_KEY,
@@ -31,7 +32,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from supervision.config import CLASS_NAME_DATA_FIELD
 
 LONG_DESCRIPTION = """
 Detect the location of barcodes in an image.

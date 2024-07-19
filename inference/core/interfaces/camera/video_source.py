@@ -7,9 +7,9 @@ from threading import Event, Lock, Thread
 from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, Union
 
 import cv2
+import supervision as sv
 from numpy import ndarray
 
-import supervision as sv
 from inference.core import logger
 from inference.core.env import (
     DEFAULT_ADAPTIVE_MODE_READER_PACE_TOLERANCE,

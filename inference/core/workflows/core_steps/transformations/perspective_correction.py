@@ -3,9 +3,9 @@ from typing import List, Literal, Optional, Type, Union
 
 import cv2 as cv
 import numpy as np
+import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
-import supervision as sv
 from inference.core.logger import logger
 from inference.core.workflows.constants import KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
 from inference.core.workflows.entities.base import (

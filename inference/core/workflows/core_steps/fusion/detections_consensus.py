@@ -17,9 +17,9 @@ from typing import (
 from uuid import uuid4
 
 import numpy as np
+import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
-import supervision as sv
 from inference.core.workflows.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,

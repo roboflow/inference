@@ -2,8 +2,9 @@ from copy import copy, deepcopy
 from typing import Any, Callable, Dict, List
 
 import numpy as np
-
 import supervision as sv
+from supervision import Position
+
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
     DetectionsSelectionMode,
@@ -18,7 +19,6 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 from inference.core.workflows.core_steps.common.query_language.operations.utils import (
     safe_stringify,
 )
-from supervision import Position
 
 PROPERTIES_EXTRACTORS = {
     DetectionsProperty.CONFIDENCE: lambda detections: detections.confidence.tolist(),

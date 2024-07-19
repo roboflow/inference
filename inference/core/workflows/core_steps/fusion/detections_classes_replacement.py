@@ -2,9 +2,10 @@ from typing import Dict, List, Literal, Optional, Tuple, Type
 from uuid import uuid4
 
 import numpy as np
-from pydantic import ConfigDict, Field
-
 import supervision as sv
+from pydantic import ConfigDict, Field
+from supervision.config import CLASS_NAME_DATA_FIELD
+
 from inference.core.workflows.constants import DETECTION_ID_KEY, PARENT_ID_KEY
 from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
@@ -19,7 +20,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from supervision.config import CLASS_NAME_DATA_FIELD
 
 LONG_DESCRIPTION = """
 Combine results of detection model with classification results performed separately for 

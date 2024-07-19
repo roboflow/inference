@@ -7,10 +7,10 @@ from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
+import supervision as sv
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
-import supervision as sv
 from inference.core.active_learning.cache_operations import (
     return_strategy_credit,
     use_credit_of_matching_strategy,
