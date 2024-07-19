@@ -1,6 +1,7 @@
 from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
+from inference.core.workflows.core_steps.visualizations.annotators.background_color import BackgroundColorAnnotator
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.visualizations.base import (
@@ -80,7 +81,7 @@ class BackgroundColorVisualizationBlock(VisualizationBlock):
 
         if key not in self.annotatorCache:
             background_color = str_to_color(color)
-            self.annotatorCache[key] = sv.BackgroundColorAnnotator(
+            self.annotatorCache[key] = BackgroundColorAnnotator(
                 color=background_color,
                 opacity=opacity,
             )
