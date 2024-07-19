@@ -3,9 +3,9 @@ from copy import deepcopy
 from typing import Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
-import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
+import supervision as sv
 from inference.core.workflows.constants import DETECTION_ID_KEY, PARENT_ID_KEY
 from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (

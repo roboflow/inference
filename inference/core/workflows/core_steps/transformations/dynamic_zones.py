@@ -2,9 +2,9 @@ from typing import Any, List, Literal, Tuple, Type, Union
 
 import cv2 as cv
 import numpy as np
-import supervision as sv
 from pydantic import ConfigDict, Field
 
+import supervision as sv
 from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,

@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import List, Literal, Optional, Union
 
-import supervision as sv
 from pydantic import Field
 
+import supervision as sv
 from inference.core.workflows.core_steps.visualizations.base import (
     VisualizationBlock,
     VisualizationManifest,

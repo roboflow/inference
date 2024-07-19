@@ -1,9 +1,11 @@
 import cv2
-from supervision.annotators.base import BaseAnnotator, ImageType
-from supervision.draw.color import Color
-from supervision.detection.core import Detections
-from supervision.utils.conversion import ensure_cv2_image_for_annotation
 import numpy as np
+
+from supervision.annotators.base import BaseAnnotator, ImageType
+from supervision.detection.core import Detections
+from supervision.draw.color import Color
+from supervision.utils.conversion import ensure_cv2_image_for_annotation
+
 
 class BackgroundColorAnnotator(BaseAnnotator):
     """

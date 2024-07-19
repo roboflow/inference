@@ -311,7 +311,7 @@ class UsageCollector:
 
                 if s:
                     s.close()
-                
+
             ip_address_hash_hex = UsageCollector._hash(ip_address)
 
         if not time_ns:

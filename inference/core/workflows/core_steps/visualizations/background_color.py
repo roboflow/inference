@@ -1,21 +1,22 @@
 from typing import List, Literal, Optional, Type, Union
 
-import supervision as sv
-from inference.core.workflows.core_steps.visualizations.annotators.background_color import BackgroundColorAnnotator
 from pydantic import ConfigDict, Field
 
+import supervision as sv
+from inference.core.workflows.core_steps.visualizations.annotators.background_color import (
+    BackgroundColorAnnotator,
+)
 from inference.core.workflows.core_steps.visualizations.base import (
     OUTPUT_IMAGE_KEY,
     VisualizationBlock,
     VisualizationManifest,
 )
 from inference.core.workflows.core_steps.visualizations.utils import str_to_color
-
 from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    STRING_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    STRING_KIND,
     FloatZeroToOne,
     StepOutputSelector,
     WorkflowParameterSelector,
@@ -23,7 +24,9 @@ from inference.core.workflows.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "BackgroundColorVisualization"
-SHORT_DESCRIPTION = "Paints a mask over all areas outside of detected regions in an image."
+SHORT_DESCRIPTION = (
+    "Paints a mask over all areas outside of detected regions in an image."
+)
 LONG_DESCRIPTION = """
 The `BackgroundColorVisualization` block draws all areas
 outside of detected regions in an image with a specified
@@ -96,10 +99,7 @@ class BackgroundColorVisualizationBlock(VisualizationBlock):
         color: str,
         opacity: Optional[float],
     ) -> BlockResult:
-        annotator = self.getAnnotator(
-            color,
-            opacity
-        )
+        annotator = self.getAnnotator(color, opacity)
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,

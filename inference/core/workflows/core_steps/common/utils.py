@@ -4,9 +4,8 @@ from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Optional, Union
 
 import numpy as np
-import supervision as sv
-from supervision.config import CLASS_NAME_DATA_FIELD
 
+import supervision as sv
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
@@ -43,6 +42,7 @@ from inference.core.workflows.entities.base import (
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+from supervision.config import CLASS_NAME_DATA_FIELD
 
 
 def load_core_model(

@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import Any, Deque, Dict, Iterable, List, Optional, TypeVar
 
 import supervision as sv
-
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
     UpdateSeverity,

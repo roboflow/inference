@@ -1,8 +1,8 @@
 from typing import Any, Dict, List
 
 import numpy as np
-import supervision as sv
 
+import supervision as sv
 from inference.core.workflows.constants import (
     CLASS_ID_KEY,
     CLASS_NAME_KEY,

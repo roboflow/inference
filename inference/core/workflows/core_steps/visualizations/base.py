@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import List, Literal, Optional, Type, Union
 
-import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
+import supervision as sv
 from inference.core.workflows.core_steps.visualizations.utils import str_to_color
 from inference.core.workflows.entities.base import OutputDefinition, WorkflowImageData
 from inference.core.workflows.entities.types import (

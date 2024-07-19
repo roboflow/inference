@@ -1,9 +1,9 @@
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-import supervision as sv
 from networkx import DiGraph
 
+import supervision as sv
 from inference.core.workflows.constants import WORKFLOW_INPUT_BATCH_LINEAGE_ID
 from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,

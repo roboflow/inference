@@ -79,13 +79,13 @@ from inference.core.workflows.core_steps.transformations.perspective_correction 
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
 )
+from inference.core.workflows.core_steps.visualizations.background_color import (
+    BackgroundColorVisualizationBlock,
+)
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.blur import (
     BlurVisualizationBlock,
-)
-from inference.core.workflows.core_steps.visualizations.background_color import (
-    BackgroundColorVisualizationBlock,
 )
 from inference.core.workflows.core_steps.visualizations.bounding_box import (
     BoundingBoxVisualizationBlock,
