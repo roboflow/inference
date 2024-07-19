@@ -3,9 +3,10 @@ from typing import List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.core_steps.visualizations.base import (
-    VisualizationBlock,
-    VisualizationManifest,
+from inference.core.workflows.core_steps.visualizations.base import OUTPUT_IMAGE_KEY
+from inference.core.workflows.core_steps.visualizations.base_colorable import (
+    ColorableVisualizationBlock,
+    ColorableVisualizationManifest,
 )
 from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
@@ -16,8 +17,6 @@ from inference.core.workflows.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-OUTPUT_IMAGE_KEY: str = "image"
-
 TYPE: str = "CropVisualization"
 SHORT_DESCRIPTION = "Draws scaled up crops of detections on the scene."
 LONG_DESCRIPTION = """
@@ -26,7 +25,7 @@ on the scene using Supervision's `sv.CropAnnotator`.
 """
 
 
-class CropManifest(VisualizationManifest):
+class CropManifest(ColorableVisualizationManifest):
     type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
@@ -70,7 +69,7 @@ class CropManifest(VisualizationManifest):
     )
 
 
-class CropVisualizationBlock(VisualizationBlock):
+class CropVisualizationBlock(ColorableVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}

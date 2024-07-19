@@ -1,19 +1,16 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import Literal, Optional, Type, Union
 
 import supervision as sv
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import OutputDefinition, WorkflowImageData
+from inference.core.workflows.core_steps.visualizations.base import (
+    OUTPUT_IMAGE_KEY,
+    VisualizationBlock,
+    VisualizationManifest,
+)
+from inference.core.workflows.entities.base import WorkflowImageData
 from inference.core.workflows.entities.types import (
-    BATCH_OF_IMAGES_KIND,
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BOOLEAN_KIND,
     INTEGER_KIND,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -21,8 +18,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
-OUTPUT_IMAGE_KEY: str = "image"
 
 TYPE: str = "PixelateVisualization"
 SHORT_DESCRIPTION = "Pixelates detected objects in an image."
@@ -32,7 +27,7 @@ objects in an image using Supervision's `sv.PixelateAnnotator`.
 """
 
 
-class PixelateManifest(WorkflowBlockManifest):
+class PixelateManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
@@ -43,47 +38,14 @@ class PixelateManifest(WorkflowBlockManifest):
         }
     )
 
-    predictions: StepOutputSelector(
-        kind=[
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-        ]
-    ) = Field(  # type: ignore
-        description="Predictions",
-        examples=["$steps.object_detection_model.predictions"],
-    )
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        title="Input Image",
-        description="The input image for this step.",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("image", "images"),
-    )
-
-    copy_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
-        description="Duplicate the image contents (vs overwriting the image in place). Deselect for chained visualizations that should stack on previous ones where the intermediate state is not needed.",
-        default=True,
-    )
-
     pixel_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Size of the pixelation.",
         default=20,
         examples=[20, "$inputs.pixel_size"],
     )
 
-    @classmethod
-    def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(
-                name=OUTPUT_IMAGE_KEY,
-                kind=[
-                    BATCH_OF_IMAGES_KIND,
-                ],
-            ),
-        ]
 
-
-class PixelateVisualizationBlock(WorkflowBlock):
+class PixelateVisualizationBlock(VisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}
