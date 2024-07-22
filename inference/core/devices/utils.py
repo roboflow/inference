@@ -6,7 +6,6 @@ import string
 import uuid
 
 from inference.core.env import DEVICE_ID, INFERENCE_SERVER_ID, MODEL_CACHE_DIR
-from inference.core.logger import logger
 
 
 def is_running_in_docker():
