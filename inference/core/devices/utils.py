@@ -144,8 +144,8 @@ def get_global_device_id():
     else:
         with open(f"{cache_dir}/_rfconfig", "r") as f:
             config = json.loads(f.read())
-            print(f"config: {config}")
-        return config["global_device_id"]
+            if config.get("global_device_id") is not None:
+                return config["global_device_id"]
     global_device_id = DEVICE_ID if DEVICE_ID is not None else get_device_hostname()
     with open(f"{cache_dir}/_config", "w") as f:
         f.write(
