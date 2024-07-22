@@ -1,10 +1,12 @@
+import json
 import os
 import platform
 import random
 import string
 import uuid
 
-from inference.core.env import DEVICE_ID, INFERENCE_SERVER_ID
+from inference.core.env import DEVICE_ID, INFERENCE_SERVER_ID, MODEL_CACHE_DIR
+from inference.core.logger import logger
 
 
 def is_running_in_docker():
@@ -136,5 +138,27 @@ def get_inference_server_id():
         return "UNKNOWN"
 
 
+def get_global_device_id():
+    cache_dir = f"{MODEL_CACHE_DIR}/_config"
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+    else:
+        with open(f"{cache_dir}/_rfconfig", "r") as f:
+            config = json.loads(f.read())
+            print(f"config: {config}")
+        return config["global_device_id"]
+    global_device_id = DEVICE_ID if DEVICE_ID is not None else get_device_hostname()
+    with open(f"{cache_dir}/_config", "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "inference_server_id": INFERENCE_SERVER_ID,
+                    "global_device_id": global_device_id,
+                }
+            )
+        )
+    return global_device_id
+
+
 GLOBAL_INFERENCE_SERVER_ID = get_inference_server_id()
-GLOBAL_DEVICE_ID = DEVICE_ID if DEVICE_ID is not None else get_device_hostname()
+GLOBAL_DEVICE_ID = get_global_device_id()
