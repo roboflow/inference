@@ -645,12 +645,13 @@ class UsageCollector:
         resource_details = {}
         resource_id = ""
         category = None
+        enterprise = False
+        # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
         if "workflow" in func_kwargs:
             workflow: CompiledWorkflow = func_kwargs["workflow"]
             if hasattr(workflow, "workflow_definition"):
-                # TODO: handle enterprise blocks here
+                # TODO: extend ParsedWorkflowDefinition to expose `enterprise`
                 workflow_definition = workflow.workflow_definition
-                enterprise = False
             if hasattr(workflow, "init_parameters"):
                 init_parameters = workflow.init_parameters
                 if "workflows_core.api_key" in init_parameters:
@@ -667,9 +668,16 @@ class UsageCollector:
                     resource_details=resource_details
                 )
             category = "workflows"
-        elif "model_id" in func_kwargs:
-            # TODO: handle model
-            pass
+        elif hasattr(func, "__self__"):
+            _self = func.__self__
+            if hasattr(_self, "dataset_id") and hasattr(_self, "version_id"):
+                model_id = f"{_self.dataset_id}/{_self.version_id}"
+                category = "model"
+                resource_id = model_id
+        else:
+            resource_id = "unknown"
+            category = "unknown"
+
         source = None
         runtime_parameters = func_kwargs.get("runtime_parameters")
         if (

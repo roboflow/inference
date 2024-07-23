@@ -7,6 +7,7 @@ from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.usage_tracking.collector import usage_collector
 
 
 class BaseInference:
@@ -24,7 +25,8 @@ class BaseInference:
         logger.debug(
             f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
         )
-        predicted_arrays = self.predict(preproc_image, **kwargs)
+        metered_predict = usage_collector(self.predict)
+        predicted_arrays = metered_predict(preproc_image, **kwargs)
         postprocessed = self.postprocess(predicted_arrays, returned_metadata, **kwargs)
 
         return postprocessed
