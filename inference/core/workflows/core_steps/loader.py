@@ -27,6 +27,8 @@ from inference.core.workflows.core_steps.models.foundation.lmm import LMMBlock
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier import (
     LMMForClassificationBlock,
 )
+from inference.core.workflows.core_steps.models.foundation.openai import OpenAIBlock
+from inference.core.workflows.core_steps.models.foundation.cogvlm import CogVLMBlock
 from inference.core.workflows.core_steps.models.foundation.ocr import OCRModelBlock
 from inference.core.workflows.core_steps.models.foundation.yolo_world import (
     YoloWorldModelBlock,
@@ -186,6 +188,8 @@ def load_blocks() -> List[
         ClipComparisonBlock,
         LMMBlock,
         LMMForClassificationBlock,
+        OpenAIBlock,
+        CogVLMBlock,
         OCRModelBlock,
         YoloWorldModelBlock,
         RoboflowInstanceSegmentationModelBlock,
