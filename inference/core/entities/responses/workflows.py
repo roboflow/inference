@@ -146,3 +146,6 @@ class WorkflowsBlocksDescription(BaseModel):
     universal_query_language_description: UniversalQueryLanguageDescription = Field(
         description="Definitions of Universal Query Language operations and operators"
     )
+    dynamic_block_definition_schema: dict = Field(
+        description="Schema for dynamic block definition"
+    )
