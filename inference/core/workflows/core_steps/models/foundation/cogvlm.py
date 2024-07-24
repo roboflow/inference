@@ -47,16 +47,6 @@ NOT_DETECTED_VALUE = "not_detected"
 
 JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json\n([\s\S]*?)\n```")
 
-
-class CogVLMConfig(BaseModel):
-    max_tokens: int = Field(default=450)
-    gpt_image_detail: Literal["low", "high", "auto"] = Field(
-        default="auto",
-        description="To be used for GPT-4V only.",
-    )
-    gpt_model_version: str = Field(default="gpt-4o")
-
-
 LONG_DESCRIPTION = """
 Ask a question to CogVLM, an open source vision-language model.
 
@@ -65,15 +55,6 @@ This model requires a GPU and can only be run on self-hosted devices, and is not
 _If you want to classify an image into one or more categories, we recommend using the 
 dedicated LMMForClassificationBlock._
 """
-
-
-class LMMConfig(BaseModel):
-    max_tokens: int = Field(default=450)
-    gpt_image_detail: Literal["low", "high", "auto"] = Field(
-        default="auto",
-        description="To be used for GPT-4V only.",
-    )
-    gpt_model_version: str = Field(default="gpt-4o")
 
 
 class BlockManifest(WorkflowBlockManifest):
