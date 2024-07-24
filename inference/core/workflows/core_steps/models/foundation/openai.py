@@ -54,8 +54,7 @@ You can specify arbitrary text prompts to the OpenAIBlock.
 
 You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
 
-_If you want to classify an image into one or more categories, we recommend using the 
-dedicated LMMForClassificationBlock._
+_This model was previously part of the LMM block._
 """
 
 
@@ -67,6 +66,7 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "search_keywords": ["LMM", "ChatGPT"],
         }
     )
     type: Literal["OpenAI"]
