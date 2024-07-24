@@ -55,6 +55,9 @@ from inference.core.workflows.core_steps.models.third_party.qr_code_detection im
 from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload import (
     RoboflowDatasetUploadBlock,
 )
+from inference.core.workflows.core_steps.sinks.roboflow.roboflow_custom_metadata import (
+    RoboflowCustomMetadataBlock,
+)
 from inference.core.workflows.core_steps.transformations.absolute_static_crop import (
     AbsoluteStaticCropBlock,
 )
@@ -225,6 +228,7 @@ def load_blocks() -> List[
         PixelateVisualizationBlock,
         PolygonVisualizationBlock,
         TriangleVisualizationBlock,
+        RoboflowCustomMetadataBlock,
     ]
 
 
