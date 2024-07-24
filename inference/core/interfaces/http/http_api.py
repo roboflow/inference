@@ -76,6 +76,7 @@ from inference.core.entities.responses.server_state import (
 from inference.core.entities.responses.workflows import (
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
+    WorkflowsBlocksSchemaDescription,
     WorkflowValidationStatus,
 )
 from inference.core.env import (
@@ -157,6 +158,9 @@ from inference.core.workflows.execution_engine.compiler.syntactic_parser import 
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
+from inference.core.workflows.execution_engine.compiler.syntactic_parser import (
+    get_workflow_schema_description,
+)
 
 if LAMBDA:
     from inference.core.usage import trackUsage
@@ -902,6 +906,18 @@ class HttpInterface(BaseInterface):
             @with_route_exceptions
             async def describe_workflows_blocks() -> WorkflowsBlocksDescription:
                 return handle_describe_workflows_blocks_request()
+
+            @app.get(
+                "/workflows/blocks/schema",
+                response_model=WorkflowsBlocksSchemaDescription,
+                summary="[Endpoint to get definition of workflows block schema",
+                description="Endpoint provides detailed information about workflows building blocks that are "
+                "accessible in the inference server. This information could be used to programmatically "
+                "build / display workflows.",
+            )
+            @with_route_exceptions
+            async def get_workflow_schema() -> WorkflowsBlocksSchemaDescription:
+                return get_workflow_schema_description()
 
             @app.post(
                 "/workflows/blocks/describe",

@@ -17,6 +17,7 @@ from inference.core.workflows.execution_engine.introspection.blocks_loader impor
     load_all_defined_kinds,
     load_workflow_blocks,
 )
+from inference.core.entities.responses.workflows import WorkflowsBlocksSchemaDescription
 
 
 def parse_workflow_definition(
@@ -51,9 +52,15 @@ def build_workflow_definition_entity(
     block_manifest_types_union = Union[steps_manifests]
     block_type = Annotated[block_manifest_types_union, Field(discriminator="type")]
     return create_model(
-        "WorkflowSpecificationV1",
+        "WorkflowSpecificationV2",
         version=(Literal["1.0"], ...),
         inputs=(List[InputType], ...),
         steps=(List[block_type], ...),
         outputs=(List[JsonField], ...),
     )
+
+
+def get_workflow_schema_description() -> WorkflowsBlocksSchemaDescription:
+    workflow_definition_class = build_workflow_definition_entity([])
+    schema = workflow_definition_class.model_json_schema()
+    return WorkflowsBlocksSchemaDescription(schema=schema)

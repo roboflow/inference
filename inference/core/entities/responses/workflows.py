@@ -149,3 +149,6 @@ class WorkflowsBlocksDescription(BaseModel):
     dynamic_block_definition_schema: dict = Field(
         description="Schema for dynamic block definition"
     )
+    
+class WorkflowsBlocksSchemaDescription(BaseModel):
+    schema: dict = Field(description="Schema for dynamic block definition")
