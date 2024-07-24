@@ -680,7 +680,7 @@ class UsageCollector:
                 resource_id = model_id
             else:
                 resource_id = "unknown"
-                category = "unknown"            
+                category = "unknown"
             if isinstance(kwargs, dict) and "source" in kwargs:
                 resource_details["source"] = kwargs["source"]
             if hasattr(_self, "task_type"):
