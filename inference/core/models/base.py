@@ -16,6 +16,7 @@ class BaseInference:
     This class provides a basic interface for inference tasks.
     """
 
+    @usage_collector
     def infer(self, image: Any, **kwargs) -> Any:
         """Runs inference on given data.
         - image:
@@ -25,8 +26,7 @@ class BaseInference:
         logger.debug(
             f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
         )
-        metered_predict = usage_collector(self.predict)
-        predicted_arrays = metered_predict(preproc_image, **kwargs)
+        predicted_arrays = self.predict(preproc_image, **kwargs)
         postprocessed = self.postprocess(predicted_arrays, returned_metadata, **kwargs)
 
         return postprocessed

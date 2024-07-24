@@ -668,12 +668,23 @@ class UsageCollector:
                     resource_details=resource_details
                 )
             category = "workflows"
-        elif hasattr(func, "__self__"):
-            _self = func.__self__
+        elif "self" in func_kwargs:
+            _self = func_kwargs["self"]
             if hasattr(_self, "dataset_id") and hasattr(_self, "version_id"):
                 model_id = f"{_self.dataset_id}/{_self.version_id}"
                 category = "model"
                 resource_id = model_id
+            elif isinstance(kwargs, dict) and "model_id" in kwargs:
+                model_id = kwargs["model_id"]
+                category = "model"
+                resource_id = model_id
+            else:
+                resource_id = "unknown"
+                category = "unknown"            
+            if isinstance(kwargs, dict) and "source" in kwargs:
+                resource_details["source"] = kwargs["source"]
+            if hasattr(_self, "task_type"):
+                resource_details["task_type"] = _self.task_type
         else:
             resource_id = "unknown"
             category = "unknown"
