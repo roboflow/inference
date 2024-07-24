@@ -1,31 +1,29 @@
-from typing import List, Literal, Optional, Type, Union
 import hashlib
-from pydantic import ConfigDict, Field
-from fastapi import BackgroundTasks
 from functools import partial
+from typing import List, Literal, Optional, Type, Union
 
+from fastapi import BackgroundTasks
+from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
-    OutputDefinition,
-)
+from inference.core.cache.base import BaseCache
+from inference.core.roboflow_api import add_custom_metadata, get_roboflow_workspace
+from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
-    BATCH_OF_STRING_KIND,
-    STRING_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
+    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_STRING_KIND,
+    BOOLEAN_KIND,
+    STRING_KIND,
     StepOutputSelector,
     WorkflowParameterSelector,
-    BOOLEAN_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference.core.roboflow_api import get_roboflow_workspace, add_custom_metadata
-from inference.core.cache.base import BaseCache
 
 SHORT_DESCRIPTION = "Add custom metadata to Roboflow Model Monitoring dashboard"
 
