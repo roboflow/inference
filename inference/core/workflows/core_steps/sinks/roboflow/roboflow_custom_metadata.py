@@ -2,11 +2,13 @@ import hashlib
 from functools import partial
 from typing import List, Literal, Optional, Type, Union
 
+import numpy as np
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
 from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import add_custom_metadata, get_roboflow_workspace
+from inference.core.workflows.constants import INFERENCE_ID_KEY
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
@@ -133,7 +135,8 @@ class RoboflowCustomMetadataBlock(WorkflowBlock):
                 "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
                 "retrieve one."
             )
-        inference_ids = [p["inference_id"] for p in predictions]
+        inference_ids = [p[INFERENCE_ID_KEY] for p in predictions]
+        inference_ids = list(set(np.concatenate(inference_ids).tolist()))
         if len(inference_ids) == 0:
             return [
                 {
@@ -150,7 +153,7 @@ class RoboflowCustomMetadataBlock(WorkflowBlock):
                     "message": "Custom metadata upload failed because no field_name was inputted",
                 }
             ]
-        if field_value is None:
+        if field_value is None or len(field_value) == 0:
             return [
                 {
                     "error_status": True,
@@ -164,7 +167,7 @@ class RoboflowCustomMetadataBlock(WorkflowBlock):
             api_key=self._api_key,
             inference_ids=inference_ids,
             field_name=field_name,
-            field_value=field_value,
+            field_value=field_value[0],
         )
         if fire_and_forget and self._background_tasks:
             self._background_tasks.add_task(registration_task)

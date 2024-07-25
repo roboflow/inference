@@ -16,6 +16,7 @@ from inference.core.workflows.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
     IMAGE_DIMENSIONS_KEY,
+    INFERENCE_ID_KEY,
     KEYPOINTS_CLASS_ID_KEY_IN_INFERENCE_RESPONSE,
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_CLASS_NAME_KEY_IN_INFERENCE_RESPONSE,
@@ -99,7 +100,7 @@ def convert_inference_detections_batch_to_sv_detections(
         detections[DETECTION_ID_KEY] = np.array(detection_ids)
         detections[PARENT_ID_KEY] = np.array(parent_ids)
         detections[IMAGE_DIMENSIONS_KEY] = np.array([[height, width]] * len(detections))
-        detections["inference_id"] = np.array([p["inference_id"]] * len(detections))
+        detections[INFERENCE_ID_KEY] = np.array([p[INFERENCE_ID_KEY]] * len(detections))
         batch_of_detections.append(detections)
     return batch_of_detections
 

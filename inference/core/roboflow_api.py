@@ -131,11 +131,16 @@ def add_custom_metadata(
     response = requests.post(
         url=api_url,
         json={
-            "inference_ids": inference_ids,
-            "field_name": field_name,
-            "field_value": field_value,
+            "data": [
+                {
+                    "inference_ids": inference_ids,
+                    "field_name": field_name,
+                    "field_value": field_value,
+                }
+            ]
         },
     )
+    print(f"response: {response.json()}")
     api_key_safe_raise_for_status(response=response)
     return True
 
