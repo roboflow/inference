@@ -44,7 +44,9 @@ class PingbackInfo:
             manager (ModelManager): Reference to the model manager object.
         """
         try:
-            self.scheduler = BackgroundScheduler()
+            self.scheduler = BackgroundScheduler(
+                job_defaults={"coalesce": True, "max_instances": 1}
+            )
             self.model_manager = manager
             self.process_startup_time = str(int(time.time()))
             logger.debug(
@@ -119,7 +121,7 @@ class PingbackInfo:
                     GLOBAL_INFERENCE_SERVER_ID, model_id, min=start, max=now
                 )
                 all_data["inference_results"] = all_data["inference_results"] + results
-            res = requests.post(wrap_url(METRICS_URL), json=all_data)
+            res = requests.post(wrap_url(METRICS_URL), json=all_data, timeout=5)
             try:
                 api_key_safe_raise_for_status(response=res)
                 logger.debug(
