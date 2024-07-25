@@ -2,6 +2,7 @@ import hashlib
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 from fastapi import BackgroundTasks
 
@@ -65,7 +66,7 @@ def test_add_custom_metadata_request_success(
     add_custom_metadata_mock.return_value = True
     cache = MemoryCache()
     api_key = "my_api_key"
-    inference_ids = ["id1", "id2"]
+    inference_ids = np.array(["id1", "id2"])
     field_name = "location"
     field_value = "toronto"
 
@@ -92,7 +93,7 @@ def test_add_custom_metadata_request_failure(
     add_custom_metadata_mock.side_effect = Exception("API error")
     cache = MemoryCache()
     api_key = "my_api_key"
-    inference_ids = ["id1", "id2"]
+    inference_ids = np.array(["id1", "id2"])
     field_name = "location"
     field_value = "toronto"
 
@@ -124,7 +125,7 @@ async def test_run_when_api_key_is_not_specified() -> None:
             fire_and_forget=True,
             field_name="location",
             field_value=["toronto"],
-            predictions=[{"inference_id": "id1"}],
+            predictions=[{"inference_id": np.array(["id1"])}],
         )
 
 
@@ -169,14 +170,14 @@ async def test_run_when_no_field_name() -> None:
         fire_and_forget=True,
         field_name=None,
         field_value=["toronto"],
-        predictions=[{"inference_id": "id1"}],
+        predictions=[{"inference_id": np.array(["id1"])}],
     )
 
     # then
     assert result == [
         {
             "error_status": True,
-            "predictions": [{"inference_id": "id1"}],
+            "predictions": [{"inference_id": np.array(["id1"])}],
             "message": "Custom metadata upload failed because no field_name was inputted",
         }
     ], "Expected failure due to no field_name"
@@ -196,14 +197,14 @@ async def test_run_when_no_field_value() -> None:
         fire_and_forget=True,
         field_name="location",
         field_value=None,
-        predictions=[{"inference_id": "id1"}],
+        predictions=[{"inference_id": np.array(["id1"])}],
     )
 
     # then
     assert result == [
         {
             "error_status": True,
-            "predictions": [{"inference_id": "id1"}],
+            "predictions": [{"inference_id": np.array(["id1"])}],
             "message": "Custom metadata upload failed because no field_value was received",
         }
     ], "Expected failure due to no field_value"
@@ -230,14 +231,14 @@ async def test_run_when_fire_and_forget(
         fire_and_forget=True,
         field_name="location",
         field_value=["toronto"],
-        predictions=[{"inference_id": "id1"}],
+        predictions=[{"inference_id": np.array(["id1"])}],
     )
 
     # then
     assert result == [
         {
             "error_status": False,
-            "predictions": [{"inference_id": "id1"}],
+            "predictions": [{"inference_id": np.array(["id1"])}],
             "message": "Custom metadata upload was successful",
         }
     ], "Expected success message"
@@ -264,14 +265,14 @@ async def test_run_when_not_fire_and_forget(
         fire_and_forget=False,
         field_name="location",
         field_value=["toronto"],
-        predictions=[{"inference_id": "id1"}],
+        predictions=[{"inference_id": np.array(["id1"])}],
     )
 
     # then
     assert result == [
         {
             "error_status": False,
-            "predictions": [{"inference_id": "id1"}],
+            "predictions": [{"inference_id": np.array(["id1"])}],
             "message": "Custom metadata upload was successful",
         }
     ], "Expected success message"
