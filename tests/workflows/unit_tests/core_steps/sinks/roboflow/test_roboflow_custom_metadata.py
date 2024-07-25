@@ -66,6 +66,9 @@ def test_add_custom_metadata_request_success(
     add_custom_metadata_mock.return_value = True
     cache = MemoryCache()
     api_key = "my_api_key"
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
+    cache.set(key=expected_cache_key, value="my_workspace")
     inference_ids = np.array(["id1", "id2"])
     field_name = "location"
     field_value = "toronto"
@@ -81,6 +84,9 @@ def test_add_custom_metadata_request_success(
 
     # then
     assert result is True, "Expected metadata to be added successfully"
+    assert (
+        cache.get(expected_cache_key) == "my_workspace"
+    ), "Expected workspace name to be in cache"
 
 
 @patch(
@@ -93,6 +99,9 @@ def test_add_custom_metadata_request_failure(
     add_custom_metadata_mock.side_effect = Exception("API error")
     cache = MemoryCache()
     api_key = "my_api_key"
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
+    cache.set(key=expected_cache_key, value="my_workspace")
     inference_ids = np.array(["id1", "id2"])
     field_name = "location"
     field_value = "toronto"
@@ -108,6 +117,9 @@ def test_add_custom_metadata_request_failure(
 
     # then
     assert result is False, "Expected metadata addition to fail"
+    assert (
+        cache.get(expected_cache_key) == "my_workspace"
+    ), "Expected workspace name to be in cache"
 
 
 @pytest.mark.asyncio
