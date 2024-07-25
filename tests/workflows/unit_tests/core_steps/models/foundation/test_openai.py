@@ -29,8 +29,8 @@ def test_openai_step_validation_when_input_is_valid(images_field_alias: str) -> 
         "name": "step_1",
         images_field_alias: "$inputs.image",
         "prompt": "$inputs.prompt",
-        "json_output": {"some_field": "some_description"},
-        "api_key": "$inputs.open_ai_key",
+        "json_output_format": {"some_field": "some_description"},
+        "openai_api_key": "$inputs.openai_api_key",
     }
 
     # when
@@ -42,8 +42,8 @@ def test_openai_step_validation_when_input_is_valid(images_field_alias: str) -> 
         name="step_1",
         images="$inputs.image",
         prompt="$inputs.prompt",
-        api_key="$inputs.open_ai_key",
-        json_output={"some_field": "some_description"},
+        openai_api_key="$inputs.openai_api_key",
+        json_output_format={"some_field": "some_description"},
     )
 
 
@@ -57,8 +57,8 @@ def test_lmm_step_validation_when_image_is_invalid(
         "name": "step_1",
         "images": value,
         "prompt": "$inputs.prompt",
-        "json_output": "$inputs.expected_output",
-        "api_key": "$inputs.open_ai_key",
+        "json_output_format": "$inputs.expected_output",
+        "openai_api_key": "$inputs.openai_api_key",
     }
 
     # when
@@ -73,7 +73,7 @@ def test_lmm_step_validation_when_prompt_is_given_directly() -> None:
         "name": "step_1",
         "images": "$inputs.image",
         "prompt": "This is my prompt",
-        "api_key": "$inputs.open_ai_key",
+        "openai_api_key": "$inputs.openai_api_key",
     }
 
     # when
@@ -85,7 +85,7 @@ def test_lmm_step_validation_when_prompt_is_given_directly() -> None:
         name="step_1",
         images="$inputs.image",
         prompt="This is my prompt",
-        api_key="$inputs.open_ai_key",
+        openai_api_key="$inputs.openai_api_key",
     )
 
 
@@ -99,7 +99,7 @@ def test_lmm_step_validation_when_prompt_is_invalid(
         "name": "step_1",
         "images": "$inputs.image",
         "prompt": value,
-        "api_key": "$inputs.open_ai_key",
+        "openai_api_key": "$inputs.openai_api_key",
     }
 
     # when
@@ -116,9 +116,9 @@ def test_lmm_step_validation_when_lmm_type_valid(
         "type": "OpenAI",
         "name": "step_1",
         "images": "$inputs.image",
-        "open_ai_model": value,
+        "openai_model": value,
         "prompt": "$inputs.prompt",
-        "api_key": "$inputs.open_ai_key",
+        "openai_api_key": "$inputs.openai_api_key",
     }
 
     # when
@@ -129,8 +129,8 @@ def test_lmm_step_validation_when_lmm_type_valid(
         name="step_1",
         images="$inputs.image",
         prompt="$inputs.prompt",
-        open_ai_model=value,
-        api_key="$inputs.open_ai_key",
+        openai_model=value,
+        openai_api_key="$inputs.openai_api_key",
     )
 
 
@@ -143,9 +143,9 @@ def test_lmm_step_validation_when_lmm_type_invalid(
         "type": "OpenAI",
         "name": "step_1",
         "images": "$inputs.image",
-        "open_ai_model": value,
+        "openai_model": value,
         "prompt": "$inputs.prompt",
-        "api_key": "$inputs.open_ai_key",
+        "openai_api_key": "$inputs.openai_api_key",
     }
 
     # when
@@ -162,9 +162,9 @@ def test_lmm_step_validation_when_api_key_valid(
         "type": "OpenAI",
         "name": "step_1",
         "images": "$inputs.image",
-        "open_ai_model": "gpt-4o-mini",
+        "openai_model": "gpt-4o-mini",
         "prompt": "$inputs.prompt",
-        "api_key": value,
+        "openai_api_key": value,
     }
 
     # when
@@ -175,8 +175,8 @@ def test_lmm_step_validation_when_api_key_valid(
         name="step_1",
         images="$inputs.image",
         prompt="$inputs.prompt",
-        open_ai_model="gpt-4o-mini",
-        api_key=value,
+        openai_model="gpt-4o-mini",
+        openai_api_key=value,
     )
 
 
@@ -184,7 +184,7 @@ def test_lmm_step_validation_when_api_key_valid(
     "value",
     [{"my_field": 3}, "some"],
 )
-def test_lmm_step_validation_when_json_output_invalid(
+def test_lmm_step_validation_when_json_output_format_invalid(
     value: Any,
 ) -> None:
     # given
@@ -192,10 +192,10 @@ def test_lmm_step_validation_when_json_output_invalid(
         "type": "OpenAI",
         "name": "step_1",
         "images": "$inputs.image",
-        "open_ai_model": "gpt-4o-mini",
+        "openai_model": "gpt-4o-mini",
         "prompt": "$inputs.prompt",
-        "json_output": value,
-        "api_key": "some",
+        "json_output_format": value,
+        "openai_api_key": "some",
     }
 
     # when
@@ -414,7 +414,7 @@ async def test_execute_gpt_4v_request() -> None:
             gpt_model_version="gpt-4o",
             gpt_image_detail="low",
             max_tokens=600,
-        )
+        ),
     )
 
     # then
@@ -469,7 +469,7 @@ async def test_execute_gpt_4v_request_gpt_4o_mini() -> None:
             gpt_model_version="gpt-4o-mini",
             gpt_image_detail="high",
             max_tokens=120,
-        )
+        ),
     )
 
     # then

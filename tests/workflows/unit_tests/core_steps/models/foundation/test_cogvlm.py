@@ -26,7 +26,7 @@ def test_cogvlm_step_validation_when_input_is_valid(images_field_alias: str) -> 
         "name": "step_1",
         images_field_alias: "$inputs.image",
         "prompt": "$inputs.prompt",
-        "json_output": {"some_field": "some_description"},
+        "json_output_format": {"some_field": "some_description"},
     }
 
     # when
@@ -38,7 +38,7 @@ def test_cogvlm_step_validation_when_input_is_valid(images_field_alias: str) -> 
         name="step_1",
         images="$inputs.image",
         prompt="$inputs.prompt",
-        json_output={"some_field": "some_description"},
+        json_output_format={"some_field": "some_description"},
     )
 
 
@@ -52,7 +52,7 @@ def test_cogvlm_step_validation_when_image_is_invalid(
         "name": "step_1",
         "images": value,
         "prompt": "$inputs.prompt",
-        "json_output": "$inputs.expected_output",
+        "json_output_format": "$inputs.expected_output",
     }
 
     # when
@@ -99,7 +99,7 @@ def test_cogvlm_step_validation_when_prompt_is_invalid(
     "value",
     [{"my_field": 3}, "some"],
 )
-def test_cogvlm_step_validation_when_json_output_invalid(
+def test_cogvlm_step_validation_when_json_output_format_invalid(
     value: Any,
 ) -> None:
     # given
@@ -108,7 +108,7 @@ def test_cogvlm_step_validation_when_json_output_invalid(
         "name": "step_1",
         "images": "$inputs.image",
         "prompt": "$inputs.prompt",
-        "json_output": value,
+        "json_output_format": value,
     }
 
     # when
