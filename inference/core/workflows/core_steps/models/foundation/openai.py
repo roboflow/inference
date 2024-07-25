@@ -75,23 +75,26 @@ class BlockManifest(WorkflowBlockManifest):
         description="Text prompt to the OpenAI model",
         examples=["my prompt", "$inputs.prompt"],
     )
-    api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]] = (
-        Field(
-            description="Your OpenAI API key",
-            examples=["xxx-xxx", "$inputs.api_key"],
-        )
+    openai_api_key: Union[
+        WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]
+    ] = Field(
+        description="Your OpenAI API key",
+        examples=["xxx-xxx", "$inputs.openai_api_key"],
     )
-    open_ai_model: Union[
+    openai_model: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt-4o", "gpt-4o-mini"]
     ] = Field(
         default="gpt-4o",
         description="Model to be used",
-        examples=["gpt-4o", "$inputs.open_ai_model"],
+        examples=["gpt-4o", "$inputs.openai_model"],
     )
-    json_output: Optional[Dict[str, str]] = Field(
+    json_output_format: Optional[Dict[str, str]] = Field(
         default=None,
         description="Holds dictionary that maps name of requested output field into its description",
-        examples=[{"count": "number of cats in the picture"}, "$inputs.json_output"],
+        examples=[
+            {"count": "number of cats in the picture"},
+            "$inputs.json_output_format",
+        ],
     )
     image_detail: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]), Literal["auto", "high", "low"]
@@ -128,9 +131,9 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="structured_output", kind=[DICTIONARY_KIND]),
             OutputDefinition(name="raw_output", kind=[STRING_KIND]),
         ]
-        if self.json_output is None:
+        if self.json_output_format is None:
             return result
-        for key in self.json_output.keys():
+        for key in self.json_output_format.keys():
             result.append(OutputDefinition(name=key, kind=[WILDCARD_KIND]))
         return result
 
@@ -159,9 +162,9 @@ class OpenAIBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
-        api_key: str,
-        open_ai_model: Optional[str],
-        json_output: Optional[Dict[str, str]],
+        openai_api_key: str,
+        openai_model: Optional[str],
+        json_output_format: Optional[Dict[str, str]],
         image_detail: Literal["low", "high", "auto"],
         max_tokens: int,
     ) -> BlockResult:
@@ -169,9 +172,9 @@ class OpenAIBlock(WorkflowBlock):
             return await self.run_locally(
                 images=images,
                 prompt=prompt,
-                api_key=api_key,
-                open_ai_model=open_ai_model,
-                json_output=json_output,
+                openai_api_key=openai_api_key,
+                openai_model=openai_model,
+                json_output_format=json_output_format,
                 image_detail=image_detail,
                 max_tokens=max_tokens,
             )
@@ -179,9 +182,9 @@ class OpenAIBlock(WorkflowBlock):
             return await self.run_remotely(
                 images=images,
                 prompt=prompt,
-                api_key=api_key,
-                open_ai_model=open_ai_model,
-                json_output=json_output,
+                openai_api_key=openai_api_key,
+                openai_model=openai_model,
+                json_output_format=json_output_format,
                 image_detail=image_detail,
                 max_tokens=max_tokens,
             )
@@ -194,16 +197,16 @@ class OpenAIBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
-        api_key: str,
-        open_ai_model: Optional[str],
-        json_output: Optional[Dict[str, str]],
+        openai_api_key: str,
+        openai_model: Optional[str],
+        json_output_format: Optional[Dict[str, str]],
         image_detail: Literal["low", "high", "auto"],
         max_tokens: int,
     ) -> BlockResult:
-        if json_output:
+        if json_output_format:
             prompt = (
                 f"{prompt}\n\nVALID response format is JSON:\n"
-                f"{json.dumps(json_output, indent=4)}"
+                f"{json.dumps(json_output_format, indent=4)}"
             )
         images_prepared_for_processing = [
             image.to_inference_format(numpy_preferred=True) for image in images
@@ -211,16 +214,16 @@ class OpenAIBlock(WorkflowBlock):
         raw_output = await run_gpt_4v_llm_prompting(
             image=images_prepared_for_processing,
             prompt=prompt,
-            remote_api_key=api_key,
+            openai_api_key=openai_api_key,
             lmm_config=LMMConfig(
-                gpt_model_version=open_ai_model,
+                gpt_model_version=openai_model,
                 gpt_image_detail=image_detail,
                 max_tokens=max_tokens,
             ),
         )
         structured_output = turn_raw_lmm_output_into_structured(
             raw_output=raw_output,
-            expected_output=json_output,
+            expected_output=json_output_format,
         )
         predictions = [
             {
@@ -242,31 +245,31 @@ class OpenAIBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
-        api_key: str,
-        open_ai_model: Optional[str],
-        json_output: Optional[Dict[str, str]],
+        openai_api_key: str,
+        openai_model: Optional[str],
+        json_output_format: Optional[Dict[str, str]],
         image_detail: Literal["low", "high", "auto"],
         max_tokens: int,
     ) -> BlockResult:
-        if json_output:
+        if json_output_format:
             prompt = (
                 f"{prompt}\n\nVALID response format is JSON:\n"
-                f"{json.dumps(json_output, indent=4)}"
+                f"{json.dumps(json_output_format, indent=4)}"
             )
         inference_images = [i.to_inference_format() for i in images]
         raw_output = await run_gpt_4v_llm_prompting(
             image=inference_images,
             prompt=prompt,
-            remote_api_key=api_key,
+            openai_api_key=openai_api_key,
             lmm_config=LMMConfig(
-                gpt_model_version=open_ai_model,
+                gpt_model_version=openai_model,
                 gpt_image_detail=image_detail,
                 max_tokens=max_tokens,
             ),
         )
         structured_output = turn_raw_lmm_output_into_structured(
             raw_output=raw_output,
-            expected_output=json_output,
+            expected_output=json_output_format,
         )
         predictions = [
             {
@@ -288,17 +291,16 @@ class OpenAIBlock(WorkflowBlock):
 async def run_gpt_4v_llm_prompting(
     image: List[Dict[str, Any]],
     prompt: str,
-    remote_api_key: Optional[str],
+    openai_api_key: Optional[str],
     lmm_config: LMMConfig,
 ) -> List[Dict[str, str]]:
-    if remote_api_key is None:
+    if openai_api_key is None:
         raise ValueError(
             "Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
         )
-    print("lmm_config", lmm_config)
     return await execute_gpt_4v_requests(
         image=image,
-        remote_api_key=remote_api_key,
+        openai_api_key=openai_api_key,
         prompt=prompt,
         lmm_config=lmm_config,
     )
@@ -306,11 +308,11 @@ async def run_gpt_4v_llm_prompting(
 
 async def execute_gpt_4v_requests(
     image: List[dict],
-    remote_api_key: str,
+    openai_api_key: str,
     prompt: str,
     lmm_config: LMMConfig,
 ) -> List[Dict[str, str]]:
-    client = AsyncOpenAI(api_key=remote_api_key)
+    client = AsyncOpenAI(api_key=openai_api_key)
     results = []
     images_batches = list(
         make_batches(
@@ -344,7 +346,6 @@ async def execute_gpt_4v_request(
     base64_image = base64.b64encode(encode_image_to_jpeg_bytes(loaded_image)).decode(
         "ascii"
     )
-    print("lmm_config", lmm_config)
     response = await client.chat.completions.create(
         model=lmm_config.gpt_model_version,
         messages=[
@@ -385,9 +386,7 @@ def turn_raw_lmm_output_into_structured(
 def try_parse_lmm_output_to_json(
     output: str, expected_output: Dict[str, str]
 ) -> Union[list, dict]:
-    print("output", output)
     json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(output)
-    print("json_blocks_found", json_blocks_found)
     if len(json_blocks_found) == 0:
         return try_parse_json(output, expected_output=expected_output)
     result = []
@@ -395,7 +394,6 @@ def try_parse_lmm_output_to_json(
         result.append(
             try_parse_json(content=json_block, expected_output=expected_output)
         )
-    print("result", result)
     return result if len(result) > 1 else result[0]
 
 

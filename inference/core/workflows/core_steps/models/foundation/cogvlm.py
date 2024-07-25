@@ -73,10 +73,13 @@ class BlockManifest(WorkflowBlockManifest):
         description="Text prompt to the CogVLM model",
         examples=["my prompt", "$inputs.prompt"],
     )
-    json_output: Optional[Dict[str, str]] = Field(
+    json_output_format: Optional[Dict[str, str]] = Field(
         default=None,
         description="Holds dictionary that maps name of requested output field into its description",
-        examples=[{"count": "number of cats in the picture"}, "$inputs.json_output"],
+        examples=[
+            {"count": "number of cats in the picture"},
+            "$inputs.json_output_format",
+        ],
     )
 
     @classmethod
@@ -102,9 +105,9 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="structured_output", kind=[DICTIONARY_KIND]),
             OutputDefinition(name="raw_output", kind=[STRING_KIND]),
         ]
-        if self.json_output is None:
+        if self.json_output_format is None:
             return result
-        for key in self.json_output.keys():
+        for key in self.json_output_format.keys():
             result.append(OutputDefinition(name=key, kind=[WILDCARD_KIND]))
         return result
 
@@ -133,19 +136,19 @@ class CogVLMBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
-        json_output: Optional[Dict[str, str]],
+        json_output_format: Optional[Dict[str, str]],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return await self.run_locally(
                 images=images,
                 prompt=prompt,
-                json_output=json_output,
+                json_output_format=json_output_format,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             return await self.run_remotely(
                 images=images,
                 prompt=prompt,
-                json_output=json_output,
+                json_output_format=json_output_format,
             )
         else:
             raise ValueError(
@@ -156,12 +159,12 @@ class CogVLMBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
-        json_output: Optional[Dict[str, str]],
+        json_output_format: Optional[Dict[str, str]],
     ) -> BlockResult:
-        if json_output:
+        if json_output_format:
             prompt = (
                 f"{prompt}\n\nVALID response format is JSON:\n"
-                f"{json.dumps(json_output, indent=4)}"
+                f"{json.dumps(json_output_format, indent=4)}"
             )
         images_prepared_for_processing = [
             image.to_inference_format(numpy_preferred=True) for image in images
@@ -174,7 +177,7 @@ class CogVLMBlock(WorkflowBlock):
         )
         structured_output = turn_raw_lmm_output_into_structured(
             raw_output=raw_output,
-            expected_output=json_output,
+            expected_output=json_output_format,
         )
         predictions = [
             {
@@ -196,12 +199,12 @@ class CogVLMBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
-        json_output: Optional[Dict[str, str]],
+        json_output_format: Optional[Dict[str, str]],
     ) -> BlockResult:
-        if json_output:
+        if json_output_format:
             prompt = (
                 f"{prompt}\n\nVALID response format is JSON:\n"
-                f"{json.dumps(json_output, indent=4)}"
+                f"{json.dumps(json_output_format, indent=4)}"
             )
         inference_images = [i.to_inference_format() for i in images]
         raw_output = await get_cogvlm_generations_from_remote_api(
@@ -211,7 +214,7 @@ class CogVLMBlock(WorkflowBlock):
         )
         structured_output = turn_raw_lmm_output_into_structured(
             raw_output=raw_output,
-            expected_output=json_output,
+            expected_output=json_output_format,
         )
         predictions = [
             {
