@@ -100,7 +100,10 @@ def convert_inference_detections_batch_to_sv_detections(
         detections[DETECTION_ID_KEY] = np.array(detection_ids)
         detections[PARENT_ID_KEY] = np.array(parent_ids)
         detections[IMAGE_DIMENSIONS_KEY] = np.array([[height, width]] * len(detections))
-        detections[INFERENCE_ID_KEY] = np.array([p[INFERENCE_ID_KEY]] * len(detections))
+        if INFERENCE_ID_KEY in p:
+            detections[INFERENCE_ID_KEY] = np.array(
+                [p[INFERENCE_ID_KEY]] * len(detections)
+            )
         batch_of_detections.append(detections)
     return batch_of_detections
 

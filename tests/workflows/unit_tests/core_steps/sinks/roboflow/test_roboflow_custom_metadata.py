@@ -1,6 +1,6 @@
 import hashlib
 from unittest import mock
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import BackgroundTasks
@@ -30,7 +30,7 @@ def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
     ), "Expected return value from the cache to be returned"
 
 
-@mock.patch(
+@patch(
     "inference.core.workflows.core_steps.sinks.roboflow.roboflow_custom_metadata.get_roboflow_workspace"
 )
 def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
@@ -55,7 +55,7 @@ def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     ), "Expected retrieved workspace to be saved in cache"
 
 
-@mock.patch(
+@patch(
     "inference.core.workflows.core_steps.sinks.roboflow.roboflow_custom_metadata.add_custom_metadata"
 )
 def test_add_custom_metadata_request_success(
@@ -82,7 +82,7 @@ def test_add_custom_metadata_request_success(
     assert result is True, "Expected metadata to be added successfully"
 
 
-@mock.patch(
+@patch(
     "inference.core.workflows.core_steps.sinks.roboflow.roboflow_custom_metadata.add_custom_metadata"
 )
 def test_add_custom_metadata_request_failure(
@@ -123,7 +123,7 @@ async def test_run_when_api_key_is_not_specified() -> None:
         _ = await block.run(
             fire_and_forget=True,
             field_name="location",
-            field_value="toronto",
+            field_value=["toronto"],
             predictions=[{"inference_id": "id1"}],
         )
 
@@ -141,7 +141,7 @@ async def test_run_when_no_inference_ids() -> None:
     result = await block.run(
         fire_and_forget=True,
         field_name="location",
-        field_value="toronto",
+        field_value=["toronto"],
         predictions=[],
     )
 
@@ -168,7 +168,7 @@ async def test_run_when_no_field_name() -> None:
     result = await block.run(
         fire_and_forget=True,
         field_name=None,
-        field_value="toronto",
+        field_value=["toronto"],
         predictions=[{"inference_id": "id1"}],
     )
 
@@ -210,7 +210,7 @@ async def test_run_when_no_field_value() -> None:
 
 
 @pytest.mark.asyncio
-@mock.patch(
+@patch(
     "inference.core.workflows.core_steps.sinks.roboflow.roboflow_custom_metadata.add_custom_metadata_request"
 )
 async def test_run_when_fire_and_forget(
@@ -229,7 +229,7 @@ async def test_run_when_fire_and_forget(
     result = await block.run(
         fire_and_forget=True,
         field_name="location",
-        field_value="toronto",
+        field_value=["toronto"],
         predictions=[{"inference_id": "id1"}],
     )
 
@@ -245,7 +245,7 @@ async def test_run_when_fire_and_forget(
 
 
 @pytest.mark.asyncio
-@mock.patch(
+@patch(
     "inference.core.workflows.core_steps.sinks.roboflow.roboflow_custom_metadata.add_custom_metadata_request"
 )
 async def test_run_when_not_fire_and_forget(
@@ -263,7 +263,7 @@ async def test_run_when_not_fire_and_forget(
     result = await block.run(
         fire_and_forget=False,
         field_name="location",
-        field_value="toronto",
+        field_value=["toronto"],
         predictions=[{"inference_id": "id1"}],
     )
 

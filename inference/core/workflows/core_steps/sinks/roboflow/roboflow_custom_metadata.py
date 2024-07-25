@@ -136,7 +136,6 @@ class RoboflowCustomMetadataBlock(WorkflowBlock):
                 "retrieve one."
             )
         inference_ids = [p[INFERENCE_ID_KEY] for p in predictions]
-        inference_ids = list(set(np.concatenate(inference_ids).tolist()))
         if len(inference_ids) == 0:
             return [
                 {
@@ -145,6 +144,7 @@ class RoboflowCustomMetadataBlock(WorkflowBlock):
                     "message": "Custom metadata upload failed because no inference_ids were received",
                 }
             ]
+        inference_ids = list(set(np.concatenate(inference_ids).tolist()))
         if field_name is None:
             return [
                 {

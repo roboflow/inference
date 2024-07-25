@@ -140,7 +140,6 @@ def add_custom_metadata(
             ]
         },
     )
-    print(f"response: {response.json()}")
     api_key_safe_raise_for_status(response=response)
     return True
 
