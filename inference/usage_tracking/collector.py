@@ -298,7 +298,20 @@ class UsageCollector:
         if ip_address:
             ip_address_hash_hex = UsageCollector._hash(ip_address)
         else:
-            ip_address: str = socket.gethostbyname(socket.gethostname())
+            try:
+                ip_address: str = socket.gethostbyname(socket.gethostname())
+            except:
+                s = None
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    s.connect(("8.8.8.8", 80))
+                    ip_address = s.getsockname()[0]
+                except:
+                    ip_address: str = socket.gethostbyname("localhost")
+
+                if s:
+                    s.close()
+
             ip_address_hash_hex = UsageCollector._hash(ip_address)
 
         if not time_ns:
