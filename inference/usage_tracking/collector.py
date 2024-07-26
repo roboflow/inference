@@ -35,7 +35,6 @@ UsagePayload = Union[APIKeyUsage, ResourceDetails, SystemDetails]
 
 class UsageCollector:
     _lock = Lock()
-    _async_lock = asyncio.Lock()
 
     def __new__(cls, *args, **kwargs):
         with UsageCollector._lock:
@@ -48,6 +47,13 @@ class UsageCollector:
         with UsageCollector._lock:
             if self._queue:
                 return
+
+        # Async lock only for async protection, should not be shared between threads
+        self._async_lock = None
+        try:
+            self._async_lock = asyncio.Lock()
+        except Exception as exc:
+            logger.debug("Failed to create async lock %s", exc)
 
         self._exec_session_id = f"{time.time_ns()}_{uuid4().hex[:4]}"
 
@@ -452,7 +458,19 @@ class UsageCollector:
         resource_id: Optional[str] = None,
         fps: float = 0,
     ) -> DefaultDict[str, Any]:
-        async with UsageCollector._async_lock:
+        if self._async_lock:
+            async with self._async_lock:
+                self.record_usage(
+                    source=source,
+                    category=category,
+                    frames=frames,
+                    enterprise=enterprise,
+                    api_key=api_key,
+                    resource_details=resource_details,
+                    resource_id=resource_id,
+                    fps=fps,
+                )
+        else:
             self.record_usage(
                 source=source,
                 category=category,
@@ -549,7 +567,10 @@ class UsageCollector:
         self._flush_queue()
 
     async def async_push_usage_payloads(self):
-        async with UsageCollector._async_lock:
+        if self._async_lock:
+            async with self._async_lock:
+                self.push_usage_payloads()
+        else:
             self.push_usage_payloads()
 
     @staticmethod
