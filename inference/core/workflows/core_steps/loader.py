@@ -81,6 +81,7 @@ from inference.core.workflows.core_steps.transformations.perspective_correction 
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
 )
+from inference.core.workflows.core_steps.utils.dominant_color import DominantColorBlock
 from inference.core.workflows.core_steps.visualizations.background_color import (
     BackgroundColorVisualizationBlock,
 )
@@ -229,6 +230,7 @@ def load_blocks() -> List[
         PixelateVisualizationBlock,
         PolygonVisualizationBlock,
         TriangleVisualizationBlock,
+        DominantColorBlock,
     ]
 
 
