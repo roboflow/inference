@@ -4,7 +4,6 @@ import json
 import re
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from openai import AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
@@ -14,7 +13,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
+from inference.core.utils.image_utils import load_image
 from inference.core.workflows.constants import PARENT_ID_KEY, ROOT_PARENT_ID_KEY
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import load_core_model
@@ -44,76 +43,43 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.http.utils.iterables import make_batches
 
-GPT_4V_MODEL_TYPE = "gpt_4v"
-COG_VLM_MODEL_TYPE = "cog_vlm"
 NOT_DETECTED_VALUE = "not_detected"
 
 JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json\n([\s\S]*?)\n```")
 
-
-class LMMConfig(BaseModel):
-    max_tokens: int = Field(default=450)
-    gpt_image_detail: Literal["low", "high", "auto"] = Field(
-        default="auto",
-        description="To be used for GPT-4V only.",
-    )
-    gpt_model_version: str = Field(default="gpt-4o")
-
-
 LONG_DESCRIPTION = """
-Ask a question to a Large Multimodal Model (LMM) with an image and text.
+Ask a question to CogVLM, an open source vision-language model.
 
-You can specify arbitrary text prompts to an LMMBlock.
+This model requires a GPU and can only be run on self-hosted devices, and is not available on the Roboflow Hosted API.
 
-The LLMBlock supports two LMMs:
-
-- OpenAI's GPT-4 with Vision, and;
-- CogVLM.
-
-You need to provide your OpenAI API key to use the GPT-4 with Vision model. You do not 
-need to provide an API key to use CogVLM.
-
-_If you want to classify an image into one or more categories, we recommend using the 
-dedicated LMMForClassificationBlock._
+_This model was previously part of the LMM block._
 """
 
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "LMM",
-            "short_description": "Run a large multimodal model such as ChatGPT-4v or CogVLM.",
+            "name": "CogVLM",
+            "short_description": "Run a self-hosted vision language model",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
-            "deprecated": True,
+            "search_keywords": ["LMM"],
         }
     )
-    type: Literal["LMM"]
+    type: Literal["CogVLM"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     prompt: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
-        description="Holds unconstrained text prompt to LMM mode",
+        description="Text prompt to the CogVLM model",
         examples=["my prompt", "$inputs.prompt"],
     )
-    lmm_type: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
-    ] = Field(
-        description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
-    )
-    lmm_config: LMMConfig = Field(
-        default_factory=lambda: LMMConfig(), description="Configuration of LMM"
-    )
-    remote_api_key: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]
-    ] = Field(
-        default=None,
-        description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
-        examples=["xxx-xxx", "$inputs.api_key"],
-    )
-    json_output: Optional[Dict[str, str]] = Field(
+    json_output_format: Optional[Dict[str, str]] = Field(
         default=None,
         description="Holds dictionary that maps name of requested output field into its description",
-        examples=[{"count": "number of cats in the picture"}, "$inputs.json_output"],
+        examples=[
+            {"count": "number of cats in the picture"},
+            "$inputs.json_output_format",
+        ],
     )
 
     @classmethod
@@ -139,14 +105,14 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="structured_output", kind=[DICTIONARY_KIND]),
             OutputDefinition(name="raw_output", kind=[STRING_KIND]),
         ]
-        if self.json_output is None:
+        if self.json_output_format is None:
             return result
-        for key in self.json_output.keys():
+        for key in self.json_output_format.keys():
             result.append(OutputDefinition(name=key, kind=[WILDCARD_KIND]))
         return result
 
 
-class LMMBlock(WorkflowBlock):
+class CogVLMBlock(WorkflowBlock):
 
     def __init__(
         self,
@@ -170,28 +136,19 @@ class LMMBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
-        lmm_type: str,
-        lmm_config: LMMConfig,
-        remote_api_key: Optional[str],
-        json_output: Optional[Dict[str, str]],
+        json_output_format: Optional[Dict[str, str]],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return await self.run_locally(
                 images=images,
                 prompt=prompt,
-                lmm_type=lmm_type,
-                lmm_config=lmm_config,
-                remote_api_key=remote_api_key,
-                json_output=json_output,
+                json_output_format=json_output_format,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             return await self.run_remotely(
                 images=images,
                 prompt=prompt,
-                lmm_type=lmm_type,
-                lmm_config=lmm_config,
-                remote_api_key=remote_api_key,
-                json_output=json_output,
+                json_output_format=json_output_format,
             )
         else:
             raise ValueError(
@@ -202,36 +159,25 @@ class LMMBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
-        lmm_type: str,
-        lmm_config: LMMConfig,
-        remote_api_key: Optional[str],
-        json_output: Optional[Dict[str, str]],
+        json_output_format: Optional[Dict[str, str]],
     ) -> BlockResult:
-        if json_output:
+        if json_output_format:
             prompt = (
                 f"{prompt}\n\nVALID response format is JSON:\n"
-                f"{json.dumps(json_output, indent=4)}"
+                f"{json.dumps(json_output_format, indent=4)}"
             )
         images_prepared_for_processing = [
             image.to_inference_format(numpy_preferred=True) for image in images
         ]
-        if lmm_type == GPT_4V_MODEL_TYPE:
-            raw_output = await run_gpt_4v_llm_prompting(
-                image=images_prepared_for_processing,
-                prompt=prompt,
-                remote_api_key=remote_api_key,
-                lmm_config=lmm_config,
-            )
-        else:
-            raw_output = await get_cogvlm_generations_locally(
-                image=images_prepared_for_processing,
-                prompt=prompt,
-                model_manager=self._model_manager,
-                api_key=self._api_key,
-            )
+        raw_output = await get_cogvlm_generations_locally(
+            image=images_prepared_for_processing,
+            prompt=prompt,
+            model_manager=self._model_manager,
+            api_key=self._api_key,
+        )
         structured_output = turn_raw_lmm_output_into_structured(
             raw_output=raw_output,
-            expected_output=json_output,
+            expected_output=json_output_format,
         )
         predictions = [
             {
@@ -253,33 +199,22 @@ class LMMBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
-        lmm_type: str,
-        lmm_config: LMMConfig,
-        remote_api_key: Optional[str],
-        json_output: Optional[Dict[str, str]],
+        json_output_format: Optional[Dict[str, str]],
     ) -> BlockResult:
-        if json_output:
+        if json_output_format:
             prompt = (
                 f"{prompt}\n\nVALID response format is JSON:\n"
-                f"{json.dumps(json_output, indent=4)}"
+                f"{json.dumps(json_output_format, indent=4)}"
             )
         inference_images = [i.to_inference_format() for i in images]
-        if lmm_type == GPT_4V_MODEL_TYPE:
-            raw_output = await run_gpt_4v_llm_prompting(
-                image=inference_images,
-                prompt=prompt,
-                remote_api_key=remote_api_key,
-                lmm_config=lmm_config,
-            )
-        else:
-            raw_output = await get_cogvlm_generations_from_remote_api(
-                image=inference_images,
-                prompt=prompt,
-                api_key=self._api_key,
-            )
+        raw_output = await get_cogvlm_generations_from_remote_api(
+            image=inference_images,
+            prompt=prompt,
+            api_key=self._api_key,
+        )
         structured_output = turn_raw_lmm_output_into_structured(
             raw_output=raw_output,
-            expected_output=json_output,
+            expected_output=json_output_format,
         )
         predictions = [
             {
@@ -296,86 +231,6 @@ class LMMBlock(WorkflowBlock):
                 image.workflow_root_ancestor_metadata.parent_id
             )
         return predictions
-
-
-async def run_gpt_4v_llm_prompting(
-    image: List[Dict[str, Any]],
-    prompt: str,
-    remote_api_key: Optional[str],
-    lmm_config: LMMConfig,
-) -> List[Dict[str, str]]:
-    if remote_api_key is None:
-        raise ValueError(
-            "Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
-        )
-    return await execute_gpt_4v_requests(
-        image=image,
-        remote_api_key=remote_api_key,
-        prompt=prompt,
-        lmm_config=lmm_config,
-    )
-
-
-async def execute_gpt_4v_requests(
-    image: List[dict],
-    remote_api_key: str,
-    prompt: str,
-    lmm_config: LMMConfig,
-) -> List[Dict[str, str]]:
-    client = AsyncOpenAI(api_key=remote_api_key)
-    results = []
-    images_batches = list(
-        make_batches(
-            iterable=image,
-            batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-        )
-    )
-    for image_batch in images_batches:
-        batch_coroutines = []
-        for image in image_batch:
-            coroutine = execute_gpt_4v_request(
-                client=client,
-                image=image,
-                prompt=prompt,
-                lmm_config=lmm_config,
-            )
-            batch_coroutines.append(coroutine)
-        batch_results = await asyncio.gather(*batch_coroutines)
-        results.extend(batch_results)
-    return results
-
-
-async def execute_gpt_4v_request(
-    client: AsyncOpenAI,
-    image: Dict[str, Any],
-    prompt: str,
-    lmm_config: LMMConfig,
-) -> Dict[str, str]:
-    loaded_image, _ = load_image(image)
-    image_metadata = {"width": loaded_image.shape[1], "height": loaded_image.shape[0]}
-    base64_image = base64.b64encode(encode_image_to_jpeg_bytes(loaded_image)).decode(
-        "ascii"
-    )
-    response = await client.chat.completions.create(
-        model=lmm_config.gpt_model_version,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}",
-                            "detail": lmm_config.gpt_image_detail,
-                        },
-                    },
-                ],
-            }
-        ],
-        max_tokens=lmm_config.max_tokens,
-    )
-    return {"content": response.choices[0].message.content, "image": image_metadata}
 
 
 async def get_cogvlm_generations_locally(
@@ -418,8 +273,7 @@ async def get_cogvlm_generations_from_remote_api(
 ) -> List[Dict[str, Any]]:
     if WORKFLOWS_REMOTE_API_TARGET == "hosted":
         raise ValueError(
-            f"Chosen remote execution of CogVLM model in Roboflow Hosted API mode, but remote execution "
-            f"is only possible for self-hosted option."
+            f"CogVLM requires a GPU and can only be executed remotely in self-hosted mode. It is not available on the Roboflow Hosted API."
         )
     client = InferenceHTTPClient.init(
         api_url=LOCAL_INFERENCE_API_URL,
