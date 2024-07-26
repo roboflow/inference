@@ -1693,21 +1693,6 @@ def test_get_workflow_specification_when_connection_error_occurs(
     get_mock: MagicMock,
 ) -> None:
     # given
-    get_mock.side_effect = ConnectionError()
-
-    # when
-    with pytest.raises(RoboflowAPIConnectionError):
-        _ = get_workflow_specification(
-            api_key="my_api_key",
-            workspace_id="my_workspace",
-            workflow_id="some_workflow",
-        )
-
-@mock.patch.object(roboflow_api.requests, "get")
-def test_get_workflow_specification_when_connection_error_occurs(
-    get_mock: MagicMock,
-) -> None:
-    # given
     delete_cached_workflow_response_if_exists("my_workspace", "some_workflow")
     get_mock.side_effect = ConnectionError()
 
