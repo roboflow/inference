@@ -79,6 +79,7 @@ from inference.core.workflows.core_steps.transformations.perspective_correction 
 from inference.core.workflows.core_steps.transformations.relative_static_crop import (
     RelativeStaticCropBlock,
 )
+from inference.core.workflows.core_steps.utils.dominant_color import DominantColorBlock
 from inference.core.workflows.core_steps.visualizations.background_color import (
     BackgroundColorVisualizationBlock,
 )
@@ -123,9 +124,6 @@ from inference.core.workflows.core_steps.visualizations.polygon import (
 )
 from inference.core.workflows.core_steps.visualizations.triangle import (
     TriangleVisualizationBlock,
-)
-from inference.core.workflows.core_steps.utils.dominant_color import (
-    DominantColorBlock,
 )
 from inference.core.workflows.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
