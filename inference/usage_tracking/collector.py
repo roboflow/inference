@@ -48,20 +48,12 @@ class UsageCollector:
             if self._queue:
                 return
 
-        # Some environments might cause asyncio.Lock to fail due to missing event loop
-        event_loop = None
-        try:
-            event_loop = asyncio.get_running_loop()
-        except Exception:
-            pass
-        if not event_loop:
-            try:
-                event_loop = asyncio.new_event_loop()
-            except Exception:
-                pass
+        # Async lock only for async protection, should not be shared between threads
         self._async_lock = None
-        if event_loop:
-            self._async_lock = asyncio.Lock(event_loop)
+        try:
+            self._async_lock = asyncio.Lock()
+        except Exception as exc:
+            logger.debug("Failed to create async lock %s", exc)
 
         self._exec_session_id = f"{time.time_ns()}_{uuid4().hex[:4]}"
 
