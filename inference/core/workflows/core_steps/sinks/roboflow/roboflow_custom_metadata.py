@@ -3,9 +3,9 @@ from functools import partial
 from typing import List, Literal, Optional, Type, Union
 
 import numpy as np
+import supervision as sv
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
-import supervision as sv
 
 from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import add_custom_metadata, get_roboflow_workspace
