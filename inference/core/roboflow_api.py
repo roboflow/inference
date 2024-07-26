@@ -31,6 +31,7 @@ from inference.core.exceptions import (
     RoboflowAPIUnsuccessfulRequestError,
     WorkspaceLoadError,
 )
+from inference.core.utils.file_system import sanitize_path_segment
 from inference.core.utils.requests import api_key_safe_raise_for_status
 from inference.core.utils.url_utils import wrap_url
 
@@ -358,8 +359,10 @@ def get_roboflow_labeling_jobs(
 
 
 def get_workflow_cache_file(workspace_id: WorkspaceID, workflow_id: str):
+    sanitized_workspace_id = sanitize_path_segment(workspace_id)
+    sanitized_workflow_id = sanitize_path_segment(workflow_id)
     return os.path.join(
-        MODEL_CACHE_DIR, "workflow", workspace_id, f"{workflow_id}.json"
+        MODEL_CACHE_DIR, "workflow", sanitized_workspace_id, f"{sanitized_workflow_id}.json"
     )
 
 
