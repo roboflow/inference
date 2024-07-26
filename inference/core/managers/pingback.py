@@ -122,7 +122,7 @@ class PingbackInfo:
                     GLOBAL_INFERENCE_SERVER_ID, model_id, min=start, max=now
                 )
                 all_data["inference_results"] = all_data["inference_results"] + results
-            res = requests.post(wrap_url(METRICS_URL), json=all_data, timeout=5)
+            res = requests.post(wrap_url(METRICS_URL), json=all_data, timeout=10)
             try:
                 api_key_safe_raise_for_status(response=res)
                 logger.debug(
