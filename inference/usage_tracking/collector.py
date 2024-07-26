@@ -541,7 +541,7 @@ class UsageCollector:
                 if api_key not in api_keys_failed:
                     del payload[api_key]
             if payload:
-                logger.warning("Enqueuing back unsent payload")
+                logger.debug("Enqueuing back unsent payload")
                 self._enqueue_payload(payload=payload)
 
     def push_usage_payloads(self):
