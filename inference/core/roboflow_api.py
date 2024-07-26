@@ -362,7 +362,10 @@ def get_workflow_cache_file(workspace_id: WorkspaceID, workflow_id: str):
     sanitized_workspace_id = sanitize_path_segment(workspace_id)
     sanitized_workflow_id = sanitize_path_segment(workflow_id)
     return os.path.join(
-        MODEL_CACHE_DIR, "workflow", sanitized_workspace_id, f"{sanitized_workflow_id}.json"
+        MODEL_CACHE_DIR,
+        "workflow",
+        sanitized_workspace_id,
+        f"{sanitized_workflow_id}.json",
     )
 
 
