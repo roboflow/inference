@@ -124,6 +124,9 @@ from inference.core.workflows.core_steps.visualizations.polygon import (
 from inference.core.workflows.core_steps.visualizations.triangle import (
     TriangleVisualizationBlock,
 )
+from inference.core.workflows.core_steps.utils.dominant_color import (
+    DominantColorBlock,
+)
 from inference.core.workflows.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
     BATCH_OF_BOOLEAN_KIND,
@@ -225,6 +228,7 @@ def load_blocks() -> List[
         PixelateVisualizationBlock,
         PolygonVisualizationBlock,
         TriangleVisualizationBlock,
+        DominantColorBlock,
     ]
 
 
