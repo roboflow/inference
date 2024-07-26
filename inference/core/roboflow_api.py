@@ -17,7 +17,7 @@ from inference.core.entities.types import (
     VersionID,
     WorkspaceID,
 )
-from inference.core.env import API_BASE_URL
+from inference.core.env import API_BASE_URL, MODEL_CACHE_DIR
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
@@ -357,6 +357,42 @@ def get_roboflow_labeling_jobs(
     return _get_from_url(url=api_url)
 
 
+def get_workflow_cache_file(workspace_id: WorkspaceID, workflow_id: str):
+    return os.path.join(
+        MODEL_CACHE_DIR, "workflow", workspace_id, f"{workflow_id}.json"
+    )
+
+
+def cache_workflow_response(
+    workspace_id: WorkspaceID, workflow_id: str, response: dict
+):
+    workflow_cache_file = get_workflow_cache_file(workspace_id, workflow_id)
+    workflow_cache_dir = os.path.dirname(workflow_cache_file)
+    if not os.path.exists(workflow_cache_dir):
+        os.makedirs(workflow_cache_dir, exist_ok=True)
+    with open(workflow_cache_file, "w") as f:
+        json.dump(response, f)
+
+
+def delete_cached_workflow_response_if_exists(
+    workspace_id: WorkspaceID, workflow_id: str
+) -> None:
+    workflow_cache_file = get_workflow_cache_file(workspace_id, workflow_id)
+    if os.path.exists(workflow_cache_file):
+        os.remove(workflow_cache_file)
+
+
+def load_cached_workflow_response(workspace_id: WorkspaceID, workflow_id: str) -> dict:
+    workflow_cache_file = get_workflow_cache_file(workspace_id, workflow_id)
+    if not os.path.exists(workflow_cache_file):
+        return None
+    try:
+        with open(workflow_cache_file, "r") as f:
+            return json.load(f)
+    except:
+        delete_cached_workflow_response_if_exists(workspace_id, workflow_id)
+
+
 @wrap_roboflow_api_errors()
 def get_workflow_specification(
     api_key: str,
@@ -367,7 +403,13 @@ def get_workflow_specification(
         url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_id}",
         params=[("api_key", api_key)],
     )
-    response = _get_from_url(url=api_url)
+    try:
+        response = _get_from_url(url=api_url)
+        cache_workflow_response(workspace_id, workflow_id, response)
+    except (requests.exceptions.ConnectionError, ConnectionError) as error:
+        response = load_cached_workflow_response(workspace_id, workflow_id)
+        if response is None:
+            raise error
     if "workflow" not in response or "config" not in response["workflow"]:
         raise MalformedWorkflowResponseError(
             f"Could not find workflow specification in API response"
