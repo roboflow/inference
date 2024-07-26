@@ -89,6 +89,7 @@ class PingbackInfo:
                 "interval",
                 seconds=METRICS_INTERVAL,
                 args=[self.model_manager],
+                replace_existing=True,
             )
             self.scheduler.start()
         except Exception as e:

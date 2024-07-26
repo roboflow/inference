@@ -5,17 +5,17 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
+import supervision as sv
 
 from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import add_custom_metadata, get_roboflow_workspace
 from inference.core.workflows.constants import INFERENCE_ID_KEY
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.entities.base import Batch, OutputDefinition
 from inference.core.workflows.entities.types import (
     BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_STRING_KIND,
     BOOLEAN_KIND,
     STRING_KIND,
     StepOutputSelector,
@@ -118,15 +118,8 @@ class RoboflowCustomMetadataBlock(WorkflowBlock):
         self,
         fire_and_forget: bool,
         field_name: str,
-        field_value: StepOutputSelector(kind=[BATCH_OF_STRING_KIND]),
-        predictions: StepOutputSelector(
-            kind=[
-                BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-                BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-                BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
-            ]
-        ),
+        field_value: Batch[str],
+        predictions: Batch[sv.Detections],
     ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
@@ -135,7 +128,7 @@ class RoboflowCustomMetadataBlock(WorkflowBlock):
                 "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
                 "retrieve one."
             )
-        inference_ids = [p[INFERENCE_ID_KEY] for p in predictions]
+        inference_ids: List[np.ndarray] = [p[INFERENCE_ID_KEY] for p in predictions]
         if len(inference_ids) == 0:
             return [
                 {
@@ -144,7 +137,7 @@ class RoboflowCustomMetadataBlock(WorkflowBlock):
                     "message": "Custom metadata upload failed because no inference_ids were received",
                 }
             ]
-        inference_ids = list(set(np.concatenate(inference_ids).tolist()))
+        inference_ids: List[str] = list(set(np.concatenate(inference_ids).tolist()))
         if field_name is None:
             return [
                 {
