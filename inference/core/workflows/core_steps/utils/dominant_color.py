@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import List, Literal, Optional, Type, Union
+
 import numpy as np
-from sklearn.cluster import MiniBatchKMeans
-
-
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from sklearn.cluster import MiniBatchKMeans
 
 from inference.core.workflows.core_steps.visualizations.utils import str_to_color
 from inference.core.workflows.entities.base import OutputDefinition, WorkflowImageData
@@ -25,6 +24,7 @@ from inference.core.workflows.prototypes.block import (
 TYPE: str = "DominantColor"
 SHORT_DESCRIPTION: str = "Get the dominant color of an image."
 LONG_DESCRIPTION: str = "Get the dominant color of an image as a list of RGB values."
+
 
 class DominantColorManifest(WorkflowBlockManifest):
     type: Literal[f"{TYPE}"]
@@ -59,12 +59,7 @@ class DominantColorBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[DominantColorManifest]:
         return DominantColorManifest
 
-    async def run(
-        self,
-        image: WorkflowImageData,
-        *args,
-        **kwargs
-    ) -> BlockResult:
+    async def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
 
         np_image = image.numpy_image
         pixels = np_image.reshape(-1, 3).astype(np.float32)
