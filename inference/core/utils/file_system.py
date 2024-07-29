@@ -1,5 +1,6 @@
 import json
 import os.path
+import re
 from typing import List, Optional, Union
 
 
@@ -63,3 +64,8 @@ def ensure_parent_dir_exists(path: str) -> None:
 def ensure_write_is_allowed(path: str, allow_override: bool) -> None:
     if os.path.exists(path) and not allow_override:
         raise RuntimeError(f"File {path} exists and override is forbidden.")
+
+
+def sanitize_path_segment(path_segment: str) -> str:
+    # Keep only letters, numbers, underscores and dashes
+    return re.sub(r"[^A-Za-z0-9_-]", "_", path_segment)
