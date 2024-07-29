@@ -118,6 +118,34 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
 
 
 @wrap_roboflow_api_errors()
+def add_custom_metadata(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    inference_ids: List[str],
+    field_name: str,
+    field_value: str,
+) -> bool:
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{workspace_id}/inference-stats/metadata",
+        params=[("api_key", api_key), ("nocache", "true")],
+    )
+    response = requests.post(
+        url=api_url,
+        json={
+            "data": [
+                {
+                    "inference_ids": inference_ids,
+                    "field_name": field_name,
+                    "field_value": field_value,
+                }
+            ]
+        },
+    )
+    api_key_safe_raise_for_status(response=response)
+    return True
+
+
+@wrap_roboflow_api_errors()
 def get_roboflow_dataset_type(
     api_key: str, workspace_id: WorkspaceID, dataset_id: DatasetID
 ) -> TaskType:
