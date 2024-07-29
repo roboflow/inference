@@ -429,6 +429,7 @@ class UsageCollector:
         api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: str = "",
+        usage_inference_test_run: bool = False,
         fps: float = 0,
         enterprise: bool = False,
     ):
@@ -441,9 +442,9 @@ class UsageCollector:
             if not source_usage["timestamp_start"]:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
-            source_usage["processed_frames"] += frames
+            source_usage["processed_frames"] += frames if not usage_inference_test_run else 0
             source_usage["fps"] = round(fps, 2)
-            source_usage["source_duration"] += frames / fps if fps else 0
+            source_usage["source_duration"] += frames / fps if fps and not usage_inference_test_run else 0
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
             source_usage["api_key_hash"] = api_key_hash
@@ -459,6 +460,7 @@ class UsageCollector:
         api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: str = "",
+        usage_inference_test_run: bool = False,
         fps: float = 0,
     ) -> DefaultDict[str, Any]:
         if self._settings.opt_out and not enterprise:
@@ -481,6 +483,7 @@ class UsageCollector:
             api_key=api_key,
             resource_details=resource_details,
             resource_id=resource_id,
+            usage_inference_test_run=usage_inference_test_run,
             fps=fps,
             enterprise=enterprise,
         )
@@ -596,7 +599,7 @@ class UsageCollector:
                     logger.debug(
                         "Failed to send usage - got %s status code (%s)",
                         response.status_code,
-                        response.raw,
+                        response.content,
                     )
                     api_keys_hashes_failed.add(api_key_hash)
                     continue
@@ -637,6 +640,7 @@ class UsageCollector:
         usage_fps: float,
         usage_api_key: str,
         usage_workflow_id: str,
+        usage_inference_test_run: bool,
         func: Callable[[Any], Any],
         args: List[Any],
         kwargs: Dict[str, Any],
@@ -709,6 +713,7 @@ class UsageCollector:
             "category": category,
             "resource_details": resource_details,
             "resource_id": resource_id,
+            "usage_inference_test_run": usage_inference_test_run,
             "fps": usage_fps,
             "enterprise": enterprise,
         }
@@ -720,6 +725,7 @@ class UsageCollector:
             usage_fps: float = 0,
             usage_api_key: APIKey = "",
             usage_workflow_id: str = "",
+            usage_inference_test_run: bool = False,
             **kwargs,
         ):
             self.record_usage(
@@ -727,6 +733,7 @@ class UsageCollector:
                     usage_fps=usage_fps,
                     usage_api_key=usage_api_key,
                     usage_workflow_id=usage_workflow_id,
+                    usage_inference_test_run=usage_inference_test_run,
                     func=func,
                     args=args,
                     kwargs=kwargs,
@@ -740,6 +747,7 @@ class UsageCollector:
             usage_fps: float = 0,
             usage_api_key: APIKey = "",
             usage_workflow_id: str = "",
+            usage_inference_test_run: bool = False,
             **kwargs,
         ):
             await self.async_record_usage(
@@ -747,6 +755,7 @@ class UsageCollector:
                     usage_fps=usage_fps,
                     usage_api_key=usage_api_key,
                     usage_workflow_id=usage_workflow_id,
+                    usage_inference_test_run=usage_inference_test_run,
                     func=func,
                     args=args,
                     kwargs=kwargs,
