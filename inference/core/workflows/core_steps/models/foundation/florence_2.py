@@ -75,7 +75,7 @@ class BlockManifest(WorkflowBlockManifest):
     prompt: Union[
         WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]
     ] = Field(
-        description="The accompanying prompt for the task.",
+        description="The accompanying prompt for the task (comma separated).",
         examples=[["red apple", "blue soda can"], "$inputs.prompt"],
     )
     version: Union[
@@ -113,7 +113,7 @@ class Florence2ModelBlock(WorkflowBlock):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
-        self.model = Florence2("florence-2-base")
+        self.model = Florence2("florence-2-base/1")
         # CHECKPOINT = "microsoft/Florence-2-large"
         # REVISION = 'refs/pr/6'
         # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
