@@ -83,6 +83,16 @@ from inference.core.workflows.core_steps.visualizations.background_color import 
     BackgroundColorVisualizationBlock,
 )
 
+# FE Custom
+from inference.core.workflows.core_steps.utils.dominant_color import DominantColorBlock
+from inference.core.workflows.core_steps.utils.plc_modbus_tcp import ModbusTCPBlock
+# Traditional
+from inference.core.workflows.core_steps.traditional.blur import ImageBlurBlock
+from inference.core.workflows.core_steps.traditional.convertGrayscale import ConvertGrayscaleBlock
+from inference.core.workflows.core_steps.traditional.edgeDetection import EdgeDetectionBlock
+from inference.core.workflows.core_steps.traditional.treshold import ImageTresholdBlock
+from inference.core.workflows.core_steps.traditional.countours import ImageContoursBlock
+
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.blur import (
     BlurVisualizationBlock,
@@ -225,6 +235,13 @@ def load_blocks() -> List[
         PixelateVisualizationBlock,
         PolygonVisualizationBlock,
         TriangleVisualizationBlock,
+        DominantColorBlock,
+        ModbusTCPBlock,
+        ImageBlurBlock,
+        ConvertGrayscaleBlock,
+        EdgeDetectionBlock,
+        ImageTresholdBlock,
+        ImageContoursBlock,
     ]
 
 

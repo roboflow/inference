@@ -202,6 +202,20 @@ BATCH_OF_STRING_KIND = Kind(
     description="Batch of string values",
     docs=BATCH_OF_STRING_KIND_DOCS,
 )
+BATCH_OF_INTEGER_KIND_DOCS = f"""
+This kind represents batch of integer values.
+Examples:
+```
+[1, 2, 6]
+[9, 4]
+```
+{DOCS_NOTE_ABOUT_BATCH}
+"""
+BATCH_OF_INTEGER_KIND = Kind(
+    name="Batch[integer]",
+    description="Batch of integer values",
+    docs=BATCH_OF_INTEGER_KIND_DOCS,
+)
 BATCH_OF_TOP_CLASS_KIND_DOCS = f"""
 The kind represent top classes predicted by classification model - representing its predictions on batch of images.
 
