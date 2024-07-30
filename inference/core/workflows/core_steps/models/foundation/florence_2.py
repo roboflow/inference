@@ -113,12 +113,13 @@ class Florence2ModelBlock(WorkflowBlock):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
-        CHECKPOINT = "microsoft/Florence-2-large"
-        REVISION = 'refs/pr/6'
-        DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = Florence2("florence-2-base")
+        # CHECKPOINT = "microsoft/Florence-2-large"
+        # REVISION = 'refs/pr/6'
+        # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.model = AutoModelForCausalLM.from_pretrained(CHECKPOINT, trust_remote_code=True).eval().to(DEVICE)
-        self.processor = AutoProcessor.from_pretrained(CHECKPOINT, trust_remote_code=True)
+        # self.model = AutoModelForCausalLM.from_pretrained(CHECKPOINT, trust_remote_code=True).eval().to(DEVICE)
+        # self.processor = AutoProcessor.from_pretrained(CHECKPOINT, trust_remote_code=True)
 
 
     @classmethod
@@ -155,29 +156,29 @@ class Florence2ModelBlock(WorkflowBlock):
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
 
-    def run_example(self, task_prompt, image, text_input=None):
-        if text_input is None:
-            prompt = task_prompt
-        else:
-            prompt = task_prompt + text_input
-        print(prompt)
-        inputs = self.processor(text=prompt, images=image, return_tensors="pt")
-        generated_ids = self.model.generate(
-            input_ids=inputs["input_ids"].cuda(),
-            pixel_values=inputs["pixel_values"].cuda(),
-            max_new_tokens=1024,
-            early_stopping=False,
-            do_sample=False,
-            num_beams=3,
-        )
-        generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
-        parsed_answer = self.processor.post_process_generation(
-            generated_text, 
-            task=task_prompt, 
-            image_size=(image.width, image.height)
-        )
+    # def run_example(self, task_prompt, image, text_input=None):
+    #     if text_input is None:
+    #         prompt = task_prompt
+    #     else:
+    #         prompt = task_prompt + text_input
+    #     print(prompt)
+    #     inputs = self.processor(text=prompt, images=image, return_tensors="pt")
+    #     generated_ids = self.model.generate(
+    #         input_ids=inputs["input_ids"].cuda(),
+    #         pixel_values=inputs["pixel_values"].cuda(),
+    #         max_new_tokens=1024,
+    #         early_stopping=False,
+    #         do_sample=False,
+    #         num_beams=3,
+    #     )
+    #     generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
+    #     parsed_answer = self.processor.post_process_generation(
+    #         generated_text, 
+    #         task=task_prompt, 
+    #         image_size=(image.width, image.height)
+    #     )
 
-        return parsed_answer
+    #     return parsed_answer
 
     async def run_locally(
         self,
@@ -190,7 +191,7 @@ class Florence2ModelBlock(WorkflowBlock):
         images = [images] if not isinstance(images, list) else images
         for single_image in images:
             single_image = Image.fromarray(single_image.numpy_image)
-            parsed_answer = self.run_example(vision_task, single_image, "<and>".join(prompt))
+            parsed_answer = self.model.infer(single_image, "<CAPTION>")#self.run_example(vision_task, single_image, "<and>".join(prompt))
             preds = []
             for i, bbox in enumerate(parsed_answer[vision_task]["bboxes"]):
                 pred = {
