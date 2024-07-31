@@ -1,6 +1,6 @@
 import os.path
 from time import perf_counter
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import clip
 import numpy as np
@@ -127,7 +127,13 @@ class YOLOWorld(RoboflowCoreModel):
             bbox_array = np.array([box.xywh.tolist()[0] for box in results.boxes])
             conf_array = np.array([[float(box.conf)] for box in results.boxes])
             cls_array = np.array(
-                [self.get_cls_conf_array(int(box.cls)) for box in results.boxes]
+                [
+                    self.get_cls_conf_array(
+                        max_class_id=int(box.cls),
+                        max_class_confidence=float(box.conf),
+                    )
+                    for box in results.boxes
+                ]
             )
 
             pred_array = np.concatenate([bbox_array, conf_array, cls_array], axis=1)
@@ -224,7 +230,9 @@ class YOLOWorld(RoboflowCoreModel):
         """
         return ["yolo-world.pt"]
 
-    def get_cls_conf_array(self, class_id) -> list:
-        arr = [0] * len(self.class_names)
-        arr[class_id] = 1
+    def get_cls_conf_array(
+        self, max_class_id: int, max_class_confidence: float
+    ) -> List[float]:
+        arr = [0.0] * len(self.class_names)
+        arr[max_class_id] = max_class_confidence
         return arr

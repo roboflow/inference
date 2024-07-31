@@ -1,10 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
 from openai import BaseModel
 from pydantic import ConfigDict, Field
 
-from inference.core import logger
 from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.entities.types import FlowControl
 from inference.core.workflows.errors import BlockInterfaceError

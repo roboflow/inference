@@ -1,7 +1,7 @@
 import numpy as np
+import supervision as sv
 
 from inference.models import YOLOWorld
-import supervision as sv
 
 
 def test_yolo_world_v1_s_against_single_image(person_image: np.ndarray) -> None:
@@ -29,6 +29,46 @@ def test_yolo_world_v1_s_against_single_image(person_image: np.ndarray) -> None:
     detection_results = sv.Detections.from_inference(results)
 
     # then
+    assert len(detection_results) == len(
+        expected_detections
+    ), "Expected the same number of boxes"
+    assert np.allclose(
+        detection_results.xyxy, expected_detections.xyxy, atol=0.05
+    ), "Boxes coordinates detection differ"
+    assert np.allclose(
+        detection_results.confidence, expected_detections.confidence, atol=1e-4
+    ), "Confidences differ"
+    assert np.allclose(
+        detection_results.class_id, expected_detections.class_id
+    ), "Classes id differ"
+
+
+def test_yolo_world_v1_s_against_single_image_with_only_one_detected_box(
+    person_image: np.ndarray,
+) -> None:
+    # given
+    model = YOLOWorld(model_id="yolo_world/s")
+    model.set_classes(["person"])
+    expected_detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [273.18, 160.18, 358.61, 378.85],
+            ]
+        ),
+        confidence=np.array([0.9503]),
+        class_id=np.array([0]),
+    )
+
+    # when
+    results = model.infer(person_image, confidence=0.03).dict(
+        by_alias=True, exclude_none=True
+    )
+    detection_results = sv.Detections.from_inference(results)
+
+    # then
+    assert len(detection_results) == len(
+        expected_detections
+    ), "Expected the same number of boxes"
     assert np.allclose(
         detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
@@ -62,7 +102,11 @@ def test_yolo_world_v1_m_against_single_image(person_image: np.ndarray) -> None:
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)
+
     # then
+    assert len(detection_results) == len(
+        expected_detections
+    ), "Expected the same number of boxes"
     assert np.allclose(
         detection_results.xyxy,
         expected_detections.xyxy,
@@ -98,7 +142,11 @@ def test_yolo_world_v1_l_against_single_image(person_image: np.ndarray) -> None:
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)
+
     # then
+    assert len(detection_results) == len(
+        expected_detections
+    ), "Expected the same number of boxes"
     assert np.allclose(
         detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
@@ -132,7 +180,11 @@ def test_yolo_world_v1_x_against_single_image(person_image: np.ndarray) -> None:
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)
+
     # then
+    assert len(detection_results) == len(
+        expected_detections
+    ), "Expected the same number of boxes"
     assert np.allclose(
         detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
@@ -168,6 +220,9 @@ def test_yolo_world_v2_s_against_single_image(person_image: np.ndarray) -> None:
     detection_results = sv.Detections.from_inference(results)
 
     # then
+    assert len(detection_results) == len(
+        expected_detections
+    ), "Expected the same number of boxes"
     assert np.allclose(
         detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
@@ -202,6 +257,9 @@ def test_yolo_world_v2_m_against_single_image(person_image: np.ndarray) -> None:
     )
     detection_results = sv.Detections.from_inference(results)
     # then
+    assert len(detection_results) == len(
+        expected_detections
+    ), "Expected the same number of boxes"
     assert np.allclose(
         detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
@@ -235,7 +293,11 @@ def test_yolo_world_v2_l_against_single_image(person_image: np.ndarray) -> None:
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)
+
     # then
+    assert len(detection_results) == len(
+        expected_detections
+    ), "Expected the same number of boxes"
     assert np.allclose(
         detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"
@@ -269,7 +331,11 @@ def test_yolo_world_v2_x_against_single_image(person_image: np.ndarray) -> None:
         by_alias=True, exclude_none=True
     )
     detection_results = sv.Detections.from_inference(results)
+
     # then
+    assert len(detection_results) == len(
+        expected_detections
+    ), "Expected the same number of boxes"
     assert np.allclose(
         detection_results.xyxy, expected_detections.xyxy, atol=0.05
     ), "Boxes coordinates detection differ"

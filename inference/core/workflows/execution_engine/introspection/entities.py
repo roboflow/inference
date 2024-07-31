@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Type
+from typing import Callable, Dict, List, Optional, Set, Type, Union
 
 from pydantic import BaseModel, Field
 
@@ -90,7 +90,12 @@ class DiscoveredConnections:
 
 
 class BlockDescription(BaseModel):
-    manifest_class: Type[WorkflowBlockManifest] = Field(exclude=True)
+    manifest_class: Union[Type[WorkflowBlockManifest], Type[BaseModel]] = Field(
+        exclude=True
+    )
+    # Type[BaseModel] here is to let dynamic blocks being BaseModel to pass validation - but that should be
+    # the only case for using this type in this field. Dynamic blocks implements the same interface, yet due
+    # to dynamic nature of creation - cannot be initialised as abstract class WorkflowBlockManifest
     block_class: Type[WorkflowBlock] = Field(exclude=True)
     block_schema: dict = Field(
         description="OpenAPI specification of block manifest that "

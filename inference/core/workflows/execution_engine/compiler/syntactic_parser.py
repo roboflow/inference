@@ -7,17 +7,24 @@ from typing_extensions import Annotated
 from inference.core.workflows.entities.base import InputType, JsonField
 from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.compiler.entities import (
+    BlockSpecification,
     ParsedWorkflowDefinition,
 )
+from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
+    DynamicBlockDefinition,
+)
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    load_all_defined_kinds,
     load_workflow_blocks,
 )
 
 
 def parse_workflow_definition(
-    raw_workflow_definition: dict,
+    raw_workflow_definition: dict, dynamic_blocks: List[BlockSpecification]
 ) -> ParsedWorkflowDefinition:
-    workflow_definition_class = build_workflow_definition_entity()
+    workflow_definition_class = build_workflow_definition_entity(
+        dynamic_blocks=dynamic_blocks,
+    )
     try:
         workflow_definition = workflow_definition_class.model_validate(
             raw_workflow_definition
@@ -36,8 +43,10 @@ def parse_workflow_definition(
         ) from e
 
 
-def build_workflow_definition_entity() -> Type[BaseModel]:
-    blocks = load_workflow_blocks()
+def build_workflow_definition_entity(
+    dynamic_blocks: List[BlockSpecification],
+) -> Type[BaseModel]:
+    blocks = load_workflow_blocks() + dynamic_blocks
     steps_manifests = tuple(block.manifest_class for block in blocks)
     block_manifest_types_union = Union[steps_manifests]
     block_type = Annotated[block_manifest_types_union, Field(discriminator="type")]

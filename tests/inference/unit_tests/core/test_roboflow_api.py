@@ -31,12 +31,14 @@ from inference.core.roboflow_api import (
     get_roboflow_model_data,
     get_roboflow_model_type,
     get_roboflow_workspace,
+    delete_cached_workflow_response_if_exists,
     get_workflow_specification,
     raise_from_lambda,
     register_image_at_roboflow,
     wrap_roboflow_api_errors,
 )
 from inference.core.utils.url_utils import wrap_url
+import json
 
 
 class _TestException(Exception):
@@ -1691,6 +1693,7 @@ def test_get_workflow_specification_when_connection_error_occurs(
     get_mock: MagicMock,
 ) -> None:
     # given
+    delete_cached_workflow_response_if_exists("my_workspace", "some_workflow")
     get_mock.side_effect = ConnectionError()
 
     # when
@@ -1700,6 +1703,33 @@ def test_get_workflow_specification_when_connection_error_occurs(
             workspace_id="my_workspace",
             workflow_id="some_workflow",
         )
+
+
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_workflow_specification_when_connection_error_occurs_but_file_is_cached(
+    get_mock: MagicMock,
+) -> None:
+    # given
+    delete_cached_workflow_response_if_exists("my_workspace", "some_workflow")
+
+    get_mock.return_value = MagicMock(
+        status_code=200,
+        json= MagicMock(return_value={"workflow": {"config": json.dumps({"specification": "some"}) }}),
+    )
+
+    _ = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+    )
+
+    get_mock.side_effect = ConnectionError()
+    
+    _ = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+    )
 
 
 def test_get_workflow_specification_when_wrong_api_key_used(

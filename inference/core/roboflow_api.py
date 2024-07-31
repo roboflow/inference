@@ -17,7 +17,7 @@ from inference.core.entities.types import (
     VersionID,
     WorkspaceID,
 )
-from inference.core.env import API_BASE_URL
+from inference.core.env import API_BASE_URL, MODEL_CACHE_DIR
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
@@ -31,6 +31,7 @@ from inference.core.exceptions import (
     RoboflowAPIUnsuccessfulRequestError,
     WorkspaceLoadError,
 )
+from inference.core.utils.file_system import sanitize_path_segment
 from inference.core.utils.requests import api_key_safe_raise_for_status
 from inference.core.utils.url_utils import wrap_url
 
@@ -114,6 +115,34 @@ def get_roboflow_workspace(api_key: str) -> WorkspaceID:
     if workspace_id is None:
         raise WorkspaceLoadError(f"Empty workspace encountered, check your API key.")
     return workspace_id
+
+
+@wrap_roboflow_api_errors()
+def add_custom_metadata(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    inference_ids: List[str],
+    field_name: str,
+    field_value: str,
+) -> bool:
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{workspace_id}/inference-stats/metadata",
+        params=[("api_key", api_key), ("nocache", "true")],
+    )
+    response = requests.post(
+        url=api_url,
+        json={
+            "data": [
+                {
+                    "inference_ids": inference_ids,
+                    "field_name": field_name,
+                    "field_value": field_value,
+                }
+            ]
+        },
+    )
+    api_key_safe_raise_for_status(response=response)
+    return True
 
 
 @wrap_roboflow_api_errors()
@@ -357,6 +386,47 @@ def get_roboflow_labeling_jobs(
     return _get_from_url(url=api_url)
 
 
+def get_workflow_cache_file(workspace_id: WorkspaceID, workflow_id: str):
+    sanitized_workspace_id = sanitize_path_segment(workspace_id)
+    sanitized_workflow_id = sanitize_path_segment(workflow_id)
+    return os.path.join(
+        MODEL_CACHE_DIR,
+        "workflow",
+        sanitized_workspace_id,
+        f"{sanitized_workflow_id}.json",
+    )
+
+
+def cache_workflow_response(
+    workspace_id: WorkspaceID, workflow_id: str, response: dict
+):
+    workflow_cache_file = get_workflow_cache_file(workspace_id, workflow_id)
+    workflow_cache_dir = os.path.dirname(workflow_cache_file)
+    if not os.path.exists(workflow_cache_dir):
+        os.makedirs(workflow_cache_dir, exist_ok=True)
+    with open(workflow_cache_file, "w") as f:
+        json.dump(response, f)
+
+
+def delete_cached_workflow_response_if_exists(
+    workspace_id: WorkspaceID, workflow_id: str
+) -> None:
+    workflow_cache_file = get_workflow_cache_file(workspace_id, workflow_id)
+    if os.path.exists(workflow_cache_file):
+        os.remove(workflow_cache_file)
+
+
+def load_cached_workflow_response(workspace_id: WorkspaceID, workflow_id: str) -> dict:
+    workflow_cache_file = get_workflow_cache_file(workspace_id, workflow_id)
+    if not os.path.exists(workflow_cache_file):
+        return None
+    try:
+        with open(workflow_cache_file, "r") as f:
+            return json.load(f)
+    except:
+        delete_cached_workflow_response_if_exists(workspace_id, workflow_id)
+
+
 @wrap_roboflow_api_errors()
 def get_workflow_specification(
     api_key: str,
@@ -367,7 +437,13 @@ def get_workflow_specification(
         url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_id}",
         params=[("api_key", api_key)],
     )
-    response = _get_from_url(url=api_url)
+    try:
+        response = _get_from_url(url=api_url)
+        cache_workflow_response(workspace_id, workflow_id, response)
+    except (requests.exceptions.ConnectionError, ConnectionError) as error:
+        response = load_cached_workflow_response(workspace_id, workflow_id)
+        if response is None:
+            raise error
     if "workflow" not in response or "config" not in response["workflow"]:
         raise MalformedWorkflowResponseError(
             f"Could not find workflow specification in API response"

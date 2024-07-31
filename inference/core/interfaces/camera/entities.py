@@ -59,6 +59,7 @@ class VideoFrame:
     image: np.ndarray
     frame_id: FrameID
     frame_timestamp: FrameTimestamp
+    fps: float = 0
     source_id: Optional[int] = None
 
 

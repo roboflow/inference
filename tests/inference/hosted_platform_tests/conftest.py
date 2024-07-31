@@ -249,6 +249,3 @@ def retry_at_max_n_times(function: callable, n: int, function_description: str) 
             return None
         attempts += 1
     raise Exception(f"Could not achieve success of {function_description}")
-
-
-

@@ -2,8 +2,8 @@ import pytest
 
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
-    InferenceResponseImage,
     ClassificationPrediction,
+    InferenceResponseImage,
 )
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     OperationsChain,
