@@ -1,10 +1,10 @@
 import math
-from typing import List, Literal, Optional, Type, Union
 
 import cv2 as cv
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
+from typing_extensions import List, Literal, Optional, Type, Union
 
 from inference.core.logger import logger
 from inference.core.workflows.constants import KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
@@ -57,13 +57,16 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         }
     )
     type: Literal[f"{TYPE}"]
-    predictions: StepOutputSelector(
-        kind=[
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-        ]
-    ) = Field(  # type: ignore
+    predictions: Optional[
+        StepOutputSelector(
+            kind=[
+                BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+                BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            ]
+        )
+    ] = Field(  # type: ignore
         description="Predictions",
+        default=None,
         examples=["$steps.object_detection_model.predictions"],
     )
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
@@ -228,9 +231,9 @@ def extend_perspective_polygon(
 
 def generate_transformation_matrix(
     src_polygon: np.ndarray,
-    detections: sv.Detections,
     transformed_rect_width: int,
     transformed_rect_height: int,
+    detections: Optional[sv.Detections] = None,
     detections_anchor: Optional[sv.Position] = None,
 ) -> np.ndarray:
     polygon_with_vertices_clockwise = sort_polygon_vertices_clockwise(
@@ -239,7 +242,7 @@ def generate_transformation_matrix(
     src_polygon = roll_polygon_vertices_to_start_from_leftmost_bottom(
         polygon=polygon_with_vertices_clockwise
     )
-    if detections_anchor:
+    if detections and detections_anchor:
         src_polygon = extend_perspective_polygon(
             polygon=src_polygon,
             detections=detections,
@@ -338,7 +341,7 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
     async def run(
         self,
         images: Batch[WorkflowImageData],
-        predictions: Batch[sv.Detections],
+        predictions: Optional[Batch[sv.Detections]],
         perspective_polygons: Union[
             List[np.ndarray],
             List[List[np.ndarray]],
@@ -350,21 +353,30 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
         extend_perspective_polygon_by_detections_anchor: Optional[str],
         warp_image: Optional[bool],
     ) -> BlockResult:
+        if not predictions and not images:
+            raise ValueError(
+                "Either predictions or images are required to apply perspective correction."
+            )
+        if warp_image and not images:
+            raise ValueError(
+                "images are required to warp image into requested perspective."
+            )
+        if not predictions:
+            predictions = [None] * len(images)
+
         if not self.perspective_transformers:
             largest_perspective_polygons = pick_largest_perspective_polygons(
                 perspective_polygons
             )
 
-            if len(largest_perspective_polygons) == 1 and len(predictions) > 1:
-                largest_perspective_polygons = largest_perspective_polygons * len(
-                    predictions
-                )
+            batch_size = len(predictions) if predictions else len(images)
+            if len(largest_perspective_polygons) == 1 and batch_size > 1:
+                largest_perspective_polygons = largest_perspective_polygons * batch_size
 
-            if len(largest_perspective_polygons) != len(predictions):
+            if len(largest_perspective_polygons) != batch_size:
                 raise ValueError(
-                    f"Predictions batch size ({len(predictions)}) does not match number of perspective polygons ({largest_perspective_polygons})"
+                    f"Predictions batch size ({batch_size}) does not match number of perspective polygons ({largest_perspective_polygons})"
                 )
-
             for polygon, detections in zip(largest_perspective_polygons, predictions):
                 if polygon is None:
                     self.perspective_transformers.append(None)
@@ -392,7 +404,7 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
                     dsize=(transformed_rect_width, transformed_rect_height),
                 )
 
-            if detections is None or perspective_transformer is None:
+            if detections is None:
                 result.append(
                     {OUTPUT_DETECTIONS_KEY: None, OUTPUT_IMAGE_KEY: result_image}
                 )
