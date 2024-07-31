@@ -125,7 +125,7 @@ class Florence2ModelBlock(WorkflowBlock):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
-        self.model = Florence2("florence-2-base/1")
+        self.model = Florence2("florence-pretrains/1")
         # CHECKPOINT = "microsoft/Florence-2-large"
         # REVISION = 'refs/pr/6'
         # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -194,7 +194,6 @@ class Florence2ModelBlock(WorkflowBlock):
 
     async def get_florence2_generations_locally(
         self,
-        model_id: str,
         image: List[dict],
         prompt: str,
         model_manager: ModelManager,
@@ -208,7 +207,6 @@ class Florence2ModelBlock(WorkflowBlock):
                 "height": loaded_image.shape[0],
             }
             inference_request = Florence2InferenceRequest(
-                model_id=model_id,
                 image=single_image,
                 prompt=prompt,
                 api_key=api_key,
@@ -216,8 +214,9 @@ class Florence2ModelBlock(WorkflowBlock):
             model_id = load_core_model(
                 model_manager=model_manager,
                 inference_request=inference_request,
-                core_model="florence2",
+                core_model="florence-pretrains",
             )
+            print(model_id)
             result = await model_manager.infer_from_request(model_id, inference_request)
             serialised_result.append(
                 {
@@ -235,11 +234,12 @@ class Florence2ModelBlock(WorkflowBlock):
         version: str,
     ) -> BlockResult:
         predictions = []
-        images = [images] if not isinstance(images, list) else images
+        images_prepared_for_processing = [
+            image.to_inference_format(numpy_preferred=True) for image in images
+        ]
         predictions = await self.get_florence2_generations_locally(
-            "florence-2-base/1",
-            image=images,
-            prompt=vision_task + prompt,
+            image=images_prepared_for_processing,
+            prompt=vision_task + "<and>".join(prompt),
             model_manager=self._model_manager,
             api_key=self._api_key,
         )
