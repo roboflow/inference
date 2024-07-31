@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
@@ -27,6 +27,9 @@ from inference.core.workflows.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
+    BATCH_OF_STRING_KIND,
+    STRING_KIND,
+    WILDCARD_KIND,
     FloatZeroToOne,
     ImageInputField,
     StepOutputImageSelector,
@@ -49,6 +52,8 @@ from transformers import (
 )
 import torch
 from PIL import Image
+from inference.core.utils.image_utils import load_image
+from inference.core.entities.requests.florence2 import Florence2InferenceRequest
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -92,16 +97,23 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
-        return False
+        return True
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
-            ),
+            OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
+            # OutputDefinition(name="*", kind=[WILDCARD_KIND]),
         ]
 
+    def get_actual_outputs(self) -> List[OutputDefinition]:
+        result = [
+            OutputDefinition(name="raw_output", kind=[STRING_KIND]),
+        ]
+        # for key in self.json_output_format.keys():
+        #     result.append(OutputDefinition(name=key, kind=[WILDCARD_KIND]))
+        return result
+    
 class Florence2ModelBlock(WorkflowBlock):
 
     def __init__(
@@ -180,6 +192,41 @@ class Florence2ModelBlock(WorkflowBlock):
 
     #     return parsed_answer
 
+    async def get_florence2_generations_locally(
+        self,
+        model_id: str,
+        image: List[dict],
+        prompt: str,
+        model_manager: ModelManager,
+        api_key: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        serialised_result = []
+        for single_image in image:
+            loaded_image, _ = load_image(single_image)
+            image_metadata = {
+                "width": loaded_image.shape[1],
+                "height": loaded_image.shape[0],
+            }
+            inference_request = Florence2InferenceRequest(
+                model_id=model_id,
+                image=single_image,
+                prompt=prompt,
+                api_key=api_key,
+            )
+            model_id = load_core_model(
+                model_manager=model_manager,
+                inference_request=inference_request,
+                core_model="florence2",
+            )
+            result = await model_manager.infer_from_request(model_id, inference_request)
+            serialised_result.append(
+                {
+                    "content": result.response,
+                    "image": image_metadata,
+                }
+            )
+        return serialised_result
+
     async def run_locally(
         self,
         images: Batch[WorkflowImageData],
@@ -189,22 +236,29 @@ class Florence2ModelBlock(WorkflowBlock):
     ) -> BlockResult:
         predictions = []
         images = [images] if not isinstance(images, list) else images
-        for single_image in images:
-            single_image = Image.fromarray(single_image.numpy_image)
-            parsed_answer = self.model.infer(single_image, "<CAPTION>")#self.run_example(vision_task, single_image, "<and>".join(prompt))
-            preds = []
-            for i, bbox in enumerate(parsed_answer[vision_task]["bboxes"]):
-                pred = {
-                    "class": parsed_answer[vision_task]["bboxes_labels"][i],
-                    "class_id": prompt.index(parsed_answer[vision_task]["bboxes_labels"][i]),
-                    "confidence": 1.0,
-                    "x": (bbox[0] + bbox[2]) / 2,
-                    "y": (bbox[1] + bbox[3]) / 2,
-                    "width": bbox[2] - bbox[0],
-                    "height": bbox[3] - bbox[1],
-                }
-                preds.append(pred)
-            predictions.append(preds)
+        predictions = await self.get_florence2_generations_locally(
+            "florence-2-base/1",
+            image=images,
+            prompt=vision_task + prompt,
+            model_manager=self._model_manager,
+            api_key=self._api_key,
+        )
+        # for single_image in images:
+        #     single_image = Image.fromarray(single_image.numpy_image)
+        #     parsed_answer = self.model.infer(single_image, "<CAPTION>")#self.run_example(vision_task, single_image, "<and>".join(prompt))
+        #     preds = []
+        #     for i, bbox in enumerate(parsed_answer[vision_task]["bboxes"]):
+        #         pred = {
+        #             "class": parsed_answer[vision_task]["bboxes_labels"][i],
+        #             "class_id": prompt.index(parsed_answer[vision_task]["bboxes_labels"][i]),
+        #             "confidence": 1.0,
+        #             "x": (bbox[0] + bbox[2]) / 2,
+        #             "y": (bbox[1] + bbox[3]) / 2,
+        #             "width": bbox[2] - bbox[0],
+        #             "height": bbox[3] - bbox[1],
+        #         }
+        #         preds.append(pred)
+        #     predictions.append(preds)
 
         print(predictions)
 
