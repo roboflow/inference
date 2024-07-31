@@ -27,6 +27,8 @@ from inference.core.workflows.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
+    BATCH_OF_IMAGE_METADATA_KIND,
+    BATCH_OF_PARENT_ID_KIND,
     BATCH_OF_STRING_KIND,
     STRING_KIND,
     WILDCARD_KIND,
@@ -54,6 +56,7 @@ import torch
 from PIL import Image
 from inference.core.utils.image_utils import load_image
 from inference.core.entities.requests.florence2 import Florence2InferenceRequest
+from inference.core.entities.requests.inference import LMMInferenceRequest
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -102,12 +105,18 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
+            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
-            # OutputDefinition(name="*", kind=[WILDCARD_KIND]),
+            OutputDefinition(name="*", kind=[WILDCARD_KIND]),
         ]
 
     def get_actual_outputs(self) -> List[OutputDefinition]:
         result = [
+            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="raw_output", kind=[STRING_KIND]),
         ]
         # for key in self.json_output_format.keys():
@@ -125,7 +134,8 @@ class Florence2ModelBlock(WorkflowBlock):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
-        self.model = Florence2("florence-pretrains/1")
+        # self.model = Florence2(model_id="florence-pretrains/1", api_key=self._api_key)
+        # print("florence 2 loaded")
         # CHECKPOINT = "microsoft/Florence-2-large"
         # REVISION = 'refs/pr/6'
         # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -206,21 +216,19 @@ class Florence2ModelBlock(WorkflowBlock):
                 "width": loaded_image.shape[1],
                 "height": loaded_image.shape[0],
             }
-            inference_request = Florence2InferenceRequest(
+            model_id = "florence-pretrains/1"
+            inference_request = LMMInferenceRequest(
+                model_id=model_id,
                 image=single_image,
-                prompt=prompt,
+                prompt="<OD>",
                 api_key=api_key,
             )
-            model_id = load_core_model(
-                model_manager=model_manager,
-                inference_request=inference_request,
-                core_model="florence-pretrains",
-            )
-            print(model_id)
+            model_manager.add_model(model_id, api_key=api_key)
             result = await model_manager.infer_from_request(model_id, inference_request)
+            print(result)
             serialised_result.append(
                 {
-                    "content": result.response,
+                    "raw_output": result.response,
                     "image": image_metadata,
                 }
             )
@@ -243,6 +251,11 @@ class Florence2ModelBlock(WorkflowBlock):
             model_manager=self._model_manager,
             api_key=self._api_key,
         )
+        formatted_predictions = [{
+            **pred,
+            "parent_id": image.parent_metadata.parent_id,
+            "root_parent_id": image.workflow_root_ancestor_metadata.parent_id
+        } for pred, image in zip(predictions, images)]
         # for single_image in images:
         #     single_image = Image.fromarray(single_image.numpy_image)
         #     parsed_answer = self.model.infer(single_image, "<CAPTION>")#self.run_example(vision_task, single_image, "<and>".join(prompt))
@@ -260,12 +273,9 @@ class Florence2ModelBlock(WorkflowBlock):
         #         preds.append(pred)
         #     predictions.append(preds)
 
-        print(predictions)
+        print(formatted_predictions)
 
-        return self._post_process_result(
-            images=images,
-            predictions=predictions,
-        )
+        return formatted_predictions
 
     def _post_process_result(
         self,
@@ -283,4 +293,4 @@ class Florence2ModelBlock(WorkflowBlock):
         # )
         # return [{"predictions": prediction} for prediction in predictions]
         img = Image.fromarray(images[0].numpy_image)
-        return {"predictions": {"image": {"height": img.height, "width": img.width}, "predictions": predictions[0]}}
+        return predictions
