@@ -296,7 +296,7 @@ def correct_detections(
                 ]
             )
         else:
-            xmin, ymin, xmax, ymax = np.around(detection[i].xyxy[0]).tolist()
+            xmin, ymin, xmax, ymax = np.around(detection.xyxy[0]).tolist()
             polygon = np.array(
                 [[[xmin, ymin], [xmax, ymin], [xmax, ymax], [xmin, ymax]]],
                 dtype=np.float32,
