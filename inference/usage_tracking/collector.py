@@ -10,6 +10,7 @@ from collections import defaultdict
 from functools import wraps
 from queue import Queue
 from threading import Event, Lock, Thread
+from typing_extensions import Any, Callable, DefaultDict, Dict, List, Optional, ParamSpec, Tuple, TypeVar, Union
 from uuid import uuid4
 
 import requests
@@ -35,6 +36,10 @@ from inference.usage_tracking.utils import collect_func_params
 
 from .config import TelemetrySettings, get_telemetry_settings
 from .sqlite_queue import SQLiteQueue
+
+
+T = TypeVar('T')
+P = ParamSpec('P')
 
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
@@ -497,6 +502,7 @@ class UsageCollector:
         api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: str = "",
+        usage_inference_test_run: bool = False,
         fps: float = 0,
     ) -> DefaultDict[str, Any]:
         if self._async_lock:
@@ -509,6 +515,7 @@ class UsageCollector:
                     api_key=api_key,
                     resource_details=resource_details,
                     resource_id=resource_id,
+                    usage_inference_test_run=usage_inference_test_run,
                     fps=fps,
                 )
         else:
@@ -520,6 +527,7 @@ class UsageCollector:
                 api_key=api_key,
                 resource_details=resource_details,
                 resource_id=resource_id,
+                usage_inference_test_run=usage_inference_test_run,
                 fps=fps,
             )
 
@@ -718,16 +726,16 @@ class UsageCollector:
             "enterprise": enterprise,
         }
 
-    def __call__(self, func: Callable[[Any], Any]):
+    def __call__(self, func: Callable[P, T]) -> Callable[P, T]:
         @wraps(func)
         def sync_wrapper(
-            *args,
+            *args: P.args,
             usage_fps: float = 0,
             usage_api_key: APIKey = "",
             usage_workflow_id: str = "",
             usage_inference_test_run: bool = False,
-            **kwargs,
-        ):
+            **kwargs: P.kwargs,
+        ) -> T:
             self.record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
@@ -743,13 +751,13 @@ class UsageCollector:
 
         @wraps(func)
         async def async_wrapper(
-            *args,
+            *args: P.args,
             usage_fps: float = 0,
             usage_api_key: APIKey = "",
             usage_workflow_id: str = "",
             usage_inference_test_run: bool = False,
-            **kwargs,
-        ):
+            **kwargs: P.kwargs,
+        ) -> T:
             await self.async_record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
