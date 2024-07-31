@@ -10,7 +10,18 @@ from collections import defaultdict
 from functools import wraps
 from queue import Queue
 from threading import Event, Lock, Thread
-from typing_extensions import Any, Callable, DefaultDict, Dict, List, Optional, ParamSpec, Tuple, TypeVar, Union
+from typing_extensions import (
+    Any,
+    Callable,
+    DefaultDict,
+    Dict,
+    List,
+    Optional,
+    ParamSpec,
+    Tuple,
+    TypeVar,
+    Union,
+)
 from uuid import uuid4
 
 import requests
@@ -38,8 +49,8 @@ from .config import TelemetrySettings, get_telemetry_settings
 from .sqlite_queue import SQLiteQueue
 
 
-T = TypeVar('T')
-P = ParamSpec('P')
+T = TypeVar("T")
+P = ParamSpec("P")
 
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
@@ -447,9 +458,13 @@ class UsageCollector:
             if not source_usage["timestamp_start"]:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
-            source_usage["processed_frames"] += frames if not usage_inference_test_run else 0
+            source_usage["processed_frames"] += (
+                frames if not usage_inference_test_run else 0
+            )
             source_usage["fps"] = round(fps, 2)
-            source_usage["source_duration"] += frames / fps if fps and not usage_inference_test_run else 0
+            source_usage["source_duration"] += (
+                frames / fps if fps and not usage_inference_test_run else 0
+            )
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
             source_usage["api_key_hash"] = api_key_hash
