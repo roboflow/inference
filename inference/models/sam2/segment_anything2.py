@@ -55,7 +55,8 @@ class SegmentAnything2(RoboflowCoreModel):
         checkpoint = self.cache_file("sam2_hiera_large.pt")
         model_cfg = "sam2_hiera_l.yaml"
         self.sam = build_sam2(model_cfg, checkpoint)
-        self.sam.to(device="cuda" if torch.cuda.is_available() else "cpu")
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.sam.to(self.device)
 
         self.predictor = SAM2ImagePredictor(self.sam)
 
@@ -101,6 +102,8 @@ class SegmentAnything2(RoboflowCoreModel):
             (array([...]), (224, 224))
         """
         if image_id and image_id in self.embedding_cache:
+            embedding = self.embedding_cache[image_id]
+            embedding = torch.Tensor(embedding).to(self.device)
             return (
                 self.embedding_cache[image_id],
                 self.image_size_cache[image_id],
@@ -191,7 +194,7 @@ class SegmentAnything2(RoboflowCoreModel):
         mask_input_format: Optional[str] = "json",
         orig_im_size: Optional[List[int]] = None,
         point_coords: Optional[List[List[float]]] = None,
-        point_labels: Optional[List[int]] = [None],
+        point_labels: Optional[List[int]] = None,
         use_mask_input_cache: Optional[bool] = True,
         **kwargs,
     ):
@@ -249,6 +252,15 @@ class SegmentAnything2(RoboflowCoreModel):
                 embedding = np.array(embeddings)
             elif embeddings_format == "binary":
                 embedding = np.load(BytesIO(embeddings))
+            else:
+                raise ValueError(
+                    "Invalid embeddings format"
+                )
+            embedding = torch.Tensor(embedding).to(self.device)
+
+
+
+        
 
         if point_coords is not None:
             point_coords = point_coords
@@ -274,7 +286,7 @@ class SegmentAnything2(RoboflowCoreModel):
                 and use_mask_input_cache
             ):
                 mask_input = self.low_res_logits_cache[image_id]
-            elif not mask_input and (
+            elif mask_input is None and (
                 not image_id or image_id not in self.low_res_logits_cache
             ):
                 raise ValueError("Must provide either mask_input or cached image_id")
@@ -291,28 +303,36 @@ class SegmentAnything2(RoboflowCoreModel):
                 elif mask_input_format == "binary":
                     binary_data = base64.b64decode(mask_input)
                     mask_input = np.load(BytesIO(binary_data))
+                elif mask_input_format == "raw":
+                    mask_input = np.expand_dims(mask_input, axis=0)
+
         else:
-            mask_input = None #np.zeros((1, 1, 256, 256), dtype=np.float32)
+            mask_input = None 
 
 
-        print(dict(point_coords  = point_coords.astype(np.float32) if point_coords is not None else None,
-            point_labels = point_labels,
-            # box = None,
-            mask_input =  mask_input.astype(np.float32) if mask_input is not None else  None,
-            multimask_output = False,
-            return_logits = True ,
-            normalize_coords=False))
-        masks, _, low_res_logits = self.predictor.predict(
+        
+        self._is_image_set = True
+        self._features = None
+        self._orig_hw = None
+        self._is_batch = False
+
+        masks, scores, low_res_logits = self.predictor.predict(
             point_coords  = point_coords.astype(np.float32) if point_coords is not None else None,
             point_labels = point_labels,
             # box = None,
             mask_input =  mask_input.astype(np.float32) if mask_input is not None else  None,
-            multimask_output = False,
+            multimask_output = True,
             return_logits = True ,
             normalize_coords=True
         )
+
+        sorted_ind = np.argsort(scores)[::-1]
+        masks = masks[sorted_ind]
+        scores = scores[sorted_ind]
+        low_res_logits = low_res_logits[sorted_ind]
+
         if image_id:
-            self.low_res_logits_cache[image_id] = low_res_logits
+            self.low_res_logits_cache[image_id] = low_res_logits[0]
             if image_id not in self.segmentation_cache_keys:
                 self.segmentation_cache_keys.append(image_id)
             if len(self.segmentation_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
