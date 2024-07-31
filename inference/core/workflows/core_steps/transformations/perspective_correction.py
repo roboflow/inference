@@ -72,7 +72,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    perspective_polygons: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    perspective_polygons: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Perspective polygons (for each batch at least one must be consisting of 4 vertices)",
     )
     transformed_rect_width: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
@@ -127,6 +127,11 @@ def pick_largest_perspective_polygons(
         raise ValueError("Unexpected type of input")
     if not perspective_polygons_batch:
         raise ValueError("Unexpected empty batch")
+    if len(perspective_polygons_batch) == 4 and all(
+        isinstance(p, list) and len(p) == 2 for p in perspective_polygons_batch
+    ):
+        perspective_polygons_batch = [perspective_polygons_batch]
+
     largest_perspective_polygons: List[np.ndarray] = []
     for polygons in perspective_polygons_batch:
         if polygons is None:
@@ -334,7 +339,7 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         predictions: Batch[sv.Detections],
-        perspective_polygons: Batch[List[np.ndarray]],
+        perspective_polygons: List[List[int]],
         transformed_rect_width: int,
         transformed_rect_height: int,
         extend_perspective_polygon_by_detections_anchor: Optional[str],
