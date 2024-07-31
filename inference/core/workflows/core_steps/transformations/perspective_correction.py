@@ -339,20 +339,31 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         predictions: Batch[sv.Detections],
-        perspective_polygons: List[List[int]],
+        perspective_polygons: Union[
+            List[np.ndarray],
+            List[List[np.ndarray]],
+            List[List[List[int]]],
+            List[List[List[List[int]]]],
+        ],
         transformed_rect_width: int,
         transformed_rect_height: int,
         extend_perspective_polygon_by_detections_anchor: Optional[str],
         warp_image: Optional[bool],
     ) -> BlockResult:
         if not self.perspective_transformers:
-            try:
-                largest_perspective_polygons = pick_largest_perspective_polygons(
-                    perspective_polygons
+            largest_perspective_polygons = pick_largest_perspective_polygons(
+                perspective_polygons
+            )
+
+            if len(largest_perspective_polygons) == 1 and len(predictions) > 1:
+                largest_perspective_polygons = largest_perspective_polygons * len(
+                    predictions
                 )
-            except ValueError as exc:
-                logger.error(exc)
-                largest_perspective_polygons = [None for _ in perspective_polygons]
+
+            if len(largest_perspective_polygons) != len(predictions):
+                raise ValueError(
+                    f"Predictions batch size ({len(predictions)}) does not match number of perspective polygons ({largest_perspective_polygons})"
+                )
 
             for polygon, detections in zip(largest_perspective_polygons, predictions):
                 if polygon is None:
