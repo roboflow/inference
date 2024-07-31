@@ -190,8 +190,8 @@ class SegmentAnything2(RoboflowCoreModel):
         mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
         mask_input_format: Optional[str] = "json",
         orig_im_size: Optional[List[int]] = None,
-        point_coords: Optional[List[List[float]]] = [],
-        point_labels: Optional[List[int]] = [],
+        point_coords: Optional[List[List[float]]] = None,
+        point_labels: Optional[List[int]] = [None],
         use_mask_input_cache: Optional[bool] = True,
         **kwargs,
     ):
@@ -250,20 +250,22 @@ class SegmentAnything2(RoboflowCoreModel):
             elif embeddings_format == "binary":
                 embedding = np.load(BytesIO(embeddings))
 
-        point_coords = point_coords
-        point_coords.append([0, 0])
-        point_coords = np.array(point_coords, dtype=np.float32)
-        point_coords = np.expand_dims(point_coords, axis=0)
-        point_coords = self.predictor._transforms.transform_coords(
-            coords=point_coords,
-            normalize=False,
-            orig_hw=original_image_size,
-        )
+        if point_coords is not None:
+            point_coords = point_coords
+            # point_coords.append([0, 0])
+            point_coords = np.array(point_coords, dtype=np.float32)
+            point_coords = np.expand_dims(point_coords, axis=0)
+            # point_coords = self.predictor._transforms.transform_coords(
+            #     coords=point_coords,
+            #     normalize=False,
+            #     orig_hw=original_image_size,
+            # )
 
-        point_labels = point_labels
-        point_labels.append(-1)
-        point_labels = np.array(point_labels, dtype=np.float32)
-        point_labels = np.expand_dims(point_labels, axis=0)
+        if point_labels is not None:
+            point_labels = point_labels
+            # point_labels.append(-1)
+            point_labels = np.array(point_labels, dtype=np.float32)
+            point_labels = np.expand_dims(point_labels, axis=0)
 
         if has_mask_input:
             if (
@@ -290,29 +292,24 @@ class SegmentAnything2(RoboflowCoreModel):
                     binary_data = base64.b64decode(mask_input)
                     mask_input = np.load(BytesIO(binary_data))
         else:
-            mask_input = np.zeros((1, 1, 256, 256), dtype=np.float32)
+            mask_input = None #np.zeros((1, 1, 256, 256), dtype=np.float32)
 
-        # ort_inputs = {
-        #     "image_embeddings": embedding.astype(np.float32),
-        #     "point_coords": point_coords.astype(np.float32),
-        #     "point_labels": point_labels,
-        #     "mask_input": mask_input.astype(np.float32),
-        #     "has_mask_input": (
-        #         np.zeros(1, dtype=np.float32)
-        #         if not has_mask_input
-        #         else np.ones(1, dtype=np.float32)
-        #     ),
-        #     "orig_im_size": np.array(original_image_size, dtype=np.float32),
-        # }
-        # masks, _, low_res_logits = self.ort_session.run(None, ort_inputs)
-        masks, _, low_res_logits = self.predictor.predict(
-            point_coords  = point_coords.astype(np.float32),
+
+        print(dict(point_coords  = point_coords.astype(np.float32) if point_coords is not None else None,
             point_labels = point_labels,
-            # box: Optional[np.ndarray] = None,
-            mask_input = mask_input.astype(np.float32),
+            # box = None,
+            mask_input =  mask_input.astype(np.float32) if mask_input is not None else  None,
             multimask_output = False,
             return_logits = True ,
-            normalize_coords=False
+            normalize_coords=False))
+        masks, _, low_res_logits = self.predictor.predict(
+            point_coords  = point_coords.astype(np.float32) if point_coords is not None else None,
+            point_labels = point_labels,
+            # box = None,
+            mask_input =  mask_input.astype(np.float32) if mask_input is not None else  None,
+            multimask_output = False,
+            return_logits = True ,
+            normalize_coords=True
         )
         if image_id:
             self.low_res_logits_cache[image_id] = low_res_logits
