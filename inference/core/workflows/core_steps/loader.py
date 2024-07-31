@@ -93,6 +93,7 @@ from inference.core.workflows.core_steps.traditional.edgeDetection import EdgeDe
 from inference.core.workflows.core_steps.traditional.treshold import ImageTresholdBlock
 from inference.core.workflows.core_steps.traditional.countours import ImageContoursBlock
 from inference.core.workflows.core_steps.traditional.pixelationCount import PixelationCountBlock
+from inference.core.workflows.core_steps.traditional.sift import SIFTBlock
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.blur import (
@@ -244,6 +245,7 @@ def load_blocks() -> List[
         ImageTresholdBlock,
         ImageContoursBlock,
         PixelationCountBlock,
+        SIFTBlock,
     ]
 
 
