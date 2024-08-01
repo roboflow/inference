@@ -340,6 +340,29 @@ ZONE_KIND = Kind(
     docs=None,
 )
 
+NUMPY_ARRAY_KIND = Kind(
+    name="numpy_array",
+    description="Numpy array",
+    docs=None,
+)
+
+BATCH_OF_SELECTOR_KIND_DOCS = f"""
+This kind represents a batch of selectors.
+
+Example:
+```
+[
+    {{"selector": "selector1"}},
+    {{"selector": "selector2"}},
+]
+```
+"""
+BATCH_OF_SELECTOR_KIND = Kind(
+    name="Batch[selector]",
+    description="Batch of selectors",
+    docs=BATCH_OF_SELECTOR_KIND_DOCS,
+)
+
 OBJECT_DETECTION_PREDICTION_KIND_DOCS = """
 This kind represents single object detection prediction in form of 
 [`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object.

@@ -94,6 +94,7 @@ from inference.core.workflows.core_steps.traditional.treshold import ImageTresho
 from inference.core.workflows.core_steps.traditional.countours import ImageContoursBlock
 from inference.core.workflows.core_steps.traditional.pixelationCount import PixelationCountBlock
 from inference.core.workflows.core_steps.traditional.sift import SIFTBlock
+from inference.core.workflows.core_steps.traditional.siftComparison import SIFTComparisonBlock
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.blur import (
@@ -246,6 +247,7 @@ def load_blocks() -> List[
         ImageContoursBlock,
         PixelationCountBlock,
         SIFTBlock,
+        SIFTComparisonBlock,
     ]
 
 
