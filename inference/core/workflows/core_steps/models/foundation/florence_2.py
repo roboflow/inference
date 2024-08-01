@@ -30,6 +30,7 @@ from inference.core.workflows.entities.types import (
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_PARENT_ID_KIND,
     BATCH_OF_STRING_KIND,
+    BATCH_OF_DICTIONARY_KIND,
     STRING_KIND,
     WILDCARD_KIND,
     FloatZeroToOne,
@@ -57,6 +58,7 @@ from PIL import Image
 from inference.core.utils.image_utils import load_image
 from inference.core.entities.requests.florence2 import Florence2InferenceRequest
 from inference.core.entities.requests.inference import LMMInferenceRequest
+import json
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -108,7 +110,7 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
-            OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
+            OutputDefinition(name="raw_output", kind=[BATCH_OF_DICTIONARY_KIND]),
             OutputDefinition(name="*", kind=[WILDCARD_KIND]),
         ]
 
@@ -117,7 +119,7 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
-            OutputDefinition(name="raw_output", kind=[STRING_KIND]),
+            OutputDefinition(name="raw_output", kind=[BATCH_OF_DICTIONARY_KIND]),
         ]
         # for key in self.json_output_format.keys():
         #     result.append(OutputDefinition(name=key, kind=[WILDCARD_KIND]))
@@ -131,6 +133,7 @@ class Florence2ModelBlock(WorkflowBlock):
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
+        self.model_manager = model_manager
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
@@ -220,15 +223,14 @@ class Florence2ModelBlock(WorkflowBlock):
             inference_request = LMMInferenceRequest(
                 model_id=model_id,
                 image=single_image,
-                prompt="<OD>",
+                prompt=prompt,
                 api_key=api_key,
             )
             model_manager.add_model(model_id, api_key=api_key)
             result = await model_manager.infer_from_request(model_id, inference_request)
-            print(result)
             serialised_result.append(
                 {
-                    "raw_output": result.response,
+                    "raw_output": json.loads(result.response),
                     "image": image_metadata,
                 }
             )
@@ -247,7 +249,7 @@ class Florence2ModelBlock(WorkflowBlock):
         ]
         predictions = await self.get_florence2_generations_locally(
             image=images_prepared_for_processing,
-            prompt=vision_task + "<and>".join(prompt),
+            prompt=vision_task +" "+ "<and>".join(prompt),
             model_manager=self._model_manager,
             api_key=self._api_key,
         )

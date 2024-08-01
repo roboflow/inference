@@ -40,6 +40,7 @@ from inference.core.roboflow_api import (
     get_roboflow_model_data,
 )
 from inference.core.utils.image_utils import load_image_rgb
+import json
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -109,6 +110,7 @@ class TransformerModel(RoboflowInferenceModel):
         return [response]
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
+        print("Prompt to predict:", prompt)
         model_inputs = self.processor(
             text=prompt, images=image_in, return_tensors="pt"
         ).to(self.model.device)
@@ -119,14 +121,16 @@ class TransformerModel(RoboflowInferenceModel):
                 preprocessed_inputs=model_inputs
             )
             generation = self.model.generate(
-                **prepared_inputs, max_new_tokens=100, do_sample=False
+                **prepared_inputs, max_new_tokens=1024, do_sample=False, early_stopping=False, num_beams=3
             )
             generation = generation[0]
             if self.generation_includes_input:
                 generation = generation[input_len:]
-            decoded = self.processor.decode(generation, skip_special_tokens=True)
+            decoded = self.processor.batch_decode(generation, skip_special_tokens=False)[0]
+            parsed_answer = self.processor.post_process_generation(decoded, task=prompt.split(">")[0]+">", image_size=image_in.size)
+            print("Decoded prediction: ",parsed_answer)
 
-        return (decoded,)
+        return (json.dumps(parsed_answer),)
 
     def prepare_generation_params(
         self, preprocessed_inputs: Dict[str, Any]

@@ -153,6 +153,7 @@ class ModelManager:
 
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         self.check_for_model(model_id)
+        print("Inferring on Model: ", self._models[model_id])
         return self._models[model_id].infer_from_request(request)
 
     def make_response(
