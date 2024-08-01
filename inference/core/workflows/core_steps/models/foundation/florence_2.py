@@ -1,7 +1,12 @@
+import json
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
+import supervision as sv
 from pydantic import ConfigDict, Field
+
+from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.managers.base import ModelManager
+from inference.core.utils.image_utils import load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.entities.base import (
     Batch,
@@ -9,14 +14,13 @@ from inference.core.workflows.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.entities.types import (
-    LIST_OF_VALUES_KIND,
-    STRING_KIND,
+    BATCH_OF_DICTIONARY_KIND,
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_DICTIONARY_KIND,
+    LIST_OF_VALUES_KIND,
+    ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
     WILDCARD_KIND,
-    ROBOFLOW_MODEL_ID_KIND,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -27,19 +31,15 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference.core.utils.image_utils import load_image
-from inference.core.entities.requests.inference import LMMInferenceRequest
-import json
-import supervision as sv
 
-TASKS_WITH_PROMPT=[
+TASKS_WITH_PROMPT = [
     "<CAPTION_TO_PHRASE_GROUNDING>",
     "<REFERRING_EXPRESSION_SEGMENTATION>",
     "<REGION_TO_SEGMENTATION>",
     "<OPEN_VOCABULARY_DETECTION>",
-    "<REGION_TO_CATEGORY>"
-    "<REGION_TO_DESCRIPTION>"
+    "<REGION_TO_CATEGORY>" "<REGION_TO_DESCRIPTION>",
 ]
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -48,16 +48,18 @@ class BlockManifest(WorkflowBlockManifest):
             "short_description": "Run a multitask transformer model for a wide range of computer vision tasks.",
             "long_description": "Florence-2 is a multitask transformer model that can be used for a wide range of computer vision tasks. It is based on the Vision Transformer architecture and has been trained on a large-scale dataset of images with a wide range of labels. The model is capable of performing tasks such as image classification, object detection, and image segmentation.",
             "license": "MIT",
-            "block_type": "model"
+            "block_type": "model",
         }
     )
     type: Literal["Florence2Model", "Florence2"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        title="Model",
-        default="florence-pretrains/1",
-        description="Roboflow model identifier",
-        examples=["florence-pretrains/1", "$inputs.model"],
+    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
+        Field(
+            title="Model",
+            default="florence-pretrains/1",
+            description="Roboflow model identifier",
+            examples=["florence-pretrains/1", "$inputs.model"],
+        )
     )
     vision_task: Union[
         Literal[
@@ -78,13 +80,12 @@ class BlockManifest(WorkflowBlockManifest):
         default="<OPEN_VOCABULARY_DETECTION>",
         examples=["<OPEN_VOCABULARY_DETECTION>"],
     )
-    prompt: Union[
-        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]
-    ] = Field(
-        description="The accompanying prompt for the task (comma separated).",
-        examples=[["red apple", "blue soda can"], "$inputs.prompt"],
+    prompt: Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]] = (
+        Field(
+            description="The accompanying prompt for the task (comma separated).",
+            examples=[["red apple", "blue soda can"], "$inputs.prompt"],
+        )
     )
-    
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
@@ -109,7 +110,8 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="structured_output", kind=[WILDCARD_KIND]),
         ]
         return result
-    
+
+
 class Florence2ModelBlock(WorkflowBlock):
 
     def __init__(
@@ -121,7 +123,6 @@ class Florence2ModelBlock(WorkflowBlock):
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
-
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -136,14 +137,11 @@ class Florence2ModelBlock(WorkflowBlock):
         images: Batch[WorkflowImageData],
         vision_task: str,
         prompt: List[str],
-        model_id: str
+        model_id: str,
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return await self.run_locally(
-                images=images,
-                vision_task=vision_task,
-                prompt=prompt,
-                model_id=model_id
+                images=images, vision_task=vision_task, prompt=prompt, model_id=model_id
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             raise ValueError(
@@ -159,7 +157,7 @@ class Florence2ModelBlock(WorkflowBlock):
         images: Batch[WorkflowImageData],
         vision_task: str,
         prompt: List[str],
-        model_id: str
+        model_id: str,
     ) -> BlockResult:
         predictions = []
         images_prepared_for_processing = [
@@ -169,32 +167,45 @@ class Florence2ModelBlock(WorkflowBlock):
         # infer on florence2 model
         predictions = await self.get_florence2_generations_locally(
             image=images_prepared_for_processing,
-            prompt=vision_task if vision_task not in TASKS_WITH_PROMPT else vision_task+" "+ "<and>".join(prompt),
+            prompt=(
+                vision_task
+                if vision_task not in TASKS_WITH_PROMPT
+                else vision_task + " " + "<and>".join(prompt)
+            ),
             model_manager=self._model_manager,
             api_key=self._api_key,
-            model_id=model_id
+            model_id=model_id,
         )
 
         # convert to sv detections
         for prediction in predictions:
-            prediction["structured_output"] = sv.Detections.from_lmm(sv.LMM.FLORENCE_2, prediction["raw_output"], resolution_wh=(prediction["image"]["width"], prediction["image"]["height"]))
+            prediction["structured_output"] = sv.Detections.from_lmm(
+                sv.LMM.FLORENCE_2,
+                prediction["raw_output"],
+                resolution_wh=(
+                    prediction["image"]["width"],
+                    prediction["image"]["height"],
+                ),
+            )
 
-        formatted_predictions = [{
-            **pred,
-            "parent_id": image.parent_metadata.parent_id,
-            "root_parent_id": image.workflow_root_ancestor_metadata.parent_id,
-        } for pred, image in zip(predictions, images)]
-
+        formatted_predictions = [
+            {
+                **pred,
+                "parent_id": image.parent_metadata.parent_id,
+                "root_parent_id": image.workflow_root_ancestor_metadata.parent_id,
+            }
+            for pred, image in zip(predictions, images)
+        ]
 
         return formatted_predictions
-    
+
     async def get_florence2_generations_locally(
         self,
         image: List[dict],
         prompt: str,
         model_manager: ModelManager,
         api_key: Optional[str],
-        model_id: str
+        model_id: str,
     ) -> List[Dict[str, Any]]:
         serialised_result = []
 

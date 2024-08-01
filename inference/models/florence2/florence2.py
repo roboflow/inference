@@ -1,8 +1,8 @@
+import json
 import os
 from typing import Any, Dict
 
 import torch
-import json
 from PIL import Image
 from transformers import AutoModelForCausalLM
 
@@ -33,7 +33,7 @@ class Florence2(TransformerModel):
             "input_ids": preprocessed_inputs["input_ids"],
             "pixel_values": preprocessed_inputs["pixel_values"],
         }
-    
+
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         model_inputs = self.processor(
             text=prompt, images=image_in, return_tensors="pt"
@@ -45,13 +45,19 @@ class Florence2(TransformerModel):
                 preprocessed_inputs=model_inputs
             )
             generation = self.model.generate(
-                **prepared_inputs, max_new_tokens=1024, do_sample=False, early_stopping=False, num_beams=3
+                **prepared_inputs,
+                max_new_tokens=1024,
+                do_sample=False,
+                early_stopping=False,
+                num_beams=3
             )
             generation = generation[0]
             if self.generation_includes_input:
                 generation = generation[input_len:]
             decoded = self.processor.decode(generation, skip_special_tokens=False)
-            parsed_answer = self.processor.post_process_generation(decoded, task=prompt.split(">")[0]+">", image_size=image_in.size)
+            parsed_answer = self.processor.post_process_generation(
+                decoded, task=prompt.split(">")[0] + ">", image_size=image_in.size
+            )
 
         return (json.dumps(parsed_answer),)
 
@@ -94,12 +100,18 @@ class LoRAFlorence2(LoRATransformerModel):
                 preprocessed_inputs=model_inputs
             )
             generation = self.model.generate(
-                **prepared_inputs, max_new_tokens=1024, do_sample=False, early_stopping=False, num_beams=3
+                **prepared_inputs,
+                max_new_tokens=1024,
+                do_sample=False,
+                early_stopping=False,
+                num_beams=3
             )
             generation = generation[0]
             if self.generation_includes_input:
                 generation = generation[input_len:]
             decoded = self.processor.decode(generation, skip_special_tokens=False)
-            parsed_answer = self.processor.post_process_generation(decoded, task=prompt.split(">")[0]+">", image_size=image_in.size)
+            parsed_answer = self.processor.post_process_generation(
+                decoded, task=prompt.split(">")[0] + ">", image_size=image_in.size
+            )
 
         return (json.dumps(parsed_answer),)

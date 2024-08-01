@@ -41,7 +41,9 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
         detection_dict[X_KEY] = x1 + detection_dict[WIDTH_KEY] / 2
         detection_dict[Y_KEY] = y1 + detection_dict[HEIGHT_KEY] / 2
 
-        detection_dict[CONFIDENCE_KEY] = float(confidence) if confidence is not None else None
+        detection_dict[CONFIDENCE_KEY] = (
+            float(confidence) if confidence is not None else None
+        )
         detection_dict[CLASS_ID_KEY] = int(class_id) if class_id is not None else None
         if mask is not None:
             polygon = sv.mask_to_polygons(mask=mask)
@@ -55,8 +57,12 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
                 )
         if tracker_id is not None:
             detection_dict[TRACKER_ID_KEY] = int(tracker_id)
-        detection_dict[CLASS_NAME_KEY] = str(data["class_name"]) if "class_name" in data else ""
-        detection_dict[DETECTION_ID_KEY] = str(data[DETECTION_ID_KEY]) if DETECTION_ID_KEY in data else None
+        detection_dict[CLASS_NAME_KEY] = (
+            str(data["class_name"]) if "class_name" in data else ""
+        )
+        detection_dict[DETECTION_ID_KEY] = (
+            str(data[DETECTION_ID_KEY]) if DETECTION_ID_KEY in data else None
+        )
         if PARENT_ID_KEY in data:
             detection_dict[PARENT_ID_KEY] = str(data[PARENT_ID_KEY])
         if (

@@ -24,6 +24,9 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison impor
     ClipComparisonBlock,
 )
 from inference.core.workflows.core_steps.models.foundation.cogvlm import CogVLMBlock
+from inference.core.workflows.core_steps.models.foundation.florence_2 import (
+    Florence2ModelBlock,
+)
 from inference.core.workflows.core_steps.models.foundation.lmm import LMMBlock
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier import (
     LMMForClassificationBlock,
@@ -32,9 +35,6 @@ from inference.core.workflows.core_steps.models.foundation.ocr import OCRModelBl
 from inference.core.workflows.core_steps.models.foundation.openai import OpenAIBlock
 from inference.core.workflows.core_steps.models.foundation.yolo_world import (
     YoloWorldModelBlock,
-)
-from inference.core.workflows.core_steps.models.foundation.florence_2 import (
-    Florence2ModelBlock,
 )
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation import (
     RoboflowInstanceSegmentationModelBlock,
