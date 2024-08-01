@@ -27,11 +27,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceConfiguration, InferenceHTTPClient
-from inference_sdk.http.utils.iterables import make_batches
-from inference.models.florence2.florence2 import Florence2
 from inference.core.utils.image_utils import load_image
-from inference.core.entities.requests.florence2 import Florence2InferenceRequest
 from inference.core.entities.requests.inference import LMMInferenceRequest
 import json
 import supervision as sv

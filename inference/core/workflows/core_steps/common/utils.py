@@ -53,7 +53,6 @@ def load_core_model(
         ClipCompareRequest,
         CogVLMInferenceRequest,
         YOLOWorldInferenceRequest,
-        Florence2InferenceRequest
     ],
     core_model: str,
 ) -> str:
@@ -61,7 +60,6 @@ def load_core_model(
     core_model_id = (
         f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
     )
-    print(core_model_id)
     model_manager.add_model(core_model_id, inference_request.api_key)
     return core_model_id
 
