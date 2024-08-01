@@ -1,0 +1,53 @@
+FROM nvcr.io/nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+
+WORKDIR /app
+
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ffmpeg \
+    libxext6 \
+    libopencv-dev \
+    uvicorn \
+    python3-pip \
+    git \
+    libgdal-dev \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/requirements.sam2.txt \
+    requirements/requirements.http.txt \
+    requirements/_requirements.txt \
+    ./
+
+RUN python3 -m pip install --upgrade pip
+RUN python3 -m pip install --extra-index-url  https://download.pytorch.org/whl/cu124  \
+    -r _requirements.txt \
+    -r requirements.sam2.txt \
+    -r requirements.http.txt \
+    --upgrade \
+    && rm -rf ~/.cache/pip
+
+# Install setup.py requirements for flash_attn
+RUN python3 -m pip install packaging==24.1  && rm -rf ~/.cache/pip
+
+# Install flash_attn required for Paligemma and Florence2
+# RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-build-isolation && rm -rf ~/.cache/pip
+WORKDIR /sam
+RUN apt-get install -y gcc
+RUN git clone https://github.com/facebookresearch/segment-anything-2
+RUN cd segment-anything-2 && python3 -m pip install --no-build-isolation . && rm -rf ~/.cache/pip
+
+WORKDIR /app/
+COPY inference inference
+COPY docker/config/gpu_http.py gpu_http.py
+
+ENV VERSION_CHECK_MODE=continuous
+ENV PROJECT=roboflow-platform
+ENV NUM_WORKERS=1
+ENV HOST=0.0.0.0
+ENV PORT=9001
+ENV WORKFLOWS_STEP_EXECUTION_MODE=local
+ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
+ENV API_LOGGING_ENABLED=True
+ENV LMM_ENABLED=True
+
+ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
