@@ -64,7 +64,7 @@ class SegmentAnything2(RoboflowCoreModel):
         self.image_size_cache = {}
         self.embedding_cache_keys = []
 
-        # self.low_res_logits_cache = {}
+        self.low_res_logits_cache = {}
         # self.segmentation_cache_keys = []
         self.task_type = "unsupervised-segmentation"
 
@@ -230,7 +230,7 @@ class SegmentAnything2(RoboflowCoreModel):
             - The cache has a maximum size defined by SAM_MAX_EMBEDDING_CACHE_SIZE. When the cache exceeds this size,
               the oldest entries are removed.
         """
-        if not embeddings:
+        if embeddings is not None:
             if not image and not image_id:
                 raise ValueError(
                     "Must provide either image, cached image_id, or embeddings"

@@ -16,13 +16,15 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
 COPY requirements/requirements.sam2.txt \
     requirements/requirements.http.txt \
     requirements/_requirements.txt \
+    requirements/requirements.gpu.txt \
     ./
 
 RUN python3 -m pip install --upgrade pip
-RUN python3 -m pip install --extra-index-url  https://download.pytorch.org/whl/cu124  \
+RUN python3 -m pip install --extra-index-url  https://download.pytorch.org/whl/cu121  \
     -r _requirements.txt \
     -r requirements.sam2.txt \
     -r requirements.http.txt \
+    -r requirements.gpu.txt \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -34,7 +36,7 @@ RUN python3 -m pip install packaging==24.1  && rm -rf ~/.cache/pip
 WORKDIR /sam
 RUN apt-get install -y gcc
 RUN git clone https://github.com/facebookresearch/segment-anything-2
-RUN cd segment-anything-2 && python3 -m pip install --no-build-isolation . && rm -rf ~/.cache/pip
+RUN cd segment-anything-2 && TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0 7.5 8.0 8.6" python3 -m pip install -e . && rm -rf ~/.cache/pip
 
 WORKDIR /app/
 COPY inference inference
@@ -49,5 +51,6 @@ ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV API_LOGGING_ENABLED=True
 ENV LMM_ENABLED=True
+ENV PYTHONPATH=/app/
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
