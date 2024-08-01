@@ -146,11 +146,8 @@ class Florence2ModelBlock(WorkflowBlock):
                 model_id=model_id
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return await self.run_locally(
-                images=images,
-                vision_task=vision_task,
-                prompt=prompt,
-                model_id=model_id
+            raise ValueError(
+                f"Invalid step execution mode: {self._step_execution_mode}; Florence2ModelBlock only supports local execution."
             )
         else:
             raise ValueError(
