@@ -1,39 +1,22 @@
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
-
-from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parents_coordinates_to_batch_of_sv_detections,
-    attach_prediction_type_info_to_sv_detections_batch,
-    convert_inference_detections_batch_to_sv_detections,
-    load_core_model,
-)
 from inference.core.workflows.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.entities.types import (
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    FLOAT_ZERO_TO_ONE_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_STRING_KIND,
     BATCH_OF_DICTIONARY_KIND,
     STRING_KIND,
     WILDCARD_KIND,
-    FloatZeroToOne,
+    ROBOFLOW_MODEL_ID_KIND,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -47,18 +30,20 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 from inference_sdk.http.utils.iterables import make_batches
 from inference.models.florence2.florence2 import Florence2
-from transformers import (
-    AdamW,
-    AutoModelForCausalLM,
-    AutoProcessor,
-    get_scheduler
-)
-import torch
-from PIL import Image
 from inference.core.utils.image_utils import load_image
 from inference.core.entities.requests.florence2 import Florence2InferenceRequest
 from inference.core.entities.requests.inference import LMMInferenceRequest
 import json
+import supervision as sv
+
+TASKS_WITH_PROMPT=[
+    "<CAPTION_TO_PHRASE_GROUNDING>",
+    "<REFERRING_EXPRESSION_SEGMENTATION>",
+    "<REGION_TO_SEGMENTATION>",
+    "<OPEN_VOCABULARY_DETECTION>",
+    "<REGION_TO_CATEGORY>"
+    "<REGION_TO_DESCRIPTION>"
+]
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -72,15 +57,30 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["Florence2Model", "Florence2"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
+        title="Model",
+        default="florence-pretrains/1",
+        description="Roboflow model identifier",
+        examples=["florence-pretrains/1", "$inputs.model"],
+    )
     vision_task: Union[
         Literal[
+            "<OD>",
+            "<CAPTION_TO_PHRASE_GROUNDING>",
+            "<DENSE_REGION_CAPTION>",
+            "<REGION_PROPOSAL>",
+            "<OCR_WITH_REGION>",
+            "<REFERRING_EXPRESSION_SEGMENTATION>",
+            "<REGION_TO_SEGMENTATION>",
             "<OPEN_VOCABULARY_DETECTION>",
+            "<REGION_TO_CATEGORY>",
+            "<REGION_TO_DESCRIPTION>",
         ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(
         description="The computer vision task to perform.",
         default="<OPEN_VOCABULARY_DETECTION>",
-        examples=["<OD>", "<CAPTION>"],
+        examples=["<OPEN_VOCABULARY_DETECTION>"],
     )
     prompt: Union[
         WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]
@@ -88,17 +88,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="The accompanying prompt for the task (comma separated).",
         examples=[["red apple", "blue soda can"], "$inputs.prompt"],
     )
-    version: Union[
-        Literal[
-            "B",
-            "L"
-        ],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
-    ] = Field(
-        default="B",
-        description="Variant of Florence-2 Model",
-        examples=["B", "$inputs.variant"],
-    )
+    
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
@@ -111,7 +101,7 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="raw_output", kind=[BATCH_OF_DICTIONARY_KIND]),
-            OutputDefinition(name="*", kind=[WILDCARD_KIND]),
+            OutputDefinition(name="structured_output", kind=[WILDCARD_KIND]),
         ]
 
     def get_actual_outputs(self) -> List[OutputDefinition]:
@@ -120,9 +110,8 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="raw_output", kind=[BATCH_OF_DICTIONARY_KIND]),
+            OutputDefinition(name="structured_output", kind=[WILDCARD_KIND]),
         ]
-        # for key in self.json_output_format.keys():
-        #     result.append(OutputDefinition(name=key, kind=[WILDCARD_KIND]))
         return result
     
 class Florence2ModelBlock(WorkflowBlock):
@@ -133,18 +122,9 @@ class Florence2ModelBlock(WorkflowBlock):
         api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
-        self.model_manager = model_manager
         self._model_manager = model_manager
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
-        # self.model = Florence2(model_id="florence-pretrains/1", api_key=self._api_key)
-        # print("florence 2 loaded")
-        # CHECKPOINT = "microsoft/Florence-2-large"
-        # REVISION = 'refs/pr/6'
-        # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # self.model = AutoModelForCausalLM.from_pretrained(CHECKPOINT, trust_remote_code=True).eval().to(DEVICE)
-        # self.processor = AutoProcessor.from_pretrained(CHECKPOINT, trust_remote_code=True)
 
 
     @classmethod
@@ -160,66 +140,78 @@ class Florence2ModelBlock(WorkflowBlock):
         images: Batch[WorkflowImageData],
         vision_task: str,
         prompt: List[str],
-        version: str,
+        model_id: str
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return await self.run_locally(
                 images=images,
                 vision_task=vision_task,
                 prompt=prompt,
-                version=version,
+                model_id=model_id
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             return await self.run_locally(
                 images=images,
                 vision_task=vision_task,
                 prompt=prompt,
-                version=version,
+                model_id=model_id
             )
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
 
-    # def run_example(self, task_prompt, image, text_input=None):
-    #     if text_input is None:
-    #         prompt = task_prompt
-    #     else:
-    #         prompt = task_prompt + text_input
-    #     print(prompt)
-    #     inputs = self.processor(text=prompt, images=image, return_tensors="pt")
-    #     generated_ids = self.model.generate(
-    #         input_ids=inputs["input_ids"].cuda(),
-    #         pixel_values=inputs["pixel_values"].cuda(),
-    #         max_new_tokens=1024,
-    #         early_stopping=False,
-    #         do_sample=False,
-    #         num_beams=3,
-    #     )
-    #     generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
-    #     parsed_answer = self.processor.post_process_generation(
-    #         generated_text, 
-    #         task=task_prompt, 
-    #         image_size=(image.width, image.height)
-    #     )
+    async def run_locally(
+        self,
+        images: Batch[WorkflowImageData],
+        vision_task: str,
+        prompt: List[str],
+        model_id: str
+    ) -> BlockResult:
+        predictions = []
+        images_prepared_for_processing = [
+            image.to_inference_format(numpy_preferred=True) for image in images
+        ]
 
-    #     return parsed_answer
+        # infer on florence2 model
+        predictions = await self.get_florence2_generations_locally(
+            image=images_prepared_for_processing,
+            prompt=vision_task if vision_task not in TASKS_WITH_PROMPT else vision_task+" "+ "<and>".join(prompt),
+            model_manager=self._model_manager,
+            api_key=self._api_key,
+            model_id=model_id
+        )
 
+        # convert to sv detections
+        for prediction in predictions:
+            prediction["structured_output"] = sv.Detections.from_lmm(sv.LMM.FLORENCE_2, prediction["raw_output"], resolution_wh=(prediction["image"]["width"], prediction["image"]["height"]))
+
+        formatted_predictions = [{
+            **pred,
+            "parent_id": image.parent_metadata.parent_id,
+            "root_parent_id": image.workflow_root_ancestor_metadata.parent_id,
+        } for pred, image in zip(predictions, images)]
+
+
+        return formatted_predictions
+    
     async def get_florence2_generations_locally(
         self,
         image: List[dict],
         prompt: str,
         model_manager: ModelManager,
         api_key: Optional[str],
+        model_id: str
     ) -> List[Dict[str, Any]]:
         serialised_result = []
+
+        # run florence 2 on each image
         for single_image in image:
             loaded_image, _ = load_image(single_image)
             image_metadata = {
                 "width": loaded_image.shape[1],
                 "height": loaded_image.shape[0],
             }
-            model_id = "florence-pretrains/1"
             inference_request = LMMInferenceRequest(
                 model_id=model_id,
                 image=single_image,
@@ -235,64 +227,3 @@ class Florence2ModelBlock(WorkflowBlock):
                 }
             )
         return serialised_result
-
-    async def run_locally(
-        self,
-        images: Batch[WorkflowImageData],
-        vision_task: str,
-        prompt: List[str],
-        version: str,
-    ) -> BlockResult:
-        predictions = []
-        images_prepared_for_processing = [
-            image.to_inference_format(numpy_preferred=True) for image in images
-        ]
-        predictions = await self.get_florence2_generations_locally(
-            image=images_prepared_for_processing,
-            prompt=vision_task +" "+ "<and>".join(prompt),
-            model_manager=self._model_manager,
-            api_key=self._api_key,
-        )
-        formatted_predictions = [{
-            **pred,
-            "parent_id": image.parent_metadata.parent_id,
-            "root_parent_id": image.workflow_root_ancestor_metadata.parent_id
-        } for pred, image in zip(predictions, images)]
-        # for single_image in images:
-        #     single_image = Image.fromarray(single_image.numpy_image)
-        #     parsed_answer = self.model.infer(single_image, "<CAPTION>")#self.run_example(vision_task, single_image, "<and>".join(prompt))
-        #     preds = []
-        #     for i, bbox in enumerate(parsed_answer[vision_task]["bboxes"]):
-        #         pred = {
-        #             "class": parsed_answer[vision_task]["bboxes_labels"][i],
-        #             "class_id": prompt.index(parsed_answer[vision_task]["bboxes_labels"][i]),
-        #             "confidence": 1.0,
-        #             "x": (bbox[0] + bbox[2]) / 2,
-        #             "y": (bbox[1] + bbox[3]) / 2,
-        #             "width": bbox[2] - bbox[0],
-        #             "height": bbox[3] - bbox[1],
-        #         }
-        #         preds.append(pred)
-        #     predictions.append(preds)
-
-        print(formatted_predictions)
-
-        return formatted_predictions
-
-    def _post_process_result(
-        self,
-        images: Batch[WorkflowImageData],
-        predictions: List[dict],
-    ) -> BlockResult:
-        # predictions = convert_inference_detections_batch_to_sv_detections(predictions)
-        # predictions = attach_prediction_type_info_to_sv_detections_batch(
-        #     predictions=predictions,
-        #     prediction_type="object-detection",
-        # )
-        # predictions = attach_parents_coordinates_to_batch_of_sv_detections(
-        #     images=images,
-        #     predictions=predictions,
-        # )
-        # return [{"predictions": prediction} for prediction in predictions]
-        img = Image.fromarray(images[0].numpy_image)
-        return predictions

@@ -11,7 +11,6 @@ from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
-from inference.core.entities.requests.florence2 import Florence2InferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.constants import (
     DETECTION_ID_KEY,
