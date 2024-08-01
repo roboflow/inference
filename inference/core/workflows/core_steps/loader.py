@@ -95,6 +95,8 @@ from inference.core.workflows.core_steps.traditional.countours import ImageConto
 from inference.core.workflows.core_steps.traditional.pixelationCount import PixelationCountBlock
 from inference.core.workflows.core_steps.traditional.sift import SIFTBlock
 from inference.core.workflows.core_steps.traditional.siftComparison import SIFTComparisonBlock
+from inference.core.workflows.core_steps.traditional.templateMatching import TemplateMatchingBlock
+
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.blur import (
@@ -248,6 +250,7 @@ def load_blocks() -> List[
         PixelationCountBlock,
         SIFTBlock,
         SIFTComparisonBlock,
+        TemplateMatchingBlock
     ]
 
 
