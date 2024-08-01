@@ -23,11 +23,13 @@ from inference.core.workflows.core_steps.fusion.dimension_collapse import (
 from inference.core.workflows.core_steps.models.foundation.clip_comparison import (
     ClipComparisonBlock,
 )
+from inference.core.workflows.core_steps.models.foundation.cogvlm import CogVLMBlock
 from inference.core.workflows.core_steps.models.foundation.lmm import LMMBlock
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier import (
     LMMForClassificationBlock,
 )
 from inference.core.workflows.core_steps.models.foundation.ocr import OCRModelBlock
+from inference.core.workflows.core_steps.models.foundation.openai import OpenAIBlock
 from inference.core.workflows.core_steps.models.foundation.yolo_world import (
     YoloWorldModelBlock,
 )
@@ -51,6 +53,9 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection im
 )
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection import (
     QRCodeDetectorBlock,
+)
+from inference.core.workflows.core_steps.sinks.roboflow.roboflow_custom_metadata import (
+    RoboflowCustomMetadataBlock,
 )
 from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload import (
     RoboflowDatasetUploadBlock,
@@ -186,6 +191,8 @@ def load_blocks() -> List[
         ClipComparisonBlock,
         LMMBlock,
         LMMForClassificationBlock,
+        OpenAIBlock,
+        CogVLMBlock,
         OCRModelBlock,
         YoloWorldModelBlock,
         RoboflowInstanceSegmentationModelBlock,
@@ -225,6 +232,7 @@ def load_blocks() -> List[
         PixelateVisualizationBlock,
         PolygonVisualizationBlock,
         TriangleVisualizationBlock,
+        RoboflowCustomMetadataBlock,
     ]
 
 
