@@ -59,6 +59,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
     )
 
     tolerance: Union[WorkflowParameterSelector(kind=[INTEGER_KIND]), int] = Field(
+        default=10,
         description="Tolerance for color matching.", examples=[10, "$inputs.tolerance"],
     )
 
@@ -113,11 +114,11 @@ class PixelationCountBlock(WorkflowBlock):  # Ensure the class name matches the 
                 except ValueError as e:
                     raise ValueError(f"Invalid tuple color format: {target_color}") from e
             else:
-                raise ValueError(f"Invalid color format, must be hex or tuple BGR: {target_color}")
+                raise ValueError(f"Invalid hex color format: {target_color}")
         elif isinstance(target_color, tuple) and len(target_color) == 3:
             target_color_bgr = target_color
         else:
-            raise ValueError(f"Invalid color format, must be hex or tuple BGR: {target_color}")
+            raise ValueError(f"Invalid color format: {target_color}")
 
         # Define the target color and the tolerance range
         lower_bound = np.array([target_color_bgr[0] - tolerance, target_color_bgr[1] - tolerance, target_color_bgr[2] - tolerance])
