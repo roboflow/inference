@@ -24,6 +24,7 @@ from inference.core.workflows.entities.types import (
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
+    NUMPY_ARRAY_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -71,7 +72,7 @@ class SIFTDetectionManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name="descriptors",
                 kind=[
-                    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+                    NUMPY_ARRAY_KIND,
                 ],
             ),
         ]
@@ -84,14 +85,12 @@ class SIFTBlock(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[SIFTDetectionManifest]:
         return SIFTDetectionManifest
-    
+
     def apply_sift(self, image: np.ndarray) -> (np.ndarray, list, np.ndarray):
         """
         Applies SIFT to the image.
-
         Args:
             image: Input image.
-
         Returns:
             np.ndarray: Image with keypoints drawn.
             list: Keypoints detected.
@@ -102,7 +101,7 @@ class SIFTBlock(WorkflowBlock):
         kp, des = sift.detectAndCompute(gray, None)
         # Draw keypoints with larger circles
         img_with_kp = cv2.drawKeypoints(gray, kp, image)
-        
+
         # Convert keypoints to the desired format
         keypoints = [
             {
@@ -115,7 +114,7 @@ class SIFTBlock(WorkflowBlock):
             }
             for point in kp
         ]
-        
+
         return img_with_kp, keypoints, des
 
     async def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
