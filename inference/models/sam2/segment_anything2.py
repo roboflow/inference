@@ -230,7 +230,8 @@ class SegmentAnything2(RoboflowCoreModel):
             - The cache has a maximum size defined by SAM_MAX_EMBEDDING_CACHE_SIZE. When the cache exceeds this size,
               the oldest entries are removed.
         """
-        if embeddings is not None:
+        if embeddings is None:
+            print("EMBEDDIGNS IS NONE")
             if not image and not image_id:
                 raise ValueError(
                     "Must provide either image, cached image_id, or embeddings"
@@ -243,6 +244,7 @@ class SegmentAnything2(RoboflowCoreModel):
                 image=image, image_id=image_id
             )
         else:
+            print("EMBEDDIGNS IS", embeddings)
             if not orig_im_size:
                 raise ValueError(
                     "Must provide original image size if providing embeddings"
@@ -310,11 +312,11 @@ class SegmentAnything2(RoboflowCoreModel):
             mask_input = None 
 
 
-        
-        self._is_image_set = True
-        self._features = None
-        self._orig_hw = None
-        self._is_batch = False
+        # if embedding is not None:
+        #     self.predictor._is_image_set = True
+        #     self.predictor._features = embedding
+        #     self.predictor._orig_hw = original_image_size
+        #     self.predictor._is_batch = False
 
         masks, scores, low_res_logits = self.predictor.predict(
             point_coords  = point_coords.astype(np.float32) if point_coords is not None else None,
