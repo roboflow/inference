@@ -73,7 +73,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
                 ],
             ),
             OutputDefinition(
-                name="Number of Color Pixels",
+                name="color_pixel_count",
                 kind=[
                     INTEGER_KIND,
                 ],
@@ -142,4 +142,4 @@ class PixelationCountBlock(WorkflowBlock):  # Ensure the class name matches the 
             numpy_image=image.numpy_image,  # Keeping the original image as output
         )
 
-        return {OUTPUT_IMAGE_KEY: output, "Number of Color Pixels": color_pixel_count}
+        return {OUTPUT_IMAGE_KEY: output, "color_pixel_count": color_pixel_count}
