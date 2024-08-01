@@ -1,10 +1,9 @@
 import base64
 from io import BytesIO
 from time import perf_counter
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional, Union, Dict
 
 import numpy as np
-import onnxruntime
 import rasterio.features
 import torch
 import os
@@ -65,7 +64,7 @@ class SegmentAnything2(RoboflowCoreModel):
         self.embedding_cache_keys = []
 
         self.low_res_logits_cache = {}
-        # self.segmentation_cache_keys = []
+        self.segmentation_cache_keys = []
         self.task_type = "unsupervised-segmentation"
 
     def get_infer_bucket_file_list(self) -> List[str]:
@@ -102,25 +101,27 @@ class SegmentAnything2(RoboflowCoreModel):
             (array([...]), (224, 224))
         """
         if image_id and image_id in self.embedding_cache:
-            embedding = self.embedding_cache[image_id]
-            embedding = torch.Tensor(embedding).to(self.device)
             return (
                 self.embedding_cache[image_id],
                 self.image_size_cache[image_id],
             )
+
         img_in = self.preproc_image(image)
-        self.predictor.set_image(img_in)
-        embedding = self.predictor.get_image_embedding().cpu().numpy()
-    
+        with torch.inference_mode():
+            self.predictor.set_image(img_in)
+            # embedding = self.predictor.get_image_embedding().cpu().numpy()
+            # high_res_feats = [v.cpu().numpy() for v in self.predictor._features["high_res_feats"]]
+            # embedding_dict = {"image_embed": embedding, "high_res_feats": high_res_feats}
+            embedding_dict = self.predictor._features
         if image_id:
-            self.embedding_cache[image_id] = embedding
+            self.embedding_cache[image_id] = embedding_dict
             self.image_size_cache[image_id] = img_in.shape[:2]
             self.embedding_cache_keys.append(image_id)
             if len(self.embedding_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
                 cache_key = self.embedding_cache_keys.pop(0)
                 del self.embedding_cache[cache_key]
                 del self.image_size_cache[cache_key]
-        return (embedding, img_in.shape[:2])
+        return (embedding_dict, img_in.shape[:2])
 
     def infer_from_request(self, request: SamInferenceRequest):
         """Performs inference based on the request type.
@@ -186,16 +187,9 @@ class SegmentAnything2(RoboflowCoreModel):
     def segment_image(
         self,
         image: Any,
-        embeddings: Optional[Union[np.ndarray, List[List[float]]]] = None,
-        embeddings_format: Optional[str] = "json",
-        has_mask_input: Optional[bool] = False,
         image_id: Optional[str] = None,
-        mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
-        mask_input_format: Optional[str] = "json",
-        orig_im_size: Optional[List[int]] = None,
         point_coords: Optional[List[List[float]]] = None,
         point_labels: Optional[List[int]] = None,
-        use_mask_input_cache: Optional[bool] = True,
         **kwargs,
     ):
         """
@@ -230,8 +224,7 @@ class SegmentAnything2(RoboflowCoreModel):
             - The cache has a maximum size defined by SAM_MAX_EMBEDDING_CACHE_SIZE. When the cache exceeds this size,
               the oldest entries are removed.
         """
-        if embeddings is None:
-            print("EMBEDDIGNS IS NONE")
+        with torch.inference_mode():
             if not image and not image_id:
                 raise ValueError(
                     "Must provide either image, cached image_id, or embeddings"
@@ -243,104 +236,44 @@ class SegmentAnything2(RoboflowCoreModel):
             embedding, original_image_size = self.embed_image(
                 image=image, image_id=image_id
             )
-        else:
-            print("EMBEDDIGNS IS", embeddings)
-            if not orig_im_size:
-                raise ValueError(
-                    "Must provide original image size if providing embeddings"
-                )
-            original_image_size = orig_im_size
-            if embeddings_format == "json":
-                embedding = np.array(embeddings)
-            elif embeddings_format == "binary":
-                embedding = np.load(BytesIO(embeddings))
-            else:
-                raise ValueError(
-                    "Invalid embeddings format"
-                )
-            embedding = torch.Tensor(embedding).to(self.device)
+
+            if point_coords is not None:
+                point_coords = np.array(point_coords, dtype=np.float32)
+                point_coords = np.expand_dims(point_coords, axis=0)
+
+            if point_labels is not None:
+                point_labels = np.array(point_labels, dtype=np.float32)
+                point_labels = np.expand_dims(point_labels, axis=0)
 
 
+            mask_input = self.low_res_logits_cache.get(image_id, None)
+            self.predictor._is_image_set = True
+            self.predictor._features = embedding
+            self.predictor._orig_hw = [original_image_size]
+            self.predictor._is_batch = False
 
-        
+            masks, scores, low_res_logits = self.predictor.predict(
+                point_coords  = point_coords.astype(np.float32) if point_coords is not None else None,
+                point_labels = point_labels,
+                mask_input =  np.expand_dims(mask_input, axis=0).astype(np.float32) if mask_input is not None else  None,
+                multimask_output = True,
+                return_logits = True ,
+                normalize_coords=True
+            )
 
-        if point_coords is not None:
-            point_coords = point_coords
-            # point_coords.append([0, 0])
-            point_coords = np.array(point_coords, dtype=np.float32)
-            point_coords = np.expand_dims(point_coords, axis=0)
-            # point_coords = self.predictor._transforms.transform_coords(
-            #     coords=point_coords,
-            #     normalize=False,
-            #     orig_hw=original_image_size,
-            # )
+            sorted_ind = np.argsort(scores)[::-1]
+            masks = masks[sorted_ind]
+            scores = scores[sorted_ind]
+            low_res_logits = low_res_logits[sorted_ind]
 
-        if point_labels is not None:
-            point_labels = point_labels
-            # point_labels.append(-1)
-            point_labels = np.array(point_labels, dtype=np.float32)
-            point_labels = np.expand_dims(point_labels, axis=0)
+            if image_id:
+                self.low_res_logits_cache[image_id] = low_res_logits[0]
+                if image_id not in self.segmentation_cache_keys:
+                    self.segmentation_cache_keys.append(image_id)
+                if len(self.segmentation_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
+                    cache_key = self.segmentation_cache_keys.pop(0)
+                    del self.low_res_logits_cache[cache_key]
+            masks = masks[0]
+            low_res_masks = low_res_logits[0]
 
-        if has_mask_input:
-            if (
-                image_id
-                and image_id in self.low_res_logits_cache
-                and use_mask_input_cache
-            ):
-                mask_input = self.low_res_logits_cache[image_id]
-            elif mask_input is None and (
-                not image_id or image_id not in self.low_res_logits_cache
-            ):
-                raise ValueError("Must provide either mask_input or cached image_id")
-            else:
-                if mask_input_format == "json":
-                    polys = mask_input
-                    mask_input = np.zeros((1, len(polys), 256, 256), dtype=np.uint8)
-                    for i, poly in enumerate(polys):
-                        poly = ShapelyPolygon(poly)
-                        raster = rasterio.features.rasterize(
-                            [poly], out_shape=(256, 256)
-                        )
-                        mask_input[0, i, :, :] = raster
-                elif mask_input_format == "binary":
-                    binary_data = base64.b64decode(mask_input)
-                    mask_input = np.load(BytesIO(binary_data))
-                elif mask_input_format == "raw":
-                    mask_input = np.expand_dims(mask_input, axis=0)
-
-        else:
-            mask_input = None 
-
-
-        # if embedding is not None:
-        #     self.predictor._is_image_set = True
-        #     self.predictor._features = embedding
-        #     self.predictor._orig_hw = original_image_size
-        #     self.predictor._is_batch = False
-
-        masks, scores, low_res_logits = self.predictor.predict(
-            point_coords  = point_coords.astype(np.float32) if point_coords is not None else None,
-            point_labels = point_labels,
-            # box = None,
-            mask_input =  mask_input.astype(np.float32) if mask_input is not None else  None,
-            multimask_output = True,
-            return_logits = True ,
-            normalize_coords=True
-        )
-
-        sorted_ind = np.argsort(scores)[::-1]
-        masks = masks[sorted_ind]
-        scores = scores[sorted_ind]
-        low_res_logits = low_res_logits[sorted_ind]
-
-        if image_id:
-            self.low_res_logits_cache[image_id] = low_res_logits[0]
-            if image_id not in self.segmentation_cache_keys:
-                self.segmentation_cache_keys.append(image_id)
-            if len(self.segmentation_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
-                cache_key = self.segmentation_cache_keys.pop(0)
-                del self.low_res_logits_cache[cache_key]
-        masks = masks[0]
-        low_res_masks = low_res_logits[0]
-
-        return masks, low_res_masks
+            return masks, low_res_masks
