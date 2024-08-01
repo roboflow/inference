@@ -113,6 +113,13 @@ class SIFTComparisonBlock(WorkflowBlock):
         #descriptor1 = np.array(descriptor1).astype(np.float32)
         #descriptor2 = np.array(descriptor2).astype(np.float32)
 
+        # Check if both descriptor arrays have at least 2 descriptors
+        if len(descriptor1) < 2 or len(descriptor2) < 2:
+            return {
+                "good_matches_count": 0,
+                "images_match": False,
+            }
+
         # Implement the SIFT comparison logic
         flann = cv2.FlannBasedMatcher(dict(algorithm=1, trees=5), dict(checks=50))
         matches = flann.knnMatch(descriptor1, descriptor2, k=2)
