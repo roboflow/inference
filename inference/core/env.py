@@ -285,6 +285,7 @@ SAM_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM_MAX_EMBEDDING_CACHE_SIZE", 10)
 
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
+SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
 
 
 # Device ID, default is "sample-device-id"

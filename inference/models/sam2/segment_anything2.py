@@ -1,4 +1,5 @@
 import base64
+import hashlib
 from io import BytesIO
 from time import perf_counter
 from typing import Any, List, Optional, Union, Dict
@@ -12,16 +13,16 @@ from sam2.sam2_image_predictor import SAM2ImagePredictor
 from shapely.geometry import Polygon as ShapelyPolygon
 
 from inference.core.entities.requests.inference import InferenceRequestImage
-from inference.core.entities.requests.sam import (
-    SamEmbeddingRequest,
-    SamInferenceRequest,
-    SamSegmentationRequest,
+from inference.core.entities.requests.sam2 import (
+    Sam2EmbeddingRequest,
+    Sam2InferenceRequest,
+    Sam2SegmentationRequest,
 )
-from inference.core.entities.responses.sam import (
-    SamEmbeddingResponse,
-    SamSegmentationResponse,
+from inference.core.entities.responses.sam2 import (
+    Sam2EmbeddingResponse,
+    Sam2SegmentationResponse,
 )
-from inference.core.env import SAM_MAX_EMBEDDING_CACHE_SIZE, SAM_VERSION_ID
+from inference.core.env import SAM_MAX_EMBEDDING_CACHE_SIZE, SAM2_VERSION_ID
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
@@ -41,7 +42,7 @@ class SegmentAnything2(RoboflowCoreModel):
         segmentation_cache_keys: Keys for the segmentation cache.
     """
 
-    def __init__(self, *args, model_id: str = f"sam2/temp", **kwargs):
+    def __init__(self, *args, model_id: str = f"sam2/{SAM2_VERSION_ID}", **kwargs):
         """Initializes the SegmentAnything.
 
         Args:
@@ -49,10 +50,14 @@ class SegmentAnything2(RoboflowCoreModel):
             **kwargs: Arbitrary keyword arguments.
         """
         super().__init__(*args, model_id=model_id, **kwargs)
-        assert os.path.exists(self.cache_file("sam2_hiera_large.pt"))
+        checkpoint = self.cache_file("weights.pt")
+        model_cfg = {
+            "hiera_large": "sam2_hiera_l.yaml",
+            "hiera_small": "sam2_hiera_s.yaml",
+            "hiera_tiny": "sam2_hiera_t.yaml",
+            "hiera_b_plus": "sam2_hiera_b+.yaml"
+        }[SAM2_VERSION_ID]
 
-        checkpoint = self.cache_file("sam2_hiera_large.pt")
-        model_cfg = "sam2_hiera_l.yaml"
         self.sam = build_sam2(model_cfg, checkpoint)
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.sam.to(self.device)
@@ -73,7 +78,7 @@ class SegmentAnything2(RoboflowCoreModel):
         Returns:
             List[str]: List of file names.
         """
-        return ["sam2_hiera_large.pt"]
+        return ["weights.pt"]
 
     def embed_image(self, image: Any, image_id: Optional[str] = None, **kwargs):
         """
@@ -104,26 +109,37 @@ class SegmentAnything2(RoboflowCoreModel):
             return (
                 self.embedding_cache[image_id],
                 self.image_size_cache[image_id],
+                image_id
             )
 
         img_in = self.preproc_image(image)
+        if image_id is None:
+            image_id = hashlib.md5(img_in.tobytes()).hexdigest()[:12]
+
+        if image_id and image_id in self.embedding_cache:
+            return (
+                self.embedding_cache[image_id],
+                self.image_size_cache[image_id],
+                image_id
+            )
+
         with torch.inference_mode():
             self.predictor.set_image(img_in)
             # embedding = self.predictor.get_image_embedding().cpu().numpy()
             # high_res_feats = [v.cpu().numpy() for v in self.predictor._features["high_res_feats"]]
             # embedding_dict = {"image_embed": embedding, "high_res_feats": high_res_feats}
             embedding_dict = self.predictor._features
-        if image_id:
-            self.embedding_cache[image_id] = embedding_dict
-            self.image_size_cache[image_id] = img_in.shape[:2]
-            self.embedding_cache_keys.append(image_id)
-            if len(self.embedding_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
-                cache_key = self.embedding_cache_keys.pop(0)
-                del self.embedding_cache[cache_key]
-                del self.image_size_cache[cache_key]
-        return (embedding_dict, img_in.shape[:2])
+        
+        self.embedding_cache[image_id] = embedding_dict
+        self.image_size_cache[image_id] = img_in.shape[:2]
+        self.embedding_cache_keys.append(image_id)
+        if len(self.embedding_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
+            cache_key = self.embedding_cache_keys.pop(0)
+            del self.embedding_cache[cache_key]
+            del self.image_size_cache[cache_key]
+        return (embedding_dict, img_in.shape[:2], image_id)
 
-    def infer_from_request(self, request: SamInferenceRequest):
+    def infer_from_request(self, request: Sam2InferenceRequest):
         """Performs inference based on the request type.
 
         Args:
@@ -133,21 +149,13 @@ class SegmentAnything2(RoboflowCoreModel):
             Union[SamEmbeddingResponse, SamSegmentationResponse]: The inference response.
         """
         t1 = perf_counter()
-        if isinstance(request, SamEmbeddingRequest):
-            embedding, _ = self.embed_image(**request.dict())
+        if isinstance(request, Sam2EmbeddingRequest):
+            _, _, image_id = self.embed_image(**request.dict())
             inference_time = perf_counter() - t1
-            if request.format == "json":
-                return SamEmbeddingResponse(
-                    embeddings=embedding.tolist(), time=inference_time
-                )
-            elif request.format == "binary":
-                binary_vector = BytesIO()
-                np.save(binary_vector, embedding)
-                binary_vector.seek(0)
-                return SamEmbeddingResponse(
-                    embeddings=binary_vector.getvalue(), time=inference_time
-                )
-        elif isinstance(request, SamSegmentationRequest):
+            return Sam2EmbeddingResponse(
+                time=inference_time, image_id=image_id
+            )
+        elif isinstance(request, Sam2SegmentationRequest):
             masks, low_res_masks = self.segment_image(**request.dict())
             if request.format == "json":
                 masks = masks > self.predictor.model.mask_threshold
@@ -165,7 +173,7 @@ class SegmentAnything2(RoboflowCoreModel):
             else:
                 raise ValueError(f"Invalid format {request.format}")
 
-            response = SamSegmentationResponse(
+            response = Sam2SegmentationResponse(
                 masks=[m.tolist() for m in masks],
                 low_res_masks=[m.tolist() for m in low_res_masks],
                 time=perf_counter() - t1,
@@ -227,13 +235,13 @@ class SegmentAnything2(RoboflowCoreModel):
         with torch.inference_mode():
             if not image and not image_id:
                 raise ValueError(
-                    "Must provide either image, cached image_id, or embeddings"
+                    "Must provide either image or  cached image_id"
                 )
             elif image_id and not image and image_id not in self.embedding_cache:
                 raise ValueError(
                     f"Image ID {image_id} not in embedding cache, must provide the image or embeddings"
                 )
-            embedding, original_image_size = self.embed_image(
+            embedding, original_image_size, image_id = self.embed_image(
                 image=image, image_id=image_id
             )
 
@@ -253,7 +261,7 @@ class SegmentAnything2(RoboflowCoreModel):
             self.predictor._is_batch = False
 
             masks, scores, low_res_logits = self.predictor.predict(
-                point_coords  = point_coords.astype(np.float32) if point_coords is not None else None,
+                point_coords  = point_coords,
                 point_labels = point_labels,
                 mask_input =  np.expand_dims(mask_input, axis=0).astype(np.float32) if mask_input is not None else  None,
                 multimask_output = True,
@@ -266,13 +274,12 @@ class SegmentAnything2(RoboflowCoreModel):
             scores = scores[sorted_ind]
             low_res_logits = low_res_logits[sorted_ind]
 
-            if image_id:
-                self.low_res_logits_cache[image_id] = low_res_logits[0]
-                if image_id not in self.segmentation_cache_keys:
-                    self.segmentation_cache_keys.append(image_id)
-                if len(self.segmentation_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
-                    cache_key = self.segmentation_cache_keys.pop(0)
-                    del self.low_res_logits_cache[cache_key]
+            self.low_res_logits_cache[image_id] = low_res_logits[0]
+            if image_id not in self.segmentation_cache_keys:
+                self.segmentation_cache_keys.append(image_id)
+            if len(self.segmentation_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
+                cache_key = self.segmentation_cache_keys.pop(0)
+                del self.low_res_logits_cache[cache_key]
             masks = masks[0]
             low_res_masks = low_res_logits[0]
 
