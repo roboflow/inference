@@ -9,12 +9,12 @@ from PIL import Image
 from transformers import RTDetrForObjectDetection, RTDetrImageProcessor
 
 from inference.core.models.base import PreprocessReturnMetadata
-from inference.core.models.roboflow import RoboflowCoreModel
+from inference.models.transformers.transformers import TransformerModel
 from inference.core.utils.image_utils import load_image_rgb
 
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-class RTDETR(RoboflowCoreModel):
+class RTDETR(TransformerModel):
     def __init__(self, *args, model_id=f"", **kwargs):
         super().__init__(*args, model_id=model_id, **kwargs)
         self.model_id = model_id
