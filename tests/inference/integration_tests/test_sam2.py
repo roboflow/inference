@@ -86,4 +86,4 @@ def setup():
 
 
 if __name__ == "__main__":
-    test_sam()
+    test_sam2()
