@@ -8,8 +8,17 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 import rasterio.features
 import torch
-from sam2.build_sam import build_sam2
-from sam2.sam2_image_predictor import SAM2ImagePredictor
+import logging
+
+try:
+    from sam2.build_sam import build_sam2
+    from sam2.sam2_image_predictor import SAM2ImagePredictor
+except:
+    logging.error(
+        "Could not import sam2. See the instructions at "
+        "https://github.com/facebookresearch/segment-anything-2/?tab=readme-ov-file#installation"
+    )
+    raise
 from shapely.geometry import Polygon as ShapelyPolygon
 
 from inference.core.entities.requests.inference import InferenceRequestImage
