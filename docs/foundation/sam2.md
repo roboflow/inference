@@ -2,6 +2,10 @@
 
 You can use Segment Anything 2 to identify the precise location of objects in an image. This process can generate masks for objects in an image iteratively, by specifying points to be included or discluded from the segmentation mask.
 
+## How to Use Segment Anything
+
+To use Segment Anything 2 with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>. Then, retrieve your API key from the Roboflow dashboard.
+
 ## How To Use SAM2 Locally With Inference
 
 We will follow along with the example located at `examples/sam2/sam2.py`.
@@ -133,3 +137,80 @@ annotated_image = dot_annotator.annotate(annotated_image, dot_detections)
 im = Image.fromarray(annotated_image)
 im.save("sam_negative_prompted.png")
 ```
+## How To Use SAM2 With a Local Docker Container HTTP Server
+
+### Build and Start The Server
+
+Build the dockerfile (make sure your cwd is at the root of inference) with
+```
+docker build -f docker/dockerfiles/Dockerfile.sam2 -t sam2 .
+```
+and start a sam2 server with
+```
+docker run -it --rm -v /tmp/cache/:/tmp/cache/ -v $(pwd)/inference/:/app/inference/ --gpus=all --net=host sam2
+```
+
+### Embed an Image
+
+An embedding is a numeric representation of an image. SAM uses embeddings as input to calcualte the location of objects in an image.
+
+Create a new Python file and add the following code:
+
+```python
+import requests
+
+infer_payload = {
+    "image": {
+        "type": "base64",
+        "value": "https://i.imgur.com/Q6lDy8B.jpg",
+    },
+    "image_id": "example_image_id",
+}
+
+base_url = "http://localhost:9001"
+
+# Define your Roboflow API Key
+api_key = "YOUR ROBOFLOW API KEY"
+
+res = requests.post(
+    f"{base_url}/sam2/embed_image?api_key={api_key}",
+    json=infer_payload,
+)
+
+```
+
+This code makes a request to Inference to embed an image using SAM.
+
+The `example_image_id` is used to cache the embeddings for later use so you don't have to send them back in future segmentation requests.
+
+### Segment an Object
+
+To segment an object, you need to know at least one point in the image that represents the object that you want to use.
+
+!!! tip "For testing with a single image, you can upload an image to the <a href="https://roboflow.github.io/polygonzone/" target="_blank">Polygon Zone web interface</a> and hover over a point in the image to see the coordinates of that point."
+
+You may also opt to use an object detection model to identify an object, then use the center point of the bounding box as a prompt for segmentation.
+
+Create a new Python file and add the following code:
+
+```python
+#Define request payload
+infer_payload = {
+    "image": {
+        "type": "base64",
+        "value": "https://i.imgur.com/Q6lDy8B.jpg",
+    },
+    "point_coords": [[380, 350]],
+    "point_labels": [1],
+    "image_id": "example_image_id",
+}
+
+res = requests.post(
+    f"{base_url}/sam2/embed_image?api_key={api_key}",
+    json=infer_clip_payload,
+)
+
+masks = request.json()['masks']
+```
+
+This request returns segmentation masks that represent the object of interest.
