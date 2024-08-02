@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import logging
 import os
 from io import BytesIO
 from time import perf_counter
@@ -8,7 +9,6 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 import rasterio.features
 import torch
-import logging
 
 try:
     from sam2.build_sam import build_sam2
