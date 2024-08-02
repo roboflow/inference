@@ -53,6 +53,7 @@ nav:
           - L2CS-Net (Gaze Detection): foundation/gaze.md
           - PaliGemma: foundation/paligemma.md
           - Segment Anything (Segmentation): foundation/sam.md
+          - Segment Anything 2 (Segmentation): foundation/sam2.md
           - YOLO-World (Object Detection): foundation/yolo_world.md
       - Run a Model:
           - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
