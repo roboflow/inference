@@ -20,6 +20,7 @@ from inference.core.workflows.core_steps.fusion.detections_consensus import (
 from inference.core.workflows.core_steps.fusion.dimension_collapse import (
     DimensionCollapseBlock,
 )
+from inference.core.workflows.core_steps.fusion.rename_classes import RenameClassesBlock
 from inference.core.workflows.core_steps.models.foundation.clip_comparison import (
     ClipComparisonBlock,
 )
@@ -216,6 +217,7 @@ def load_blocks() -> List[
         ExpressionBlock,
         PropertyDefinitionBlock,
         DimensionCollapseBlock,
+        RenameClassesBlock,
         FirstNonEmptyOrDefaultBlock,
         BackgroundColorVisualizationBlock,
         BlurVisualizationBlock,
