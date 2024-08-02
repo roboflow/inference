@@ -207,7 +207,7 @@ infer_payload = {
 
 res = requests.post(
     f"{base_url}/sam2/embed_image?api_key={api_key}",
-    json=infer_clip_payload,
+    json=infer_payload,
 )
 
 masks = request.json()['masks']
