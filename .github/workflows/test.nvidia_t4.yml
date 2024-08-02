@@ -32,7 +32,7 @@ jobs:
       - name: 🧪 Regression Tests - SAM2
         id: sam2_tests
         run: |
-           PORT=9101 API_KEY=${{ secrets.API_KEY }} python3 -m pytest tests/inference/integration_tests/test_sam2.py
+           PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_SAM2_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam2.py
       - name: 🚨 Show server logs on error
         run: docker logs inference-test
         if: ${{ steps.sam2_tests.outcome != 'success' }}

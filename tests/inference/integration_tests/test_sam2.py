@@ -31,7 +31,7 @@ payload_ = {
 tests = ["embed_image", "segment_image"]
 
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_SAM_TEST", False)),
+    bool_env(os.getenv("SKIP_SAM2_TEST", True)),
     reason="Skipping SAM test",
 )
 @pytest.mark.parametrize("version_id", version_ids)
