@@ -93,8 +93,8 @@ from inference.core.env import (
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
-    CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
+    CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
@@ -1330,6 +1330,7 @@ class HttpInterface(BaseInterface):
                     return model_response
 
             if CORE_MODEL_SAM2_ENABLED:
+
                 @app.post(
                     "/sam2/embed_image",
                     response_model=Sam2EmbeddingResponse,

@@ -1,13 +1,13 @@
 import base64
 import hashlib
+import os
 from io import BytesIO
 from time import perf_counter
-from typing import Any, List, Optional, Union, Dict
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import rasterio.features
 import torch
-import os
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 from shapely.geometry import Polygon as ShapelyPolygon
@@ -22,7 +22,7 @@ from inference.core.entities.responses.sam2 import (
     Sam2EmbeddingResponse,
     Sam2SegmentationResponse,
 )
-from inference.core.env import SAM_MAX_EMBEDDING_CACHE_SIZE, SAM2_VERSION_ID
+from inference.core.env import SAM2_VERSION_ID, SAM_MAX_EMBEDDING_CACHE_SIZE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
@@ -55,7 +55,7 @@ class SegmentAnything2(RoboflowCoreModel):
             "hiera_large": "sam2_hiera_l.yaml",
             "hiera_small": "sam2_hiera_s.yaml",
             "hiera_tiny": "sam2_hiera_t.yaml",
-            "hiera_b_plus": "sam2_hiera_b+.yaml"
+            "hiera_b_plus": "sam2_hiera_b+.yaml",
         }[self.version_id]
 
         self.sam = build_sam2(model_cfg, checkpoint)
@@ -109,7 +109,7 @@ class SegmentAnything2(RoboflowCoreModel):
             return (
                 self.embedding_cache[image_id],
                 self.image_size_cache[image_id],
-                image_id
+                image_id,
             )
 
         img_in = self.preproc_image(image)
@@ -120,7 +120,7 @@ class SegmentAnything2(RoboflowCoreModel):
             return (
                 self.embedding_cache[image_id],
                 self.image_size_cache[image_id],
-                image_id
+                image_id,
             )
 
         with torch.inference_mode():
@@ -129,7 +129,7 @@ class SegmentAnything2(RoboflowCoreModel):
             # high_res_feats = [v.cpu().numpy() for v in self.predictor._features["high_res_feats"]]
             # embedding_dict = {"image_embed": embedding, "high_res_feats": high_res_feats}
             embedding_dict = self.predictor._features
-        
+
         self.embedding_cache[image_id] = embedding_dict
         self.image_size_cache[image_id] = img_in.shape[:2]
         self.embedding_cache_keys.append(image_id)
@@ -152,9 +152,7 @@ class SegmentAnything2(RoboflowCoreModel):
         if isinstance(request, Sam2EmbeddingRequest):
             _, _, image_id = self.embed_image(**request.dict())
             inference_time = perf_counter() - t1
-            return Sam2EmbeddingResponse(
-                time=inference_time, image_id=image_id
-            )
+            return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
         elif isinstance(request, Sam2SegmentationRequest):
             masks, low_res_masks = self.segment_image(**request.dict())
             if request.format == "json":
@@ -234,9 +232,7 @@ class SegmentAnything2(RoboflowCoreModel):
         """
         with torch.inference_mode():
             if not image and not image_id:
-                raise ValueError(
-                    "Must provide either image or  cached image_id"
-                )
+                raise ValueError("Must provide either image or  cached image_id")
             elif image_id and not image and image_id not in self.embedding_cache:
                 raise ValueError(
                     f"Image ID {image_id} not in embedding cache, must provide the image or embeddings"
@@ -253,7 +249,6 @@ class SegmentAnything2(RoboflowCoreModel):
                 point_labels = np.array(point_labels, dtype=np.float32)
                 point_labels = np.expand_dims(point_labels, axis=0)
 
-
             mask_input = self.low_res_logits_cache.get(image_id, None)
             self.predictor._is_image_set = True
             self.predictor._features = embedding
@@ -261,12 +256,16 @@ class SegmentAnything2(RoboflowCoreModel):
             self.predictor._is_batch = False
 
             masks, scores, low_res_logits = self.predictor.predict(
-                point_coords  = point_coords,
-                point_labels = point_labels,
-                mask_input =  np.expand_dims(mask_input, axis=0).astype(np.float32) if mask_input is not None else  None,
-                multimask_output = True,
-                return_logits = True ,
-                normalize_coords=True
+                point_coords=point_coords,
+                point_labels=point_labels,
+                mask_input=(
+                    np.expand_dims(mask_input, axis=0).astype(np.float32)
+                    if mask_input is not None
+                    else None
+                ),
+                multimask_output=True,
+                return_logits=True,
+                normalize_coords=True,
             )
 
             sorted_ind = np.argsort(scores)[::-1]
