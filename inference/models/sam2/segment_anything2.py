@@ -125,9 +125,6 @@ class SegmentAnything2(RoboflowCoreModel):
 
         with torch.inference_mode():
             self.predictor.set_image(img_in)
-            # embedding = self.predictor.get_image_embedding().cpu().numpy()
-            # high_res_feats = [v.cpu().numpy() for v in self.predictor._features["high_res_feats"]]
-            # embedding_dict = {"image_embed": embedding, "high_res_feats": high_res_feats}
             embedding_dict = self.predictor._features
 
         self.embedding_cache[image_id] = embedding_dict

@@ -11,6 +11,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     git \
     libgdal-dev \
     wget \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam2.txt \
@@ -30,13 +31,7 @@ RUN python3 -m pip install --extra-index-url  https://download.pytorch.org/whl/c
     --upgrade \
     && rm -rf ~/.cache/pip
 
-# Install setup.py requirements for flash_attn
-RUN python3 -m pip install packaging==24.1  && rm -rf ~/.cache/pip
-
-# Install flash_attn required for Paligemma and Florence2
-# RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-build-isolation && rm -rf ~/.cache/pip
 WORKDIR /sam
-RUN apt-get install -y gcc
 RUN git clone https://github.com/facebookresearch/segment-anything-2
 COPY inference/models/sam2/sam.patch ./
 RUN cd segment-anything-2 && git checkout 0e78a118995e66bb27d78518c4bd9a3e95b4e266 && git apply ../sam.patch && TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0 7.5 8.0 8.6" python3 -m pip install -e . && rm -rf ~/.cache/pip
