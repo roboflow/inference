@@ -442,7 +442,7 @@ class HttpInterface(BaseInterface):
                     Response: The response from the next middleware or endpoint.
                 """
                 response = await call_next(request)
-                if response.status_code >= 400:
+                if self.model_manager.pingback and response.status_code >= 400:
                     self.model_manager.num_errors += 1
                 return response
 
