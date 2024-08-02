@@ -13,7 +13,7 @@ import torch
 try:
     from sam2.build_sam import build_sam2
     from sam2.sam2_image_predictor import SAM2ImagePredictor
-except:
+except ImportError:
     logging.error(
         "Could not import sam2. See the instructions at "
         "https://github.com/facebookresearch/segment-anything-2/?tab=readme-ov-file#installation"
