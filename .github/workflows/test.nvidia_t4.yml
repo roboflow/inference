@@ -78,3 +78,19 @@ jobs:
       - name: 🧹 Cleanup Test Docker - GPU
         run: make stop_test_docker
         if: success() || failure()
+      - name: 🔨 Build and Push Test Docker - SAM2
+        run: |
+          docker build -t roboflow/roboflow-inference-server-sam2:test -f docker/dockerfiles/Dockerfile.sam2 .
+      - name: 🔋 Start Test Docker - SAM2
+        run: |
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-sam2 make start_test_docker_gpu
+      - name: 🧪 Regression Tests - SAM2
+        id: sam2_tests
+        run: |
+           PORT=9101 API_KEY=${{ secrets.API_KEY }} python3 -m pytest tests/inference/integration_tests/test_sam2.py
+      - name: 🚨 Show server logs on error
+        run: docker logs inference-test
+        if: ${{ steps.sam2_tests.outcome != 'success' }}
+      - name: 🧹 Cleanup Test Docker - SAM2
+        run: make stop_test_docker
+        if: success() || failure()

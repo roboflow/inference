@@ -56,7 +56,7 @@ class SegmentAnything2(RoboflowCoreModel):
             "hiera_small": "sam2_hiera_s.yaml",
             "hiera_tiny": "sam2_hiera_t.yaml",
             "hiera_b_plus": "sam2_hiera_b+.yaml"
-        }[SAM2_VERSION_ID]
+        }[self.version_id]
 
         self.sam = build_sam2(model_cfg, checkpoint)
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -158,9 +158,9 @@ class SegmentAnything2(RoboflowCoreModel):
         elif isinstance(request, Sam2SegmentationRequest):
             masks, low_res_masks = self.segment_image(**request.dict())
             if request.format == "json":
-                masks = masks > self.predictor.model.mask_threshold
+                masks = masks > self.predictor.mask_threshold
                 masks = masks2poly(masks)
-                low_res_masks = low_res_masks > self.predictor.model.mask_threshold
+                low_res_masks = low_res_masks > self.predictor.mask_threshold
                 low_res_masks = masks2poly(low_res_masks)
             elif request.format == "binary":
                 binary_vector = BytesIO()

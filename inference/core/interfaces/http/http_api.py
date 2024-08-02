@@ -37,6 +37,10 @@ from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
 )
+from inference.core.entities.requests.sam2 import (
+    Sam2EmbeddingRequest,
+    Sam2SegmentationRequest,
+)
 from inference.core.entities.requests.server_state import (
     AddModelRequest,
     ClearModelRequest,
@@ -69,6 +73,10 @@ from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
     SamSegmentationResponse,
 )
+from inference.core.entities.responses.sam2 import (
+    Sam2EmbeddingResponse,
+    Sam2SegmentationResponse,
+)
 from inference.core.entities.responses.server_state import (
     ModelsDescriptions,
     ServerVersionInfo,
@@ -86,6 +94,7 @@ from inference.core.env import (
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
     CORE_MODEL_SAM_ENABLED,
+    CORE_MODEL_SAM2_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
@@ -530,6 +539,16 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The SAM model ID.
+        """
+        load_sam2_model = partial(load_core_model, core_model="sam2")
+        """Loads the SAM2 model into the model manager.
+
+        Args:
+        inference_request: The request containing version and other details.
+        api_key: The API key for the request.
+
+        Returns:
+        The SAM2 model ID.
         """
 
         load_gaze_model = partial(load_core_model, core_model="gaze")
@@ -1303,6 +1322,78 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(sam_model_id, actor)
+                    if inference_request.format == "binary":
+                        return Response(
+                            content=model_response,
+                            headers={"Content-Type": "application/octet-stream"},
+                        )
+                    return model_response
+
+            if CORE_MODEL_SAM2_ENABLED:
+                @app.post(
+                    "/sam2/embed_image",
+                    response_model=Sam2EmbeddingResponse,
+                    summary="SAM2 Image Embeddings",
+                    description="Run the Meta AI Segmant Anything 2 Model to embed image data.",
+                )
+                @with_route_exceptions
+                async def sam2_embed_image(
+                    inference_request: Sam2EmbeddingRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Embeds image data using the Meta AI Segmant Anything Model (SAM).
+
+                    Args:
+                        inference_request (SamEmbeddingRequest): The request containing the image to be embedded.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        M.Sam2EmbeddingResponse or Response: The response affirming the image has been embedded
+                    """
+                    logger.debug(f"Reached /sam2/embed_image")
+                    sam2_model_id = load_sam2_model(inference_request, api_key=api_key)
+                    model_response = await self.model_manager.infer_from_request(
+                        sam2_model_id, inference_request
+                    )
+                    return model_response
+
+                @app.post(
+                    "/sam2/segment_image",
+                    response_model=Sam2SegmentationResponse,
+                    summary="SAM2 Image Segmentation",
+                    description="Run the Meta AI Segmant Anything 2 Model to generate segmenations for image data.",
+                )
+                @with_route_exceptions
+                async def sam2_segment_image(
+                    inference_request: Sam2SegmentationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Generates segmentations for image data using the Meta AI Segmant Anything Model (SAM).
+
+                    Args:
+                        inference_request (Sam2SegmentationRequest): The request containing the image to be segmented.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        M.SamSegmentationResponse or Response: The response containing the segmented image.
+                    """
+                    logger.debug(f"Reached /sam2/segment_image")
+                    sam2_model_id = load_sam2_model(inference_request, api_key=api_key)
+                    model_response = await self.model_manager.infer_from_request(
+                        sam2_model_id, inference_request
+                    )
                     if inference_request.format == "binary":
                         return Response(
                             content=model_response,
