@@ -126,6 +126,7 @@ def function(left_player_detections, right_player_detections):
 }
 
 
+@pytest.mark.skip(reason="Could not find requested Roboflow resource, maybe deleted?")
 @pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
 async def test_rock_paper_scissors_workflow(
