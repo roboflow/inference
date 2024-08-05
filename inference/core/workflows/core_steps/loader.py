@@ -30,14 +30,12 @@ from inference.core.workflows.core_steps.models.foundation.lmm_classifier import
 )
 from inference.core.workflows.core_steps.models.foundation.ocr import OCRModelBlock
 from inference.core.workflows.core_steps.models.foundation.openai import OpenAIBlock
-from inference.core.workflows.core_steps.models.foundation.yolo_world import (
-    YoloWorldModelBlock,
-)
-
 from inference.core.workflows.core_steps.models.foundation.segment_anything import (
     SegmentAnything2Block,
 )
-
+from inference.core.workflows.core_steps.models.foundation.yolo_world import (
+    YoloWorldModelBlock,
+)
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation import (
     RoboflowInstanceSegmentationModelBlock,
 )

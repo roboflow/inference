@@ -10,8 +10,8 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 from inference.core.entities.requests.clip import ClipCompareRequest
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
-from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
+from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.constants import (
     DETECTION_ID_KEY,
@@ -54,7 +54,7 @@ def load_core_model(
         ClipCompareRequest,
         CogVLMInferenceRequest,
         YOLOWorldInferenceRequest,
-        Sam2InferenceRequest
+        Sam2InferenceRequest,
     ],
     core_model: str,
 ) -> str:
