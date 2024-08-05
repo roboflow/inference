@@ -92,7 +92,7 @@ nav:
           - Inference Landing Page: inference_helpers/inference_landing_page.md
           - Inference CLI: inference_helpers/inference_cli.md
           - Inference SDK: inference_helpers/inference_sdk.md
-      - inference configuration::
+      - inference configuration:
           - Environmental variables: server_configuration/environmental_variables.md
           - Security of input formats: server_configuration/accepted_input_formats.md
       - Reference:
