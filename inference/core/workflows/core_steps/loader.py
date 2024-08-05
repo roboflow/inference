@@ -33,6 +33,11 @@ from inference.core.workflows.core_steps.models.foundation.openai import OpenAIB
 from inference.core.workflows.core_steps.models.foundation.yolo_world import (
     YoloWorldModelBlock,
 )
+
+from inference.core.workflows.core_steps.models.foundation.segment_anything import (
+    SegmentAnything2Block,
+)
+
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation import (
     RoboflowInstanceSegmentationModelBlock,
 )
