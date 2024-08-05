@@ -414,7 +414,7 @@ class RoboflowInferenceModel(Model):
             resized = letterbox_image(
                 preprocessed_image,
                 (self.img_size_w, self.img_size_h),
-                color=(32, 32, 32),
+                color=(114, 114, 114),
             )
 
         if is_bgr:
