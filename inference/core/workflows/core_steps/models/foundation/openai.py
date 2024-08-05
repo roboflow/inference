@@ -158,6 +158,14 @@ class OpenAIBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
+    @classmethod
+    def get_block_version(cls) -> int:
+        return 1
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return "~=1.0.0"
+
     async def run(
         self,
         images: Batch[WorkflowImageData],

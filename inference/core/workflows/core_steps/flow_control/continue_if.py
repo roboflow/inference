@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Literal, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
@@ -59,6 +59,14 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return []
+
+    @classmethod
+    def get_block_version(cls) -> int:
+        return 1
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return "~=1.0.0"
 
 
 class ContinueIfBlock(WorkflowBlock):

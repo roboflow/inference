@@ -8,7 +8,7 @@ from inference.core.workflows.entities.base import (
     WorkflowParameter,
 )
 from inference.core.workflows.errors import DuplicatedNameError
-from inference.core.workflows.execution_engine.compiler.validator import (
+from inference.core.workflows.execution_engine.v1.compiler.validator import (
     validate_inputs_names_are_unique,
     validate_outputs_names_are_unique,
     validate_steps_names_are_unique,

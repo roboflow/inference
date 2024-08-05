@@ -6,16 +6,12 @@ from typing_extensions import Annotated
 
 from inference.core.workflows.entities.base import InputType, JsonField
 from inference.core.workflows.errors import WorkflowSyntaxError
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    load_workflow_blocks,
+)
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
     ParsedWorkflowDefinition,
-)
-from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
-    DynamicBlockDefinition,
-)
-from inference.core.workflows.execution_engine.introspection.blocks_loader import (
-    load_all_defined_kinds,
-    load_workflow_blocks,
 )
 
 

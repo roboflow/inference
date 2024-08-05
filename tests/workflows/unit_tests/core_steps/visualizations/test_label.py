@@ -13,6 +13,7 @@ from inference.core.workflows.entities.base import (
     WorkflowImageData,
 )
 
+
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 def test_label_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
     # given
@@ -27,7 +28,7 @@ def test_label_validation_when_valid_manifest_is_given(images_field_alias: str) 
         "text_scale": 1.0,
         "text_thickness": 1,
         "text_padding": 10,
-        "border_radius": 0
+        "border_radius": 0,
     }
 
     # when
@@ -39,13 +40,13 @@ def test_label_validation_when_valid_manifest_is_given(images_field_alias: str) 
         name="label1",
         images="$inputs.image",
         predictions="$steps.od_model.predictions",
-        text='Class',
-        text_position='TOP_LEFT',
-        text_color='WHITE',
+        text="Class",
+        text_position="TOP_LEFT",
+        text_color="WHITE",
         text_scale=1.0,
         text_thickness=1,
         text_padding=10,
-        border_radius=0
+        border_radius=0,
     )
 
 
@@ -62,7 +63,7 @@ def test_label_validation_when_invalid_image_is_given() -> None:
         "text_scale": 1.0,
         "text_thickness": 1,
         "text_padding": 10,
-        "border_radius": 0
+        "border_radius": 0,
     }
 
     # when
@@ -82,7 +83,8 @@ async def test_label_visualization_block() -> None:
         ),
         predictions=sv.Detections(
             xyxy=np.array(
-                [[0, 0, 20, 20], [80, 80, 120, 120], [450, 450, 550, 550]], dtype=np.float64
+                [[0, 0, 20, 20], [80, 80, 120, 120], [450, 450, 550, 550]],
+                dtype=np.float64,
             ),
             class_id=np.array([1, 1, 1]),
         ),
@@ -91,20 +93,22 @@ async def test_label_visualization_block() -> None:
         palette_size=10,
         custom_colors=None,
         color_axis="CLASS",
-        text='Class',
-        text_position='TOP_LEFT',
-        text_color='WHITE',
+        text="Class",
+        text_position="TOP_LEFT",
+        text_color="WHITE",
         text_scale=1.0,
         text_thickness=1,
         text_padding=10,
-        border_radius=0
+        border_radius=0,
     )
 
     assert output is not None
     assert "image" in output
     assert hasattr(output.get("image"), "numpy_image")
-    
+
     # dimensions of output match input
     assert output.get("image").numpy_image.shape == (1000, 1000, 3)
     # check if the image is modified
-    assert not np.array_equal(output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8))
+    assert not np.array_equal(
+        output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
+    )

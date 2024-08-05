@@ -22,7 +22,7 @@ def test_blur_validation_when_valid_manifest_is_given(images_field_alias: str) -
         "name": "blur1",
         "predictions": "$steps.od_model.predictions",
         images_field_alias: "$inputs.image",
-        "kernel_size": 5
+        "kernel_size": 5,
     }
 
     # when
@@ -34,7 +34,7 @@ def test_blur_validation_when_valid_manifest_is_given(images_field_alias: str) -
         name="blur1",
         images="$inputs.image",
         predictions="$steps.od_model.predictions",
-        kernel_size=5
+        kernel_size=5,
     )
 
 
@@ -45,12 +45,13 @@ def test_blur_validation_when_invalid_image_is_given() -> None:
         "name": "blur1",
         "images": "invalid",
         "predictions": "$steps.od_model.predictions",
-        "kernel_size": 5
+        "kernel_size": 5,
     }
 
     # when
     with pytest.raises(ValidationError):
         _ = BlurManifest.model_validate(data)
+
 
 @pytest.mark.asyncio
 async def test_blur_visualization_block() -> None:
@@ -65,18 +66,19 @@ async def test_blur_visualization_block() -> None:
         ),
         predictions=sv.Detections(
             xyxy=np.array(
-                [[0, 0, 20, 20], [80, 80, 120, 120], [450, 450, 550, 550]], dtype=np.float64
+                [[0, 0, 20, 20], [80, 80, 120, 120], [450, 450, 550, 550]],
+                dtype=np.float64,
             ),
             class_id=np.array([1, 1, 1]),
         ),
         copy_image=True,
-        kernel_size=5
+        kernel_size=5,
     )
 
     assert output is not None
     assert "image" in output
     assert hasattr(output.get("image"), "numpy_image")
-    
+
     # dimensions of output match input
     assert output.get("image").numpy_image.shape == (1000, 1000, 3)
     # check if the image is modified

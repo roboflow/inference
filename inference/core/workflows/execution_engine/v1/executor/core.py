@@ -8,17 +8,19 @@ from inference.core.workflows.errors import (
     StepExecutionError,
     WorkflowError,
 )
-from inference.core.workflows.execution_engine.compiler.entities import CompiledWorkflow
-from inference.core.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    CompiledWorkflow,
+)
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_last_chunk_of_selector,
 )
-from inference.core.workflows.execution_engine.executor.execution_data_manager.manager import (
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
     ExecutionDataManager,
 )
-from inference.core.workflows.execution_engine.executor.flow_coordinator import (
+from inference.core.workflows.execution_engine.v1.executor.flow_coordinator import (
     ParallelStepExecutionCoordinator,
 )
-from inference.core.workflows.execution_engine.executor.output_constructor import (
+from inference.core.workflows.execution_engine.v1.executor.output_constructor import (
     construct_workflow_output,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock

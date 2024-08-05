@@ -1,4 +1,4 @@
-from typing import Any, List, Literal, Tuple, Type, Union
+from typing import Any, List, Literal, Optional, Tuple, Type, Union
 
 import cv2 as cv
 import numpy as np
@@ -66,6 +66,14 @@ class DynamicZonesManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(name=OUTPUT_KEY, kind=[LIST_OF_VALUES_KIND]),
         ]
+
+    @classmethod
+    def get_block_version(cls) -> int:
+        return 1
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return "~=1.0.0"
 
 
 def calculate_simplified_polygon(

@@ -4,12 +4,6 @@ from unittest.mock import MagicMock
 import networkx as nx
 import pytest
 
-from inference.core.workflows.core_steps.common.query_language.entities.operations import (
-    IsTrue,
-    StatementGroup,
-    StaticOperand,
-    UnaryStatement,
-)
 from inference.core.workflows.core_steps.models.roboflow import object_detection
 from inference.core.workflows.core_steps.transformations import dynamic_crop
 from inference.core.workflows.entities.base import (
@@ -17,13 +11,13 @@ from inference.core.workflows.entities.base import (
     WorkflowImage,
     WorkflowParameter,
 )
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     InputNode,
     NodeCategory,
     OutputNode,
     StepNode,
 )
-from inference.core.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
     construct_input_selector,
     get_input_parameters_selectors,
     get_last_chunk_of_selector,

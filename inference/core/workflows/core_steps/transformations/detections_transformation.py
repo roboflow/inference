@@ -1,5 +1,5 @@
 from copy import copy
-from typing import Any, Dict, List, Literal, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
@@ -86,6 +86,14 @@ class BlockManifest(WorkflowBlockManifest):
                 ],
             )
         ]
+
+    @classmethod
+    def get_block_version(cls) -> int:
+        return 1
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return "~=1.0.0"
 
 
 class DetectionsTransformationBlock(WorkflowBlock):

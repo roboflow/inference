@@ -15,14 +15,16 @@ from inference.core.workflows.entities.base import (
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_polygon_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
+def test_polygon_validation_when_valid_manifest_is_given(
+    images_field_alias: str,
+) -> None:
     # given
     data = {
         "type": "PolygonVisualization",
         "name": "polygon1",
         "predictions": "$steps.od_model.predictions",
         images_field_alias: "$inputs.image",
-        "thickness": 2
+        "thickness": 2,
     }
 
     # when
@@ -34,7 +36,7 @@ def test_polygon_validation_when_valid_manifest_is_given(images_field_alias: str
         name="polygon1",
         images="$inputs.image",
         predictions="$steps.od_model.predictions",
-        thickness=2
+        thickness=2,
     )
 
 
@@ -45,7 +47,7 @@ def test_polygon_validation_when_invalid_image_is_given() -> None:
         "name": "polygon1",
         "images": "invalid",
         "predictions": "$steps.od_model.predictions",
-        "thickness": 2
+        "thickness": 2,
     }
 
     # when
@@ -70,7 +72,8 @@ async def test_polygon_visualization_block() -> None:
         ),
         predictions=sv.Detections(
             xyxy=np.array(
-                [[0, 0, 20, 20], [80, 80, 120, 120], [450, 450, 550, 550]], dtype=np.float64
+                [[0, 0, 20, 20], [80, 80, 120, 120], [450, 450, 550, 550]],
+                dtype=np.float64,
             ),
             mask=mask,
             class_id=np.array([1, 1, 1]),
@@ -80,14 +83,16 @@ async def test_polygon_visualization_block() -> None:
         palette_size=10,
         custom_colors=["#FF0000", "#00FF00", "#0000FF"],
         color_axis="CLASS",
-        thickness=2
+        thickness=2,
     )
 
     assert output is not None
     assert "image" in output
     assert hasattr(output.get("image"), "numpy_image")
-    
+
     # dimensions of output match input
     assert output.get("image").numpy_image.shape == (1000, 1000, 3)
     # check if the image is modified
-    assert not np.array_equal(output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8))
+    assert not np.array_equal(
+        output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
+    )

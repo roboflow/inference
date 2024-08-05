@@ -44,6 +44,14 @@ class PixelateManifest(VisualizationManifest):
         examples=[20, "$inputs.pixel_size"],
     )
 
+    @classmethod
+    def get_block_version(cls) -> int:
+        return 1
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return "~=1.0.0"
+
 
 class PixelateVisualizationBlock(VisualizationBlock):
     def __init__(self, *args, **kwargs):

@@ -9,7 +9,7 @@ from inference.core.workflows.entities.base import (
     WorkflowImage,
     WorkflowParameter,
 )
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     InputNode,
     NodeCategory,
     OutputNode,

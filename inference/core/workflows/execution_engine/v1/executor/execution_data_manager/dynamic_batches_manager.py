@@ -3,12 +3,12 @@ from typing import Any, Dict, List
 from networkx import DiGraph
 
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     ExecutionGraphNode,
     InputNode,
     NodeCategory,
 )
-from inference.core.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
     identify_lineage,
     node_as,
 )

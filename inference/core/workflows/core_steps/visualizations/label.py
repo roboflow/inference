@@ -100,6 +100,14 @@ class LabelManifest(ColorableVisualizationManifest):
         examples=[0, "$inputs.border_radius"],
     )
 
+    @classmethod
+    def get_block_version(cls) -> int:
+        return 1
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return "~=1.0.0"
+
 
 class LabelVisualizationBlock(ColorableVisualizationBlock):
     def __init__(self, *args, **kwargs):

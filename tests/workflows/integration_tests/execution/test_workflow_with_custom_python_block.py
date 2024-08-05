@@ -11,7 +11,7 @@ from inference.core.workflows.errors import (
     WorkflowEnvironmentConfigurationError,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.core.workflows.execution_engine.dynamic_blocks import block_assembler
+from inference.core.workflows.execution_engine.v1.dynamic_blocks import block_assembler
 
 FUNCTION_TO_GET_OVERLAP_OF_BBOXES = """
 def run(self, predictions: sv.Detections, class_x: str, class_y: str) -> BlockResult:

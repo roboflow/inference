@@ -11,17 +11,17 @@ from inference.core.workflows.core_steps.common.query_language.introspection.cor
     prepare_operations_descriptions,
     prepare_operators_descriptions,
 )
-from inference.core.workflows.execution_engine.dynamic_blocks.block_assembler import (
-    compile_dynamic_blocks,
-)
-from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
-    DynamicBlockDefinition,
-)
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
 )
 from inference.core.workflows.execution_engine.introspection.connections_discovery import (
     discover_blocks_connections,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
+    compile_dynamic_blocks,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+    DynamicBlockDefinition,
 )
 
 

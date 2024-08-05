@@ -6,8 +6,10 @@ import pytest
 
 from inference.core.workflows.entities.base import WorkflowImage, WorkflowParameter
 from inference.core.workflows.errors import RuntimeInputError
-from inference.core.workflows.execution_engine.executor import runtime_input_assembler
-from inference.core.workflows.execution_engine.executor.runtime_input_assembler import (
+from inference.core.workflows.execution_engine.v1.executor import (
+    runtime_input_assembler,
+)
+from inference.core.workflows.execution_engine.v1.executor import (
     assembly_runtime_parameters,
 )
 

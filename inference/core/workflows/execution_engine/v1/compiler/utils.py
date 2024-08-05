@@ -5,7 +5,7 @@ from networkx import DiGraph
 from inference.core.workflows.constants import NODE_COMPILATION_OUTPUT_PROPERTY
 from inference.core.workflows.entities.base import InputType, JsonField
 from inference.core.workflows.errors import AssumptionError
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     ExecutionGraphNode,
     NodeCategory,
 )

@@ -160,10 +160,10 @@ from inference.core.workflows.errors import (
     WorkflowDefinitionError,
     WorkflowError,
 )
-from inference.core.workflows.execution_engine.compiler.syntactic_parser import (
+from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
     parse_workflow_definition,
 )
-from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 

@@ -7,12 +7,16 @@ from inference.core.workflows.errors import (
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
 )
-from inference.core.workflows.execution_engine.dynamic_blocks import block_scaffolding
-from inference.core.workflows.execution_engine.dynamic_blocks.block_scaffolding import (
+from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+    block_scaffolding,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding import (
     assembly_custom_python_block,
     create_dynamic_module,
 )
-from inference.core.workflows.execution_engine.dynamic_blocks.entities import PythonCode
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+    PythonCode,
+)
 
 
 def test_create_dynamic_module_when_syntax_error_happens() -> None:

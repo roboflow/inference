@@ -3,24 +3,24 @@ from typing import Any, Dict, Generator, List, Optional, Set, Tuple, TypeVar, Un
 
 from inference.core.workflows.entities.base import Batch
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompoundStepInputDefinition,
     DynamicStepInputDefinition,
     StaticStepInputDefinition,
     StepInputDefinition,
     StepNode,
 )
-from inference.core.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_last_chunk_of_selector,
 )
-from inference.core.workflows.execution_engine.executor.execution_data_manager.branching_manager import (
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.branching_manager import (
     BranchingManager,
 )
-from inference.core.workflows.execution_engine.executor.execution_data_manager.dynamic_batches_manager import (
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.dynamic_batches_manager import (
     DynamicBatchesManager,
     DynamicBatchIndex,
 )
-from inference.core.workflows.execution_engine.executor.execution_data_manager.execution_cache import (
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.execution_cache import (
     ExecutionCache,
 )
 

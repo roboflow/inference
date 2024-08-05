@@ -15,8 +15,8 @@ from inference.core.workflows.entities.types import (
     WorkflowParameterSelector,
 )
 from inference.core.workflows.errors import DynamicBlockError
-from inference.core.workflows.execution_engine.dynamic_blocks import block_assembler
-from inference.core.workflows.execution_engine.dynamic_blocks.block_assembler import (
+from inference.core.workflows.execution_engine.v1.dynamic_blocks import block_assembler
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
     build_input_field_metadata,
     build_outputs_definitions,
     collect_input_dimensionality_offsets,
@@ -25,7 +25,7 @@ from inference.core.workflows.execution_engine.dynamic_blocks.block_assembler im
     create_dynamic_block_specification,
     pick_dimensionality_reference_property,
 )
-from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     DynamicBlockDefinition,
     DynamicInputDefinition,
     DynamicOutputDefinition,

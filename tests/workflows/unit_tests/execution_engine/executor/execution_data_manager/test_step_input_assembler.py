@@ -4,7 +4,7 @@ import pytest
 
 from inference.core.workflows.entities.base import Batch
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
-from inference.core.workflows.execution_engine.executor.execution_data_manager.step_input_assembler import (
+from inference.core.workflows.execution_engine.v1.executor import (
     GuardForIndicesWrapping,
     ensure_compound_input_indices_match,
     get_empty_batch_elements_indices,

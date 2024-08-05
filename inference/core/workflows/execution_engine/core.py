@@ -2,14 +2,13 @@ import asyncio
 from asyncio import AbstractEventLoop
 from typing import Any, Dict, List, Optional
 
-from inference.core.env import API_KEY
-from inference.core.workflows.execution_engine.compiler.core import compile_workflow
-from inference.core.workflows.execution_engine.compiler.entities import CompiledWorkflow
-from inference.core.workflows.execution_engine.executor.core import run_workflow
-from inference.core.workflows.execution_engine.executor.runtime_input_assembler import (
-    assembly_runtime_parameters,
+from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    CompiledWorkflow,
 )
-from inference.core.workflows.execution_engine.executor.runtime_input_validator import (
+from inference.core.workflows.execution_engine.v1.executor import (
+    assembly_runtime_parameters,
+    run_workflow,
     validate_runtime_input,
 )
 

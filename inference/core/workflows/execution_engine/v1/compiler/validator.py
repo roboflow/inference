@@ -2,10 +2,10 @@ from typing import List
 
 from inference.core.workflows.entities.base import InputType, JsonField
 from inference.core.workflows.errors import DuplicatedNameError
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     ParsedWorkflowDefinition,
 )
-from inference.core.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_input_parameters_selectors,
     get_output_selectors,
     get_steps_selectors,

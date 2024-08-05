@@ -1,4 +1,4 @@
-from typing import Any, List, Literal, Type
+from typing import Any, List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field
 
@@ -56,6 +56,14 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[LIST_OF_VALUES_KIND],
             )
         ]
+
+    @classmethod
+    def get_block_version(cls) -> int:
+        return 1
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return "~=1.0.0"
 
 
 class DimensionCollapseBlock(WorkflowBlock):

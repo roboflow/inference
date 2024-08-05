@@ -1,4 +1,3 @@
-import networkx as nx
 import pytest
 
 from inference.core.workflows.entities.base import (
@@ -12,7 +11,7 @@ from inference.core.workflows.errors import (
     InvalidReferenceTargetError,
     ReferenceTypeError,
 )
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     DynamicStepInputDefinition,
     InputNode,
     NodeCategory,
@@ -23,7 +22,7 @@ from inference.core.workflows.execution_engine.compiler.entities import (
     StaticStepInputDefinition,
     StepNode,
 )
-from inference.core.workflows.execution_engine.compiler.graph_constructor import (
+from inference.core.workflows.execution_engine.v1.compiler.graph_constructor import (
     prepare_execution_graph,
 )
 from tests.workflows.unit_tests.execution_engine.compiler.plugin_with_test_blocks.blocks import (

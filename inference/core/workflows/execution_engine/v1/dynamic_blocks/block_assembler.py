@@ -18,13 +18,20 @@ from inference.core.workflows.errors import (
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
 )
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    load_all_defined_kinds,
+)
+from inference.core.workflows.execution_engine.introspection.utils import (
+    build_human_friendly_block_name,
+    get_full_type_name,
+)
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
 )
-from inference.core.workflows.execution_engine.dynamic_blocks.block_scaffolding import (
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding import (
     assembly_custom_python_block,
 )
-from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     BLOCK_SOURCE,
     DynamicBlockDefinition,
     DynamicInputDefinition,
@@ -32,13 +39,6 @@ from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
     ManifestDescription,
     SelectorType,
     ValueType,
-)
-from inference.core.workflows.execution_engine.introspection.blocks_loader import (
-    load_all_defined_kinds,
-)
-from inference.core.workflows.execution_engine.introspection.utils import (
-    build_human_friendly_block_name,
-    get_full_type_name,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 

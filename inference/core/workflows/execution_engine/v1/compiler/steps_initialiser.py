@@ -1,15 +1,13 @@
-from dataclasses import replace
-from typing import Any, Callable, Dict, List, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Union
 
 from inference.core.workflows.errors import (
     BlockInitParameterNotProvidedError,
     BlockInterfaceError,
     UnknownManifestType,
 )
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
     InitialisedStep,
-    ParsedWorkflowDefinition,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 

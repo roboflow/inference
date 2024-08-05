@@ -1,7 +1,7 @@
-from typing import Dict, List, Set, Union
+from typing import Dict, Set, Union
 
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
-from inference.core.workflows.execution_engine.executor.execution_data_manager.dynamic_batches_manager import (
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.dynamic_batches_manager import (
     DynamicBatchIndex,
 )
 

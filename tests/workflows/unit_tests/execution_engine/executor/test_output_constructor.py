@@ -7,11 +7,11 @@ import supervision as sv
 from networkx import DiGraph
 
 from inference.core.workflows.entities.base import JsonField
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     NodeCategory,
     OutputNode,
 )
-from inference.core.workflows.execution_engine.executor.output_constructor import (
+from inference.core.workflows.execution_engine.v1.executor import (
     construct_workflow_output,
     convert_sv_detections_coordinates,
     create_array,

@@ -73,6 +73,14 @@ class TriangleManifest(ColorableVisualizationManifest):
         examples=[2, "$inputs.outline_thickness"],
     )
 
+    @classmethod
+    def get_block_version(cls) -> int:
+        return 1
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return "~=1.0.0"
+
 
 class TriangleVisualizationBlock(ColorableVisualizationBlock):
     def __init__(self, *args, **kwargs):

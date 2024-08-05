@@ -1,33 +1,35 @@
 from typing import Any, Callable, Dict, List, Union
 
 from inference.core.workflows.entities.base import WorkflowParameter
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    load_initializers,
+    load_workflow_blocks,
+)
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
     InputSubstitution,
     ParsedWorkflowDefinition,
 )
-from inference.core.workflows.execution_engine.compiler.graph_constructor import (
+from inference.core.workflows.execution_engine.v1.compiler.graph_constructor import (
     prepare_execution_graph,
 )
-from inference.core.workflows.execution_engine.compiler.steps_initialiser import (
+from inference.core.workflows.execution_engine.v1.compiler.steps_initialiser import (
     initialise_steps,
 )
-from inference.core.workflows.execution_engine.compiler.syntactic_parser import (
+from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
     parse_workflow_definition,
 )
-from inference.core.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
     construct_input_selector,
 )
-from inference.core.workflows.execution_engine.compiler.validator import (
+from inference.core.workflows.execution_engine.v1.compiler.validator import (
     validate_workflow_specification,
 )
-from inference.core.workflows.execution_engine.debugger.core import dump_execution_graph
-from inference.core.workflows.execution_engine.dynamic_blocks.block_assembler import (
-    compile_dynamic_blocks,
+from inference.core.workflows.execution_engine.v1.debugger.core import (
+    dump_execution_graph,
 )
-from inference.core.workflows.execution_engine.introspection.blocks_loader import (
-    load_initializers,
-    load_workflow_blocks,
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
+    compile_dynamic_blocks,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 

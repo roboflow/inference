@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 from pydantic import ValidationError
 
 from inference.core.workflows.errors import RuntimeInputError
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     InputSubstitution,
 )
 

@@ -11,9 +11,6 @@ from inference.core.workflows.core_steps.loader import (
 )
 from inference.core.workflows.entities.types import Kind
 from inference.core.workflows.errors import PluginInterfaceError, PluginLoadingError
-from inference.core.workflows.execution_engine.compiler.entities import (
-    BlockSpecification,
-)
 from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
     BlocksDescription,
@@ -21,6 +18,9 @@ from inference.core.workflows.execution_engine.introspection.entities import (
 from inference.core.workflows.execution_engine.introspection.utils import (
     build_human_friendly_block_name,
     get_full_type_name,
+)
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    BlockSpecification,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 

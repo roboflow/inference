@@ -6,13 +6,13 @@ from inference.core import logger
 from inference.core.workflows.constants import NODE_COMPILATION_OUTPUT_PROPERTY
 from inference.core.workflows.entities.types import FlowControl
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompoundStepInputDefinition,
     DynamicStepInputDefinition,
     InputNode,
     StepNode,
 )
-from inference.core.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_last_chunk_of_selector,
     get_step_selector_from_its_output,
     is_input_selector,
@@ -21,17 +21,17 @@ from inference.core.workflows.execution_engine.compiler.utils import (
     is_step_selector,
     node_as,
 )
-from inference.core.workflows.execution_engine.executor.execution_data_manager.branching_manager import (
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.branching_manager import (
     BranchingManager,
 )
-from inference.core.workflows.execution_engine.executor.execution_data_manager.dynamic_batches_manager import (
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.dynamic_batches_manager import (
     DynamicBatchesManager,
     DynamicBatchIndex,
 )
-from inference.core.workflows.execution_engine.executor.execution_data_manager.execution_cache import (
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.execution_cache import (
     ExecutionCache,
 )
-from inference.core.workflows.execution_engine.executor.execution_data_manager.step_input_assembler import (
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.step_input_assembler import (
     BatchModeSIMDStepInput,
     NonBatchModeSIMDStepInput,
     construct_non_simd_step_input,

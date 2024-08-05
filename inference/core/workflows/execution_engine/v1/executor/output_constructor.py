@@ -10,15 +10,15 @@ from inference.core.workflows.core_steps.common.utils import (
 )
 from inference.core.workflows.entities.base import CoordinatesSystem, JsonField
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
-from inference.core.workflows.execution_engine.compiler.entities import OutputNode
-from inference.core.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import OutputNode
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
     construct_output_selector,
     node_as,
 )
-from inference.core.workflows.execution_engine.executor.execution_data_manager.dynamic_batches_manager import (
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.dynamic_batches_manager import (
     DynamicBatchIndex,
 )
-from inference.core.workflows.execution_engine.executor.execution_data_manager.manager import (
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.manager import (
     ExecutionDataManager,
 )
 

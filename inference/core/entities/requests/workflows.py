@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     DynamicBlockDefinition,
 )
 

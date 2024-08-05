@@ -4,10 +4,10 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison impor
     BlockManifest,
 )
 from inference.core.workflows.errors import RuntimeInputError
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     InputSubstitution,
 )
-from inference.core.workflows.execution_engine.executor.runtime_input_validator import (
+from inference.core.workflows.execution_engine.v1.executor import (
     validate_runtime_input,
 )
 

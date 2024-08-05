@@ -1,14 +1,14 @@
 import abc
-from typing import List, Optional, Set
+from typing import List, Optional
 
 import networkx as nx
 
-from inference.core.workflows.execution_engine.compiler.entities import NodeCategory
-from inference.core.workflows.execution_engine.compiler.graph_traversal import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import NodeCategory
+from inference.core.workflows.execution_engine.v1.compiler.graph_traversal import (
     assign_max_distances_from_start,
     group_nodes_by_sorted_key_value,
 )
-from inference.core.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_nodes_of_specific_category,
 )
 

@@ -1714,7 +1714,9 @@ def test_get_workflow_specification_when_connection_error_occurs_but_file_is_cac
 
     get_mock.return_value = MagicMock(
         status_code=200,
-        json= MagicMock(return_value={"workflow": {"config": json.dumps({"specification": "some"}) }}),
+        json=MagicMock(
+            return_value={"workflow": {"config": json.dumps({"specification": "some"})}}
+        ),
     )
 
     _ = get_workflow_specification(
@@ -1724,7 +1726,7 @@ def test_get_workflow_specification_when_connection_error_occurs_but_file_is_cac
     )
 
     get_mock.side_effect = ConnectionError()
-    
+
     _ = get_workflow_specification(
         api_key="my_api_key",
         workspace_id="my_workspace",

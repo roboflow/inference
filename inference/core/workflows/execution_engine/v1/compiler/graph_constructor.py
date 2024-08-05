@@ -27,7 +27,13 @@ from inference.core.workflows.errors import (
     StepInputLineageError,
     StepOutputLineageError,
 )
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.introspection.entities import (
+    ParsedSelector,
+)
+from inference.core.workflows.execution_engine.introspection.selectors_parser import (
+    get_step_selectors,
+)
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompoundStepInputDefinition,
     DictOfStepInputDefinitions,
     DynamicStepInputDefinition,
@@ -46,13 +52,13 @@ from inference.core.workflows.execution_engine.compiler.entities import (
     StepInputDefinition,
     StepNode,
 )
-from inference.core.workflows.execution_engine.compiler.graph_traversal import (
+from inference.core.workflows.execution_engine.v1.compiler.graph_traversal import (
     traverse_graph_ensuring_parents_are_reached_first,
 )
-from inference.core.workflows.execution_engine.compiler.reference_type_checker import (
+from inference.core.workflows.execution_engine.v1.compiler.reference_type_checker import (
     validate_reference_kinds,
 )
-from inference.core.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
     construct_input_selector,
     construct_output_selector,
     construct_step_selector,
@@ -68,12 +74,6 @@ from inference.core.workflows.execution_engine.compiler.utils import (
     is_step_output_selector,
     is_step_selector,
     node_as,
-)
-from inference.core.workflows.execution_engine.introspection.entities import (
-    ParsedSelector,
-)
-from inference.core.workflows.execution_engine.introspection.selectors_parser import (
-    get_step_selectors,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
