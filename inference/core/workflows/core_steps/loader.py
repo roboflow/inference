@@ -198,6 +198,7 @@ def load_blocks() -> List[
         CogVLMBlock,
         OCRModelBlock,
         YoloWorldModelBlock,
+        SegmentAnything2Block,
         RoboflowInstanceSegmentationModelBlock,
         RoboflowKeypointDetectionModelBlock,
         RoboflowClassificationModelBlock,

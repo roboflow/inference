@@ -9,8 +9,7 @@ from inference.core.workflows.execution_engine.core import ExecutionEngine
 SAM_WORKFLOW = {
     "version": "1.0",
     "inputs": [
-        {"type": "WorkflowImage", "name": "image"},
-        {"type": "WorkflowParameter", "name": "reference"},
+        {"type": "WorkflowImage", "name": "image"}
     ],
     "steps": [
         {
