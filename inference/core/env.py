@@ -106,6 +106,7 @@ CORE_MODEL_CLIP_ENABLED = str2bool(os.getenv("CORE_MODEL_CLIP_ENABLED", True))
 
 # Flag to enable SAM core model, default is True
 CORE_MODEL_SAM_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM_ENABLED", True))
+CORE_MODEL_SAM2_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM2_ENABLED", False))
 
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
@@ -285,6 +286,7 @@ SAM_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM_MAX_EMBEDDING_CACHE_SIZE", 10)
 
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
+SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
 
 
 # Device ID, default is "sample-device-id"
