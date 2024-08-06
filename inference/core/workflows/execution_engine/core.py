@@ -1,7 +1,9 @@
 from typing import Any, Dict, List, Optional
 
-from inference.core.workflows.entities.engine import BaseExecutionEngine
 from inference.core.workflows.errors import NotSupportedExecutionEngineError
+from inference.core.workflows.execution_engine.entities.engine import (
+    BaseExecutionEngine,
+)
 from inference.core.workflows.execution_engine.v1.core import ExecutionEngineV1
 
 REGISTERED_ENGINES = {1: ExecutionEngineV1}

@@ -6,7 +6,7 @@ from inference.core.workflows.core_steps.models.third_party.qr_code_detection.ve
     BlockManifest,
     QRCodeDetectorBlockV1,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,

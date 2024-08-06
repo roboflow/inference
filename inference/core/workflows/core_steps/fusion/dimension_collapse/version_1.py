@@ -2,8 +2,11 @@ from typing import Any, List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import Batch, OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    OutputDefinition,
+)
+from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     StepOutputSelector,
 )

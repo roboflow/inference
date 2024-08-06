@@ -14,7 +14,7 @@ def test_get_full_type_name() -> None:
     # then
     assert (
         type_name
-        == "inference.core.workflows.core_steps.transformations.dynamic_crop.DynamicCropBlock"
+        == "inference.core.workflows.core_steps.transformations.dynamic_crop.version_1.DynamicCropBlockV1"
     )
 
 

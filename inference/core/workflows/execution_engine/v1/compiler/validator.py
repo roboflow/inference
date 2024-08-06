@@ -1,7 +1,7 @@
 from typing import List
 
-from inference.core.workflows.entities.base import InputType, JsonField
 from inference.core.workflows.errors import DuplicatedNameError
+from inference.core.workflows.execution_engine.entities.base import InputType, JsonField
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     ParsedWorkflowDefinition,
 )

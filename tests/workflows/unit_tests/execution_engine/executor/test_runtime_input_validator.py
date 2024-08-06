@@ -7,7 +7,9 @@ from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     InputSubstitution,
 )
-from inference.core.workflows.execution_engine.v1.executor import validate_runtime_input
+from inference.core.workflows.execution_engine.v1.executor.runtime_input_validator import (
+    validate_runtime_input,
+)
 
 
 def test_validate_runtime_input_when_input_is_valid() -> None:

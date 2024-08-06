@@ -10,8 +10,8 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
 )
-from inference.core.workflows.entities.base import WorkflowImageData
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
@@ -31,7 +31,7 @@ from an instance segmentation to draw a halo using
 
 
 class HaloManifest(ColorableVisualizationManifest):
-    type: Literal[f"{TYPE}"]
+    type: Literal[f"{TYPE}", "HaloVisualization"]
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Halo Visualization",

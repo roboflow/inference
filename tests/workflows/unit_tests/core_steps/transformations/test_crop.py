@@ -7,7 +7,7 @@ from inference.core.workflows.core_steps.transformations.dynamic_crop.version_1 
     BlockManifest,
     crop_image,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     OriginCoordinatesSystem,
     WorkflowImageData,

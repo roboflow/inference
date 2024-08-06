@@ -1,10 +1,9 @@
 import asyncio
-import base64
 import json
 import re
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.env import (
@@ -14,15 +13,18 @@ from inference.core.env import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import load_image
-from inference.core.workflows.constants import PARENT_ID_KEY, ROOT_PARENT_ID_KEY
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import load_core_model
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.constants import (
+    PARENT_ID_KEY,
+    ROOT_PARENT_ID_KEY,
+)
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_DICTIONARY_KIND,
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_PARENT_ID_KIND,

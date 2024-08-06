@@ -1,20 +1,19 @@
 from dataclasses import replace
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Type, Union
 from uuid import uuid4
 
-from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
+from pydantic import ConfigDict, Field, PositiveInt
 
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     OriginCoordinatesSystem,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_IMAGES_KIND,
     INTEGER_KIND,
-    FlowControl,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,

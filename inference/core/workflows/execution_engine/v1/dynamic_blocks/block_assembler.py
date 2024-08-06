@@ -5,18 +5,18 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.errors import (
+    DynamicBlockError,
+    WorkflowEnvironmentConfigurationError,
+)
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     WILDCARD_KIND,
     Kind,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
-)
-from inference.core.workflows.errors import (
-    DynamicBlockError,
-    WorkflowEnvironmentConfigurationError,
 )
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_all_defined_kinds,

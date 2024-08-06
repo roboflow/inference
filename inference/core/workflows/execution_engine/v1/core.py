@@ -2,7 +2,9 @@ import asyncio
 from asyncio import AbstractEventLoop
 from typing import Any, Dict, List, Optional
 
-from inference.core.workflows.entities.engine import BaseExecutionEngine
+from inference.core.workflows.execution_engine.entities.engine import (
+    BaseExecutionEngine,
+)
 from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,

@@ -4,7 +4,13 @@ from unittest.mock import MagicMock
 import networkx as nx
 import pytest
 
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.core_steps.models.roboflow.object_detection import (
+    version_1 as object_detection_version_1,
+)
+from inference.core.workflows.core_steps.transformations.dynamic_crop import (
+    version_1 as dynamic_crop_version_1,
+)
+from inference.core.workflows.execution_engine.entities.base import (
     JsonField,
     WorkflowImage,
     WorkflowParameter,
@@ -191,13 +197,13 @@ def test_get_output_names() -> None:
 def test_get_steps_selectors() -> None:
     # given
     steps = [
-        dynamic_crop.BlockManifest(
+        dynamic_crop_version_1.BlockManifest(
             type="Crop",
             name="my_crop",
             image="$inputs.image",
             detections="$steps.detect_2.predictions",
         ),
-        object_detection.BlockManifest(
+        object_detection_version_1.BlockManifest(
             type="ObjectDetectionModel",
             name="my_model",
             image="$inputs.image",

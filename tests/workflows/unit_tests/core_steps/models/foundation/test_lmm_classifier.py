@@ -3,8 +3,10 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.foundation.lmm import LMMConfig
-from inference.core.workflows.core_steps.models.foundation.lmm_classifier import (
+from inference.core.workflows.core_steps.models.foundation.lmm.version_1 import (
+    LMMConfig,
+)
+from inference.core.workflows.core_steps.models.foundation.lmm_classifier.version_1 import (
     BlockManifest,
 )
 

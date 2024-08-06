@@ -4,12 +4,17 @@ import numpy as np
 import supervision as sv
 from networkx import DiGraph
 
-from inference.core.workflows.constants import WORKFLOW_INPUT_BATCH_LINEAGE_ID
 from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
-from inference.core.workflows.entities.base import CoordinatesSystem, JsonField
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
+from inference.core.workflows.execution_engine.constants import (
+    WORKFLOW_INPUT_BATCH_LINEAGE_ID,
+)
+from inference.core.workflows.execution_engine.entities.base import (
+    CoordinatesSystem,
+    JsonField,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import OutputNode
 from inference.core.workflows.execution_engine.v1.compiler.utils import (
     construct_output_selector,

@@ -1,15 +1,18 @@
 import pytest
 
-from inference.core.workflows.entities.base import (
-    JsonField,
-    WorkflowImage,
-    WorkflowParameter,
-)
-from inference.core.workflows.entities.types import INTEGER_KIND, ROBOFLOW_MODEL_ID_KIND
 from inference.core.workflows.errors import (
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
     ReferenceTypeError,
+)
+from inference.core.workflows.execution_engine.entities.base import (
+    JsonField,
+    WorkflowImage,
+    WorkflowParameter,
+)
+from inference.core.workflows.execution_engine.entities.types import (
+    INTEGER_KIND,
+    ROBOFLOW_MODEL_ID_KIND,
 )
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     DynamicStepInputDefinition,

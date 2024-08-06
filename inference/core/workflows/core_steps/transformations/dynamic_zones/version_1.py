@@ -1,16 +1,18 @@
-from typing import Any, List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
 import cv2 as cv
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import Batch, OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    OutputDefinition,
+)
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
-    FlowControl,
     StepOutputSelector,
     WorkflowParameterSelector,
 )

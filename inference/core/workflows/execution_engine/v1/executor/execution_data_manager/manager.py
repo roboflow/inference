@@ -3,9 +3,10 @@ from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 from networkx import DiGraph
 
 from inference.core import logger
-from inference.core.workflows.constants import NODE_COMPILATION_OUTPUT_PROPERTY
-from inference.core.workflows.entities.types import FlowControl
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
+from inference.core.workflows.execution_engine.constants import (
+    NODE_COMPILATION_OUTPUT_PROPERTY,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompoundStepInputDefinition,
     DynamicStepInputDefinition,
@@ -21,6 +22,7 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
     is_step_selector,
     node_as,
 )
+from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.branching_manager import (
     BranchingManager,
 )

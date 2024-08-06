@@ -26,7 +26,7 @@ IMPORTS_LINES = [
     "import requests",
     "import cv2",
     "import shapely",
-    "from inference.core.workflows.entities.base import Batch, WorkflowImageData",
+    "from inference.core.workflows.execution_engine.entities.base import Batch, WorkflowImageData",
     "from inference.core.workflows.prototypes.block import BlockResult",
 ]
 

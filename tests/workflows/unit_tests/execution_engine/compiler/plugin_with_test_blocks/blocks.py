@@ -2,14 +2,13 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
     BATCH_OF_IMAGES_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BATCH_OF_PREDICTION_TYPE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
-    FlowControl,
     ImageInputField,
     RoboflowModelField,
     StepOutputImageSelector,
@@ -18,6 +17,7 @@ from inference.core.workflows.entities.types import (
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
+from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,

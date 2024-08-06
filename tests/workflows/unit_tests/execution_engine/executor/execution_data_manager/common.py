@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 from networkx import DiGraph
 
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     JsonField,
     OutputDefinition,
     WorkflowImage,

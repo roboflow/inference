@@ -16,8 +16,11 @@ from inference.core.workflows.core_steps.common.utils import (
     grab_batch_parameters,
     grab_non_batch_parameters,
 )
-from inference.core.workflows.entities.base import Batch, OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    OutputDefinition,
+)
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,

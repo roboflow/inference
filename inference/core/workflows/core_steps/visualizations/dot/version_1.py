@@ -10,8 +10,8 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
 )
-from inference.core.workflows.entities.base import WorkflowImageData
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     STRING_KIND,
     WorkflowParameterSelector,

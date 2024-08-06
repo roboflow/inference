@@ -1,9 +1,9 @@
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import numpy as np
 import supervision as sv
 
-from inference.core.workflows.constants import (
+from inference.core.workflows.execution_engine.constants import (
     CLASS_ID_KEY,
     CLASS_NAME_KEY,
     CONFIDENCE_KEY,
@@ -16,7 +16,6 @@ from inference.core.workflows.constants import (
     KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
     KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
-    PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
     POLYGON_KEY,
     TRACKER_ID_KEY,
@@ -24,7 +23,7 @@ from inference.core.workflows.constants import (
     X_KEY,
     Y_KEY,
 )
-from inference.core.workflows.entities.base import WorkflowImageData
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 
 def serialise_sv_detections(detections: sv.Detections) -> dict:

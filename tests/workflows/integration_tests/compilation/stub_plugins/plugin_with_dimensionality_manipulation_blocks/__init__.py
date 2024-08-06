@@ -2,12 +2,12 @@ from typing import Dict, List, Literal, Optional, Type, Union
 
 from pydantic import Field
 
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     StepOutputImageSelector,
     WorkflowImageSelector,
 )

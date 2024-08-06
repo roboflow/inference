@@ -2,9 +2,8 @@ from typing import Any, Dict, List, Literal, Tuple, Type, Union
 
 from pydantic import Field
 
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
-    FlowControl,
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     Kind,
     StepOutputSelector,
     WorkflowParameterSelector,
@@ -18,6 +17,7 @@ from inference.core.workflows.execution_engine.introspection.entities import (
     BlockPropertySelectorDefinition,
     BlocksDescription,
 )
+from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,

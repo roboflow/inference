@@ -3,11 +3,6 @@ from typing import List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field
 
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.constants import (
-    PARENT_ID_KEY,
-    PREDICTION_TYPE_KEY,
-    ROOT_PARENT_ID_KEY,
-)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.lmm.version_1 import (
     GPT_4V_MODEL_TYPE,
@@ -17,12 +12,17 @@ from inference.core.workflows.core_steps.models.foundation.lmm.version_1 import 
     run_gpt_4v_llm_prompting,
     turn_raw_lmm_output_into_structured,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.constants import (
+    PARENT_ID_KEY,
+    PREDICTION_TYPE_KEY,
+    ROOT_PARENT_ID_KEY,
+)
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_PARENT_ID_KIND,
     BATCH_OF_PREDICTION_TYPE_KIND,

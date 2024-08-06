@@ -4,8 +4,8 @@ import re
 from typing import Dict, List, Set, Tuple, Type
 
 from inference.core.utils.file_system import dump_text_lines, read_text_file
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import STEP_AS_SELECTED_ELEMENT
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import STEP_AS_SELECTED_ELEMENT
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
 )

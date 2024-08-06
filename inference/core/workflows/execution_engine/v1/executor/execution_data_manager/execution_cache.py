@@ -4,11 +4,11 @@ from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
 
 from networkx import DiGraph
 
-from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.errors import (
     ExecutionEngineRuntimeError,
     InvalidBlockBehaviourError,
 )
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.v1.compiler.entities import StepNode
 from inference.core.workflows.execution_engine.v1.compiler.utils import (
     get_last_chunk_of_selector,

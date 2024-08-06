@@ -1,6 +1,6 @@
 from typing import Any, Callable, Dict, List, Optional, Union
 
-from inference.core.workflows.entities.base import WorkflowParameter
+from inference.core.workflows.execution_engine.entities.base import WorkflowParameter
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_initializers,
     load_workflow_blocks,

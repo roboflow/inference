@@ -1,11 +1,11 @@
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, Generator, List, Optional, Set, Type, Union
+from typing import Any, Dict, Generator, List, Optional, Set, Type, Union
 
 import networkx as nx
 
-from inference.core.workflows.entities.base import InputType, JsonField
+from inference.core.workflows.execution_engine.entities.base import InputType, JsonField
 from inference.core.workflows.execution_engine.introspection.entities import (
     ParsedSelector,
 )

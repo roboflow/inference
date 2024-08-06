@@ -1,6 +1,6 @@
 from collections import defaultdict
 
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     JsonField,
     WorkflowImage,
     WorkflowParameter,

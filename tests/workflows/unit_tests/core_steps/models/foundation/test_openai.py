@@ -1,8 +1,7 @@
 import json
 import time
 from typing import Any
-from unittest import mock
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
@@ -10,12 +9,10 @@ from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.foundation import lmm
-from inference.core.workflows.core_steps.models.foundation.openai import (
+from inference.core.workflows.core_steps.models.foundation.openai.version_1 import (
     BlockManifest,
     LMMConfig,
     execute_gpt_4v_request,
-    run_gpt_4v_llm_prompting,
     try_parse_json,
     try_parse_lmm_output_to_json,
 )

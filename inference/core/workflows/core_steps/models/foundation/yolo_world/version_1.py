@@ -17,12 +17,12 @@ from inference.core.workflows.core_steps.common.utils import (
     convert_inference_detections_batch_to_sv_detections,
     load_core_model,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     LIST_OF_VALUES_KIND,

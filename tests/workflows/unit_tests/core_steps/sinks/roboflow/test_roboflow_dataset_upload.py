@@ -10,6 +10,7 @@ import supervision as sv
 from fastapi import BackgroundTasks
 
 from inference.core.cache import MemoryCache
+from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload import version_1
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.version_1 import (
     BatchCreationFrequency,
     RoboflowDatasetUploadBlockV1,
@@ -20,7 +21,7 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.version_1
     is_prediction_registration_forbidden,
     register_datapoint,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,
@@ -171,7 +172,7 @@ def test_is_prediction_registration_forbidden_when_non_empty_sv_detection_provid
     assert result is False
 
 
-@mock.patch.object(roboflow_dataset_upload, "register_image_at_roboflow")
+@mock.patch.object(version_1, "register_image_at_roboflow")
 def test_register_datapoint_when_duplicate_found(
     register_image_at_roboflow_mock: MagicMock,
 ) -> None:
@@ -201,7 +202,7 @@ def test_register_datapoint_when_duplicate_found(
     assert result == "Duplicated image", "Duplicate status is expected to be reported"
 
 
-@mock.patch.object(roboflow_dataset_upload, "register_image_at_roboflow")
+@mock.patch.object(version_1, "register_image_at_roboflow")
 def test_register_datapoint_when_registration_should_be_forbidden(
     register_image_at_roboflow_mock: MagicMock,
 ) -> None:
@@ -226,8 +227,8 @@ def test_register_datapoint_when_registration_should_be_forbidden(
     ), "Status reporting success on image registration is expected"
 
 
-@mock.patch.object(roboflow_dataset_upload, "annotate_image_at_roboflow")
-@mock.patch.object(roboflow_dataset_upload, "register_image_at_roboflow")
+@mock.patch.object(version_1, "annotate_image_at_roboflow")
+@mock.patch.object(version_1, "register_image_at_roboflow")
 def test_register_datapoint_when_registration_should_be_successful(
     register_image_at_roboflow_mock: MagicMock,
     annotate_image_at_roboflow_mock: MagicMock,
@@ -324,7 +325,7 @@ def test_register_datapoint_when_registration_should_be_successful(
         ("my_batch", "monthly", "my_batch_2024_05_01"),
     ],
 )
-@mock.patch.object(roboflow_dataset_upload, "datetime")
+@mock.patch.object(version_1, "datetime")
 def test_generate_batch_name(
     datetime_mock: MagicMock,
     labeling_batch_prefix: str,
@@ -361,7 +362,7 @@ def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
     ), "Expected return value from the cache to be returned"
 
 
-@mock.patch.object(roboflow_dataset_upload, "get_roboflow_workspace")
+@mock.patch.object(version_1, "get_roboflow_workspace")
 def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     get_roboflow_workspace_mock: MagicMock,
 ) -> None:
@@ -384,7 +385,7 @@ def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     ), "Expected retrieved workspace to be saved in cache"
 
 
-@mock.patch.object(roboflow_dataset_upload, "use_credit_of_matching_strategy")
+@mock.patch.object(version_1, "use_credit_of_matching_strategy")
 def test_execute_registration_when_quota_limit_exceeded(
     use_credit_of_matching_strategy_mock: MagicMock,
 ) -> None:
@@ -433,9 +434,9 @@ def test_execute_registration_when_quota_limit_exceeded(
     ), "Expected quota hut to be marked"
 
 
-@mock.patch.object(roboflow_dataset_upload, "return_strategy_credit")
-@mock.patch.object(roboflow_dataset_upload, "register_datapoint")
-@mock.patch.object(roboflow_dataset_upload, "use_credit_of_matching_strategy")
+@mock.patch.object(version_1, "return_strategy_credit")
+@mock.patch.object(version_1, "register_datapoint")
+@mock.patch.object(version_1, "use_credit_of_matching_strategy")
 def test_execute_registration_when_error_in_registration_happened(
     use_credit_of_matching_strategy_mock: MagicMock,
     register_datapoint_mock: MagicMock,
@@ -490,9 +491,9 @@ def test_execute_registration_when_error_in_registration_happened(
     )
 
 
-@mock.patch.object(roboflow_dataset_upload, "return_strategy_credit")
-@mock.patch.object(roboflow_dataset_upload, "register_datapoint")
-@mock.patch.object(roboflow_dataset_upload, "use_credit_of_matching_strategy")
+@mock.patch.object(version_1, "return_strategy_credit")
+@mock.patch.object(version_1, "register_datapoint")
+@mock.patch.object(version_1, "use_credit_of_matching_strategy")
 def test_execute_registration_when_registration_should_be_successful(
     use_credit_of_matching_strategy_mock: MagicMock,
     register_datapoint_mock: MagicMock,
@@ -648,7 +649,7 @@ async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
 
 
 @pytest.mark.asyncio
-@mock.patch.object(roboflow_dataset_upload, "execute_registration", MagicMock())
+@mock.patch.object(version_1, "execute_registration", MagicMock())
 async def test_run_sink_when_registration_should_happen_in_background() -> None:
     # given
     background_tasks = BackgroundTasks()
@@ -706,7 +707,7 @@ async def test_run_sink_when_registration_should_happen_in_background() -> None:
 
 
 @pytest.mark.asyncio
-@mock.patch.object(roboflow_dataset_upload, "execute_registration")
+@mock.patch.object(version_1, "execute_registration")
 async def test_run_sink_when_registration_should_happen_in_foreground_despite_providing_background_tasks(
     execute_registration_mock: MagicMock,
 ) -> None:

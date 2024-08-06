@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple, TypeVar, Union
 
-from inference.core.workflows.entities.base import Batch
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
+from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompoundStepInputDefinition,
     DynamicStepInputDefinition,

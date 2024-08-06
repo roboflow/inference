@@ -5,8 +5,9 @@ import pytest
 from pydantic import ValidationError
 from pydantic_core import PydanticUndefinedType
 
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.errors import DynamicBlockError
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     WILDCARD_KIND,
     Kind,
     StepOutputImageSelector,
@@ -14,7 +15,6 @@ from inference.core.workflows.entities.types import (
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
-from inference.core.workflows.errors import DynamicBlockError
 from inference.core.workflows.execution_engine.v1.dynamic_blocks import block_assembler
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
     build_input_field_metadata,

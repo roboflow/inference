@@ -8,13 +8,13 @@ from inference.core.utils.image_utils import (
     attempt_loading_image_from_string,
     load_image_from_url,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.errors import RuntimeInputError
+from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     InputType,
     WorkflowImage,
     WorkflowImageData,
 )
-from inference.core.workflows.errors import RuntimeInputError
 
 
 def assembly_runtime_parameters(

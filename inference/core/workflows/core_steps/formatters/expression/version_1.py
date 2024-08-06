@@ -14,8 +14,8 @@ from inference.core.workflows.core_steps.common.query_language.evaluation_engine
 from inference.core.workflows.core_steps.common.query_language.operations.core import (
     build_operations_chain,
 )
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,

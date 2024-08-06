@@ -9,8 +9,8 @@ from inference.core.workflows.core_steps.visualizations.common.base import (
     VisualizationManifest,
 )
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
-from inference.core.workflows.entities.base import WorkflowImageData
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,

@@ -3,7 +3,7 @@ import pytest
 from inference.core.workflows.core_steps.fusion.dimension_collapse.version_1 import (
     DimensionCollapseBlockV1,
 )
-from inference.core.workflows.entities.base import Batch
+from inference.core.workflows.execution_engine.entities.base import Batch
 
 
 @pytest.mark.asyncio

@@ -7,16 +7,6 @@ import networkx as nx
 from networkx import DiGraph
 
 from inference.core import logger
-from inference.core.workflows.constants import (
-    NODE_COMPILATION_OUTPUT_PROPERTY,
-    WORKFLOW_INPUT_BATCH_LINEAGE_ID,
-)
-from inference.core.workflows.entities.base import (
-    InputType,
-    JsonField,
-    OutputDefinition,
-)
-from inference.core.workflows.entities.types import STEP_AS_SELECTED_ELEMENT, Kind
 from inference.core.workflows.errors import (
     AssumptionError,
     BlockInterfaceError,
@@ -26,6 +16,19 @@ from inference.core.workflows.errors import (
     StepInputDimensionalityError,
     StepInputLineageError,
     StepOutputLineageError,
+)
+from inference.core.workflows.execution_engine.constants import (
+    NODE_COMPILATION_OUTPUT_PROPERTY,
+    WORKFLOW_INPUT_BATCH_LINEAGE_ID,
+)
+from inference.core.workflows.execution_engine.entities.base import (
+    InputType,
+    JsonField,
+    OutputDefinition,
+)
+from inference.core.workflows.execution_engine.entities.types import (
+    STEP_AS_SELECTED_ELEMENT,
+    Kind,
 )
 from inference.core.workflows.execution_engine.introspection.entities import (
     ParsedSelector,

@@ -9,9 +9,9 @@ from pydantic import ConfigDict, Field
 
 from inference.core.cache.base import BaseCache
 from inference.core.roboflow_api import add_custom_metadata, get_roboflow_workspace
-from inference.core.workflows.constants import INFERENCE_ID_KEY
-from inference.core.workflows.entities.base import Batch, OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,

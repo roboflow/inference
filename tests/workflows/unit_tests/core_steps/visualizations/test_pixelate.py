@@ -7,7 +7,7 @@ from inference.core.workflows.core_steps.visualizations.pixelate.version_1 impor
     PixelateManifest,
     PixelateVisualizationBlockV1,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )

@@ -25,7 +25,7 @@ from inference.core.utils.image_utils import (
     encode_image_to_jpeg_bytes,
     load_image_from_url,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_IMAGES_KIND,
     WILDCARD_KIND,
     Kind,

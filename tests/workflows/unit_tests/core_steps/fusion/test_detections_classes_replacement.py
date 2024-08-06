@@ -13,7 +13,7 @@ from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v
     DetectionsClassesReplacementBlockV1,
     extract_leading_class_from_prediction,
 )
-from inference.core.workflows.entities.base import Batch
+from inference.core.workflows.execution_engine.entities.base import Batch
 
 
 @pytest.mark.asyncio

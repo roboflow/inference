@@ -1,14 +1,20 @@
 import uuid
 from copy import deepcopy
-from typing import Dict, List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
-from inference.core.workflows.constants import DETECTION_ID_KEY, PARENT_ID_KEY
-from inference.core.workflows.entities.base import Batch, OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.constants import (
+    DETECTION_ID_KEY,
+    PARENT_ID_KEY,
+)
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    OutputDefinition,
+)
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,

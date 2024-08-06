@@ -143,7 +143,7 @@ from inference.core.workflows.core_steps.visualizations.polygon.version_1 import
 from inference.core.workflows.core_steps.visualizations.triangle.version_1 import (
     TriangleVisualizationBlockV1,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
     BATCH_OF_BOOLEAN_KIND,
     BATCH_OF_CLASSIFICATION_PREDICTION_KIND,

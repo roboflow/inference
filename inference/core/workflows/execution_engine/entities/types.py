@@ -1,8 +1,7 @@
-from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import List, Optional
 
 from pydantic import AliasChoices, BaseModel, Field, StringConstraints
-from typing_extensions import Annotated, Literal
+from typing_extensions import Annotated
 
 
 class Kind(BaseModel):
@@ -670,7 +669,3 @@ StepOutputImageSelector = Annotated[
 ]
 
 FloatZeroToOne = Annotated[float, Field(ge=0.0, le=1.0)]
-
-
-class FlowControl(BaseModel):
-    context: Optional[Union[str, List[str]]] = Field(default=None)

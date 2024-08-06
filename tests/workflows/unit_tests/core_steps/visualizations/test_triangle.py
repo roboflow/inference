@@ -7,7 +7,7 @@ from inference.core.workflows.core_steps.visualizations.triangle.version_1 impor
     TriangleManifest,
     TriangleVisualizationBlockV1,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )

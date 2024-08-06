@@ -7,21 +7,21 @@ import supervision as sv
 from pydantic import ConfigDict
 from supervision.config import CLASS_NAME_DATA_FIELD
 
-from inference.core.workflows.constants import (
+from inference.core.workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_sv_detections,
+)
+from inference.core.workflows.execution_engine.constants import (
     DETECTED_CODE_KEY,
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
     PREDICTION_TYPE_KEY,
 )
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parents_coordinates_to_sv_detections,
-)
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
     ImageInputField,
     StepOutputImageSelector,

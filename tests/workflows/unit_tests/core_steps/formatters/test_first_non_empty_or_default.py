@@ -3,7 +3,7 @@ import pytest
 from inference.core.workflows.core_steps.formatters.first_non_empty_or_default.version_1 import (
     FirstNonEmptyOrDefaultBlockV1,
 )
-from inference.core.workflows.entities.base import Batch
+from inference.core.workflows.execution_engine.entities.base import Batch
 
 
 @pytest.mark.asyncio

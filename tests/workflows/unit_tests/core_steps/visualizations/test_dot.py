@@ -7,7 +7,7 @@ from inference.core.workflows.core_steps.visualizations.dot.version_1 import (
     DotManifest,
     DotVisualizationBlockV1,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )

@@ -6,7 +6,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.introspe
     OperationDescription,
     OperatorDescription,
 )
-from inference.core.workflows.entities.types import Kind
+from inference.core.workflows.execution_engine.entities.types import Kind
 from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
 )

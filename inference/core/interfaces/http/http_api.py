@@ -150,7 +150,6 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
     OperationTypeNotRecognisedError,
 )
-from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.errors import (
     DynamicBlockError,
     ExecutionGraphStructureError,
@@ -161,6 +160,7 @@ from inference.core.workflows.errors import (
     WorkflowError,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
     parse_workflow_definition,
 )

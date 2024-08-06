@@ -3,7 +3,7 @@ import numpy as np
 from inference.core.workflows.core_steps.transformations.relative_static_crop.version_1 import (
     take_static_crop,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     OriginCoordinatesSystem,
     WorkflowImageData,

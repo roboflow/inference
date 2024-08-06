@@ -7,13 +7,15 @@ import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from typing_extensions import Literal, Type
 
-from inference.core.workflows.constants import KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.constants import (
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+)
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_IMAGES_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,

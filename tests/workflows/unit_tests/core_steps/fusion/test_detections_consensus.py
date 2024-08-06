@@ -7,6 +7,7 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
+from inference.core.workflows.core_steps.fusion.detections_consensus import version_1
 from inference.core.workflows.core_steps.fusion.detections_consensus.version_1 import (
     AggregationMode,
     BlockManifest,
@@ -561,7 +562,7 @@ def test_get_class_of_least_confident_detection() -> None:
     assert result == ("a", 0)
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(version_1, "uuid4")
 def test_merge_detections(uuid4_mock: MagicMock) -> None:
     # given
     uuid4_mock.return_value = "some_uuid"
@@ -1226,7 +1227,7 @@ def test_does_not_detect_objects_in_any_source_when_not_all_sources_give_empty_p
     assert result is False
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(version_1, "uuid4")
 def test_get_consensus_for_single_detection_when_only_single_source_and_single_source_is_enough(
     uuid_mock: MagicMock,
 ) -> None:
@@ -1347,7 +1348,7 @@ def test_get_consensus_for_single_detection_when_only_single_source_and_single_s
     assert consensus_detections == []
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(version_1, "uuid4")
 def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_and_all_other_conditions_should_pass(
     uuid_mock: MagicMock,
 ) -> None:
@@ -1513,7 +1514,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
     assert consensus_detections == []
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(version_1, "uuid4")
 def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_but_confidence_is_not_enough(
     uuid_mock: MagicMock,
 ) -> None:
@@ -1584,7 +1585,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
     assert consensus_detections == []
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(version_1, "uuid4")
 def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_but_classes_do_not_match(
     uuid_mock: MagicMock,
 ) -> None:
@@ -1910,7 +1911,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_do_not_m
     assert result == ("some_parent", False, {}, empty_detections)
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(version_1, "uuid4")
 def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_single_source_given_but_thats_enough_for_consensus(
     uuid_mock: MagicMock,
 ) -> None:
@@ -1976,7 +1977,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_sin
     assert result == ("some_parent", True, {"b": 0.9}, expected_consensus_detections)
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(version_1, "uuid4")
 def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_multiple_sources_given_enough_for_consensus(
     uuid_mock: MagicMock,
 ) -> None:

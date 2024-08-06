@@ -4,7 +4,7 @@ import logging
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
 import supervision as sv
@@ -31,12 +31,12 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
 from inference.core.workflows.core_steps.common.utils import scale_sv_detections
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
     BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,

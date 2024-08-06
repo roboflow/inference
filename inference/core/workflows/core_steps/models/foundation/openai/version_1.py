@@ -10,14 +10,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.core.workflows.constants import PARENT_ID_KEY, ROOT_PARENT_ID_KEY
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.constants import (
+    PARENT_ID_KEY,
+    ROOT_PARENT_ID_KEY,
+)
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_DICTIONARY_KIND,
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_PARENT_ID_KIND,

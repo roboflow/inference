@@ -11,8 +11,8 @@ from inference.core.workflows.core_steps.loader import (
     load_blocks,
     load_kinds,
 )
-from inference.core.workflows.entities.types import Kind
 from inference.core.workflows.errors import PluginInterfaceError, PluginLoadingError
+from inference.core.workflows.execution_engine.entities.types import Kind
 from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
     BlocksDescription,

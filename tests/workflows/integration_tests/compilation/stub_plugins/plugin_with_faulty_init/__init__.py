@@ -2,7 +2,7 @@ from typing import List, Literal, Type
 
 from pydantic import Field
 
-from inference.core.workflows.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,

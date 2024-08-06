@@ -7,7 +7,7 @@ from inference.core.workflows.core_steps.visualizations.blur.version_1 import (
     BlurManifest,
     BlurVisualizationBlockV1,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
