@@ -313,6 +313,25 @@ DETECTION_KIND = Kind(
     docs=DETECTION_KIND_DOCS,
 )
 
+DETECTION_KIND_DOCS = """
+This kind represents a batch of detections from a model that detects multiple elements
+(like object detection or instance segmentation model). It is represented as a tuple
+that is created from `sv.Detections(...)` object while iterating over its content. `workflows`
+utilises `data` property of `sv.Detections(...)` to keep additional metadata which will be available
+in the tuple. Some properties may not always be present. Take a look at documentation of 
+`Batch[object_detection_prediction]`, `Batch[instance_segmentation_prediction]`, `Batch[keypoint_detection_prediction]`
+kinds to discover which additional metadata are available.
+
+More technical details about 
+[iterating over `sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/#supervision.detection.core.Detections)
+"""
+
+BATCH_OF_DETECTION_KIND = Kind(
+    name="Batch[detection]",
+    description="Batch of detections",
+
+)
+
 
 POINT_KIND = Kind(
     name="point",

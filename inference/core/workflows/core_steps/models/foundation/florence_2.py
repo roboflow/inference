@@ -20,7 +20,7 @@ from inference.core.workflows.entities.types import (
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
-    WILDCARD_KIND,
+    BATCH_OF_DETECTION_KIND,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -99,7 +99,7 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="raw_output", kind=[BATCH_OF_DICTIONARY_KIND]),
-            OutputDefinition(name="structured_output", kind=[WILDCARD_KIND]),
+            OutputDefinition(name="predictions", kind=[BATCH_OF_DETECTION_KIND]),
         ]
 
     def get_actual_outputs(self) -> List[OutputDefinition]:
@@ -108,7 +108,7 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="raw_output", kind=[BATCH_OF_DICTIONARY_KIND]),
-            OutputDefinition(name="structured_output", kind=[WILDCARD_KIND]),
+            OutputDefinition(name="predictions", kind=[BATCH_OF_DETECTION_KIND]),
         ]
         return result
 
@@ -180,7 +180,7 @@ class Florence2ModelBlock(WorkflowBlock):
 
         # convert to sv detections
         for prediction in predictions:
-            prediction["structured_output"] = sv.Detections.from_lmm(
+            prediction["predictions"] = sv.Detections.from_lmm(
                 sv.LMM.FLORENCE_2,
                 prediction["raw_output"],
                 resolution_wh=(
