@@ -102,11 +102,11 @@ class ExecutionCache:
                 indices=indices, outputs=outputs
             )
             self._step_outputs_registered.add(step_name)
-        except TypeError as e:
+        except (TypeError, AttributeError) as e:
             # checking this case defensively as there is no guarantee on block
             # meeting contract, and we want graceful error handling
             raise InvalidBlockBehaviourError(
-                public_message=f"Block implementing step {step_name} should return outputs which are lists of "
+                public_message=f"Block implementing step `{step_name}` should return outputs which are lists of "
                 f"dicts, but the type of output does not match expectation.",
                 context="workflow_execution | step_output_registration",
                 inner_error=e,
@@ -124,7 +124,17 @@ class ExecutionCache:
                 f"the problem - including workflow definition you use.",
                 context="workflow_execution | step_output_registration",
             )
-        self._cache_content[step_name].register_outputs(outputs=outputs)
+        try:
+            self._cache_content[step_name].register_outputs(outputs=outputs)
+        except (TypeError, AttributeError) as e:
+            # checking this case defensively as there is no guarantee on block
+            # meeting contract, and we want graceful error handling
+            raise InvalidBlockBehaviourError(
+                public_message=f"Block implementing step `{step_name}` `should return outputs which are "
+                f"dicts, but the type of output does not match expectation.",
+                context="workflow_execution | step_output_registration",
+                inner_error=e,
+            ) from e
         self._step_outputs_registered.add(step_name)
 
     def get_batch_output(
@@ -309,7 +319,7 @@ class BatchStepCache:
             element_properties = set(element.keys())
             if element_properties != self._outputs:
                 raise ExecutionEngineRuntimeError(
-                    public_message=f"Step {self._step_name} did not produced required outputs. "
+                    public_message=f"Step {self._step_name} did not produce required outputs. "
                     f"Expected: {self._outputs}. Got: {element_properties}. "
                     f"Contact Roboflow team through github issues "
                     f"(https://github.com/roboflow/inference/issues) providing full context of"
@@ -381,7 +391,7 @@ class NonBatchStepCache:
     def register_outputs(self, outputs: Dict[str, Any]):
         if set(outputs.keys()) != self._outputs:
             raise ExecutionEngineRuntimeError(
-                public_message=f"Step {self._step_name} did not produced required outputs. "
+                public_message=f"Step {self._step_name} did not produce required outputs. "
                 f"Expected: {self._outputs}. Got: {outputs.keys()}. "
                 f"Contact Roboflow team through github issues "
                 f"(https://github.com/roboflow/inference/issues) providing full context of"

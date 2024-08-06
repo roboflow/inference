@@ -25,7 +25,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Filters out unwanted Bounding Boxes based on conditions specified"
+SHORT_DESCRIPTION = "Conditionally filter out model predictions."
 
 
 class BlockManifest(WorkflowBlockManifest):

@@ -13,6 +13,7 @@ from inference.core.workflows.core_steps.common.utils import (
     filter_out_unwanted_classes_from_sv_detections_batch,
     grab_batch_parameters,
     grab_non_batch_parameters,
+    remove_unexpected_keys_from_dictionary,
     scale_sv_detections,
     sv_detections_to_root_coordinates,
 )
@@ -221,8 +222,8 @@ def test_add_inference_keypoints_to_sv_detections() -> None:
     inference_prediction = [
         {
             "keypoints": [
-                {"x": 10, "y": 20, "class": "a", "confidence": 0.3, "class_id": 1},
-                {"x": 20, "y": 30, "class": "b", "confidence": 0.4, "class_id": 0},
+                {"x": 10, "y": 20, "class_name": "a", "confidence": 0.3, "class_id": 1},
+                {"x": 20, "y": 30, "class_name": "b", "confidence": 0.4, "class_id": 0},
             ]
         },
         {
@@ -1170,3 +1171,37 @@ def test_scale_sv_detections_when_scale_makes_output_smaller() -> None:
     assert np.allclose(
         result["image_dimensions"], np.array([[100, 50], [100, 50]])
     ), "Expected image dimensions to decrease 2x"
+
+
+def test_remove_unexpected_keys_from_dictionary_when_empty_dict_given() -> None:
+    # when
+    result = remove_unexpected_keys_from_dictionary(
+        dictionary={}, expected_keys={"some", "other"}
+    )
+
+    # then
+    assert result == {}
+
+
+def test_remove_unexpected_keys_from_dictionary_when_non_empty_dict_given_but_no_keys_expected() -> (
+    None
+):
+    # when
+    result = remove_unexpected_keys_from_dictionary(
+        dictionary={"a": 1, "b": 2}, expected_keys=set()
+    )
+
+    # then
+    assert result == {}
+
+
+def test_remove_unexpected_keys_from_dictionary_when_part_of_keys_are_not_expected() -> (
+    None
+):
+    # when
+    result = remove_unexpected_keys_from_dictionary(
+        dictionary={"a": 1, "b": 2, "c": 3}, expected_keys={"a", "d"}
+    )
+
+    # then
+    assert result == {"a": 1}

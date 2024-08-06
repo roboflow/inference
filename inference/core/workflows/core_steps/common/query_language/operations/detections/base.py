@@ -22,9 +22,9 @@ from inference.core.workflows.core_steps.common.query_language.operations.utils 
 
 PROPERTIES_EXTRACTORS = {
     DetectionsProperty.CONFIDENCE: lambda detections: detections.confidence.tolist(),
-    DetectionsProperty.CLASS_NAME: lambda detections: detections.data[
-        "class_name"
-    ].tolist(),
+    DetectionsProperty.CLASS_NAME: lambda detections: detections.data.get(
+        "class_name", np.array([], dtype=str)
+    ).tolist(),
     DetectionsProperty.X_MIN: lambda detections: detections.xyxy[:, 0].tolist(),
     DetectionsProperty.Y_MIN: lambda detections: detections.xyxy[:, 1].tolist(),
     DetectionsProperty.X_MAX: lambda detections: detections.xyxy[:, 2].tolist(),
@@ -173,7 +173,7 @@ def sort_detections(
             context="step_execution | roboflow_query_language_evaluation",
         )
     if mode not in SORT_PROPERTIES_EXTRACT:
-        InvalidInputTypeError(
+        raise InvalidInputTypeError(
             public_message=f"Executing sort_detections(...), expected mode to be one of "
             f"{SORT_PROPERTIES_EXTRACT.values()}, got {mode}.",
             context="step_execution | roboflow_query_language_evaluation",

@@ -27,9 +27,13 @@ class WorkflowRunner:
             self._event_loop = event_loop
         if workflows_parameters is None:
             workflows_parameters = {}
+        # TODO: pass fps reflecting each stream to workflows_parameters
+        fps = video_frames[0].fps
         workflows_parameters[image_input_name] = [
             video_frame.image for video_frame in video_frames
         ]
         return execution_engine.run(
-            runtime_parameters=workflows_parameters, event_loop=self._event_loop
+            runtime_parameters=workflows_parameters,
+            event_loop=self._event_loop,
+            fps=fps,
         )

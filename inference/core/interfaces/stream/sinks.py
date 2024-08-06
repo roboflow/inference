@@ -80,8 +80,8 @@ def render_boxes(
             (for sequential input) or position in the batch (from 0 to batch_size-1).
 
     Returns: None
-    Side effects: on_frame_rendered() is called against the np.ndarray produced from video frame
-        and predictions.
+    Side effects: on_frame_rendered() is called against the tuple (stream_id, np.ndarray) produced from video
+        frame and predictions.
 
     Example:
         ```python
@@ -92,7 +92,11 @@ def render_boxes(
 
         output_size = (640, 480)
         video_sink = cv2.VideoWriter("output.avi", cv2.VideoWriter_fourcc(*"MJPG"), 25.0, output_size)
-        on_prediction = partial(render_boxes, display_size=output_size, on_frame_rendered=video_sink.write)
+        on_prediction = partial(
+            render_boxes,
+            display_size=output_size,
+            on_frame_rendered=lambda frame_data: video_sink.write(frame_data[1])
+        )
 
         pipeline = InferencePipeline.init(
              model_id="your-model/3",
@@ -105,7 +109,8 @@ def render_boxes(
         ```
 
         In this example, `render_boxes()` is used as a sink for `InferencePipeline` predictions - making frames with
-        predictions displayed to be saved into video file.
+        predictions displayed to be saved into video file. Please note that this is oversimplified example of usage
+        which will not be robust against multiple streams - better implementation available in `VideoFileSink` class.
     """
     sequential_input_provided = False
     if not isinstance(video_frame, list):
@@ -162,7 +167,7 @@ def _handle_frame_rendering(
             if hasattr(sv.Detections, "from_inference"):
                 detections = sv.Detections.from_inference(prediction)
             else:
-                detections = sv.Detections.from_roboflow(prediction)
+                detections = sv.Detections.from_inference(prediction)
             image = frame.image.copy()
             for annotator in annotators:
                 kwargs = {

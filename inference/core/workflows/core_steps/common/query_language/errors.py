@@ -5,6 +5,10 @@ class RoboflowQueryLanguageError(WorkflowExecutionEngineError):
     pass
 
 
+class UndeclaredSymbolError(RoboflowQueryLanguageError):
+    pass
+
+
 class InvalidInputTypeError(RoboflowQueryLanguageError):
     pass
 

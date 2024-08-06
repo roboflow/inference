@@ -1,32 +1,63 @@
-try:
-    from inference.models.clip import Clip
-except:
-    pass
+from inference.core.env import (
+    CORE_MODEL_CLIP_ENABLED,
+    CORE_MODEL_COGVLM_ENABLED,
+    CORE_MODEL_DOCTR_ENABLED,
+    CORE_MODEL_GAZE_ENABLED,
+    CORE_MODEL_GROUNDINGDINO_ENABLED,
+    CORE_MODEL_SAM_ENABLED,
+    CORE_MODEL_SAM2_ENABLED,
+    CORE_MODEL_YOLO_WORLD_ENABLED,
+    CORE_MODELS_ENABLED,
+)
 
-try:
-    from inference.models.gaze import Gaze
-except:
-    pass
+if CORE_MODELS_ENABLED:
+    if CORE_MODEL_CLIP_ENABLED:
+        try:
+            from inference.models.clip import Clip
+        except:
+            pass
 
-try:
-    from inference.models.sam import SegmentAnything
-except:
-    pass
+    if CORE_MODEL_GAZE_ENABLED:
+        try:
+            from inference.models.gaze import Gaze
+        except:
+            pass
 
-try:
-    from inference.models.doctr import DocTR
-except:
-    pass
+    if CORE_MODEL_SAM_ENABLED:
+        try:
+            from inference.models.sam import SegmentAnything
+        except:
+            pass
 
-try:
-    from inference.models.grounding_dino import GroundingDINO
-except:
-    pass
+    if CORE_MODEL_SAM2_ENABLED:
+        try:
+            from inference.models.sam2 import SegmentAnything2
+        except:
+            pass
 
-try:
-    from inference.models.cogvlm import CogVLM
-except:
-    pass
+    if CORE_MODEL_DOCTR_ENABLED:
+        try:
+            from inference.models.doctr import DocTR
+        except:
+            pass
+
+    if CORE_MODEL_GROUNDINGDINO_ENABLED:
+        try:
+            from inference.models.grounding_dino import GroundingDINO
+        except:
+            pass
+
+    if CORE_MODEL_COGVLM_ENABLED:
+        try:
+            from inference.models.cogvlm import CogVLM
+        except:
+            pass
+
+    if CORE_MODEL_YOLO_WORLD_ENABLED:
+        try:
+            from inference.models.yolo_world import YOLOWorld
+        except:
+            pass
 
 try:
     from inference.models.paligemma import LoRAPaliGemma, PaliGemma
@@ -35,11 +66,6 @@ except:
 
 try:
     from inference.models.florence2 import Florence2, LoRAFlorence2
-except:
-    pass
-
-try:
-    from inference.models.yolo_world import YOLOWorld
 except:
     pass
 

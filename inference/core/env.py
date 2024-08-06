@@ -12,8 +12,27 @@ load_dotenv(os.getcwd() + "/.env")
 # The project name, default is "roboflow-platform"
 PROJECT = os.getenv("PROJECT", "roboflow-platform")
 
-# Allow numpy input, default is True
-ALLOW_NUMPY_INPUT = str2bool(os.getenv("ALLOW_NUMPY_INPUT", True))
+# Allow numpy input, default is False
+ALLOW_NUMPY_INPUT = str2bool(os.getenv("ALLOW_NUMPY_INPUT", False))
+ALLOW_URL_INPUT = str2bool(os.getenv("ALLOW_URL_INPUT", True))
+ALLOW_NON_HTTPS_URL_INPUT = str2bool(os.getenv("ALLOW_NON_HTTPS_URL_INPUT", False))
+ALLOW_URL_INPUT_WITHOUT_FQDN = str2bool(
+    os.getenv("ALLOW_URL_INPUT_WITHOUT_FQDN", False)
+)
+WHITELISTED_DESTINATIONS_FOR_URL_INPUT = os.getenv(
+    "WHITELISTED_DESTINATIONS_FOR_URL_INPUT"
+)
+if WHITELISTED_DESTINATIONS_FOR_URL_INPUT is not None:
+    WHITELISTED_DESTINATIONS_FOR_URL_INPUT = set(
+        WHITELISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
+    )
+BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = os.getenv(
+    "BLACKLISTED_DESTINATIONS_FOR_URL_INPUT"
+)
+if BLACKLISTED_DESTINATIONS_FOR_URL_INPUT is not None:
+    BLACKLISTED_DESTINATIONS_FOR_URL_INPUT = set(
+        BLACKLISTED_DESTINATIONS_FOR_URL_INPUT.split(",")
+    )
 
 # List of allowed origins
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
@@ -87,6 +106,7 @@ CORE_MODEL_CLIP_ENABLED = str2bool(os.getenv("CORE_MODEL_CLIP_ENABLED", True))
 
 # Flag to enable SAM core model, default is True
 CORE_MODEL_SAM_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM_ENABLED", True))
+CORE_MODEL_SAM2_ENABLED = str2bool(os.getenv("CORE_MODEL_SAM2_ENABLED", False))
 
 # Flag to enable GAZE core model, default is True
 CORE_MODEL_GAZE_ENABLED = str2bool(os.getenv("CORE_MODEL_GAZE_ENABLED", True))
@@ -266,6 +286,7 @@ SAM_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM_MAX_EMBEDDING_CACHE_SIZE", 10)
 
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
+SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")
 
 
 # Device ID, default is "sample-device-id"
@@ -365,7 +386,7 @@ HOSTED_CORE_MODEL_URL = (
 )
 
 DISABLE_WORKFLOW_ENDPOINTS = str2bool(os.getenv("DISABLE_WORKFLOW_ENDPOINTS", False))
-WORKFLOWS_STEP_EXECUTION_MODE = os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "remote")
+WORKFLOWS_STEP_EXECUTION_MODE = os.getenv("WORKFLOWS_STEP_EXECUTION_MODE", "local")
 WORKFLOWS_REMOTE_API_TARGET = os.getenv("WORKFLOWS_REMOTE_API_TARGET", "hosted")
 WORKFLOWS_MAX_CONCURRENT_STEPS = int(os.getenv("WORKFLOWS_MAX_CONCURRENT_STEPS", "8"))
 WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE = int(
@@ -373,6 +394,9 @@ WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE = int(
 )
 WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS = int(
     os.getenv("WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", "8")
+)
+ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS = str2bool(
+    os.getenv("ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", True)
 )
 
 MODEL_VALIDATION_DISABLED = str2bool(os.getenv("MODEL_VALIDATION_DISABLED", "False"))

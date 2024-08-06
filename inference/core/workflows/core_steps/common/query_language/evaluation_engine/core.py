@@ -19,14 +19,17 @@ from inference.core.workflows.core_steps.common.query_language.entities.types im
 from inference.core.workflows.core_steps.common.query_language.errors import (
     EvaluationEngineError,
     RoboflowQueryLanguageError,
+    UndeclaredSymbolError,
 )
 from inference.core.workflows.core_steps.common.query_language.evaluation_engine.detection.geometry import (
     is_point_in_zone,
 )
 
 BINARY_OPERATORS = {
+    "==": lambda a, b: a == b,
     "(Number) ==": lambda a, b: a == b,
     "(Number) !=": lambda a, b: a != b,
+    "!=": lambda a, b: a != b,
     "(Number) >": lambda a, b: a > b,
     "(Number) >=": lambda a, b: a >= b,
     "(Number) <": lambda a, b: a < b,
@@ -173,6 +176,11 @@ def dynamic_operand_builder(
     operand_name: str,
     operations_function: Callable[[T, Dict[str, Any]], V],
 ) -> V:
+    if operand_name not in values:
+        raise UndeclaredSymbolError(
+            public_message=f"Encountered undefined symbol `{operand_name}`",
+            context="unknown",
+        )
     return operations_function(values[operand_name], global_parameters=values)
 
 
@@ -195,6 +203,12 @@ def binary_eval(
         if negate:
             result = not result
         return result
+    except UndeclaredSymbolError as error:
+        raise UndeclaredSymbolError(
+            public_message=f"Attempted to execute evaluation of type: {operation_type} in context {execution_context}, "
+            f"but encountered error: {error.public_message}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+        ) from error
     except RoboflowQueryLanguageError as error:
         raise error
     except Exception as error:
@@ -225,6 +239,7 @@ def build_unary_statement(
         operator=operator,
         negate=definition.negate,
         operation_type=definition.type,
+        execution_context=execution_context,
         operator_parameters=operator_parameters,
     )
 
@@ -235,6 +250,7 @@ def unary_eval(
     operator: Callable[[V, Any], bool],
     negate: bool,
     operation_type: str,
+    execution_context: str,
     operator_parameters: Optional[Dict[str, Any]] = None,
 ) -> bool:
     if operator_parameters is None:
@@ -245,13 +261,19 @@ def unary_eval(
         if negate:
             result = not result
         return result
+    except UndeclaredSymbolError as error:
+        raise UndeclaredSymbolError(
+            public_message=f"Attempted to execute evaluation of type: {operation_type} in context {execution_context}, "
+            f"but encountered error: {error.public_message}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+        ) from error
     except RoboflowQueryLanguageError as error:
         raise error
     except Exception as error:
         raise EvaluationEngineError(
-            public_message=f"Attempted to execute evaluation of type: {operation_type}, "
+            public_message=f"Attempted to execute evaluation of type: {operation_type} in context {execution_context}, "
             f"but encountered error: {error}",
-            context="step_execution | roboflow_query_language_evaluation",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=error,
         ) from error
 

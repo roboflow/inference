@@ -22,9 +22,11 @@ from inference.core.workflows.execution_engine.executor.output_constructor impor
     construct_workflow_output,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.usage_tracking.collector import usage_collector
 from inference_sdk.http.utils.iterables import make_batches
 
 
+@usage_collector
 async def run_workflow(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],

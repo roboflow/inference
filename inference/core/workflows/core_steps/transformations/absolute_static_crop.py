@@ -39,7 +39,7 @@ recognition on each of the individual cropped regions.
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Use absolute coordinates to crop.",
+            "short_description": "Crop an image using fixed pixel coordinates.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",

@@ -81,10 +81,12 @@ dedicated LMMForClassificationBlock._
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "short_description": "Run a large language model.",
+            "name": "LMM",
+            "short_description": "Run a large multimodal model such as ChatGPT-4v or CogVLM.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "deprecated": True,
         }
     )
     type: Literal["LMM"]

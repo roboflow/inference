@@ -3,6 +3,8 @@ name: Static code analysis
 on:
   pull_request:
     branches: [ main ]
+  push:
+    branches: [ main ]
 
 jobs:
   build-dev-test:

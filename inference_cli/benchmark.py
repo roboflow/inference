@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 
 import typer
@@ -5,8 +6,9 @@ from typing_extensions import Annotated
 
 from inference_cli.lib.benchmark.dataset import PREDEFINED_DATASETS
 from inference_cli.lib.benchmark_adapter import (
-    run_api_speed_benchmark,
+    run_infer_api_speed_benchmark,
     run_python_package_speed_benchmark,
+    run_workflow_api_speed_benchmark,
 )
 
 benchmark_app = typer.Typer(help="Commands for running inference benchmarks.")
@@ -15,13 +17,45 @@ benchmark_app = typer.Typer(help="Commands for running inference benchmarks.")
 @benchmark_app.command()
 def api_speed(
     model_id: Annotated[
-        str,
+        Optional[str],
         typer.Option(
             "--model_id",
             "-m",
             help="Model ID in format project/version.",
         ),
-    ],
+    ] = None,
+    workflow_id: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workflow-id",
+            "-wid",
+            help="Workflow ID.",
+        ),
+    ] = None,
+    workspace_name: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workspace-name",
+            "-wn",
+            help="Workspace Name.",
+        ),
+    ] = None,
+    workflow_specification: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workflow-specification",
+            "-ws",
+            help="Workflow specification.",
+        ),
+    ] = None,
+    workflow_parameters: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workflow-parameters",
+            "-wp",
+            help="Model ID in format project/version.",
+        ),
+    ] = None,
     dataset_reference: Annotated[
         str,
         typer.Option(
@@ -110,20 +144,42 @@ def api_speed(
         if proceed.lower() != "y":
             return None
     try:
-        run_api_speed_benchmark(
-            model_id=model_id,
-            dataset_reference=dataset_reference,
-            host=host,
-            warm_up_requests=warm_up_requests,
-            benchmark_requests=benchmark_requests,
-            request_batch_size=request_batch_size,
-            number_of_clients=number_of_clients,
-            requests_per_second=requests_per_second,
-            api_key=api_key,
-            model_configuration=model_configuration,
-            output_location=output_location,
-            enforce_legacy_endpoints=enforce_legacy_endpoints,
-        )
+        if model_id:
+            run_infer_api_speed_benchmark(
+                model_id=model_id,
+                dataset_reference=dataset_reference,
+                host=host,
+                warm_up_requests=warm_up_requests,
+                benchmark_requests=benchmark_requests,
+                request_batch_size=request_batch_size,
+                number_of_clients=number_of_clients,
+                requests_per_second=requests_per_second,
+                api_key=api_key,
+                model_configuration=model_configuration,
+                output_location=output_location,
+                enforce_legacy_endpoints=enforce_legacy_endpoints,
+            )
+        else:
+            if workflow_specification:
+                workflow_specification = json.loads(workflow_specification)
+            if workflow_parameters:
+                workflow_parameters = json.loads(workflow_parameters)
+            run_workflow_api_speed_benchmark(
+                workflow_id=workflow_id,
+                workspace_name=workspace_name,
+                workflow_specification=workflow_specification,
+                workflow_parameters=workflow_parameters,
+                dataset_reference=dataset_reference,
+                host=host,
+                warm_up_requests=warm_up_requests,
+                benchmark_requests=benchmark_requests,
+                request_batch_size=request_batch_size,
+                number_of_clients=number_of_clients,
+                requests_per_second=requests_per_second,
+                api_key=api_key,
+                model_configuration=model_configuration,
+                output_location=output_location,
+            )
     except Exception as error:
         typer.echo(f"Command failed. Cause: {error}")
         raise typer.Exit(code=1)

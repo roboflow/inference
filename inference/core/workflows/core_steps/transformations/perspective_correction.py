@@ -1,21 +1,29 @@
 import math
-from typing import List, Literal, Optional, Type, Union
 
 import cv2 as cv
 import numpy as np
 import supervision as sv
-from pydantic import ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field
+from typing_extensions import List, Literal, Optional, Type, Union
 
 from inference.core.logger import logger
 from inference.core.workflows.constants import KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
-from inference.core.workflows.entities.base import Batch, OutputDefinition
+from inference.core.workflows.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.entities.types import (
+    BATCH_OF_IMAGES_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    BOOLEAN_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
+    StepOutputImageSelector,
     StepOutputSelector,
+    WorkflowImageSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -24,7 +32,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-OUTPUT_KEY: str = "corrected_coordinates"
+OUTPUT_DETECTIONS_KEY: str = "corrected_coordinates"
+OUTPUT_IMAGE_KEY: str = "warped_image"
 TYPE: str = "PerspectiveCorrection"
 SHORT_DESCRIPTION = (
     "Correct coordinates of detections from plane defined by given polygon "
@@ -48,16 +57,25 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         }
     )
     type: Literal[f"{TYPE}"]
-    predictions: StepOutputSelector(
-        kind=[
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-        ]
-    ) = Field(  # type: ignore
+    predictions: Optional[
+        StepOutputSelector(
+            kind=[
+                BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+                BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            ]
+        )
+    ] = Field(  # type: ignore
         description="Predictions",
+        default=None,
         examples=["$steps.object_detection_model.predictions"],
     )
-    perspective_polygons: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        title="Image to Crop",
+        description="The input image for this step.",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
+    )
+    perspective_polygons: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Perspective polygons (for each batch at least one must be consisting of 4 vertices)",
     )
     transformed_rect_width: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
@@ -72,6 +90,10 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         description=f"If set, perspective polygons will be extended to contain all bounding boxes. Allowed values: {', '.join(sv.Position.list())}",
         default="",
     )
+    warp_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+        description=f"If set to True, image will be warped into transformed rect",
+        default=False,
+    )
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
@@ -81,10 +103,16 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name=OUTPUT_KEY,
+                name=OUTPUT_DETECTIONS_KEY,
                 kind=[
                     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
                     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
+            ),
+            OutputDefinition(
+                name=OUTPUT_IMAGE_KEY,
+                kind=[
+                    BATCH_OF_IMAGES_KIND,
                 ],
             ),
         ]
@@ -102,6 +130,11 @@ def pick_largest_perspective_polygons(
         raise ValueError("Unexpected type of input")
     if not perspective_polygons_batch:
         raise ValueError("Unexpected empty batch")
+    if len(perspective_polygons_batch) == 4 and all(
+        isinstance(p, list) and len(p) == 2 for p in perspective_polygons_batch
+    ):
+        perspective_polygons_batch = [perspective_polygons_batch]
+
     largest_perspective_polygons: List[np.ndarray] = []
     for polygons in perspective_polygons_batch:
         if polygons is None:
@@ -198,9 +231,9 @@ def extend_perspective_polygon(
 
 def generate_transformation_matrix(
     src_polygon: np.ndarray,
-    detections: sv.Detections,
     transformed_rect_width: int,
     transformed_rect_height: int,
+    detections: Optional[sv.Detections] = None,
     detections_anchor: Optional[sv.Position] = None,
 ) -> np.ndarray:
     polygon_with_vertices_clockwise = sort_polygon_vertices_clockwise(
@@ -209,7 +242,7 @@ def generate_transformation_matrix(
     src_polygon = roll_polygon_vertices_to_start_from_leftmost_bottom(
         polygon=polygon_with_vertices_clockwise
     )
-    if detections_anchor:
+    if detections and detections_anchor:
         src_polygon = extend_perspective_polygon(
             polygon=src_polygon,
             detections=detections,
@@ -266,7 +299,7 @@ def correct_detections(
                 ]
             )
         else:
-            xmin, ymin, xmax, ymax = np.around(detection[i].xyxy[0]).tolist()
+            xmin, ymin, xmax, ymax = np.around(detection.xyxy[0]).tolist()
             polygon = np.array(
                 [[[xmin, ymin], [xmax, ymin], [xmax, ymax], [xmin, ymax]]],
                 dtype=np.float32,
@@ -307,21 +340,43 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
 
     async def run(
         self,
-        predictions: Batch[sv.Detections],
-        perspective_polygons: Batch[List[np.ndarray]],
+        images: Batch[WorkflowImageData],
+        predictions: Optional[Batch[sv.Detections]],
+        perspective_polygons: Union[
+            List[np.ndarray],
+            List[List[np.ndarray]],
+            List[List[List[int]]],
+            List[List[List[List[int]]]],
+        ],
         transformed_rect_width: int,
         transformed_rect_height: int,
         extend_perspective_polygon_by_detections_anchor: Optional[str],
+        warp_image: Optional[bool],
     ) -> BlockResult:
-        if not self.perspective_transformers:
-            try:
-                largest_perspective_polygons = pick_largest_perspective_polygons(
-                    perspective_polygons
-                )
-            except ValueError as exc:
-                logger.error(exc)
-                largest_perspective_polygons = [None for _ in perspective_polygons]
+        if not predictions and not images:
+            raise ValueError(
+                "Either predictions or images are required to apply perspective correction."
+            )
+        if warp_image and not images:
+            raise ValueError(
+                "images are required to warp image into requested perspective."
+            )
+        if not predictions:
+            predictions = [None] * len(images)
 
+        if not self.perspective_transformers:
+            largest_perspective_polygons = pick_largest_perspective_polygons(
+                perspective_polygons
+            )
+
+            batch_size = len(predictions) if predictions else len(images)
+            if len(largest_perspective_polygons) == 1 and batch_size > 1:
+                largest_perspective_polygons = largest_perspective_polygons * batch_size
+
+            if len(largest_perspective_polygons) != batch_size:
+                raise ValueError(
+                    f"Predictions batch size ({batch_size}) does not match number of perspective polygons ({largest_perspective_polygons})"
+                )
             for polygon, detections in zip(largest_perspective_polygons, predictions):
                 if polygon is None:
                     self.perspective_transformers.append(None)
@@ -337,15 +392,33 @@ class PerspectiveCorrectionBlock(WorkflowBlock):
                 )
 
         result = []
-        for detections, perspective_transformer in zip(
-            predictions, self.perspective_transformers
+        for detections, perspective_transformer, image in zip(
+            predictions, self.perspective_transformers, images
         ):
-            if detections is None or perspective_transformer is None:
-                result.append({OUTPUT_KEY: None})
+            result_image = image
+            if warp_image:
+                # https://docs.opencv.org/4.9.0/da/d54/group__imgproc__transform.html#gaf73673a7e8e18ec6963e3774e6a94b87
+                result_image = cv.warpPerspective(
+                    src=image.numpy_image,
+                    M=perspective_transformer,
+                    dsize=(transformed_rect_width, transformed_rect_height),
+                )
+
+            if detections is None:
+                result.append(
+                    {OUTPUT_DETECTIONS_KEY: None, OUTPUT_IMAGE_KEY: result_image}
+                )
                 continue
+
             corrected_detections = correct_detections(
                 detections=detections,
                 perspective_transformer=perspective_transformer,
             )
-            result.append({OUTPUT_KEY: corrected_detections})
+
+            result.append(
+                {
+                    OUTPUT_DETECTIONS_KEY: corrected_detections,
+                    OUTPUT_IMAGE_KEY: result_image,
+                }
+            )
         return result

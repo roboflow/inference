@@ -1,4 +1,5 @@
-from typing import Any, Callable, Dict, List, Union
+from dataclasses import replace
+from typing import Any, Callable, Dict, List, Tuple, Type, Union
 
 from inference.core.workflows.errors import (
     BlockInitParameterNotProvidedError,
@@ -8,6 +9,7 @@ from inference.core.workflows.errors import (
 from inference.core.workflows.execution_engine.compiler.entities import (
     BlockSpecification,
     InitialisedStep,
+    ParsedWorkflowDefinition,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
@@ -48,6 +50,7 @@ def initialise_step(
 ) -> InitialisedStep:
     block_init_parameters = block_specification.block_class.get_init_parameters()
     init_parameters_values = retrieve_init_parameters_values(
+        block_name=step_manifest.name,
         block_init_parameters=block_init_parameters,
         block_source=block_specification.block_source,
         explicit_init_parameters=explicit_init_parameters,
@@ -72,6 +75,7 @@ def initialise_step(
 
 
 def retrieve_init_parameters_values(
+    block_name: str,
     block_init_parameters: List[str],
     block_source: str,
     explicit_init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
@@ -79,6 +83,7 @@ def retrieve_init_parameters_values(
 ) -> Dict[str, Any]:
     return {
         block_init_parameter: retrieve_init_parameter_values(
+            block_name=block_name,
             block_init_parameter=block_init_parameter,
             block_source=block_source,
             explicit_init_parameters=explicit_init_parameters,
@@ -89,6 +94,7 @@ def retrieve_init_parameters_values(
 
 
 def retrieve_init_parameter_values(
+    block_name: str,
     block_init_parameter: str,
     block_source: str,
     explicit_init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
@@ -105,7 +111,7 @@ def retrieve_init_parameter_values(
         return call_if_callable(initializers[block_init_parameter])
     raise BlockInitParameterNotProvidedError(
         public_message=f"Could not resolve init parameter {block_init_parameter} to initialise "
-        f"step from plugin: {block_source}.",
+        f"step `{block_name}` from plugin: {block_source}.",
         context="workflow_compilation | steps_initialisation",
     )
 
