@@ -312,7 +312,7 @@ class SegmentAnything(RoboflowCoreModel):
             if len(self.segmentation_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
                 cache_key = self.segmentation_cache_keys.pop(0)
                 del self.low_res_logits_cache[cache_key]
-        masks = masks[0]
+        masks = masks[0] # [1, 256, 256]
         low_res_masks = low_res_logits[0]
 
         return masks, low_res_masks

@@ -146,10 +146,12 @@ class SegmentAnything2Block(WorkflowBlock):
                 sam_model_id, inference_request
             )
 
-            print("SAM2 response:", sam2_segmentation_response)
             prediction = self._convert_sam2_segmentation_response_to_inference_instances_seg_response(sam2_segmentation_response, single_image)
-
             predictions.append(prediction)
+
+        predictions = [
+            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
+        ]
         return self._post_process_result(
             images=images,
             predictions=predictions,
@@ -157,14 +159,13 @@ class SegmentAnything2Block(WorkflowBlock):
     
 
     def _convert_sam2_segmentation_response_to_inference_instances_seg_response(self, sample2_segmentation_response, image):
-
-        image_width = image.numpy_image.shape[1],
-        image_height = image.numpy_image.shape[0],
+        image_width = image.numpy_image.shape[1]
+        image_height = image.numpy_image.shape[0]
         predictions = []
 
-        for raw_mask in sample2_segmentation_response.masks:
-            mask = raw_mask
 
+        for mask in sample2_segmentation_response.masks:
+            #for some reason this list of points contains empty array elements
             x_coords = mask[::2]
             y_coords = mask[1::2]
 
@@ -208,8 +209,6 @@ class SegmentAnything2Block(WorkflowBlock):
         images: Batch[WorkflowImageData],
         predictions: List[dict],
     ) -> BlockResult:
-        print("POST PROCESSING", images)
-
         
         predictions = convert_inference_detections_batch_to_sv_detections(predictions)
         predictions = attach_prediction_type_info_to_sv_detections_batch(
