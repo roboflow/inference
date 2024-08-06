@@ -5,6 +5,7 @@ from collections import Counter
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 
 from inference.core.workflows.core_steps.loader import (
     REGISTERED_INITIALIZERS,
@@ -95,7 +96,7 @@ def get_manifest_type_identifiers(
 
 
 def load_workflow_blocks(
-    execution_engine_version: Optional[str] = None,
+    execution_engine_version: Optional[Version] = None,
 ) -> List[BlockSpecification]:
     core_blocks = load_core_workflow_blocks()
     plugins_blocks = load_plugins_blocks()
@@ -196,7 +197,7 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
 
 
 def is_block_compatible_with_execution_engine(
-    execution_engine_version: Optional[str],
+    execution_engine_version: Optional[Version],
     block_execution_engine_compatibility: Optional[str],
     block_source: str,
     block_identifier: str,

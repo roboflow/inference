@@ -34,7 +34,7 @@ class LabelManifest(ColorableVisualizationManifest):
     type: Literal[f"{TYPE}", "LabelVisualization"]
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "LabelVisualization",
+            "name": "Label Visualization",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -106,7 +106,7 @@ class LabelManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return "~=1.0.0"
+        return ">=1.0.0,<2.0.0"
 
 
 class LabelVisualizationBlockV1(ColorableVisualizationBlock):

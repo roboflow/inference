@@ -52,7 +52,7 @@ class CornerManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return "~=1.0.0"
+        return ">=1.0.0,<2.0.0"
 
 
 class CornerVisualizationBlockV1(ColorableVisualizationBlock):

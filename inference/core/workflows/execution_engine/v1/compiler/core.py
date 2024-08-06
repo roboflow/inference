@@ -1,5 +1,7 @@
 from typing import Any, Callable, Dict, List, Optional, Union
 
+from packaging.version import Version
+
 from inference.core.workflows.execution_engine.entities.base import WorkflowParameter
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_initializers,
@@ -37,7 +39,7 @@ from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 def compile_workflow(
     workflow_definition: dict,
     init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
-    execution_engine_version: Optional[str] = None,
+    execution_engine_version: Optional[Version] = None,
 ) -> CompiledWorkflow:
     statically_defined_blocks = load_workflow_blocks(
         execution_engine_version=execution_engine_version
@@ -51,6 +53,7 @@ def compile_workflow(
     parsed_workflow_definition = parse_workflow_definition(
         raw_workflow_definition=workflow_definition,
         dynamic_blocks=dynamic_blocks,
+        execution_engine_version=execution_engine_version,
     )
     validate_workflow_specification(workflow_definition=parsed_workflow_definition)
     execution_graph = prepare_execution_graph(

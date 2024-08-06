@@ -1,6 +1,7 @@
-from typing import List, Literal, Type, Union
+from typing import List, Optional, Type, Union
 
 import pydantic
+from packaging.version import Version
 from pydantic import BaseModel, Field, create_model
 from typing_extensions import Annotated
 
@@ -16,10 +17,13 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 
 
 def parse_workflow_definition(
-    raw_workflow_definition: dict, dynamic_blocks: List[BlockSpecification]
+    raw_workflow_definition: dict,
+    dynamic_blocks: List[BlockSpecification],
+    execution_engine_version: Optional[Version] = None,
 ) -> ParsedWorkflowDefinition:
     workflow_definition_class = build_workflow_definition_entity(
         dynamic_blocks=dynamic_blocks,
+        execution_engine_version=execution_engine_version,
     )
     try:
         workflow_definition = workflow_definition_class.model_validate(
@@ -41,14 +45,18 @@ def parse_workflow_definition(
 
 def build_workflow_definition_entity(
     dynamic_blocks: List[BlockSpecification],
+    execution_engine_version: Optional[Version] = None,
 ) -> Type[BaseModel]:
-    blocks = load_workflow_blocks() + dynamic_blocks
+    blocks = (
+        load_workflow_blocks(execution_engine_version=execution_engine_version)
+        + dynamic_blocks
+    )
     steps_manifests = tuple(block.manifest_class for block in blocks)
     block_manifest_types_union = Union[steps_manifests]
     block_type = Annotated[block_manifest_types_union, Field(discriminator="type")]
     return create_model(
         "WorkflowSpecificationV1",
-        version=(Literal["1.0"], ...),
+        version=(str, ...),
         inputs=(List[InputType], ...),
         steps=(List[block_type], ...),
         outputs=(List[JsonField], ...),

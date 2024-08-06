@@ -2,6 +2,8 @@ import asyncio
 from asyncio import AbstractEventLoop
 from typing import Any, Dict, List, Optional
 
+from packaging.version import Version
+
 from inference.core.workflows.execution_engine.entities.engine import (
     BaseExecutionEngine,
 )
@@ -16,6 +18,8 @@ from inference.core.workflows.execution_engine.v1.executor.runtime_input_assembl
 from inference.core.workflows.execution_engine.v1.executor.runtime_input_validator import (
     validate_runtime_input,
 )
+
+EXECUTION_ENGINE_V1_VERSION = Version("1.0.0")
 
 
 class ExecutionEngineV1(BaseExecutionEngine):
@@ -34,6 +38,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         compiled_workflow = compile_workflow(
             workflow_definition=workflow_definition,
             init_parameters=init_parameters,
+            execution_engine_version=EXECUTION_ENGINE_V1_VERSION,
         )
         return cls(
             compiled_workflow=compiled_workflow,
