@@ -183,6 +183,8 @@ class SegmentAnything2(RoboflowCoreModel):
                 time=perf_counter() - t1,
             )
             return response
+        else:
+            raise ValueError(f"Invalid request type {type(request)}")
 
     def preproc_image(self, image: InferenceRequestImage):
         """Preprocesses an image.
