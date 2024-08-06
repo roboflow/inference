@@ -41,13 +41,24 @@ In the code above, we loaded a model and then we used that model's `infer(...)` 
 Running inference is fun but it's not much to look at. Let's add some code to visualize our results.
 
 ```python
-from inference import get_model
-import supervision as sv
-import cv2
+from io import BytesIO
 
-# define the image url to use for inference
-image_file = "people-walking.jpg"
-image = cv2.imread(image_file)
+import requests
+import supervision as sv
+from inference import get_model
+from PIL import Image
+from PIL.ImageFile import ImageFile
+
+
+def load_image_from_url(url: str) -> ImageFile:
+    response = requests.get(url)
+    response.raise_for_status()  # check if the request was successful
+    image = Image.open(BytesIO(response.content))
+    return image
+
+
+# load the image from an url
+image = load_image_from_url("https://media.roboflow.com/inference/people-walking.jpg")
 
 # load a pre-trained yolov8n model
 model = get_model(model_id="yolov8n-640")
@@ -59,20 +70,16 @@ results = model.infer(image)[0]
 detections = sv.Detections.from_inference(results)
 
 # create supervision annotators
-bounding_box_annotator = sv.BoundingBoxAnnotator()
+bounding_box_annotator = sv.BoxAnnotator()
 label_annotator = sv.LabelAnnotator()
 
 # annotate the image with our inference results
-annotated_image = bounding_box_annotator.annotate(
-    scene=image, detections=detections)
-annotated_image = label_annotator.annotate(
-    scene=annotated_image, detections=detections)
+annotated_image = bounding_box_annotator.annotate(scene=image, detections=detections)
+annotated_image = label_annotator.annotate(scene=annotated_image, detections=detections)
 
 # display the image
 sv.plot_image(annotated_image)
 ```
-
-The `people-walking.jpg` file is hosted <a href="https://media.roboflow.com/inference/people-walking.jpg" target="_blank">here</a>.
 
 ![People Walking Annotated](https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking-annotated.jpg)
 
