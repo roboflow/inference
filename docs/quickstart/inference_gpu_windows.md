@@ -1,4 +1,7 @@
-# Install `inference-gpu` and NVIDIA CUDA on Windows
+# Install the `inference-gpu` Python Package and NVIDIA CUDA on Windows
+
+!!! warning
+    We strongly recommend [installing Inference with Docker on Windows](https://inference.roboflow.com/quickstart/docker/). The guide below should only be used if you are unable to use Docker on your system.
 
 You can use Inference with `inference-gpu` and NVIDIA CUDA on Windows devices.
 
