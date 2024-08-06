@@ -726,7 +726,10 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 for provider in REQUIRED_ONNX_PROVIDERS:
                     if provider not in available_providers:
                         raise OnnxProviderNotAvailable(
-                            f"Required ONNX Execution Provider {provider} is not availble. Check that you are using the correct docker image on a supported device."
+                            f"Required ONNX Execution Provider {provider} is not availble. "
+                            "Check that you are using the correct docker image on a supported device. "
+                            "Export list of available providers as ONNXRUNTIME_EXECUTION_PROVIDERS environmental variable, "
+                            "consult documentation for more details."
                         )
 
             inputs = self.onnx_session.get_inputs()[0]
