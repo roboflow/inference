@@ -1,0 +1,4 @@
+rasterio~=1.3
+torch
+torchvision
+numpy<2
