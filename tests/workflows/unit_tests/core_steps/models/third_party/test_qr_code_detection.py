@@ -2,9 +2,9 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.third_party.qr_code_detection import (
+from inference.core.workflows.core_steps.models.third_party.qr_code_detection.version_1 import (
     BlockManifest,
-    QRCodeDetectorBlock,
+    QRCodeDetectorBlockV1,
 )
 from inference.core.workflows.entities.base import (
     Batch,
@@ -52,7 +52,7 @@ def test_manifest_parsing_when_image_is_invalid_valid() -> None:
 @pytest.mark.asyncio
 async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
     # given
-    step = QRCodeDetectorBlock()
+    step = QRCodeDetectorBlockV1()
     images = Batch(
         content=[
             WorkflowImageData(

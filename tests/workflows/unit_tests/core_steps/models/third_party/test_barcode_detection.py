@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.third_party.barcode_detection import (
-    BarcodeDetectorBlock,
+from inference.core.workflows.core_steps.models.third_party.barcode_detection.version_1 import (
+    BarcodeDetectorBlockV1,
     BlockManifest,
 )
 from inference.core.workflows.entities.base import (
@@ -52,7 +52,7 @@ def test_manifest_parsing_when_image_is_invalid_valid() -> None:
 @pytest.mark.asyncio
 async def test_barcode_detection(barcode_image: np.ndarray) -> None:
     # given
-    step = BarcodeDetectorBlock()
+    step = BarcodeDetectorBlockV1()
     images = Batch(
         content=[
             WorkflowImageData(

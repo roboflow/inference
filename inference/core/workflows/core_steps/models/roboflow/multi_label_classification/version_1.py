@@ -55,6 +55,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Multi-Label Classification Model",
+            "version": "v1",
             "short_description": "Apply multiple tags to an image.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -63,7 +64,9 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal[
-        "RoboflowMultiLabelClassificationModel", "MultiLabelClassificationModel"
+        "roboflow_core/roboflow_multi_label_classification_model@v1",
+        "RoboflowMultiLabelClassificationModel",
+        "MultiLabelClassificationModel",
     ]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
@@ -110,7 +113,7 @@ class BlockManifest(WorkflowBlockManifest):
         return "~=1.0.0"
 
 
-class RoboflowMultiLabelClassificationModelBlock(WorkflowBlock):
+class RoboflowMultiLabelClassificationModelBlockV1(WorkflowBlock):
 
     def __init__(
         self,

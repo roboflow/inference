@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation import (
+from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.version_1 import (
     BlockManifest,
 )
 

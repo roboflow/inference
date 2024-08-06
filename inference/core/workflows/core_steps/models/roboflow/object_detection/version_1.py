@@ -2,9 +2,7 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, PositiveInt
 
-from inference.core.entities.requests.inference import (
-    KeypointsDetectionInferenceRequest,
-)
+from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.env import (
     HOSTED_DETECT_URL,
     LOCAL_INFERENCE_API_URL,
@@ -15,7 +13,6 @@ from inference.core.env import (
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
-    add_inference_keypoints_to_sv_detections,
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
@@ -27,7 +24,7 @@ from inference.core.workflows.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.entities.types import (
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
@@ -49,7 +46,7 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Run inference on a keypoint detection model hosted on or uploaded to Roboflow.
+Run inference on a object-detection model hosted on or uploaded to Roboflow.
 
 You can query any model that is private to your account, or any public model available 
 on [Roboflow Universe](https://universe.roboflow.com).
@@ -63,25 +60,30 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Keypoint Detection Model",
-            "short_description": "Predict skeletons on objects.",
+            "name": "Object Detection Model",
+            "version": "v1",
+            "short_description": "Predict the location of objects with bounding boxes.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
         },
         protected_namespaces=(),
     )
-    type: Literal["RoboflowKeypointDetectionModel", "KeypointsDetectionModel"]
+    type: Literal[
+        "roboflow_core/roboflow_object_detection_model@v1",
+        "RoboflowObjectDetectionModel",
+        "ObjectDetectionModel",
+    ]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
         RoboflowModelField
     )
-    class_agnostic_nms: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
-        Field(
-            default=False,
-            description="Value to decide if NMS is to be used in class-agnostic mode.",
-            examples=[True, "$inputs.class_agnostic_nms"],
-        )
+    class_agnostic_nms: Union[
+        Optional[bool], WorkflowParameterSelector(kind=[BOOLEAN_KIND])
+    ] = Field(
+        default=False,
+        description="Value to decide if NMS is to be used in class-agnostic mode.",
+        examples=[True, "$inputs.class_agnostic_nms"],
     )
     class_filter: Union[
         Optional[List[str]], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])
@@ -120,14 +122,6 @@ class BlockManifest(WorkflowBlockManifest):
         description="Maximum number of candidates as NMS input to be taken into account.",
         examples=[3000, "$inputs.max_candidates"],
     )
-    keypoint_confidence: Union[
-        FloatZeroToOne,
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
-    ] = Field(
-        default=0.0,
-        description="Confidence threshold to predict keypoint as visible.",
-        examples=[0.3, "$inputs.keypoint_confidence"],
-    )
     disable_active_learning: Union[
         bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])
     ] = Field(
@@ -152,7 +146,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="predictions", kind=[BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 
@@ -161,7 +155,7 @@ class BlockManifest(WorkflowBlockManifest):
         return "~=1.0.0"
 
 
-class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
+class RoboflowObjectDetectionModelBlockV1(WorkflowBlock):
 
     def __init__(
         self,
@@ -191,7 +185,6 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
         iou_threshold: Optional[float],
         max_detections: Optional[int],
         max_candidates: Optional[int],
-        keypoint_confidence: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
@@ -205,7 +198,6 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
                 iou_threshold=iou_threshold,
                 max_detections=max_detections,
                 max_candidates=max_candidates,
-                keypoint_confidence=keypoint_confidence,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
             )
@@ -219,7 +211,6 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
                 iou_threshold=iou_threshold,
                 max_detections=max_detections,
                 max_candidates=max_candidates,
-                keypoint_confidence=keypoint_confidence,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
             )
@@ -238,12 +229,11 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
         iou_threshold: Optional[float],
         max_detections: Optional[int],
         max_candidates: Optional[int],
-        keypoint_confidence: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
         inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
-        request = KeypointsDetectionInferenceRequest(
+        request = ObjectDetectionInferenceRequest(
             api_key=self._api_key,
             model_id=model_id,
             image=inference_images,
@@ -255,7 +245,6 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            keypoint_confidence=keypoint_confidence,
             source="workflow-execution",
         )
         self._model_manager.add_model(
@@ -278,7 +267,7 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
 
     async def run_remotely(
         self,
-        images: Batch[Optional[WorkflowImageData]],
+        images: Batch[WorkflowImageData],
         model_id: str,
         class_agnostic_nms: Optional[bool],
         class_filter: Optional[List[str]],
@@ -286,7 +275,6 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
         iou_threshold: Optional[float],
         max_detections: Optional[int],
         max_candidates: Optional[int],
-        keypoint_confidence: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
@@ -310,15 +298,14 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
             iou_threshold=iou_threshold,
             max_detections=max_detections,
             max_candidates=max_candidates,
-            keypoint_confidence_threshold=keypoint_confidence,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        inference_images = [i.numpy_image for i in images]
+        non_empty_inference_images = [i.numpy_image for i in images]
         predictions = await client.infer_async(
-            inference_input=inference_images,
+            inference_input=non_empty_inference_images,
             model_id=model_id,
         )
         if not isinstance(predictions, list):
@@ -335,22 +322,17 @@ class RoboflowKeypointDetectionModelBlock(WorkflowBlock):
         predictions: List[dict],
         class_filter: Optional[List[str]],
     ) -> BlockResult:
-        detections = convert_inference_detections_batch_to_sv_detections(predictions)
-        for prediction, image_detections in zip(predictions, detections):
-            add_inference_keypoints_to_sv_detections(
-                inference_prediction=prediction["predictions"],
-                detections=image_detections,
-            )
-        detections = attach_prediction_type_info_to_sv_detections_batch(
-            predictions=detections,
-            prediction_type="keypoint-detection",
+        predictions = convert_inference_detections_batch_to_sv_detections(predictions)
+        predictions = attach_prediction_type_info_to_sv_detections_batch(
+            predictions=predictions,
+            prediction_type="object-detection",
         )
-        detections = filter_out_unwanted_classes_from_sv_detections_batch(
-            predictions=detections,
+        predictions = filter_out_unwanted_classes_from_sv_detections_batch(
+            predictions=predictions,
             classes_to_accept=class_filter,
         )
-        detections = attach_parents_coordinates_to_batch_of_sv_detections(
+        predictions = attach_parents_coordinates_to_batch_of_sv_detections(
             images=images,
-            predictions=detections,
+            predictions=predictions,
         )
-        return [{"predictions": image_detections} for image_detections in detections]
+        return [{"predictions": prediction} for prediction in predictions]

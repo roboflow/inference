@@ -1,40 +1,32 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import ConfigDict, Field, PositiveInt
+from pydantic import AliasChoices, ConfigDict, Field
 
-from inference.core.entities.requests.inference import (
-    InstanceSegmentationInferenceRequest,
-)
+from inference.core.entities.requests.inference import ClassificationInferenceRequest
 from inference.core.env import (
-    HOSTED_INSTANCE_SEGMENTATION_URL,
+    HOSTED_CLASSIFICATION_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.workflows.constants import PARENT_ID_KEY, ROOT_PARENT_ID_KEY
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parents_coordinates_to_batch_of_sv_detections,
-    attach_prediction_type_info_to_sv_detections_batch,
-    convert_inference_detections_batch_to_sv_detections,
-    filter_out_unwanted_classes_from_sv_detections_batch,
-)
+from inference.core.workflows.core_steps.common.utils import attach_prediction_type_info
 from inference.core.workflows.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.entities.types import (
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
-    INTEGER_KIND,
-    LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
-    STRING_KIND,
     FloatZeroToOne,
+    FlowControl,
     ImageInputField,
     RoboflowModelField,
     StepOutputImageSelector,
@@ -49,7 +41,7 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Run inference on an instance segmentation model hosted on or uploaded to Roboflow.
+Run inference on a multi-class classification model hosted on or uploaded to Roboflow.
 
 You can query any model that is private to your account, or any public model available 
 on [Roboflow Universe](https://universe.roboflow.com).
@@ -63,32 +55,23 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Instance Segmentation Model",
-            "short_description": "Predict the shape, size, and location of objects.",
+            "name": "Single-Label Classification Model",
+            "version": "v1",
+            "short_description": "Apply a single tag to an image.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
         },
         protected_namespaces=(),
     )
-    type: Literal["RoboflowInstanceSegmentationModel", "InstanceSegmentationModel"]
+    type: Literal[
+        "roboflow_core/roboflow_classification_model@v1",
+        "RoboflowClassificationModel",
+        "ClassificationModel",
+    ]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
         RoboflowModelField
-    )
-    class_agnostic_nms: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
-        Field(
-            default=False,
-            description="Value to decide if NMS is to be used in class-agnostic mode.",
-            examples=[True, "$inputs.class_agnostic_nms"],
-        )
-    )
-    class_filter: Union[
-        Optional[List[str]], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])
-    ] = Field(
-        default=None,
-        description="List of classes to retrieve from predictions (to define subset of those which was used while model training)",
-        examples=[["a", "b", "c"], "$inputs.class_filter"],
     )
     confidence: Union[
         FloatZeroToOne,
@@ -97,44 +80,6 @@ class BlockManifest(WorkflowBlockManifest):
         default=0.4,
         description="Confidence threshold for predictions",
         examples=[0.3, "$inputs.confidence_threshold"],
-    )
-    iou_threshold: Union[
-        FloatZeroToOne,
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
-    ] = Field(
-        default=0.3,
-        description="Parameter of NMS, to decide on minimum box intersection over union to merge boxes",
-        examples=[0.4, "$inputs.iou_threshold"],
-    )
-    max_detections: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
-        default=300,
-        description="Maximum number of detections to return",
-        examples=[300, "$inputs.max_detections"],
-    )
-    max_candidates: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
-        default=3000,
-        description="Maximum number of candidates as NMS input to be taken into account.",
-        examples=[3000, "$inputs.max_candidates"],
-    )
-    mask_decode_mode: Union[
-        Literal["accurate", "tradeoff", "fast"],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
-    ] = Field(
-        default="accurate",
-        description="Parameter of mask decoding in prediction post-processing.",
-        examples=["accurate", "$inputs.mask_decode_mode"],
-    )
-    tradeoff_factor: Union[
-        FloatZeroToOne,
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
-    ] = Field(
-        default=0.0,
-        description="Post-processing parameter to dictate tradeoff between fast and accurate",
-        examples=[0.3, "$inputs.tradeoff_factor"],
     )
     disable_active_learning: Union[
         bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])
@@ -160,8 +105,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="predictions",
-                kind=[BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND],
+                name="predictions", kind=[BATCH_OF_CLASSIFICATION_PREDICTION_KIND]
             ),
         ]
 
@@ -170,7 +114,7 @@ class BlockManifest(WorkflowBlockManifest):
         return "~=1.0.0"
 
 
-class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
+class RoboflowClassificationModelBlockV1(WorkflowBlock):
 
     def __init__(
         self,
@@ -194,14 +138,7 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
-        class_agnostic_nms: Optional[bool],
-        class_filter: Optional[List[str]],
         confidence: Optional[float],
-        iou_threshold: Optional[float],
-        max_detections: Optional[int],
-        max_candidates: Optional[int],
-        mask_decode_mode: Literal["accurate", "tradeoff", "fast"],
-        tradeoff_factor: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
@@ -209,14 +146,7 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
             return await self.run_locally(
                 images=images,
                 model_id=model_id,
-                class_agnostic_nms=class_agnostic_nms,
-                class_filter=class_filter,
                 confidence=confidence,
-                iou_threshold=iou_threshold,
-                max_detections=max_detections,
-                max_candidates=max_candidates,
-                mask_decode_mode=mask_decode_mode,
-                tradeoff_factor=tradeoff_factor,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
             )
@@ -224,14 +154,7 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
             return await self.run_remotely(
                 images=images,
                 model_id=model_id,
-                class_agnostic_nms=class_agnostic_nms,
-                class_filter=class_filter,
                 confidence=confidence,
-                iou_threshold=iou_threshold,
-                max_detections=max_detections,
-                max_candidates=max_candidates,
-                mask_decode_mode=mask_decode_mode,
-                tradeoff_factor=tradeoff_factor,
                 disable_active_learning=disable_active_learning,
                 active_learning_target_dataset=active_learning_target_dataset,
             )
@@ -244,33 +167,19 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
-        class_agnostic_nms: Optional[bool],
-        class_filter: Optional[List[str]],
         confidence: Optional[float],
-        iou_threshold: Optional[float],
-        max_detections: Optional[int],
-        max_candidates: Optional[int],
-        mask_decode_mode: Literal["accurate", "tradeoff", "fast"],
-        tradeoff_factor: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
         inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
-        request = InstanceSegmentationInferenceRequest(
+        request = ClassificationInferenceRequest(
             api_key=self._api_key,
             model_id=model_id,
             image=inference_images,
-            disable_active_learning=disable_active_learning,
-            active_learning_target_dataset=active_learning_target_dataset,
-            class_agnostic_nms=class_agnostic_nms,
-            class_filter=class_filter,
             confidence=confidence,
-            iou_threshold=iou_threshold,
-            max_detections=max_detections,
-            max_candidates=max_candidates,
-            mask_decode_mode=mask_decode_mode,
-            tradeoff_factor=tradeoff_factor,
+            disable_active_learning=disable_active_learning,
             source="workflow-execution",
+            active_learning_target_dataset=active_learning_target_dataset,
         )
         self._model_manager.add_model(
             model_id=model_id,
@@ -279,36 +188,29 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
         predictions = await self._model_manager.infer_from_request(
             model_id=model_id, request=request
         )
-        if not isinstance(predictions, list):
-            predictions = [predictions]
-        predictions = [
-            e.model_dump(by_alias=True, exclude_none=True) for e in predictions
-        ]
+        if isinstance(predictions, list):
+            predictions = [
+                e.model_dump(by_alias=True, exclude_none=True) for e in predictions
+            ]
+        else:
+            predictions = [predictions.model_dump(by_alias=True, exclude_none=True)]
         return self._post_process_result(
-            images=images,
             predictions=predictions,
-            class_filter=class_filter,
+            images=images,
         )
 
     async def run_remotely(
         self,
-        images: Batch[WorkflowImageData],
+        images: Batch[Optional[WorkflowImageData]],
         model_id: str,
-        class_agnostic_nms: Optional[bool],
-        class_filter: Optional[List[str]],
         confidence: Optional[float],
-        iou_threshold: Optional[float],
-        max_detections: Optional[int],
-        max_candidates: Optional[int],
-        mask_decode_mode: Literal["accurate", "tradeoff", "fast"],
-        tradeoff_factor: Optional[float],
         disable_active_learning: Optional[bool],
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
         api_url = (
             LOCAL_INFERENCE_API_URL
             if WORKFLOWS_REMOTE_API_TARGET != "hosted"
-            else HOSTED_INSTANCE_SEGMENTATION_URL
+            else HOSTED_CLASSIFICATION_URL
         )
         client = InferenceHTTPClient(
             api_url=api_url,
@@ -317,51 +219,38 @@ class RoboflowInstanceSegmentationModelBlock(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
         client_config = InferenceConfiguration(
+            confidence_threshold=confidence,
             disable_active_learning=disable_active_learning,
             active_learning_target_dataset=active_learning_target_dataset,
-            class_agnostic_nms=class_agnostic_nms,
-            class_filter=class_filter,
-            confidence_threshold=confidence,
-            iou_threshold=iou_threshold,
-            max_detections=max_detections,
-            max_candidates=max_candidates,
-            mask_decode_mode=mask_decode_mode,
-            tradeoff_factor=tradeoff_factor,
             max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        inference_images = [i.numpy_image for i in images]
+        non_empty_inference_images = [i.numpy_image for i in images]
         predictions = await client.infer_async(
-            inference_input=inference_images,
+            inference_input=non_empty_inference_images,
             model_id=model_id,
         )
         if not isinstance(predictions, list):
             predictions = [predictions]
         return self._post_process_result(
-            images=images,
             predictions=predictions,
-            class_filter=class_filter,
+            images=images,
         )
 
     def _post_process_result(
         self,
         images: Batch[WorkflowImageData],
         predictions: List[dict],
-        class_filter: Optional[List[str]],
     ) -> BlockResult:
-        predictions = convert_inference_detections_batch_to_sv_detections(predictions)
-        predictions = attach_prediction_type_info_to_sv_detections_batch(
+        predictions = attach_prediction_type_info(
             predictions=predictions,
-            prediction_type="instance-segmentation",
+            prediction_type="classification",
         )
-        predictions = filter_out_unwanted_classes_from_sv_detections_batch(
-            predictions=predictions,
-            classes_to_accept=class_filter,
-        )
-        predictions = attach_parents_coordinates_to_batch_of_sv_detections(
-            images=images,
-            predictions=predictions,
-        )
+        for prediction, image in zip(predictions, images):
+            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
+            prediction[ROOT_PARENT_ID_KEY] = (
+                image.workflow_root_ancestor_metadata.parent_id
+            )
         return [{"predictions": prediction} for prediction in predictions]

@@ -1,4 +1,4 @@
-from typing import Callable, List, Tuple, Type, Union
+from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
@@ -30,37 +30,41 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison.versi
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.version_1 import (
     CogVLMBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.lmm import LMMBlock
-from inference.core.workflows.core_steps.models.foundation.lmm_classifier import (
-    LMMForClassificationBlock,
+from inference.core.workflows.core_steps.models.foundation.lmm.version_1 import (
+    LMMBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.lmm_classifier.version_1 import (
+    LMMForClassificationBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.ocr.version_1 import (
     OCRModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.openai import OpenAIBlock
+from inference.core.workflows.core_steps.models.foundation.openai.version_1 import (
+    OpenAIBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.yolo_world.version_1 import (
     YoloWorldModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation import (
-    RoboflowInstanceSegmentationModelBlock,
+from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.version_1 import (
+    RoboflowInstanceSegmentationModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.keypoint_detection import (
-    RoboflowKeypointDetectionModelBlock,
+from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.version_1 import (
+    RoboflowKeypointDetectionModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.multi_class_classification import (
-    RoboflowClassificationModelBlock,
+from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.version_1 import (
+    RoboflowClassificationModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.multi_label_classification import (
-    RoboflowMultiLabelClassificationModelBlock,
+from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.version_1 import (
+    RoboflowMultiLabelClassificationModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.object_detection import (
-    RoboflowObjectDetectionModelBlock,
+from inference.core.workflows.core_steps.models.roboflow.object_detection.version_1 import (
+    RoboflowObjectDetectionModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.third_party.barcode_detection import (
-    BarcodeDetectorBlock,
+from inference.core.workflows.core_steps.models.third_party.barcode_detection.version_1 import (
+    BarcodeDetectorBlockV1,
 )
-from inference.core.workflows.core_steps.models.third_party.qr_code_detection import (
-    QRCodeDetectorBlock,
+from inference.core.workflows.core_steps.models.third_party.qr_code_detection.version_1 import (
+    QRCodeDetectorBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.version_1 import (
     RoboflowCustomMetadataBlockV1,
@@ -175,10 +179,7 @@ from inference.core.workflows.entities.types import (
     ZONE_KIND,
     Kind,
 )
-from inference.core.workflows.prototypes.block import (
-    WorkflowBlock,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import WorkflowBlock
 
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
@@ -187,31 +188,23 @@ REGISTERED_INITIALIZERS = {
 }
 
 
-def load_blocks() -> List[
-    Union[
-        Type[WorkflowBlock],
-        Tuple[
-            Type[WorkflowBlockManifest],
-            Callable[[Type[WorkflowBlockManifest]], WorkflowBlock],
-        ],
-    ]
-]:
+def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
         DetectionsConsensusBlockV1,
         ClipComparisonBlockV1,
-        LMMBlock,
-        LMMForClassificationBlock,
-        OpenAIBlock,
+        LMMBlockV1,
+        LMMForClassificationBlockV1,
+        OpenAIBlockV1,
         CogVLMBlockV1,
         OCRModelBlockV1,
         YoloWorldModelBlockV1,
-        RoboflowInstanceSegmentationModelBlock,
-        RoboflowKeypointDetectionModelBlock,
-        RoboflowClassificationModelBlock,
-        RoboflowMultiLabelClassificationModelBlock,
-        RoboflowObjectDetectionModelBlock,
-        BarcodeDetectorBlock,
-        QRCodeDetectorBlock,
+        RoboflowInstanceSegmentationModelBlockV1,
+        RoboflowKeypointDetectionModelBlockV1,
+        RoboflowClassificationModelBlockV1,
+        RoboflowMultiLabelClassificationModelBlockV1,
+        RoboflowObjectDetectionModelBlockV1,
+        BarcodeDetectorBlockV1,
+        QRCodeDetectorBlockV1,
         AbsoluteStaticCropBlockV1,
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,

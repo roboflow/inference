@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.roboflow.multi_class_classification import (
+from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.version_1 import (
     BlockManifest,
 )
 
