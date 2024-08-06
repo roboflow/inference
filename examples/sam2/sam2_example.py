@@ -5,6 +5,7 @@ import timeit
 os.environ["API_KEY"] = "KtaN2J2MNPbpM8hW8ElL"
 from inference.models.sam2 import SegmentAnything2
 from inference.core.utils.postprocess import masks2poly
+from inference.core.entities.requests.sam2 import Sam2PromptSet, Sam2Prompt, Box, Point
 import supervision as sv
 from PIL import Image
 import numpy as np
@@ -27,18 +28,24 @@ print("segment time: ", end - start)
 
 # convert binary masks to polygons
 raw_masks = raw_masks >= m.predictor.mask_threshold
-poly_masks = masks2poly(raw_masks)
+raw_masks = raw_masks[0]
 
 point = [250, 800]
+label = False
+prompt = Sam2PromptSet(
+    prompts=[{"points": [{"x": point[0], "y": point[1], "positive": label}]}]
+)
+
 # give a negative point (point_label 0) or a positive example (point_label 1)
 # uses cached masks from prior call
+
 raw_masks2, raw_low_res_masks2 = m.segment_image(
     image_path,
-    point_coords=[point],
-    point_labels=[0],
+    prompts=prompt,
 )
 
 raw_masks2 = raw_masks2 >= m.predictor.mask_threshold
+raw_masks2 = raw_masks2[0]
 
 image = np.array(Image.open(image_path).convert("RGB"))
 

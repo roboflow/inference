@@ -1,6 +1,6 @@
 from typing import Any, List, Optional, Union
 
-from pydantic import Field, root_validator, validator
+from pydantic import Field, root_validator, validator, BaseModel
 
 from inference.core.entities.requests.inference import (
     BaseRequest,
@@ -55,6 +55,46 @@ class Sam2EmbeddingRequest(Sam2InferenceRequest):
         description="The ID of the image to be embedded used to cache the embedding.",
     )
 
+class Box(BaseModel):
+    x: float = Field()
+    y: float = Field()
+    width: float = Field()
+    height: float = Field()
+
+class Point(BaseModel):
+    x: float = Field()
+    y: float = Field()
+    positive: bool = Field()
+
+class Sam2Prompt(BaseModel):
+    box: Optional[Box] = Field(default=None)
+    points: Optional[List[Point]] = Field(default=None)
+
+class Sam2PromptSet(BaseModel):
+    prompts: Optional[List[Sam2Prompt]] = Field()
+    def to_sam2_inputs(self):
+        if self.prompts is None:
+            return {"point_coords": None, "point_labels": None, "box": None}
+        return_dict = {"point_coords": [], "point_labels": [], "box": []}
+        for prompt in self.prompts:
+            if prompt.box is not None:
+                x1  = prompt.box.x - prompt.box.width / 2
+                y1 = prompt.box.y - prompt.box.height / 2
+                x2 = prompt.box.x + prompt.box.width / 2
+                y2 = prompt.box.y + prompt.box.height / 2
+                return_dict["box"].append([x1, y1, x2, y2])
+            if prompt.points is not None:
+                return_dict["point_coords"] = [[point.x, point.y] for point in prompt.points]
+                return_dict["point_labels"] = [int(point.positive) for point in prompt.points]
+
+        return_dict = {k: v if v else None for k, v in return_dict.items()}
+        lengths = set()
+        for v in return_dict.values():
+            if isinstance(v, list):
+                lengths.add(len(v))
+        
+        assert len(lengths) in [0, 1], "All prompts must have the same number of points"
+        return return_dict
 
 class Sam2SegmentationRequest(Sam2InferenceRequest):
     """SAM segmentation request.
@@ -80,13 +120,5 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
         examples=["image_id"],
         description="The ID of the image to be segmented used to retrieve cached embeddings. If an embedding is cached, it will be used instead of generating a new embedding. If no embedding is cached, a new embedding will be generated and cached.",
     )
-    point_coords: Optional[List[List[float]]] = Field(
-        default=None,
-        examples=[[[10.0, 10.0]]],
-        description="The coordinates of the interactive points used during decoding. Each point (x,y pair) corresponds to a label in point_labels.",
-    )
-    point_labels: Optional[List[float]] = Field(
-        default=None,
-        examples=[[1]],
-        description="The labels of the interactive points used during decoding. A 1 represents a positive point (part of the object to be segmented). A 0 represents a negative point (not part of the object to be segmented). Each label corresponds to a point in point_coords.",
-    )
+    prompts: Sam2PromptSet = Field(default=Sam2PromptSet(prompts=None))
+
