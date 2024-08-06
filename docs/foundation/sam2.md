@@ -8,7 +8,7 @@ To use Segment Anything 2 with Inference, you will need a Roboflow API key. If y
 
 ## How To Use SAM2 Locally With Inference
 
-We will follow along with the example located at `examples/sam2/sam2.py`.
+We will follow along with the example located at `examples/sam2/sam2_example.py`.
 
 We start with the following image,
 
