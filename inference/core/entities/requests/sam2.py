@@ -81,12 +81,12 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
         description="The ID of the image to be segmented used to retrieve cached embeddings. If an embedding is cached, it will be used instead of generating a new embedding. If no embedding is cached, a new embedding will be generated and cached.",
     )
     point_coords: Optional[List[List[float]]] = Field(
-        default=[[0.0, 0.0]],
+        default=None,
         examples=[[[10.0, 10.0]]],
         description="The coordinates of the interactive points used during decoding. Each point (x,y pair) corresponds to a label in point_labels.",
     )
     point_labels: Optional[List[float]] = Field(
-        default=[0],
+        default=None,
         examples=[[1]],
         description="The labels of the interactive points used during decoding. A 1 represents a positive point (part of the object to be segmented). A 0 represents a negative point (not part of the object to be segmented). Each label corresponds to a point in point_coords.",
     )

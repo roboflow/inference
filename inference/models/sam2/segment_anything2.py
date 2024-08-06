@@ -162,7 +162,7 @@ class SegmentAnything2(RoboflowCoreModel):
         elif isinstance(request, Sam2SegmentationRequest):
             masks, low_res_masks = self.segment_image(**request.dict())
             if request.format == "json":
-                masks = masks > self.predictor.mask_threshold
+                masks = masks >= self.predictor.mask_threshold
                 masks = masks2poly(masks)
                 low_res_masks = low_res_masks > self.predictor.mask_threshold
                 low_res_masks = masks2poly(low_res_masks)

@@ -9,7 +9,7 @@ import supervision as sv
 from PIL import Image
 import numpy as np
 
-image_path = "./examples/sam2/dogs.jpg"
+image_path = "./examples/sam2/hand.png"
 m = SegmentAnything2(model_id="sam2/hiera_large")
 
 # call embed_image before segment_image to precompute embeddings
