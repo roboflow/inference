@@ -1,3 +1,4 @@
+import json
 from typing import Type
 from unittest import mock
 from unittest.mock import MagicMock
@@ -24,6 +25,7 @@ from inference.core.exceptions import (
 from inference.core.roboflow_api import (
     ModelEndpointType,
     annotate_image_at_roboflow,
+    delete_cached_workflow_response_if_exists,
     get_roboflow_active_learning_configuration,
     get_roboflow_dataset_type,
     get_roboflow_labeling_batches,
@@ -31,14 +33,12 @@ from inference.core.roboflow_api import (
     get_roboflow_model_data,
     get_roboflow_model_type,
     get_roboflow_workspace,
-    delete_cached_workflow_response_if_exists,
     get_workflow_specification,
     raise_from_lambda,
     register_image_at_roboflow,
     wrap_roboflow_api_errors,
 )
 from inference.core.utils.url_utils import wrap_url
-import json
 
 
 class TestException(Exception):

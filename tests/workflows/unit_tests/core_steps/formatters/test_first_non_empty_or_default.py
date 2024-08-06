@@ -1,7 +1,7 @@
 import pytest
 
-from inference.core.workflows.core_steps.formatters.first_non_empty_or_default import (
-    FirstNonEmptyOrDefaultBlock,
+from inference.core.workflows.core_steps.formatters.first_non_empty_or_default.version_1 import (
+    FirstNonEmptyOrDefaultBlockV1,
 )
 from inference.core.workflows.entities.base import Batch
 
@@ -9,7 +9,7 @@ from inference.core.workflows.entities.base import Batch
 @pytest.mark.asyncio
 async def test_block_run_when_only_empty_data_provided() -> None:
     # given
-    step = FirstNonEmptyOrDefaultBlock()
+    step = FirstNonEmptyOrDefaultBlockV1()
     data = Batch(content=[None, None, None], indices=[(0,), (1,), (2,)])
 
     # when
@@ -24,7 +24,7 @@ async def test_block_run_when_only_empty_single_non_empty_data_element_provided(
     None
 ):
     # given
-    step = FirstNonEmptyOrDefaultBlock()
+    step = FirstNonEmptyOrDefaultBlockV1()
     data = Batch(content=[None, "non-empty", None], indices=[(0,), (1,), (2,)])
 
     # when
@@ -39,7 +39,7 @@ async def test_block_run_when_only_empty_multiple_non_empty_data_element_provide
     None
 ):
     # given
-    step = FirstNonEmptyOrDefaultBlock()
+    step = FirstNonEmptyOrDefaultBlockV1()
     data = Batch(
         content=[None, "non-empty", "another-non-empty"], indices=[(0,), (1,), (2,)]
     )

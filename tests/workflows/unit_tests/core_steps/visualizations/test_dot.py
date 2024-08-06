@@ -3,11 +3,10 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.dot import (
+from inference.core.workflows.core_steps.visualizations.dot.version_1 import (
     DotManifest,
-    DotVisualizationBlock,
+    DotVisualizationBlockV1,
 )
-
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -62,7 +61,7 @@ def test_dot_validation_when_invalid_image_is_given() -> None:
 @pytest.mark.asyncio
 async def test_dot_visualization_block() -> None:
     # given
-    block = DotVisualizationBlock()
+    block = DotVisualizationBlockV1()
 
     output = await block.run(
         image=WorkflowImageData(

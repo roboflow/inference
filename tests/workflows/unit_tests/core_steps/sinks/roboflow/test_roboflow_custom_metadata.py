@@ -1,5 +1,4 @@
 import hashlib
-from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -7,10 +6,10 @@ import pytest
 from fastapi import BackgroundTasks
 
 from inference.core.cache import MemoryCache
-from inference.core.workflows.core_steps.sinks.roboflow.roboflow_custom_metadata import (
-    RoboflowCustomMetadataBlock,
-    get_workspace_name,
+from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.version_1 import (
+    RoboflowCustomMetadataBlockV1,
     add_custom_metadata_request,
+    get_workspace_name,
 )
 
 
@@ -125,7 +124,7 @@ def test_add_custom_metadata_request_failure(
 @pytest.mark.asyncio
 async def test_run_when_api_key_is_not_specified() -> None:
     # given
-    block = RoboflowCustomMetadataBlock(
+    block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
         background_tasks=None,
         api_key=None,
@@ -144,7 +143,7 @@ async def test_run_when_api_key_is_not_specified() -> None:
 @pytest.mark.asyncio
 async def test_run_when_no_inference_ids() -> None:
     # given
-    block = RoboflowCustomMetadataBlock(
+    block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
         background_tasks=None,
         api_key="my_api_key",
@@ -171,7 +170,7 @@ async def test_run_when_no_inference_ids() -> None:
 @pytest.mark.asyncio
 async def test_run_when_no_field_name() -> None:
     # given
-    block = RoboflowCustomMetadataBlock(
+    block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
         background_tasks=None,
         api_key="my_api_key",
@@ -198,7 +197,7 @@ async def test_run_when_no_field_name() -> None:
 @pytest.mark.asyncio
 async def test_run_when_no_field_value() -> None:
     # given
-    block = RoboflowCustomMetadataBlock(
+    block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
         background_tasks=None,
         api_key="my_api_key",
@@ -231,7 +230,7 @@ async def test_run_when_fire_and_forget(
 ) -> None:
     # given
     background_tasks = BackgroundTasks()
-    block = RoboflowCustomMetadataBlock(
+    block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
         background_tasks=background_tasks,
         api_key="my_api_key",
@@ -265,7 +264,7 @@ async def test_run_when_not_fire_and_forget(
     add_custom_metadata_request_mock: MagicMock,
 ) -> None:
     # given
-    block = RoboflowCustomMetadataBlock(
+    block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
         background_tasks=None,
         api_key="my_api_key",

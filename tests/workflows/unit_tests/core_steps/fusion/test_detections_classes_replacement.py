@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 import supervision as sv
-from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -10,9 +9,8 @@ from inference.core.entities.responses.inference import (
     MultiLabelClassificationInferenceResponse,
     MultiLabelClassificationPrediction,
 )
-from inference.core.workflows.constants import DETECTION_ID_KEY
-from inference.core.workflows.core_steps.fusion.detections_classes_replacement import (
-    DetectionsClassesReplacementBlock,
+from inference.core.workflows.core_steps.fusion.detections_classes_replacement.version_1 import (
+    DetectionsClassesReplacementBlockV1,
     extract_leading_class_from_prediction,
 )
 from inference.core.workflows.entities.base import Batch
@@ -21,7 +19,7 @@ from inference.core.workflows.entities.base import Batch
 @pytest.mark.asyncio
 async def test_classes_replacement_when_object_detection_object_is_none() -> None:
     # given
-    step = DetectionsClassesReplacementBlock()
+    step = DetectionsClassesReplacementBlockV1()
 
     # when
     result = await step.run(
@@ -38,7 +36,7 @@ async def test_classes_replacement_when_object_detection_object_is_none() -> Non
 @pytest.mark.asyncio
 async def test_classes_replacement_when_there_are_no_predictions_is_none() -> None:
     # given
-    step = DetectionsClassesReplacementBlock()
+    step = DetectionsClassesReplacementBlockV1()
     detections = sv.Detections(
         xyxy=np.array([[10, 20, 30, 40]]),
     )
@@ -60,7 +58,7 @@ async def test_classes_replacement_when_replacement_to_happen_without_filtering_
     None
 ):
     # given
-    step = DetectionsClassesReplacementBlock()
+    step = DetectionsClassesReplacementBlockV1()
     detections = sv.Detections(
         xyxy=np.array(
             [
@@ -132,7 +130,7 @@ async def test_classes_replacement_when_replacement_to_happen_without_filtering_
     None
 ):
     # given
-    step = DetectionsClassesReplacementBlock()
+    step = DetectionsClassesReplacementBlockV1()
     detections = sv.Detections(
         xyxy=np.array(
             [
@@ -216,7 +214,7 @@ async def test_classes_replacement_when_replacement_to_happen_and_one_result_to_
     None
 ):
     # given
-    step = DetectionsClassesReplacementBlock()
+    step = DetectionsClassesReplacementBlockV1()
     detections = sv.Detections(
         xyxy=np.array(
             [

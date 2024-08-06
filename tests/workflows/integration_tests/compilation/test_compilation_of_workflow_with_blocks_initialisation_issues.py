@@ -9,8 +9,8 @@ from inference.core.workflows.errors import (
     BlockInitParameterNotProvidedError,
     BlockInterfaceError,
 )
-from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
 from inference.core.workflows.execution_engine.introspection import blocks_loader
+from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
 
 VALID_DEFINITION = {
     "version": "1.0",

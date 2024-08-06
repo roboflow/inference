@@ -3,11 +3,10 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.blur import (
+from inference.core.workflows.core_steps.visualizations.blur.version_1 import (
     BlurManifest,
-    BlurVisualizationBlock,
+    BlurVisualizationBlockV1,
 )
-
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -56,7 +55,7 @@ def test_blur_validation_when_invalid_image_is_given() -> None:
 @pytest.mark.asyncio
 async def test_blur_visualization_block() -> None:
     # given
-    block = BlurVisualizationBlock()
+    block = BlurVisualizationBlockV1()
 
     start_image = np.random.randint(0, 255, (1000, 1000, 3), dtype=np.uint8)
     output = await block.run(

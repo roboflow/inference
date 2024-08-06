@@ -3,11 +3,10 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.ellipse import (
+from inference.core.workflows.core_steps.visualizations.ellipse.version_1 import (
     EllipseManifest,
-    EllipseVisualizationBlock,
+    EllipseVisualizationBlockV1,
 )
-
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -64,7 +63,7 @@ def test_ellipse_validation_when_invalid_image_is_given() -> None:
 @pytest.mark.asyncio
 async def test_ellipse_visualization_block() -> None:
     # given
-    block = EllipseVisualizationBlock()
+    block = EllipseVisualizationBlockV1()
 
     output = await block.run(
         image=WorkflowImageData(

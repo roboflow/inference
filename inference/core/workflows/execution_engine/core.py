@@ -1,19 +1,13 @@
-import asyncio
-from asyncio import AbstractEventLoop
 from typing import Any, Dict, List, Optional
 
-from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
-from inference.core.workflows.execution_engine.v1.compiler.entities import (
-    CompiledWorkflow,
-)
-from inference.core.workflows.execution_engine.v1.executor import (
-    assembly_runtime_parameters,
-    run_workflow,
-    validate_runtime_input,
-)
+from inference.core.workflows.entities.engine import BaseExecutionEngine
+from inference.core.workflows.errors import NotSupportedExecutionEngineError
+from inference.core.workflows.execution_engine.v1.core import ExecutionEngineV1
+
+REGISTERED_ENGINES = {1: ExecutionEngineV1}
 
 
-class ExecutionEngine:
+class ExecutionEngine(BaseExecutionEngine):
 
     @classmethod
     def init(
@@ -24,64 +18,39 @@ class ExecutionEngine:
         prevent_local_images_loading: bool = False,
         workflow_id: Optional[str] = None,
     ) -> "ExecutionEngine":
-        if init_parameters is None:
-            init_parameters = {}
-        compiled_workflow = compile_workflow(
+        requested_engine_version = int(
+            workflow_definition.get(
+                "execution_engine_version",
+                max(REGISTERED_ENGINES.keys()),
+            )
+        )
+        if requested_engine_version not in REGISTERED_ENGINES:
+            raise NotSupportedExecutionEngineError(
+                public_message=f"There is no Execution Engine in major version: {requested_engine_version} defined. "
+                f"Available execution errors: {list(REGISTERED_ENGINES.keys())}.",
+                context="workflow_compilation | engine_initialisation",
+            )
+        engine = REGISTERED_ENGINES[requested_engine_version].init(
             workflow_definition=workflow_definition,
             init_parameters=init_parameters,
-        )
-        return cls(
-            compiled_workflow=compiled_workflow,
             max_concurrent_steps=max_concurrent_steps,
             prevent_local_images_loading=prevent_local_images_loading,
             workflow_id=workflow_id,
         )
+        return cls(engine=engine)
 
     def __init__(
         self,
-        compiled_workflow: CompiledWorkflow,
-        max_concurrent_steps: int,
-        prevent_local_images_loading: bool,
-        workflow_id: Optional[str] = None,
+        engine: BaseExecutionEngine,
     ):
-        self._compiled_workflow = compiled_workflow
-        self._max_concurrent_steps = max_concurrent_steps
-        self._prevent_local_images_loading = prevent_local_images_loading
-        self._workflow_id = workflow_id
-
-    def run(
-        self,
-        runtime_parameters: Dict[str, Any],
-        event_loop: Optional[AbstractEventLoop] = None,
-        fps: float = 0,
-    ) -> List[Dict[str, Any]]:
-        if event_loop is None:
-            try:
-                event_loop = asyncio.get_event_loop()
-            except:
-                event_loop = asyncio.new_event_loop()
-        return event_loop.run_until_complete(
-            self.run_async(runtime_parameters=runtime_parameters, fps=fps)
-        )
+        self._engine = engine
 
     async def run_async(
         self,
         runtime_parameters: Dict[str, Any],
         fps: float = 0,
     ) -> List[Dict[str, Any]]:
-        runtime_parameters = assembly_runtime_parameters(
+        return await self._engine.run_async(
             runtime_parameters=runtime_parameters,
-            defined_inputs=self._compiled_workflow.workflow_definition.inputs,
-            prevent_local_images_loading=self._prevent_local_images_loading,
-        )
-        validate_runtime_input(
-            runtime_parameters=runtime_parameters,
-            input_substitutions=self._compiled_workflow.input_substitutions,
-        )
-        return await run_workflow(
-            workflow=self._compiled_workflow,
-            runtime_parameters=runtime_parameters,
-            max_concurrent_steps=self._max_concurrent_steps,
-            usage_fps=fps,
-            usage_workflow_id=self._workflow_id,
+            fps=fps,
         )

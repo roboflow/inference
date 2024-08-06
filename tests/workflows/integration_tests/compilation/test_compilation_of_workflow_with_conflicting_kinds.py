@@ -2,9 +2,7 @@ import pytest
 
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.errors import (
-    ReferenceTypeError,
-)
+from inference.core.workflows.errors import ReferenceTypeError
 from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
 
 KINDS_CONFLICTING_WORKFLOW = {

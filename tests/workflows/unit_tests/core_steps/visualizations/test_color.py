@@ -3,11 +3,10 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.color import (
+from inference.core.workflows.core_steps.visualizations.color.version_1 import (
     ColorManifest,
-    ColorVisualizationBlock,
+    ColorVisualizationBlockV1,
 )
-
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -56,7 +55,7 @@ def test_color_validation_when_invalid_image_is_given() -> None:
 @pytest.mark.asyncio
 async def test_color_visualization_block() -> None:
     # given
-    block = ColorVisualizationBlock()
+    block = ColorVisualizationBlockV1()
 
     output = await block.run(
         image=WorkflowImageData(

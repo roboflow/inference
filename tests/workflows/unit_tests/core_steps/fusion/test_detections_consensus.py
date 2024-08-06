@@ -7,8 +7,7 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.fusion import detections_consensus
-from inference.core.workflows.core_steps.fusion.detections_consensus import (
+from inference.core.workflows.core_steps.fusion.detections_consensus.version_1 import (
     AggregationMode,
     BlockManifest,
     aggregate_field_values,

@@ -3,11 +3,10 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.mask import (
+from inference.core.workflows.core_steps.visualizations.mask.version_1 import (
     MaskManifest,
-    MaskVisualizationBlock,
+    MaskVisualizationBlockV1,
 )
-
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -56,7 +55,7 @@ def test_mask_validation_when_invalid_image_is_given() -> None:
 @pytest.mark.asyncio
 async def test_mask_visualization_block() -> None:
     # given
-    block = MaskVisualizationBlock()
+    block = MaskVisualizationBlockV1()
 
     mask = np.zeros((3, 1000, 1000), dtype=np.bool_)
     mask[0, 0:20, 0:20] = True

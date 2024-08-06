@@ -2,7 +2,9 @@ import importlib
 import logging
 import os
 from collections import Counter
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Optional, Union
+
+from packaging.specifiers import SpecifierSet
 
 from inference.core.workflows.core_steps.loader import (
     REGISTERED_INITIALIZERS,
@@ -30,8 +32,12 @@ WORKFLOWS_CORE_PLUGIN_NAME = "workflows_core"
 
 def describe_available_blocks(
     dynamic_blocks: List[BlockSpecification],
+    execution_engine_version: Optional[str] = None,
 ) -> BlocksDescription:
-    blocks = load_workflow_blocks() + dynamic_blocks
+    blocks = (
+        load_workflow_blocks(execution_engine_version=execution_engine_version)
+        + dynamic_blocks
+    )
     result = []
     for block in blocks:
         block_schema = block.manifest_class.model_json_schema()
@@ -82,16 +88,29 @@ def get_manifest_type_identifiers(
     raise PluginInterfaceError(
         public_message="`type` property for block is required to be `Literal` "
         "defining at least one unique value to identify block in JSON "
-        f"definitions. Block `{block_identifier}` loaded from `{block_source} "
+        f"definitions. Block `{block_identifier}` loaded from `{block_source}` "
         f"does not fit that requirement.",
         context="workflow_compilation | blocks_loading",
     )
 
 
-def load_workflow_blocks() -> List[BlockSpecification]:
+def load_workflow_blocks(
+    execution_engine_version: Optional[str] = None,
+) -> List[BlockSpecification]:
     core_blocks = load_core_workflow_blocks()
     plugins_blocks = load_plugins_blocks()
-    return core_blocks + plugins_blocks
+    all_blocks = core_blocks + plugins_blocks
+    filtered_blocks = []
+    for block in all_blocks:
+        if not is_block_compatible_with_execution_engine(
+            execution_engine_version=execution_engine_version,
+            block_execution_engine_compatibility=block.manifest_class.get_execution_engine_compatibility(),
+            block_source=block.block_source,
+            block_identifier=block.identifier,
+        ):
+            continue
+        filtered_blocks.append(block)
+    return filtered_blocks
 
 
 def load_core_workflow_blocks() -> List[BlockSpecification]:
@@ -174,6 +193,28 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
         )
         already_spotted_blocks.add(block)
     return result
+
+
+def is_block_compatible_with_execution_engine(
+    execution_engine_version: Optional[str],
+    block_execution_engine_compatibility: Optional[str],
+    block_source: str,
+    block_identifier: str,
+) -> bool:
+    if block_execution_engine_compatibility is None or execution_engine_version is None:
+        return True
+    try:
+        return SpecifierSet(block_execution_engine_compatibility).contains(
+            execution_engine_version
+        )
+    except ValueError as error:
+        raise PluginInterfaceError(
+            public_message=f"Could not parse either version of Execution Engine ({execution_engine_version}) or "
+            f"EE version requirements ({block_execution_engine_compatibility}) for "
+            f"block `{block_identifier}` loaded from `{block_source}`.",
+            inner_error=error,
+            context="workflow_compilation | blocks_loading",
+        )
 
 
 def load_initializers() -> Dict[str, Union[Any, Callable[[None], Any]]]:

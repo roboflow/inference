@@ -3,11 +3,10 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.circle import (
+from inference.core.workflows.core_steps.visualizations.circle.version_1 import (
     CircleManifest,
-    CircleVisualizationBlock,
+    CircleVisualizationBlockV1,
 )
-
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -58,7 +57,7 @@ def test_circle_validation_when_invalid_image_is_given() -> None:
 @pytest.mark.asyncio
 async def test_circle_visualization_block() -> None:
     # given
-    block = CircleVisualizationBlock()
+    block = CircleVisualizationBlockV1()
 
     output = await block.run(
         image=WorkflowImageData(

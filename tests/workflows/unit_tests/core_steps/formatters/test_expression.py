@@ -7,9 +7,9 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
     EvaluationEngineError,
     UndeclaredSymbolError,
 )
-from inference.core.workflows.core_steps.formatters.expression import (
+from inference.core.workflows.core_steps.formatters.expression.version_1 import (
     CasesDefinition,
-    ExpressionBlock,
+    ExpressionBlockV1,
     StaticCaseResult,
 )
 
@@ -19,7 +19,7 @@ async def test_block_run_when_no_data_provided_and_static_output_to_be_returned(
     None
 ):
     # given
-    step = ExpressionBlock()
+    step = ExpressionBlockV1()
     switch = CasesDefinition(
         type="CasesDefinition",
         cases=[],
@@ -36,7 +36,7 @@ async def test_block_run_when_no_data_provided_and_static_output_to_be_returned(
 @pytest.mark.asyncio
 async def test_block_run_when_data_provided_and_default_output_to_be_returned() -> None:
     # given
-    step = ExpressionBlock()
+    step = ExpressionBlockV1()
     switch = CasesDefinition.model_validate(
         {
             "type": "CasesDefinition",
@@ -77,7 +77,7 @@ async def test_block_run_when_data_provided_and_first_matching_case_to_be_return
     None
 ):
     # given
-    step = ExpressionBlock()
+    step = ExpressionBlockV1()
     switch = CasesDefinition.model_validate(
         {
             "type": "CasesDefinition",
@@ -152,7 +152,7 @@ async def test_block_run_when_data_provided_and_data_operations_to_be_performed(
     None
 ):
     # given
-    step = ExpressionBlock()
+    step = ExpressionBlockV1()
     switch = CasesDefinition.model_validate(
         {
             "type": "CasesDefinition",
@@ -206,7 +206,7 @@ async def test_block_run_when_data_provided_and_operations_on_dynamic_result_to_
     None
 ):
     # given
-    step = ExpressionBlock()
+    step = ExpressionBlockV1()
     switch = CasesDefinition.model_validate(
         {
             "type": "CasesDefinition",
@@ -268,7 +268,7 @@ async def test_block_run_when_data_provided_and_operations_on_dynamic_result_to_
 @pytest.mark.asyncio
 async def test_block_run_when_uql_error_happens() -> None:
     # given
-    step = ExpressionBlock()
+    step = ExpressionBlockV1()
     switch = CasesDefinition.model_validate(
         {
             "type": "CasesDefinition",
@@ -305,7 +305,7 @@ async def test_block_run_when_data_provided_and_missing_variable_detected_on_dat
     None
 ):
     # given
-    step = ExpressionBlock()
+    step = ExpressionBlockV1()
     switch = CasesDefinition.model_validate(
         {
             "type": "CasesDefinition",
@@ -352,7 +352,7 @@ async def test_block_run_when_data_provided_and_missing_variable_detected_in_out
     None
 ):
     # given
-    step = ExpressionBlock()
+    step = ExpressionBlockV1()
     switch = CasesDefinition.model_validate(
         {
             "type": "CasesDefinition",
@@ -394,7 +394,7 @@ async def test_block_run_when_data_provided_and_missing_variable_detected_in_uql
     None
 ):
     # given
-    step = ExpressionBlock()
+    step = ExpressionBlockV1()
     switch = CasesDefinition.model_validate(
         {
             "type": "CasesDefinition",

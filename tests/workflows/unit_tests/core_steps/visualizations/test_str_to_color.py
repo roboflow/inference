@@ -1,7 +1,7 @@
 import pytest
 import supervision as sv
 
-from inference.core.workflows.core_steps.visualizations.utils import str_to_color
+from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 
 
 def test_str_to_color_with_hex_color() -> None:

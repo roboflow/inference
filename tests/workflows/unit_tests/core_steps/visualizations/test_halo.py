@@ -3,11 +3,10 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.halo import (
+from inference.core.workflows.core_steps.visualizations.halo.version_1 import (
     HaloManifest,
-    HaloVisualizationBlock,
+    HaloVisualizationBlockV1,
 )
-
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -59,7 +58,7 @@ def test_halo_validation_when_invalid_image_is_given() -> None:
 @pytest.mark.asyncio
 async def test_halo_visualization_block() -> None:
     # given
-    block = HaloVisualizationBlock()
+    block = HaloVisualizationBlockV1()
 
     mask = np.zeros((3, 1000, 1000), dtype=np.bool_)
     mask[0, 0:20, 0:20] = True

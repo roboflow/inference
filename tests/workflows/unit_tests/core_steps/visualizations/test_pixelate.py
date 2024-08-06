@@ -3,14 +3,13 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.pixelate import (
+from inference.core.workflows.core_steps.visualizations.pixelate.version_1 import (
     PixelateManifest,
-    PixelateVisualizationBlock,
+    PixelateVisualizationBlockV1,
 )
-
 from inference.core.workflows.entities.base import (
-    WorkflowImageData,
     ImageParentMetadata,
+    WorkflowImageData,
 )
 
 
@@ -58,7 +57,7 @@ def test_pixelate_validation_when_invalid_image_is_given() -> None:
 @pytest.mark.asyncio
 async def test_pixelate_visualization_block() -> None:
     # given
-    block = PixelateVisualizationBlock()
+    block = PixelateVisualizationBlockV1()
 
     start_image = np.random.randint(0, 255, (1000, 1000, 3), dtype=np.uint8)
     output = await block.run(

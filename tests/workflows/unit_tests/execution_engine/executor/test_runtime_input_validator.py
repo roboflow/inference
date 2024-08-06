@@ -1,15 +1,13 @@
 import pytest
 
-from inference.core.workflows.core_steps.models.foundation.clip_comparison import (
+from inference.core.workflows.core_steps.models.foundation.clip_comparison.version_1 import (
     BlockManifest,
 )
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     InputSubstitution,
 )
-from inference.core.workflows.execution_engine.v1.executor import (
-    validate_runtime_input,
-)
+from inference.core.workflows.execution_engine.v1.executor import validate_runtime_input
 
 
 def test_validate_runtime_input_when_input_is_valid() -> None:

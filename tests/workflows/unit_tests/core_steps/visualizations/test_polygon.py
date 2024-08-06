@@ -3,11 +3,10 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.polygon import (
+from inference.core.workflows.core_steps.visualizations.polygon.version_1 import (
     PolygonManifest,
-    PolygonVisualizationBlock,
+    PolygonVisualizationBlockV1,
 )
-
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -58,7 +57,7 @@ def test_polygon_validation_when_invalid_image_is_given() -> None:
 @pytest.mark.asyncio
 async def test_polygon_visualization_block() -> None:
     # given
-    block = PolygonVisualizationBlock()
+    block = PolygonVisualizationBlockV1()
 
     mask = np.zeros((3, 1000, 1000), dtype=np.bool_)
     mask[0, 0:20, 0:20] = True

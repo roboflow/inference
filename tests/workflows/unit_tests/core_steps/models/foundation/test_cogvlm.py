@@ -8,8 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.entities.responses.cogvlm import CogVLMResponse
-from inference.core.workflows.core_steps.models.foundation import cogvlm
-from inference.core.workflows.core_steps.models.foundation.cogvlm import (
+from inference.core.workflows.core_steps.models.foundation.cog_vlm.version_1 import (
     BlockManifest,
     get_cogvlm_generations_from_remote_api,
     get_cogvlm_generations_locally,

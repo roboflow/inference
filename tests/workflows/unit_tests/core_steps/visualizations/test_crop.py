@@ -3,11 +3,10 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.crop import (
+from inference.core.workflows.core_steps.visualizations.crop.version_1 import (
     CropManifest,
-    CropVisualizationBlock,
+    CropVisualizationBlockV1,
 )
-
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -62,7 +61,7 @@ def test_crop_validation_when_invalid_image_is_given() -> None:
 @pytest.mark.asyncio
 async def test_crop_visualization_block() -> None:
     # given
-    block = CropVisualizationBlock()
+    block = CropVisualizationBlockV1()
 
     output = await block.run(
         image=WorkflowImageData(

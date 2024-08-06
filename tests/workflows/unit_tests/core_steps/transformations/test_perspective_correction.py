@@ -1,12 +1,10 @@
-from typing import Any
-
 import cv2 as cv
 import numpy as np
 import pytest
 import supervision as sv
 
 from inference.core.workflows.constants import KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
-from inference.core.workflows.core_steps.transformations.perspective_correction import (
+from inference.core.workflows.core_steps.transformations.perspective_correction.version_1 import (
     correct_detections,
     extend_perspective_polygon,
     generate_transformation_matrix,

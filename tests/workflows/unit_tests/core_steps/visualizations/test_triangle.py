@@ -3,11 +3,10 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.triangle import (
+from inference.core.workflows.core_steps.visualizations.triangle.version_1 import (
     TriangleManifest,
-    TriangleVisualizationBlock,
+    TriangleVisualizationBlockV1,
 )
-
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
@@ -67,7 +66,7 @@ def test_triangle_validation_when_invalid_image_is_given() -> None:
 @pytest.mark.asyncio
 async def test_triangle_visualization_block() -> None:
     # given
-    block = TriangleVisualizationBlock()
+    block = TriangleVisualizationBlockV1()
 
     output = await block.run(
         image=WorkflowImageData(

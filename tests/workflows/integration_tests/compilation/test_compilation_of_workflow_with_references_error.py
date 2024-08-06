@@ -2,9 +2,7 @@ import pytest
 
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.errors import (
-    InvalidReferenceTargetError,
-)
+from inference.core.workflows.errors import InvalidReferenceTargetError
 from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
 
 WORKFLOW_WITH_REFERENCE_TO_NON_EXISTING_IMAGE_IN_STEP = {

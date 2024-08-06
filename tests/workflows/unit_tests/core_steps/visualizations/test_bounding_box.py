@@ -3,13 +3,9 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.bounding_box import (
+from inference.core.workflows.core_steps.visualizations.bounding_box.version_1 import (
     BoundingBoxManifest,
-    BoundingBoxVisualizationBlock,
-)
-
-from inference.core.workflows.entities.base import (
-    WorkflowImageData,
+    BoundingBoxVisualizationBlockV1,
 )
 from inference.core.workflows.entities.base import (
     ImageParentMetadata,
@@ -64,7 +60,7 @@ def test_bounding_box_validation_when_invalid_image_is_given() -> None:
 @pytest.mark.asyncio
 async def test_bounding_box_visualization_block() -> None:
     # given
-    block = BoundingBoxVisualizationBlock()
+    block = BoundingBoxVisualizationBlockV1()
 
     start_image = np.zeros((1000, 1000, 3), dtype=np.uint8)
     output = await block.run(
@@ -111,7 +107,7 @@ async def test_bounding_box_visualization_block() -> None:
 @pytest.mark.asyncio
 async def test_bounding_box_visualization_block_nocopy() -> None:
     # given
-    block = BoundingBoxVisualizationBlock()
+    block = BoundingBoxVisualizationBlockV1()
 
     start_image = np.zeros((1000, 1000, 3), dtype=np.uint8)
     output = await block.run(

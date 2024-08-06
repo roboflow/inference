@@ -8,8 +8,8 @@ from inference.core.entities.responses.inference import (
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     OperationsChain,
 )
-from inference.core.workflows.core_steps.formatters.property_definition import (
-    PropertyDefinitionBlock,
+from inference.core.workflows.core_steps.formatters.property_definition.version_1 import (
+    PropertyDefinitionBlockV1,
 )
 
 
@@ -44,7 +44,7 @@ async def test_property_extraction_block() -> None:
             ]
         }
     ).operations
-    step = PropertyDefinitionBlock()
+    step = PropertyDefinitionBlockV1()
 
     # when
     result = await step.run(data=data, operations=operations)

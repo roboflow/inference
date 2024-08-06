@@ -62,16 +62,6 @@ class WorkflowBlockManifest(BaseModel, ABC):
         return False
 
     @classmethod
-    @abstractmethod
-    def get_block_version(cls) -> int:
-        raise BlockInterfaceError(
-            public_message=f"Class method `get_block_version()` must be implemented "
-            f"for {get_full_type_name(selected_type=cls)} to be valid "
-            f"`WorkflowBlockManifest`.",
-            context="getting_block_version",
-        )
-
-    @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return None
 

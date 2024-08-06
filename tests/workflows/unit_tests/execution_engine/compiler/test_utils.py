@@ -5,7 +5,6 @@ import networkx as nx
 import pytest
 
 from inference.core.workflows.core_steps.models.roboflow import object_detection
-from inference.core.workflows.core_steps.transformations import dynamic_crop
 from inference.core.workflows.entities.base import (
     JsonField,
     WorkflowImage,

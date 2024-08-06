@@ -14,8 +14,8 @@ from inference.core.workflows.core_steps.models.foundation import lmm
 from inference.core.workflows.core_steps.models.foundation.openai import (
     BlockManifest,
     LMMConfig,
-    run_gpt_4v_llm_prompting,
     execute_gpt_4v_request,
+    run_gpt_4v_llm_prompting,
     try_parse_json,
     try_parse_lmm_output_to_json,
 )
