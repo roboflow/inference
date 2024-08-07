@@ -95,8 +95,7 @@ def test_sorting_workflow_for_when_nothing_to_sort(
     assert len(detections) == 0, "Expected nothing to pass confidence threshold"
 
 
-@pytest.mark.asyncio
-async def test_sorting_workflow_for_confidence_ascending(
+def test_sorting_workflow_for_confidence_ascending(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -117,7 +116,7 @@ async def test_sorting_workflow_for_confidence_ascending(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
             "model_id": "yolov8n-640",
@@ -136,8 +135,7 @@ async def test_sorting_workflow_for_confidence_ascending(
     ), "Expected alignment of confidences to be as requested"
 
 
-@pytest.mark.asyncio
-async def test_sorting_workflow_for_x_min_descending(
+def test_sorting_workflow_for_x_min_descending(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -158,7 +156,7 @@ async def test_sorting_workflow_for_x_min_descending(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
             "model_id": "yolov8n-640",
@@ -177,8 +175,7 @@ async def test_sorting_workflow_for_x_min_descending(
     ), "Expected alignment of boxes min_x to be as requested"
 
 
-@pytest.mark.asyncio
-async def test_sorting_workflow_for_x_max_ascending(
+def test_sorting_workflow_for_x_max_ascending(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -199,7 +196,7 @@ async def test_sorting_workflow_for_x_max_ascending(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
             "model_id": "yolov8n-640",
@@ -218,8 +215,7 @@ async def test_sorting_workflow_for_x_max_ascending(
     ), "Expected alignment of boxes max_x to be as requested"
 
 
-@pytest.mark.asyncio
-async def test_sorting_workflow_for_y_min_ascending(
+def test_sorting_workflow_for_y_min_ascending(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -240,7 +236,7 @@ async def test_sorting_workflow_for_y_min_ascending(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
             "model_id": "yolov8n-640",
@@ -259,8 +255,7 @@ async def test_sorting_workflow_for_y_min_ascending(
     ), "Expected alignment of boxes min_y to be as requested"
 
 
-@pytest.mark.asyncio
-async def test_sorting_workflow_for_y_max_descending(
+def test_sorting_workflow_for_y_max_descending(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -281,7 +276,7 @@ async def test_sorting_workflow_for_y_max_descending(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
             "model_id": "yolov8n-640",
@@ -300,8 +295,7 @@ async def test_sorting_workflow_for_y_max_descending(
     ), "Expected alignment of boxes max_y to be as requested"
 
 
-@pytest.mark.asyncio
-async def test_sorting_workflow_for_size_descending(
+def test_sorting_workflow_for_size_descending(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -322,7 +316,7 @@ async def test_sorting_workflow_for_size_descending(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
             "model_id": "yolov8n-640",
@@ -341,8 +335,7 @@ async def test_sorting_workflow_for_size_descending(
     ), "Expected alignment of boxes size to be as requested"
 
 
-@pytest.mark.asyncio
-async def test_sorting_workflow_for_center_x_descending(
+def test_sorting_workflow_for_center_x_descending(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -363,7 +356,7 @@ async def test_sorting_workflow_for_center_x_descending(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
             "model_id": "yolov8n-640",
@@ -382,8 +375,7 @@ async def test_sorting_workflow_for_center_x_descending(
     ), "Expected alignment of boxes centers to be as requested"
 
 
-@pytest.mark.asyncio
-async def test_sorting_workflow_for_center_y_ascending(
+def test_sorting_workflow_for_center_y_ascending(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -404,7 +396,7 @@ async def test_sorting_workflow_for_center_y_ascending(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
             "model_id": "yolov8n-640",

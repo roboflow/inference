@@ -755,7 +755,7 @@ def test_workflow_with_detections_tiling_in_non_batch_variant(
     )
 
     # when
-    result = execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={"image": [crowd_image, dogs_image]}
     )
 

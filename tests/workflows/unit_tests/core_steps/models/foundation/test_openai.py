@@ -1,7 +1,7 @@
 import json
 import time
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -380,7 +380,7 @@ Some other comment
 
 def test_execute_gpt_4v_request() -> None:
     # given
-    client = AsyncMock()
+    client = MagicMock()
     client.chat.completions.create.return_value = ChatCompletion(
         id="38",
         choices=[
@@ -434,7 +434,7 @@ def test_execute_gpt_4v_request() -> None:
 
 def test_execute_gpt_4v_request_gpt_4o_mini() -> None:
     # given
-    client = AsyncMock()
+    client = MagicMock()
     client.chat.completions.create.return_value = ChatCompletion(
         id="38",
         choices=[

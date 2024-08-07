@@ -275,9 +275,8 @@ WORKFLOW_WITH_CONDITION_DEPENDENT_ON_MODEL_PREDICTION = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_flow_control_step_affecting_batches(
+def test_flow_control_step_affecting_batches(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -313,7 +312,7 @@ async def test_flow_control_step_affecting_batches(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [crowd_image, dogs_image],
             "classes": ["person", "car"],
@@ -414,8 +413,7 @@ WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS = {
 }
 
 
-@pytest.mark.asyncio
-async def test_flow_control_step_affecting_data_with_increased_dimensionality(
+def test_flow_control_step_affecting_data_with_increased_dimensionality(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
     dogs_image: np.ndarray,
@@ -451,7 +449,7 @@ async def test_flow_control_step_affecting_data_with_increased_dimensionality(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [crowd_image, dogs_image],
         }

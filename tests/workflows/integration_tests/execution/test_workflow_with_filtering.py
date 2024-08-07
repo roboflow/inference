@@ -250,8 +250,7 @@ def test_filtering_workflow_when_image_not_provided_in_input(
         )
 
 
-@pytest.mark.asyncio
-async def test_filtering_workflow_when_classes_not_provided(
+def test_filtering_workflow_when_classes_not_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -269,7 +268,7 @@ async def test_filtering_workflow_when_classes_not_provided(
 
     # when
     with pytest.raises(EvaluationEngineError):
-        _ = await execution_engine.run_async(
+        _ = execution_engine.run(
             runtime_parameters={
                 "image": crowd_image,
                 "model_id": "yolov8n-640",
@@ -277,8 +276,7 @@ async def test_filtering_workflow_when_classes_not_provided(
         )
 
 
-@pytest.mark.asyncio
-async def test_filtering_workflow_when_model_id_cannot_be_resolved_to_valid_model(
+def test_filtering_workflow_when_model_id_cannot_be_resolved_to_valid_model(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -296,7 +294,7 @@ async def test_filtering_workflow_when_model_id_cannot_be_resolved_to_valid_mode
 
     # when
     with pytest.raises(StepExecutionError):
-        _ = await execution_engine.run_async(
+        _ = execution_engine.run(
             runtime_parameters={
                 "image": crowd_image,
                 "model_id": "invalid",

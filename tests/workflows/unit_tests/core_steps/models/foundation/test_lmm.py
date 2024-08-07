@@ -2,7 +2,7 @@ import json
 import time
 from typing import Any
 from unittest import mock
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -402,7 +402,7 @@ def test_get_cogvlm_generations_from_remote_api(
     inference_client_init_mock: MagicMock,
 ) -> None:
     # given
-    client_mock = AsyncMock()
+    client_mock = MagicMock()
     client_mock.prompt_cogvlm.side_effect = [
         {"response": "Response 1: 42"},
         {"response": "Response 2: 42"},
@@ -432,8 +432,8 @@ def test_get_cogvlm_generations_from_remote_api(
 @mock.patch.object(version_1, "load_core_model", MagicMock())
 def test_get_cogvlm_generations_locally() -> None:
     # given
-    model_manager = AsyncMock()
-    model_manager.infer_from_request.side_effect = [
+    model_manager = MagicMock()
+    model_manager.infer_from_request_sync.side_effect = [
         CogVLMResponse.model_validate({"response": "Response 1: 42"}),
         CogVLMResponse.model_validate({"response": "Response 2: 42"}),
         CogVLMResponse.model_validate({"response": "Response 3: 42"}),
@@ -461,7 +461,7 @@ def test_get_cogvlm_generations_locally() -> None:
 
 def test_execute_gpt_4v_request() -> None:
     # given
-    client = AsyncMock()
+    client = MagicMock()
     client.chat.completions.create.return_value = ChatCompletion(
         id="38",
         choices=[
