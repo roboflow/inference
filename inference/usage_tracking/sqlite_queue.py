@@ -118,7 +118,9 @@ class SQLiteQueue:
 
         return rows_count == 0
 
-    def _flush_db(self, connection: sqlite3.Connection, limit: int = 100) -> List[Dict[str, Any]]:
+    def _flush_db(
+        self, connection: sqlite3.Connection, limit: int = 100
+    ) -> List[Dict[str, Any]]:
         cursor = connection.cursor()
         sql_select = f"SELECT id, {self._col_name} FROM {self._tbl_name} ORDER BY id ASC LIMIT {limit}"
         sql_delete = f"DELETE FROM {self._tbl_name} WHERE id >= ? and id <= ?"
@@ -141,7 +143,7 @@ class SQLiteQueue:
         parsed_payloads = []
         top_id = -1
         bottom_id = -1
-        for (_id, payload) in payloads:
+        for _id, payload in payloads:
             top_id = max(top_id, _id)
             if bottom_id == -1:
                 bottom_id = _id
