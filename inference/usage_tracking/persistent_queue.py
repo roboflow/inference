@@ -1,7 +1,6 @@
 import json
 import os
 import sqlite3
-import time
 
 from typing_extensions import Any, Dict, List
 
@@ -11,7 +10,7 @@ from inference.core.logger import logger
 
 class PersistentQueue:
     def __init__(self, db_file_path: str = os.path.join(MODEL_CACHE_DIR, "usage.db")):
-        self._connection: sqlite3.Connection = sqlite3.connect(db_file_path)
+        self._connection: sqlite3.Connection = sqlite3.connect(db_file_path, timeout=1)
         self._tbl_name: str = "usage"
         self._col_name: str = "payload"
         sql_create_table = f"""CREATE TABLE IF NOT EXISTS {self._tbl_name} (
@@ -19,12 +18,14 @@ class PersistentQueue:
                                 {self._col_name} TEXT NOT NULL
                             );"""
         cursor = self._connection.cursor()
-        cursor.execute("BEGIN EXCLUSIVE", timeout=1)
+        cursor.execute("BEGIN EXCLUSIVE")
         try:
             cursor.execute(sql_create_table)
             self._connection.commit()
+            cursor.close()
         except Exception as exc:
             self._connection.rollback()
+            cursor.close()
             raise exc
 
     def put(self, payload: Any):
@@ -44,6 +45,8 @@ class PersistentQueue:
         except Exception as exc:
             logger.debug("Failed to store usage payload, %s", exc)
             self._connection.rollback()
+
+        cursor.close()
 
     @staticmethod
     def full() -> bool:
@@ -67,6 +70,8 @@ class PersistentQueue:
         except Exception as exc:
             logger.debug("Failed to store usage payload, %s", exc)
             self._connection.rollback()
+
+        cursor.close()
 
         return count == 0
 
@@ -93,6 +98,8 @@ class PersistentQueue:
             self._connection.rollback()
             return []
 
+        cursor.close()
+
         parsed_payloads = []
         for (payload,) in payloads:
             try:
@@ -101,3 +108,13 @@ class PersistentQueue:
                 logger.debug("Failed to parse usage payload %s, %s", payload, exc)
 
         return parsed_payloads
+
+    def __del__(self):
+        cursor = self._connection.cursor()
+        try:
+            cursor.execute("BEGIN EXCLUSIVE")
+            self._connection.commit()
+            cursor.close()
+            self._connection.close()
+        except Exception as exc:
+            logger.debug("Failed to safely close db connection, %s", exc)
