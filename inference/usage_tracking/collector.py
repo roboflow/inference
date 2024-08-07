@@ -35,9 +35,8 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 from inference.usage_tracking.utils import collect_func_params
 
 from .config import TelemetrySettings, get_telemetry_settings
-from .sqlite_queue import SQLiteQueue
 from .redis_queue import RedisQueue
-
+from .sqlite_queue import SQLiteQueue
 
 T = TypeVar("T")
 P = ParamSpec("P")

@@ -12,6 +12,7 @@ class RedisQueue:
     """
     Store and forget, keys with specified prefix are handled by external service
     """
+
     def __init__(
         self,
         prefix: str = f"UsageCollector:{time.time()}",
