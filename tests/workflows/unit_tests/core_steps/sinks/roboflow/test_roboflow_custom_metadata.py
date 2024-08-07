@@ -2,9 +2,9 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
-import supervision as sv
 import numpy as np
 import pytest
+import supervision as sv
 from fastapi import BackgroundTasks
 
 from inference.core.cache import MemoryCache

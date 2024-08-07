@@ -67,7 +67,6 @@ def describe_available_blocks(
                 manifest_type_identifier_aliases=manifest_type_identifiers[1:],
             )
         )
-    _validate_loaded_blocks_names_uniqueness(blocks=result)
     _validate_loaded_blocks_manifest_type_identifiers(blocks=result)
     declared_kinds = load_all_defined_kinds()
     return BlocksDescription(blocks=result, declared_kinds=declared_kinds)
@@ -271,23 +270,6 @@ def _load_initializers_from_plugin(
         f"{plugin_name}.{parameter_name}": initializer
         for parameter_name, initializer in registered_initializers.items()
     }
-
-
-def _validate_loaded_blocks_names_uniqueness(blocks: List[BlockDescription]) -> None:
-    block_names_lookup = {}
-    for block in blocks:
-        if block.human_friendly_block_name in block_names_lookup:
-            clashing_block = block_names_lookup[block.human_friendly_block_name]
-            raise PluginLoadingError(
-                public_message=f"Block defined in {block.block_source} plugin with fully qualified class "
-                f"name {block.fully_qualified_block_class_name} clashes in terms of "
-                f"the human friendly name (value={block.human_friendly_block_name}) with other "
-                f"block - defined in {clashing_block.block_source} with fully qualified class name: "
-                f"{clashing_block.fully_qualified_block_class_name}.",
-                context="blocks_loading",
-            )
-        block_names_lookup[block.human_friendly_block_name] = block
-    return None
 
 
 def _validate_loaded_blocks_manifest_type_identifiers(
