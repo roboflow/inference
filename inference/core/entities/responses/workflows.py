@@ -134,10 +134,10 @@ class WorkflowsBlocksDescription(BaseModel):
         description="List of loaded blocks descriptions"
     )
     declared_kinds: List[Kind] = Field(description="List of kinds defined for blocks")
-    kinds_connections: Dict[
-        str, List[ExternalWorkflowsBlockSelectorDefinition]
-    ] = Field(
-        description="Mapping from kind name into list of blocks properties accepting references of that kind"
+    kinds_connections: Dict[str, List[ExternalWorkflowsBlockSelectorDefinition]] = (
+        Field(
+            description="Mapping from kind name into list of blocks properties accepting references of that kind"
+        )
     )
     primitives_connections: List[ExternalBlockPropertyPrimitiveDefinition] = Field(
         description="List defining all properties for all blocks that can be filled "

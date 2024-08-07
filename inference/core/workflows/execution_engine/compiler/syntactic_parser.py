@@ -4,6 +4,7 @@ import pydantic
 from pydantic import BaseModel, Field, create_model
 from typing_extensions import Annotated
 
+from inference.core.entities.responses.workflows import WorkflowsBlocksSchemaDescription
 from inference.core.workflows.entities.base import InputType, JsonField
 from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.compiler.entities import (
@@ -17,7 +18,6 @@ from inference.core.workflows.execution_engine.introspection.blocks_loader impor
     load_all_defined_kinds,
     load_workflow_blocks,
 )
-from inference.core.entities.responses.workflows import WorkflowsBlocksSchemaDescription
 
 
 def parse_workflow_definition(
