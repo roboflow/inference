@@ -64,7 +64,7 @@ class UsageCollector:
             exec_session_id=self._exec_session_id
         )
 
-        if LAMBDA:
+        if LAMBDA or self._settings.opt_out:
             self._queue: "Queue[UsagePayload]" = Queue(maxsize=self._settings.queue_size)
         else:
             self._queue = PersistentQueue()
