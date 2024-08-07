@@ -2,7 +2,7 @@ import os
 
 import timeit
 
-os.environ["API_KEY"] = "KtaN2J2MNPbpM8hW8ElL"
+os.environ["API_KEY"] = "API_KEY"
 from inference.models.sam2 import SegmentAnything2
 from inference.core.utils.postprocess import masks2poly
 from inference.core.entities.requests.sam2 import Sam2PromptSet, Sam2Prompt, Box, Point
