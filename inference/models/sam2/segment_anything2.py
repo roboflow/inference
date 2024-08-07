@@ -174,7 +174,7 @@ class SegmentAnything2(RoboflowCoreModel):
 
                     pred = Sam2SegmentationPrediction(
                         mask=[polygon.tolist() for polygon in mask],
-                        low_res_masks=[polygon.tolist() for polygon in low_res_mask],
+                        low_res_mask=[polygon.tolist() for polygon in low_res_mask],
                     )
                     predictions.append(pred)
 
@@ -256,7 +256,12 @@ class SegmentAnything2(RoboflowCoreModel):
             self.predictor._features = embedding
             self.predictor._orig_hw = [original_image_size]
             self.predictor._is_batch = False
-            args = prompts.to_sam2_inputs() if prompts else dict()
+            args = dict()
+            if prompts:
+                if type(prompts) is dict:
+                    args = Sam2PromptSet(**prompts).to_sam2_inputs()
+                else:
+                    args = prompts.to_sam2_inputs()
 
 
             masks, scores, low_res_logits = self.predictor.predict(

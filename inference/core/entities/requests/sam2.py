@@ -71,7 +71,7 @@ class Sam2Prompt(BaseModel):
     points: Optional[List[Point]] = Field(default=None)
 
 class Sam2PromptSet(BaseModel):
-    prompts: Optional[List[Sam2Prompt]] = Field()
+    prompts: Optional[List[Sam2Prompt]] = Field(default=None)
     def to_sam2_inputs(self):
         if self.prompts is None:
             return {"point_coords": None, "point_labels": None, "box": None}
