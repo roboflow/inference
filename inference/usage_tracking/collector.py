@@ -81,23 +81,31 @@ class UsageCollector:
             exec_session_id=self._exec_session_id
         )
 
+        self._hashed_api_keys: Dict[APIKey, APIKeyHash] = {}
+        self._api_keys_hashing_enabled = True
+
         if LAMBDA and REDIS_HOST:
+            logger.debug("Persistence through RedisQueue")
             self._queue: "Queue[UsagePayload]" = RedisQueue()
+            self._api_keys_hashing_enabled = False
         elif LAMBDA or self._settings.opt_out:
+            logger.debug("No persistence")
             self._queue: "Queue[UsagePayload]" = Queue(
                 maxsize=self._settings.queue_size
             )
+            self._api_keys_hashing_enabled = False
         else:
             try:
                 self._queue = SQLiteQueue()
+                logger.debug("Persistence through SQLiteQueue")
             except Exception as exc:
                 logger.debug("Unable to create instance of SQLiteQueue, %s", exc)
+                logger.debug("No persistence")
                 self._queue: "Queue[UsagePayload]" = Queue(
                     maxsize=self._settings.queue_size
                 )
+                self._api_keys_hashing_enabled = False
         self._queue_lock = Lock()
-
-        self._hashed_api_keys: Dict[APIKey, APIKeyHash] = {}
 
         self._system_info_sent: bool = False
         self._resource_details_lock = Lock()
@@ -276,7 +284,10 @@ class UsageCollector:
         if api_key:
             api_key_hash = self._hashed_api_keys.get(api_key)
             if not api_key_hash:
-                api_key_hash = UsageCollector._hash(api_key)
+                if self._api_keys_hashing_enabled:
+                    api_key_hash = UsageCollector._hash(api_key)
+                else:
+                    api_key_hash = api_key
             self._hashed_api_keys[api_key] = api_key_hash
         return api_key_hash
 
