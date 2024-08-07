@@ -13,7 +13,16 @@ from threading import Event, Lock, Thread
 from uuid import uuid4
 
 import requests
-from typing_extensions import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
+from typing_extensions import (
+    Any,
+    Callable,
+    DefaultDict,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 from inference.core.env import API_KEY, LAMBDA, REDIS_HOST
 from inference.core.logger import logger
@@ -23,7 +32,6 @@ from inference.usage_tracking.utils import collect_func_params
 
 from .config import TelemetrySettings, get_telemetry_settings
 from .persistent_queue import PersistentQueue
-
 
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
@@ -65,9 +73,17 @@ class UsageCollector:
         )
 
         if LAMBDA or self._settings.opt_out:
-            self._queue: "Queue[UsagePayload]" = Queue(maxsize=self._settings.queue_size)
+            self._queue: "Queue[UsagePayload]" = Queue(
+                maxsize=self._settings.queue_size
+            )
         else:
-            self._queue = PersistentQueue()
+            try:
+                self._queue = PersistentQueue()
+            except Exception as exc:
+                logger.debug("Unable to create instance of PersistentQueue, %s", exc)
+                self._queue: "Queue[UsagePayload]" = Queue(
+                    maxsize=self._settings.queue_size
+                )
         self._queue_lock = Lock()
 
         self._system_info_sent: bool = False

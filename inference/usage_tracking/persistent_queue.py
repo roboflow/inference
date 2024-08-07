@@ -1,8 +1,8 @@
 import json
 import os
+import sqlite3
 import time
 
-import sqlite3
 from typing_extensions import Any, Dict, List
 
 from inference.core.env import MODEL_CACHE_DIR
@@ -10,10 +10,7 @@ from inference.core.logger import logger
 
 
 class PersistentQueue:
-    def __init__(
-        self,
-        db_file_path: str = os.path.join(MODEL_CACHE_DIR, "usage.db")
-    ):
+    def __init__(self, db_file_path: str = os.path.join(MODEL_CACHE_DIR, "usage.db")):
         self._connection: sqlite3.Connection = sqlite3.connect(db_file_path)
         self._tbl_name: str = "usage"
         self._col_name: str = "payload"
@@ -73,7 +70,7 @@ class PersistentQueue:
 
         return count == 0
 
-    def get_nowait(self) -> List[Dict[str, Any]]
+    def get_nowait(self) -> List[Dict[str, Any]]:
         cursor = self._connection.cursor()
         sql_select = f"SELECT {self._col_name} FROM {self._tbl_name}"
         sql_delete = f"DELETE FROM {self._tbl_name}"
@@ -97,7 +94,7 @@ class PersistentQueue:
             return []
 
         parsed_payloads = []
-        for payload, in payloads:
+        for (payload,) in payloads:
             try:
                 parsed_payloads.append(json.loads(payload))
             except Exception as exc:
