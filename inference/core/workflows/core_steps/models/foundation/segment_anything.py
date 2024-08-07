@@ -3,6 +3,7 @@ from typing import List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field, PositiveInt
 
 import numpy as np
+import supervision as sv
 
 from inference.core.entities.requests.sam2 import Sam2SegmentationRequest
 from inference.core.managers.base import ModelManager
@@ -30,11 +31,15 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
+    StepOutputSelector
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -42,7 +47,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-from inference.core.entities.requests.sam2 import Sam2PromptSet
+from inference.core.entities.requests.sam2 import Sam2PromptSet, Sam2Prompt, Box
 
 
 LONG_DESCRIPTION = """
@@ -62,7 +67,21 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["SegmentAnything2Model"]
+    
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+
+    boxes: StepOutputSelector(
+        kind=[
+            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+        ]
+    ) = Field(  # type: ignore
+        description="Boxes (from other model predictions)",
+        examples=["$steps.object_detection_model.predictions"],
+        default=None
+    )
+
     sam2_model: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]),
         Literal["hiera_large", "hiera_small", "hiera_tiny", "hiera_b_plus"],
@@ -110,11 +129,13 @@ class SegmentAnything2Block(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         sam2_model: str,
+        boxes: Batch[sv.Detections]
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return await self.run_locally(
                 images=images,
                 sam2_model=sam2_model,
+                boxes=boxes
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             raise NotImplementedError(
@@ -129,16 +150,41 @@ class SegmentAnything2Block(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         sam2_model: str,
+        boxes: Batch[sv.Detections]
     ) -> BlockResult:
 
         predictions = []
-        for single_image in images:
+
+        if not boxes:
+            boxes = [None] * len(images)
+
+        for single_image, boxes_for_image in zip(images, boxes):
+
+            prompts = Sam2PromptSet()
+            if boxes_for_image is not None:
+                for x1, y1, x2, y2 in boxes_for_image.xyxy:
+
+                    width = x2 - x1
+                    height = y2 - y1
+                    cx = x1 + width / 2
+                    cy = y1 + height / 2
+
+                    prompt = Sam2Prompt(
+                        box=Box(
+                            x=cx,
+                            y=cy,
+                            width=width,
+                            height=height,
+                        )
+                    )
+                    prompts.add_prompt(prompt)
+
             inference_request = Sam2SegmentationRequest(
                 image=single_image.to_inference_format(numpy_preferred=True),
                 sam2_version_id=sam2_model,
                 api_key=self._api_key,
                 source="workflow-execution",
-                prompts=Sam2PromptSet()
+                prompts=prompts
 
             )
             sam_model_id = load_core_model(
