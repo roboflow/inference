@@ -32,7 +32,7 @@ from inference.core.workflows.execution_engine.compiler.entities import Compiled
 from inference.usage_tracking.utils import collect_func_params
 
 from .config import TelemetrySettings, get_telemetry_settings
-from .persistent_queue import PersistentQueue
+from .sqlite_queue import SQLiteQueue
 
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
@@ -80,9 +80,9 @@ class UsageCollector:
             )
         else:
             try:
-                self._queue = PersistentQueue()
+                self._queue = SQLiteQueue()
             except Exception as exc:
-                logger.debug("Unable to create instance of PersistentQueue, %s", exc)
+                logger.debug("Unable to create instance of SQLiteQueue, %s", exc)
                 self._queue: "Queue[UsagePayload]" = Queue(
                     maxsize=self._settings.queue_size
                 )

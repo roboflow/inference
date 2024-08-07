@@ -2,13 +2,13 @@ import sqlite3
 from typing_extensions import Any, List
 
 from inference.core.env import LAMBDA
-from inference.usage_tracking.persistent_queue import PersistentQueue
+from inference.usage_tracking.sqlite_queue import SQLiteQueue
 
 
 def test_empty():
     # given
     conn = sqlite3.connect(":memory:")
-    q = PersistentQueue(connection=conn)
+    q = SQLiteQueue(connection=conn)
 
     # then
     assert q.empty(connection=conn) is True
@@ -17,7 +17,7 @@ def test_empty():
 def test_not_empty():
     # given
     conn = sqlite3.connect(":memory:")
-    q = PersistentQueue(connection=conn)
+    q = SQLiteQueue(connection=conn)
 
     # when
     q.put("test", connection=conn)
@@ -30,7 +30,7 @@ def test_not_empty():
 def test_get_nowait():
     # given
     conn = sqlite3.connect(":memory:")
-    q = PersistentQueue(connection=conn)
+    q = SQLiteQueue(connection=conn)
 
     # when
     q.put("test", connection=conn)
