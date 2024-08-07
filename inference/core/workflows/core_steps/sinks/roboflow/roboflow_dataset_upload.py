@@ -464,6 +464,7 @@ def register_datapoint(
         api_key=api_key,
         batch_name=batch_name,
         tags=tags,
+        inference_id=prediction.data["inference_id"][0],
     )
     if roboflow_image_id is None:
         return DUPLICATED_STATUS
@@ -489,6 +490,7 @@ def safe_register_image_at_roboflow(
     api_key: str,
     batch_name: str,
     tags: List[str],
+    inference_id: Optional[str] = None,
 ) -> Optional[str]:
     registration_response = register_image_at_roboflow(
         api_key=api_key,
@@ -497,6 +499,7 @@ def safe_register_image_at_roboflow(
         image_bytes=encoded_image,
         batch_name=batch_name,
         tags=tags,
+        inference_id=inference_id,
     )
     image_duplicated = registration_response.get("duplicate", False)
     if image_duplicated:
