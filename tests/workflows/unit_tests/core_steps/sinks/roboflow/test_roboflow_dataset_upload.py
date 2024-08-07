@@ -1,5 +1,6 @@
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from unittest import mock
 from unittest.mock import MagicMock, call
@@ -567,8 +568,9 @@ def test_run_sink_when_api_key_is_not_specified() -> None:
     # given
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=MemoryCache(),
-        background_tasks=None,
         api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
     )
 
     # when
@@ -596,8 +598,9 @@ def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
     # given
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=MemoryCache(),
-        background_tasks=None,
         api_key="my_api_key",
+        background_tasks=None,
+        thread_pool_executor=None,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -647,13 +650,14 @@ def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
 
 
 @mock.patch.object(version_1, "execute_registration", MagicMock())
-def test_run_sink_when_registration_should_happen_in_background() -> None:
+def test_run_sink_when_registration_should_happen_in_background_tasks() -> None:
     # given
     background_tasks = BackgroundTasks()
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=MemoryCache(),
-        background_tasks=background_tasks,
         api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -703,6 +707,63 @@ def test_run_sink_when_registration_should_happen_in_background() -> None:
     assert len(background_tasks.tasks) == 3, "Async tasks to be added"
 
 
+@mock.patch.object(version_1, "execute_registration", MagicMock())
+def test_run_sink_when_registration_should_happen_in_thread_pool() -> None:
+    # given
+    with ThreadPoolExecutor() as thread_pool_executor:
+        data_collector_block = RoboflowDatasetUploadBlockV1(
+            cache=MemoryCache(),
+            api_key="my_api_key",
+            background_tasks=None,
+            thread_pool_executor=thread_pool_executor,
+        )
+        image = WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="parent"),
+            numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
+        )
+        prediction = {
+            "top": "car",
+            "predictions": [
+                {"class": "car", "confidence": 0.7},
+                {"class": "truck", "confidence": 0.3},
+            ],
+        }
+        indices = [(0,), (1,), (2,)]
+
+        # when
+        result = data_collector_block.run(
+            images=Batch(content=[image, image, image], indices=indices),
+            predictions=Batch(
+                content=[prediction, prediction, prediction], indices=indices
+            ),
+            target_project="my_project",
+            usage_quota_name="my_quota",
+            persist_predictions=True,
+            minutely_usage_limit=10,
+            hourly_usage_limit=100,
+            daily_usage_limit=1000,
+            max_image_size=(128, 128),
+            compression_level=75,
+            registration_tags=["some"],
+            disable_sink=False,
+            fire_and_forget=True,
+            labeling_batch_prefix="my_batch",
+            labeling_batches_recreation_frequency="never",
+        )
+
+        # then
+        assert (
+            result
+            == [
+                {
+                    "error_status": False,
+                    "message": "Element registration happens in the background task",
+                }
+            ]
+            * 3
+        ), "Expected async execution status to be presented"
+
+
 @mock.patch.object(version_1, "execute_registration")
 def test_run_sink_when_registration_should_happen_in_foreground_despite_providing_background_tasks(
     execute_registration_mock: MagicMock,
@@ -712,8 +773,9 @@ def test_run_sink_when_registration_should_happen_in_foreground_despite_providin
     cache = MemoryCache()
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=cache,
-        background_tasks=background_tasks,
         api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),

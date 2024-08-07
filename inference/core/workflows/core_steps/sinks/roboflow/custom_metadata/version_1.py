@@ -1,6 +1,8 @@
 import hashlib
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import supervision as sv
@@ -112,14 +114,16 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
         cache: BaseCache,
         api_key: Optional[str],
         background_tasks: Optional[BackgroundTasks],
+        thread_pool_executor: Optional[ThreadPoolExecutor],
     ):
         self._api_key = api_key
         self._cache = cache
         self._background_tasks = background_tasks
+        self._thread_pool_executor = thread_pool_executor
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key", "cache", "background_tasks"]
+        return ["api_key", "cache", "background_tasks", "thread_pool_executor"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -141,30 +145,14 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
             )
         inference_ids: List[np.ndarray] = [p[INFERENCE_ID_KEY] for p in predictions]
         if len(inference_ids) == 0:
-            return [
-                {
-                    "error_status": True,
-                    "predictions": predictions,
-                    "message": "Custom metadata upload failed because no inference_ids were received",
-                }
-            ]
+            return {
+                "error_status": True,
+                "predictions": predictions,
+                "message": "Custom metadata upload failed because no inference_ids were received. "
+                "This is known bug (https://github.com/roboflow/inference/issues/567). "
+                "Please provide a report for the problem under mentioned issue.",
+            }
         inference_ids: List[str] = list(set(np.concatenate(inference_ids).tolist()))
-        if field_name is None:
-            return [
-                {
-                    "error_status": True,
-                    "predictions": predictions,
-                    "message": "Custom metadata upload failed because no field_name was inputted",
-                }
-            ]
-        if field_value is None or len(field_value) == 0:
-            return [
-                {
-                    "error_status": True,
-                    "predictions": predictions,
-                    "message": "Custom metadata upload failed because no field_value was received",
-                }
-            ]
         registration_task = partial(
             add_custom_metadata_request,
             cache=self._cache,
@@ -173,17 +161,19 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
             field_name=field_name,
             field_value=field_value[0],
         )
+        error_status = False
+        message = "Registration happens in the background task"
         if fire_and_forget and self._background_tasks:
             self._background_tasks.add_task(registration_task)
+        elif fire_and_forget and self._thread_pool_executor:
+            self._thread_pool_executor.submit(registration_task)
         else:
-            registration_task()
-        return [
-            {
-                "error_status": False,
-                "predictions": predictions,
-                "message": "Custom metadata upload was successful",
-            }
-        ]
+            error_status, message = registration_task()
+        return {
+            "error_status": error_status,
+            "predictions": predictions,
+            "message": message,
+        }
 
 
 def get_workspace_name(
@@ -208,17 +198,25 @@ def add_custom_metadata_request(
     inference_ids: List[str],
     field_name: str,
     field_value: str,
-):
+) -> Tuple[bool, str]:
     workspace_id = get_workspace_name(api_key=api_key, cache=cache)
-    was_added = False
     try:
-        was_added = add_custom_metadata(
+        add_custom_metadata(
             api_key=api_key,
             workspace_id=workspace_id,
             inference_ids=inference_ids,
             field_name=field_name,
             field_value=field_value,
         )
-    except Exception as e:
-        pass
-    return was_added
+        return (
+            False,
+            "Custom metadata upload was successful",
+        )
+    except Exception as error:
+        logging.warning(
+            f"Could not add custom metadata for inference IDs: {inference_ids}. Reason: {error}"
+        )
+        return (
+            True,
+            f"Error while custom metadata registration. Error type: {type(error)}. Details: {error}",
+        )

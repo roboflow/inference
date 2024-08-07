@@ -185,6 +185,8 @@ REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
     "cache": cache,
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
+    "background_tasks": None,
+    "thread_pool_executor": None,
 }
 
 

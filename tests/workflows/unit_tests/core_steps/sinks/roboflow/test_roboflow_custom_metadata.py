@@ -1,4 +1,5 @@
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -82,7 +83,10 @@ def test_add_custom_metadata_request_success(
     )
 
     # then
-    assert result is True, "Expected metadata to be added successfully"
+    assert result == (
+        False,
+        "Custom metadata upload was successful",
+    ), "Expected metadata to be added successfully"
     assert (
         cache.get(expected_cache_key) == "my_workspace"
     ), "Expected workspace name to be in cache"
@@ -115,7 +119,7 @@ def test_add_custom_metadata_request_failure(
     )
 
     # then
-    assert result is False, "Expected metadata addition to fail"
+    assert result[0] is True, "Expected metadata addition to fail"
     assert (
         cache.get(expected_cache_key) == "my_workspace"
     ), "Expected workspace name to be in cache"
@@ -125,8 +129,9 @@ def test_run_when_api_key_is_not_specified() -> None:
     # given
     block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
-        background_tasks=None,
         api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
     )
 
     # when
@@ -143,8 +148,9 @@ def test_run_when_no_inference_ids() -> None:
     # given
     block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
-        background_tasks=None,
         api_key="my_api_key",
+        background_tasks=None,
+        thread_pool_executor=None,
     )
 
     # when
@@ -156,81 +162,33 @@ def test_run_when_no_inference_ids() -> None:
     )
 
     # then
-    assert result == [
-        {
-            "error_status": True,
-            "predictions": [],
-            "message": "Custom metadata upload failed because no inference_ids were received",
-        }
-    ], "Expected failure due to no inference_ids"
-
-
-def test_run_when_no_field_name() -> None:
-    # given
-    block = RoboflowCustomMetadataBlockV1(
-        cache=MemoryCache(),
-        background_tasks=None,
-        api_key="my_api_key",
-    )
-
-    # when
-    result = block.run(
-        fire_and_forget=True,
-        field_name=None,
-        field_value=["toronto"],
-        predictions=[{"inference_id": np.array(["id1"])}],
-    )
-
-    # then
-    assert result == [
-        {
-            "error_status": True,
-            "predictions": [{"inference_id": np.array(["id1"])}],
-            "message": "Custom metadata upload failed because no field_name was inputted",
-        }
-    ], "Expected failure due to no field_name"
-
-
-def test_run_when_no_field_value() -> None:
-    # given
-    block = RoboflowCustomMetadataBlockV1(
-        cache=MemoryCache(),
-        background_tasks=None,
-        api_key="my_api_key",
-    )
-
-    # when
-    result = block.run(
-        fire_and_forget=True,
-        field_name="location",
-        field_value=None,
-        predictions=[{"inference_id": np.array(["id1"])}],
-    )
-
-    # then
-    assert result == [
-        {
-            "error_status": True,
-            "predictions": [{"inference_id": np.array(["id1"])}],
-            "message": "Custom metadata upload failed because no field_value was received",
-        }
-    ], "Expected failure due to no field_value"
+    assert result == {
+        "error_status": True,
+        "predictions": [],
+        "message": "Custom metadata upload failed because no inference_ids were received. This is known bug "
+        "(https://github.com/roboflow/inference/issues/567). Please provide a report for the "
+        "problem under mentioned issue.",
+    }, "Expected failure due to no inference_ids"
 
 
 @patch(
     "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.version_1.add_custom_metadata_request"
 )
-def test_run_when_fire_and_forget(
+def test_run_when_fire_and_forget_with_background_tasks(
     add_custom_metadata_request_mock: MagicMock,
 ) -> None:
     # given
     background_tasks = BackgroundTasks()
     block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
-        background_tasks=background_tasks,
         api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
     )
-    add_custom_metadata_request_mock.return_value = True
+    add_custom_metadata_request_mock.return_value = (
+        False,
+        "Custom metadata upload was successful",
+    )
 
     # when
     result = block.run(
@@ -241,14 +199,47 @@ def test_run_when_fire_and_forget(
     )
 
     # then
-    assert result == [
-        {
+    assert result == {
+        "error_status": False,
+        "predictions": [{"inference_id": np.array(["id1"])}],
+        "message": "Registration happens in the background task",
+    }, "Expected success message"
+    assert len(background_tasks.tasks) == 1, "Expected background task to be added"
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.version_1.add_custom_metadata_request"
+)
+def test_run_when_fire_and_forget_with_thread_pool(
+    add_custom_metadata_request_mock: MagicMock,
+) -> None:
+    # given
+    with ThreadPoolExecutor() as thread_pool_executor:
+        block = RoboflowCustomMetadataBlockV1(
+            cache=MemoryCache(),
+            api_key="my_api_key",
+            background_tasks=None,
+            thread_pool_executor=thread_pool_executor,
+        )
+        add_custom_metadata_request_mock.return_value = (
+            False,
+            "Custom metadata upload was successful",
+        )
+
+        # when
+        result = block.run(
+            fire_and_forget=True,
+            field_name="location",
+            field_value=["toronto"],
+            predictions=[{"inference_id": np.array(["id1"])}],
+        )
+
+        # then
+        assert result == {
             "error_status": False,
             "predictions": [{"inference_id": np.array(["id1"])}],
-            "message": "Custom metadata upload was successful",
-        }
-    ], "Expected success message"
-    assert len(background_tasks.tasks) == 1, "Expected background task to be added"
+            "message": "Registration happens in the background task",
+        }, "Expected success message"
 
 
 @patch(
@@ -260,10 +251,14 @@ def test_run_when_not_fire_and_forget(
     # given
     block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
-        background_tasks=None,
         api_key="my_api_key",
+        background_tasks=None,
+        thread_pool_executor=None,
     )
-    add_custom_metadata_request_mock.return_value = True
+    add_custom_metadata_request_mock.return_value = (
+        False,
+        "Custom metadata upload was successful",
+    )
 
     # when
     result = block.run(
@@ -274,11 +269,9 @@ def test_run_when_not_fire_and_forget(
     )
 
     # then
-    assert result == [
-        {
-            "error_status": False,
-            "predictions": [{"inference_id": np.array(["id1"])}],
-            "message": "Custom metadata upload was successful",
-        }
-    ], "Expected success message"
+    assert result == {
+        "error_status": False,
+        "predictions": [{"inference_id": np.array(["id1"])}],
+        "message": "Custom metadata upload was successful",
+    }, "Expected success message"
     add_custom_metadata_request_mock.assert_called_once()

@@ -174,7 +174,7 @@ def test_load_initializers_when_plugin_exists_and_initializers_provided() -> Non
     result = load_initializers()
 
     # then
-    assert len(result) == 5
+    assert len(result) == 7
     assert (
         result[
             "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers.a"

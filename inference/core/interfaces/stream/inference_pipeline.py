@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from enum import Enum
 from functools import partial
@@ -443,6 +444,8 @@ class InferencePipeline:
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
         workflow_init_parameters: Optional[Dict[str, Any]] = None,
+        workflows_thread_pool_workers: int = 4,
+        cancel_thread_pool_tasks_on_exit: bool = True,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -492,7 +495,11 @@ class InferencePipeline:
             workflow_init_parameters (Optional[Dict[str, Any]]): Additional init parameters to be used by
                 workflows Execution Engine to init steps of your workflow - may be required when running workflows
                 with custom plugins.
-
+            workflows_thread_pool_workers (int): Number of workers for workflows thread pool which is used
+                by workflows blocks to run background tasks.
+            cancel_thread_pool_tasks_on_exit (bool): Flag to decide if unstated background tasks should be
+                canceled at the end of InferencePipeline processing. By default, when video file ends or
+                pipeline is stopped, tasks that has not started will be cancelled.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -548,13 +555,15 @@ class InferencePipeline:
             )
             if api_key is None:
                 api_key = API_KEY
-            background_tasks = BackgroundTasks()
             if workflow_init_parameters is None:
                 workflow_init_parameters = {}
+            thread_pool_executor = ThreadPoolExecutor(
+                max_workers=workflows_thread_pool_workers
+            )
             workflow_init_parameters["workflows_core.model_manager"] = model_manager
             workflow_init_parameters["workflows_core.api_key"] = api_key
-            workflow_init_parameters["workflows_core.background_tasks"] = (
-                background_tasks
+            workflow_init_parameters["workflows_core.thread_pool_executor"] = (
+                thread_pool_executor
             )
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
@@ -578,7 +587,9 @@ class InferencePipeline:
             on_video_frame=on_video_frame,
             on_prediction=on_prediction,
             on_pipeline_start=None,
-            on_pipeline_end=None,
+            on_pipeline_end=lambda: thread_pool_executor.shutdown(
+                cancel_futures=cancel_thread_pool_tasks_on_exit
+            ),
             max_fps=max_fps,
             watchdog=watchdog,
             status_update_handlers=status_update_handlers,

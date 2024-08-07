@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import partial
 from typing import List, Literal, Optional, Tuple, Type, Union
@@ -201,16 +202,18 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
     def __init__(
         self,
         cache: BaseCache,
-        background_tasks: Optional[BackgroundTasks],
         api_key: Optional[str],
+        background_tasks: Optional[BackgroundTasks],
+        thread_pool_executor: Optional[ThreadPoolExecutor],
     ):
         self._cache = cache
-        self._background_tasks = background_tasks
         self._api_key = api_key
+        self._background_tasks = background_tasks
+        self._thread_pool_executor = thread_pool_executor
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["cache", "background_tasks", "api_key"]
+        return ["cache", "api_key", "background_tasks", "thread_pool_executor"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -268,6 +271,7 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
                 new_labeling_batch_frequency=labeling_batches_recreation_frequency,
                 cache=self._cache,
                 background_tasks=self._background_tasks,
+                thread_pool_executor=self._thread_pool_executor,
                 api_key=self._api_key,
             )
             result.append({"error_status": error_status, "message": message})
@@ -291,6 +295,7 @@ def register_datapoint_at_roboflow(
     new_labeling_batch_frequency: BatchCreationFrequency,
     cache: BaseCache,
     background_tasks: Optional[BackgroundTasks],
+    thread_pool_executor: Optional[ThreadPoolExecutor],
     api_key: str,
 ) -> Tuple[bool, str]:
     registration_task = partial(
@@ -313,6 +318,9 @@ def register_datapoint_at_roboflow(
     )
     if fire_and_forget and background_tasks:
         background_tasks.add_task(registration_task)
+        return False, "Element registration happens in the background task"
+    if fire_and_forget and thread_pool_executor:
+        thread_pool_executor.submit(registration_task)
         return False, "Element registration happens in the background task"
     return registration_task()
 
