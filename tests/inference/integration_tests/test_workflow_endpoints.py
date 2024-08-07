@@ -595,3 +595,21 @@ def test_workflow_run_when_dynamic_block_is_in_use(
     assert set(response_data["outputs"][1].keys()) == {
         "max_confidence"
     }, "Expected only `max_confidence` output"
+
+
+def test_getting_block_schema_using_get_endpoint(server_url) -> None:
+    # when
+    response = requests.get(f"{server_url}/workflows/blocks/schema")
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert "schema" in response_data, "Response expected to define schema"
+    schema = response_data["schema"]
+    assert "$defs" in schema, "Response expected to define valid types"
+    assert "properties" in schema, "Response expected to define schema properties"
+    assert (
+        "required" in schema
+    ), "Response expected to define required schema properties"
+    assert "title" in schema, "Response expected to define unique schema title"
+    assert "type" in schema, "Response expected to define schema type"

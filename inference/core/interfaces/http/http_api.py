@@ -162,14 +162,12 @@ from inference.core.workflows.errors import (
     WorkflowError,
 )
 from inference.core.workflows.execution_engine.compiler.syntactic_parser import (
+    get_workflow_schema_description,
     parse_workflow_definition,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
-from inference.core.workflows.execution_engine.compiler.syntactic_parser import (
-    get_workflow_schema_description,
-)
 
 if LAMBDA:
     from inference.core.usage import trackUsage
