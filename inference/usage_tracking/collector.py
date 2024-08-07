@@ -35,7 +35,6 @@ from typing_extensions import (
     Dict,
     List,
     Optional,
-    Set,
     Tuple,
     Union,
 )
@@ -447,7 +446,7 @@ class UsageCollector:
         api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: str = "",
-        usage_inference_test_run: bool = False,
+        inference_test_run: bool = False,
         fps: float = 0,
         enterprise: bool = False,
     ):
@@ -461,11 +460,11 @@ class UsageCollector:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
             source_usage["processed_frames"] += (
-                frames if not usage_inference_test_run else 0
+                frames if not inference_test_run else 0
             )
             source_usage["fps"] = round(fps, 2)
             source_usage["source_duration"] += (
-                frames / fps if fps and not usage_inference_test_run else 0
+                frames / fps if fps and not inference_test_run else 0
             )
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
@@ -482,7 +481,7 @@ class UsageCollector:
         api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: str = "",
-        usage_inference_test_run: bool = False,
+        inference_test_run: bool = False,
         fps: float = 0,
     ) -> DefaultDict[str, Any]:
         if self._settings.opt_out and not enterprise:
@@ -505,7 +504,7 @@ class UsageCollector:
             api_key=api_key,
             resource_details=resource_details,
             resource_id=resource_id,
-            usage_inference_test_run=usage_inference_test_run,
+            inference_test_run=inference_test_run,
             fps=fps,
             enterprise=enterprise,
         )
@@ -519,7 +518,7 @@ class UsageCollector:
         api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: str = "",
-        usage_inference_test_run: bool = False,
+        inference_test_run: bool = False,
         fps: float = 0,
     ) -> DefaultDict[str, Any]:
         if self._async_lock:
@@ -532,7 +531,7 @@ class UsageCollector:
                     api_key=api_key,
                     resource_details=resource_details,
                     resource_id=resource_id,
-                    usage_inference_test_run=usage_inference_test_run,
+                    inference_test_run=inference_test_run,
                     fps=fps,
                 )
         else:
@@ -544,7 +543,7 @@ class UsageCollector:
                 api_key=api_key,
                 resource_details=resource_details,
                 resource_id=resource_id,
-                usage_inference_test_run=usage_inference_test_run,
+                inference_test_run=inference_test_run,
                 fps=fps,
             )
 
@@ -738,7 +737,7 @@ class UsageCollector:
             "category": category,
             "resource_details": resource_details,
             "resource_id": resource_id,
-            "usage_inference_test_run": usage_inference_test_run,
+            "inference_test_run": usage_inference_test_run,
             "fps": usage_fps,
             "enterprise": enterprise,
         }
