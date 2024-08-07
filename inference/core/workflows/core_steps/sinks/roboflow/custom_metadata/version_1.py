@@ -89,17 +89,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
-
-    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
             OutputDefinition(name="message", kind=[STRING_KIND]),
-            OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
-            ),
         ]
 
     @classmethod
@@ -143,16 +136,15 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
                 "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
                 "retrieve one."
             )
-        inference_ids: List[np.ndarray] = [p[INFERENCE_ID_KEY] for p in predictions]
+        inference_ids: List[str] = predictions.data.get(INFERENCE_ID_KEY, [])
         if len(inference_ids) == 0:
             return {
                 "error_status": True,
-                "predictions": predictions,
                 "message": "Custom metadata upload failed because no inference_ids were received. "
                 "This is known bug (https://github.com/roboflow/inference/issues/567). "
                 "Please provide a report for the problem under mentioned issue.",
             }
-        inference_ids: List[str] = list(set(np.concatenate(inference_ids).tolist()))
+        inference_ids: List[str] = list(set(inference_ids))
         registration_task = partial(
             add_custom_metadata_request,
             cache=self._cache,
@@ -171,7 +163,6 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
             error_status, message = registration_task()
         return {
             "error_status": error_status,
-            "predictions": predictions,
             "message": message,
         }
 

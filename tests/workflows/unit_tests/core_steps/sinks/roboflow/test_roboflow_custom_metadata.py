@@ -2,6 +2,7 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
+import supervision as sv
 import numpy as np
 import pytest
 from fastapi import BackgroundTasks
@@ -105,7 +106,7 @@ def test_add_custom_metadata_request_failure(
     api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
     expected_cache_key = f"workflows:api_key_to_workspace:{api_key_hash}"
     cache.set(key=expected_cache_key, value="my_workspace")
-    inference_ids = np.array(["id1", "id2"])
+    inference_ids = ["id1", "id2"]
     field_name = "location"
     field_value = "toronto"
 
@@ -133,14 +134,20 @@ def test_run_when_api_key_is_not_specified() -> None:
         background_tasks=None,
         thread_pool_executor=None,
     )
+    predictions = sv.Detections(
+        xyxy=np.array([[1, 2, 3, 4]]),
+        confidence=np.array([0.1]),
+        class_id=np.array([1]),
+    )
+    predictions.data["inference_id"] = np.array(["id1"])
 
     # when
     with pytest.raises(ValueError):
         _ = block.run(
             fire_and_forget=True,
             field_name="location",
-            field_value=["toronto"],
-            predictions=[{"inference_id": np.array(["id1"])}],
+            field_value="toronto",
+            predictions=predictions,
         )
 
 
@@ -157,14 +164,13 @@ def test_run_when_no_inference_ids() -> None:
     result = block.run(
         fire_and_forget=True,
         field_name="location",
-        field_value=["toronto"],
-        predictions=[],
+        field_value="toronto",
+        predictions=sv.Detections.empty(),
     )
 
     # then
     assert result == {
         "error_status": True,
-        "predictions": [],
         "message": "Custom metadata upload failed because no inference_ids were received. This is known bug "
         "(https://github.com/roboflow/inference/issues/567). Please provide a report for the "
         "problem under mentioned issue.",
@@ -189,19 +195,23 @@ def test_run_when_fire_and_forget_with_background_tasks(
         False,
         "Custom metadata upload was successful",
     )
-
+    predictions = sv.Detections(
+        xyxy=np.array([[1, 2, 3, 4]]),
+        confidence=np.array([0.1]),
+        class_id=np.array([1]),
+    )
+    predictions.data["inference_id"] = np.array(["id1"])
     # when
     result = block.run(
         fire_and_forget=True,
         field_name="location",
-        field_value=["toronto"],
-        predictions=[{"inference_id": np.array(["id1"])}],
+        field_value="toronto",
+        predictions=predictions,
     )
 
     # then
     assert result == {
         "error_status": False,
-        "predictions": [{"inference_id": np.array(["id1"])}],
         "message": "Registration happens in the background task",
     }, "Expected success message"
     assert len(background_tasks.tasks) == 1, "Expected background task to be added"
@@ -225,19 +235,24 @@ def test_run_when_fire_and_forget_with_thread_pool(
             False,
             "Custom metadata upload was successful",
         )
+        predictions = sv.Detections(
+            xyxy=np.array([[1, 2, 3, 4]]),
+            confidence=np.array([0.1]),
+            class_id=np.array([1]),
+        )
+        predictions.data["inference_id"] = np.array(["id1"])
 
         # when
         result = block.run(
             fire_and_forget=True,
             field_name="location",
-            field_value=["toronto"],
-            predictions=[{"inference_id": np.array(["id1"])}],
+            field_value="toronto",
+            predictions=predictions,
         )
 
         # then
         assert result == {
             "error_status": False,
-            "predictions": [{"inference_id": np.array(["id1"])}],
             "message": "Registration happens in the background task",
         }, "Expected success message"
 
@@ -259,19 +274,24 @@ def test_run_when_not_fire_and_forget(
         False,
         "Custom metadata upload was successful",
     )
+    predictions = sv.Detections(
+        xyxy=np.array([[1, 2, 3, 4]]),
+        confidence=np.array([0.1]),
+        class_id=np.array([1]),
+    )
+    predictions.data["inference_id"] = np.array(["id1"])
 
     # when
     result = block.run(
         fire_and_forget=False,
         field_name="location",
-        field_value=["toronto"],
-        predictions=[{"inference_id": np.array(["id1"])}],
+        field_value="toronto",
+        predictions=predictions,
     )
 
     # then
     assert result == {
         "error_status": False,
-        "predictions": [{"inference_id": np.array(["id1"])}],
         "message": "Custom metadata upload was successful",
     }, "Expected success message"
     add_custom_metadata_request_mock.assert_called_once()

@@ -878,6 +878,7 @@ class HttpInterface(BaseInterface):
                 workflow_request: WorkflowInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
+                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 workflow_specification = get_workflow_specification(
                     api_key=workflow_request.api_key,
                     workspace_id=workspace_name,
@@ -907,6 +908,7 @@ class HttpInterface(BaseInterface):
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
+                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_request.specification,
@@ -921,6 +923,7 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def get_execution_engine_versions() -> ExecutionEngineVersions:
+                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 versions = get_available_versions()
                 return ExecutionEngineVersions(versions=versions)
 
@@ -951,6 +954,7 @@ class HttpInterface(BaseInterface):
             async def describe_workflows_blocks(
                 request: Optional[DescribeBlocksRequest] = None,
             ) -> WorkflowsBlocksDescription:
+                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 dynamic_blocks_definitions = None
                 requested_execution_engine_version = None
                 if request is not None:
@@ -974,6 +978,7 @@ class HttpInterface(BaseInterface):
             async def get_dynamic_block_outputs(
                 step_manifest: Dict[str, Any]
             ) -> List[OutputDefinition]:
+                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 # Potentially TODO: dynamic blocks do not support dynamic outputs, but if it changes
                 # we need to provide dynamic blocks manifests here
                 dummy_workflow_definition = {
@@ -999,6 +1004,7 @@ class HttpInterface(BaseInterface):
             async def validate_workflow(
                 specification: dict,
             ) -> WorkflowValidationStatus:
+                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
                 workflow_init_parameters = {
                     "workflows_core.model_manager": model_manager,
