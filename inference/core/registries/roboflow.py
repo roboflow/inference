@@ -29,6 +29,7 @@ from inference.models.aliases import resolve_roboflow_model_alias
 GENERIC_MODELS = {
     "clip": ("embed", "clip"),
     "sam": ("embed", "sam"),
+    "sam2": ("embed", "sam2"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
     "grounding_dino": ("object-detection", "grounding-dino"),
