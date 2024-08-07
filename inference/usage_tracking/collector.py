@@ -20,6 +20,7 @@ from typing_extensions import (
     Dict,
     List,
     Optional,
+    Set,
     Tuple,
     Union,
 )
@@ -37,6 +38,7 @@ ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
 ResourceUsage = Union[DefaultDict[ResourceID, Usage], Dict[ResourceID, Usage]]
 APIKey = str
+APIKeyHash = str
 APIKeyUsage = Union[DefaultDict[APIKey, ResourceUsage], Dict[APIKey, ResourceUsage]]
 ResourceDetails = Dict[str, Any]
 SystemDetails = Dict[str, Any]
@@ -86,6 +88,8 @@ class UsageCollector:
                 )
         self._queue_lock = Lock()
 
+        self._hashed_api_keys: Dict[APIKey, APIKeyHash] = {}
+
         self._system_info_sent: bool = False
         self._resource_details_lock = Lock()
         self._resource_details: DefaultDict[APIKey, Dict[ResourceID, bool]] = (
@@ -104,7 +108,7 @@ class UsageCollector:
 
     @staticmethod
     def empty_usage_dict(exec_session_id: str) -> APIKeyUsage:
-        return defaultdict(  # api_key
+        return defaultdict(  # api_key_hash
             lambda: defaultdict(  # category:resource_id
                 lambda: {
                     "timestamp_start": None,
@@ -116,7 +120,7 @@ class UsageCollector:
                     "category": "",
                     "resource_id": "",
                     "hosted": LAMBDA,
-                    "api_key": "",
+                    "api_key_hash": "",
                     "enterprise": False,
                 }
             )
@@ -159,13 +163,13 @@ class UsageCollector:
 
     @staticmethod
     def _get_api_key_usage_containing_resource(
-        api_key: APIKey, usage_payloads: List[APIKeyUsage]
+        api_key_hash: APIKey, usage_payloads: List[APIKeyUsage]
     ) -> Optional[ResourceUsage]:
         for usage_payload in usage_payloads:
-            for other_api_key, resource_payloads in usage_payload.items():
-                if api_key and other_api_key != api_key:
+            for other_api_key_hash, resource_payloads in usage_payload.items():
+                if api_key_hash and other_api_key_hash != api_key_hash:
                     continue
-                if other_api_key == "":
+                if other_api_key_hash == "":
                     continue
                 for resource_id, resource_usage in resource_payloads.items():
                     if not resource_id:
@@ -180,8 +184,8 @@ class UsageCollector:
         merged_api_key_usage_payloads: APIKeyUsage = {}
         system_info_payload = None
         for usage_payload in usage_payloads:
-            for api_key, resource_payloads in usage_payload.items():
-                if api_key == "":
+            for api_key_hash, resource_payloads in usage_payload.items():
+                if api_key_hash == "":
                     if (
                         resource_payloads
                         and len(resource_payloads) > 1
@@ -194,18 +198,18 @@ class UsageCollector:
                         continue
                     api_key_usage_with_resource = (
                         UsageCollector._get_api_key_usage_containing_resource(
-                            api_key=api_key,
+                            api_key_hash=api_key_hash,
                             usage_payloads=usage_payloads,
                         )
                     )
                     if not api_key_usage_with_resource:
                         system_info_payload = resource_payloads
                         continue
-                    api_key = api_key_usage_with_resource["api_key"]
+                    api_key_hash = api_key_usage_with_resource["api_key_hash"]
                     resource_id = api_key_usage_with_resource["resource_id"]
                     category = api_key_usage_with_resource.get("category")
                     for v in resource_payloads.values():
-                        v["api_key"] = api_key
+                        v["api_key_hash"] = api_key_hash
                         if "resource_id" not in v or not v["resource_id"]:
                             v["resource_id"] = resource_id
                         if "category" not in v or not v["category"]:
@@ -217,7 +221,7 @@ class UsageCollector:
                     if resource_usage_key == "":
                         api_key_usage_with_resource = (
                             UsageCollector._get_api_key_usage_containing_resource(
-                                api_key=api_key,
+                                api_key_hash=api_key_hash,
                                 usage_payloads=usage_payloads,
                             )
                         )
@@ -227,11 +231,11 @@ class UsageCollector:
                         resource_id = api_key_usage_with_resource["resource_id"]
                         category = api_key_usage_with_resource.get("category")
                         resource_usage_key = f"{category}:{resource_id}"
-                        resource_usage_payload["api_key"] = api_key
+                        resource_usage_payload["api_key_hash"] = api_key_hash
                         resource_usage_payload["resource_id"] = resource_id
                         resource_usage_payload["category"] = category
                     merged_api_key_payload = merged_api_key_usage_payloads.setdefault(
-                        api_key, {}
+                        api_key_hash, {}
                     )
                     merged_resource_payload = merged_api_key_payload.setdefault(
                         resource_usage_key, {}
@@ -245,14 +249,31 @@ class UsageCollector:
 
         zipped_payloads = [merged_api_key_usage_payloads]
         if system_info_payload:
-            system_info_api_key = next(iter(system_info_payload.values()))["api_key"]
-            zipped_payloads.append({system_info_api_key: system_info_payload})
+            system_info_api_key_hash = next(iter(system_info_payload.values()))[
+                "api_key_hash"
+            ]
+            zipped_payloads.append({system_info_api_key_hash: system_info_payload})
         return zipped_payloads
 
     @staticmethod
     def _hash(payload: str, length=5):
         payload_hash = hashlib.sha256(payload.encode())
         return payload_hash.hexdigest()[:length]
+
+    def _calculate_api_key_hash(self, api_key: APIKey) -> APIKeyHash:
+        api_key_hash = ""
+        if not api_key:
+            api_key = API_KEY
+        if api_key:
+            api_key_hash = self._hashed_api_keys.get(api_key)
+            if not api_key_hash:
+                api_key_hash = UsageCollector._hash(api_key)
+            self._hashed_api_keys[api_key] = api_key_hash
+        return api_key_hash
+
+    @staticmethod
+    def _calculate_resource_hash(resource_details: Dict[str, Any]) -> str:
+        return UsageCollector._hash(json.dumps(resource_details, sort_keys=True))
 
     def _enqueue_payload(self, payload: UsagePayload):
         logger.debug("Enqueuing usage payload %s", payload)
@@ -270,10 +291,6 @@ class UsageCollector:
                 for usage_payload in merged_usage_payloads:
                     self._queue.put(usage_payload)
 
-    @staticmethod
-    def _calculate_resource_hash(resource_details: Dict[str, Any]) -> str:
-        return UsageCollector._hash(json.dumps(resource_details, sort_keys=True))
-
     def record_resource_details(
         self,
         category: str,
@@ -289,28 +306,27 @@ class UsageCollector:
         if not isinstance(resource_details, dict) and not resource_id:
             return
 
-        if not api_key:
-            api_key = API_KEY or ""
+        api_key_hash = self._calculate_api_key_hash(api_key=api_key)
         if not resource_id:
             resource_id = UsageCollector._calculate_resource_hash(
                 resource_details=resource_details
             )
 
         with self._resource_details_lock:
-            api_key_specifications = self._resource_details[api_key]
+            api_key_specifications = self._resource_details[api_key_hash]
             if resource_id in api_key_specifications:
                 return
             api_key_specifications[resource_id] = True
 
         resource_details_payload: ResourceDetails = {
-            api_key: {
+            api_key_hash: {
                 f"{category}:{resource_id}": {
                     "timestamp_start": time.time_ns(),
                     "category": category,
                     "resource_id": resource_id,
                     "hosted": LAMBDA,
                     "resource_details": json.dumps(resource_details),
-                    "api_key": api_key,
+                    "api_key_hash": api_key_hash,
                     "enterprise": enterprise,
                 }
             }
@@ -321,7 +337,7 @@ class UsageCollector:
     @staticmethod
     def system_info(
         exec_session_id: str,
-        api_key: str = "",
+        api_key_hash: APIKeyHash = "",
         ip_address: Optional[str] = None,
         time_ns: Optional[int] = None,
         enterprise: bool = False,
@@ -348,14 +364,11 @@ class UsageCollector:
         if not time_ns:
             time_ns = time.time_ns()
 
-        if not api_key:
-            api_key = API_KEY or ""
-
         return {
             "timestamp_start": time_ns,
             "exec_session_id": exec_session_id,
             "ip_address_hash": ip_address_hash_hex,
-            "api_key": api_key,
+            "api_key_hash": api_key_hash,
             "hosted": LAMBDA,
             "is_gpu_available": False,  # TODO
             "python_version": sys.version.split()[0],
@@ -371,13 +384,12 @@ class UsageCollector:
     ):
         if self._system_info_sent:
             return
-        if not api_key:
-            api_key = API_KEY or ""
+        api_key_hash = self._calculate_api_key_hash(api_key=api_key)
         system_info_payload = {
-            api_key: {
+            api_key_hash: {
                 "": self.system_info(
                     exec_session_id=self._exec_session_id,
-                    api_key=api_key,
+                    api_key_hash=api_key_hash,
                     ip_address=ip_address,
                     enterprise=enterprise,
                 )
@@ -412,19 +424,18 @@ class UsageCollector:
         source: str,
         category: str,
         frames: int = 1,
-        api_key: str = "",
+        api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: str = "",
         fps: float = 0,
         enterprise: bool = False,
     ):
         source = str(source) if source else ""
-        if not api_key:
-            api_key = API_KEY or ""
+        api_key_hash = self._calculate_api_key_hash(api_key=api_key)
         if not resource_id and resource_details:
             resource_id = UsageCollector._calculate_resource_hash(resource_details)
         with UsageCollector._lock:
-            source_usage = self._usage[api_key][f"{category}:{resource_id}"]
+            source_usage = self._usage[api_key_hash][f"{category}:{resource_id}"]
             if not source_usage["timestamp_start"]:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
@@ -433,7 +444,7 @@ class UsageCollector:
             source_usage["source_duration"] += frames / fps if fps else 0
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
-            source_usage["api_key"] = api_key
+            source_usage["api_key_hash"] = api_key_hash
             source_usage["enterprise"] = enterprise
             logger.debug("Updated usage: %s", source_usage)
 
@@ -443,7 +454,7 @@ class UsageCollector:
         category: str,
         enterprise: bool,
         frames: int = 1,
-        api_key: str = "",
+        api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: str = "",
         fps: float = 0,
@@ -478,7 +489,7 @@ class UsageCollector:
         category: str,
         enterprise: bool,
         frames: int = 1,
-        api_key: str = "",
+        api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: str = "",
         fps: float = 0,
@@ -546,16 +557,23 @@ class UsageCollector:
         if "127.0.0.1" in self._settings.api_usage_endpoint_url.lower():
             ssl_verify = False
 
-        api_keys_failed = set()
+        hashes_to_api_keys = dict(a[::-1] for a in self._hashed_api_keys.items())
+
+        api_keys_hashes_failed = set()
         for payload in payloads:
-            for api_key, workflow_payloads in payload.items():
-                if any("processed_frames" not in w for w in workflow_payloads.values()):
-                    api_keys_failed.add(api_key)
+            for api_key_hash, workflow_payloads in payload.items():
+                if api_key_hash not in hashes_to_api_keys:
+                    api_keys_hashes_failed.add(api_key_hash)
                     continue
-                enterprise = any(
-                    w.get("enterprise") for w in workflow_payloads.values()
-                )
+                api_key = hashes_to_api_keys[api_key_hash]
+                if any("processed_frames" not in w for w in workflow_payloads.values()):
+                    api_keys_hashes_failed.add(api_key_hash)
+                    continue
                 try:
+                    for workflow_payload in workflow_payloads.values():
+                        if api_key_hash in workflow_payload:
+                            del workflow_payload["api_key_hash"]
+                        workflow_payload["api_key"] = api_key
                     logger.debug(
                         "Offloading usage to %s, payload: %s",
                         self._settings.api_usage_endpoint_url,
@@ -570,7 +588,7 @@ class UsageCollector:
                     )
                 except Exception as exc:
                     logger.debug("Failed to send usage - %s", exc)
-                    api_keys_failed.add(api_key)
+                    api_keys_hashes_failed.add(api_key_hash)
                     continue
                 if response.status_code != 200:
                     logger.debug(
@@ -578,11 +596,11 @@ class UsageCollector:
                         response.status_code,
                         response.raw,
                     )
-                    api_keys_failed.add(api_key)
+                    api_keys_hashes_failed.add(api_key_hash)
                     continue
-            for api_key in list(payload.keys()):
-                if api_key not in api_keys_failed:
-                    del payload[api_key]
+            for api_key_hash in list(payload.keys()):
+                if api_key_hash not in api_keys_hashes_failed:
+                    del payload[api_key_hash]
             if payload:
                 logger.debug("Enqueuing back unsent payload")
                 self._enqueue_payload(payload=payload)
@@ -621,8 +639,6 @@ class UsageCollector:
         args: List[Any],
         kwargs: Dict[str, Any],
     ) -> Dict[str, Any]:
-        if not usage_api_key:
-            usage_api_key = API_KEY or ""
         func_kwargs = collect_func_params(func, args, kwargs)
         resource_details = {}
         resource_id = ""
@@ -681,7 +697,7 @@ class UsageCollector:
         def sync_wrapper(
             *args,
             usage_fps: float = 0,
-            usage_api_key: str = "",
+            usage_api_key: APIKey = "",
             usage_workflow_id: str = "",
             **kwargs,
         ):
@@ -701,7 +717,7 @@ class UsageCollector:
         async def async_wrapper(
             *args,
             usage_fps: float = 0,
-            usage_api_key: str = "",
+            usage_api_key: APIKey = "",
             usage_workflow_id: str = "",
             **kwargs,
         ):
