@@ -149,3 +149,7 @@ class WorkflowsBlocksDescription(BaseModel):
     dynamic_block_definition_schema: dict = Field(
         description="Schema for dynamic block definition"
     )
+
+
+class ExecutionEngineVersions(BaseModel):
+    versions: List[str]

@@ -135,3 +135,7 @@ class ExecutionEngineNotImplementedError(WorkflowExecutionEngineError):
 
 class RuntimeInputError(WorkflowExecutionEngineError):
     pass
+
+
+class WorkflowExecutionEngineVersionError(WorkflowError):
+    pass

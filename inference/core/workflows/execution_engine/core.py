@@ -21,6 +21,10 @@ REGISTERED_ENGINES = {
 }
 
 
+def get_available_versions() -> List[str]:
+    return [str(v) for v in sorted(REGISTERED_ENGINES.keys())]
+
+
 class ExecutionEngine(BaseExecutionEngine):
 
     @classmethod

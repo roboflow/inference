@@ -82,6 +82,7 @@ from inference.core.entities.responses.server_state import (
     ServerVersionInfo,
 )
 from inference.core.entities.responses.workflows import (
+    ExecutionEngineVersions,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
     WorkflowValidationStatus,
@@ -158,8 +159,12 @@ from inference.core.workflows.errors import (
     RuntimeInputError,
     WorkflowDefinitionError,
     WorkflowError,
+    WorkflowExecutionEngineVersionError,
 )
-from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.execution_engine.core import (
+    ExecutionEngine,
+    get_available_versions,
+)
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
     parse_workflow_definition,
@@ -246,6 +251,7 @@ def with_route_exceptions(route):
             InvalidInputTypeError,
             OperationTypeNotRecognisedError,
             DynamicBlockError,
+            WorkflowExecutionEngineVersionError,
         ) as error:
             resp = JSONResponse(
                 status_code=400,
@@ -469,7 +475,7 @@ class HttpInterface(BaseInterface):
             )
             return orjson_response(resp)
 
-        async def process_workflow_inference_request(
+        def process_workflow_inference_request(
             workflow_request: WorkflowInferenceRequest,
             workflow_specification: dict,
             background_tasks: Optional[BackgroundTasks],
@@ -485,9 +491,7 @@ class HttpInterface(BaseInterface):
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 prevent_local_images_loading=True,
             )
-            result = await execution_engine.run_async(
-                runtime_parameters=workflow_request.inputs
-            )
+            result = execution_engine.run(runtime_parameters=workflow_request.inputs)
             outputs = serialise_workflow_result(
                 result=result,
                 excluded_fields=workflow_request.excluded_fields,
@@ -879,7 +883,7 @@ class HttpInterface(BaseInterface):
                     workspace_id=workspace_name,
                     workflow_id=workflow_id,
                 )
-                return await process_workflow_inference_request(
+                return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
                     background_tasks=background_tasks if not LAMBDA else None,
@@ -903,11 +907,22 @@ class HttpInterface(BaseInterface):
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
-                return await process_workflow_inference_request(
+                return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_request.specification,
                     background_tasks=background_tasks if not LAMBDA else None,
                 )
+
+            @app.get(
+                "/workflows/execution_engine/versions",
+                response_model=ExecutionEngineVersions,
+                summary="Returns available Execution Engine versions sorted from oldest to newest",
+                description="Returns available Execution Engine versions sorted from oldest to newest",
+            )
+            @with_route_exceptions
+            async def get_execution_engine_versions() -> ExecutionEngineVersions:
+                versions = get_available_versions()
+                return ExecutionEngineVersions(versions=versions)
 
             @app.get(
                 "/workflows/blocks/describe",
@@ -937,10 +952,15 @@ class HttpInterface(BaseInterface):
                 request: Optional[DescribeBlocksRequest] = None,
             ) -> WorkflowsBlocksDescription:
                 dynamic_blocks_definitions = None
+                requested_execution_engine_version = None
                 if request is not None:
                     dynamic_blocks_definitions = request.dynamic_blocks_definitions
+                    requested_execution_engine_version = (
+                        request.execution_engine_version
+                    )
                 return handle_describe_workflows_blocks_request(
-                    dynamic_blocks_definitions=dynamic_blocks_definitions
+                    dynamic_blocks_definitions=dynamic_blocks_definitions,
+                    requested_execution_engine_version=requested_execution_engine_version,
                 )
 
             @app.post(
