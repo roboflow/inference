@@ -1,12 +1,20 @@
 import json
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
+import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import load_image
+from inference.core.workflows.constants import (
+    HEIGHT_KEY,
+    IMAGE_DIMENSIONS_KEY,
+    PARENT_ID_KEY,
+    ROOT_PARENT_ID_KEY,
+    WIDTH_KEY,
+)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.entities.base import (
     Batch,
@@ -14,13 +22,13 @@ from inference.core.workflows.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.entities.types import (
+    BATCH_OF_DETECTION_KIND,
     BATCH_OF_DICTIONARY_KIND,
     BATCH_OF_IMAGE_METADATA_KIND,
     BATCH_OF_PARENT_ID_KIND,
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
-    BATCH_OF_DETECTION_KIND,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -180,24 +188,53 @@ class Florence2ModelBlock(WorkflowBlock):
             model_id=model_id,
         )
 
+        batch_of_raw_output = [pred["raw_output"] for pred in predictions]
+        batch_of_structured_output = [pred["structured_output"] for pred in predictions]
+        batch_of_image_metadata = [pred["image"] for pred in predictions]
+        batch_of_parent_id = [image.parent_metadata.parent_id for image in images]
+        batch_of_root_parent_id = [
+            image.workflow_root_ancestor_metadata.parent_id for image in images
+        ]
+
         # convert to sv detections
-        for prediction in predictions:
-            prediction["predictions"] = sv.Detections.from_lmm(
+        batch_of_predictions = []
+        for structured_output, parent_id, root_parent_id, image in zip(
+            batch_of_structured_output,
+            batch_of_parent_id,
+            batch_of_root_parent_id,
+            batch_of_image_metadata,
+        ):
+            width, height = image["width"], image["height"]
+            sv_dets = sv.Detections.from_lmm(
                 sv.LMM.FLORENCE_2,
-                prediction["structured_output"],
+                structured_output,
                 resolution_wh=(
-                    prediction["image"]["width"],
-                    prediction["image"]["height"],
+                    width,
+                    height,
                 ),
             )
+            sv_dets[IMAGE_DIMENSIONS_KEY] = np.array([[height, width]] * len(sv_dets))
+            sv_dets[PARENT_ID_KEY] = np.array([parent_id] * len(sv_dets))
+            sv_dets[ROOT_PARENT_ID_KEY] = np.array([root_parent_id] * len(sv_dets))
+            batch_of_predictions.append(sv_dets)
 
         formatted_predictions = [
             {
-                **pred,
-                "parent_id": image.parent_metadata.parent_id,
-                "root_parent_id": image.workflow_root_ancestor_metadata.parent_id,
+                "raw_output": raw_output,
+                "structured_output": structured_output,
+                "image": image_metadata,
+                "predictions": predictions,
+                "parent_id": parent_id,
+                "root_parent_id": root_parent_id,
             }
-            for pred, image in zip(predictions, images)
+            for raw_output, structured_output, image_metadata, predictions, parent_id, root_parent_id in zip(
+                batch_of_raw_output,
+                batch_of_structured_output,
+                batch_of_image_metadata,
+                batch_of_predictions,
+                batch_of_parent_id,
+                batch_of_root_parent_id,
+            )
         ]
 
         return formatted_predictions

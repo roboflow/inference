@@ -329,7 +329,6 @@ More technical details about
 BATCH_OF_DETECTION_KIND = Kind(
     name="Batch[detection]",
     description="Batch of detections",
-
 )
 
 

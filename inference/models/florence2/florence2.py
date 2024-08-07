@@ -39,7 +39,6 @@ class Florence2(TransformerModel):
             text=prompt, images=image_in, return_tensors="pt"
         ).to(self.model.device)
         input_len = model_inputs["input_ids"].shape[-1]
-
         with torch.inference_mode():
             prepared_inputs = self.prepare_generation_params(
                 preprocessed_inputs=model_inputs
@@ -58,9 +57,10 @@ class Florence2(TransformerModel):
             parsed_answer = self.processor.post_process_generation(
                 decoded, task=prompt.split(">")[0] + ">", image_size=image_in.size
             )
-        print(decoded)
-        print(parsed_answer)
-        return (decoded, parsed_answer,)
+        return (
+            decoded,
+            parsed_answer,
+        )
 
 
 class LoRAFlorence2(LoRATransformerModel):
