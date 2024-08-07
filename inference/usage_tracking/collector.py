@@ -36,6 +36,8 @@ from inference.usage_tracking.utils import collect_func_params
 
 from .config import TelemetrySettings, get_telemetry_settings
 from .sqlite_queue import SQLiteQueue
+from .redis_queue import RedisQueue
+
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -80,7 +82,9 @@ class UsageCollector:
             exec_session_id=self._exec_session_id
         )
 
-        if LAMBDA or self._settings.opt_out:
+        if LAMBDA and REDIS_HOST:
+            self._queue: "Queue[UsagePayload]" = RedisQueue()
+        elif LAMBDA or self._settings.opt_out:
             self._queue: "Queue[UsagePayload]" = Queue(
                 maxsize=self._settings.queue_size
             )
