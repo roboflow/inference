@@ -115,4 +115,7 @@ class LoRAFlorence2(LoRATransformerModel):
                 decoded, task=prompt.split(">")[0] + ">", image_size=image_in.size
             )
 
-        return (json.dumps(parsed_answer),)
+        return (
+            decoded,
+            parsed_answer,
+        )
