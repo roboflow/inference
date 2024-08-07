@@ -58,8 +58,9 @@ class Florence2(TransformerModel):
             parsed_answer = self.processor.post_process_generation(
                 decoded, task=prompt.split(">")[0] + ">", image_size=image_in.size
             )
-
-        return (json.dumps(parsed_answer),)
+        print(decoded)
+        print(parsed_answer)
+        return (decoded, parsed_answer,)
 
 
 class LoRAFlorence2(LoRATransformerModel):

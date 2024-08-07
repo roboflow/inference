@@ -104,6 +104,7 @@ class TransformerModel(RoboflowInferenceModel):
         image_dims = preprocess_return_metadata["image_dims"]
         response = LMMInferenceResponse(
             response=text,
+            structured_response=predictions[1] if len(predictions) > 1 else None,
             image=InferenceResponseImage(width=image_dims[0], height=image_dims[1]),
         )
         return [response]
