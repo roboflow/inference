@@ -148,7 +148,7 @@ class ColorableVisualizationBlock(VisualizationBlock, ABC):
             return sv.ColorPalette.from_matplotlib(palette_name, int(palette_size))
 
     @abstractmethod
-    async def run(
+    def run(
         self,
         image: WorkflowImageData,
         predictions: sv.Detections,

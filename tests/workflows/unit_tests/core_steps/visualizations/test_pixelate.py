@@ -54,13 +54,12 @@ def test_pixelate_validation_when_invalid_image_is_given() -> None:
         _ = PixelateManifest.model_validate(data)
 
 
-@pytest.mark.asyncio
-async def test_pixelate_visualization_block() -> None:
+def test_pixelate_visualization_block() -> None:
     # given
     block = PixelateVisualizationBlockV1()
 
     start_image = np.random.randint(0, 255, (1000, 1000, 3), dtype=np.uint8)
-    output = await block.run(
+    output = block.run(
         image=WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=start_image,

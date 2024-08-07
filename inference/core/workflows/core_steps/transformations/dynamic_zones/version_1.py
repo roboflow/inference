@@ -118,7 +118,7 @@ class DynamicZonesBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return DynamicZonesManifest
 
-    async def run(
+    def run(
         self,
         predictions: Batch[sv.Detections],
         required_number_of_vertices: int,

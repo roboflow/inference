@@ -73,5 +73,5 @@ class DimensionCollapseBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(self, data: Batch[Any]) -> BlockResult:
+    def run(self, data: Batch[Any]) -> BlockResult:
         return {"output": [e for e in data]}

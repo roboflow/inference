@@ -563,8 +563,7 @@ def test_execute_registration_when_registration_should_be_successful(
     return_strategy_credit_mock.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_run_sink_when_api_key_is_not_specified() -> None:
+def test_run_sink_when_api_key_is_not_specified() -> None:
     # given
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=MemoryCache(),
@@ -574,7 +573,7 @@ async def test_run_sink_when_api_key_is_not_specified() -> None:
 
     # when
     with pytest.raises(ValueError):
-        _ = await data_collector_block.run(
+        _ = data_collector_block.run(
             images=Batch(content=[], indices=[]),
             predictions=Batch(content=[], indices=[]),
             target_project="my_project",
@@ -593,8 +592,7 @@ async def test_run_sink_when_api_key_is_not_specified() -> None:
         )
 
 
-@pytest.mark.asyncio
-async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
+def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
     # given
     data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=MemoryCache(),
@@ -615,7 +613,7 @@ async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
     indices = [(0,), (1,), (2,)]
 
     # when
-    result = await data_collector_block.run(
+    result = data_collector_block.run(
         images=Batch(content=[image, image, image], indices=indices),
         predictions=Batch(
             content=[prediction, prediction, prediction], indices=indices
@@ -648,9 +646,8 @@ async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
     ), "Expected disable sink status to be returned"
 
 
-@pytest.mark.asyncio
 @mock.patch.object(version_1, "execute_registration", MagicMock())
-async def test_run_sink_when_registration_should_happen_in_background() -> None:
+def test_run_sink_when_registration_should_happen_in_background() -> None:
     # given
     background_tasks = BackgroundTasks()
     data_collector_block = RoboflowDatasetUploadBlockV1(
@@ -672,7 +669,7 @@ async def test_run_sink_when_registration_should_happen_in_background() -> None:
     indices = [(0,), (1,), (2,)]
 
     # when
-    result = await data_collector_block.run(
+    result = data_collector_block.run(
         images=Batch(content=[image, image, image], indices=indices),
         predictions=Batch(
             content=[prediction, prediction, prediction], indices=indices
@@ -706,9 +703,8 @@ async def test_run_sink_when_registration_should_happen_in_background() -> None:
     assert len(background_tasks.tasks) == 3, "Async tasks to be added"
 
 
-@pytest.mark.asyncio
 @mock.patch.object(version_1, "execute_registration")
-async def test_run_sink_when_registration_should_happen_in_foreground_despite_providing_background_tasks(
+def test_run_sink_when_registration_should_happen_in_foreground_despite_providing_background_tasks(
     execute_registration_mock: MagicMock,
 ) -> None:
     # given
@@ -734,7 +730,7 @@ async def test_run_sink_when_registration_should_happen_in_foreground_despite_pr
     indices = [(0,), (1,), (2,)]
 
     # when
-    result = await data_collector_block.run(
+    result = data_collector_block.run(
         images=Batch(content=[image, image, image], indices=indices),
         predictions=Batch(
             content=[prediction, prediction, prediction], indices=indices

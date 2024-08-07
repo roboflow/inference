@@ -90,7 +90,7 @@ class ColorVisualizationBlockV1(ColorableVisualizationBlock):
 
         return self.annotatorCache[key]
 
-    async def run(
+    def run(
         self,
         image: WorkflowImageData,
         predictions: sv.Detections,

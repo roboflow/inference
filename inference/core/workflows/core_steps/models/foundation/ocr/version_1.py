@@ -114,20 +114,20 @@ class OCRModelBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         images: Batch[WorkflowImageData],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return await self.run_locally(images=images)
+            return self.run_locally(images=images)
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return await self.run_remotely(images=images)
+            return self.run_remotely(images=images)
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
 
-    async def run_locally(
+    def run_locally(
         self,
         images: Batch[WorkflowImageData],
     ) -> BlockResult:
@@ -142,7 +142,7 @@ class OCRModelBlockV1(WorkflowBlock):
                 inference_request=inference_request,
                 core_model="doctr",
             )
-            result = await self._model_manager.infer_from_request(
+            result = self._model_manager.infer_from_request_sync(
                 doctr_model_id, inference_request
             )
             predictions.append(result.model_dump())
@@ -151,7 +151,7 @@ class OCRModelBlockV1(WorkflowBlock):
             images=images,
         )
 
-    async def run_remotely(
+    def run_remotely(
         self,
         images: Batch[WorkflowImageData],
     ) -> BlockResult:
@@ -172,7 +172,7 @@ class OCRModelBlockV1(WorkflowBlock):
         )
         client.configure(configuration)
         non_empty_inference_images = [i.numpy_image for i in images]
-        predictions = await client.ocr_image_async(
+        predictions = client.ocr_image(
             inference_input=non_empty_inference_images,
         )
         if len(images) == 1:

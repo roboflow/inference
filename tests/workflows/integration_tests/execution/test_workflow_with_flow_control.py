@@ -48,9 +48,8 @@ AB_TEST_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_flow_control_step_not_operating_on_batches(
+def test_flow_control_step_not_operating_on_batches(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -82,7 +81,7 @@ async def test_flow_control_step_not_operating_on_batches(
     )
 
     # when
-    result = await execution_engine.run_async(runtime_parameters={"image": crowd_image})
+    result = execution_engine.run(runtime_parameters={"image": crowd_image})
 
     # then
     assert isinstance(result, list), "Expected result to be list"
@@ -96,9 +95,8 @@ async def test_flow_control_step_not_operating_on_batches(
     ), "Expected only one of the results provided, mutually exclusive based on random choice"
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_flow_control_step_not_operating_on_batches_affecting_batch_of_inputs(
+def test_flow_control_step_not_operating_on_batches_affecting_batch_of_inputs(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -130,9 +128,7 @@ async def test_flow_control_step_not_operating_on_batches_affecting_batch_of_inp
     )
 
     # when
-    result = await execution_engine.run_async(
-        runtime_parameters={"image": [crowd_image] * 4}
-    )
+    result = execution_engine.run(runtime_parameters={"image": [crowd_image] * 4})
 
     # then
     assert isinstance(result, list), "Expected result to be list"

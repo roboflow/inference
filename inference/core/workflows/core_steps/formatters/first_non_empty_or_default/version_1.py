@@ -65,7 +65,7 @@ class FirstNonEmptyOrDefaultBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         data: Batch[Any],
         default: Any,

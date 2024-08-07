@@ -90,6 +90,22 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self._key_queue.append(model_id)
         return await super().infer_from_request(model_id, request, **kwargs)
 
+    def infer_from_request_sync(
+        self, model_id: str, request: InferenceRequest, **kwargs
+    ) -> InferenceResponse:
+        """Processes a complete inference request and updates the cache.
+
+        Args:
+            model_id (str): The identifier of the model.
+            request (InferenceRequest): The request to process.
+
+        Returns:
+            InferenceResponse: The response from the inference.
+        """
+        self._key_queue.remove(model_id)
+        self._key_queue.append(model_id)
+        return super().infer_from_request_sync(model_id, request, **kwargs)
+
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
         """Performs only the inference part of a request and updates the cache.
 

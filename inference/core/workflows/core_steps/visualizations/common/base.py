@@ -83,7 +83,7 @@ class VisualizationBlock(WorkflowBlock, ABC):
         pass
 
     @abstractmethod
-    async def run(
+    def run(
         self,
         image: WorkflowImageData,
         predictions: sv.Detections,

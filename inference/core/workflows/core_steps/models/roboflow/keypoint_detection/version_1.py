@@ -186,7 +186,7 @@ class RoboflowKeypointDetectionModelBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
@@ -201,7 +201,7 @@ class RoboflowKeypointDetectionModelBlockV1(WorkflowBlock):
         active_learning_target_dataset: Optional[str],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return await self.run_locally(
+            return self.run_locally(
                 images=images,
                 model_id=model_id,
                 class_agnostic_nms=class_agnostic_nms,
@@ -215,7 +215,7 @@ class RoboflowKeypointDetectionModelBlockV1(WorkflowBlock):
                 active_learning_target_dataset=active_learning_target_dataset,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return await self.run_remotely(
+            return self.run_remotely(
                 images=images,
                 model_id=model_id,
                 class_agnostic_nms=class_agnostic_nms,
@@ -233,7 +233,7 @@ class RoboflowKeypointDetectionModelBlockV1(WorkflowBlock):
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
 
-    async def run_locally(
+    def run_locally(
         self,
         images: Batch[WorkflowImageData],
         model_id: str,
@@ -267,7 +267,7 @@ class RoboflowKeypointDetectionModelBlockV1(WorkflowBlock):
             model_id=model_id,
             api_key=self._api_key,
         )
-        predictions = await self._model_manager.infer_from_request(
+        predictions = self._model_manager.infer_from_request_sync(
             model_id=model_id, request=request
         )
         if not isinstance(predictions, list):
@@ -281,7 +281,7 @@ class RoboflowKeypointDetectionModelBlockV1(WorkflowBlock):
             class_filter=class_filter,
         )
 
-    async def run_remotely(
+    def run_remotely(
         self,
         images: Batch[Optional[WorkflowImageData]],
         model_id: str,
@@ -322,7 +322,7 @@ class RoboflowKeypointDetectionModelBlockV1(WorkflowBlock):
         )
         client.configure(inference_configuration=client_config)
         inference_images = [i.numpy_image for i in images]
-        predictions = await client.infer_async(
+        predictions = client.infer(
             inference_input=inference_images,
             model_id=model_id,
         )

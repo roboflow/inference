@@ -112,7 +112,7 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         object_detection_predictions: Optional[sv.Detections],
         classification_predictions: Optional[Batch[Optional[dict]]],

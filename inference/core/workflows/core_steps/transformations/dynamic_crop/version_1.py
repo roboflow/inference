@@ -93,7 +93,7 @@ class DynamicCropBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         images: Batch[WorkflowImageData],
         predictions: Batch[sv.Detections],

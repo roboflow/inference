@@ -57,13 +57,12 @@ def test_bounding_box_validation_when_invalid_image_is_given() -> None:
         _ = BoundingBoxManifest.model_validate(data)
 
 
-@pytest.mark.asyncio
-async def test_bounding_box_visualization_block() -> None:
+def test_bounding_box_visualization_block() -> None:
     # given
     block = BoundingBoxVisualizationBlockV1()
 
     start_image = np.zeros((1000, 1000, 3), dtype=np.uint8)
-    output = await block.run(
+    output = block.run(
         image=WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=start_image,
@@ -104,13 +103,12 @@ async def test_bounding_box_visualization_block() -> None:
     )
 
 
-@pytest.mark.asyncio
-async def test_bounding_box_visualization_block_nocopy() -> None:
+def test_bounding_box_visualization_block_nocopy() -> None:
     # given
     block = BoundingBoxVisualizationBlockV1()
 
     start_image = np.zeros((1000, 1000, 3), dtype=np.uint8)
-    output = await block.run(
+    output = block.run(
         image=WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=start_image,
@@ -130,8 +128,6 @@ async def test_bounding_box_visualization_block_nocopy() -> None:
         thickness=1,
         roundness=0,
     )
-
-    print("output", output)
 
     assert output is not None
     assert "image" in output

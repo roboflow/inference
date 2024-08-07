@@ -50,7 +50,7 @@ def assembly_custom_python_block(
         )
     run_function = getattr(code_module, python_code.run_function_name)
 
-    async def run(self, *args, **kwargs) -> BlockResult:
+    def run(self, *args, **kwargs) -> BlockResult:
         if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
             raise WorkflowEnvironmentConfigurationError(
                 public_message="Cannot use dynamic blocks with custom Python code in this installation of `workflows`. "

@@ -66,7 +66,7 @@ class PixelateVisualizationBlockV1(VisualizationBlock):
             self.annotatorCache[key] = sv.PixelateAnnotator(pixel_size=pixel_size)
         return self.annotatorCache[key]
 
-    async def run(
+    def run(
         self,
         image: WorkflowImageData,
         predictions: sv.Detections,

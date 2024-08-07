@@ -378,8 +378,7 @@ Some other comment
     assert result == [{"field_a": 1, "field_b": 37}, {"field_a": 2, "field_b": 47}]
 
 
-@pytest.mark.asyncio
-async def test_execute_gpt_4v_request() -> None:
+def test_execute_gpt_4v_request() -> None:
     # given
     client = AsyncMock()
     client.chat.completions.create.return_value = ChatCompletion(
@@ -400,7 +399,7 @@ async def test_execute_gpt_4v_request() -> None:
     )
 
     # when
-    result = await execute_gpt_4v_request(
+    result = execute_gpt_4v_request(
         client=client,
         image={
             "type": "numpy_object",
@@ -433,8 +432,7 @@ async def test_execute_gpt_4v_request() -> None:
     ), "Image details level expected to be set to `low` as in LMMConfig"
 
 
-@pytest.mark.asyncio
-async def test_execute_gpt_4v_request_gpt_4o_mini() -> None:
+def test_execute_gpt_4v_request_gpt_4o_mini() -> None:
     # given
     client = AsyncMock()
     client.chat.completions.create.return_value = ChatCompletion(
@@ -455,7 +453,7 @@ async def test_execute_gpt_4v_request_gpt_4o_mini() -> None:
     )
 
     # when
-    result = await execute_gpt_4v_request(
+    result = execute_gpt_4v_request(
         client=client,
         image={
             "type": "numpy_object",

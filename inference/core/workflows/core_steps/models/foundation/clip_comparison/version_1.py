@@ -1,4 +1,4 @@
-import asyncio
+from functools import partial
 from typing import List, Literal, Optional, Type, Union
 
 from pydantic import AliasChoices, ConfigDict, Field
@@ -15,6 +15,7 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
     remove_unexpected_keys_from_dictionary,
+    run_in_parallel,
 )
 from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,
@@ -41,7 +42,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_sdk import InferenceHTTPClient
-from inference_sdk.http.utils.iterables import make_batches
 
 LONG_DESCRIPTION = """
 Use the OpenAI CLIP zero-shot classification model to classify images.
@@ -119,21 +119,21 @@ class ClipComparisonBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         images: Batch[WorkflowImageData],
         texts: List[str],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return await self.run_locally(images=images, texts=texts)
+            return self.run_locally(images=images, texts=texts)
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return await self.run_remotely(images=images, texts=texts)
+            return self.run_remotely(images=images, texts=texts)
         else:
             raise ValueError(
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
 
-    async def run_locally(
+    def run_locally(
         self,
         images: Batch[WorkflowImageData],
         texts: List[str],
@@ -152,7 +152,7 @@ class ClipComparisonBlockV1(WorkflowBlock):
                 inference_request=inference_request,
                 core_model="clip",
             )
-            prediction = await self._model_manager.infer_from_request(
+            prediction = self._model_manager.infer_from_request_sync(
                 clip_model_id, inference_request
             )
             predictions.append(prediction.model_dump())
@@ -161,7 +161,7 @@ class ClipComparisonBlockV1(WorkflowBlock):
             predictions=predictions,
         )
 
-    async def run_remotely(
+    def run_remotely(
         self,
         images: Batch[WorkflowImageData],
         texts: List[str],
@@ -177,23 +177,18 @@ class ClipComparisonBlockV1(WorkflowBlock):
         )
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
-        image_sub_batches = list(
-            make_batches(
-                iterable=images,
-                batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+        tasks = [
+            partial(
+                client.clip_compare,
+                subject=single_image.numpy_image,
+                prompt=texts,
             )
+            for single_image in images
+        ]
+        predictions = run_in_parallel(
+            tasks=tasks,
+            max_workers=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )
-        predictions = []
-        for single_sub_batch in image_sub_batches:
-            coroutines = []
-            for single_image in single_sub_batch:
-                coroutine = client.clip_compare_async(
-                    subject=single_image.numpy_image,
-                    prompt=texts,
-                )
-                coroutines.append(coroutine)
-            sub_batch_predictions = list(await asyncio.gather(*coroutines))
-            predictions.extend(sub_batch_predictions)
         return self._post_process_result(images=images, predictions=predictions)
 
     def _post_process_result(

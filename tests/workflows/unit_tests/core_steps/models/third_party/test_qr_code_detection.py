@@ -49,8 +49,7 @@ def test_manifest_parsing_when_image_is_invalid_valid() -> None:
         _ = BlockManifest.model_validate(data)
 
 
-@pytest.mark.asyncio
-async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
+def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
     # given
     step = QRCodeDetectorBlockV1()
     images = Batch(
@@ -64,7 +63,7 @@ async def test_qr_code_detection(qr_codes_image: np.ndarray) -> None:
     )
 
     # when
-    result = await step.run(images=images)
+    result = step.run(images=images)
 
     # then
     actual_parent_id = result[0]["predictions"]["parent_id"]

@@ -1,5 +1,5 @@
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from fastapi.encoders import jsonable_encoder
@@ -151,7 +151,87 @@ class ModelManager:
                 )
             raise
 
+    def infer_from_request_sync(
+        self, model_id: str, request: InferenceRequest, **kwargs
+    ) -> InferenceResponse:
+        """Runs inference on the specified model with the given request.
+
+        Args:
+            model_id (str): The identifier of the model.
+            request (InferenceRequest): The request to process.
+
+        Returns:
+            InferenceResponse: The response from the inference.
+        """
+        logger.debug(
+            f"ModelManager - inference from request started for model_id={model_id}."
+        )
+        if METRICS_ENABLED and self.pingback:
+            logger.debug("ModelManager - setting pingback fallback api key...")
+            self.pingback.fallback_api_key = request.api_key
+        try:
+            rtn_val = self.model_infer_sync(
+                model_id=model_id, request=request, **kwargs
+            )
+            logger.debug(
+                f"ModelManager - inference from request finished for model_id={model_id}."
+            )
+            finish_time = time.time()
+            if not DISABLE_INFERENCE_CACHE:
+                logger.debug(
+                    f"ModelManager - caching inference request started for model_id={model_id}"
+                )
+                cache.zadd(
+                    f"models",
+                    value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
+                    score=finish_time,
+                    expire=METRICS_INTERVAL * 2,
+                )
+                if (
+                    hasattr(request, "image")
+                    and hasattr(request.image, "type")
+                    and request.image.type == "numpy"
+                ):
+                    request.image.value = str(request.image.value)
+                cache.zadd(
+                    f"inference:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                    value=to_cachable_inference_item(request, rtn_val),
+                    score=finish_time,
+                    expire=METRICS_INTERVAL * 2,
+                )
+                logger.debug(
+                    f"ModelManager - caching inference request finished for model_id={model_id}"
+                )
+            return rtn_val
+        except Exception as e:
+            finish_time = time.time()
+            if not DISABLE_INFERENCE_CACHE:
+                cache.zadd(
+                    f"models",
+                    value=f"{GLOBAL_INFERENCE_SERVER_ID}:{request.api_key}:{model_id}",
+                    score=finish_time,
+                    expire=METRICS_INTERVAL * 2,
+                )
+                cache.zadd(
+                    f"error:{GLOBAL_INFERENCE_SERVER_ID}:{model_id}",
+                    value={
+                        "request": jsonable_encoder(
+                            request.dict(exclude={"image", "subject", "prompt"})
+                        ),
+                        "error": str(e),
+                    },
+                    score=finish_time,
+                    expire=METRICS_INTERVAL * 2,
+                )
+            raise
+
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
+        self.check_for_model(model_id)
+        return self._models[model_id].infer_from_request(request)
+
+    def model_infer_sync(
+        self, model_id: str, request: InferenceRequest, **kwargs
+    ) -> Union[List[InferenceResponse], InferenceResponse]:
         self.check_for_model(model_id)
         return self._models[model_id].infer_from_request(request)
 

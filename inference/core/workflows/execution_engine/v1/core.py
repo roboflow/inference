@@ -1,5 +1,3 @@
-import asyncio
-from asyncio import AbstractEventLoop
 from typing import Any, Dict, List, Optional
 
 from packaging.version import Version
@@ -62,21 +60,6 @@ class ExecutionEngineV1(BaseExecutionEngine):
     def run(
         self,
         runtime_parameters: Dict[str, Any],
-        event_loop: Optional[AbstractEventLoop] = None,
-        fps: float = 0,
-    ) -> List[Dict[str, Any]]:
-        if event_loop is None:
-            try:
-                event_loop = asyncio.get_event_loop()
-            except:
-                event_loop = asyncio.new_event_loop()
-        return event_loop.run_until_complete(
-            self.run_async(runtime_parameters=runtime_parameters, fps=fps)
-        )
-
-    async def run_async(
-        self,
-        runtime_parameters: Dict[str, Any],
         fps: float = 0,
     ) -> List[Dict[str, Any]]:
         runtime_parameters = assembly_runtime_parameters(
@@ -88,7 +71,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             runtime_parameters=runtime_parameters,
             input_substitutions=self._compiled_workflow.input_substitutions,
         )
-        return await run_workflow(
+        return run_workflow(
             workflow=self._compiled_workflow,
             runtime_parameters=runtime_parameters,
             max_concurrent_steps=self._max_concurrent_steps,

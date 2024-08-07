@@ -133,7 +133,7 @@ class LMMForClassificationBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         images: Batch[WorkflowImageData],
         lmm_type: str,
@@ -142,7 +142,7 @@ class LMMForClassificationBlockV1(WorkflowBlock):
         remote_api_key: Optional[str],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return await self.run_locally(
+            return self.run_locally(
                 images=images,
                 lmm_type=lmm_type,
                 classes=classes,
@@ -150,7 +150,7 @@ class LMMForClassificationBlockV1(WorkflowBlock):
                 remote_api_key=remote_api_key,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return await self.run_remotely(
+            return self.run_remotely(
                 images=images,
                 lmm_type=lmm_type,
                 classes=classes,
@@ -162,7 +162,7 @@ class LMMForClassificationBlockV1(WorkflowBlock):
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
 
-    async def run_locally(
+    def run_locally(
         self,
         images: Batch[WorkflowImageData],
         lmm_type: str,
@@ -179,14 +179,14 @@ class LMMForClassificationBlockV1(WorkflowBlock):
             image.to_inference_format(numpy_preferred=True) for image in images
         ]
         if lmm_type == GPT_4V_MODEL_TYPE:
-            raw_output = await run_gpt_4v_llm_prompting(
+            raw_output = run_gpt_4v_llm_prompting(
                 image=images_prepared_for_processing,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
         else:
-            raw_output = await get_cogvlm_generations_locally(
+            raw_output = get_cogvlm_generations_locally(
                 image=images_prepared_for_processing,
                 prompt=prompt,
                 model_manager=self._model_manager,
@@ -212,7 +212,7 @@ class LMMForClassificationBlockV1(WorkflowBlock):
             )
         return predictions
 
-    async def run_remotely(
+    def run_remotely(
         self,
         images: Batch[WorkflowImageData],
         lmm_type: str,
@@ -229,14 +229,14 @@ class LMMForClassificationBlockV1(WorkflowBlock):
             image.to_inference_format(numpy_preferred=True) for image in images
         ]
         if lmm_type == GPT_4V_MODEL_TYPE:
-            raw_output = await run_gpt_4v_llm_prompting(
+            raw_output = run_gpt_4v_llm_prompting(
                 image=images_prepared_for_processing,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
         else:
-            raw_output = await get_cogvlm_generations_from_remote_api(
+            raw_output = get_cogvlm_generations_from_remote_api(
                 image=images_prepared_for_processing,
                 prompt=prompt,
                 api_key=self._api_key,

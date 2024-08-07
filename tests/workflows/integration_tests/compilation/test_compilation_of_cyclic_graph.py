@@ -35,8 +35,7 @@ CYCLIC_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_cyclic_workflow(
+def test_compilation_of_cyclic_workflow(
     model_manager: ModelManager,
 ) -> None:
     # given

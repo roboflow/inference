@@ -121,8 +121,7 @@ def test_add_custom_metadata_request_failure(
     ), "Expected workspace name to be in cache"
 
 
-@pytest.mark.asyncio
-async def test_run_when_api_key_is_not_specified() -> None:
+def test_run_when_api_key_is_not_specified() -> None:
     # given
     block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
@@ -132,7 +131,7 @@ async def test_run_when_api_key_is_not_specified() -> None:
 
     # when
     with pytest.raises(ValueError):
-        _ = await block.run(
+        _ = block.run(
             fire_and_forget=True,
             field_name="location",
             field_value=["toronto"],
@@ -140,8 +139,7 @@ async def test_run_when_api_key_is_not_specified() -> None:
         )
 
 
-@pytest.mark.asyncio
-async def test_run_when_no_inference_ids() -> None:
+def test_run_when_no_inference_ids() -> None:
     # given
     block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
@@ -150,7 +148,7 @@ async def test_run_when_no_inference_ids() -> None:
     )
 
     # when
-    result = await block.run(
+    result = block.run(
         fire_and_forget=True,
         field_name="location",
         field_value=["toronto"],
@@ -167,8 +165,7 @@ async def test_run_when_no_inference_ids() -> None:
     ], "Expected failure due to no inference_ids"
 
 
-@pytest.mark.asyncio
-async def test_run_when_no_field_name() -> None:
+def test_run_when_no_field_name() -> None:
     # given
     block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
@@ -177,7 +174,7 @@ async def test_run_when_no_field_name() -> None:
     )
 
     # when
-    result = await block.run(
+    result = block.run(
         fire_and_forget=True,
         field_name=None,
         field_value=["toronto"],
@@ -194,8 +191,7 @@ async def test_run_when_no_field_name() -> None:
     ], "Expected failure due to no field_name"
 
 
-@pytest.mark.asyncio
-async def test_run_when_no_field_value() -> None:
+def test_run_when_no_field_value() -> None:
     # given
     block = RoboflowCustomMetadataBlockV1(
         cache=MemoryCache(),
@@ -204,7 +200,7 @@ async def test_run_when_no_field_value() -> None:
     )
 
     # when
-    result = await block.run(
+    result = block.run(
         fire_and_forget=True,
         field_name="location",
         field_value=None,
@@ -221,11 +217,10 @@ async def test_run_when_no_field_value() -> None:
     ], "Expected failure due to no field_value"
 
 
-@pytest.mark.asyncio
 @patch(
     "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.version_1.add_custom_metadata_request"
 )
-async def test_run_when_fire_and_forget(
+def test_run_when_fire_and_forget(
     add_custom_metadata_request_mock: MagicMock,
 ) -> None:
     # given
@@ -238,7 +233,7 @@ async def test_run_when_fire_and_forget(
     add_custom_metadata_request_mock.return_value = True
 
     # when
-    result = await block.run(
+    result = block.run(
         fire_and_forget=True,
         field_name="location",
         field_value=["toronto"],
@@ -256,11 +251,10 @@ async def test_run_when_fire_and_forget(
     assert len(background_tasks.tasks) == 1, "Expected background task to be added"
 
 
-@pytest.mark.asyncio
 @patch(
     "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.version_1.add_custom_metadata_request"
 )
-async def test_run_when_not_fire_and_forget(
+def test_run_when_not_fire_and_forget(
     add_custom_metadata_request_mock: MagicMock,
 ) -> None:
     # given
@@ -272,7 +266,7 @@ async def test_run_when_not_fire_and_forget(
     add_custom_metadata_request_mock.return_value = True
 
     # when
-    result = await block.run(
+    result = block.run(
         fire_and_forget=False,
         field_name="location",
         field_value=["toronto"],

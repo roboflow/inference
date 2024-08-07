@@ -46,7 +46,7 @@ class Block1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return Block1Manifest
 
-    async def run_locally(
+    def run(
         self, *args, **kwargs
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         pass
@@ -71,7 +71,7 @@ class Block2(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return Block2Manifest
 
-    async def run_locally(
+    def run(
         self, *args, **kwargs
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         pass
@@ -95,7 +95,7 @@ class Block3(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return Block3Manifest
 
-    async def run_locally(
+    def run(
         self, *args, **kwargs
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         pass

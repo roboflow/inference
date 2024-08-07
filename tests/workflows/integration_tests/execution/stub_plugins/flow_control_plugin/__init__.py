@@ -45,7 +45,7 @@ class ABTestBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ABTestManifest
 
-    async def run(
+    def run(
         self,
         a_step: StepSelector,
         b_step: StepSelector,
@@ -103,7 +103,7 @@ class ConditionBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         condition_statement: StatementGroup,
         evaluation_parameters: Dict[str, Any],

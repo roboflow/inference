@@ -58,8 +58,7 @@ def build_sorting_workflow_definition(
     }
 
 
-@pytest.mark.asyncio
-async def test_sorting_workflow_for_when_nothing_to_sort(
+def test_sorting_workflow_for_when_nothing_to_sort(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -80,7 +79,7 @@ async def test_sorting_workflow_for_when_nothing_to_sort(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
             "model_id": "yolov8n-640",

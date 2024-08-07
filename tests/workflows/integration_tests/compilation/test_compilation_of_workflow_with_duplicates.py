@@ -30,8 +30,7 @@ DEFINITION_WITH_DUPLICATED_INPUTS = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_with_duplicated_inputs(
+def test_compilation_of_workflow_with_duplicated_inputs(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -80,8 +79,7 @@ DEFINITION_WITH_DUPLICATED_STEPS = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_with_duplicated_steps(
+def test_compilation_of_workflow_with_duplicated_steps(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -128,8 +126,7 @@ DEFINITION_WITH_DUPLICATED_OUTPUTS = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_with_duplicated_outputs(
+def test_compilation_of_workflow_with_duplicated_outputs(
     model_manager: ModelManager,
 ) -> None:
     # given

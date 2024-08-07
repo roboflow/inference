@@ -1,16 +1,16 @@
-import asyncio
 import base64
 import json
 import re
+from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from openai import AsyncOpenAI
+from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,
     ROOT_PARENT_ID_KEY,
@@ -148,15 +148,13 @@ class OpenAIBlockV1(WorkflowBlock):
         self,
         model_manager: ModelManager,
         api_key: Optional[str],
-        step_execution_mode: StepExecutionMode,
     ):
         self._model_manager = model_manager
         self._api_key = api_key
-        self._step_execution_mode = step_execution_mode
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key", "step_execution_mode"]
+        return ["model_manager", "api_key"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -166,90 +164,7 @@ class OpenAIBlockV1(WorkflowBlock):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
 
-    async def run(
-        self,
-        images: Batch[WorkflowImageData],
-        prompt: str,
-        openai_api_key: str,
-        openai_model: Optional[str],
-        json_output_format: Optional[Dict[str, str]],
-        image_detail: Literal["low", "high", "auto"],
-        max_tokens: int,
-    ) -> BlockResult:
-        if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return await self.run_locally(
-                images=images,
-                prompt=prompt,
-                openai_api_key=openai_api_key,
-                openai_model=openai_model,
-                json_output_format=json_output_format,
-                image_detail=image_detail,
-                max_tokens=max_tokens,
-            )
-        elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return await self.run_remotely(
-                images=images,
-                prompt=prompt,
-                openai_api_key=openai_api_key,
-                openai_model=openai_model,
-                json_output_format=json_output_format,
-                image_detail=image_detail,
-                max_tokens=max_tokens,
-            )
-        else:
-            raise ValueError(
-                f"Unknown step execution mode: {self._step_execution_mode}"
-            )
-
-    async def run_locally(
-        self,
-        images: Batch[WorkflowImageData],
-        prompt: str,
-        openai_api_key: str,
-        openai_model: Optional[str],
-        json_output_format: Optional[Dict[str, str]],
-        image_detail: Literal["low", "high", "auto"],
-        max_tokens: int,
-    ) -> BlockResult:
-        if json_output_format:
-            prompt = (
-                f"{prompt}\n\nVALID response format is JSON:\n"
-                f"{json.dumps(json_output_format, indent=4)}"
-            )
-        images_prepared_for_processing = [
-            image.to_inference_format(numpy_preferred=True) for image in images
-        ]
-        raw_output = await run_gpt_4v_llm_prompting(
-            image=images_prepared_for_processing,
-            prompt=prompt,
-            openai_api_key=openai_api_key,
-            lmm_config=LMMConfig(
-                gpt_model_version=openai_model,
-                gpt_image_detail=image_detail,
-                max_tokens=max_tokens,
-            ),
-        )
-        structured_output = turn_raw_lmm_output_into_structured(
-            raw_output=raw_output,
-            expected_output=json_output_format,
-        )
-        predictions = [
-            {
-                "raw_output": raw["content"],
-                "image": raw["image"],
-                "structured_output": structured,
-                **structured,
-            }
-            for raw, structured in zip(raw_output, structured_output)
-        ]
-        for prediction, image in zip(predictions, images):
-            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
-            prediction[ROOT_PARENT_ID_KEY] = (
-                image.workflow_root_ancestor_metadata.parent_id
-            )
-        return predictions
-
-    async def run_remotely(
+    def run(
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
@@ -265,7 +180,7 @@ class OpenAIBlockV1(WorkflowBlock):
                 f"{json.dumps(json_output_format, indent=4)}"
             )
         inference_images = [i.to_inference_format() for i in images]
-        raw_output = await run_gpt_4v_llm_prompting(
+        raw_output = run_gpt_4v_llm_prompting(
             image=inference_images,
             prompt=prompt,
             openai_api_key=openai_api_key,
@@ -296,7 +211,7 @@ class OpenAIBlockV1(WorkflowBlock):
         return predictions
 
 
-async def run_gpt_4v_llm_prompting(
+def run_gpt_4v_llm_prompting(
     image: List[Dict[str, Any]],
     prompt: str,
     openai_api_key: Optional[str],
@@ -306,7 +221,7 @@ async def run_gpt_4v_llm_prompting(
         raise ValueError(
             "Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
         )
-    return await execute_gpt_4v_requests(
+    return execute_gpt_4v_requests(
         image=image,
         openai_api_key=openai_api_key,
         prompt=prompt,
@@ -314,37 +229,31 @@ async def run_gpt_4v_llm_prompting(
     )
 
 
-async def execute_gpt_4v_requests(
+def execute_gpt_4v_requests(
     image: List[dict],
     openai_api_key: str,
     prompt: str,
     lmm_config: LMMConfig,
 ) -> List[Dict[str, str]]:
-    client = AsyncOpenAI(api_key=openai_api_key)
-    results = []
-    images_batches = list(
-        make_batches(
-            iterable=image,
-            batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+    client = OpenAI(api_key=openai_api_key)
+    tasks = [
+        partial(
+            execute_gpt_4v_request,
+            client=client,
+            image=single_image,
+            prompt=prompt,
+            lmm_config=lmm_config,
         )
+        for single_image in image
+    ]
+    return run_in_parallel(
+        tasks=tasks,
+        max_workers=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
-    for image_batch in images_batches:
-        batch_coroutines = []
-        for image in image_batch:
-            coroutine = execute_gpt_4v_request(
-                client=client,
-                image=image,
-                prompt=prompt,
-                lmm_config=lmm_config,
-            )
-            batch_coroutines.append(coroutine)
-        batch_results = await asyncio.gather(*batch_coroutines)
-        results.extend(batch_results)
-    return results
 
 
-async def execute_gpt_4v_request(
-    client: AsyncOpenAI,
+def execute_gpt_4v_request(
+    client: OpenAI,
     image: Dict[str, Any],
     prompt: str,
     lmm_config: LMMConfig,
@@ -354,7 +263,7 @@ async def execute_gpt_4v_request(
     base64_image = base64.b64encode(encode_image_to_jpeg_bytes(loaded_image)).decode(
         "ascii"
     )
-    response = await client.chat.completions.create(
+    response = client.chat.completions.create(
         model=lmm_config.gpt_model_version,
         messages=[
             {

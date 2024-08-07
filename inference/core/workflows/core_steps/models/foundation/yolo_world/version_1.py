@@ -137,7 +137,7 @@ class YoloWorldModelBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         images: Batch[WorkflowImageData],
         class_names: List[str],
@@ -145,14 +145,14 @@ class YoloWorldModelBlockV1(WorkflowBlock):
         confidence: Optional[float],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return await self.run_locally(
+            return self.run_locally(
                 images=images,
                 class_names=class_names,
                 version=version,
                 confidence=confidence,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return await self.run_remotely(
+            return self.run_remotely(
                 images=images,
                 class_names=class_names,
                 version=version,
@@ -163,7 +163,7 @@ class YoloWorldModelBlockV1(WorkflowBlock):
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
 
-    async def run_locally(
+    def run_locally(
         self,
         images: Batch[WorkflowImageData],
         class_names: List[str],
@@ -184,7 +184,7 @@ class YoloWorldModelBlockV1(WorkflowBlock):
                 inference_request=inference_request,
                 core_model="yolo_world",
             )
-            prediction = await self._model_manager.infer_from_request(
+            prediction = self._model_manager.infer_from_request_sync(
                 yolo_world_model_id, inference_request
             )
             predictions.append(prediction.model_dump(by_alias=True, exclude_none=True))
@@ -193,7 +193,7 @@ class YoloWorldModelBlockV1(WorkflowBlock):
             predictions=predictions,
         )
 
-    async def run_remotely(
+    def run_remotely(
         self,
         images: Batch[WorkflowImageData],
         class_names: List[str],
@@ -226,7 +226,7 @@ class YoloWorldModelBlockV1(WorkflowBlock):
         )
         predictions = []
         for sub_batch in image_sub_batches:
-            sub_batch_predictions = await client.infer_from_yolo_world_async(
+            sub_batch_predictions = client.infer_from_yolo_world(
                 inference_input=[i["value"] for i in sub_batch],
                 class_names=class_names,
                 model_version=version,

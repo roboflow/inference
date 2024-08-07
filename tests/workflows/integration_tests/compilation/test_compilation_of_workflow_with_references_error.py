@@ -29,8 +29,7 @@ WORKFLOW_WITH_REFERENCE_TO_NON_EXISTING_IMAGE_IN_STEP = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_with_reference_to_non_existing_image_in_step(
+def test_compilation_of_workflow_with_reference_to_non_existing_image_in_step(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -75,8 +74,7 @@ WORKFLOW_WITH_REFERENCE_TO_NON_EXISTING_IMAGE_IN_OUTPUT = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_with_reference_to_non_existing_image_in_output(
+def test_compilation_of_workflow_with_reference_to_non_existing_image_in_output(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -127,8 +125,7 @@ WORKFLOW_WITH_REFERENCE_TO_NON_EXISTING_STEP_OUTPUT_IN_STEP = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_with_reference_to_non_existing_step_output_in_step(
+def test_compilation_of_workflow_with_reference_to_non_existing_step_output_in_step(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -173,8 +170,7 @@ WORKFLOW_WITH_REFERENCE_TO_NON_EXISTING_STEP_IN_OUTPUT = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_with_reference_to_non_existing_step_in_output(
+def test_compilation_of_workflow_with_reference_to_non_existing_step_in_output(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -219,8 +215,7 @@ WORKFLOW_WITH_REFERENCE_TO_NON_EXISTING_STEP_OUTPUT_OF_EXISTING_STEP = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_with_reference_to_non_existing_step_output_of_existing_step(
+def test_compilation_of_workflow_with_reference_to_non_existing_step_output_of_existing_step(
     model_manager: ModelManager,
 ) -> None:
     # given

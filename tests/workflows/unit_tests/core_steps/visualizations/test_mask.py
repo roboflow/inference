@@ -52,8 +52,7 @@ def test_mask_validation_when_invalid_image_is_given() -> None:
         _ = MaskManifest.model_validate(data)
 
 
-@pytest.mark.asyncio
-async def test_mask_visualization_block() -> None:
+def test_mask_visualization_block() -> None:
     # given
     block = MaskVisualizationBlockV1()
 
@@ -62,7 +61,7 @@ async def test_mask_visualization_block() -> None:
     mask[1, 80:120, 80:120] = True
     mask[2, 450:550, 450:550] = True
 
-    output = await block.run(
+    output = block.run(
         image=WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),

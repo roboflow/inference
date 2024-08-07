@@ -73,7 +73,7 @@ class ContinueIfBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         condition_statement: StatementGroup,
         evaluation_parameters: Dict[str, Any],

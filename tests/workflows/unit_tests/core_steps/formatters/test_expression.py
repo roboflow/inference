@@ -14,10 +14,7 @@ from inference.core.workflows.core_steps.formatters.expression.version_1 import 
 )
 
 
-@pytest.mark.asyncio
-async def test_block_run_when_no_data_provided_and_static_output_to_be_returned() -> (
-    None
-):
+def test_block_run_when_no_data_provided_and_static_output_to_be_returned() -> None:
     # given
     step = ExpressionBlockV1()
     switch = CasesDefinition(
@@ -27,14 +24,13 @@ async def test_block_run_when_no_data_provided_and_static_output_to_be_returned(
     )
 
     # when
-    result = await step.run(data={}, data_operations={}, switch=switch)
+    result = step.run(data={}, data_operations={}, switch=switch)
 
     # then
     assert result == {"output": "static-value"}
 
 
-@pytest.mark.asyncio
-async def test_block_run_when_data_provided_and_default_output_to_be_returned() -> None:
+def test_block_run_when_data_provided_and_default_output_to_be_returned() -> None:
     # given
     step = ExpressionBlockV1()
     switch = CasesDefinition.model_validate(
@@ -64,18 +60,13 @@ async def test_block_run_when_data_provided_and_default_output_to_be_returned() 
     )
 
     # when
-    result = await step.run(
-        data={"input_list": [1, 2]}, data_operations={}, switch=switch
-    )
+    result = step.run(data={"input_list": [1, 2]}, data_operations={}, switch=switch)
 
     # then
     assert result == {"output": "default"}
 
 
-@pytest.mark.asyncio
-async def test_block_run_when_data_provided_and_first_matching_case_to_be_returned() -> (
-    None
-):
+def test_block_run_when_data_provided_and_first_matching_case_to_be_returned() -> None:
     # given
     step = ExpressionBlockV1()
     switch = CasesDefinition.model_validate(
@@ -139,18 +130,13 @@ async def test_block_run_when_data_provided_and_first_matching_case_to_be_return
     )
 
     # when
-    result = await step.run(
-        data={"input_list": [1, 2]}, data_operations={}, switch=switch
-    )
+    result = step.run(data={"input_list": [1, 2]}, data_operations={}, switch=switch)
 
     # then
     assert result == {"output": "first-matching"}
 
 
-@pytest.mark.asyncio
-async def test_block_run_when_data_provided_and_data_operations_to_be_performed() -> (
-    None
-):
+def test_block_run_when_data_provided_and_data_operations_to_be_performed() -> None:
     # given
     step = ExpressionBlockV1()
     switch = CasesDefinition.model_validate(
@@ -188,7 +174,7 @@ async def test_block_run_when_data_provided_and_data_operations_to_be_performed(
     }
 
     # when
-    result = await step.run(
+    result = step.run(
         data={
             "input_list": [1, 2],
             "additional_param": "some",
@@ -201,8 +187,7 @@ async def test_block_run_when_data_provided_and_data_operations_to_be_performed(
     assert result == {"output": "SOME"}
 
 
-@pytest.mark.asyncio
-async def test_block_run_when_data_provided_and_operations_on_dynamic_result_to_be_performed() -> (
+def test_block_run_when_data_provided_and_operations_on_dynamic_result_to_be_performed() -> (
     None
 ):
     # given
@@ -252,7 +237,7 @@ async def test_block_run_when_data_provided_and_operations_on_dynamic_result_to_
     }
 
     # when
-    result = await step.run(
+    result = step.run(
         data={
             "input_list": [1, 2],
             "additional_param": "some",
@@ -265,8 +250,7 @@ async def test_block_run_when_data_provided_and_operations_on_dynamic_result_to_
     assert result == {"output": "MUTATED"}
 
 
-@pytest.mark.asyncio
-async def test_block_run_when_uql_error_happens() -> None:
+def test_block_run_when_uql_error_happens() -> None:
     # given
     step = ExpressionBlockV1()
     switch = CasesDefinition.model_validate(
@@ -297,11 +281,10 @@ async def test_block_run_when_uql_error_happens() -> None:
 
     # when
     with pytest.raises(EvaluationEngineError):
-        _ = await step.run(data={"input_list": 1}, data_operations={}, switch=switch)
+        _ = step.run(data={"input_list": 1}, data_operations={}, switch=switch)
 
 
-@pytest.mark.asyncio
-async def test_block_run_when_data_provided_and_missing_variable_detected_on_data_operations() -> (
+def test_block_run_when_data_provided_and_missing_variable_detected_on_data_operations() -> (
     None
 ):
     # given
@@ -342,13 +325,12 @@ async def test_block_run_when_data_provided_and_missing_variable_detected_on_dat
 
     # when
     with pytest.raises(KeyError):
-        _ = await step.run(
+        _ = step.run(
             data={"input_list": [1, 2]}, data_operations=data_operations, switch=switch
         )
 
 
-@pytest.mark.asyncio
-async def test_block_run_when_data_provided_and_missing_variable_detected_in_output_building() -> (
+def test_block_run_when_data_provided_and_missing_variable_detected_in_output_building() -> (
     None
 ):
     # given
@@ -384,13 +366,10 @@ async def test_block_run_when_data_provided_and_missing_variable_detected_in_out
 
     # when
     with pytest.raises(KeyError):
-        _ = await step.run(
-            data={"input_list": [1, 2]}, data_operations={}, switch=switch
-        )
+        _ = step.run(data={"input_list": [1, 2]}, data_operations={}, switch=switch)
 
 
-@pytest.mark.asyncio
-async def test_block_run_when_data_provided_and_missing_variable_detected_in_uql_building() -> (
+def test_block_run_when_data_provided_and_missing_variable_detected_in_uql_building() -> (
     None
 ):
     # given
@@ -426,6 +405,6 @@ async def test_block_run_when_data_provided_and_missing_variable_detected_in_uql
 
     # when
     with pytest.raises(UndeclaredSymbolError):
-        _ = await step.run(
+        _ = step.run(
             data={"additional_param": "some"}, data_operations={}, switch=switch
         )

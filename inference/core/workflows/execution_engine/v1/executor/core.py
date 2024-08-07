@@ -1,5 +1,5 @@
-import asyncio
 from datetime import datetime
+from functools import partial
 from typing import Any, Dict, List
 
 from inference.core import logger
@@ -23,13 +23,16 @@ from inference.core.workflows.execution_engine.v1.executor.flow_coordinator impo
 from inference.core.workflows.execution_engine.v1.executor.output_constructor import (
     construct_workflow_output,
 )
+from inference.core.workflows.execution_engine.v1.executor.utils import (
+    run_steps_in_parallel,
+)
 from inference.core.workflows.prototypes.block import WorkflowBlock
 from inference.usage_tracking.collector import usage_collector
 from inference_sdk.http.utils.iterables import make_batches
 
 
 @usage_collector
-async def run_workflow(
+def run_workflow(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],
     max_concurrent_steps: int,
@@ -43,7 +46,7 @@ async def run_workflow(
     )
     next_steps = execution_coordinator.get_steps_to_execute_next()
     while next_steps is not None:
-        await execute_steps(
+        execute_steps(
             next_steps=next_steps,
             workflow=workflow,
             execution_data_manager=execution_data_manager,
@@ -57,30 +60,26 @@ async def run_workflow(
     )
 
 
-async def execute_steps(
+def execute_steps(
     next_steps: List[str],
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     max_concurrent_steps: int,
 ) -> None:
     logger.info(f"Executing steps: {next_steps}.")
-    steps_batches = list(
-        make_batches(iterable=next_steps, batch_size=max_concurrent_steps)
-    )
-    for steps_batch in steps_batches:
-        logger.info(f"Steps batch: {steps_batch}")
-        coroutines = [
-            safe_execute_step(
-                step_selector=step_selector,
-                workflow=workflow,
-                execution_data_manager=execution_data_manager,
-            )
-            for step_selector in steps_batch
-        ]
-        await asyncio.gather(*coroutines)
+    steps_functions = [
+        partial(
+            safe_execute_step,
+            step_selector=step_selector,
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+        )
+        for step_selector in next_steps
+    ]
+    _ = run_steps_in_parallel(steps=steps_functions, max_workers=max_concurrent_steps)
 
 
-async def safe_execute_step(
+def safe_execute_step(
     step_selector: str,
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
@@ -89,7 +88,7 @@ async def safe_execute_step(
         logger.info(
             f"started execution of: {step_selector} - {datetime.now().isoformat()}"
         )
-        await run_step(
+        run_step(
             step_selector=step_selector,
             workflow=workflow,
             execution_data_manager=execution_data_manager,
@@ -108,25 +107,25 @@ async def safe_execute_step(
         ) from error
 
 
-async def run_step(
+def run_step(
     step_selector: str,
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
 ) -> None:
     if execution_data_manager.is_step_simd(step_selector=step_selector):
-        return await run_simd_step(
+        return run_simd_step(
             step_selector=step_selector,
             workflow=workflow,
             execution_data_manager=execution_data_manager,
         )
-    return await run_non_simd_step(
+    return run_non_simd_step(
         step_selector=step_selector,
         workflow=workflow,
         execution_data_manager=execution_data_manager,
     )
 
 
-async def run_simd_step(
+def run_simd_step(
     step_selector: str,
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
@@ -135,19 +134,19 @@ async def run_simd_step(
     step_instance = workflow.steps[step_name].step
     step_manifest = workflow.steps[step_name].manifest
     if step_manifest.accepts_batch_input():
-        return await run_simd_step_in_batch_mode(
+        return run_simd_step_in_batch_mode(
             step_selector=step_selector,
             step_instance=step_instance,
             execution_data_manager=execution_data_manager,
         )
-    return await run_simd_step_in_non_batch_mode(
+    return run_simd_step_in_non_batch_mode(
         step_selector=step_selector,
         step_instance=step_instance,
         execution_data_manager=execution_data_manager,
     )
 
 
-async def run_simd_step_in_batch_mode(
+def run_simd_step_in_batch_mode(
     step_selector: str,
     step_instance: WorkflowBlock,
     execution_data_manager: ExecutionDataManager,
@@ -156,7 +155,7 @@ async def run_simd_step_in_batch_mode(
     if not step_input.indices:
         # no inputs - discarded either by conditional exec or by not accepting empty
         return None
-    outputs = await step_instance.run(**step_input.parameters)
+    outputs = step_instance.run(**step_input.parameters)
     execution_data_manager.register_simd_step_output(
         step_selector=step_selector,
         indices=step_input.indices,
@@ -164,7 +163,7 @@ async def run_simd_step_in_batch_mode(
     )
 
 
-async def run_simd_step_in_non_batch_mode(
+def run_simd_step_in_non_batch_mode(
     step_selector: str,
     step_instance: WorkflowBlock,
     execution_data_manager: ExecutionDataManager,
@@ -173,7 +172,7 @@ async def run_simd_step_in_non_batch_mode(
     for input_definition in execution_data_manager.iterate_over_simd_step_input(
         step_selector=step_selector
     ):
-        result = await step_instance.run(**input_definition.parameters)
+        result = step_instance.run(**input_definition.parameters)
         results.append(result)
         indices.append(input_definition.index)
     if not indices:
@@ -185,7 +184,7 @@ async def run_simd_step_in_non_batch_mode(
     )
 
 
-async def run_non_simd_step(
+def run_non_simd_step(
     step_selector: str,
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
@@ -198,7 +197,7 @@ async def run_non_simd_step(
         return None
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step
-    step_result = await step_instance.run(**step_input)
+    step_result = step_instance.run(**step_input)
     if isinstance(step_result, list):
         raise ExecutionEngineRuntimeError(
             public_message=f"Error in execution engine. Non-SIMD step {step_name} "

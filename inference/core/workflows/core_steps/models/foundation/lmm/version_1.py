@@ -1,10 +1,10 @@
-import asyncio
 import base64
 import json
 import re
+from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from openai import AsyncOpenAI
+from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
@@ -16,7 +16,10 @@ from inference.core.env import (
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import load_core_model
+from inference.core.workflows.core_steps.common.utils import (
+    load_core_model,
+    run_in_parallel,
+)
 from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,
     ROOT_PARENT_ID_KEY,
@@ -45,7 +48,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_sdk import InferenceHTTPClient
-from inference_sdk.http.utils.iterables import make_batches
 
 GPT_4V_MODEL_TYPE = "gpt_4v"
 COG_VLM_MODEL_TYPE = "cog_vlm"
@@ -174,7 +176,7 @@ class LMMBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
@@ -184,7 +186,7 @@ class LMMBlockV1(WorkflowBlock):
         json_output: Optional[Dict[str, str]],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return await self.run_locally(
+            return self.run_locally(
                 images=images,
                 prompt=prompt,
                 lmm_type=lmm_type,
@@ -193,7 +195,7 @@ class LMMBlockV1(WorkflowBlock):
                 json_output=json_output,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return await self.run_remotely(
+            return self.run_remotely(
                 images=images,
                 prompt=prompt,
                 lmm_type=lmm_type,
@@ -206,7 +208,7 @@ class LMMBlockV1(WorkflowBlock):
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
 
-    async def run_locally(
+    def run_locally(
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
@@ -224,14 +226,14 @@ class LMMBlockV1(WorkflowBlock):
             image.to_inference_format(numpy_preferred=True) for image in images
         ]
         if lmm_type == GPT_4V_MODEL_TYPE:
-            raw_output = await run_gpt_4v_llm_prompting(
+            raw_output = run_gpt_4v_llm_prompting(
                 image=images_prepared_for_processing,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
         else:
-            raw_output = await get_cogvlm_generations_locally(
+            raw_output = get_cogvlm_generations_locally(
                 image=images_prepared_for_processing,
                 prompt=prompt,
                 model_manager=self._model_manager,
@@ -257,7 +259,7 @@ class LMMBlockV1(WorkflowBlock):
             )
         return predictions
 
-    async def run_remotely(
+    def run_remotely(
         self,
         images: Batch[WorkflowImageData],
         prompt: str,
@@ -273,14 +275,14 @@ class LMMBlockV1(WorkflowBlock):
             )
         inference_images = [i.to_inference_format() for i in images]
         if lmm_type == GPT_4V_MODEL_TYPE:
-            raw_output = await run_gpt_4v_llm_prompting(
+            raw_output = run_gpt_4v_llm_prompting(
                 image=inference_images,
                 prompt=prompt,
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
         else:
-            raw_output = await get_cogvlm_generations_from_remote_api(
+            raw_output = get_cogvlm_generations_from_remote_api(
                 image=inference_images,
                 prompt=prompt,
                 api_key=self._api_key,
@@ -306,7 +308,7 @@ class LMMBlockV1(WorkflowBlock):
         return predictions
 
 
-async def run_gpt_4v_llm_prompting(
+def run_gpt_4v_llm_prompting(
     image: List[Dict[str, Any]],
     prompt: str,
     remote_api_key: Optional[str],
@@ -316,7 +318,7 @@ async def run_gpt_4v_llm_prompting(
         raise ValueError(
             "Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
         )
-    return await execute_gpt_4v_requests(
+    return execute_gpt_4v_requests(
         image=image,
         remote_api_key=remote_api_key,
         prompt=prompt,
@@ -324,37 +326,31 @@ async def run_gpt_4v_llm_prompting(
     )
 
 
-async def execute_gpt_4v_requests(
+def execute_gpt_4v_requests(
     image: List[dict],
     remote_api_key: str,
     prompt: str,
     lmm_config: LMMConfig,
 ) -> List[Dict[str, str]]:
-    client = AsyncOpenAI(api_key=remote_api_key)
-    results = []
-    images_batches = list(
-        make_batches(
-            iterable=image,
-            batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+    client = OpenAI(api_key=remote_api_key)
+    tasks = [
+        partial(
+            execute_gpt_4v_request,
+            client=client,
+            image=single_image,
+            prompt=prompt,
+            lmm_config=lmm_config,
         )
+        for single_image in image
+    ]
+    return run_in_parallel(
+        tasks=tasks,
+        max_workers=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     )
-    for image_batch in images_batches:
-        batch_coroutines = []
-        for image in image_batch:
-            coroutine = execute_gpt_4v_request(
-                client=client,
-                image=image,
-                prompt=prompt,
-                lmm_config=lmm_config,
-            )
-            batch_coroutines.append(coroutine)
-        batch_results = await asyncio.gather(*batch_coroutines)
-        results.extend(batch_results)
-    return results
 
 
-async def execute_gpt_4v_request(
-    client: AsyncOpenAI,
+def execute_gpt_4v_request(
+    client: OpenAI,
     image: Dict[str, Any],
     prompt: str,
     lmm_config: LMMConfig,
@@ -364,7 +360,7 @@ async def execute_gpt_4v_request(
     base64_image = base64.b64encode(encode_image_to_jpeg_bytes(loaded_image)).decode(
         "ascii"
     )
-    response = await client.chat.completions.create(
+    response = client.chat.completions.create(
         model=lmm_config.gpt_model_version,
         messages=[
             {
@@ -386,7 +382,7 @@ async def execute_gpt_4v_request(
     return {"content": response.choices[0].message.content, "image": image_metadata}
 
 
-async def get_cogvlm_generations_locally(
+def get_cogvlm_generations_locally(
     image: List[dict],
     prompt: str,
     model_manager: ModelManager,
@@ -409,7 +405,7 @@ async def get_cogvlm_generations_locally(
             inference_request=inference_request,
             core_model="cogvlm",
         )
-        result = await model_manager.infer_from_request(model_id, inference_request)
+        result = model_manager.infer_from_request_sync(model_id, inference_request)
         serialised_result.append(
             {
                 "content": result.response,
@@ -419,49 +415,38 @@ async def get_cogvlm_generations_locally(
     return serialised_result
 
 
-async def get_cogvlm_generations_from_remote_api(
+def get_cogvlm_generations_from_remote_api(
     image: List[dict],
     prompt: str,
     api_key: Optional[str],
 ) -> List[Dict[str, Any]]:
     if WORKFLOWS_REMOTE_API_TARGET == "hosted":
         raise ValueError(
-            f"Chosen remote execution of CogVLM model in Roboflow Hosted API mode, but remote execution "
-            f"is only possible for self-hosted option."
+            f"CogVLM requires a GPU and can only be executed remotely in self-hosted mode. "
+            f"It is not available on the Roboflow Hosted API."
         )
     client = InferenceHTTPClient.init(
         api_url=LOCAL_INFERENCE_API_URL,
         api_key=api_key,
     )
-    raw_output = []
-    images_batches = list(
-        make_batches(
-            iterable=image,
-            batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+    serialised_result = []
+    for single_image in image:
+        loaded_image, _ = load_image(single_image)
+        image_metadata = {
+            "width": loaded_image.shape[1],
+            "height": loaded_image.shape[0],
+        }
+        result = client.prompt_cogvlm(
+            visual_prompt=single_image["value"],
+            text_prompt=prompt,
         )
-    )
-    for image_batch in images_batches:
-        batch_coroutines, batch_image_metadata = [], []
-        for image in image_batch:
-            loaded_image, _ = load_image(image)
-            image_metadata = {
-                "width": loaded_image.shape[1],
-                "height": loaded_image.shape[0],
+        serialised_result.append(
+            {
+                "content": result["response"],
+                "image": image_metadata,
             }
-            batch_image_metadata.append(image_metadata)
-            coroutine = client.prompt_cogvlm_async(
-                visual_prompt=image["value"],
-                text_prompt=prompt,
-            )
-            batch_coroutines.append(coroutine)
-        batch_results = await asyncio.gather(*batch_coroutines)
-        raw_output.extend(
-            [
-                {"content": br["response"], "image": bm}
-                for br, bm in zip(batch_results, batch_image_metadata)
-            ]
         )
-    return raw_output
+    return serialised_result
 
 
 def turn_raw_lmm_output_into_structured(

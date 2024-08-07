@@ -77,7 +77,7 @@ class TileDetectionsBatchBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         images_crops: Batch[Batch[WorkflowImageData]],
         crops_predictions: Batch[Batch[sv.Detections]],

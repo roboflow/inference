@@ -38,8 +38,7 @@ VALID_DEFINITION = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_where_definition_does_not_specify_fields(
+def test_compilation_of_workflow_where_definition_does_not_specify_fields(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -60,9 +59,8 @@ async def test_compilation_of_workflow_where_definition_does_not_specify_fields(
     assert isinstance(error.value.inner_error, ValidationError)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("field_to_remove", ["version", "inputs", "steps", "outputs"])
-async def test_compilation_of_workflow_where_definition_does_not_specify_all_fields(
+def test_compilation_of_workflow_where_definition_does_not_specify_all_fields(
     model_manager: ModelManager,
     field_to_remove: str,
 ) -> None:
@@ -108,8 +106,7 @@ DEFINITION_WITH_NON_EXISTING_STEP = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_where_non_existing_step_is_requested(
+def test_compilation_of_workflow_where_non_existing_step_is_requested(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -153,8 +150,7 @@ DEFINITION_WITH_STEP_SYNTAX_ERROR = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_where_existing_step_is_defined_incorrectly(
+def test_compilation_of_workflow_where_existing_step_is_defined_incorrectly(
     model_manager: ModelManager,
 ) -> None:
     # given

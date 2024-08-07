@@ -53,12 +53,12 @@ class ExecutionEngine(BaseExecutionEngine):
     ):
         self._engine = engine
 
-    async def run_async(
+    def run(
         self,
         runtime_parameters: Dict[str, Any],
         fps: float = 0,
     ) -> List[Dict[str, Any]]:
-        return await self._engine.run_async(
+        return self._engine.run(
             runtime_parameters=runtime_parameters,
             fps=fps,
         )
@@ -97,8 +97,8 @@ def _select_execution_engine(
     if not matching_versions:
         raise NotSupportedExecutionEngineError(
             public_message=f"Workflow definition requested Execution Engine in version: "
-            f"{requested_engine_version_specifier_set} which cannot be found in existing setup."
-            f"Available Execution Engines versions: {list(REGISTERED_ENGINES.keys())}.",
+            f"`{requested_engine_version_specifier_set}` which cannot be found in existing setup. "
+            f"Available Execution Engines versions: `{list(REGISTERED_ENGINES.keys())}`.",
             context="workflow_compilation | engine_initialisation",
         )
     if len(matching_versions) > 1:

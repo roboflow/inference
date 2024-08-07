@@ -400,8 +400,7 @@ def run(self, a, b):
 """
 
 
-@pytest.mark.asyncio
-async def test_create_dynamic_block_specification() -> None:
+def test_create_dynamic_block_specification() -> None:
     # given
     kinds_lookup = {
         "*": WILDCARD_KIND,
@@ -477,7 +476,7 @@ async def test_create_dynamic_block_specification() -> None:
     ), "Expected output dimensionality offset announced"
 
     block_instance = result.block_class()
-    code_run_result = await block_instance.run(a="some", b=[1, 2, 3])
+    code_run_result = block_instance.run(a="some", b=[1, 2, 3])
     assert code_run_result == {
         "output": [3, 2, 1]
     }, "Expected code to work properly and revert second param"

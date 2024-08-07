@@ -294,18 +294,17 @@ Some other comment
     assert result == [{"field_a": 1, "field_b": 37}, {"field_a": 2, "field_b": 47}]
 
 
-@pytest.mark.asyncio
 @mock.patch.object(
     version_1, "WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", 2
 )
 @mock.patch.object(version_1, "WORKFLOWS_REMOTE_API_TARGET", "self-hosted")
 @mock.patch.object(version_1.InferenceHTTPClient, "init")
-async def test_get_cogvlm_generations_from_remote_api(
+def test_get_cogvlm_generations_from_remote_api(
     inference_client_init_mock: MagicMock,
 ) -> None:
     # given
     client_mock = AsyncMock()
-    client_mock.prompt_cogvlm_async.side_effect = [
+    client_mock.prompt_cogvlm.side_effect = [
         {"response": "Response 1: 42"},
         {"response": "Response 2: 42"},
         {"response": "Response 3: 42"},
@@ -313,7 +312,7 @@ async def test_get_cogvlm_generations_from_remote_api(
     inference_client_init_mock.return_value = client_mock
 
     # when
-    result = await get_cogvlm_generations_from_remote_api(
+    result = get_cogvlm_generations_from_remote_api(
         image=[
             {"type": "numpy_object", "value": np.zeros((192, 168, 3), dtype=np.uint8)},
             {"type": "numpy_object", "value": np.zeros((193, 168, 3), dtype=np.uint8)},
@@ -331,9 +330,8 @@ async def test_get_cogvlm_generations_from_remote_api(
     ]
 
 
-@pytest.mark.asyncio
 @mock.patch.object(version_1, "load_core_model", MagicMock())
-async def test_get_cogvlm_generations_locally() -> None:
+def test_get_cogvlm_generations_locally() -> None:
     # given
     model_manager = AsyncMock()
     model_manager.infer_from_request.side_effect = [
@@ -343,7 +341,7 @@ async def test_get_cogvlm_generations_locally() -> None:
     ]
 
     # when
-    result = await get_cogvlm_generations_locally(
+    result = get_cogvlm_generations_locally(
         image=[
             {"type": "numpy_object", "value": np.zeros((192, 168, 3), dtype=np.uint8)},
             {"type": "numpy_object", "value": np.zeros((193, 168, 3), dtype=np.uint8)},

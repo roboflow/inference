@@ -1,7 +1,8 @@
 import logging
 import uuid
 from copy import deepcopy
-from typing import Any, Dict, Iterable, List, Optional, Union
+from multiprocessing.pool import ThreadPool
+from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar, Union
 
 import numpy as np
 import supervision as sv
@@ -44,6 +45,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+
+T = TypeVar("T")
 
 
 def load_core_model(
@@ -407,3 +410,12 @@ def remove_unexpected_keys_from_dictionary(
     for unexpected_key in unexpected_keys:
         del dictionary[unexpected_key]
     return dictionary
+
+
+def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[T]:
+    with ThreadPool(processes=max_workers) as pool:
+        return pool.map(func=_run_task, iterable=tasks)
+
+
+def _run_task(step: Callable[[], T]) -> T:
+    return step()

@@ -13,8 +13,7 @@ from inference.core.workflows.core_steps.formatters.property_definition.version_
 )
 
 
-@pytest.mark.asyncio
-async def test_property_extraction_block() -> None:
+def test_property_extraction_block() -> None:
     # given
     data = ClassificationInferenceResponse(
         image=InferenceResponseImage(width=128, height=256),
@@ -47,7 +46,7 @@ async def test_property_extraction_block() -> None:
     step = PropertyDefinitionBlockV1()
 
     # when
-    result = await step.run(data=data, operations=operations)
+    result = step.run(data=data, operations=operations)
 
     # then
     assert result == {"output": "cat-mutated"}

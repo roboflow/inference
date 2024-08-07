@@ -28,7 +28,7 @@ class FaultyInitBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return FaultyInitManifest
 
-    async def run(self) -> BlockResult:
+    def run(self) -> BlockResult:
         pass
 
 

@@ -96,7 +96,7 @@ class DetectionsToParentCoordinatesBatchBlock(WorkflowBlock):
     def accepts_batch_input(cls) -> bool:
         return True
 
-    async def run(
+    def run(
         self,
         images: Batch[WorkflowImageData],
         images_predictions: Batch[Batch[sv.Detections]],

@@ -82,7 +82,7 @@ class WorkflowBlock(ABC):
         )
 
     @abstractmethod
-    async def run(
+    def run(
         self,
         *args,
         **kwargs,

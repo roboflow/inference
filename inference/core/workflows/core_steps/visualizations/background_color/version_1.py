@@ -95,7 +95,7 @@ class BackgroundColorVisualizationBlockV1(VisualizationBlock):
 
         return self.annotatorCache[key]
 
-    async def run(
+    def run(
         self,
         image: WorkflowImageData,
         predictions: sv.Detections,

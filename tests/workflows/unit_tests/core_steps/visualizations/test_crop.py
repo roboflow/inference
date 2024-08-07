@@ -58,12 +58,11 @@ def test_crop_validation_when_invalid_image_is_given() -> None:
         _ = CropManifest.model_validate(data)
 
 
-@pytest.mark.asyncio
-async def test_crop_visualization_block() -> None:
+def test_crop_visualization_block() -> None:
     # given
     block = CropVisualizationBlockV1()
 
-    output = await block.run(
+    output = block.run(
         image=WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),

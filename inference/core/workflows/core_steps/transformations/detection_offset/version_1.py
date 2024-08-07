@@ -106,7 +106,7 @@ class DetectionOffsetBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         predictions: Batch[sv.Detections],
         offset_width: int,

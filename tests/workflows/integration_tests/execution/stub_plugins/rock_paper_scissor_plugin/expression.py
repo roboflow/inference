@@ -56,7 +56,7 @@ class ExpressionBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self, data: Dict[str, Any], output: Union[str, PythonCodeBlock]
     ) -> BlockResult:
         if isinstance(output, str):
