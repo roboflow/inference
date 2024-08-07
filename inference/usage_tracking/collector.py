@@ -25,19 +25,6 @@ from typing_extensions import (
     TypeVar,
     Union,
 )
-from uuid import uuid4
-
-import requests
-from typing_extensions import (
-    Any,
-    Callable,
-    DefaultDict,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
-)
 
 from inference.core.env import API_KEY, LAMBDA, REDIS_HOST
 from inference.core.logger import logger
