@@ -116,7 +116,7 @@ class UsageCollector:
                     "category": "",
                     "resource_id": "",
                     "hosted": LAMBDA,
-                    "api_key": None,
+                    "api_key": "",
                     "enterprise": False,
                 }
             )
@@ -145,8 +145,10 @@ class UsageCollector:
             if self._queue.empty():
                 break
             payload = self._queue.get_nowait()
+            if not payload:
+                continue
             if not isinstance(payload, list):
-                payload = []
+                payload = [payload]
             usage_payloads.extend(payload)
         return usage_payloads
 
@@ -163,7 +165,7 @@ class UsageCollector:
             for other_api_key, resource_payloads in usage_payload.items():
                 if api_key and other_api_key != api_key:
                     continue
-                if other_api_key is None:
+                if other_api_key == "":
                     continue
                 for resource_id, resource_usage in resource_payloads.items():
                     if not resource_id:
@@ -171,7 +173,7 @@ class UsageCollector:
                     if not resource_usage or "resource_id" not in resource_usage:
                         continue
                     return resource_usage
-        return None
+        return
 
     @staticmethod
     def _zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
@@ -179,11 +181,11 @@ class UsageCollector:
         system_info_payload = None
         for usage_payload in usage_payloads:
             for api_key, resource_payloads in usage_payload.items():
-                if api_key is None:
+                if api_key == "":
                     if (
                         resource_payloads
                         and len(resource_payloads) > 1
-                        or list(resource_payloads.keys()) != [None]
+                        or list(resource_payloads.keys()) != [""]
                     ):
                         logger.debug(
                             "Dropping usage payload %s due to missing API key",
@@ -212,7 +214,7 @@ class UsageCollector:
                     resource_usage_key,
                     resource_usage_payload,
                 ) in resource_payloads.items():
-                    if resource_usage_key is None:
+                    if resource_usage_key == "":
                         api_key_usage_with_resource = (
                             UsageCollector._get_api_key_usage_containing_resource(
                                 api_key=api_key,
@@ -220,7 +222,7 @@ class UsageCollector:
                             )
                         )
                         if not api_key_usage_with_resource:
-                            system_info_payload = {None: resource_usage_payload}
+                            system_info_payload = {"": resource_usage_payload}
                             continue
                         resource_id = api_key_usage_with_resource["resource_id"]
                         category = api_key_usage_with_resource.get("category")
@@ -276,8 +278,8 @@ class UsageCollector:
         self,
         category: str,
         resource_details: Dict[str, Any],
-        resource_id: Optional[str] = None,
-        api_key: Optional[str] = None,
+        resource_id: str = "",
+        api_key: str = "",
         enterprise: bool = False,
     ):
         if not category:
@@ -288,7 +290,7 @@ class UsageCollector:
             return
 
         if not api_key:
-            api_key = API_KEY
+            api_key = API_KEY or ""
         if not resource_id:
             resource_id = UsageCollector._calculate_resource_hash(
                 resource_details=resource_details
@@ -319,7 +321,7 @@ class UsageCollector:
     @staticmethod
     def system_info(
         exec_session_id: str,
-        api_key: Optional[str] = None,
+        api_key: str = "",
         ip_address: Optional[str] = None,
         time_ns: Optional[int] = None,
         enterprise: bool = False,
@@ -347,7 +349,7 @@ class UsageCollector:
             time_ns = time.time_ns()
 
         if not api_key:
-            api_key = API_KEY
+            api_key = API_KEY or ""
 
         return {
             "timestamp_start": time_ns,
@@ -370,10 +372,10 @@ class UsageCollector:
         if self._system_info_sent:
             return
         if not api_key:
-            api_key = API_KEY
+            api_key = API_KEY or ""
         system_info_payload = {
             api_key: {
-                None: self.system_info(
+                "": self.system_info(
                     exec_session_id=self._exec_session_id,
                     api_key=api_key,
                     ip_address=ip_address,
@@ -410,15 +412,15 @@ class UsageCollector:
         source: str,
         category: str,
         frames: int = 1,
-        api_key: Optional[str] = None,
+        api_key: str = "",
         resource_details: Optional[Dict[str, Any]] = None,
-        resource_id: Optional[str] = None,
+        resource_id: str = "",
         fps: float = 0,
         enterprise: bool = False,
     ):
         source = str(source) if source else ""
         if not api_key:
-            api_key = API_KEY
+            api_key = API_KEY or ""
         if not resource_id and resource_details:
             resource_id = UsageCollector._calculate_resource_hash(resource_details)
         with UsageCollector._lock:
@@ -441,9 +443,9 @@ class UsageCollector:
         category: str,
         enterprise: bool,
         frames: int = 1,
-        api_key: Optional[str] = None,
+        api_key: str = "",
         resource_details: Optional[Dict[str, Any]] = None,
-        resource_id: Optional[str] = None,
+        resource_id: str = "",
         fps: float = 0,
     ) -> DefaultDict[str, Any]:
         if self._settings.opt_out and not enterprise:
@@ -476,9 +478,9 @@ class UsageCollector:
         category: str,
         enterprise: bool,
         frames: int = 1,
-        api_key: Optional[str] = None,
+        api_key: str = "",
         resource_details: Optional[Dict[str, Any]] = None,
-        resource_id: Optional[str] = None,
+        resource_id: str = "",
         fps: float = 0,
     ) -> DefaultDict[str, Any]:
         if self._async_lock:
@@ -620,10 +622,10 @@ class UsageCollector:
         kwargs: Dict[str, Any],
     ) -> Dict[str, Any]:
         if not usage_api_key:
-            usage_api_key = API_KEY
+            usage_api_key = API_KEY or ""
         func_kwargs = collect_func_params(func, args, kwargs)
         resource_details = {}
-        resource_id = None
+        resource_id = ""
         category = None
         if "workflow" in func_kwargs:
             workflow: CompiledWorkflow = func_kwargs["workflow"]
@@ -679,8 +681,8 @@ class UsageCollector:
         def sync_wrapper(
             *args,
             usage_fps: float = 0,
-            usage_api_key: Optional[str] = None,
-            usage_workflow_id: Optional[str] = None,
+            usage_api_key: str = "",
+            usage_workflow_id: str = "",
             **kwargs,
         ):
             self.record_usage(
@@ -699,8 +701,8 @@ class UsageCollector:
         async def async_wrapper(
             *args,
             usage_fps: float = 0,
-            usage_api_key: Optional[str] = None,
-            usage_workflow_id: Optional[str] = None,
+            usage_api_key: str = "",
+            usage_workflow_id: str = "",
             **kwargs,
         ):
             await self.async_record_usage(

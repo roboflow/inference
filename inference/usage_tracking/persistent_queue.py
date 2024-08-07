@@ -144,7 +144,8 @@ class PersistentQueue:
         parsed_payloads = []
         for (payload,) in payloads:
             try:
-                parsed_payloads.append(json.loads(payload))
+                parsed_payload = json.loads(payload)
+                parsed_payloads.append(parsed_payload)
             except Exception as exc:
                 logger.debug("Failed to parse usage payload %s, %s", payload, exc)
 
@@ -160,6 +161,7 @@ class PersistentQueue:
                 )
                 parsed_payloads = self._flush_db(connection=connection)
                 connection.close()
+                return parsed_payloads
             except Exception as exc:
                 logger.debug("Failed to obtain records, %s", exc)
                 return []

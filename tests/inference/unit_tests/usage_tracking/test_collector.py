@@ -27,7 +27,7 @@ def test_create_empty_usage_dict():
                 "category": "",
                 "resource_id": "",
                 "hosted": LAMBDA,
-                "api_key": None,
+                "api_key": "",
                 "enterprise": False,
             }
         }
@@ -350,9 +350,9 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource
     dumped_usage_payloads = [
         {
             "api1": {
-                None: {
+                "": {
                     "api_key": "api1",
-                    "resource_id": None,
+                    "resource_id": "",
                     "timestamp_start": 1721032989934855000,
                     "is_gpu_available": False,
                     "python_version": "3.10.0",
@@ -391,9 +391,9 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource
             },
         },{
             "api1": {
-                None: {
+                "": {
                     "api_key": "api1",
-                    "resource_id": None,
+                    "resource_id": "",
                     "timestamp_start": 1721032989934855000,
                     "is_gpu_available": False,
                     "python_version": "3.10.0",
@@ -407,9 +407,9 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id():
     dumped_usage_payloads = [
         {
             "api2": {
-                None: {
+                "": {
                     "api_key": "api2",
-                    "resource_id": None,
+                    "resource_id": "",
                     "timestamp_start": 1721032989934855000,
                     "is_gpu_available": False,
                     "python_version": "3.10.0",
@@ -457,10 +457,10 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id():
 def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
     dumped_usage_payloads = [
         {
-            None: {
-                None: {
-                    "api_key": None,
-                    "resource_id": None,
+            "": {
+                "": {
+                    "api_key": "",
+                    "resource_id": "",
                     "timestamp_start": 1721032989934855000,
                     "is_gpu_available": False,
                     "python_version": "3.10.0",
@@ -514,7 +514,7 @@ def test_system_info():
         "timestamp_start": 1,
         "exec_session_id": "exec_session_id",
         "ip_address_hash": hashlib.sha256("w.x.y.z".encode()).hexdigest()[:5],
-        "api_key": None,
+        "api_key": "",
         "is_gpu_available": False,
     }
     for k, v in expected_system_info.items():
