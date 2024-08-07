@@ -457,6 +457,7 @@ def register_datapoint(
     batch_name: str,
     tags: List[str],
 ) -> str:
+    inference_id = prediction.data["inference_id"][0] if prediction and "inference_id" in prediction.data else None
     roboflow_image_id = safe_register_image_at_roboflow(
         target_project=target_project,
         encoded_image=encoded_image,
@@ -464,7 +465,7 @@ def register_datapoint(
         api_key=api_key,
         batch_name=batch_name,
         tags=tags,
-        inference_id=prediction.data["inference_id"][0],
+        inference_id=inference_id,
     )
     if roboflow_image_id is None:
         return DUPLICATED_STATUS
@@ -490,7 +491,7 @@ def safe_register_image_at_roboflow(
     api_key: str,
     batch_name: str,
     tags: List[str],
-    inference_id: Optional[str] = None,
+    inference_id: Optional[str],
 ) -> Optional[str]:
     registration_response = register_image_at_roboflow(
         api_key=api_key,
