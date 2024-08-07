@@ -10,18 +10,20 @@ from collections import defaultdict
 from functools import wraps
 from queue import Queue
 from threading import Event, Lock, Thread
-from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
 import requests
+from typing_extensions import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Union
 
-from inference.core.env import API_KEY, LAMBDA
+from inference.core.env import API_KEY, LAMBDA, REDIS_HOST
 from inference.core.logger import logger
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.execution_engine.compiler.entities import CompiledWorkflow
 from inference.usage_tracking.utils import collect_func_params
 
 from .config import TelemetrySettings, get_telemetry_settings
+from .persistent_queue import PersistentQueue
+
 
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
@@ -62,8 +64,10 @@ class UsageCollector:
             exec_session_id=self._exec_session_id
         )
 
-        # TODO: use persistent queue, i.e. https://pypi.org/project/persist-queue/
-        self._queue: "Queue[UsagePayload]" = Queue(maxsize=self._settings.queue_size)
+        if LAMBDA:
+            self._queue: "Queue[UsagePayload]" = Queue(maxsize=self._settings.queue_size)
+        else:
+            self._queue = PersistentQueue()
         self._queue_lock = Lock()
 
         self._system_info_sent: bool = False
@@ -124,7 +128,10 @@ class UsageCollector:
         while self._queue:
             if self._queue.empty():
                 break
-            usage_payloads.append(self._queue.get_nowait())
+            payload = self._queue.get_nowait()
+            if not isinstance(payload, list):
+                payload = []
+            usage_payloads.extend(payload)
         return usage_payloads
 
     def _dump_usage_queue_with_lock(self) -> List[APIKeyUsage]:
