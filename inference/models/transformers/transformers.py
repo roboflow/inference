@@ -104,6 +104,7 @@ class TransformerModel(RoboflowInferenceModel):
         image_dims = preprocess_return_metadata["image_dims"]
         response = LMMInferenceResponse(
             response=text,
+            structured_response=predictions[1] if len(predictions) > 1 else None,
             image=InferenceResponseImage(width=image_dims[0], height=image_dims[1]),
         )
         return [response]
@@ -115,23 +116,24 @@ class TransformerModel(RoboflowInferenceModel):
         input_len = model_inputs["input_ids"].shape[-1]
 
         with torch.inference_mode():
-            prepared_inputs = self.prepare_generation_params(
+            prepared_inputs, decoder_inputs = self.prepare_generation_params(
                 preprocessed_inputs=model_inputs
             )
             generation = self.model.generate(
-                **prepared_inputs, max_new_tokens=100, do_sample=False
+                **prepared_inputs
             )
             generation = generation[0]
             if self.generation_includes_input:
                 generation = generation[input_len:]
-            decoded = self.processor.decode(generation, skip_special_tokens=True)
+            decoded = self.processor.decode(generation, **decoder_inputs)
 
         return (decoded,)
 
     def prepare_generation_params(
         self, preprocessed_inputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        return preprocessed_inputs
+    ) ->Tuple[ Dict[str, Any]]:
+        # (generation params (dict), decoder params (dict))
+        return ({**preprocessed_inputs, "do_sample": False, "max_new_tokens": 100},{"skip_special_tokens": True})
 
     def get_infer_bucket_file_list(self) -> list:
         """Get the list of required files for inference.

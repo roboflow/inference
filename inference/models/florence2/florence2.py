@@ -1,14 +1,41 @@
+import json
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 import torch
+from PIL import Image
 from transformers import AutoModelForCausalLM
 
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
+class Florence2Processing:
+    def prepare_generation_params(
+        self, preprocessed_inputs: Dict[str, Any]
+    ) -> Tuple[Dict[str, Any]]:
+        return ({
+            "input_ids": preprocessed_inputs["input_ids"],
+            "pixel_values": preprocessed_inputs["pixel_values"],
+            "max_new_tokens": 1024,
+            "do_sample": False,
+            "early_stopping": False,
+            "num_beams": 3,
+        }, {"skip_special_tokens": False})
 
-class Florence2(TransformerModel):
+    def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
+        decoded, = super().predict(image_in, prompt, history, **kwargs)
+        parsed_answer = self.processor.post_process_generation(
+            decoded, task=prompt.split(">")[0] + ">", image_size=image_in.size
+        )
+
+        return (
+            decoded,
+            parsed_answer,
+        )
+
+
+
+class Florence2(Florence2Processing, TransformerModel):
     transformers_class = AutoModelForCausalLM
     default_dtype = torch.float32
 
@@ -24,16 +51,8 @@ class Florence2(TransformerModel):
         )
         super().initialize_model()
 
-    def prepare_generation_params(
-        self, preprocessed_inputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        return {
-            "input_ids": preprocessed_inputs["input_ids"],
-            "pixel_values": preprocessed_inputs["pixel_values"],
-        }
 
-
-class LoRAFlorence2(LoRATransformerModel):
+class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
     load_base_from_roboflow = True
     transformers_class = AutoModelForCausalLM
     default_dtype = torch.float32
@@ -51,11 +70,3 @@ class LoRAFlorence2(LoRATransformerModel):
         )
 
         return cache_dir
-
-    def prepare_generation_params(
-        self, preprocessed_inputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        return {
-            "input_ids": preprocessed_inputs["input_ids"],
-            "pixel_values": preprocessed_inputs["pixel_values"],
-        }

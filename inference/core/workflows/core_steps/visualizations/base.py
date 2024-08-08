@@ -7,6 +7,7 @@ from pydantic import AliasChoices, ConfigDict, Field
 from inference.core.workflows.core_steps.visualizations.utils import str_to_color
 from inference.core.workflows.entities.base import OutputDefinition, WorkflowImageData
 from inference.core.workflows.entities.types import (
+    BATCH_OF_DETECTION_KIND,
     BATCH_OF_IMAGES_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
@@ -41,6 +42,7 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
             BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
             BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+            BATCH_OF_DETECTION_KIND,
         ]
     ) = Field(  # type: ignore
         description="Predictions",

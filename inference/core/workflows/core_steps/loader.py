@@ -24,6 +24,9 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison impor
     ClipComparisonBlock,
 )
 from inference.core.workflows.core_steps.models.foundation.cogvlm import CogVLMBlock
+from inference.core.workflows.core_steps.models.foundation.florence_2 import (
+    Florence2ModelBlock,
+)
 from inference.core.workflows.core_steps.models.foundation.lmm import LMMBlock
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier import (
     LMMForClassificationBlock,
@@ -195,6 +198,7 @@ def load_blocks() -> List[
         CogVLMBlock,
         OCRModelBlock,
         YoloWorldModelBlock,
+        Florence2ModelBlock,
         RoboflowInstanceSegmentationModelBlock,
         RoboflowKeypointDetectionModelBlock,
         RoboflowClassificationModelBlock,
