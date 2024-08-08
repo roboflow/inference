@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.foundation.yolo_world.version_1 import (
+from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     BlockManifest,
 )
 

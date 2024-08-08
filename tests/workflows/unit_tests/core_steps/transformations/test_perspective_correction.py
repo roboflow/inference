@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.workflows.core_steps.transformations.perspective_correction.version_1 import (
+from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     correct_detections,
     extend_perspective_polygon,
     generate_transformation_matrix,

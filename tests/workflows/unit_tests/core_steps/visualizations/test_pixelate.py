@@ -3,7 +3,7 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.pixelate.version_1 import (
+from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
     PixelateManifest,
     PixelateVisualizationBlockV1,
 )

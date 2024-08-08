@@ -9,7 +9,7 @@ from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.foundation.openai.version_1 import (
+from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     BlockManifest,
     LMMConfig,
     execute_gpt_4v_request,

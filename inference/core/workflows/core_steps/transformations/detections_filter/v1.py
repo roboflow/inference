@@ -7,7 +7,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
     AllOperationsType,
     OperationDefinition,
 )
-from inference.core.workflows.core_steps.transformations.detections_transformation.version_1 import (
+from inference.core.workflows.core_steps.transformations.detections_transformation.v1 import (
     execute_transformation,
 )
 from inference.core.workflows.execution_engine.entities.base import (

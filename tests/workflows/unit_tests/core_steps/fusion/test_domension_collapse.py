@@ -1,6 +1,6 @@
 import pytest
 
-from inference.core.workflows.core_steps.fusion.dimension_collapse.version_1 import (
+from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import Batch

@@ -4,7 +4,7 @@ from pydantic import ConfigDict, Field
 
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.models.foundation.lmm.version_1 import (
+from inference.core.workflows.core_steps.models.foundation.lmm.v1 import (
     GPT_4V_MODEL_TYPE,
     LMMConfig,
     get_cogvlm_generations_from_remote_api,

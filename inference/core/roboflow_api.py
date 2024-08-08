@@ -124,7 +124,7 @@ def add_custom_metadata(
     inference_ids: List[str],
     field_name: str,
     field_value: str,
-) -> None:
+):
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/{workspace_id}/inference-stats/metadata",
         params=[("api_key", api_key), ("nocache", "true")],

@@ -1,4 +1,4 @@
-from inference.core.workflows.core_steps.transformations.dynamic_crop.version_1 import (
+from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import (
     DynamicCropBlockV1,
 )
 from inference.core.workflows.execution_engine.introspection.utils import (
@@ -14,7 +14,7 @@ def test_get_full_type_name() -> None:
     # then
     assert (
         type_name
-        == "inference.core.workflows.core_steps.transformations.dynamic_crop.version_1.DynamicCropBlockV1"
+        == "inference.core.workflows.core_steps.transformations.dynamic_crop.v1.DynamicCropBlockV1"
     )
 
 

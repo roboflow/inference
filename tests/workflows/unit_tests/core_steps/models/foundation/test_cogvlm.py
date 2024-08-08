@@ -8,8 +8,8 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.entities.responses.cogvlm import CogVLMResponse
-from inference.core.workflows.core_steps.models.foundation.cog_vlm import version_1
-from inference.core.workflows.core_steps.models.foundation.cog_vlm.version_1 import (
+from inference.core.workflows.core_steps.models.foundation.cog_vlm import v1
+from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     BlockManifest,
     get_cogvlm_generations_from_remote_api,
     get_cogvlm_generations_locally,
@@ -297,11 +297,9 @@ Some other comment
     assert result == [{"field_a": 1, "field_b": 37}, {"field_a": 2, "field_b": 47}]
 
 
-@mock.patch.object(
-    version_1, "WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", 2
-)
-@mock.patch.object(version_1, "WORKFLOWS_REMOTE_API_TARGET", "self-hosted")
-@mock.patch.object(version_1.InferenceHTTPClient, "init")
+@mock.patch.object(v1, "WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", 2)
+@mock.patch.object(v1, "WORKFLOWS_REMOTE_API_TARGET", "self-hosted")
+@mock.patch.object(v1.InferenceHTTPClient, "init")
 def test_get_cogvlm_generations_from_remote_api(
     inference_client_init_mock: MagicMock,
 ) -> None:
@@ -333,7 +331,7 @@ def test_get_cogvlm_generations_from_remote_api(
     ]
 
 
-@mock.patch.object(version_1, "load_core_model", MagicMock())
+@mock.patch.object(v1, "load_core_model", MagicMock())
 def test_get_cogvlm_generations_locally() -> None:
     # given
     model_manager = MagicMock()

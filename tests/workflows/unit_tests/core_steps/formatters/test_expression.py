@@ -7,7 +7,7 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
     EvaluationEngineError,
     UndeclaredSymbolError,
 )
-from inference.core.workflows.core_steps.formatters.expression.version_1 import (
+from inference.core.workflows.core_steps.formatters.expression.v1 import (
     CasesDefinition,
     ExpressionBlockV1,
     StaticCaseResult,

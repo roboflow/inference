@@ -2,9 +2,7 @@ from unittest import mock
 
 import pytest
 
-from inference.core.workflows.core_steps.formatters.expression.version_1 import (
-    BlockManifest,
-)
+from inference.core.workflows.core_steps.formatters.expression.v1 import BlockManifest
 from inference.core.workflows.errors import (
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,

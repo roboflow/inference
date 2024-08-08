@@ -8,7 +8,7 @@ from inference.core.entities.responses.inference import (
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     OperationsChain,
 )
-from inference.core.workflows.core_steps.formatters.property_definition.version_1 import (
+from inference.core.workflows.core_steps.formatters.property_definition.v1 import (
     PropertyDefinitionBlockV1,
 )
 

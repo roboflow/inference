@@ -9,7 +9,7 @@ from inference.core.entities.responses.inference import (
     MultiLabelClassificationInferenceResponse,
     MultiLabelClassificationPrediction,
 )
-from inference.core.workflows.core_steps.fusion.detections_classes_replacement.version_1 import (
+from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
     DetectionsClassesReplacementBlockV1,
     extract_leading_class_from_prediction,
 )

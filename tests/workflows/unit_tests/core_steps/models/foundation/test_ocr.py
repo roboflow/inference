@@ -1,9 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.foundation.ocr.version_1 import (
-    BlockManifest,
-)
+from inference.core.workflows.core_steps.models.foundation.ocr.v1 import BlockManifest
 
 
 @pytest.mark.parametrize("type_alias", ["roboflow_core/ocr_model@v1", "OCRModel"])

@@ -1,10 +1,10 @@
 import pytest
 
 from inference.core.workflows.core_steps.models.roboflow.object_detection import (
-    version_1 as object_detection_version_1,
+    v1 as object_detection_version_1,
 )
 from inference.core.workflows.core_steps.transformations.dynamic_crop import (
-    version_1 as dynamic_crop_version_1,
+    v1 as dynamic_crop_version_1,
 )
 from inference.core.workflows.errors import DuplicatedNameError
 from inference.core.workflows.execution_engine.entities.base import (

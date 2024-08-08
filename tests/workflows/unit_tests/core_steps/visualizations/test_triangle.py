@@ -3,7 +3,7 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.triangle.version_1 import (
+from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleManifest,
     TriangleVisualizationBlockV1,
 )

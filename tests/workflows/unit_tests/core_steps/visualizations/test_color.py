@@ -3,7 +3,7 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.color.version_1 import (
+from inference.core.workflows.core_steps.visualizations.color.v1 import (
     ColorManifest,
     ColorVisualizationBlockV1,
 )

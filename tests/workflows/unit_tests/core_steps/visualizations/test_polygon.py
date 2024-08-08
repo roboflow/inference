@@ -3,7 +3,7 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.polygon.version_1 import (
+from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
     PolygonManifest,
     PolygonVisualizationBlockV1,
 )

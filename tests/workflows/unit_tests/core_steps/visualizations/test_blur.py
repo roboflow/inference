@@ -3,7 +3,7 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.visualizations.blur.version_1 import (
+from inference.core.workflows.core_steps.visualizations.blur.v1 import (
     BlurManifest,
     BlurVisualizationBlockV1,
 )

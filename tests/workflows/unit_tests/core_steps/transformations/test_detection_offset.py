@@ -5,7 +5,7 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.transformations.detection_offset.version_1 import (
+from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     BlockManifest,
     offset_detections,
 )

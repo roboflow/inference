@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.third_party.barcode_detection.version_1 import (
+from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
     BlockManifest,
 )
