@@ -33,10 +33,10 @@ nav:
       - Enterprise Features: enterprise/enterprise.md
       - Inference Basics:
           - Roboflow Ecosystem: quickstart/roboflow_ecosystem.md
-          - "Models: Popular": quickstart/aliases.md
-          - "Models: Fine-tuned": quickstart/explore_models.md
-          - "Models: Universe": quickstart/load_from_universe.md
-          - "Models: Local Weights": models/from_local_weights.md
+          - 'Models: Popular': quickstart/aliases.md
+          - 'Models: Fine-tuned': quickstart/explore_models.md
+          - 'Models: Universe': quickstart/load_from_universe.md
+          - 'Models: Local Weights': models/from_local_weights.md
       - Supported Fine-Tuned Models:
           - YOLOv10: fine-tuned/yolov10.md
           - YOLOv9: fine-tuned/yolov9.md
@@ -56,6 +56,7 @@ nav:
           - Segment Anything 2 (Segmentation): foundation/sam2.md
           - YOLO-World (Object Detection): foundation/yolo_world.md
       - Run a Model:
+          - Getting started: quickstart/run_a_model.md
           - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
           - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
           - Predict Over UDP: quickstart/run_model_over_udp.md
@@ -99,12 +100,13 @@ nav:
           - Inference API Reference: docs/reference/
           - Running With Docker: quickstart/docker.md
           - Docker Configuration Options: quickstart/docker_configuration_options.md
+          - Install “bare metal” Inference GPU on Windows: quickstart/inference_gpu_windows.md
           - Contribute to Inference: contributing.md
           - Changelog: https://github.com/roboflow/inference/releases
   - Cookbooks: cookbooks.md
 
 theme:
-  name: "material"
+  name: 'material'
   logo: inference-icon.png
   favicon: inference-icon.png
   custom_dir: docs/theme
@@ -124,13 +126,13 @@ theme:
 
   palette:
     - scheme: default
-      primary: "custom"
+      primary: 'custom'
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
 
     - scheme: slate
-      primary: "custom"
+      primary: 'custom'
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -166,6 +168,6 @@ markdown_extensions:
       permalink: true
 
 extra_javascript:
-  - "https://widget.kapa.ai/kapa-widget.bundle.js"
-  - "javascript/init_kapa_widget.js"
-  - "javascript/cookbooks.js"
+  - 'https://widget.kapa.ai/kapa-widget.bundle.js'
+  - 'javascript/init_kapa_widget.js'
+  - 'javascript/cookbooks.js'
