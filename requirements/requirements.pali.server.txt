@@ -1,4 +1,4 @@
-torch>=2.0.1,<=2.3.1
+torch>=2.0.1,<=2.4.0
 torchvision>=0.15.0,<=0.18.1
 transformers>=4.41.1
 timm~=1.0.0

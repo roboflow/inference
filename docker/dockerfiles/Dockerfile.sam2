@@ -14,8 +14,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements/requirements.sam2.txt \
-    requirements/requirements.http.txt \
+COPY requirements/requirements.http.txt \
     requirements/_requirements.txt \
     requirements/requirements.gpu.txt \
     requirements/requirements.sdk.http.txt \
@@ -24,17 +23,12 @@ COPY requirements/requirements.sam2.txt \
 RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip install --extra-index-url  https://download.pytorch.org/whl/cu141  \
     -r _requirements.txt \
-    -r requirements.sam2.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
     -r requirements.sdk.http.txt \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-WORKDIR /sam
-RUN git clone https://github.com/facebookresearch/segment-anything-2
-COPY inference/models/sam2/sam.patch ./
-RUN cd segment-anything-2 && git checkout 0e78a118995e66bb27d78518c4bd9a3e95b4e266 && git apply ../sam.patch && TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0 7.5 8.0 8.6" python3 -m pip install -e . && rm -rf ~/.cache/pip
 
 WORKDIR /app/
 COPY inference inference

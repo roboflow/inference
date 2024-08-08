@@ -7,18 +7,18 @@ from time import perf_counter
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
-import rasterio.features
 import torch
 
-try:
-    from sam2.build_sam import build_sam2
-    from sam2.sam2_image_predictor import SAM2ImagePredictor
-except ImportError:
-    logging.error(
-        "Could not import sam2. See the instructions at "
-        "https://github.com/facebookresearch/segment-anything-2/?tab=readme-ov-file#installation"
-    )
-    raise
+import sam2.utils.misc
+
+from torch.nn.attention import SDPBackend
+
+sam2.utils.misc.get_sdp_backends = lambda z: [
+    SDPBackend.EFFICIENT_ATTENTION,
+    SDPBackend.MATH,
+]
+from sam2.build_sam import build_sam2
+from sam2.sam2_image_predictor import SAM2ImagePredictor
 from shapely.geometry import Polygon as ShapelyPolygon
 
 from inference.core.entities.requests.inference import InferenceRequestImage
@@ -26,17 +26,20 @@ from inference.core.entities.requests.sam2 import (
     Sam2EmbeddingRequest,
     Sam2InferenceRequest,
     Sam2SegmentationRequest,
-    Sam2PromptSet
+    Sam2PromptSet,
 )
 from inference.core.entities.responses.sam2 import (
     Sam2EmbeddingResponse,
     Sam2SegmentationResponse,
-    Sam2SegmentationPrediction
+    Sam2SegmentationPrediction,
 )
-from inference.core.env import SAM2_VERSION_ID, SAM_MAX_EMBEDDING_CACHE_SIZE
+from inference.core.env import SAM2_VERSION_ID, SAM_MAX_EMBEDDING_CACHE_SIZE, DEVICE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
+
+if DEVICE is None:
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 class SegmentAnything2(RoboflowCoreModel):
@@ -69,9 +72,7 @@ class SegmentAnything2(RoboflowCoreModel):
             "hiera_b_plus": "sam2_hiera_b+.yaml",
         }[self.version_id]
 
-        self.sam = build_sam2(model_cfg, checkpoint)
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.sam.to(self.device)
+        self.sam = build_sam2(model_cfg, checkpoint, device=DEVICE)
 
         self.predictor = SAM2ImagePredictor(self.sam)
 
@@ -179,10 +180,8 @@ class SegmentAnything2(RoboflowCoreModel):
                     predictions.append(pred)
 
                 return Sam2SegmentationResponse(
-                    time=perf_counter() - t1,
-                    predictions=predictions
+                    time=perf_counter() - t1, predictions=predictions
                 )
-
 
             elif request.format == "binary":
                 binary_vector = BytesIO()
@@ -263,20 +262,19 @@ class SegmentAnything2(RoboflowCoreModel):
                 else:
                     args = prompts.to_sam2_inputs()
 
-
             masks, scores, low_res_logits = self.predictor.predict(
                 mask_input=mask_input,
                 multimask_output=True,
                 return_logits=True,
                 normalize_coords=True,
-                **args
+                **args,
             )
 
             if len(masks.shape) == 3:
                 masks = np.expand_dims(masks, axis=0)
                 low_res_logits = np.expand_dims(low_res_logits, axis=0)
                 scores = np.expand_dims(scores, axis=0)
-            
+
             predicted_masks = []
             low_res_masks = []
             for mask, score, low_res_logit in zip(masks, scores, low_res_logits):
@@ -288,7 +286,7 @@ class SegmentAnything2(RoboflowCoreModel):
                 low_res_logit = low_res_logit[:1]
                 predicted_masks.append(mask)
                 low_res_masks.append(low_res_logit)
-            
+
             self.low_res_logits_cache[image_id] = np.asarray(low_res_masks)
 
             if image_id not in self.segmentation_cache_keys:
@@ -296,5 +294,5 @@ class SegmentAnything2(RoboflowCoreModel):
             if len(self.segmentation_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
                 cache_key = self.segmentation_cache_keys.pop(0)
                 del self.low_res_logits_cache[cache_key]
-            
+
             return np.asarray(predicted_masks), np.asarray(low_res_masks)
