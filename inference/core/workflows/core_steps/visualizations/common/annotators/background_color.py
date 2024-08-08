@@ -1,9 +1,7 @@
 import cv2
 import numpy as np
-from supervision.annotators.base import BaseAnnotator, ImageType
-from supervision.detection.core import Detections
-from supervision.draw.color import Color
-from supervision.utils.conversion import ensure_cv2_image_for_annotation
+from supervision import Color, Detections
+from supervision.annotators.base import BaseAnnotator
 
 
 class BackgroundColorAnnotator(BaseAnnotator):
@@ -28,8 +26,7 @@ class BackgroundColorAnnotator(BaseAnnotator):
         self.opacity = opacity
         self.force_box = force_box
 
-    @ensure_cv2_image_for_annotation
-    def annotate(self, scene: ImageType, detections: Detections) -> ImageType:
+    def annotate(self, scene: np.ndarray, detections: Detections) -> np.ndarray:
         """
         Annotates the given scene with masks based on the provided detections.
         Args:
