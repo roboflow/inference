@@ -80,7 +80,7 @@ def _retrieve_requested_execution_engine_version(workflow_definition: dict) -> V
                 inner_error=e,
                 context="workflow_compilation | engine_initialisation",
             )
-    if REGISTERED_ENGINES:
+    if not REGISTERED_ENGINES:
         raise WorkflowEnvironmentConfigurationError(
             public_message="No Execution Engine versions registered to be used.",
             context="workflow_compilation | engine_initialisation",
