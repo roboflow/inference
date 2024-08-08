@@ -375,7 +375,11 @@ def assembly_manifest_class_methods(
     accepts_empty_values = lambda cls: manifest_description.accepts_empty_values
     setattr(manifest_class, "accepts_empty_values", classmethod(accepts_empty_values))
     get_execution_engine_compatibility = lambda cls: ">=1.0.0,<2.0.0"
-    setattr(manifest_class, "get_execution_engine_compatibility", classmethod(get_execution_engine_compatibility))
+    setattr(
+        manifest_class,
+        "get_execution_engine_compatibility",
+        classmethod(get_execution_engine_compatibility),
+    )
     return manifest_class
 
 
