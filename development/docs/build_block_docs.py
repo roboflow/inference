@@ -166,7 +166,9 @@ def main() -> None:
         block_families[block.human_friendly_block_name].append(block)
     for family_name, family_members in block_families.items():
         block_families[family_name] = sorted(
-            family_members, key=lambda block: int(block.block_schema.get("version", "v0")[1:])
+            family_members,
+            key=lambda block: int(block.block_schema.get("version", "v0")[1:]),
+            reverse=True,
         )
     for family_name, family_members in block_families.items():
         block_types_in_family = set()
