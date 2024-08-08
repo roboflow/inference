@@ -33,6 +33,7 @@ class Sam2SegmentationPrediction(BaseModel):
         description="The set of output masks. If request format is json, masks is a list of polygons, where each polygon is a list of points, where each point is a tuple containing the x,y pixel coordinates of the point. If request format is binary, masks is a list of binary numpy arrays. The dimensions of each mask are 256 x 256",
     )
 
+
 class Sam2SegmentationResponse(BaseModel):
     predictions: List[Sam2SegmentationPrediction] = Field()
     time: float = Field(

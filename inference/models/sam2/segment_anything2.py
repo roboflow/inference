@@ -7,10 +7,8 @@ from time import perf_counter
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
-import torch
-
 import sam2.utils.misc
-
+import torch
 from torch.nn.attention import SDPBackend
 
 sam2.utils.misc.get_sdp_backends = lambda z: [
@@ -25,15 +23,15 @@ from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam2 import (
     Sam2EmbeddingRequest,
     Sam2InferenceRequest,
-    Sam2SegmentationRequest,
     Sam2PromptSet,
+    Sam2SegmentationRequest,
 )
 from inference.core.entities.responses.sam2 import (
     Sam2EmbeddingResponse,
-    Sam2SegmentationResponse,
     Sam2SegmentationPrediction,
+    Sam2SegmentationResponse,
 )
-from inference.core.env import SAM2_VERSION_ID, SAM_MAX_EMBEDDING_CACHE_SIZE, DEVICE
+from inference.core.env import DEVICE, SAM2_VERSION_ID, SAM_MAX_EMBEDDING_CACHE_SIZE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly

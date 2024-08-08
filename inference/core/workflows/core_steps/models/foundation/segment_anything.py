@@ -1,12 +1,23 @@
 from typing import List, Literal, Optional, Type, Union
 
-from pydantic import ConfigDict, Field, PositiveInt
-
 import numpy as np
 import supervision as sv
+from pydantic import ConfigDict, Field, PositiveInt
 
-from inference.core.entities.requests.sam2 import Sam2SegmentationRequest
+from inference.core.entities.requests.sam2 import (
+    Box,
+    Sam2Prompt,
+    Sam2PromptSet,
+    Sam2SegmentationRequest,
+)
+from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
+    InstanceSegmentationInferenceResponse,
+    InstanceSegmentationPrediction,
+    Point,
+)
 from inference.core.managers.base import ModelManager
+from inference.core.utils.postprocess import masks2poly
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_batch_of_sv_detections,
@@ -14,16 +25,6 @@ from inference.core.workflows.core_steps.common.utils import (
     convert_inference_detections_batch_to_sv_detections,
     load_core_model,
 )
-
-from inference.core.entities.responses.inference import (
-    InferenceResponseImage,
-    InstanceSegmentationInferenceResponse,
-    InstanceSegmentationPrediction,
-    Point,
-)
-
-from inference.core.utils.postprocess import masks2poly
-
 from inference.core.workflows.entities.base import (
     Batch,
     OutputDefinition,
@@ -31,24 +32,20 @@ from inference.core.workflows.entities.base import (
 )
 from inference.core.workflows.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     ImageInputField,
     StepOutputImageSelector,
+    StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
-    StepOutputSelector
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
-from inference.core.entities.requests.sam2 import Sam2PromptSet, Sam2Prompt, Box
-
 
 LONG_DESCRIPTION = """
 Run Segment Anything 2 Model
@@ -67,7 +64,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["SegmentAnything2Model"]
-    
+
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
 
     boxes: StepOutputSelector(
@@ -79,7 +76,7 @@ class BlockManifest(WorkflowBlockManifest):
     ) = Field(  # type: ignore
         description="Boxes (from other model predictions)",
         examples=["$steps.object_detection_model.predictions"],
-        default=None
+        default=None,
     )
 
     sam2_model: Union[
@@ -129,13 +126,11 @@ class SegmentAnything2Block(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         sam2_model: str,
-        boxes: Batch[sv.Detections]
+        boxes: Batch[sv.Detections],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return await self.run_locally(
-                images=images,
-                sam2_model=sam2_model,
-                boxes=boxes
+                images=images, sam2_model=sam2_model, boxes=boxes
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             raise NotImplementedError(
@@ -150,7 +145,7 @@ class SegmentAnything2Block(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         sam2_model: str,
-        boxes: Batch[sv.Detections]
+        boxes: Batch[sv.Detections],
     ) -> BlockResult:
 
         predictions = []
@@ -184,8 +179,7 @@ class SegmentAnything2Block(WorkflowBlock):
                 sam2_version_id=sam2_model,
                 api_key=self._api_key,
                 source="workflow-execution",
-                prompts=prompts
-
+                prompts=prompts,
             )
             sam_model_id = load_core_model(
                 model_manager=self._model_manager,
@@ -197,7 +191,9 @@ class SegmentAnything2Block(WorkflowBlock):
                 sam_model_id, inference_request
             )
 
-            prediction = self._convert_sam2_segmentation_response_to_inference_instances_seg_response(sam2_segmentation_response.predictions, single_image)
+            prediction = self._convert_sam2_segmentation_response_to_inference_instances_seg_response(
+                sam2_segmentation_response.predictions, single_image
+            )
             predictions.append(prediction)
 
         predictions = [
@@ -207,21 +203,22 @@ class SegmentAnything2Block(WorkflowBlock):
             images=images,
             predictions=predictions,
         )
-    
 
-    def _convert_sam2_segmentation_response_to_inference_instances_seg_response(self, sam2_segmentation_predictions, image):
+    def _convert_sam2_segmentation_response_to_inference_instances_seg_response(
+        self, sam2_segmentation_predictions, image
+    ):
         image_width = image.numpy_image.shape[1]
         image_height = image.numpy_image.shape[0]
         predictions = []
 
         prediction_id = 0
-            
+
         for pred in sam2_segmentation_predictions:
             mask = pred.mask
             prediction_id += 1
 
             for polygon in mask:
-                #for some reason this list of points contains empty array elements
+                # for some reason this list of points contains empty array elements
                 x_coords = [coord[0] for coord in polygon]
                 y_coords = [coord[1] for coord in polygon]
 
@@ -241,31 +238,30 @@ class SegmentAnything2Block(WorkflowBlock):
                             "x": center_x,
                             "y": center_y,
                             "width": max_x - min_x,
-                            "height":  max_y - min_y,
-                            "points": [Point(x=point[0], y=point[1]) for point in polygon],
-                            "confidence": 0.5, #TODO: get confidence from model
-                            "class": str(prediction_id), #TODO: sam doesnt really have a class, so we are just using mask for now
+                            "height": max_y - min_y,
+                            "points": [
+                                Point(x=point[0], y=point[1]) for point in polygon
+                            ],
+                            "confidence": 0.5,  # TODO: get confidence from model
+                            "class": str(
+                                prediction_id
+                            ),  # TODO: sam doesnt really have a class, so we are just using mask for now
                             "class_id": prediction_id,
                         }
                     )
                 )
 
-        return  InstanceSegmentationInferenceResponse(
-                predictions=predictions,
-                image=InferenceResponseImage(
-                    width=image_width, height=image_height
-                ),
-            )
-
-        
-
+        return InstanceSegmentationInferenceResponse(
+            predictions=predictions,
+            image=InferenceResponseImage(width=image_width, height=image_height),
+        )
 
     def _post_process_result(
         self,
         images: Batch[WorkflowImageData],
         predictions: List[dict],
     ) -> BlockResult:
-        
+
         predictions = convert_inference_detections_batch_to_sv_detections(predictions)
         predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,
