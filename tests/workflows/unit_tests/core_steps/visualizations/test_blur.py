@@ -13,11 +13,16 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 
 
+@pytest.mark.parametrize(
+    "type_alias", ["roboflow_core/blur_visualization@v1", "BlurVisualization"]
+)
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_blur_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
+def test_blur_validation_when_valid_manifest_is_given(
+    type_alias: str, images_field_alias: str
+) -> None:
     # given
     data = {
-        "type": "BlurVisualization",
+        "type": type_alias,
         "name": "blur1",
         "predictions": "$steps.od_model.predictions",
         images_field_alias: "$inputs.image",
@@ -29,7 +34,7 @@ def test_blur_validation_when_valid_manifest_is_given(images_field_alias: str) -
 
     # then
     assert result == BlurManifest(
-        type="BlurVisualization",
+        type=type_alias,
         name="blur1",
         images="$inputs.image",
         predictions="$steps.od_model.predictions",

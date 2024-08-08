@@ -18,11 +18,14 @@ from inference.core.workflows.core_steps.models.foundation.openai.version_1 impo
 )
 
 
+@pytest.mark.parametrize("type_alias", ["roboflow_core/open_ai@v1", "OpenAI"])
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_openai_step_validation_when_input_is_valid(images_field_alias: str) -> None:
+def test_openai_step_validation_when_input_is_valid(
+    type_alias: str, images_field_alias: str
+) -> None:
     # given
     specification = {
-        "type": "OpenAI",
+        "type": type_alias,
         "name": "step_1",
         images_field_alias: "$inputs.image",
         "prompt": "$inputs.prompt",
@@ -35,7 +38,7 @@ def test_openai_step_validation_when_input_is_valid(images_field_alias: str) -> 
 
     # then
     assert result == BlockManifest(
-        type="OpenAI",
+        type=type_alias,
         name="step_1",
         images="$inputs.image",
         prompt="$inputs.prompt",

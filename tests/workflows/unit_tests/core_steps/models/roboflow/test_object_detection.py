@@ -10,7 +10,12 @@ from inference.core.workflows.core_steps.models.roboflow.object_detection.versio
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 @pytest.mark.parametrize(
-    "type_alias", ["RoboflowObjectDetectionModel", "ObjectDetectionModel"]
+    "type_alias",
+    [
+        "roboflow_core/roboflow_object_detection_model@v1",
+        "RoboflowObjectDetectionModel",
+        "ObjectDetectionModel",
+    ],
 )
 def test_object_detection_model_validation_when_minimalistic_config_is_provided(
     images_field_alias: str,

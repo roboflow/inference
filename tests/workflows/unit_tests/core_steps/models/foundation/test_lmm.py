@@ -23,11 +23,14 @@ from inference.core.workflows.core_steps.models.foundation.lmm.version_1 import 
 )
 
 
+@pytest.mark.parametrize("type_alias", ["roboflow_core/lmm@v1", "LMM"])
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_lmm_step_validation_when_input_is_valid(images_field_alias: str) -> None:
+def test_lmm_step_validation_when_input_is_valid(
+    type_alias: str, images_field_alias: str
+) -> None:
     # given
     specification = {
-        "type": "LMM",
+        "type": type_alias,
         "name": "step_1",
         images_field_alias: "$inputs.image",
         "lmm_type": "$inputs.lmm_type",
@@ -41,7 +44,7 @@ def test_lmm_step_validation_when_input_is_valid(images_field_alias: str) -> Non
 
     # then
     assert result == BlockManifest(
-        type="LMM",
+        type=type_alias,
         name="step_1",
         images="$inputs.image",
         prompt="$inputs.prompt",

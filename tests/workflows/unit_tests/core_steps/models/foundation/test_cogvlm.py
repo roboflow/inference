@@ -18,11 +18,14 @@ from inference.core.workflows.core_steps.models.foundation.cog_vlm.version_1 imp
 )
 
 
+@pytest.mark.parametrize("type_alias", ["roboflow_core/cog_vlm@v1", "CogVLM"])
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_cogvlm_step_validation_when_input_is_valid(images_field_alias: str) -> None:
+def test_cogvlm_step_validation_when_input_is_valid(
+    type_alias: str, images_field_alias: str
+) -> None:
     # given
     specification = {
-        "type": "CogVLM",
+        "type": type_alias,
         "name": "step_1",
         images_field_alias: "$inputs.image",
         "prompt": "$inputs.prompt",
@@ -34,7 +37,7 @@ def test_cogvlm_step_validation_when_input_is_valid(images_field_alias: str) -> 
 
     # then
     assert result == BlockManifest(
-        type="CogVLM",
+        type=type_alias,
         name="step_1",
         images="$inputs.image",
         prompt="$inputs.prompt",

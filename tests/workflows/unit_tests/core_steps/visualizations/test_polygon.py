@@ -13,13 +13,17 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 
 
+@pytest.mark.parametrize(
+    "type_alias", ["roboflow_core/polygon_visualization@v1", "PolygonVisualization"]
+)
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 def test_polygon_validation_when_valid_manifest_is_given(
+    type_alias: str,
     images_field_alias: str,
 ) -> None:
     # given
     data = {
-        "type": "PolygonVisualization",
+        "type": type_alias,
         "name": "polygon1",
         "predictions": "$steps.od_model.predictions",
         images_field_alias: "$inputs.image",
@@ -31,7 +35,7 @@ def test_polygon_validation_when_valid_manifest_is_given(
 
     # then
     assert result == PolygonManifest(
-        type="PolygonVisualization",
+        type=type_alias,
         name="polygon1",
         images="$inputs.image",
         predictions="$steps.od_model.predictions",

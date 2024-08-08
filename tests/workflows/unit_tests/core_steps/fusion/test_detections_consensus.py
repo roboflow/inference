@@ -32,6 +32,48 @@ from inference.core.workflows.core_steps.fusion.detections_consensus.version_1 i
 
 
 @pytest.mark.parametrize(
+    "type_alias", ["roboflow_core/detections_consensus@v1", "DetectionsConsensus"]
+)
+def test_detections_consensus_validation_when_valid_specification_given_with_supported_type_aliases(
+    type_alias: str,
+) -> None:
+    # given
+    specification = {
+        "type": type_alias,
+        "name": "some",
+        "predictions": [
+            "$steps.detection.predictions",
+            "$steps.detection_2.predictions",
+        ],
+        "image_metadata": "$steps.detection.image",
+        "required_votes": 3,
+    }
+
+    # when
+    result = BlockManifest.model_validate(specification)
+
+    # then
+    assert result == BlockManifest(
+        type=type_alias,
+        name="some",
+        predictions_batches=[
+            "$steps.detection.predictions",
+            "$steps.detection_2.predictions",
+        ],
+        image_metadata="$steps.detection.image",
+        required_votes=3,
+        class_aware=True,
+        iou_threshold=0.3,
+        confidence=0.0,
+        classes_to_consider=None,
+        required_objects=None,
+        presence_confidence_aggregation=AggregationMode.MAX,
+        detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
+        detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+    )
+
+
+@pytest.mark.parametrize(
     "predictions_batch_alias", ["predictions", "predictions_batches"]
 )
 def test_detections_consensus_validation_when_valid_specification_given(

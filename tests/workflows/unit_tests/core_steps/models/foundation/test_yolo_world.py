@@ -10,7 +10,10 @@ from inference.core.workflows.core_steps.models.foundation.yolo_world.version_1 
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-@pytest.mark.parametrize("type_field_alias", ["YoloWorldModel", "YoloWorld"])
+@pytest.mark.parametrize(
+    "type_field_alias",
+    ["roboflow_core/yolo_world_model@v1", "YoloWorldModel", "YoloWorld"],
+)
 def test_yolo_world_step_configuration_decoding_when_valid_config_is_given(
     images_field_alias: str,
     type_field_alias: str,

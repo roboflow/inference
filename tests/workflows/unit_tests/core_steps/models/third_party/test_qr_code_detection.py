@@ -14,7 +14,10 @@ from inference.core.workflows.execution_engine.entities.base import (
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-@pytest.mark.parametrize("type_alias", ["QRCodeDetector", "QRCodeDetection"])
+@pytest.mark.parametrize(
+    "type_alias",
+    ["roboflow_core/qr_code_detector@v1", "QRCodeDetector", "QRCodeDetection"],
+)
 def test_manifest_parsing_when_data_is_valid(
     images_field_alias: str, type_alias: str
 ) -> None:

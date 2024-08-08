@@ -11,15 +11,19 @@ from inference.core.workflows.core_steps.transformations.detection_offset.versio
 )
 
 
+@pytest.mark.parametrize(
+    "type_alias", ["roboflow_core/detection_offset@v1", "DetectionOffset"]
+)
 @pytest.mark.parametrize("offset_width_alias", ["offset_width", "offset_x"])
 @pytest.mark.parametrize("offset_height_alias", ["offset_height", "offset_y"])
 def test_manifest_parsing_when_valid_data_provided(
+    type_alias: str,
     offset_width_alias: str,
     offset_height_alias: str,
 ) -> None:
     # given
     data = {
-        "type": "DetectionOffset",
+        "type": type_alias,
         "name": "some",
         "predictions": "$steps.some.predictions",
         offset_width_alias: "$inputs.offset_x",
@@ -33,7 +37,7 @@ def test_manifest_parsing_when_valid_data_provided(
 
     # then
     assert result == BlockManifest(
-        type="DetectionOffset",
+        type=type_alias,
         name="some",
         predictions="$steps.some.predictions",
         offset_width="$inputs.offset_x",

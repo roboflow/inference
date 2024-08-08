@@ -10,7 +10,12 @@ from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 @pytest.mark.parametrize(
-    "type_alias", ["RoboflowInstanceSegmentationModel", "InstanceSegmentationModel"]
+    "type_alias",
+    [
+        "roboflow_core/roboflow_instance_segmentation_model@v1",
+        "RoboflowInstanceSegmentationModel",
+        "InstanceSegmentationModel",
+    ],
 )
 def test_instance_segmentation_model_validation_when_minimalistic_config_is_provided(
     images_field_alias: str,

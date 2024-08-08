@@ -13,13 +13,17 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 
 
+@pytest.mark.parametrize(
+    "type_alias", ["roboflow_core/ellipse_visualization@v1", "EllipseVisualization"]
+)
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 def test_ellipse_validation_when_valid_manifest_is_given(
+    type_alias: str,
     images_field_alias: str,
 ) -> None:
     # given
     data = {
-        "type": "EllipseVisualization",
+        "type": type_alias,
         "name": "ellipse1",
         "predictions": "$steps.od_model.predictions",
         images_field_alias: "$inputs.image",
@@ -33,7 +37,7 @@ def test_ellipse_validation_when_valid_manifest_is_given(
 
     # then
     assert result == EllipseManifest(
-        type="EllipseVisualization",
+        type=type_alias,
         name="ellipse1",
         images="$inputs.image",
         predictions="$steps.od_model.predictions",

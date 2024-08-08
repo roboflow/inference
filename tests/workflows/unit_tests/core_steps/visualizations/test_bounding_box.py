@@ -13,13 +13,18 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 
 
+@pytest.mark.parametrize(
+    "type_alias",
+    ["roboflow_core/bounding_box_visualization@v1", "BoundingBoxVisualization"],
+)
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 def test_bounding_box_validation_when_valid_manifest_is_given(
+    type_alias: str,
     images_field_alias: str,
 ) -> None:
     # given
     data = {
-        "type": "BoundingBoxVisualization",
+        "type": type_alias,
         "name": "square1",
         "predictions": "$steps.od_model.predictions",
         images_field_alias: "$inputs.image",
@@ -32,7 +37,7 @@ def test_bounding_box_validation_when_valid_manifest_is_given(
 
     # then
     assert result == BoundingBoxManifest(
-        type="BoundingBoxVisualization",
+        type=type_alias,
         name="square1",
         images="$inputs.image",
         predictions="$steps.od_model.predictions",
