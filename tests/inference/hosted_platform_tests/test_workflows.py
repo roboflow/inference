@@ -141,7 +141,7 @@ def test_getting_block_schema_from_get_endpoint(
     object_detection_service_url: str,
 ) -> None:
     # when
-    response = requests.get(f"{object_detection_service_url}/workflows/blocks/schema")
+    response = requests.get(f"{object_detection_service_url}/workflows/definition/schema")
 
     # then
     response.raise_for_status()

@@ -946,7 +946,7 @@ class HttpInterface(BaseInterface):
                 )
 
             @app.get(
-                "/workflows/blocks/schema",
+                "/workflows/definition/schema",
                 response_model=WorkflowsBlocksSchemaDescription,
                 summary="Endpoint to fetch the workflows block schema",
                 description="Endpoint to fetch the schema of all available blocks. This information can be "

@@ -599,7 +599,7 @@ def test_workflow_run_when_dynamic_block_is_in_use(
 
 def test_getting_block_schema_using_get_endpoint(server_url) -> None:
     # when
-    response = requests.get(f"{server_url}/workflows/blocks/schema")
+    response = requests.get(f"{server_url}/workflows/definition/schema")
 
     # then
     response.raise_for_status()

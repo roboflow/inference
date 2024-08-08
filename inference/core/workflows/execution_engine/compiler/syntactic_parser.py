@@ -52,7 +52,7 @@ def build_workflow_definition_entity(
     block_manifest_types_union = Union[steps_manifests]
     block_type = Annotated[block_manifest_types_union, Field(discriminator="type")]
     return create_model(
-        "WorkflowSpecificationV2",
+        "WorkflowSpecificationV1",
         version=(Literal["1.0"], ...),
         inputs=(List[InputType], ...),
         steps=(List[block_type], ...),
