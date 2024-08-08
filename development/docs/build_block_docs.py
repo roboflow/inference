@@ -54,6 +54,11 @@ BLOCK_VERSION_TEMPLATE = """
 
 {description}
 
+### Type identifier
+
+Use the following identifier in step `"type"` field: `{type_identifier}`to add the block as
+as step in your workflow.
+
 ### Properties
 
 {block_inputs}
@@ -192,6 +197,7 @@ def main() -> None:
             version_content = BLOCK_VERSION_TEMPLATE.format(
                 family_name=family_name,
                 version=block.block_schema.get("version", "undefined"),
+                type_identifier=block.manifest_type_identifier,
                 description=long_description,
                 block_inputs=format_block_inputs(parsed_manifest),
                 block_input_bindings=format_input_bindings(parsed_manifest),
