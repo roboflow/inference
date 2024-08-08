@@ -152,4 +152,4 @@ class WorkflowsBlocksDescription(BaseModel):
 
 
 class WorkflowsBlocksSchemaDescription(BaseModel):
-    schema: dict = Field(description="Schema for dynamic block definition")
+    schema: dict = Field(description="Schema for validating block definitions")

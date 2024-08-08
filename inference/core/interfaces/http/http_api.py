@@ -924,18 +924,6 @@ class HttpInterface(BaseInterface):
             async def describe_workflows_blocks() -> WorkflowsBlocksDescription:
                 return handle_describe_workflows_blocks_request()
 
-            @app.get(
-                "/workflows/blocks/schema",
-                response_model=WorkflowsBlocksSchemaDescription,
-                summary="[Endpoint to get definition of workflows block schema",
-                description="Endpoint provides detailed information about workflows building blocks that are "
-                "accessible in the inference server. This information could be used to programmatically "
-                "build / display workflows.",
-            )
-            @with_route_exceptions
-            async def get_workflow_schema() -> WorkflowsBlocksSchemaDescription:
-                return get_workflow_schema_description()
-
             @app.post(
                 "/workflows/blocks/describe",
                 response_model=WorkflowsBlocksDescription,
@@ -956,6 +944,17 @@ class HttpInterface(BaseInterface):
                 return handle_describe_workflows_blocks_request(
                     dynamic_blocks_definitions=dynamic_blocks_definitions
                 )
+
+            @app.get(
+                "/workflows/blocks/schema",
+                response_model=WorkflowsBlocksSchemaDescription,
+                summary="Endpoint to fetch the workflows block schema",
+                description="Endpoint to fetch the schema of all available blocks. This information can be "
+                "used to validate workflow definitions and suggest syntax in the JSON editor.",
+            )
+            @with_route_exceptions
+            async def get_workflow_schema() -> WorkflowsBlocksSchemaDescription:
+                return get_workflow_schema_description()
 
             @app.post(
                 "/workflows/blocks/dynamic_outputs",
