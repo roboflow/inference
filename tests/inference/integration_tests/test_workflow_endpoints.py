@@ -567,6 +567,7 @@ def test_workflow_run(
     )
 
     # then
+    print(response.json())
     response.raise_for_status()
     response_data = response.json()
     assert isinstance(
