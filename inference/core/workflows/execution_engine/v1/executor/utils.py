@@ -1,4 +1,5 @@
-from multiprocessing.pool import ThreadPool
+import concurrent
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, List, TypeVar
 
 T = TypeVar("T")
@@ -7,9 +8,9 @@ T = TypeVar("T")
 def run_steps_in_parallel(
     steps: List[Callable[[], T]], max_workers: int = 1
 ) -> List[T]:
-    with ThreadPool(processes=max_workers) as pool:
-        return pool.map(func=_run_step, iterable=steps)
-
-
-def _run_step(step: Callable[[], T]) -> T:
-    return step()
+    results = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(step) for step in steps]
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
+    return results

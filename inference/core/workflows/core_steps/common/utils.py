@@ -1,7 +1,8 @@
+import concurrent
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from multiprocessing.pool import ThreadPool
 from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar, Union
 
 import numpy as np
@@ -413,9 +414,9 @@ def remove_unexpected_keys_from_dictionary(
 
 
 def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[T]:
-    with ThreadPool(processes=max_workers) as pool:
-        return pool.map(func=_run_task, iterable=tasks)
-
-
-def _run_task(step: Callable[[], T]) -> T:
-    return step()
+    results = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(task) for task in tasks]
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
+    return results

@@ -6,8 +6,6 @@ from queue import Queue
 from threading import Thread
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 
-from fastapi import BackgroundTasks
-
 from inference.core import logger
 from inference.core.active_learning.middlewares import (
     NullActiveLearningMiddleware,

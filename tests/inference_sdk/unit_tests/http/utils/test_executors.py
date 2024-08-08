@@ -219,7 +219,9 @@ def test_make_request_when_successful_response_is_expected(
 
 
 @mock.patch.object(executors, "make_request")
-def test_make_parallel_requests(make_request_mock: MagicMock) -> None:
+def test_make_parallel_requests(
+    make_request_mock: MagicMock,
+) -> None:
     # given
     request_data = RequestData(
         url="https://some.com",
@@ -240,7 +242,7 @@ def test_make_parallel_requests(make_request_mock: MagicMock) -> None:
     # then
     assert len(result) == 4, "Number of output responses must match number of requests"
     make_request_mock.assert_has_calls(
-        [call(request_data, request_method=RequestMethod.GET)] * 4, any_order=True
+        [call(request_data=request_data, request_method=RequestMethod.GET)] * 4, any_order=True
     ), "Mock of request method must be invoked 4 times with proper parameters"
 
 
