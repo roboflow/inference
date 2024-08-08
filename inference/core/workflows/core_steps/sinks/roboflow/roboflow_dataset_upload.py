@@ -457,7 +457,11 @@ def register_datapoint(
     batch_name: str,
     tags: List[str],
 ) -> str:
-    inference_id = prediction.data["inference_id"][0] if prediction and "inference_id" in prediction.data else None
+    inference_id = (
+        prediction.data["inference_id"][0]
+        if prediction and "inference_id" in prediction.data
+        else None
+    )
     roboflow_image_id = safe_register_image_at_roboflow(
         target_project=target_project,
         encoded_image=encoded_image,
