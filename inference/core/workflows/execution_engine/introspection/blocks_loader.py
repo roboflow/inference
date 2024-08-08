@@ -65,6 +65,7 @@ def describe_available_blocks(
                 ),
                 manifest_type_identifier=manifest_type_identifiers[0],
                 manifest_type_identifier_aliases=manifest_type_identifiers[1:],
+                execution_engine_compatibility=block.manifest_class.get_execution_engine_compatibility(),
             )
         )
     _validate_loaded_blocks_manifest_type_identifiers(blocks=result)

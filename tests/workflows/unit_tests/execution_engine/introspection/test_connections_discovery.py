@@ -110,6 +110,7 @@ BLOCK_1_DESCRIPTION = BlockDescription(
     fully_qualified_block_class_name="some.Block1",
     human_friendly_block_name="Block 1",
     manifest_type_identifier="Block1Manifest",
+    execution_engine_compatibility=None,
 )
 BLOCK_2_DESCRIPTION = BlockDescription(
     manifest_class=Block2Manifest,
@@ -120,6 +121,7 @@ BLOCK_2_DESCRIPTION = BlockDescription(
     fully_qualified_block_class_name="some.Block2",
     human_friendly_block_name="Block 2",
     manifest_type_identifier="Block2Manifest",
+    execution_engine_compatibility=None,
 )
 BLOCK_3_DESCRIPTION = BlockDescription(
     manifest_class=Block3Manifest,
@@ -130,6 +132,7 @@ BLOCK_3_DESCRIPTION = BlockDescription(
     fully_qualified_block_class_name="some.Block3",
     human_friendly_block_name="Block 3",
     manifest_type_identifier="Block3Manifest",
+    execution_engine_compatibility=None,
 )
 
 BLOCKS_DESCRIPTION = BlocksDescription(

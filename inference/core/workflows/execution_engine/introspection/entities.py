@@ -119,6 +119,10 @@ class BlockDescription(BaseModel):
         description="Aliases of `manifest_type_identifier` that are in use.",
         default_factory=list,
     )
+    execution_engine_compatibility: Optional[str] = Field(
+        description="Execution Engine versions compatible with block.",
+        default=None,
+    )
 
 
 class BlocksDescription(BaseModel):

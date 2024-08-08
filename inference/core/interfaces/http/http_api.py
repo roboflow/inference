@@ -155,6 +155,7 @@ from inference.core.workflows.errors import (
     DynamicBlockError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
+    NotSupportedExecutionEngineError,
     ReferenceTypeError,
     RuntimeInputError,
     WorkflowDefinitionError,
@@ -252,6 +253,7 @@ def with_route_exceptions(route):
             OperationTypeNotRecognisedError,
             DynamicBlockError,
             WorkflowExecutionEngineVersionError,
+            NotSupportedExecutionEngineError,
         ) as error:
             resp = JSONResponse(
                 status_code=400,
