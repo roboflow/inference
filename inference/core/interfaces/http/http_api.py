@@ -452,8 +452,8 @@ class HttpInterface(BaseInterface):
             cached_projects = set()
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
-                # exclude / (health check)
-                if request.url.path == '/':
+                # exclude / and /info (health check)
+                if request.url.path in ['/', '/info']:
                     return await call_next(request)
                 
                 def _unauthorized_response(msg):
