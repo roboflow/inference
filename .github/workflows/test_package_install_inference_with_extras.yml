@@ -33,7 +33,7 @@ jobs:
       - name: 📦 Installing `inference` package...
         run: |
           wheel_name=`ls ./dist/inference-*-py3-none-any.whl | head -n 1`
-          pip install --no-cache-dir "${wheel_name}[clip,gaze,grounding-dino,sam,waf,yolo-world,http,hosted]"
+          pip install "${wheel_name}[clip,gaze,grounding-dino,sam,waf,yolo-world,http,hosted]"
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |

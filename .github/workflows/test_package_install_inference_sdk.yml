@@ -31,7 +31,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: 📦 Installing `inference` package...
-        run: pip install --no-cache-dir ./dist/inference_sdk-*-py3-none-any.whl
+        run: pip install ./dist/inference_sdk-*-py3-none-any.whl
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |
