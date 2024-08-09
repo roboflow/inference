@@ -56,7 +56,6 @@ from inference.core.entities.responses.clip import (
     ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.cogvlm import CogVLMResponse
-from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -69,6 +68,7 @@ from inference.core.entities.responses.inference import (
     StubResponse,
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
+from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
     SamSegmentationResponse,
@@ -1313,7 +1313,7 @@ class HttpInterface(BaseInterface):
 
                 @app.post(
                     "/doctr/ocr",
-                    response_model=DoctrOCRInferenceResponse,
+                    response_model=OCRInferenceResponse,
                     summary="DocTR OCR response",
                     description="Run the DocTR OCR model to retrieve text in an image.",
                 )
@@ -1335,7 +1335,7 @@ class HttpInterface(BaseInterface):
                         request (Request, default Body()): The HTTP request.
 
                     Returns:
-                        M.DoctrOCRInferenceResponse: The response containing the embedded image.
+                        M.OCRInferenceResponse: The response containing the embedded image.
                     """
                     logger.debug(f"Reached /doctr/ocr")
                     doctr_model_id = load_doctr_model(
