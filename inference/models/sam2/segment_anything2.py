@@ -7,34 +7,37 @@ from time import perf_counter
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
-import rasterio.features
+import sam2.utils.misc
 import torch
+from torch.nn.attention import SDPBackend
 
-try:
-    from sam2.build_sam import build_sam2
-    from sam2.sam2_image_predictor import SAM2ImagePredictor
-except ImportError:
-    logging.error(
-        "Could not import sam2. See the instructions at "
-        "https://github.com/facebookresearch/segment-anything-2/?tab=readme-ov-file#installation"
-    )
-    raise
+sam2.utils.misc.get_sdp_backends = lambda z: [
+    SDPBackend.EFFICIENT_ATTENTION,
+    SDPBackend.MATH,
+]
+from sam2.build_sam import build_sam2
+from sam2.sam2_image_predictor import SAM2ImagePredictor
 from shapely.geometry import Polygon as ShapelyPolygon
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam2 import (
     Sam2EmbeddingRequest,
     Sam2InferenceRequest,
+    Sam2PromptSet,
     Sam2SegmentationRequest,
 )
 from inference.core.entities.responses.sam2 import (
     Sam2EmbeddingResponse,
+    Sam2SegmentationPrediction,
     Sam2SegmentationResponse,
 )
-from inference.core.env import SAM2_VERSION_ID, SAM_MAX_EMBEDDING_CACHE_SIZE
+from inference.core.env import DEVICE, SAM2_VERSION_ID, SAM_MAX_EMBEDDING_CACHE_SIZE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
+
+if DEVICE is None:
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 class SegmentAnything2(RoboflowCoreModel):
@@ -67,9 +70,7 @@ class SegmentAnything2(RoboflowCoreModel):
             "hiera_b_plus": "sam2_hiera_b+.yaml",
         }[self.version_id]
 
-        self.sam = build_sam2(model_cfg, checkpoint)
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.sam.to(self.device)
+        self.sam = build_sam2(model_cfg, checkpoint, device=DEVICE)
 
         self.predictor = SAM2ImagePredictor(self.sam)
 
@@ -162,10 +163,24 @@ class SegmentAnything2(RoboflowCoreModel):
         elif isinstance(request, Sam2SegmentationRequest):
             masks, low_res_masks = self.segment_image(**request.dict())
             if request.format == "json":
-                masks = masks > self.predictor.mask_threshold
-                masks = masks2poly(masks)
-                low_res_masks = low_res_masks > self.predictor.mask_threshold
-                low_res_masks = masks2poly(low_res_masks)
+
+                predictions = []
+                for mask, low_res_mask in zip(masks, low_res_masks):
+                    mask = mask >= self.predictor.mask_threshold
+                    mask = masks2poly(mask)
+                    low_res_mask = low_res_mask > self.predictor.mask_threshold
+                    low_res_mask = masks2poly(low_res_mask)
+
+                    pred = Sam2SegmentationPrediction(
+                        mask=[polygon.tolist() for polygon in mask],
+                        low_res_mask=[polygon.tolist() for polygon in low_res_mask],
+                    )
+                    predictions.append(pred)
+
+                return Sam2SegmentationResponse(
+                    time=perf_counter() - t1, predictions=predictions
+                )
+
             elif request.format == "binary":
                 binary_vector = BytesIO()
                 np.savez_compressed(
@@ -177,12 +192,8 @@ class SegmentAnything2(RoboflowCoreModel):
             else:
                 raise ValueError(f"Invalid format {request.format}")
 
-            response = Sam2SegmentationResponse(
-                masks=[m.tolist() for m in masks],
-                low_res_masks=[m.tolist() for m in low_res_masks],
-                time=perf_counter() - t1,
-            )
-            return response
+        else:
+            raise ValueError(f"Invalid request type {type(request)}")
 
     def preproc_image(self, image: InferenceRequestImage):
         """Preprocesses an image.
@@ -200,8 +211,7 @@ class SegmentAnything2(RoboflowCoreModel):
         self,
         image: Any,
         image_id: Optional[str] = None,
-        point_coords: Optional[List[List[float]]] = None,
-        point_labels: Optional[List[int]] = None,
+        prompts: Sam2PromptSet = None,
         **kwargs,
     ):
         """
@@ -210,17 +220,8 @@ class SegmentAnything2(RoboflowCoreModel):
 
         Args:
             image (Any): The image to be segmented.
-            embeddings (Optional[Union[np.ndarray, List[List[float]]]]): The embeddings of the image.
-                Defaults to None, in which case the image is used to compute embeddings.
-            embeddings_format (Optional[str]): Format of the provided embeddings; either 'json' or 'binary'. Defaults to 'json'.
-            has_mask_input (Optional[bool]): Specifies whether mask input is provided. Defaults to False.
             image_id (Optional[str]): A cached identifier for the image. Useful for accessing cached embeddings or masks.
-            mask_input (Optional[Union[np.ndarray, List[List[List[float]]]]]): Input mask for the image.
-            mask_input_format (Optional[str]): Format of the provided mask input; either 'json' or 'binary'. Defaults to 'json'.
-            orig_im_size (Optional[List[int]]): Original size of the image when providing embeddings directly.
-            point_coords (Optional[List[List[float]]]): Coordinates of points in the image. Defaults to an empty list.
-            point_labels (Optional[List[int]]): Labels associated with the provided points. Defaults to an empty list.
-            use_mask_input_cache (Optional[bool]): Flag to determine if cached mask input should be used. Defaults to True.
+            prompts (Optional[List[Sam2Prompt]]): List of prompts to use for segmentation. Defaults to None.
             **kwargs: Additional keyword arguments.
 
         Returns:
@@ -247,45 +248,49 @@ class SegmentAnything2(RoboflowCoreModel):
                 image=image, image_id=image_id
             )
 
-            if point_coords is not None:
-                point_coords = np.array(point_coords, dtype=np.float32)
-                point_coords = np.expand_dims(point_coords, axis=0)
-
-            if point_labels is not None:
-                point_labels = np.array(point_labels, dtype=np.float32)
-                point_labels = np.expand_dims(point_labels, axis=0)
-
             mask_input = self.low_res_logits_cache.get(image_id, None)
             self.predictor._is_image_set = True
             self.predictor._features = embedding
             self.predictor._orig_hw = [original_image_size]
             self.predictor._is_batch = False
+            args = dict()
+            if prompts:
+                if type(prompts) is dict:
+                    args = Sam2PromptSet(**prompts).to_sam2_inputs()
+                else:
+                    args = prompts.to_sam2_inputs()
 
             masks, scores, low_res_logits = self.predictor.predict(
-                point_coords=point_coords,
-                point_labels=point_labels,
-                mask_input=(
-                    np.expand_dims(mask_input, axis=0).astype(np.float32)
-                    if mask_input is not None
-                    else None
-                ),
+                mask_input=mask_input,
                 multimask_output=True,
                 return_logits=True,
                 normalize_coords=True,
+                **args,
             )
 
-            sorted_ind = np.argsort(scores)[::-1]
-            masks = masks[sorted_ind]
-            scores = scores[sorted_ind]
-            low_res_logits = low_res_logits[sorted_ind]
+            if len(masks.shape) == 3:
+                masks = np.expand_dims(masks, axis=0)
+                low_res_logits = np.expand_dims(low_res_logits, axis=0)
+                scores = np.expand_dims(scores, axis=0)
 
-            self.low_res_logits_cache[image_id] = low_res_logits[0]
+            predicted_masks = []
+            low_res_masks = []
+            for mask, score, low_res_logit in zip(masks, scores, low_res_logits):
+                sorted_ind = np.argsort(score)[::-1]
+                mask = mask[sorted_ind]
+                score = score[sorted_ind]
+                low_res_logit = low_res_logit[sorted_ind]
+                mask = mask[:1]
+                low_res_logit = low_res_logit[:1]
+                predicted_masks.append(mask)
+                low_res_masks.append(low_res_logit)
+
+            self.low_res_logits_cache[image_id] = np.asarray(low_res_masks)
+
             if image_id not in self.segmentation_cache_keys:
                 self.segmentation_cache_keys.append(image_id)
             if len(self.segmentation_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
                 cache_key = self.segmentation_cache_keys.pop(0)
                 del self.low_res_logits_cache[cache_key]
-            masks = masks[0]
-            low_res_masks = low_res_logits[0]
 
-            return masks, low_res_masks
+            return np.asarray(predicted_masks), np.asarray(low_res_masks)

@@ -34,9 +34,17 @@ from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBloc
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.ocr import OCRModelBlock
 from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
+from inference.core.workflows.core_steps.models.foundation.openai import OpenAIBlock
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything import (
+    SegmentAnything2Block,
+)
+from inference.core.workflows.core_steps.models.foundation.yolo_world import (
+    YoloWorldModelBlock,
 )
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
@@ -188,6 +196,53 @@ REGISTERED_INITIALIZERS = {
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
+        DetectionsConsensusBlock,
+        ClipComparisonBlock,
+        LMMBlock,
+        LMMForClassificationBlock,
+        OpenAIBlock,
+        CogVLMBlock,
+        OCRModelBlock,
+        YoloWorldModelBlock,
+        SegmentAnything2Block,
+        RoboflowInstanceSegmentationModelBlock,
+        RoboflowKeypointDetectionModelBlock,
+        RoboflowClassificationModelBlock,
+        RoboflowMultiLabelClassificationModelBlock,
+        RoboflowObjectDetectionModelBlock,
+        BarcodeDetectorBlock,
+        QRCodeDetectorBlock,
+        AbsoluteStaticCropBlock,
+        DynamicCropBlock,
+        DetectionsFilterBlock,
+        DetectionOffsetBlock,
+        RelativeStaticCropBlock,
+        DetectionsTransformationBlock,
+        RoboflowDatasetUploadBlock,
+        ContinueIfBlock,
+        PerspectiveCorrectionBlock,
+        DynamicZonesBlock,
+        DetectionsClassesReplacementBlock,
+        ExpressionBlock,
+        PropertyDefinitionBlock,
+        DimensionCollapseBlock,
+        FirstNonEmptyOrDefaultBlock,
+        BackgroundColorVisualizationBlock,
+        BlurVisualizationBlock,
+        BoundingBoxVisualizationBlock,
+        CircleVisualizationBlock,
+        ColorVisualizationBlock,
+        CornerVisualizationBlock,
+        CropVisualizationBlock,
+        DotVisualizationBlock,
+        EllipseVisualizationBlock,
+        HaloVisualizationBlock,
+        LabelVisualizationBlock,
+        MaskVisualizationBlock,
+        PixelateVisualizationBlock,
+        PolygonVisualizationBlock,
+        TriangleVisualizationBlock,
+        RoboflowCustomMetadataBlock,
         DetectionsConsensusBlockV1,
         ClipComparisonBlockV1,
         LMMBlockV1,

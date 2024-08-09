@@ -28,6 +28,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.pali.flash_attn.txt \
     ./
 
+RUN python3 -m pip install -U pip
 RUN python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cu118 \
     -r _requirements.txt \
     -r requirements.sam.txt \
