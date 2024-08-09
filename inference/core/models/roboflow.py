@@ -667,7 +667,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
     def run_test_inference(self) -> None:
         test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
         logger.debug(f"Running test inference. Image size: {test_image.shape}")
-        result = self.infer(test_image)
+        result = self.infer(test_image, usage_inference_test_run=True)
         logger.debug(f"Test inference finished.")
         return result
 

@@ -7,6 +7,7 @@ from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.usage_tracking.collector import usage_collector
 
 
 class BaseInference:
@@ -15,6 +16,7 @@ class BaseInference:
     This class provides a basic interface for inference tasks.
     """
 
+    @usage_collector
     def infer(self, image: Any, **kwargs) -> Any:
         """Runs inference on given data.
         - image:

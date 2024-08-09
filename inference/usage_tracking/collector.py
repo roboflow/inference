@@ -20,8 +20,9 @@ from typing_extensions import (
     Dict,
     List,
     Optional,
-    Set,
+    ParamSpec,
     Tuple,
+    TypeVar,
     Union,
 )
 
@@ -34,7 +35,11 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 from inference.usage_tracking.utils import collect_func_params
 
 from .config import TelemetrySettings, get_telemetry_settings
+from .redis_queue import RedisQueue
 from .sqlite_queue import SQLiteQueue
+
+T = TypeVar("T")
+P = ParamSpec("P")
 
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
@@ -76,21 +81,31 @@ class UsageCollector:
             exec_session_id=self._exec_session_id
         )
 
-        if LAMBDA or self._settings.opt_out:
+        self._hashed_api_keys: Dict[APIKey, APIKeyHash] = {}
+        self._api_keys_hashing_enabled = True
+
+        if LAMBDA and REDIS_HOST:
+            logger.debug("Persistence through RedisQueue")
+            self._queue: "Queue[UsagePayload]" = RedisQueue()
+            self._api_keys_hashing_enabled = False
+        elif LAMBDA or self._settings.opt_out:
+            logger.debug("No persistence")
             self._queue: "Queue[UsagePayload]" = Queue(
                 maxsize=self._settings.queue_size
             )
+            self._api_keys_hashing_enabled = False
         else:
             try:
                 self._queue = SQLiteQueue()
+                logger.debug("Persistence through SQLiteQueue")
             except Exception as exc:
                 logger.debug("Unable to create instance of SQLiteQueue, %s", exc)
+                logger.debug("No persistence")
                 self._queue: "Queue[UsagePayload]" = Queue(
                     maxsize=self._settings.queue_size
                 )
+                self._api_keys_hashing_enabled = False
         self._queue_lock = Lock()
-
-        self._hashed_api_keys: Dict[APIKey, APIKeyHash] = {}
 
         self._system_info_sent: bool = False
         self._resource_details_lock = Lock()
@@ -269,7 +284,10 @@ class UsageCollector:
         if api_key:
             api_key_hash = self._hashed_api_keys.get(api_key)
             if not api_key_hash:
-                api_key_hash = UsageCollector._hash(api_key)
+                if self._api_keys_hashing_enabled:
+                    api_key_hash = UsageCollector._hash(api_key)
+                else:
+                    api_key_hash = api_key
             self._hashed_api_keys[api_key] = api_key_hash
         return api_key_hash
 
@@ -429,6 +447,7 @@ class UsageCollector:
         api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: str = "",
+        inference_test_run: bool = False,
         fps: float = 0,
         enterprise: bool = False,
     ):
@@ -441,9 +460,11 @@ class UsageCollector:
             if not source_usage["timestamp_start"]:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
-            source_usage["processed_frames"] += frames
+            source_usage["processed_frames"] += frames if not inference_test_run else 0
             source_usage["fps"] = round(fps, 2)
-            source_usage["source_duration"] += frames / fps if fps else 0
+            source_usage["source_duration"] += (
+                frames / fps if fps and not inference_test_run else 0
+            )
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
             source_usage["api_key_hash"] = api_key_hash
@@ -459,6 +480,7 @@ class UsageCollector:
         api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: str = "",
+        inference_test_run: bool = False,
         fps: float = 0,
     ) -> DefaultDict[str, Any]:
         if self._settings.opt_out and not enterprise:
@@ -481,6 +503,7 @@ class UsageCollector:
             api_key=api_key,
             resource_details=resource_details,
             resource_id=resource_id,
+            inference_test_run=inference_test_run,
             fps=fps,
             enterprise=enterprise,
         )
@@ -494,6 +517,7 @@ class UsageCollector:
         api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
         resource_id: str = "",
+        inference_test_run: bool = False,
         fps: float = 0,
     ) -> DefaultDict[str, Any]:
         if self._async_lock:
@@ -506,6 +530,7 @@ class UsageCollector:
                     api_key=api_key,
                     resource_details=resource_details,
                     resource_id=resource_id,
+                    inference_test_run=inference_test_run,
                     fps=fps,
                 )
         else:
@@ -517,6 +542,7 @@ class UsageCollector:
                 api_key=api_key,
                 resource_details=resource_details,
                 resource_id=resource_id,
+                inference_test_run=inference_test_run,
                 fps=fps,
             )
 
@@ -596,7 +622,7 @@ class UsageCollector:
                     logger.debug(
                         "Failed to send usage - got %s status code (%s)",
                         response.status_code,
-                        response.raw,
+                        response.content,
                     )
                     api_keys_hashes_failed.add(api_key_hash)
                     continue
@@ -637,6 +663,7 @@ class UsageCollector:
         usage_fps: float,
         usage_api_key: str,
         usage_workflow_id: str,
+        usage_inference_test_run: bool,
         func: Callable[[Any], Any],
         args: List[Any],
         kwargs: Dict[str, Any],
@@ -645,12 +672,13 @@ class UsageCollector:
         resource_details = {}
         resource_id = ""
         category = None
+        enterprise = False
+        # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
         if "workflow" in func_kwargs:
             workflow: CompiledWorkflow = func_kwargs["workflow"]
             if hasattr(workflow, "workflow_definition"):
-                # TODO: handle enterprise blocks here
+                # TODO: extend ParsedWorkflowDefinition to expose `enterprise`
                 workflow_definition = workflow.workflow_definition
-                enterprise = False
             if hasattr(workflow, "init_parameters"):
                 init_parameters = workflow.init_parameters
                 if "workflows_core.api_key" in init_parameters:
@@ -667,9 +695,27 @@ class UsageCollector:
                     resource_details=resource_details
                 )
             category = "workflows"
-        elif "model_id" in func_kwargs:
-            # TODO: handle model
-            pass
+        elif "self" in func_kwargs:
+            _self = func_kwargs["self"]
+            if hasattr(_self, "dataset_id") and hasattr(_self, "version_id"):
+                model_id = f"{_self.dataset_id}/{_self.version_id}"
+                category = "model"
+                resource_id = model_id
+            elif isinstance(kwargs, dict) and "model_id" in kwargs:
+                model_id = kwargs["model_id"]
+                category = "model"
+                resource_id = model_id
+            else:
+                resource_id = "unknown"
+                category = "unknown"
+            if isinstance(kwargs, dict) and "source" in kwargs:
+                resource_details["source"] = kwargs["source"]
+            if hasattr(_self, "task_type"):
+                resource_details["task_type"] = _self.task_type
+        else:
+            resource_id = "unknown"
+            category = "unknown"
+
         source = None
         runtime_parameters = func_kwargs.get("runtime_parameters")
         if (
@@ -690,24 +736,27 @@ class UsageCollector:
             "category": category,
             "resource_details": resource_details,
             "resource_id": resource_id,
+            "inference_test_run": usage_inference_test_run,
             "fps": usage_fps,
             "enterprise": enterprise,
         }
 
-    def __call__(self, func: Callable[[Any], Any]):
+    def __call__(self, func: Callable[P, T]) -> Callable[P, T]:
         @wraps(func)
         def sync_wrapper(
-            *args,
+            *args: P.args,
             usage_fps: float = 0,
             usage_api_key: APIKey = "",
             usage_workflow_id: str = "",
-            **kwargs,
-        ):
+            usage_inference_test_run: bool = False,
+            **kwargs: P.kwargs,
+        ) -> T:
             self.record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
                     usage_api_key=usage_api_key,
                     usage_workflow_id=usage_workflow_id,
+                    usage_inference_test_run=usage_inference_test_run,
                     func=func,
                     args=args,
                     kwargs=kwargs,
@@ -717,17 +766,19 @@ class UsageCollector:
 
         @wraps(func)
         async def async_wrapper(
-            *args,
+            *args: P.args,
             usage_fps: float = 0,
             usage_api_key: APIKey = "",
             usage_workflow_id: str = "",
-            **kwargs,
-        ):
+            usage_inference_test_run: bool = False,
+            **kwargs: P.kwargs,
+        ) -> T:
             await self.async_record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
                     usage_api_key=usage_api_key,
                     usage_workflow_id=usage_workflow_id,
+                    usage_inference_test_run=usage_inference_test_run,
                     func=func,
                     args=args,
                     kwargs=kwargs,
