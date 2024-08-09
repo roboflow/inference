@@ -153,3 +153,7 @@ class WorkflowsBlocksDescription(BaseModel):
 
 class ExecutionEngineVersions(BaseModel):
     versions: List[str]
+
+
+class WorkflowsBlocksSchemaDescription(BaseModel):
+    schema: dict = Field(description="Schema for validating block definitions")

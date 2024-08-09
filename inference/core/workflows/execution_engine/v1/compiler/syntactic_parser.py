@@ -5,6 +5,7 @@ from packaging.version import Version
 from pydantic import BaseModel, Field, create_model
 from typing_extensions import Annotated
 
+from inference.core.entities.responses.workflows import WorkflowsBlocksSchemaDescription
 from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import InputType, JsonField
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
@@ -61,3 +62,9 @@ def build_workflow_definition_entity(
         steps=(List[block_type], ...),
         outputs=(List[JsonField], ...),
     )
+
+
+def get_workflow_schema_description() -> WorkflowsBlocksSchemaDescription:
+    workflow_definition_class = build_workflow_definition_entity([])
+    schema = workflow_definition_class.model_json_schema()
+    return WorkflowsBlocksSchemaDescription(schema=schema)

@@ -567,7 +567,6 @@ def test_workflow_run(
     )
 
     # then
-    print(response.json())
     response.raise_for_status()
     response_data = response.json()
     assert isinstance(
@@ -693,3 +692,21 @@ def test_get_versions_of_execution_engine(server_url: str) -> None:
     response.raise_for_status()
     response_data = response.json()
     assert response_data["versions"] == ["1.0.0"]
+
+
+def test_getting_block_schema_using_get_endpoint(server_url) -> None:
+    # when
+    response = requests.get(f"{server_url}/workflows/definition/schema")
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert "schema" in response_data, "Response expected to define schema"
+    schema = response_data["schema"]
+    assert "$defs" in schema, "Response expected to define valid types"
+    assert "properties" in schema, "Response expected to define schema properties"
+    assert (
+        "required" in schema
+    ), "Response expected to define required schema properties"
+    assert "title" in schema, "Response expected to define unique schema title"
+    assert "type" in schema, "Response expected to define schema type"
