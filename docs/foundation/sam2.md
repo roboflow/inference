@@ -54,6 +54,7 @@ import os
 os.environ["API_KEY"] = "<YOUR-API-KEY>"
 from inference.models.sam2 import SegmentAnything2
 from inference.core.utils.postprocess import masks2poly
+from inference.core.entities.requests.sam2 import Sam2PromptSet
 import supervision as sv
 from PIL import Image
 import numpy as np
@@ -90,15 +91,21 @@ The resulting mask will look like this:
 ### Negative Prompt the Model
 ```
 point = [250, 800]
+label = False
 # give a negative point (point_label 0) or a positive example (point_label 1)
+prompt = Sam2PromptSet(
+    prompts=[{"points": [{"x": point[0], "y": point[1], "positive": label}]}]
+)
+
 # uses cached masks from prior call
+
 raw_masks2, raw_low_res_masks2 = m.segment_image(
     image_path,
-    point_coords=[point],
-    point_labels=[0],
+    prompts=prompt,
 )
 
 raw_masks2 = raw_masks2 >= m.predictor.mask_threshold
+raw_masks2 = raw_masks2[0]
 ```
 Here we tell the model that the cached mask should not include the wrist.
 

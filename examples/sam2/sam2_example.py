@@ -31,11 +31,11 @@ raw_masks = raw_masks[0]
 
 point = [250, 800]
 label = False
+# give a negative point (point_label 0) or a positive example (point_label 1)
 prompt = Sam2PromptSet(
     prompts=[{"points": [{"x": point[0], "y": point[1], "positive": label}]}]
 )
 
-# give a negative point (point_label 0) or a positive example (point_label 1)
 # uses cached masks from prior call
 
 raw_masks2, raw_low_res_masks2 = m.segment_image(
