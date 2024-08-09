@@ -97,6 +97,7 @@ from inference.core.env import (
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
+    DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
@@ -110,7 +111,6 @@ from inference.core.env import (
     ROBOFLOW_SERVICE_SECRET,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_STEP_EXECUTION_MODE,
-    DEDICATED_DEPLOYMENT_WORKSPACE_URL,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -145,9 +145,9 @@ from inference.core.interfaces.http.orjson_utils import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import (
-    get_workflow_specification,
-    get_roboflow_workspace,
     get_roboflow_dataset_type,
+    get_roboflow_workspace,
+    get_workflow_specification,
 )
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
