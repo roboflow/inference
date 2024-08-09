@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple, TypeVar, Union
 
-from inference.core.workflows.errors import ExecutionEngineRuntimeError
+from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.entities.base import Batch
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompoundStepInputDefinition,
@@ -78,24 +78,113 @@ def construct_non_simd_step_input(
         return None
     result = {}
     for parameter_name, parameter_spec in step_node.input_data.items():
-        if parameter_spec.is_batch_oriented():
-            raise ExecutionEngineRuntimeError(
-                public_message=f"Encountered batch-oriented input for non-SIMD step: {step_node.name}."
-                f"This is most likely a bug. Contact Roboflow team through github issues "
-                f"(https://github.com/roboflow/inference/issues) providing full context of"
-                f"the problem - including workflow definition you use.",
-                context="workflow_execution | step_input_assembling",
-            )
-        if parameter_spec.points_to_input():
-            input_name = get_last_chunk_of_selector(selector=parameter_spec.selector)
-            result[parameter_name] = runtime_parameters[input_name]
-        elif parameter_spec.points_to_step_output():
-            result[parameter_name] = execution_cache.get_non_batch_output(
-                selector=parameter_spec.selector
+        if parameter_spec.is_compound_input():
+            result[parameter_name] = construct_non_simd_step_compound_input(
+                step_node=step_node,
+                parameter_spec=parameter_spec,
+                runtime_parameters=runtime_parameters,
+                execution_cache=execution_cache,
             )
         else:
-            result[parameter_name] = parameter_spec.value
+            result[parameter_name] = construct_non_simd_step_non_compound_input(
+                step_node=step_node,
+                parameter_spec=parameter_spec,
+                runtime_parameters=runtime_parameters,
+                execution_cache=execution_cache,
+            )
     return result
+
+
+def construct_non_simd_step_compound_input(
+    step_node: StepNode,
+    parameter_spec: CompoundStepInputDefinition,
+    runtime_parameters: Dict[str, Any],
+    execution_cache: ExecutionCache,
+) -> Any:
+    if parameter_spec.represents_list_of_inputs():
+        return construct_non_simd_step_compound_list_input(
+            step_node=step_node,
+            parameter_spec=parameter_spec,
+            runtime_parameters=runtime_parameters,
+            execution_cache=execution_cache,
+        )
+    return construct_non_simd_step_compound_dict_input(
+        step_node=step_node,
+        parameter_spec=parameter_spec,
+        runtime_parameters=runtime_parameters,
+        execution_cache=execution_cache,
+    )
+
+
+def construct_non_simd_step_compound_list_input(
+    step_node: StepNode,
+    parameter_spec: CompoundStepInputDefinition,
+    runtime_parameters: Dict[str, Any],
+    execution_cache: ExecutionCache,
+) -> List[Any]:
+    result = []
+    for nested_definition in parameter_spec.iterate_through_definitions():
+        nested_value = construct_non_simd_step_non_compound_input(
+            step_node=step_node,
+            parameter_spec=nested_definition,
+            runtime_parameters=runtime_parameters,
+            execution_cache=execution_cache,
+        )
+        result.append(nested_value)
+    return result
+
+
+def construct_non_simd_step_compound_dict_input(
+    step_node: StepNode,
+    parameter_spec: CompoundStepInputDefinition,
+    runtime_parameters: Dict[str, Any],
+    execution_cache: ExecutionCache,
+) -> Dict[str, Any]:
+    result = {}
+    for nested_definition in parameter_spec.iterate_through_definitions():
+        result[nested_definition.parameter_specification.nested_element_key] = (
+            construct_non_simd_step_non_compound_input(
+                step_node=step_node,
+                parameter_spec=nested_definition,
+                runtime_parameters=runtime_parameters,
+                execution_cache=execution_cache,
+            )
+        )
+    return result
+
+
+def construct_non_simd_step_non_compound_input(
+    step_node: StepNode,
+    parameter_spec: StepInputDefinition,
+    runtime_parameters: Dict[str, Any],
+    execution_cache: ExecutionCache,
+) -> Any:
+    if parameter_spec.is_compound_input():
+        raise AssumptionError(
+            public_message=f"Workflows Execution Error encountered unexpected state probably related to the fact "
+            f"that Workflows Compiler allowed for multi-level nesting of inputs selectors which "
+            f"is not supported. This is most likely the bug. Contact Roboflow team "
+            f"through github issues (https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
+    if parameter_spec.is_batch_oriented():
+        raise ExecutionEngineRuntimeError(
+            public_message=f"Encountered batch-oriented input for non-SIMD step: {step_node.name}."
+            f"This is most likely a bug. Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full context of"
+            f"the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
+    if parameter_spec.points_to_input():
+        parameter_spec: DynamicStepInputDefinition = parameter_spec  # type: ignore
+        input_name = get_last_chunk_of_selector(selector=parameter_spec.selector)
+        return runtime_parameters[input_name]
+    if parameter_spec.points_to_step_output():
+        parameter_spec: DynamicStepInputDefinition = parameter_spec  # type: ignore
+        return execution_cache.get_non_batch_output(selector=parameter_spec.selector)
+    parameter_spec: StaticStepInputDefinition = parameter_spec  # type: ignore
+    return parameter_spec.value
 
 
 def iterate_over_simd_step_input(

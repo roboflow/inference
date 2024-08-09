@@ -196,7 +196,7 @@ class ListOfStepInputDefinitions(CompoundStepInputDefinition):
 
 @dataclass(frozen=True)
 class DictOfStepInputDefinitions(CompoundStepInputDefinition):
-    nested_definitions: Dict[str, Union[StepInputDefinition]]
+    nested_definitions: Dict[str, StepInputDefinition]
 
     def iterate_through_definitions(self) -> Generator[StepInputDefinition, None, None]:
         for definition in self.nested_definitions.values():
