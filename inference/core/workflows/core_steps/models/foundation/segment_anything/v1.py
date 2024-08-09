@@ -101,7 +101,7 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND],
             ),
         ]
-    
+
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
@@ -134,9 +134,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         boxes: Batch[sv.Detections],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return self.run_locally(
-                images=images, sam2_model=sam2_model, boxes=boxes
-            )
+            return self.run_locally(images=images, sam2_model=sam2_model, boxes=boxes)
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             raise NotImplementedError(
                 "Remote execution is not supported for Segment Anything."
@@ -168,9 +166,11 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                 for x1, y1, x2, y2 in boxes_for_image.xyxy:
 
                     prompt_class_ids.append(boxes_for_image.class_id[prompt_index])
-                    prompt_class_names.append(boxes_for_image.data["class_name"][prompt_index])
+                    prompt_class_names.append(
+                        boxes_for_image.data["class_name"][prompt_index]
+                    )
                     prompt_index += 1
-                    
+
                     width = x2 - x1
                     height = y2 - y1
                     cx = x1 + width / 2
@@ -204,7 +204,10 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             )
 
             prediction = self._convert_sam2_segmentation_response_to_inference_instances_seg_response(
-                sam2_segmentation_response.predictions, single_image, prompt_class_ids, prompt_class_names
+                sam2_segmentation_response.predictions,
+                single_image,
+                prompt_class_ids,
+                prompt_class_names,
             )
             predictions.append(prediction)
 
@@ -226,12 +229,13 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         prediction_id = 0
 
         if len(prompt_class_ids) == 0:
-            prompt_class_ids = [i for i in range(len(sam2_segmentation_predictions))] 
-            prompt_class_names = [str(i) for i in range(len(sam2_segmentation_predictions))] 
+            prompt_class_ids = [i for i in range(len(sam2_segmentation_predictions))]
+            prompt_class_names = [
+                str(i) for i in range(len(sam2_segmentation_predictions))
+            ]
 
         for pred in sam2_segmentation_predictions:
             mask = pred.mask
-            
 
             for polygon in mask:
                 # for some reason this list of points contains empty array elements
@@ -259,8 +263,8 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                                 Point(x=point[0], y=point[1]) for point in polygon
                             ],
                             "confidence": 0.5,  # TODO: get confidence from model
-                            "class": prompt_class_names[prediction_id], 
-                            "class_id": prompt_class_ids[prediction_id]
+                            "class": prompt_class_names[prediction_id],
+                            "class_id": prompt_class_ids[prediction_id],
                         }
                     )
                 )

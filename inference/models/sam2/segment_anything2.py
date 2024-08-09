@@ -7,10 +7,10 @@ from time import perf_counter
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
+import rasterio.features
 import sam2.utils.misc
 import torch
 from torch.nn.attention import SDPBackend
-import rasterio.features
 
 sam2.utils.misc.get_sdp_backends = lambda z: [
     SDPBackend.EFFICIENT_ATTENTION,
@@ -271,11 +271,7 @@ class SegmentAnything2(RoboflowCoreModel):
                     mask_input = np.load(BytesIO(binary_data))
 
             elif use_mask_input_cache:
-                mask_input =self.low_res_logits_cache.get(image_id, None)
-                
-        
-
-
+                mask_input = self.low_res_logits_cache.get(image_id, None)
 
             self.predictor._is_image_set = True
             self.predictor._features = embedding
@@ -312,7 +308,6 @@ class SegmentAnything2(RoboflowCoreModel):
                 low_res_logit = low_res_logit[:1]
                 predicted_masks.append(mask)
                 low_res_masks.append(low_res_logit)
-
 
             self.low_res_logits_cache[image_id] = np.asarray(low_res_masks)
 
