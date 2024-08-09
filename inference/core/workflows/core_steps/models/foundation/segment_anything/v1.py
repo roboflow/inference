@@ -25,12 +25,12 @@ from inference.core.workflows.core_steps.common.utils import (
     convert_inference_detections_batch_to_sv_detections,
     load_core_model,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -56,6 +56,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Segment Anything 2 Model",
+            "version": "v1",
             "short_description": "Segment Anything 2",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -63,7 +64,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["SegmentAnything2Model"]
+    type: Literal["roboflow_core/segment_anything@v1", "SegmentAnything2Model"]
 
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
 
@@ -100,9 +101,13 @@ class BlockManifest(WorkflowBlockManifest):
                 kind=[BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND],
             ),
         ]
+    
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.0.0,<2.0.0"
 
 
-class SegmentAnything2Block(WorkflowBlock):
+class SegmentAnything2BlockV1(WorkflowBlock):
 
     def __init__(
         self,
@@ -122,14 +127,14 @@ class SegmentAnything2Block(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         images: Batch[WorkflowImageData],
         sam2_model: str,
         boxes: Batch[sv.Detections],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return await self.run_locally(
+            return self.run_locally(
                 images=images, sam2_model=sam2_model, boxes=boxes
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
@@ -141,7 +146,7 @@ class SegmentAnything2Block(WorkflowBlock):
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
 
-    async def run_locally(
+    def run_locally(
         self,
         images: Batch[WorkflowImageData],
         sam2_model: str,
@@ -187,7 +192,7 @@ class SegmentAnything2Block(WorkflowBlock):
                 core_model="sam2",
             )
 
-            sam2_segmentation_response = await self._model_manager.infer_from_request(
+            sam2_segmentation_response = self._model_manager.infer_from_request_sync(
                 sam_model_id, inference_request
             )
 
