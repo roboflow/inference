@@ -159,11 +159,18 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             boxes = [None] * len(images)
 
         for single_image, boxes_for_image in zip(images, boxes):
+            prompt_class_ids = []
+            prompt_class_names = []
+            prompt_index = 0
 
             prompts = Sam2PromptSet()
             if boxes_for_image is not None:
                 for x1, y1, x2, y2 in boxes_for_image.xyxy:
 
+                    prompt_class_ids.append(boxes_for_image.class_id[prompt_index])
+                    prompt_class_names.append(boxes_for_image.data["class_name"][prompt_index])
+                    prompt_index += 1
+                    
                     width = x2 - x1
                     height = y2 - y1
                     cx = x1 + width / 2
@@ -197,7 +204,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             )
 
             prediction = self._convert_sam2_segmentation_response_to_inference_instances_seg_response(
-                sam2_segmentation_response.predictions, single_image
+                sam2_segmentation_response.predictions, single_image, prompt_class_ids, prompt_class_names
             )
             predictions.append(prediction)
 
@@ -210,7 +217,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         )
 
     def _convert_sam2_segmentation_response_to_inference_instances_seg_response(
-        self, sam2_segmentation_predictions, image
+        self, sam2_segmentation_predictions, image, prompt_class_ids, prompt_class_names
     ):
         image_width = image.numpy_image.shape[1]
         image_height = image.numpy_image.shape[0]
@@ -218,9 +225,13 @@ class SegmentAnything2BlockV1(WorkflowBlock):
 
         prediction_id = 0
 
+        if len(prompt_class_ids) == 0:
+            prompt_class_ids = [i for i in range(len(sam2_segmentation_predictions))] 
+            prompt_class_names = [str(i) for i in range(len(sam2_segmentation_predictions))] 
+
         for pred in sam2_segmentation_predictions:
             mask = pred.mask
-            prediction_id += 1
+            
 
             for polygon in mask:
                 # for some reason this list of points contains empty array elements
@@ -248,13 +259,12 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                                 Point(x=point[0], y=point[1]) for point in polygon
                             ],
                             "confidence": 0.5,  # TODO: get confidence from model
-                            "class": str(
-                                prediction_id
-                            ),  # TODO: sam doesnt really have a class, so we are just using mask for now
-                            "class_id": prediction_id,
+                            "class": prompt_class_names[prediction_id], 
+                            "class_id": prompt_class_ids[prediction_id]
                         }
                     )
                 )
+            prediction_id += 1
 
         return InstanceSegmentationInferenceResponse(
             predictions=predictions,
