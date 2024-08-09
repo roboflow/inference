@@ -201,10 +201,14 @@ def test_register_datapoint_when_duplicate_found(
 
     # then
     assert result == "Duplicated image", "Duplicate status is expected to be reported"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] is None
+    ), "No inference id found in sv detection"
 
 
 @mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_registration_should_be_forbidden(
+def test_register_datapoint_when_prediction_registration_should_be_forbidden(
     register_image_at_roboflow_mock: MagicMock,
 ) -> None:
     # given
@@ -226,11 +230,109 @@ def test_register_datapoint_when_registration_should_be_forbidden(
     assert (
         result == "Successfully registered image"
     ), "Status reporting success on image registration is expected"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] is None
+    ), "No inference id found in sv detection"
 
 
 @mock.patch.object(v1, "annotate_image_at_roboflow")
 @mock.patch.object(v1, "register_image_at_roboflow")
-def test_register_datapoint_when_registration_should_be_successful(
+def test_register_datapoint_when_prediction_registration_should_be_successful(
+    register_image_at_roboflow_mock: MagicMock,
+    annotate_image_at_roboflow_mock: MagicMock,
+) -> None:
+    # given
+    register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        confidence=np.array([0.1, 0.9], dtype=np.float64),
+        data={
+            "class_name": np.array(["cat", "dog"]),
+            "detection_id": np.array(["first", "second"]),
+            "parent_id": np.array(["image", "image"]),
+            "parent_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
+            "image_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
+            "inference_id": np.array(["a", "a"]),
+        },
+    )
+    expected_registered_prediction = json.dumps(
+        {
+            "image": {
+                "width": 168,
+                "height": 192,
+            },
+            "predictions": [
+                {
+                    "width": 1.0,
+                    "height": 1.0,
+                    "x": 1.5,
+                    "y": 1.5,
+                    "confidence": 0.1,
+                    "class_id": 1,
+                    "class": "cat",
+                    "detection_id": "first",
+                    "parent_id": "image",
+                },
+                {
+                    "width": 1.0,
+                    "height": 1.0,
+                    "x": 3.5,
+                    "y": 3.5,
+                    "confidence": 0.9,
+                    "class_id": 2,
+                    "class": "dog",
+                    "detection_id": "second",
+                    "parent_id": "image",
+                },
+            ],
+        }
+    )
+
+    # when
+    result = register_datapoint(
+        target_project="my_project",
+        encoded_image=b"image",
+        local_image_id="local_id",
+        prediction=detections,
+        api_key="my_api_key",
+        batch_name="my_batch",
+        tags=[],
+    )
+
+    # then
+    assert (
+        result == "Successfully registered image and annotation"
+    ), "Success status report expected"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] == "a"
+    ), "Expected inference ID to be denoted"
+    annotate_image_at_roboflow_mock.assert_called_once_with(
+        api_key="my_api_key",
+        dataset_id="my_project",
+        local_image_id="local_id",
+        roboflow_image_id="backend_id",
+        annotation_content=expected_registered_prediction,
+        annotation_file_type="json",
+        is_prediction=True,
+    )
+
+
+@mock.patch.object(v1, "annotate_image_at_roboflow")
+@mock.patch.object(v1, "register_image_at_roboflow")
+def test_register_datapoint_when_prediction_registration_should_be_successful_but_without_inference_id(
     register_image_at_roboflow_mock: MagicMock,
     annotate_image_at_roboflow_mock: MagicMock,
 ) -> None:
@@ -306,6 +408,10 @@ def test_register_datapoint_when_registration_should_be_successful(
     assert (
         result == "Successfully registered image and annotation"
     ), "Success status report expected"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] is None
+    ), "Expected inference ID not to be denoted"
     annotate_image_at_roboflow_mock.assert_called_once_with(
         api_key="my_api_key",
         dataset_id="my_project",
@@ -313,6 +419,135 @@ def test_register_datapoint_when_registration_should_be_successful(
         roboflow_image_id="backend_id",
         annotation_content=expected_registered_prediction,
         annotation_file_type="json",
+        is_prediction=True,
+    )
+
+
+@mock.patch.object(v1, "register_image_at_roboflow")
+def test_register_datapoint_when_prediction_is_empty(
+    register_image_at_roboflow_mock: MagicMock,
+) -> None:
+    # given
+    register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
+    detections = sv.Detections.empty()
+    expected_registered_prediction = json.dumps(
+        {
+            "image": {
+                "width": None,
+                "height": None,
+            },
+            "predictions": [],
+        }
+    )
+
+    # when
+    result = register_datapoint(
+        target_project="my_project",
+        encoded_image=b"image",
+        local_image_id="local_id",
+        prediction=detections,
+        api_key="my_api_key",
+        batch_name="my_batch",
+        tags=[],
+    )
+
+    # then
+    assert result == "Successfully registered image", "Success status report expected"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] is None
+    ), "Expected inference ID not to be denoted"
+
+
+@mock.patch.object(v1, "annotate_image_at_roboflow")
+@mock.patch.object(v1, "register_image_at_roboflow")
+def test_register_datapoint_when_classification_prediction_registration_should_be_successful_with_inference_id(
+    register_image_at_roboflow_mock: MagicMock,
+    annotate_image_at_roboflow_mock: MagicMock,
+) -> None:
+    # given
+    register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
+    prediction = {
+        "top": "some",
+        "confidence": 0.3,
+        "parent_id": "parent",
+        "predictions": [{"class": "some", "class_id": 1, "confidence": 0.3}],
+        "inference_id": "a",
+    }
+    expected_registered_prediction = "some"
+
+    # when
+    result = register_datapoint(
+        target_project="my_project",
+        encoded_image=b"image",
+        local_image_id="local_id",
+        prediction=prediction,
+        api_key="my_api_key",
+        batch_name="my_batch",
+        tags=[],
+    )
+
+    # then
+    assert (
+        result == "Successfully registered image and annotation"
+    ), "Success status report expected"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] == "a"
+    ), "Expected inference ID to be denoted"
+    annotate_image_at_roboflow_mock.assert_called_once_with(
+        api_key="my_api_key",
+        dataset_id="my_project",
+        local_image_id="local_id",
+        roboflow_image_id="backend_id",
+        annotation_content=expected_registered_prediction,
+        annotation_file_type="txt",
+        is_prediction=True,
+    )
+
+
+@mock.patch.object(v1, "annotate_image_at_roboflow")
+@mock.patch.object(v1, "register_image_at_roboflow")
+def test_register_datapoint_when_classification_prediction_registration_should_be_successful_without_inference_id(
+    register_image_at_roboflow_mock: MagicMock,
+    annotate_image_at_roboflow_mock: MagicMock,
+) -> None:
+    # given
+    register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
+    prediction = {
+        "top": "some",
+        "confidence": 0.3,
+        "parent_id": "parent",
+        "predictions": [{"class": "some", "class_id": 1, "confidence": 0.3}],
+    }
+    expected_registered_prediction = "some"
+
+    # when
+    result = register_datapoint(
+        target_project="my_project",
+        encoded_image=b"image",
+        local_image_id="local_id",
+        prediction=prediction,
+        api_key="my_api_key",
+        batch_name="my_batch",
+        tags=[],
+    )
+
+    # then
+    assert (
+        result == "Successfully registered image and annotation"
+    ), "Success status report expected"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] is None
+    ), "Expected inference ID not to be denoted"
+    annotate_image_at_roboflow_mock.assert_called_once_with(
+        api_key="my_api_key",
+        dataset_id="my_project",
+        local_image_id="local_id",
+        roboflow_image_id="backend_id",
+        annotation_content=expected_registered_prediction,
+        annotation_file_type="txt",
         is_prediction=True,
     )
 

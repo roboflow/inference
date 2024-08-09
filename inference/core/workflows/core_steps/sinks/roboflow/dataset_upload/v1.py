@@ -32,6 +32,7 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
 from inference.core.workflows.core_steps.common.utils import scale_sv_detections
+from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -471,6 +472,16 @@ def register_datapoint(
     batch_name: str,
     tags: List[str],
 ) -> str:
+    inference_id = None
+    if isinstance(prediction, dict):
+        inference_id = prediction.get(INFERENCE_ID_KEY)
+    if isinstance(prediction, sv.Detections) and len(prediction) > 0:
+        # TODO: Lack of inference ID for empty prediction -
+        #  dependent on https://github.com/roboflow/inference/issues/567
+        inference_id_array = prediction.data.get(INFERENCE_ID_KEY)
+        if inference_id_array is not None:
+            inference_id_list = inference_id_array.tolist()
+            inference_id = inference_id_list[0]
     roboflow_image_id = safe_register_image_at_roboflow(
         target_project=target_project,
         encoded_image=encoded_image,
@@ -478,6 +489,7 @@ def register_datapoint(
         api_key=api_key,
         batch_name=batch_name,
         tags=tags,
+        inference_id=inference_id,
     )
     if roboflow_image_id is None:
         return DUPLICATED_STATUS
@@ -503,6 +515,7 @@ def safe_register_image_at_roboflow(
     api_key: str,
     batch_name: str,
     tags: List[str],
+    inference_id: Optional[str],
 ) -> Optional[str]:
     registration_response = register_image_at_roboflow(
         api_key=api_key,
@@ -511,6 +524,7 @@ def safe_register_image_at_roboflow(
         image_bytes=encoded_image,
         batch_name=batch_name,
         tags=tags,
+        inference_id=inference_id,
     )
     image_duplicated = registration_response.get("duplicate", False)
     if image_duplicated:
