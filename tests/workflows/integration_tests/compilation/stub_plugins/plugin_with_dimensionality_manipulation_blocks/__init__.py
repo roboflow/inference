@@ -2,12 +2,12 @@ from typing import Dict, List, Literal, Optional, Type, Union
 
 from pydantic import Field
 
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
@@ -56,7 +56,7 @@ class BlockRequestingDifferentDimsBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockRequestingDifferentDimsManifest
 
-    async def run(
+    def run(
         self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
     ) -> BlockResult:
         pass
@@ -100,7 +100,7 @@ class BlockOffsetsNotInProperRangeBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockOffsetsNotInProperRangeManifest
 
-    async def run(
+    def run(
         self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
     ) -> BlockResult:
         pass
@@ -144,7 +144,7 @@ class BlockWithNegativeOffsetBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockWithNegativeOffsetManifest
 
-    async def run(
+    def run(
         self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
     ) -> BlockResult:
         pass
@@ -171,7 +171,7 @@ class NonSIMDWithOutputOffsetBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return NonSIMDWithOutputOffsetManifest
 
-    async def run(
+    def run(
         self,
     ) -> BlockResult:
         pass
@@ -197,7 +197,7 @@ class DimensionalityReferencePropertyIsNotBatchBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return DimensionalityReferencePropertyIsNotBatchManifest
 
-    async def run(
+    def run(
         self,
         dim_reference: str,
     ) -> BlockResult:
@@ -237,7 +237,7 @@ class OutputDimensionalityInInvalidRangeBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return OutputDimensionalityInInvalidRangeManifest
 
-    async def run(
+    def run(
         self, images: Batch[WorkflowImageData], crops: Batch[WorkflowImageData]
     ) -> BlockResult:
         pass
@@ -281,7 +281,7 @@ class LackOfZeroGroundOffsetBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return LackOfZeroGroundOffsetManifest
 
-    async def run(
+    def run(
         self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
     ) -> BlockResult:
         pass
@@ -321,7 +321,7 @@ class LackOfRequiredReferencePropertyBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return LackOfRequiredReferencePropertyManifest
 
-    async def run(
+    def run(
         self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
     ) -> BlockResult:
         pass
@@ -371,7 +371,7 @@ class ManipulationOutputDimensionalityWhenInvalidBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ManipulationOutputDimensionalityWhenInvalidManifest
 
-    async def run(
+    def run(
         self, images: Batch[WorkflowImageData], crops: Batch[Batch[WorkflowImageData]]
     ) -> BlockResult:
         pass
@@ -404,7 +404,7 @@ class ExpectsTheSameDimensionalityBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ExpectsTheSameDimensionalityManifest
 
-    async def run(
+    def run(
         self, images: Batch[WorkflowImageData], crops: Batch[WorkflowImageData]
     ) -> BlockResult:
         pass
@@ -439,7 +439,7 @@ class DecreasingDimensionalityBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return DecreasingDimensionalityManifest
 
-    async def run(self, images: Batch[WorkflowImageData]) -> BlockResult:
+    def run(self, images: Batch[WorkflowImageData]) -> BlockResult:
         pass
 
 

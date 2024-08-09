@@ -2,13 +2,13 @@ from unittest.mock import MagicMock
 
 import networkx as nx
 
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     InputNode,
     NodeCategory,
     OutputNode,
     StepNode,
 )
-from inference.core.workflows.execution_engine.executor.flow_coordinator import (
+from inference.core.workflows.execution_engine.v1.executor.flow_coordinator import (
     ParallelStepExecutionCoordinator,
 )
 

@@ -42,6 +42,23 @@ class WithLogger(ModelManagerDecorator):
         logger.info(f"📥 [{model_id}] res={res}.")
         return res
 
+    def infer_from_request_sync(
+        self, model_id: str, request: InferenceRequest, **kwargs
+    ) -> InferenceResponse:
+        """Processes a complete inference request and logs both the request and response.
+
+        Args:
+            model_id (str): The identifier of the model.
+            request (InferenceRequest): The request to process.
+
+        Returns:
+            InferenceResponse: The response from the inference.
+        """
+        logger.info(f"📥 [{model_id}] request={request}.")
+        res = super().infer_from_request_sync(model_id, request, **kwargs)
+        logger.info(f"📥 [{model_id}] res={res}.")
+        return res
+
     def remove(self, model_id: str) -> Model:
         """Removes a model from the manager and logs the action.
 

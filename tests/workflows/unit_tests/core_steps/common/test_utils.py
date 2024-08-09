@@ -17,7 +17,7 @@ from inference.core.workflows.core_steps.common.utils import (
     scale_sv_detections,
     sv_detections_to_root_coordinates,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     OriginCoordinatesSystem,

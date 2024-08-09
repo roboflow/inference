@@ -2,8 +2,8 @@ from typing import List, Literal, Union
 
 from pydantic import Field
 
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_IMAGES_KIND,
     BOOLEAN_KIND,
     STRING_KIND,

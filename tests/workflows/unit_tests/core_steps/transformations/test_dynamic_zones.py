@@ -1,7 +1,7 @@
 import numpy as np
 import supervision as sv
 
-from inference.core.workflows.core_steps.transformations.dynamic_zones import (
+from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
     calculate_simplified_polygon,
 )
 

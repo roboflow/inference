@@ -1,8 +1,9 @@
 import asyncio
+import concurrent
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from functools import partial
-from multiprocessing.pool import ThreadPool
 from typing import List, Tuple, Union
 
 import aiohttp
@@ -54,12 +55,17 @@ def make_parallel_requests(
     request_method: RequestMethod,
 ) -> List[Response]:
     workers = len(requests_data)
-    make_request_closure = partial(make_request, request_method=request_method)
-    with ThreadPool(processes=workers) as pool:
-        return pool.map(
-            make_request_closure,
-            iterable=requests_data,
-        )
+    results = []
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(
+                make_request, request_data=data, request_method=request_method
+            )
+            for data in requests_data
+        ]
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
+    return results
 
 
 @backoff.on_predicate(

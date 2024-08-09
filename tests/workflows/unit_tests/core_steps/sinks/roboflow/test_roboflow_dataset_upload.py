@@ -1,5 +1,6 @@
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from unittest import mock
 from unittest.mock import MagicMock, call
@@ -10,10 +11,10 @@ import supervision as sv
 from fastapi import BackgroundTasks
 
 from inference.core.cache import MemoryCache
-from inference.core.workflows.core_steps.sinks.roboflow import roboflow_dataset_upload
-from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload import (
+from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload import v1
+from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
     BatchCreationFrequency,
-    RoboflowDatasetUploadBlock,
+    RoboflowDatasetUploadBlockV1,
     encode_prediction,
     execute_registration,
     generate_batch_name,
@@ -21,7 +22,7 @@ from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload 
     is_prediction_registration_forbidden,
     register_datapoint,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,
@@ -172,7 +173,7 @@ def test_is_prediction_registration_forbidden_when_non_empty_sv_detection_provid
     assert result is False
 
 
-@mock.patch.object(roboflow_dataset_upload, "register_image_at_roboflow")
+@mock.patch.object(v1, "register_image_at_roboflow")
 def test_register_datapoint_when_duplicate_found(
     register_image_at_roboflow_mock: MagicMock,
 ) -> None:
@@ -200,10 +201,14 @@ def test_register_datapoint_when_duplicate_found(
 
     # then
     assert result == "Duplicated image", "Duplicate status is expected to be reported"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] is None
+    ), "No inference id found in sv detection"
 
 
-@mock.patch.object(roboflow_dataset_upload, "register_image_at_roboflow")
-def test_register_datapoint_when_registration_should_be_forbidden(
+@mock.patch.object(v1, "register_image_at_roboflow")
+def test_register_datapoint_when_prediction_registration_should_be_forbidden(
     register_image_at_roboflow_mock: MagicMock,
 ) -> None:
     # given
@@ -225,11 +230,109 @@ def test_register_datapoint_when_registration_should_be_forbidden(
     assert (
         result == "Successfully registered image"
     ), "Status reporting success on image registration is expected"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] is None
+    ), "No inference id found in sv detection"
 
 
-@mock.patch.object(roboflow_dataset_upload, "annotate_image_at_roboflow")
-@mock.patch.object(roboflow_dataset_upload, "register_image_at_roboflow")
-def test_register_datapoint_when_registration_should_be_successful(
+@mock.patch.object(v1, "annotate_image_at_roboflow")
+@mock.patch.object(v1, "register_image_at_roboflow")
+def test_register_datapoint_when_prediction_registration_should_be_successful(
+    register_image_at_roboflow_mock: MagicMock,
+    annotate_image_at_roboflow_mock: MagicMock,
+) -> None:
+    # given
+    register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
+    detections = sv.Detections(
+        xyxy=np.array([[1, 1, 2, 2], [3, 3, 4, 4]], dtype=np.float64),
+        class_id=np.array([1, 2]),
+        confidence=np.array([0.1, 0.9], dtype=np.float64),
+        data={
+            "class_name": np.array(["cat", "dog"]),
+            "detection_id": np.array(["first", "second"]),
+            "parent_id": np.array(["image", "image"]),
+            "parent_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
+            "image_dimensions": np.array(
+                [
+                    [192, 168],
+                    [192, 168],
+                ]
+            ),
+            "inference_id": np.array(["a", "a"]),
+        },
+    )
+    expected_registered_prediction = json.dumps(
+        {
+            "image": {
+                "width": 168,
+                "height": 192,
+            },
+            "predictions": [
+                {
+                    "width": 1.0,
+                    "height": 1.0,
+                    "x": 1.5,
+                    "y": 1.5,
+                    "confidence": 0.1,
+                    "class_id": 1,
+                    "class": "cat",
+                    "detection_id": "first",
+                    "parent_id": "image",
+                },
+                {
+                    "width": 1.0,
+                    "height": 1.0,
+                    "x": 3.5,
+                    "y": 3.5,
+                    "confidence": 0.9,
+                    "class_id": 2,
+                    "class": "dog",
+                    "detection_id": "second",
+                    "parent_id": "image",
+                },
+            ],
+        }
+    )
+
+    # when
+    result = register_datapoint(
+        target_project="my_project",
+        encoded_image=b"image",
+        local_image_id="local_id",
+        prediction=detections,
+        api_key="my_api_key",
+        batch_name="my_batch",
+        tags=[],
+    )
+
+    # then
+    assert (
+        result == "Successfully registered image and annotation"
+    ), "Success status report expected"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] == "a"
+    ), "Expected inference ID to be denoted"
+    annotate_image_at_roboflow_mock.assert_called_once_with(
+        api_key="my_api_key",
+        dataset_id="my_project",
+        local_image_id="local_id",
+        roboflow_image_id="backend_id",
+        annotation_content=expected_registered_prediction,
+        annotation_file_type="json",
+        is_prediction=True,
+    )
+
+
+@mock.patch.object(v1, "annotate_image_at_roboflow")
+@mock.patch.object(v1, "register_image_at_roboflow")
+def test_register_datapoint_when_prediction_registration_should_be_successful_but_without_inference_id(
     register_image_at_roboflow_mock: MagicMock,
     annotate_image_at_roboflow_mock: MagicMock,
 ) -> None:
@@ -305,6 +408,10 @@ def test_register_datapoint_when_registration_should_be_successful(
     assert (
         result == "Successfully registered image and annotation"
     ), "Success status report expected"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] is None
+    ), "Expected inference ID not to be denoted"
     annotate_image_at_roboflow_mock.assert_called_once_with(
         api_key="my_api_key",
         dataset_id="my_project",
@@ -312,6 +419,135 @@ def test_register_datapoint_when_registration_should_be_successful(
         roboflow_image_id="backend_id",
         annotation_content=expected_registered_prediction,
         annotation_file_type="json",
+        is_prediction=True,
+    )
+
+
+@mock.patch.object(v1, "register_image_at_roboflow")
+def test_register_datapoint_when_prediction_is_empty(
+    register_image_at_roboflow_mock: MagicMock,
+) -> None:
+    # given
+    register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
+    detections = sv.Detections.empty()
+    expected_registered_prediction = json.dumps(
+        {
+            "image": {
+                "width": None,
+                "height": None,
+            },
+            "predictions": [],
+        }
+    )
+
+    # when
+    result = register_datapoint(
+        target_project="my_project",
+        encoded_image=b"image",
+        local_image_id="local_id",
+        prediction=detections,
+        api_key="my_api_key",
+        batch_name="my_batch",
+        tags=[],
+    )
+
+    # then
+    assert result == "Successfully registered image", "Success status report expected"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] is None
+    ), "Expected inference ID not to be denoted"
+
+
+@mock.patch.object(v1, "annotate_image_at_roboflow")
+@mock.patch.object(v1, "register_image_at_roboflow")
+def test_register_datapoint_when_classification_prediction_registration_should_be_successful_with_inference_id(
+    register_image_at_roboflow_mock: MagicMock,
+    annotate_image_at_roboflow_mock: MagicMock,
+) -> None:
+    # given
+    register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
+    prediction = {
+        "top": "some",
+        "confidence": 0.3,
+        "parent_id": "parent",
+        "predictions": [{"class": "some", "class_id": 1, "confidence": 0.3}],
+        "inference_id": "a",
+    }
+    expected_registered_prediction = "some"
+
+    # when
+    result = register_datapoint(
+        target_project="my_project",
+        encoded_image=b"image",
+        local_image_id="local_id",
+        prediction=prediction,
+        api_key="my_api_key",
+        batch_name="my_batch",
+        tags=[],
+    )
+
+    # then
+    assert (
+        result == "Successfully registered image and annotation"
+    ), "Success status report expected"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] == "a"
+    ), "Expected inference ID to be denoted"
+    annotate_image_at_roboflow_mock.assert_called_once_with(
+        api_key="my_api_key",
+        dataset_id="my_project",
+        local_image_id="local_id",
+        roboflow_image_id="backend_id",
+        annotation_content=expected_registered_prediction,
+        annotation_file_type="txt",
+        is_prediction=True,
+    )
+
+
+@mock.patch.object(v1, "annotate_image_at_roboflow")
+@mock.patch.object(v1, "register_image_at_roboflow")
+def test_register_datapoint_when_classification_prediction_registration_should_be_successful_without_inference_id(
+    register_image_at_roboflow_mock: MagicMock,
+    annotate_image_at_roboflow_mock: MagicMock,
+) -> None:
+    # given
+    register_image_at_roboflow_mock.return_value = {"id": "backend_id"}
+    prediction = {
+        "top": "some",
+        "confidence": 0.3,
+        "parent_id": "parent",
+        "predictions": [{"class": "some", "class_id": 1, "confidence": 0.3}],
+    }
+    expected_registered_prediction = "some"
+
+    # when
+    result = register_datapoint(
+        target_project="my_project",
+        encoded_image=b"image",
+        local_image_id="local_id",
+        prediction=prediction,
+        api_key="my_api_key",
+        batch_name="my_batch",
+        tags=[],
+    )
+
+    # then
+    assert (
+        result == "Successfully registered image and annotation"
+    ), "Success status report expected"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] is None
+    ), "Expected inference ID not to be denoted"
+    annotate_image_at_roboflow_mock.assert_called_once_with(
+        api_key="my_api_key",
+        dataset_id="my_project",
+        local_image_id="local_id",
+        roboflow_image_id="backend_id",
+        annotation_content=expected_registered_prediction,
+        annotation_file_type="txt",
         is_prediction=True,
     )
 
@@ -325,7 +561,7 @@ def test_register_datapoint_when_registration_should_be_successful(
         ("my_batch", "monthly", "my_batch_2024_05_01"),
     ],
 )
-@mock.patch.object(roboflow_dataset_upload, "datetime")
+@mock.patch.object(v1, "datetime")
 def test_generate_batch_name(
     datetime_mock: MagicMock,
     labeling_batch_prefix: str,
@@ -362,7 +598,7 @@ def test_get_workspace_name_when_cache_contains_workspace_name() -> None:
     ), "Expected return value from the cache to be returned"
 
 
-@mock.patch.object(roboflow_dataset_upload, "get_roboflow_workspace")
+@mock.patch.object(v1, "get_roboflow_workspace")
 def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     get_roboflow_workspace_mock: MagicMock,
 ) -> None:
@@ -385,7 +621,7 @@ def test_get_workspace_name_when_cache_does_not_contain_workspace_name(
     ), "Expected retrieved workspace to be saved in cache"
 
 
-@mock.patch.object(roboflow_dataset_upload, "use_credit_of_matching_strategy")
+@mock.patch.object(v1, "use_credit_of_matching_strategy")
 def test_execute_registration_when_quota_limit_exceeded(
     use_credit_of_matching_strategy_mock: MagicMock,
 ) -> None:
@@ -434,9 +670,9 @@ def test_execute_registration_when_quota_limit_exceeded(
     ), "Expected quota hut to be marked"
 
 
-@mock.patch.object(roboflow_dataset_upload, "return_strategy_credit")
-@mock.patch.object(roboflow_dataset_upload, "register_datapoint")
-@mock.patch.object(roboflow_dataset_upload, "use_credit_of_matching_strategy")
+@mock.patch.object(v1, "return_strategy_credit")
+@mock.patch.object(v1, "register_datapoint")
+@mock.patch.object(v1, "use_credit_of_matching_strategy")
 def test_execute_registration_when_error_in_registration_happened(
     use_credit_of_matching_strategy_mock: MagicMock,
     register_datapoint_mock: MagicMock,
@@ -491,9 +727,9 @@ def test_execute_registration_when_error_in_registration_happened(
     )
 
 
-@mock.patch.object(roboflow_dataset_upload, "return_strategy_credit")
-@mock.patch.object(roboflow_dataset_upload, "register_datapoint")
-@mock.patch.object(roboflow_dataset_upload, "use_credit_of_matching_strategy")
+@mock.patch.object(v1, "return_strategy_credit")
+@mock.patch.object(v1, "register_datapoint")
+@mock.patch.object(v1, "use_credit_of_matching_strategy")
 def test_execute_registration_when_registration_should_be_successful(
     use_credit_of_matching_strategy_mock: MagicMock,
     register_datapoint_mock: MagicMock,
@@ -563,18 +799,18 @@ def test_execute_registration_when_registration_should_be_successful(
     return_strategy_credit_mock.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_run_sink_when_api_key_is_not_specified() -> None:
+def test_run_sink_when_api_key_is_not_specified() -> None:
     # given
-    data_collector_block = RoboflowDatasetUploadBlock(
+    data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=MemoryCache(),
-        background_tasks=None,
         api_key=None,
+        background_tasks=None,
+        thread_pool_executor=None,
     )
 
     # when
     with pytest.raises(ValueError):
-        _ = await data_collector_block.run(
+        _ = data_collector_block.run(
             images=Batch(content=[], indices=[]),
             predictions=Batch(content=[], indices=[]),
             target_project="my_project",
@@ -593,13 +829,13 @@ async def test_run_sink_when_api_key_is_not_specified() -> None:
         )
 
 
-@pytest.mark.asyncio
-async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
+def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
     # given
-    data_collector_block = RoboflowDatasetUploadBlock(
+    data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=MemoryCache(),
-        background_tasks=None,
         api_key="my_api_key",
+        background_tasks=None,
+        thread_pool_executor=None,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -615,7 +851,7 @@ async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
     indices = [(0,), (1,), (2,)]
 
     # when
-    result = await data_collector_block.run(
+    result = data_collector_block.run(
         images=Batch(content=[image, image, image], indices=indices),
         predictions=Batch(
             content=[prediction, prediction, prediction], indices=indices
@@ -648,15 +884,15 @@ async def test_run_sink_when_sink_is_disabled_by_configuration() -> None:
     ), "Expected disable sink status to be returned"
 
 
-@pytest.mark.asyncio
-@mock.patch.object(roboflow_dataset_upload, "execute_registration", MagicMock())
-async def test_run_sink_when_registration_should_happen_in_background() -> None:
+@mock.patch.object(v1, "execute_registration", MagicMock())
+def test_run_sink_when_registration_should_happen_in_background_tasks() -> None:
     # given
     background_tasks = BackgroundTasks()
-    data_collector_block = RoboflowDatasetUploadBlock(
+    data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=MemoryCache(),
-        background_tasks=background_tasks,
         api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -672,7 +908,7 @@ async def test_run_sink_when_registration_should_happen_in_background() -> None:
     indices = [(0,), (1,), (2,)]
 
     # when
-    result = await data_collector_block.run(
+    result = data_collector_block.run(
         images=Batch(content=[image, image, image], indices=indices),
         predictions=Batch(
             content=[prediction, prediction, prediction], indices=indices
@@ -706,18 +942,75 @@ async def test_run_sink_when_registration_should_happen_in_background() -> None:
     assert len(background_tasks.tasks) == 3, "Async tasks to be added"
 
 
-@pytest.mark.asyncio
-@mock.patch.object(roboflow_dataset_upload, "execute_registration")
-async def test_run_sink_when_registration_should_happen_in_foreground_despite_providing_background_tasks(
+@mock.patch.object(v1, "execute_registration", MagicMock())
+def test_run_sink_when_registration_should_happen_in_thread_pool() -> None:
+    # given
+    with ThreadPoolExecutor() as thread_pool_executor:
+        data_collector_block = RoboflowDatasetUploadBlockV1(
+            cache=MemoryCache(),
+            api_key="my_api_key",
+            background_tasks=None,
+            thread_pool_executor=thread_pool_executor,
+        )
+        image = WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="parent"),
+            numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
+        )
+        prediction = {
+            "top": "car",
+            "predictions": [
+                {"class": "car", "confidence": 0.7},
+                {"class": "truck", "confidence": 0.3},
+            ],
+        }
+        indices = [(0,), (1,), (2,)]
+
+        # when
+        result = data_collector_block.run(
+            images=Batch(content=[image, image, image], indices=indices),
+            predictions=Batch(
+                content=[prediction, prediction, prediction], indices=indices
+            ),
+            target_project="my_project",
+            usage_quota_name="my_quota",
+            persist_predictions=True,
+            minutely_usage_limit=10,
+            hourly_usage_limit=100,
+            daily_usage_limit=1000,
+            max_image_size=(128, 128),
+            compression_level=75,
+            registration_tags=["some"],
+            disable_sink=False,
+            fire_and_forget=True,
+            labeling_batch_prefix="my_batch",
+            labeling_batches_recreation_frequency="never",
+        )
+
+        # then
+        assert (
+            result
+            == [
+                {
+                    "error_status": False,
+                    "message": "Element registration happens in the background task",
+                }
+            ]
+            * 3
+        ), "Expected async execution status to be presented"
+
+
+@mock.patch.object(v1, "execute_registration")
+def test_run_sink_when_registration_should_happen_in_foreground_despite_providing_background_tasks(
     execute_registration_mock: MagicMock,
 ) -> None:
     # given
     background_tasks = BackgroundTasks()
     cache = MemoryCache()
-    data_collector_block = RoboflowDatasetUploadBlock(
+    data_collector_block = RoboflowDatasetUploadBlockV1(
         cache=cache,
-        background_tasks=background_tasks,
         api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
     )
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="parent"),
@@ -734,7 +1027,7 @@ async def test_run_sink_when_registration_should_happen_in_foreground_despite_pr
     indices = [(0,), (1,), (2,)]
 
     # when
-    result = await data_collector_block.run(
+    result = data_collector_block.run(
         images=Batch(content=[image, image, image], indices=indices),
         predictions=Batch(
             content=[prediction, prediction, prediction], indices=indices

@@ -88,7 +88,7 @@ class InferenceConfiguration:
     image_extensions_for_directory_scan: Optional[List[str]] = field(
         default_factory=lambda: DEFAULT_IMAGE_EXTENSIONS,
     )
-    client_downsizing_disabled: bool = False
+    client_downsizing_disabled: bool = True
     default_max_input_size: int = DEFAULT_MAX_INPUT_SIZE
     disable_active_learning: bool = False
     active_learning_target_dataset: Optional[str] = None

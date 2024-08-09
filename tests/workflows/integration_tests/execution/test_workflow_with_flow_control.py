@@ -48,9 +48,8 @@ AB_TEST_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_flow_control_step_not_operating_on_batches(
+def test_flow_control_step_not_operating_on_batches(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -82,7 +81,7 @@ async def test_flow_control_step_not_operating_on_batches(
     )
 
     # when
-    result = await execution_engine.run_async(runtime_parameters={"image": crowd_image})
+    result = execution_engine.run(runtime_parameters={"image": crowd_image})
 
     # then
     assert isinstance(result, list), "Expected result to be list"
@@ -96,9 +95,8 @@ async def test_flow_control_step_not_operating_on_batches(
     ), "Expected only one of the results provided, mutually exclusive based on random choice"
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_flow_control_step_not_operating_on_batches_affecting_batch_of_inputs(
+def test_flow_control_step_not_operating_on_batches_affecting_batch_of_inputs(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -130,9 +128,7 @@ async def test_flow_control_step_not_operating_on_batches_affecting_batch_of_inp
     )
 
     # when
-    result = await execution_engine.run_async(
-        runtime_parameters={"image": [crowd_image] * 4}
-    )
+    result = execution_engine.run(runtime_parameters={"image": [crowd_image] * 4})
 
     # then
     assert isinstance(result, list), "Expected result to be list"
@@ -279,9 +275,8 @@ WORKFLOW_WITH_CONDITION_DEPENDENT_ON_MODEL_PREDICTION = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_flow_control_step_affecting_batches(
+def test_flow_control_step_affecting_batches(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -317,7 +312,7 @@ async def test_flow_control_step_affecting_batches(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [crowd_image, dogs_image],
             "classes": ["person", "car"],
@@ -418,8 +413,7 @@ WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS = {
 }
 
 
-@pytest.mark.asyncio
-async def test_flow_control_step_affecting_data_with_increased_dimensionality(
+def test_flow_control_step_affecting_data_with_increased_dimensionality(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
     dogs_image: np.ndarray,
@@ -455,7 +449,7 @@ async def test_flow_control_step_affecting_data_with_increased_dimensionality(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [crowd_image, dogs_image],
         }
@@ -476,3 +470,511 @@ async def test_flow_control_step_affecting_data_with_increased_dimensionality(
     assert (
         len([e for e in result[1]["dog_classification"] if e]) == 2
     ), "Expected 2 bboxes of dogs detected"
+
+
+WORKFLOW_WITH_NON_BATCH_CONDITION_BASED_ON_INPUT_AFFECTING_FURTHER_EXECUTION = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "InferenceImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "some", "default_value": 1},
+    ],
+    "steps": [
+        {
+            "type": "ContinueIf",
+            "name": "continue_if",
+            "condition_statement": {
+                "type": "StatementGroup",
+                "statements": [
+                    {
+                        "type": "BinaryStatement",
+                        "left_operand": {
+                            "type": "DynamicOperand",
+                            "operand_name": "left",
+                        },
+                        "comparator": {"type": "(Number) =="},
+                        "right_operand": {"type": "StaticOperand", "value": 1},
+                    }
+                ],
+            },
+            "next_steps": ["$steps.dependent_model"],
+            "evaluation_parameters": {"left": "$inputs.some"},
+        },
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "dependent_model",
+            "images": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "independent_model",
+            "images": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "Expression",
+            "name": "dependent_expression",
+            "data": {
+                "predictions": "$steps.dependent_model.predictions",
+            },
+            "switch": {
+                "type": "CasesDefinition",
+                "cases": [],
+                "default": {"type": "StaticCaseResult", "value": "EXECUTED DEPENDENT!"},
+            },
+        },
+        {
+            "type": "Expression",
+            "name": "independent_expression",
+            "data": {
+                "predictions": "$steps.independent_model.predictions",
+            },
+            "switch": {
+                "type": "CasesDefinition",
+                "cases": [],
+                "default": {
+                    "type": "StaticCaseResult",
+                    "value": "EXECUTED INDEPENDENT!",
+                },
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "dependent_predictions",
+            "selector": "$steps.dependent_model.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "dependent_expression",
+            "selector": "$steps.dependent_expression.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "independent_predictions",
+            "selector": "$steps.independent_model.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "independent_expression",
+            "selector": "$steps.independent_expression.output",
+        },
+    ],
+}
+
+
+def test_flow_control_workflow_where_non_batch_nested_parameter_affects_further_execution_when_condition_is_met(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+    dogs_image: np.ndarray,
+) -> None:
+    """
+    In this test scenario we verify if we can successfully use non-simd
+    conditioning in case of ContinueIf block, for which Execution Engine
+    must unwrap compound non-simd input parameters (which was the bug
+    prior to v0.16.0).
+    We take input directly, compare to 1 and if value matches - we execute
+    steps prefixed with "dependent_" in names. Independently - steps with names
+    prefixed with "independent_" should be executed.
+    Scenario checks what happens when condition is met.
+    """
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_CONDITION_BASED_ON_INPUT_AFFECTING_FURTHER_EXECUTION,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [crowd_image, dogs_image],
+            "some": 1,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "2 images provided, so 2 output elements expected"
+    assert result[0].keys() == {
+        "dependent_predictions",
+        "independent_predictions",
+        "dependent_expression",
+        "independent_expression",
+    }, "Expected all declared outputs to be delivered for first result"
+    assert result[0].keys() == {
+        "dependent_predictions",
+        "independent_predictions",
+        "dependent_expression",
+        "independent_expression",
+    }, "Expected all declared outputs to be delivered for second result"
+    assert (
+        len(result[0]["dependent_predictions"]) == 12
+    ), "Expected 12 detections in crowd image"
+    assert (
+        result[0]["dependent_expression"] == "EXECUTED DEPENDENT!"
+    ), "Expected dependent expression to execute"
+    assert (
+        len(result[0]["independent_predictions"]) == 12
+    ), "Expected 12 detections in crowd image"
+    assert (
+        result[0]["independent_expression"] == "EXECUTED INDEPENDENT!"
+    ), "Expected independent expression to execute"
+    assert (
+        len(result[1]["dependent_predictions"]) == 2
+    ), "Expected 2 detections in dogs image"
+    assert (
+        result[1]["dependent_expression"] == "EXECUTED DEPENDENT!"
+    ), "Expected dependent expression to execute"
+    assert (
+        len(result[1]["independent_predictions"]) == 2
+    ), "Expected 2 detections in dogs image"
+    assert (
+        result[1]["independent_expression"] == "EXECUTED INDEPENDENT!"
+    ), "Expected independent expression to execute"
+
+
+def test_flow_control_workflow_where_non_batch_nested_parameter_affects_further_execution_when_condition_is_not_met(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+    dogs_image: np.ndarray,
+) -> None:
+    """
+    In this test scenario we verify if we can successfully use non-simd
+    conditioning in case of ContinueIf block, for which Execution Engine
+    must unwrap compound non-simd input parameters (which was the bug
+    prior to v0.16.0).
+    We take input directly, compare to 1 and if value matches - we execute
+    steps prefixed with "dependent_" in names. Independently - steps with names
+    prefixed with "independent_" should be executed.
+    Scenario checks what happens when condition is not met.
+    """
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_CONDITION_BASED_ON_INPUT_AFFECTING_FURTHER_EXECUTION,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [crowd_image, dogs_image],
+            "some": 2,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "2 images provided, so 2 output elements expected"
+    assert result[0].keys() == {
+        "dependent_predictions",
+        "independent_predictions",
+        "dependent_expression",
+        "independent_expression",
+    }, "Expected all declared outputs to be delivered for first result"
+    assert result[0].keys() == {
+        "dependent_predictions",
+        "independent_predictions",
+        "dependent_expression",
+        "independent_expression",
+    }, "Expected all declared outputs to be delivered for second result"
+    assert (
+        result[0]["dependent_predictions"] is None
+    ), "Expected dependent model not to execute"
+    assert (
+        result[0]["dependent_expression"] is None
+    ), "Expected dependent expression not to execute"
+    assert (
+        len(result[0]["independent_predictions"]) == 12
+    ), "Expected 12 detections in crowd image"
+    assert (
+        result[0]["independent_expression"] == "EXECUTED INDEPENDENT!"
+    ), "Expected independent expression to execute"
+    assert (
+        result[1]["dependent_predictions"] is None
+    ), "Expected dependent model not to execute"
+    assert (
+        result[1]["dependent_expression"] is None
+    ), "Expected dependent expression not to execute"
+    assert (
+        len(result[1]["independent_predictions"]) == 2
+    ), "Expected 2 detections in dogs image"
+    assert (
+        result[1]["independent_expression"] == "EXECUTED INDEPENDENT!"
+    ), "Expected independent expression to execute"
+
+
+WORKFLOW_WITH_NON_BATCH_CONDITION_BASED_ON_STEP_OUTPUT_AFFECTING_FURTHER_EXECUTION = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "InferenceImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "some", "default_value": "1"},
+    ],
+    "steps": [
+        {
+            "type": "Expression",
+            "name": "input_processing_expression",
+            "data": {
+                "some": "$inputs.some",
+            },
+            "switch": {
+                "type": "CasesDefinition",
+                "cases": [],
+                "default": {
+                    "type": "DynamicCaseResult",
+                    "parameter_name": "some",
+                    "operations": [{"type": "ToNumber", "cast_to": "int"}],
+                },
+            },
+        },
+        {
+            "type": "ContinueIf",
+            "name": "continue_if",
+            "condition_statement": {
+                "type": "StatementGroup",
+                "statements": [
+                    {
+                        "type": "BinaryStatement",
+                        "left_operand": {
+                            "type": "DynamicOperand",
+                            "operand_name": "left",
+                        },
+                        "comparator": {"type": "(Number) =="},
+                        "right_operand": {"type": "StaticOperand", "value": 1},
+                    }
+                ],
+            },
+            "next_steps": ["$steps.dependent_model"],
+            "evaluation_parameters": {
+                "left": "$steps.input_processing_expression.output"
+            },
+        },
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "dependent_model",
+            "images": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "RoboflowObjectDetectionModel",
+            "name": "independent_model",
+            "images": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "Expression",
+            "name": "dependent_expression",
+            "data": {
+                "predictions": "$steps.dependent_model.predictions",
+            },
+            "switch": {
+                "type": "CasesDefinition",
+                "cases": [],
+                "default": {"type": "StaticCaseResult", "value": "EXECUTED DEPENDENT!"},
+            },
+        },
+        {
+            "type": "Expression",
+            "name": "independent_expression",
+            "data": {
+                "predictions": "$steps.independent_model.predictions",
+            },
+            "switch": {
+                "type": "CasesDefinition",
+                "cases": [],
+                "default": {
+                    "type": "StaticCaseResult",
+                    "value": "EXECUTED INDEPENDENT!",
+                },
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "dependent_predictions",
+            "selector": "$steps.dependent_model.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "dependent_expression",
+            "selector": "$steps.dependent_expression.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "independent_predictions",
+            "selector": "$steps.independent_model.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "independent_expression",
+            "selector": "$steps.independent_expression.output",
+        },
+    ],
+}
+
+
+def test_flow_control_workflow_where_non_batch_nested_parameter_produced_by_step_affects_further_execution_when_condition_is_met(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+    dogs_image: np.ndarray,
+) -> None:
+    """
+    In this test scenario we verify if we can successfully use non-simd
+    conditioning in case of ContinueIf block, for which Execution Engine
+    must unwrap compound non-simd input parameters (which was the bug
+    prior to v0.16.0).
+    We take input, pass it to expression block (casting value to int), and
+    this expression block output is compared to 1 and if value matches - we execute
+    steps prefixed with "dependent_" in names. Independently - steps with names
+    prefixed with "independent_" should be executed.
+    Scenario checks what happens when condition is met.
+    """
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_CONDITION_BASED_ON_STEP_OUTPUT_AFFECTING_FURTHER_EXECUTION,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [crowd_image, dogs_image],
+            "some": "1",
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "2 images provided, so 2 output elements expected"
+    assert result[0].keys() == {
+        "dependent_predictions",
+        "independent_predictions",
+        "dependent_expression",
+        "independent_expression",
+    }, "Expected all declared outputs to be delivered for first result"
+    assert result[0].keys() == {
+        "dependent_predictions",
+        "independent_predictions",
+        "dependent_expression",
+        "independent_expression",
+    }, "Expected all declared outputs to be delivered for second result"
+    assert (
+        len(result[0]["dependent_predictions"]) == 12
+    ), "Expected 12 detections in crowd image"
+    assert (
+        result[0]["dependent_expression"] == "EXECUTED DEPENDENT!"
+    ), "Expected dependent expression to execute"
+    assert (
+        len(result[0]["independent_predictions"]) == 12
+    ), "Expected 12 detections in crowd image"
+    assert (
+        result[0]["independent_expression"] == "EXECUTED INDEPENDENT!"
+    ), "Expected independent expression to execute"
+    assert (
+        len(result[1]["dependent_predictions"]) == 2
+    ), "Expected 2 detections in dogs image"
+    assert (
+        result[1]["dependent_expression"] == "EXECUTED DEPENDENT!"
+    ), "Expected dependent expression to execute"
+    assert (
+        len(result[1]["independent_predictions"]) == 2
+    ), "Expected 2 detections in dogs image"
+    assert (
+        result[1]["independent_expression"] == "EXECUTED INDEPENDENT!"
+    ), "Expected independent expression to execute"
+
+
+def test_flow_control_workflow_where_non_batch_nested_parameter_produced_by_step_affects_further_execution_when_condition_is_not_met(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+    dogs_image: np.ndarray,
+) -> None:
+    """
+    In this test scenario we verify if we can successfully use non-simd
+    conditioning in case of ContinueIf block, for which Execution Engine
+    must unwrap compound non-simd input parameters (which was the bug
+    prior to v0.16.0).
+    We take input, pass it to expression block (casting value to int), and
+    this expression block output is compared to 1 and if value matches - we execute
+    steps prefixed with "dependent_" in names. Independently - steps with names
+    prefixed with "independent_" should be executed.
+    Scenario checks what happens when condition is not met.
+    """
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_CONDITION_BASED_ON_STEP_OUTPUT_AFFECTING_FURTHER_EXECUTION,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [crowd_image, dogs_image],
+            "some": "2",
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "2 images provided, so 2 output elements expected"
+    assert result[0].keys() == {
+        "dependent_predictions",
+        "independent_predictions",
+        "dependent_expression",
+        "independent_expression",
+    }, "Expected all declared outputs to be delivered for first result"
+    assert result[0].keys() == {
+        "dependent_predictions",
+        "independent_predictions",
+        "dependent_expression",
+        "independent_expression",
+    }, "Expected all declared outputs to be delivered for second result"
+    assert (
+        result[0]["dependent_predictions"] is None
+    ), "Expected dependent model not to execute"
+    assert (
+        result[0]["dependent_expression"] is None
+    ), "Expected dependent expression not to execute"
+    assert (
+        len(result[0]["independent_predictions"]) == 12
+    ), "Expected 12 detections in crowd image"
+    assert (
+        result[0]["independent_expression"] == "EXECUTED INDEPENDENT!"
+    ), "Expected independent expression to execute"
+    assert (
+        result[1]["dependent_predictions"] is None
+    ), "Expected dependent model not to execute"
+    assert (
+        result[1]["dependent_expression"] is None
+    ), "Expected dependent expression not to execute"
+    assert (
+        len(result[1]["independent_predictions"]) == 2
+    ), "Expected 2 detections in dogs image"
+    assert (
+        result[1]["independent_expression"] == "EXECUTED INDEPENDENT!"
+    ), "Expected independent expression to execute"

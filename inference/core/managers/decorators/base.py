@@ -75,6 +75,20 @@ class ModelManagerDecorator(ModelManager):
         """
         return await self.model_manager.infer_from_request(model_id, request, **kwargs)
 
+    def infer_from_request_sync(
+        self, model_id: str, request: InferenceRequest, **kwargs
+    ) -> InferenceResponse:
+        """Processes a complete inference request.
+
+        Args:
+            model_id (str): The identifier of the model.
+            request (InferenceRequest): The request to process.
+
+        Returns:
+            InferenceResponse: The response from the inference.
+        """
+        return self.model_manager.infer_from_request_sync(model_id, request, **kwargs)
+
     def infer_only(self, model_id: str, request, img_in, img_dims, batch_size=None):
         """Performs only the inference part of a request.
 

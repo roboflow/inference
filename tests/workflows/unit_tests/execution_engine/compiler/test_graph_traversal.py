@@ -1,6 +1,6 @@
 import networkx as nx
 
-from inference.core.workflows.execution_engine.compiler.graph_traversal import (
+from inference.core.workflows.execution_engine.v1.compiler.graph_traversal import (
     traverse_graph_ensuring_parents_are_reached_first,
 )
 

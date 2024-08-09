@@ -28,7 +28,9 @@ from typing_extensions import (
 from inference.core.env import API_KEY, LAMBDA, REDIS_HOST
 from inference.core.logger import logger
 from inference.core.version import __version__ as inference_version
-from inference.core.workflows.execution_engine.compiler.entities import CompiledWorkflow
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    CompiledWorkflow,
+)
 from inference.usage_tracking.utils import collect_func_params
 
 from .config import TelemetrySettings, get_telemetry_settings

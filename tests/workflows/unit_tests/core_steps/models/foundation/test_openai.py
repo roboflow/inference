@@ -1,8 +1,7 @@
 import json
 import time
 from typing import Any
-from unittest import mock
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -10,22 +9,23 @@ from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.foundation import lmm
-from inference.core.workflows.core_steps.models.foundation.openai import (
+from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     BlockManifest,
     LMMConfig,
-    run_gpt_4v_llm_prompting,
     execute_gpt_4v_request,
     try_parse_json,
     try_parse_lmm_output_to_json,
 )
 
 
+@pytest.mark.parametrize("type_alias", ["roboflow_core/open_ai@v1", "OpenAI"])
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_openai_step_validation_when_input_is_valid(images_field_alias: str) -> None:
+def test_openai_step_validation_when_input_is_valid(
+    type_alias: str, images_field_alias: str
+) -> None:
     # given
     specification = {
-        "type": "OpenAI",
+        "type": type_alias,
         "name": "step_1",
         images_field_alias: "$inputs.image",
         "prompt": "$inputs.prompt",
@@ -38,7 +38,7 @@ def test_openai_step_validation_when_input_is_valid(images_field_alias: str) -> 
 
     # then
     assert result == BlockManifest(
-        type="OpenAI",
+        type=type_alias,
         name="step_1",
         images="$inputs.image",
         prompt="$inputs.prompt",
@@ -381,10 +381,9 @@ Some other comment
     assert result == [{"field_a": 1, "field_b": 37}, {"field_a": 2, "field_b": 47}]
 
 
-@pytest.mark.asyncio
-async def test_execute_gpt_4v_request() -> None:
+def test_execute_gpt_4v_request() -> None:
     # given
-    client = AsyncMock()
+    client = MagicMock()
     client.chat.completions.create.return_value = ChatCompletion(
         id="38",
         choices=[
@@ -403,7 +402,7 @@ async def test_execute_gpt_4v_request() -> None:
     )
 
     # when
-    result = await execute_gpt_4v_request(
+    result = execute_gpt_4v_request(
         client=client,
         image={
             "type": "numpy_object",
@@ -436,10 +435,9 @@ async def test_execute_gpt_4v_request() -> None:
     ), "Image details level expected to be set to `low` as in LMMConfig"
 
 
-@pytest.mark.asyncio
-async def test_execute_gpt_4v_request_gpt_4o_mini() -> None:
+def test_execute_gpt_4v_request_gpt_4o_mini() -> None:
     # given
-    client = AsyncMock()
+    client = MagicMock()
     client.chat.completions.create.return_value = ChatCompletion(
         id="38",
         choices=[
@@ -458,7 +456,7 @@ async def test_execute_gpt_4v_request_gpt_4o_mini() -> None:
     )
 
     # when
-    result = await execute_gpt_4v_request(
+    result = execute_gpt_4v_request(
         client=client,
         image={
             "type": "numpy_object",

@@ -1,8 +1,8 @@
 import pytest
 
-from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
-from inference.core.workflows.execution_engine.executor.execution_data_manager.dynamic_batches_manager import (
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.dynamic_batches_manager import (
     DynamicBatchesManager,
     assembly_root_batch_indices,
 )

@@ -2,17 +2,21 @@ from unittest import mock
 
 import pytest
 
-from inference.core.workflows.core_steps.formatters.expression import BlockManifest
+from inference.core.workflows.core_steps.formatters.expression.v1 import BlockManifest
 from inference.core.workflows.errors import (
     DynamicBlockError,
     WorkflowEnvironmentConfigurationError,
 )
-from inference.core.workflows.execution_engine.dynamic_blocks import block_scaffolding
-from inference.core.workflows.execution_engine.dynamic_blocks.block_scaffolding import (
+from inference.core.workflows.execution_engine.v1.dynamic_blocks import (
+    block_scaffolding,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_scaffolding import (
     assembly_custom_python_block,
     create_dynamic_module,
 )
-from inference.core.workflows.execution_engine.dynamic_blocks.entities import PythonCode
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+    PythonCode,
+)
 
 
 def test_create_dynamic_module_when_syntax_error_happens() -> None:
@@ -70,8 +74,7 @@ def run_function(a, b) -> BlockResult:
     assert module.run_function(3, 5) == {"result": 8}
 
 
-@pytest.mark.asyncio
-async def test_assembly_custom_python_block() -> None:
+def test_assembly_custom_python_block() -> None:
     # given
     manifest = BlockManifest
     init_function = """
@@ -99,7 +102,7 @@ def run_function(self, a, b) -> BlockResult:
         python_code=python_code,
     )
     workflow_block_instance = workflow_block_class()
-    execution_result = await workflow_block_instance.run(a=3, b=5)
+    execution_result = workflow_block_instance.run(a=3, b=5)
 
     # then
     assert (
@@ -113,8 +116,7 @@ def run_function(self, a, b) -> BlockResult:
     }, "Expected result of 3 + 5 + 6 (last value from init)"
 
 
-@pytest.mark.asyncio
-async def test_assembly_custom_python_block_when_run_function_not_found() -> None:
+def test_assembly_custom_python_block_when_run_function_not_found() -> None:
     # given
     manifest = BlockManifest
     init_function = """
@@ -144,8 +146,7 @@ def run_function(self, a, b) -> BlockResult:
         )
 
 
-@pytest.mark.asyncio
-async def test_assembly_custom_python_block_when_init_function_not_found() -> None:
+def test_assembly_custom_python_block_when_init_function_not_found() -> None:
     # given
     manifest = BlockManifest
     init_function = """
@@ -175,11 +176,10 @@ def run_function(self, a, b) -> BlockResult:
         )
 
 
-@pytest.mark.asyncio
 @mock.patch.object(
     block_scaffolding, "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", False
 )
-async def test_run_assembled_custom_python_block_when_custom_python_forbidden() -> None:
+def test_run_assembled_custom_python_block_when_custom_python_forbidden() -> None:
     # given
     manifest = BlockManifest
     init_function = """
@@ -208,4 +208,4 @@ def run_function(self, a, b) -> BlockResult:
     )
     workflow_block_instance = workflow_block_class()
     with pytest.raises(WorkflowEnvironmentConfigurationError):
-        _ = await workflow_block_instance.run(a=3, b=5)
+        _ = workflow_block_instance.run(a=3, b=5)

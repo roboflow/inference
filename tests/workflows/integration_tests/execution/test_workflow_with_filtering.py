@@ -108,8 +108,7 @@ EXPECTED_OBJECT_DETECTION_CONFIDENCES = np.array(
 )
 
 
-@pytest.mark.asyncio
-async def test_filtering_workflow_when_minimal_valid_input_provided(
+def test_filtering_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -126,7 +125,7 @@ async def test_filtering_workflow_when_minimal_valid_input_provided(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
             "model_id": "yolov8n-640",
@@ -150,8 +149,7 @@ async def test_filtering_workflow_when_minimal_valid_input_provided(
     ), "Expected confidences to match what was validated manually as workflow outcome"
 
 
-@pytest.mark.asyncio
-async def test_filtering_workflow_when_batch_input_provided(
+def test_filtering_workflow_when_batch_input_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -168,7 +166,7 @@ async def test_filtering_workflow_when_batch_input_provided(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [crowd_image, crowd_image],
             "model_id": "yolov8n-640",
@@ -203,8 +201,7 @@ async def test_filtering_workflow_when_batch_input_provided(
     ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
 
 
-@pytest.mark.asyncio
-async def test_filtering_workflow_when_model_id_not_provided_in_input(
+def test_filtering_workflow_when_model_id_not_provided_in_input(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -222,15 +219,14 @@ async def test_filtering_workflow_when_model_id_not_provided_in_input(
 
     # when
     with pytest.raises(RuntimeInputError):
-        _ = await execution_engine.run_async(
+        _ = execution_engine.run(
             runtime_parameters={
                 "image": crowd_image,
             }
         )
 
 
-@pytest.mark.asyncio
-async def test_filtering_workflow_when_image_not_provided_in_input(
+def test_filtering_workflow_when_image_not_provided_in_input(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -247,15 +243,14 @@ async def test_filtering_workflow_when_image_not_provided_in_input(
 
     # when
     with pytest.raises(RuntimeInputError):
-        _ = await execution_engine.run_async(
+        _ = execution_engine.run(
             runtime_parameters={
                 "model_id": "yolov8n-640",
             }
         )
 
 
-@pytest.mark.asyncio
-async def test_filtering_workflow_when_classes_not_provided(
+def test_filtering_workflow_when_classes_not_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -273,7 +268,7 @@ async def test_filtering_workflow_when_classes_not_provided(
 
     # when
     with pytest.raises(EvaluationEngineError):
-        _ = await execution_engine.run_async(
+        _ = execution_engine.run(
             runtime_parameters={
                 "image": crowd_image,
                 "model_id": "yolov8n-640",
@@ -281,8 +276,7 @@ async def test_filtering_workflow_when_classes_not_provided(
         )
 
 
-@pytest.mark.asyncio
-async def test_filtering_workflow_when_model_id_cannot_be_resolved_to_valid_model(
+def test_filtering_workflow_when_model_id_cannot_be_resolved_to_valid_model(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -300,7 +294,7 @@ async def test_filtering_workflow_when_model_id_cannot_be_resolved_to_valid_mode
 
     # when
     with pytest.raises(StepExecutionError):
-        _ = await execution_engine.run_async(
+        _ = execution_engine.run(
             runtime_parameters={
                 "image": crowd_image,
                 "model_id": "invalid",

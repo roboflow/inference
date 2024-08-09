@@ -9,30 +9,34 @@ from inference.usage_tracking.collector import UsageCollector
 
 def test_create_empty_usage_dict():
     # given
-    usage_default_dict = UsageCollector.empty_usage_dict(exec_session_id="exec_session_id")
+    usage_default_dict = UsageCollector.empty_usage_dict(
+        exec_session_id="exec_session_id"
+    )
 
     # when
     fake_api_key_hash = UsageCollector._hash("fake_api_key")
     usage_default_dict[fake_api_key_hash]["category:fake_id"]
 
     # then
-    assert json.dumps(usage_default_dict) == json.dumps({
-        fake_api_key_hash: {
-            "category:fake_id": {
-                "timestamp_start": None,
-                "timestamp_stop": None,
-                "exec_session_id": "exec_session_id",
-                "processed_frames": 0,
-                "fps": 0,
-                "source_duration": 0,
-                "category": "",
-                "resource_id": "",
-                "hosted": LAMBDA,
-                "api_key_hash": "",
-                "enterprise": False,
+    assert json.dumps(usage_default_dict) == json.dumps(
+        {
+            fake_api_key_hash: {
+                "category:fake_id": {
+                    "timestamp_start": None,
+                    "timestamp_stop": None,
+                    "exec_session_id": "exec_session_id",
+                    "processed_frames": 0,
+                    "fps": 0,
+                    "source_duration": 0,
+                    "category": "",
+                    "resource_id": "",
+                    "hosted": LAMBDA,
+                    "api_key_hash": "",
+                    "enterprise": False,
+                }
             }
         }
-    })
+    )
 
 
 def test_merge_usage_dicts_raises_on_mismatched_resource_id():
@@ -54,13 +58,16 @@ def test_merge_usage_dicts_merge_with_empty():
         "processed_frames": 1,
         "source_duration": 1,
     }
-    usage_payload_2 = {
-        "resource_id": "some",
-        "api_key_hash": "some"
-    }
+    usage_payload_2 = {"resource_id": "some", "api_key_hash": "some"}
 
-    assert UsageCollector._merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2) == usage_payload_1
-    assert UsageCollector._merge_usage_dicts(d1=usage_payload_2, d2=usage_payload_1) == usage_payload_1
+    assert (
+        UsageCollector._merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2)
+        == usage_payload_1
+    )
+    assert (
+        UsageCollector._merge_usage_dicts(d1=usage_payload_2, d2=usage_payload_1)
+        == usage_payload_1
+    )
 
 
 def test_merge_usage_dicts():
@@ -82,7 +89,9 @@ def test_merge_usage_dicts():
         "source_duration": 1,
     }
 
-    assert UsageCollector._merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2) == {
+    assert UsageCollector._merge_usage_dicts(
+        d1=usage_payload_1, d2=usage_payload_2
+    ) == {
         "resource_id": "some",
         "api_key_hash": "some",
         "timestamp_start": 1721032989934855000,
@@ -110,7 +119,9 @@ def test_get_api_key_usage_containing_resource_with_no_payload_containing_api_ke
     ]
 
     # when
-    api_key_usage_with_resource = UsageCollector._get_api_key_usage_containing_resource(api_key_hash="fake", usage_payloads=usage_payloads)
+    api_key_usage_with_resource = UsageCollector._get_api_key_usage_containing_resource(
+        api_key_hash="fake", usage_payloads=usage_payloads
+    )
 
     # then
     assert api_key_usage_with_resource is None
@@ -152,11 +163,13 @@ def test_get_api_key_usage_containing_resource_with_no_payload_containing_resour
                     "source_duration": 1,
                 },
             },
-        }
+        },
     ]
 
     # when
-    api_key_usage_with_resource = UsageCollector._get_api_key_usage_containing_resource(api_key_hash="fake_api2_hash", usage_payloads=usage_payloads)
+    api_key_usage_with_resource = UsageCollector._get_api_key_usage_containing_resource(
+        api_key_hash="fake_api2_hash", usage_payloads=usage_payloads
+    )
 
     # then
     assert api_key_usage_with_resource is None
@@ -188,11 +201,13 @@ def test_get_api_key_usage_containing_resource():
                     "source_duration": 1,
                 },
             },
-        }
+        },
     ]
 
     # when
-    api_key_usage_with_resource = UsageCollector._get_api_key_usage_containing_resource(api_key_hash="fake_api2_hash", usage_payloads=usage_payloads)
+    api_key_usage_with_resource = UsageCollector._get_api_key_usage_containing_resource(
+        api_key_hash="fake_api2_hash", usage_payloads=usage_payloads
+    )
 
     # then
     assert api_key_usage_with_resource == {
@@ -284,14 +299,17 @@ def test_zip_usage_payloads():
                     "source_duration": 1,
                 },
             },
-        }
+        },
     ]
 
     # when
-    zipped_usage_payloads = UsageCollector._zip_usage_payloads(usage_payloads=dumped_usage_payloads)
+    zipped_usage_payloads = UsageCollector._zip_usage_payloads(
+        usage_payloads=dumped_usage_payloads
+    )
 
     # then
-    assert zipped_usage_payloads == [{
+    assert zipped_usage_payloads == [
+        {
             "fake_api1_hash": {
                 "resource1": {
                     "api_key_hash": "fake_api1_hash",
@@ -344,7 +362,8 @@ def test_zip_usage_payloads():
                     "source_duration": 1,
                 },
             },
-        },]
+        },
+    ]
 
 
 def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource_id_was_collected():
@@ -372,14 +391,17 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource
                     "source_duration": 1,
                 },
             },
-        }
+        },
     ]
 
     # when
-    zipped_usage_payloads = UsageCollector._zip_usage_payloads(usage_payloads=dumped_usage_payloads)
+    zipped_usage_payloads = UsageCollector._zip_usage_payloads(
+        usage_payloads=dumped_usage_payloads
+    )
 
     # then
-    assert zipped_usage_payloads == [{
+    assert zipped_usage_payloads == [
+        {
             "api2": {
                 "resource1": {
                     "api_key_hash": "api2",
@@ -390,7 +412,8 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource
                     "source_duration": 1,
                 },
             },
-        },{
+        },
+        {
             "api1": {
                 "": {
                     "api_key_hash": "api1",
@@ -401,7 +424,8 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource
                     "inference_version": "10.10.10",
                 },
             },
-        }]
+        },
+    ]
 
 
 def test_zip_usage_payloads_with_system_info_missing_resource_id():
@@ -430,14 +454,17 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id():
                     "source_duration": 1,
                 },
             },
-        }
+        },
     ]
 
     # when
-    zipped_usage_payloads = UsageCollector._zip_usage_payloads(usage_payloads=dumped_usage_payloads)
+    zipped_usage_payloads = UsageCollector._zip_usage_payloads(
+        usage_payloads=dumped_usage_payloads
+    )
 
     # then
-    assert zipped_usage_payloads == [{
+    assert zipped_usage_payloads == [
+        {
             "api2": {
                 "fake:resource1": {
                     "api_key_hash": "api2",
@@ -452,7 +479,8 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id():
                     "inference_version": "10.10.10",
                 },
             },
-        },]
+        },
+    ]
 
 
 def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
@@ -481,14 +509,17 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
                     "source_duration": 1,
                 },
             },
-        }
+        },
     ]
 
     # when
-    zipped_usage_payloads = UsageCollector._zip_usage_payloads(usage_payloads=dumped_usage_payloads)
+    zipped_usage_payloads = UsageCollector._zip_usage_payloads(
+        usage_payloads=dumped_usage_payloads
+    )
 
     # then
-    assert zipped_usage_payloads == [{
+    assert zipped_usage_payloads == [
+        {
             "api2": {
                 "fake:resource1": {
                     "api_key_hash": "api2",
@@ -503,12 +534,15 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
                     "inference_version": "10.10.10",
                 },
             },
-        },]
+        },
+    ]
 
 
 def test_system_info():
-   # given
-    system_info = UsageCollector.system_info(exec_session_id="exec_session_id", time_ns=1, ip_address="w.x.y.z")
+    # given
+    system_info = UsageCollector.system_info(
+        exec_session_id="exec_session_id", time_ns=1, ip_address="w.x.y.z"
+    )
 
     # then
     expected_system_info = {

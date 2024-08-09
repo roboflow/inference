@@ -1,14 +1,14 @@
 from collections import defaultdict
 
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     JsonField,
     WorkflowImage,
     WorkflowParameter,
 )
-from inference.core.workflows.execution_engine.compiler.core import (
+from inference.core.workflows.execution_engine.v1.compiler.core import (
     collect_input_substitutions,
 )
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     ParsedWorkflowDefinition,
 )
 from tests.workflows.unit_tests.execution_engine.compiler.plugin_with_test_blocks.blocks import (

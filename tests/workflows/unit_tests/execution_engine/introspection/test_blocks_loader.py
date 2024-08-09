@@ -3,18 +3,26 @@ from unittest import mock
 from unittest.mock import MagicMock
 
 import pytest
+from packaging.version import Version
 from pydantic import BaseModel
 
-from inference.core.workflows.errors import PluginInterfaceError, PluginLoadingError
+from inference.core.workflows.errors import (
+    PluginInterfaceError,
+    PluginLoadingError,
+    WorkflowExecutionEngineVersionError,
+)
 from inference.core.workflows.execution_engine.introspection import blocks_loader
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
     get_manifest_type_identifiers,
+    is_block_compatible_with_execution_engine,
     load_blocks_from_plugin,
     load_initializers,
     load_initializers_from_plugin,
+    load_workflow_blocks,
 )
 from tests.workflows.unit_tests.execution_engine.introspection import (
+    plugin_with_multiple_versions_of_blocks,
     plugin_with_valid_blocks,
 )
 
@@ -174,7 +182,7 @@ def test_load_initializers_when_plugin_exists_and_initializers_provided() -> Non
     result = load_initializers()
 
     # then
-    assert len(result) == 5
+    assert len(result) == 7
     assert (
         result[
             "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_initializers.a"
@@ -199,7 +207,10 @@ def test_describe_available_blocks_when_valid_plugins_are_loaded(
     )
 
     # when
-    result = describe_available_blocks(dynamic_blocks=[])
+    result = describe_available_blocks(
+        dynamic_blocks=[],
+        execution_engine_version=Version("1.0.0"),
+    )
 
     # then
     assert len(result.blocks) == 2, "Expected 2 blocks to be loaded"
@@ -207,6 +218,47 @@ def test_describe_available_blocks_when_valid_plugins_are_loaded(
     assert result.blocks[0].manifest_class == plugin_with_valid_blocks.Block1Manifest
     assert result.blocks[1].block_class == plugin_with_valid_blocks.Block2
     assert result.blocks[1].manifest_class == plugin_with_valid_blocks.Block2Manifest
+    assert len(result.declared_kinds) == 33
+
+
+@mock.patch.object(blocks_loader, "load_workflow_blocks")
+def test_describe_available_blocks_when_valid_plugins_are_loaded_and_multiple_versions_in_the_same_family(
+    load_workflow_blocks_mock: MagicMock,
+) -> None:
+    # given
+    load_workflow_blocks_mock.return_value = load_blocks_from_plugin(
+        "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_multiple_versions_of_blocks"
+    )
+
+    # when
+    result = describe_available_blocks(
+        dynamic_blocks=[],
+        execution_engine_version=Version("1.0.0"),
+    )
+
+    # then
+    assert len(result.blocks) == 3, "Expected 2 blocks to be loaded"
+    assert (
+        result.blocks[0].block_class == plugin_with_multiple_versions_of_blocks.Block1V1
+    )
+    assert (
+        result.blocks[0].manifest_class
+        == plugin_with_multiple_versions_of_blocks.Block1V1Manifest
+    )
+    assert (
+        result.blocks[1].block_class == plugin_with_multiple_versions_of_blocks.Block1V2
+    )
+    assert (
+        result.blocks[1].manifest_class
+        == plugin_with_multiple_versions_of_blocks.Block1V2Manifest
+    )
+    assert (
+        result.blocks[2].block_class == plugin_with_multiple_versions_of_blocks.Block2
+    )
+    assert (
+        result.blocks[2].manifest_class
+        == plugin_with_multiple_versions_of_blocks.Block2Manifest
+    )
     assert len(result.declared_kinds) == 33
 
 
@@ -239,3 +291,138 @@ def test_describe_available_blocks_when_plugins_duplicate_type_identifiers(
     # when
     with pytest.raises(PluginLoadingError):
         _ = describe_available_blocks(dynamic_blocks=[])
+
+
+def test_load_workflow_blocks_when_execution_engine_version_is_not_given() -> None:
+    # when
+    result = load_workflow_blocks(execution_engine_version=None)
+
+    # then
+    assert len(result) > 0, "Expected core blocks to be found"
+
+
+def test_load_workflow_blocks_when_execution_engine_version_passed_as_string() -> None:
+    # when
+    result = load_workflow_blocks(execution_engine_version="1.0.0")
+
+    # then
+    assert len(result) > 0, "Expected core blocks to be found"
+
+
+def test_load_workflow_blocks_when_execution_engine_version_passed_as_version_object() -> (
+    None
+):
+    # when
+    result = load_workflow_blocks(execution_engine_version=Version("1.0.0"))
+
+    # then
+    assert len(result) > 0, "Expected core blocks to be found"
+
+
+def test_load_workflow_blocks_when_execution_engine_version_is_not_parsable() -> None:
+    # when
+    with pytest.raises(WorkflowExecutionEngineVersionError):
+        _ = load_workflow_blocks(execution_engine_version="invalid")
+
+
+def test_load_workflow_blocks_when_execution_engine_version_does_not_match_any_block() -> (
+    None
+):
+    # when
+    result = load_workflow_blocks(execution_engine_version="0.0.1")
+
+    # then
+    assert len(result) == 0, "Expected no blocks to be found"
+
+
+def test_is_block_compatible_with_execution_engine_when_execution_engine_version_not_given() -> (
+    None
+):
+    # when
+    result = is_block_compatible_with_execution_engine(
+        execution_engine_version=None,
+        block_execution_engine_compatibility=">=1.0.0,<2.0.0",
+        block_source="workflows_core",
+        block_identifier="some",
+    )
+
+    # then
+    assert result is True, "Expected None for EE version to be treated as *"
+
+
+def test_is_block_compatible_with_execution_engine_when_block_compatibility_not_given() -> (
+    None
+):
+    # when
+    result = is_block_compatible_with_execution_engine(
+        execution_engine_version=Version("1.3.0"),
+        block_execution_engine_compatibility=None,
+        block_source="workflows_core",
+        block_identifier="some",
+    )
+
+    # then
+    assert result is True, "Expected None for block compatibility to be treated as *"
+
+
+@pytest.mark.parametrize(
+    "execution_engine_version, block_execution_engine_compatibility",
+    [
+        (Version("1.0.0"), ">=1.0.0,<2.0.0"),
+        (Version("1.3.0"), ">=1.0.0,<2.0.0"),
+        (Version("2.3.0"), ">=2.0.0,<=2.3.0"),
+        (Version("2.3.1"), "~=2.3.0"),
+    ],
+)
+def test_is_block_compatible_with_execution_engine_when_compatible_setup_provided(
+    execution_engine_version: Version,
+    block_execution_engine_compatibility: str,
+) -> None:
+    # when
+    result = is_block_compatible_with_execution_engine(
+        execution_engine_version=execution_engine_version,
+        block_execution_engine_compatibility=block_execution_engine_compatibility,
+        block_source="workflows_core",
+        block_identifier="some",
+    )
+
+    # then
+    assert result is True, "Expected parameters to match"
+
+
+@pytest.mark.parametrize(
+    "execution_engine_version, block_execution_engine_compatibility",
+    [
+        (Version("2.0.0"), ">=1.0.0,<2.0.0"),
+        (Version("1.3.0"), ">=1.0.0,<2.0.0,!=1.3.0"),
+        (Version("2.3.1"), ">=2.0.0,<=2.3.0"),
+        (Version("2.4.1"), "~=2.3.0"),
+    ],
+)
+def test_is_block_compatible_with_execution_engine_when_non_compatible_setup_provided(
+    execution_engine_version: Version,
+    block_execution_engine_compatibility: str,
+) -> None:
+    # when
+    result = is_block_compatible_with_execution_engine(
+        execution_engine_version=execution_engine_version,
+        block_execution_engine_compatibility=block_execution_engine_compatibility,
+        block_source="workflows_core",
+        block_identifier="some",
+    )
+
+    # then
+    assert result is False, "Expected parameters not to match"
+
+
+def test_is_block_compatible_with_execution_engine_when_block_execution_engine_compatibility_is_not_parsable() -> (
+    None
+):
+    # when
+    with pytest.raises(PluginInterfaceError):
+        _ = is_block_compatible_with_execution_engine(
+            execution_engine_version=Version("1.0.0"),
+            block_execution_engine_compatibility="invalid",
+            block_source="workflows_core",
+            block_identifier="some",
+        )

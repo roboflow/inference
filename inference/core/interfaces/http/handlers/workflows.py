@@ -1,6 +1,8 @@
 # TODO - for everyone: start migrating other handlers to bring relief to http_api.py
 from typing import List, Optional
 
+from packaging.version import Version
+
 from inference.core.entities.responses.workflows import (
     ExternalBlockPropertyPrimitiveDefinition,
     ExternalWorkflowsBlockSelectorDefinition,
@@ -11,29 +13,33 @@ from inference.core.workflows.core_steps.common.query_language.introspection.cor
     prepare_operations_descriptions,
     prepare_operators_descriptions,
 )
-from inference.core.workflows.execution_engine.dynamic_blocks.block_assembler import (
-    compile_dynamic_blocks,
-)
-from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
-    DynamicBlockDefinition,
-)
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
 )
 from inference.core.workflows.execution_engine.introspection.connections_discovery import (
     discover_blocks_connections,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
+    compile_dynamic_blocks,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+    DynamicBlockDefinition,
+)
 
 
 def handle_describe_workflows_blocks_request(
     dynamic_blocks_definitions: Optional[List[DynamicBlockDefinition]] = None,
+    requested_execution_engine_version: Optional[str] = None,
 ) -> WorkflowsBlocksDescription:
     if dynamic_blocks_definitions is None:
         dynamic_blocks_definitions = []
     dynamic_blocks = compile_dynamic_blocks(
         dynamic_blocks_definitions=dynamic_blocks_definitions,
     )
-    blocks_description = describe_available_blocks(dynamic_blocks=dynamic_blocks)
+    blocks_description = describe_available_blocks(
+        dynamic_blocks=dynamic_blocks,
+        execution_engine_version=requested_execution_engine_version,
+    )
     blocks_connections = discover_blocks_connections(
         blocks_description=blocks_description,
     )

@@ -1,20 +1,24 @@
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.foundation.clip_comparison import (
+from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
     BlockManifest,
 )
 
 
+@pytest.mark.parametrize(
+    "type_alias", ["roboflow_core/clip_comparison@v1", "ClipComparison"]
+)
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 @pytest.mark.parametrize("texts_field_alias", ["texts", "text"])
 def test_manifest_parsing_when_data_is_valid(
+    type_alias: str,
     images_field_alias: str,
     texts_field_alias: str,
 ) -> None:
     # given
     data = {
-        "type": "ClipComparison",
+        "type": type_alias,
         "name": "some",
         images_field_alias: "$inputs.some",
         texts_field_alias: "$inputs.classes",
@@ -25,7 +29,7 @@ def test_manifest_parsing_when_data_is_valid(
 
     # then
     assert result == BlockManifest(
-        type="ClipComparison",
+        type=type_alias,
         name="some",
         images="$inputs.some",
         texts="$inputs.classes",
