@@ -24,14 +24,6 @@ from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.ocr import OCRModelBlock
-from inference.core.workflows.core_steps.models.foundation.openai import OpenAIBlock
-from inference.core.workflows.core_steps.models.foundation.segment_anything import (
-    SegmentAnything2Block,
-)
-from inference.core.workflows.core_steps.models.foundation.yolo_world import (
-    YoloWorldModelBlock,
-)
 from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
     ClipComparisonBlockV1,
 )
@@ -42,9 +34,17 @@ from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBloc
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.ocr import OCRModelBlock
 from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
+from inference.core.workflows.core_steps.models.foundation.openai import OpenAIBlock
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything import (
+    SegmentAnything2Block,
+)
+from inference.core.workflows.core_steps.models.foundation.yolo_world import (
+    YoloWorldModelBlock,
 )
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
