@@ -594,22 +594,22 @@ class UsageCollector:
                     api_keys_hashes_failed.add(api_key_hash)
                     continue
                 api_key = hashes_to_api_keys[api_key_hash]
-                if any("processed_frames" not in w for w in workflow_payloads.values()):
-                    api_keys_hashes_failed.add(api_key_hash)
-                    continue
+                complete_workflow_payloads = [
+                    w for w in workflow_payloads.values() if "processed_frames" in w
+                ]
                 try:
-                    for workflow_payload in workflow_payloads.values():
-                        if api_key_hash in workflow_payload:
+                    for workflow_payload in complete_workflow_payloads:
+                        if "api_key_hash" in workflow_payload:
                             del workflow_payload["api_key_hash"]
                         workflow_payload["api_key"] = api_key
                     logger.debug(
                         "Offloading usage to %s, payload: %s",
                         self._settings.api_usage_endpoint_url,
-                        workflow_payloads,
+                        complete_workflow_payloads,
                     )
                     response = requests.post(
                         self._settings.api_usage_endpoint_url,
-                        json=list(workflow_payloads.values()),
+                        json=complete_workflow_payloads,
                         verify=ssl_verify,
                         headers={"Authorization": f"Bearer {api_key}"},
                         timeout=1,
