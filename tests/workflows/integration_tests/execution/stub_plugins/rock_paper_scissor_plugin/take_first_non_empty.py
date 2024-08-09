@@ -7,8 +7,8 @@ from typing import Any, List, Literal, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -53,7 +53,7 @@ class TakeFirstNonEmptyBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         inputs: List[Any],
     ) -> BlockResult:

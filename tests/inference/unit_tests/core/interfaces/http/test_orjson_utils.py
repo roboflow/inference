@@ -7,7 +7,7 @@ from inference.core.interfaces.http.orjson_utils import (
     serialise_list,
     serialise_workflow_result,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )

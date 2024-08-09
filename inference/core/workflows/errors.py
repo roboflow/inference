@@ -113,6 +113,10 @@ class WorkflowExecutionEngineError(WorkflowError):
     pass
 
 
+class NotSupportedExecutionEngineError(WorkflowExecutionEngineError):
+    pass
+
+
 class InvalidBlockBehaviourError(WorkflowExecutionEngineError):
     pass
 
@@ -130,4 +134,8 @@ class ExecutionEngineNotImplementedError(WorkflowExecutionEngineError):
 
 
 class RuntimeInputError(WorkflowExecutionEngineError):
+    pass
+
+
+class WorkflowExecutionEngineVersionError(WorkflowError):
     pass

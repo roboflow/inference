@@ -51,8 +51,7 @@ DETECTION_CLASSES_REPLACEMENT_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
-async def test_detection_plus_classification_workflow_when_minimal_valid_input_provided(
+def test_detection_plus_classification_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
@@ -71,7 +70,7 @@ async def test_detection_plus_classification_workflow_when_minimal_valid_input_p
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, dogs_image, crowd_image],
         }

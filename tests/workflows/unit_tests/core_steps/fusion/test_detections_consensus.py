@@ -7,8 +7,8 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.fusion import detections_consensus
-from inference.core.workflows.core_steps.fusion.detections_consensus import (
+from inference.core.workflows.core_steps.fusion.detections_consensus import v1
+from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
     AggregationMode,
     BlockManifest,
     aggregate_field_values,
@@ -29,6 +29,48 @@ from inference.core.workflows.core_steps.fusion.detections_consensus import (
     get_smallest_bounding_box,
     merge_detections,
 )
+
+
+@pytest.mark.parametrize(
+    "type_alias", ["roboflow_core/detections_consensus@v1", "DetectionsConsensus"]
+)
+def test_detections_consensus_validation_when_valid_specification_given_with_supported_type_aliases(
+    type_alias: str,
+) -> None:
+    # given
+    specification = {
+        "type": type_alias,
+        "name": "some",
+        "predictions": [
+            "$steps.detection.predictions",
+            "$steps.detection_2.predictions",
+        ],
+        "image_metadata": "$steps.detection.image",
+        "required_votes": 3,
+    }
+
+    # when
+    result = BlockManifest.model_validate(specification)
+
+    # then
+    assert result == BlockManifest(
+        type=type_alias,
+        name="some",
+        predictions_batches=[
+            "$steps.detection.predictions",
+            "$steps.detection_2.predictions",
+        ],
+        image_metadata="$steps.detection.image",
+        required_votes=3,
+        class_aware=True,
+        iou_threshold=0.3,
+        confidence=0.0,
+        classes_to_consider=None,
+        required_objects=None,
+        presence_confidence_aggregation=AggregationMode.MAX,
+        detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
+        detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+    )
 
 
 @pytest.mark.parametrize(
@@ -562,7 +604,7 @@ def test_get_class_of_least_confident_detection() -> None:
     assert result == ("a", 0)
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(v1, "uuid4")
 def test_merge_detections(uuid4_mock: MagicMock) -> None:
     # given
     uuid4_mock.return_value = "some_uuid"
@@ -1227,7 +1269,7 @@ def test_does_not_detect_objects_in_any_source_when_not_all_sources_give_empty_p
     assert result is False
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(v1, "uuid4")
 def test_get_consensus_for_single_detection_when_only_single_source_and_single_source_is_enough(
     uuid_mock: MagicMock,
 ) -> None:
@@ -1348,7 +1390,7 @@ def test_get_consensus_for_single_detection_when_only_single_source_and_single_s
     assert consensus_detections == []
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(v1, "uuid4")
 def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_and_all_other_conditions_should_pass(
     uuid_mock: MagicMock,
 ) -> None:
@@ -1514,7 +1556,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
     assert consensus_detections == []
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(v1, "uuid4")
 def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_but_confidence_is_not_enough(
     uuid_mock: MagicMock,
 ) -> None:
@@ -1585,7 +1627,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
     assert consensus_detections == []
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(v1, "uuid4")
 def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_but_classes_do_not_match(
     uuid_mock: MagicMock,
 ) -> None:
@@ -1911,7 +1953,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_do_not_m
     assert result == ("some_parent", False, {}, empty_detections)
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(v1, "uuid4")
 def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_single_source_given_but_thats_enough_for_consensus(
     uuid_mock: MagicMock,
 ) -> None:
@@ -1977,7 +2019,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_sin
     assert result == ("some_parent", True, {"b": 0.9}, expected_consensus_detections)
 
 
-@mock.patch.object(detections_consensus, "uuid4")
+@mock.patch.object(v1, "uuid4")
 def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_multiple_sources_given_enough_for_consensus(
     uuid_mock: MagicMock,
 ) -> None:

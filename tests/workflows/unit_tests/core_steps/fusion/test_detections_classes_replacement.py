@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 import supervision as sv
-from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -10,21 +9,19 @@ from inference.core.entities.responses.inference import (
     MultiLabelClassificationInferenceResponse,
     MultiLabelClassificationPrediction,
 )
-from inference.core.workflows.constants import DETECTION_ID_KEY
-from inference.core.workflows.core_steps.fusion.detections_classes_replacement import (
-    DetectionsClassesReplacementBlock,
+from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
+    DetectionsClassesReplacementBlockV1,
     extract_leading_class_from_prediction,
 )
-from inference.core.workflows.entities.base import Batch
+from inference.core.workflows.execution_engine.entities.base import Batch
 
 
-@pytest.mark.asyncio
-async def test_classes_replacement_when_object_detection_object_is_none() -> None:
+def test_classes_replacement_when_object_detection_object_is_none() -> None:
     # given
-    step = DetectionsClassesReplacementBlock()
+    step = DetectionsClassesReplacementBlockV1()
 
     # when
-    result = await step.run(
+    result = step.run(
         object_detection_predictions=None,
         classification_predictions=None,
     )
@@ -35,16 +32,15 @@ async def test_classes_replacement_when_object_detection_object_is_none() -> Non
     }, "object_detection_predictions is superior object so lack of value means lack of output"
 
 
-@pytest.mark.asyncio
-async def test_classes_replacement_when_there_are_no_predictions_is_none() -> None:
+def test_classes_replacement_when_there_are_no_predictions_is_none() -> None:
     # given
-    step = DetectionsClassesReplacementBlock()
+    step = DetectionsClassesReplacementBlockV1()
     detections = sv.Detections(
         xyxy=np.array([[10, 20, 30, 40]]),
     )
 
     # when
-    result = await step.run(
+    result = step.run(
         object_detection_predictions=detections,
         classification_predictions=None,
     )
@@ -55,12 +51,11 @@ async def test_classes_replacement_when_there_are_no_predictions_is_none() -> No
     }, "classification_predictions is inferior object so lack of value means empty output"
 
 
-@pytest.mark.asyncio
-async def test_classes_replacement_when_replacement_to_happen_without_filtering_for_multi_label_results() -> (
+def test_classes_replacement_when_replacement_to_happen_without_filtering_for_multi_label_results() -> (
     None
 ):
     # given
-    step = DetectionsClassesReplacementBlock()
+    step = DetectionsClassesReplacementBlockV1()
     detections = sv.Detections(
         xyxy=np.array(
             [
@@ -102,7 +97,7 @@ async def test_classes_replacement_when_replacement_to_happen_without_filtering_
     )
 
     # when
-    result = await step.run(
+    result = step.run(
         object_detection_predictions=detections,
         classification_predictions=classification_predictions,
     )
@@ -127,12 +122,11 @@ async def test_classes_replacement_when_replacement_to_happen_without_filtering_
     ], "Expected to generate new detection id"
 
 
-@pytest.mark.asyncio
-async def test_classes_replacement_when_replacement_to_happen_without_filtering_for_multi_class_results() -> (
+def test_classes_replacement_when_replacement_to_happen_without_filtering_for_multi_class_results() -> (
     None
 ):
     # given
-    step = DetectionsClassesReplacementBlock()
+    step = DetectionsClassesReplacementBlockV1()
     detections = sv.Detections(
         xyxy=np.array(
             [
@@ -186,7 +180,7 @@ async def test_classes_replacement_when_replacement_to_happen_without_filtering_
     )
 
     # when
-    result = await step.run(
+    result = step.run(
         object_detection_predictions=detections,
         classification_predictions=classification_predictions,
     )
@@ -211,12 +205,11 @@ async def test_classes_replacement_when_replacement_to_happen_without_filtering_
     ], "Expected to generate new detection id"
 
 
-@pytest.mark.asyncio
-async def test_classes_replacement_when_replacement_to_happen_and_one_result_to_be_filtered_out() -> (
+def test_classes_replacement_when_replacement_to_happen_and_one_result_to_be_filtered_out() -> (
     None
 ):
     # given
-    step = DetectionsClassesReplacementBlock()
+    step = DetectionsClassesReplacementBlockV1()
     detections = sv.Detections(
         xyxy=np.array(
             [
@@ -249,7 +242,7 @@ async def test_classes_replacement_when_replacement_to_happen_and_one_result_to_
     )
 
     # when
-    result = await step.run(
+    result = step.run(
         object_detection_predictions=detections,
         classification_predictions=classification_predictions,
     )

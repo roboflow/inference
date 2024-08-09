@@ -1,10 +1,10 @@
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Set, Type, Union
+from typing import Dict, List, Optional, Set, Type, Union
 
 from pydantic import BaseModel, Field
 
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import Kind
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import Kind
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -118,6 +118,10 @@ class BlockDescription(BaseModel):
     manifest_type_identifier_aliases: List[str] = Field(
         description="Aliases of `manifest_type_identifier` that are in use.",
         default_factory=list,
+    )
+    execution_engine_compatibility: Optional[str] = Field(
+        description="Execution Engine versions compatible with block.",
+        default=None,
     )
 
 

@@ -89,8 +89,7 @@ WORKFLOW_WITH_DETECTIONS_SPECIALISED_CLASSIFICATION_AND_CUSTOM_EXPRESSION = {
 }
 
 
-@pytest.mark.asyncio
-async def test_detection_plus_classification_workflow_when_reference_found_at_least_in_one_image(
+def test_detection_plus_classification_workflow_when_reference_found_at_least_in_one_image(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
@@ -109,7 +108,7 @@ async def test_detection_plus_classification_workflow_when_reference_found_at_le
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, crowd_image],
             "reference": "116.Parson_russell_terrier",
@@ -128,8 +127,7 @@ async def test_detection_plus_classification_workflow_when_reference_found_at_le
     assert result[1]["verdict"] == "NOT FOUND"
 
 
-@pytest.mark.asyncio
-async def test_detection_plus_classification_workflow_when_reference_not_found(
+def test_detection_plus_classification_workflow_when_reference_not_found(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
@@ -148,7 +146,7 @@ async def test_detection_plus_classification_workflow_when_reference_not_found(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, crowd_image],
             "reference": "NON-EXISTING",

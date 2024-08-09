@@ -673,14 +673,14 @@ you cannot use different type of models in `project_a` and `project_b` - if that
 registered) - since `v0.9.18`
 
 ### Configuration of client
-
 - `output_visualisation_format`: one of (`VisualisationResponseFormat.BASE64`, `VisualisationResponseFormat.NUMPY`,
   `VisualisationResponseFormat.PILLOW`) - given that server-side visualisation is enabled - one may choose what
   format should be used in output
 - `image_extensions_for_directory_scan`: while using `CLIENT.infer_on_stream(...)` with local directory
   this parameter controls type of files (extensions) allowed to be processed -
   default: `["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]`
-- `client_downsizing_disabled`: set to `True` if you want to avoid client-side downsizing - default `False`.
+- `client_downsizing_disabled`: set to `False` if you want to perform client-side downsizing - default `True` (
+  changed in version `0.16.0` - previously was `False`).
   Client-side scaling is only supposed to down-scale (keeping aspect-ratio) the input for inference -
   to utilise internet connection more efficiently (but for the price of images manipulation / transcoding).
   If model registry endpoint is available (mode `v1`) - model input size information will be used, if not:
@@ -689,6 +689,16 @@ registered) - since `v0.9.18`
 - `max_batch_size` - max number of elements that can be injected into single request (in `v0` mode - API only 
 support a single image in payload for the majority of endpoints - hence in this case, value will be overriden with `1`
 to prevent errors)
+
+!!! warning
+
+    The default value for flag `client_downsizing_disabled` was changed from `False` to `True` in release `0.16.0`!
+    For clients using models with input size above `1024x1024` running models on hosted 
+    platform it should improve predictions quality (as previous default behaviour was causing that input was downsized 
+    and then artificially upsized on the server side with worse image quality). 
+    There may be some clients that would like to remain previous settings to potentially improve speed (
+    when internet connection is a bottleneck and large images are submitted despite small 
+    model input size). 
 
 ## FAQs
 

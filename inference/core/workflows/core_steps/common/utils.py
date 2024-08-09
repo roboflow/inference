@@ -1,7 +1,9 @@
+import concurrent
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar, Union
 
 import numpy as np
 import supervision as sv
@@ -12,7 +14,7 @@ from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.constants import (
+from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -38,12 +40,14 @@ from inference.core.workflows.constants import (
     X_KEY,
     Y_KEY,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
+
+T = TypeVar("T")
 
 
 def load_core_model(
@@ -407,3 +411,12 @@ def remove_unexpected_keys_from_dictionary(
     for unexpected_key in unexpected_keys:
         del dictionary[unexpected_key]
     return dictionary
+
+
+def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[T]:
+    results = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(task) for task in tasks]
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
+    return results

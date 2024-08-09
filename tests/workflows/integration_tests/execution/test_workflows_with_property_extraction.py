@@ -90,8 +90,7 @@ WORKFLOW_WITH_EXTRACTION_OF_CLASSES_FOR_DETECTIONS = {
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_extraction_of_classes_for_detections(
+def test_workflow_with_extraction_of_classes_for_detections(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
@@ -110,7 +109,7 @@ async def test_workflow_with_extraction_of_classes_for_detections(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, crowd_image],
             "reference": ["dog", "dog"],
@@ -251,8 +250,7 @@ WORKFLOW_WITH_EXTRACTION_OF_CLASS_NAME_FROM_CROPS_AND_CONCATENATION_OF_RESULTS =
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_extraction_of_classes_for_classification_on_crops(
+def test_workflow_with_extraction_of_classes_for_classification_on_crops(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
@@ -271,7 +269,7 @@ async def test_workflow_with_extraction_of_classes_for_classification_on_crops(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, crowd_image],
             "reference": [
@@ -412,8 +410,7 @@ WORKFLOW_PERFORMING_OCR_AND_AGGREGATION_TO_PERFORM_PASS_FAIL_FOR_ALL_PLATES_FOUN
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_aggregation_of_ocr_results_globally_for_image(
+def test_workflow_with_aggregation_of_ocr_results_globally_for_image(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
     roboflow_api_key: str,
@@ -431,7 +428,7 @@ async def test_workflow_with_aggregation_of_ocr_results_globally_for_image(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": license_plate_image,
             "reference": 2,
@@ -538,8 +535,7 @@ WORKFLOW_PERFORMING_OCR_AND_AGGREGATION_TO_PERFORM_PASS_FAIL_FOR_EACH_PLATE_SEPA
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_pass_fail_applied_for_each_ocr_result(
+def test_workflow_with_pass_fail_applied_for_each_ocr_result(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
     dogs_image: np.ndarray,
@@ -558,7 +554,7 @@ async def test_workflow_with_pass_fail_applied_for_each_ocr_result(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [license_plate_image, dogs_image],
             "reference": 0,
@@ -620,8 +616,7 @@ WORKFLOW_WITH_INVALID_AGGREGATION = {
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_when_there_is_faulty_application_of_aggregation_step_at_batch_with_dimension_1(
+def test_workflow_when_there_is_faulty_application_of_aggregation_step_at_batch_with_dimension_1(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
     roboflow_api_key: str,

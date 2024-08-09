@@ -5,8 +5,9 @@ import pytest
 from pydantic import ValidationError
 from pydantic_core import PydanticUndefinedType
 
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.errors import DynamicBlockError
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     WILDCARD_KIND,
     Kind,
     StepOutputImageSelector,
@@ -14,9 +15,8 @@ from inference.core.workflows.entities.types import (
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
-from inference.core.workflows.errors import DynamicBlockError
-from inference.core.workflows.execution_engine.dynamic_blocks import block_assembler
-from inference.core.workflows.execution_engine.dynamic_blocks.block_assembler import (
+from inference.core.workflows.execution_engine.v1.dynamic_blocks import block_assembler
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
     build_input_field_metadata,
     build_outputs_definitions,
     collect_input_dimensionality_offsets,
@@ -25,7 +25,7 @@ from inference.core.workflows.execution_engine.dynamic_blocks.block_assembler im
     create_dynamic_block_specification,
     pick_dimensionality_reference_property,
 )
-from inference.core.workflows.execution_engine.dynamic_blocks.entities import (
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     DynamicBlockDefinition,
     DynamicInputDefinition,
     DynamicOutputDefinition,
@@ -400,8 +400,7 @@ def run(self, a, b):
 """
 
 
-@pytest.mark.asyncio
-async def test_create_dynamic_block_specification() -> None:
+def test_create_dynamic_block_specification() -> None:
     # given
     kinds_lookup = {
         "*": WILDCARD_KIND,
@@ -477,7 +476,7 @@ async def test_create_dynamic_block_specification() -> None:
     ), "Expected output dimensionality offset announced"
 
     block_instance = result.block_class()
-    code_run_result = await block_instance.run(a="some", b=[1, 2, 3])
+    code_run_result = block_instance.run(a="some", b=[1, 2, 3])
     assert code_run_result == {
         "output": [3, 2, 1]
     }, "Expected code to work properly and revert second param"
