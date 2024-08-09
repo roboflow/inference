@@ -5,7 +5,7 @@ from tests.inference.hosted_platform_tests.conftest import ROBOFLOW_API_KEY
 
 
 @pytest.mark.flaky(retries=4, delay=1)
-def test_getting_schemas_from_legacy_get_endpoint(
+def test_getting_block_descriptions_from_legacy_get_endpoint(
     object_detection_service_url: str,
 ) -> None:
     # when
@@ -33,7 +33,7 @@ def test_getting_schemas_from_legacy_get_endpoint(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
-def test_getting_schemas_from_new_post_endpoint(
+def test_getting_block_descriptions_from_new_post_endpoint(
     object_detection_service_url: str,
 ) -> None:
     # when
@@ -119,7 +119,7 @@ DYNAMIC_BLOCKS_DEFINITION = [
 
 
 @pytest.mark.flaky(retries=4, delay=1)
-def test_getting_schemas_from_new_post_endpoint_with_dynamic_blocks(
+def test_getting_block_descriptions_from_new_post_endpoint_with_dynamic_blocks(
     object_detection_service_url: str,
 ) -> None:
     # when
@@ -134,6 +134,27 @@ def test_getting_schemas_from_new_post_endpoint_with_dynamic_blocks(
     assert (
         "Cannot use dynamic blocks with custom Python code" in response_data["message"]
     ), "Expected execution to be prevented"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_getting_block_schema_from_get_endpoint(
+    object_detection_service_url: str,
+) -> None:
+    # when
+    response = requests.get(f"{object_detection_service_url}/workflows/definition/schema")
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert set(response_data.keys()) == {"schema"}
+    schema = response_data["schema"]
+    assert "$defs" in schema, "Response expected to define valid types"
+    assert "properties" in schema, "Response expected to define schema properties"
+    assert (
+        "required" in schema
+    ), "Response expected to define required schema properties"
+    assert "title" in schema, "Response expected to define unique schema title"
+    assert "type" in schema, "Response expected to define schema type"
 
 
 @pytest.mark.flaky(retries=4, delay=1)

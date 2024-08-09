@@ -84,6 +84,7 @@ from inference.core.entities.responses.server_state import (
 from inference.core.entities.responses.workflows import (
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
+    WorkflowsBlocksSchemaDescription,
     WorkflowValidationStatus,
 )
 from inference.core.env import (
@@ -166,6 +167,7 @@ from inference.core.workflows.errors import (
     WorkflowError,
 )
 from inference.core.workflows.execution_engine.compiler.syntactic_parser import (
+    get_workflow_schema_description,
     parse_workflow_definition,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
@@ -1011,6 +1013,17 @@ class HttpInterface(BaseInterface):
                 return handle_describe_workflows_blocks_request(
                     dynamic_blocks_definitions=dynamic_blocks_definitions
                 )
+
+            @app.get(
+                "/workflows/definition/schema",
+                response_model=WorkflowsBlocksSchemaDescription,
+                summary="Endpoint to fetch the workflows block schema",
+                description="Endpoint to fetch the schema of all available blocks. This information can be "
+                "used to validate workflow definitions and suggest syntax in the JSON editor.",
+            )
+            @with_route_exceptions
+            async def get_workflow_schema() -> WorkflowsBlocksSchemaDescription:
+                return get_workflow_schema_description()
 
             @app.post(
                 "/workflows/blocks/dynamic_outputs",
