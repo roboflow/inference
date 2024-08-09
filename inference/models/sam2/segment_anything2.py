@@ -10,6 +10,7 @@ import numpy as np
 import sam2.utils.misc
 import torch
 from torch.nn.attention import SDPBackend
+import rasterio.features
 
 sam2.utils.misc.get_sdp_backends = lambda z: [
     SDPBackend.EFFICIENT_ATTENTION,
@@ -212,6 +213,9 @@ class SegmentAnything2(RoboflowCoreModel):
         image: Any,
         image_id: Optional[str] = None,
         prompts: Sam2PromptSet = None,
+        mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
+        mask_input_format: Optional[str] = "json",
+        use_mask_input_cache: Optional[bool] = False,
         **kwargs,
     ):
         """
@@ -248,7 +252,31 @@ class SegmentAnything2(RoboflowCoreModel):
                 image=image, image_id=image_id
             )
 
-            mask_input = self.low_res_logits_cache.get(image_id, None)
+            if mask_input is not None:
+                if use_mask_input_cache:
+                    raise ValueError(
+                        "Cannot use mask input cache when mask input is provided"
+                    )
+                if mask_input_format == "json":
+                    polys = mask_input
+                    mask_input = np.zeros((1, len(polys), 256, 256), dtype=np.uint8)
+                    for i, poly in enumerate(polys):
+                        poly = ShapelyPolygon(poly)
+                        raster = rasterio.features.rasterize(
+                            [poly], out_shape=(256, 256)
+                        )
+                        mask_input[0, i, :, :] = raster
+                elif mask_input_format == "binary":
+                    binary_data = base64.b64decode(mask_input)
+                    mask_input = np.load(BytesIO(binary_data))
+
+            elif use_mask_input_cache:
+                mask_input =self.low_res_logits_cache.get(image_id, None)
+                
+        
+
+
+
             self.predictor._is_image_set = True
             self.predictor._features = embedding
             self.predictor._orig_hw = [original_image_size]
@@ -284,6 +312,7 @@ class SegmentAnything2(RoboflowCoreModel):
                 low_res_logit = low_res_logit[:1]
                 predicted_masks.append(mask)
                 low_res_masks.append(low_res_logit)
+
 
             self.low_res_logits_cache[image_id] = np.asarray(low_res_masks)
 

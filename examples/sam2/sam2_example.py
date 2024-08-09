@@ -21,7 +21,7 @@ print("embedd time: ", end - start)
 
 # segments image using cached embedding if it exists, else computes it on the fly
 start = timeit.timeit()
-raw_masks, raw_low_res_masks = m.segment_image(image_path)
+raw_masks, raw_low_res_masks = m.segment_image(image_path, use_mask_input_cache=True)
 end = timeit.timeit()
 print("segment time: ", end - start)
 
@@ -41,6 +41,7 @@ prompt = Sam2PromptSet(
 raw_masks2, raw_low_res_masks2 = m.segment_image(
     image_path,
     prompts=prompt,
+    use_mask_input_cache=True,
 )
 
 raw_masks2 = raw_masks2 >= m.predictor.mask_threshold
