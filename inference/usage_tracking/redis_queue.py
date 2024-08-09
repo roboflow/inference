@@ -27,8 +27,10 @@ class RedisQueue:
         with self._lock:
             try:
                 self._increment += 1
-                self._redis_cache.set(
-                    key=f"{self._prefix}:{self._increment}", value=payload
+                self._redis_cache.zadd(
+                    key=f"{self._prefix}:{self._increment}",
+                    value=payload,
+                    score=time.time(),
                 )
             except Exception as exc:
                 logger.error("Failed to store usage records '%s', %s", payload, exc)
