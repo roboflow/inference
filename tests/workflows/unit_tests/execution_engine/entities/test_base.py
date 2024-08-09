@@ -7,8 +7,8 @@ import cv2
 import numpy as np
 import pytest
 
-from inference.core.workflows.entities import base
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities import base
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     OriginCoordinatesSystem,

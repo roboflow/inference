@@ -82,8 +82,10 @@ from inference.core.entities.responses.server_state import (
     ServerVersionInfo,
 )
 from inference.core.entities.responses.workflows import (
+    ExecutionEngineVersions,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
+    WorkflowsBlocksSchemaDescription,
     WorkflowValidationStatus,
 )
 from inference.core.env import (
@@ -97,6 +99,7 @@ from inference.core.env import (
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
+    DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
@@ -143,27 +146,37 @@ from inference.core.interfaces.http.orjson_utils import (
     serialise_workflow_result,
 )
 from inference.core.managers.base import ModelManager
-from inference.core.roboflow_api import get_workflow_specification
+from inference.core.roboflow_api import (
+    get_roboflow_dataset_type,
+    get_roboflow_workspace,
+    get_workflow_specification,
+)
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
     OperationTypeNotRecognisedError,
 )
-from inference.core.workflows.entities.base import OutputDefinition
 from inference.core.workflows.errors import (
     DynamicBlockError,
     ExecutionGraphStructureError,
     InvalidReferenceTargetError,
+    NotSupportedExecutionEngineError,
     ReferenceTypeError,
     RuntimeInputError,
     WorkflowDefinitionError,
     WorkflowError,
+    WorkflowExecutionEngineVersionError,
 )
-from inference.core.workflows.execution_engine.compiler.syntactic_parser import (
+from inference.core.workflows.execution_engine.core import (
+    ExecutionEngine,
+    get_available_versions,
+)
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
+    get_workflow_schema_description,
     parse_workflow_definition,
 )
-from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 
@@ -246,6 +259,8 @@ def with_route_exceptions(route):
             InvalidInputTypeError,
             OperationTypeNotRecognisedError,
             DynamicBlockError,
+            WorkflowExecutionEngineVersionError,
+            NotSupportedExecutionEngineError,
         ) as error:
             resp = JSONResponse(
                 status_code=400,
@@ -446,6 +461,70 @@ class HttpInterface(BaseInterface):
                     self.model_manager.num_errors += 1
                 return response
 
+        if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+            cached_api_keys = set()
+            cached_projects = set()
+
+            @app.middleware("http")
+            async def check_authorization(request: Request, call_next):
+                # exclude / and /info (health check)
+                if request.url.path in ["/", "/info"]:
+                    return await call_next(request)
+
+                def _unauthorized_response(msg):
+                    return JSONResponse(
+                        status_code=401,
+                        content={
+                            "status": 401,
+                            "message": msg,
+                        },
+                    )
+
+                # check api_key
+                req_params = request.query_params
+                json_params = (
+                    await request.json()
+                    if request.headers.get("content-type", None) == "application/json"
+                    else dict()
+                )
+                api_key = req_params.get("api_key", None) or json_params.get(
+                    "api_key", None
+                )
+
+                if api_key not in cached_api_keys:
+                    try:
+                        workspace_url = (
+                            get_roboflow_workspace(api_key)
+                            if api_key is not None
+                            else None
+                        )
+
+                        if workspace_url != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
+                            return _unauthorized_response("Unauthorized api_key")
+
+                        cached_api_keys.add(api_key)
+                    except RoboflowAPINotAuthorizedError as e:
+                        return _unauthorized_response("Unauthorized api_key")
+
+                # check project_url
+                model_id = json_params.get("model_id", "")
+                project_url = (
+                    req_params.get("project", None)
+                    or json_params.get("project", None)
+                    or model_id.split("/")[0]
+                )
+                if project_url is not None and project_url not in cached_projects:
+                    try:
+                        _ = get_roboflow_dataset_type(
+                            api_key, DEDICATED_DEPLOYMENT_WORKSPACE_URL, project_url
+                        )
+
+                        cached_projects.add(project_url)
+                    except RoboflowAPINotNotFoundError as e:
+                        return _unauthorized_response("Unauthorized project")
+
+                return await call_next(request)
+
         self.app = app
         self.model_manager = model_manager
 
@@ -469,7 +548,7 @@ class HttpInterface(BaseInterface):
             )
             return orjson_response(resp)
 
-        async def process_workflow_inference_request(
+        def process_workflow_inference_request(
             workflow_request: WorkflowInferenceRequest,
             workflow_specification: dict,
             background_tasks: Optional[BackgroundTasks],
@@ -485,9 +564,7 @@ class HttpInterface(BaseInterface):
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 prevent_local_images_loading=True,
             )
-            result = await execution_engine.run_async(
-                runtime_parameters=workflow_request.inputs
-            )
+            result = execution_engine.run(runtime_parameters=workflow_request.inputs)
             outputs = serialise_workflow_result(
                 result=result,
                 excluded_fields=workflow_request.excluded_fields,
@@ -874,12 +951,13 @@ class HttpInterface(BaseInterface):
                 workflow_request: WorkflowInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
+                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 workflow_specification = get_workflow_specification(
                     api_key=workflow_request.api_key,
                     workspace_id=workspace_name,
                     workflow_id=workflow_id,
                 )
-                return await process_workflow_inference_request(
+                return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
                     background_tasks=background_tasks if not LAMBDA else None,
@@ -903,11 +981,24 @@ class HttpInterface(BaseInterface):
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
-                return await process_workflow_inference_request(
+                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
+                return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_request.specification,
                     background_tasks=background_tasks if not LAMBDA else None,
                 )
+
+            @app.get(
+                "/workflows/execution_engine/versions",
+                response_model=ExecutionEngineVersions,
+                summary="Returns available Execution Engine versions sorted from oldest to newest",
+                description="Returns available Execution Engine versions sorted from oldest to newest",
+            )
+            @with_route_exceptions
+            async def get_execution_engine_versions() -> ExecutionEngineVersions:
+                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
+                versions = get_available_versions()
+                return ExecutionEngineVersions(versions=versions)
 
             @app.get(
                 "/workflows/blocks/describe",
@@ -936,12 +1027,29 @@ class HttpInterface(BaseInterface):
             async def describe_workflows_blocks(
                 request: Optional[DescribeBlocksRequest] = None,
             ) -> WorkflowsBlocksDescription:
+                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 dynamic_blocks_definitions = None
+                requested_execution_engine_version = None
                 if request is not None:
                     dynamic_blocks_definitions = request.dynamic_blocks_definitions
+                    requested_execution_engine_version = (
+                        request.execution_engine_version
+                    )
                 return handle_describe_workflows_blocks_request(
-                    dynamic_blocks_definitions=dynamic_blocks_definitions
+                    dynamic_blocks_definitions=dynamic_blocks_definitions,
+                    requested_execution_engine_version=requested_execution_engine_version,
                 )
+
+            @app.get(
+                "/workflows/definition/schema",
+                response_model=WorkflowsBlocksSchemaDescription,
+                summary="Endpoint to fetch the workflows block schema",
+                description="Endpoint to fetch the schema of all available blocks. This information can be "
+                "used to validate workflow definitions and suggest syntax in the JSON editor.",
+            )
+            @with_route_exceptions
+            async def get_workflow_schema() -> WorkflowsBlocksSchemaDescription:
+                return get_workflow_schema_description()
 
             @app.post(
                 "/workflows/blocks/dynamic_outputs",
@@ -954,6 +1062,7 @@ class HttpInterface(BaseInterface):
             async def get_dynamic_block_outputs(
                 step_manifest: Dict[str, Any]
             ) -> List[OutputDefinition]:
+                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 # Potentially TODO: dynamic blocks do not support dynamic outputs, but if it changes
                 # we need to provide dynamic blocks manifests here
                 dummy_workflow_definition = {
@@ -979,6 +1088,7 @@ class HttpInterface(BaseInterface):
             async def validate_workflow(
                 specification: dict,
             ) -> WorkflowValidationStatus:
+                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
                 workflow_init_parameters = {
                     "workflows_core.model_manager": model_manager,

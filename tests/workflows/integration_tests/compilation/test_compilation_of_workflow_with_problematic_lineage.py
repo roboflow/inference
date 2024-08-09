@@ -9,8 +9,8 @@ from inference.core.workflows.errors import (
     ControlFlowDefinitionError,
     StepInputLineageError,
 )
-from inference.core.workflows.execution_engine.compiler.core import compile_workflow
 from inference.core.workflows.execution_engine.introspection import blocks_loader
+from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
 
 WORKFLOW_WITH_LINEAGE_CONFLICT_IN_FLOW_CONTROL = {
     "version": "1.0",
@@ -92,9 +92,8 @@ WORKFLOW_WITH_LINEAGE_CONFLICT_IN_FLOW_CONTROL = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_compilation_of_workflow_where_control_flow_block_causes_lineage_issue(
+def test_compilation_of_workflow_where_control_flow_block_causes_lineage_issue(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:
@@ -191,9 +190,8 @@ WORKFLOW_WITH_FUSION_BLOCK_COLLAPSING_DIFFERENT_LINEAGES = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_compilation_of_workflow_where_fusion_block_collapses_different_lineages(
+def test_compilation_of_workflow_where_fusion_block_collapses_different_lineages(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:

@@ -3,24 +3,12 @@ This is just example, test implementation, please do not assume it being fully f
 This is extremely unsafe block - be aware for injected code execution!
 """
 
-from copy import deepcopy
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Type, Union
 
-import numpy as np
-import supervision as sv
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
-    Batch,
-    OutputDefinition,
-    WorkflowImageData,
-)
-from inference.core.workflows.entities.types import (
-    BATCH_OF_IMAGES_KIND,
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputImageSelector,
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -68,7 +56,7 @@ class ExpressionBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self, data: Dict[str, Any], output: Union[str, PythonCodeBlock]
     ) -> BlockResult:
         if isinstance(output, str):

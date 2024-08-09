@@ -1,20 +1,31 @@
-import asyncio
-from asyncio import AbstractEventLoop
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type
 
-from inference.core.env import API_KEY
-from inference.core.workflows.execution_engine.compiler.core import compile_workflow
-from inference.core.workflows.execution_engine.compiler.entities import CompiledWorkflow
-from inference.core.workflows.execution_engine.executor.core import run_workflow
-from inference.core.workflows.execution_engine.executor.runtime_input_assembler import (
-    assembly_runtime_parameters,
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
+
+from inference.core.workflows.errors import (
+    NotSupportedExecutionEngineError,
+    WorkflowDefinitionError,
+    WorkflowEnvironmentConfigurationError,
 )
-from inference.core.workflows.execution_engine.executor.runtime_input_validator import (
-    validate_runtime_input,
+from inference.core.workflows.execution_engine.entities.engine import (
+    BaseExecutionEngine,
+)
+from inference.core.workflows.execution_engine.v1.core import (
+    EXECUTION_ENGINE_V1_VERSION,
+    ExecutionEngineV1,
 )
 
+REGISTERED_ENGINES = {
+    EXECUTION_ENGINE_V1_VERSION: ExecutionEngineV1,
+}
 
-class ExecutionEngine:
+
+def get_available_versions() -> List[str]:
+    return [str(v) for v in sorted(REGISTERED_ENGINES.keys())]
+
+
+class ExecutionEngine(BaseExecutionEngine):
 
     @classmethod
     def init(
@@ -25,64 +36,87 @@ class ExecutionEngine:
         prevent_local_images_loading: bool = False,
         workflow_id: Optional[str] = None,
     ) -> "ExecutionEngine":
-        if init_parameters is None:
-            init_parameters = {}
-        compiled_workflow = compile_workflow(
+        requested_engine_version = _retrieve_requested_execution_engine_version(
+            workflow_definition=workflow_definition,
+        )
+        engine_type = _select_execution_engine(
+            requested_engine_version=requested_engine_version
+        )
+        engine = engine_type.init(
             workflow_definition=workflow_definition,
             init_parameters=init_parameters,
-        )
-        return cls(
-            compiled_workflow=compiled_workflow,
             max_concurrent_steps=max_concurrent_steps,
             prevent_local_images_loading=prevent_local_images_loading,
             workflow_id=workflow_id,
         )
+        return cls(engine=engine)
 
     def __init__(
         self,
-        compiled_workflow: CompiledWorkflow,
-        max_concurrent_steps: int,
-        prevent_local_images_loading: bool,
-        workflow_id: Optional[str] = None,
+        engine: BaseExecutionEngine,
     ):
-        self._compiled_workflow = compiled_workflow
-        self._max_concurrent_steps = max_concurrent_steps
-        self._prevent_local_images_loading = prevent_local_images_loading
-        self._workflow_id = workflow_id
+        self._engine = engine
 
     def run(
         self,
         runtime_parameters: Dict[str, Any],
-        event_loop: Optional[AbstractEventLoop] = None,
         fps: float = 0,
     ) -> List[Dict[str, Any]]:
-        if event_loop is None:
-            try:
-                event_loop = asyncio.get_event_loop()
-            except:
-                event_loop = asyncio.new_event_loop()
-        return event_loop.run_until_complete(
-            self.run_async(runtime_parameters=runtime_parameters, fps=fps)
+        return self._engine.run(
+            runtime_parameters=runtime_parameters,
+            fps=fps,
         )
 
-    async def run_async(
-        self,
-        runtime_parameters: Dict[str, Any],
-        fps: float = 0,
-    ) -> List[Dict[str, Any]]:
-        runtime_parameters = assembly_runtime_parameters(
-            runtime_parameters=runtime_parameters,
-            defined_inputs=self._compiled_workflow.workflow_definition.inputs,
-            prevent_local_images_loading=self._prevent_local_images_loading,
+
+def _retrieve_requested_execution_engine_version(workflow_definition: dict) -> Version:
+    raw_version = workflow_definition.get("version")
+    if raw_version:
+        try:
+            return Version(raw_version)
+        except (TypeError, ValueError) as e:
+            raise WorkflowDefinitionError(
+                public_message=f"Workflow definition contains `version` defined as `{raw_version}` which cannot be "
+                f"parsed as valid version definition. Error details: {e}",
+                inner_error=e,
+                context="workflow_compilation | engine_initialisation",
+            )
+    if not REGISTERED_ENGINES:
+        raise WorkflowEnvironmentConfigurationError(
+            public_message="No Execution Engine versions registered to be used.",
+            context="workflow_compilation | engine_initialisation",
         )
-        validate_runtime_input(
-            runtime_parameters=runtime_parameters,
-            input_substitutions=self._compiled_workflow.input_substitutions,
+    return max(REGISTERED_ENGINES.keys())
+
+
+def _select_execution_engine(
+    requested_engine_version: Version,
+) -> Type[BaseExecutionEngine]:
+    requested_engine_version_specifier_set = _prepare_requested_version_specifier_set(
+        requested_engine_version=requested_engine_version,
+    )
+    matching_versions = []
+    for version in REGISTERED_ENGINES:
+        if requested_engine_version_specifier_set.contains(version):
+            matching_versions.append(version)
+    if not matching_versions:
+        raise NotSupportedExecutionEngineError(
+            public_message=f"Workflow definition requested Execution Engine in version: "
+            f"`{requested_engine_version_specifier_set}` which cannot be found in existing setup. "
+            f"Available Execution Engines versions: `{list(REGISTERED_ENGINES.keys())}`.",
+            context="workflow_compilation | engine_initialisation",
         )
-        return await run_workflow(
-            workflow=self._compiled_workflow,
-            runtime_parameters=runtime_parameters,
-            max_concurrent_steps=self._max_concurrent_steps,
-            usage_fps=fps,
-            usage_workflow_id=self._workflow_id,
+    if len(matching_versions) > 1:
+        raise WorkflowEnvironmentConfigurationError(
+            public_message="Found multiple Execution Engines versions matching workflow definition "
+            f"`{matching_versions}`. This indicates misconfiguration. "
+            f"Please raise issue at https://github.com/roboflow/inference/issues",
+            context="workflow_compilation | engine_initialisation",
         )
+    return REGISTERED_ENGINES[matching_versions[0]]
+
+
+def _prepare_requested_version_specifier_set(
+    requested_engine_version: Version,
+) -> SpecifierSet:
+    next_major_version = requested_engine_version.major + 1
+    return SpecifierSet(f">={requested_engine_version},<{next_major_version}.0.0")

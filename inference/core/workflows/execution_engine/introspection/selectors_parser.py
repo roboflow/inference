@@ -1,7 +1,6 @@
 from typing import Any, List, Optional
 
 from inference.core.workflows.errors import BlockInterfaceError
-from inference.core.workflows.execution_engine.compiler.utils import is_selector
 from inference.core.workflows.execution_engine.introspection.entities import (
     ParsedSelector,
     SelectorDefinition,
@@ -9,6 +8,7 @@ from inference.core.workflows.execution_engine.introspection.entities import (
 from inference.core.workflows.execution_engine.introspection.schema_parser import (
     parse_block_manifest,
 )
+from inference.core.workflows.execution_engine.v1.compiler.utils import is_selector
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 

@@ -11,7 +11,7 @@ from inference.core.workflows.errors import (
     WorkflowEnvironmentConfigurationError,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.core.workflows.execution_engine.dynamic_blocks import block_assembler
+from inference.core.workflows.execution_engine.v1.dynamic_blocks import block_assembler
 
 FUNCTION_TO_GET_OVERLAP_OF_BBOXES = """
 def run(self, predictions: sv.Detections, class_x: str, class_y: str) -> BlockResult:
@@ -163,8 +163,7 @@ WORKFLOW_WITH_OVERLAP_MEASUREMENT = {
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_custom_python_blocks_measuring_overlap(
+def test_workflow_with_custom_python_blocks_measuring_overlap(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
@@ -182,7 +181,7 @@ async def test_workflow_with_custom_python_blocks_measuring_overlap(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, crowd_image],
         }
@@ -275,8 +274,7 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH = {
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_custom_python_block_operating_on_batch(
+def test_workflow_with_custom_python_block_operating_on_batch(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
@@ -294,7 +292,7 @@ async def test_workflow_with_custom_python_block_operating_on_batch(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, crowd_image],
         }
@@ -408,8 +406,7 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_CROSS_DIMENSIONS = {
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_custom_python_block_operating_cross_dimensions(
+def test_workflow_with_custom_python_block_operating_cross_dimensions(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
@@ -427,7 +424,7 @@ async def test_workflow_with_custom_python_block_operating_cross_dimensions(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, crowd_image],
         }
@@ -459,9 +456,8 @@ async def test_workflow_with_custom_python_block_operating_cross_dimensions(
     ), "Expected 12 crops for second image"
 
 
-@pytest.mark.asyncio
 @mock.patch.object(block_assembler, "ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS", False)
-async def test_workflow_with_custom_python_block_when_custom_python_execution_forbidden(
+def test_workflow_with_custom_python_block_when_custom_python_execution_forbidden(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
@@ -549,8 +545,7 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_DIMENSIONALITY_REDUCTION = {
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_custom_python_block_reducing_dimensionality(
+def test_workflow_with_custom_python_block_reducing_dimensionality(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
@@ -568,7 +563,7 @@ async def test_workflow_with_custom_python_block_reducing_dimensionality(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, crowd_image],
         }
@@ -654,8 +649,7 @@ WORKFLOW_WITH_PYTHON_BLOCK_HOSTING_MODEL = {
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_custom_python_block_running_custom_model(
+def test_workflow_with_custom_python_block_running_custom_model(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
@@ -673,7 +667,7 @@ async def test_workflow_with_custom_python_block_running_custom_model(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, crowd_image],
         }
@@ -766,8 +760,7 @@ WORKFLOW_WITH_CODE_THAT_DOES_NOT_COMPILE = {
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_custom_python_block_when_code_cannot_be_compiled(
+def test_workflow_with_custom_python_block_when_code_cannot_be_compiled(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -833,8 +826,7 @@ WORKFLOW_WITHOUT_RUN_FUNCTION = {
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_custom_python_block_when_code_does_not_define_declared_run_function(
+def test_workflow_with_custom_python_block_when_code_does_not_define_declared_run_function(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -906,8 +898,7 @@ WORKFLOW_WITHOUT_DECLARED_INIT_FUNCTION = {
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_custom_python_block_when_code_does_not_define_declared_init_function(
+def test_workflow_with_custom_python_block_when_code_does_not_define_declared_init_function(
     model_manager: ModelManager,
 ) -> None:
     # given

@@ -5,7 +5,7 @@ from tests.inference.hosted_platform_tests.conftest import ROBOFLOW_API_KEY
 
 
 @pytest.mark.flaky(retries=4, delay=1)
-def test_getting_schemas_from_legacy_get_endpoint(
+def test_getting_block_descriptions_from_legacy_get_endpoint(
     object_detection_service_url: str,
 ) -> None:
     # when
@@ -33,7 +33,7 @@ def test_getting_schemas_from_legacy_get_endpoint(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
-def test_getting_schemas_from_new_post_endpoint(
+def test_getting_block_descriptions_from_new_post_endpoint(
     object_detection_service_url: str,
 ) -> None:
     # when
@@ -60,6 +60,72 @@ def test_getting_schemas_from_new_post_endpoint(
     assert (
         len(response_data["primitives_connections"]) > 0
     ), "Expected some primitive parameters for steps to be declared"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_getting_schemas_from_new_post_endpoint_when_matching_execution_engine_version_is_requested(
+    object_detection_service_url: str,
+) -> None:
+    # when
+    response = requests.post(
+        f"{object_detection_service_url}/workflows/blocks/describe",
+        json={"execution_engine_version": "1.0.0"}
+    )
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert set(response_data.keys()) == {
+        "blocks",
+        "declared_kinds",
+        "kinds_connections",
+        "primitives_connections",
+        "universal_query_language_description",
+        "dynamic_block_definition_schema",
+    }
+    assert len(response_data["blocks"]) > 0, "Some blocs expected to be added"
+    assert len(response_data["declared_kinds"]) > 0, "Some kinds must be declared"
+    assert len(response_data["declared_kinds"]) >= len(
+        response_data["kinds_connections"]
+    ), "Kinds connections declared as inputs for blocks must be at most in number of all declared kinds"
+    assert (
+        len(response_data["primitives_connections"]) > 0
+    ), "Expected some primitive parameters for steps to be declared"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_getting_schemas_from_new_post_endpoint_when_not_matching_execution_engine_version_is_requested(
+    object_detection_service_url: str,
+) -> None:
+    # when
+    response = requests.post(
+        f"{object_detection_service_url}/workflows/blocks/describe",
+        json={"execution_engine_version": "0.1.0"}
+    )
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert set(response_data.keys()) == {
+        "blocks",
+        "declared_kinds",
+        "kinds_connections",
+        "primitives_connections",
+        "universal_query_language_description",
+        "dynamic_block_definition_schema",
+    }
+    assert len(response_data["blocks"]) == 0, "Expected no blocks loaded"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_get_versions_of_execution_engine(object_detection_service_url: str) -> None:
+    # when
+    response = requests.get(f"{object_detection_service_url}/workflows/execution_engine/versions")
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert response_data["versions"] == ["1.0.0"]
 
 
 FUNCTION = """
@@ -119,7 +185,7 @@ DYNAMIC_BLOCKS_DEFINITION = [
 
 
 @pytest.mark.flaky(retries=4, delay=1)
-def test_getting_schemas_from_new_post_endpoint_with_dynamic_blocks(
+def test_getting_block_descriptions_from_new_post_endpoint_with_dynamic_blocks(
     object_detection_service_url: str,
 ) -> None:
     # when
@@ -134,6 +200,27 @@ def test_getting_schemas_from_new_post_endpoint_with_dynamic_blocks(
     assert (
         "Cannot use dynamic blocks with custom Python code" in response_data["message"]
     ), "Expected execution to be prevented"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_getting_block_schema_from_get_endpoint(
+    object_detection_service_url: str,
+) -> None:
+    # when
+    response = requests.get(f"{object_detection_service_url}/workflows/definition/schema")
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert set(response_data.keys()) == {"schema"}
+    schema = response_data["schema"]
+    assert "$defs" in schema, "Response expected to define valid types"
+    assert "properties" in schema, "Response expected to define schema properties"
+    assert (
+        "required" in schema
+    ), "Response expected to define required schema properties"
+    assert "title" in schema, "Response expected to define unique schema title"
+    assert "type" in schema, "Response expected to define schema type"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -204,6 +291,42 @@ def test_compilation_endpoint_when_compilation_succeeds(
     response.raise_for_status()
     response_data = response.json()
     assert response_data["status"] == "ok"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_compilation_endpoint_when_compilation_fails_due_to_invalid_requested_execution_engine_version(
+    object_detection_service_url: str,
+) -> None:
+    # given
+    valid_workflow_definition = {
+        "version": "0.1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowParameter", "name": "model_id"},
+            {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.3},
+        ],
+        "steps": [
+            {
+                "type": "RoboflowObjectDetectionModel",
+                "name": "detection",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "confidence": "$inputs.confidence",
+            }
+        ],
+        "outputs": [
+            {"type": "JsonField", "name": "result", "selector": "$steps.detection.*"}
+        ],
+    }
+
+    # when
+    response = requests.post(
+        f"{object_detection_service_url}/workflows/validate",
+        json=valid_workflow_definition,
+    )
+
+    # then
+    assert response.status_code == 400, "Expected BadRequest response on wrong version selection"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -659,3 +782,22 @@ def test_workflow_validate_with_dynamic_blocks(
     assert (
         "Cannot use dynamic blocks with custom Python code" in response_data["message"]
     ), "Expected execution to be prevented"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_getting_block_schema_using_get_endpoint(object_detection_service_url: str) -> None:
+    # when
+    response = requests.get(f"{object_detection_service_url}/workflows/definition/schema")
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert "schema" in response_data, "Response expected to define schema"
+    schema = response_data["schema"]
+    assert "$defs" in schema, "Response expected to define valid types"
+    assert "properties" in schema, "Response expected to define schema properties"
+    assert (
+        "required" in schema
+    ), "Response expected to define required schema properties"
+    assert "title" in schema, "Response expected to define unique schema title"
+    assert "type" in schema, "Response expected to define schema type"

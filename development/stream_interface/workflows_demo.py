@@ -12,6 +12,7 @@ from inference.core.utils.drawing import create_tiles
 
 STOP = False
 ANNOTATOR = sv.BoundingBoxAnnotator()
+TARGET_PROJECT = os.environ["TARGET_PROJECT"]
 
 
 def main() -> None:
@@ -29,10 +30,31 @@ def main() -> None:
                 "image": "$inputs.image",
                 "model_id": "yolov8n-640",
                 "confidence": 0.5,
-            }
+            },
+            {
+                "type": "RoboflowDatasetUpload",
+                "name": "roboflow_dataset_upload",
+                "images": "$inputs.image",
+                "predictions": "$steps.step_1.predictions",
+                "target_project": TARGET_PROJECT,
+                "usage_quota_name": "upload_quota_XXX",
+                "fire_and_forget": True,
+            },
+            {
+                "type": "RoboflowCustomMetadata",
+                "name": "metadata_upload",
+                "predictions": "$steps.step_1.predictions",
+                "field_name": "dummy",
+                "field_value": "dummy",
+                "fire_and_forget": True,
+            },
         ],
         "outputs": [
             {"type": "JsonField", "name": "predictions", "selector": "$steps.step_1.predictions"},
+            {"type": "JsonField", "name": "upload_error", "selector": "$steps.roboflow_dataset_upload.error_status"},
+            {"type": "JsonField", "name": "upload_message", "selector": "$steps.roboflow_dataset_upload.message"},
+            {"type": "JsonField", "name": "metadata_error", "selector": "$steps.metadata_upload.error_status"},
+            {"type": "JsonField", "name": "metadata_message", "selector": "$steps.metadata_upload.message"},
         ],
     }
     pipeline = InferencePipeline.init_with_workflow(
@@ -76,6 +98,7 @@ def workflows_sink(
         detections: sv.Detections = prediction["predictions"]
         visualised = ANNOTATOR.annotate(frame.image.copy(), detections)
         images_to_show.append(visualised)
+        print(prediction["upload_message"], prediction["metadata_message"])
     tiles = create_tiles(images=images_to_show)
     cv2.imshow(f"Predictions", tiles)
     cv2.waitKey(1)

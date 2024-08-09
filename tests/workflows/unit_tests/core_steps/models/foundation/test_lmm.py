@@ -2,7 +2,7 @@ import json
 import time
 from typing import Any
 from unittest import mock
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -11,8 +11,8 @@ from openai.types.chat.chat_completion import Choice
 from pydantic import ValidationError
 
 from inference.core.entities.responses.cogvlm import CogVLMResponse
-from inference.core.workflows.core_steps.models.foundation import lmm
-from inference.core.workflows.core_steps.models.foundation.lmm import (
+from inference.core.workflows.core_steps.models.foundation.lmm import v1
+from inference.core.workflows.core_steps.models.foundation.lmm.v1 import (
     BlockManifest,
     LMMConfig,
     execute_gpt_4v_request,
@@ -23,11 +23,14 @@ from inference.core.workflows.core_steps.models.foundation.lmm import (
 )
 
 
+@pytest.mark.parametrize("type_alias", ["roboflow_core/lmm@v1", "LMM"])
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_lmm_step_validation_when_input_is_valid(images_field_alias: str) -> None:
+def test_lmm_step_validation_when_input_is_valid(
+    type_alias: str, images_field_alias: str
+) -> None:
     # given
     specification = {
-        "type": "LMM",
+        "type": type_alias,
         "name": "step_1",
         images_field_alias: "$inputs.image",
         "lmm_type": "$inputs.lmm_type",
@@ -41,7 +44,7 @@ def test_lmm_step_validation_when_input_is_valid(images_field_alias: str) -> Non
 
     # then
     assert result == BlockManifest(
-        type="LMM",
+        type=type_alias,
         name="step_1",
         images="$inputs.image",
         prompt="$inputs.prompt",
@@ -393,16 +396,15 @@ Some other comment
     assert result == [{"field_a": 1, "field_b": 37}, {"field_a": 2, "field_b": 47}]
 
 
-@pytest.mark.asyncio
-@mock.patch.object(lmm, "WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", 2)
-@mock.patch.object(lmm, "WORKFLOWS_REMOTE_API_TARGET", "self-hosted")
-@mock.patch.object(lmm.InferenceHTTPClient, "init")
-async def test_get_cogvlm_generations_from_remote_api(
+@mock.patch.object(v1, "WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", 2)
+@mock.patch.object(v1, "WORKFLOWS_REMOTE_API_TARGET", "self-hosted")
+@mock.patch.object(v1.InferenceHTTPClient, "init")
+def test_get_cogvlm_generations_from_remote_api(
     inference_client_init_mock: MagicMock,
 ) -> None:
     # given
-    client_mock = AsyncMock()
-    client_mock.prompt_cogvlm_async.side_effect = [
+    client_mock = MagicMock()
+    client_mock.prompt_cogvlm.side_effect = [
         {"response": "Response 1: 42"},
         {"response": "Response 2: 42"},
         {"response": "Response 3: 42"},
@@ -410,7 +412,7 @@ async def test_get_cogvlm_generations_from_remote_api(
     inference_client_init_mock.return_value = client_mock
 
     # when
-    result = await get_cogvlm_generations_from_remote_api(
+    result = get_cogvlm_generations_from_remote_api(
         image=[
             {"type": "numpy_object", "value": np.zeros((192, 168, 3), dtype=np.uint8)},
             {"type": "numpy_object", "value": np.zeros((193, 168, 3), dtype=np.uint8)},
@@ -428,19 +430,18 @@ async def test_get_cogvlm_generations_from_remote_api(
     ]
 
 
-@pytest.mark.asyncio
-@mock.patch.object(lmm, "load_core_model", MagicMock())
-async def test_get_cogvlm_generations_locally() -> None:
+@mock.patch.object(v1, "load_core_model", MagicMock())
+def test_get_cogvlm_generations_locally() -> None:
     # given
-    model_manager = AsyncMock()
-    model_manager.infer_from_request.side_effect = [
+    model_manager = MagicMock()
+    model_manager.infer_from_request_sync.side_effect = [
         CogVLMResponse.model_validate({"response": "Response 1: 42"}),
         CogVLMResponse.model_validate({"response": "Response 2: 42"}),
         CogVLMResponse.model_validate({"response": "Response 3: 42"}),
     ]
 
     # when
-    result = await get_cogvlm_generations_locally(
+    result = get_cogvlm_generations_locally(
         image=[
             {"type": "numpy_object", "value": np.zeros((192, 168, 3), dtype=np.uint8)},
             {"type": "numpy_object", "value": np.zeros((193, 168, 3), dtype=np.uint8)},
@@ -459,10 +460,9 @@ async def test_get_cogvlm_generations_locally() -> None:
     ]
 
 
-@pytest.mark.asyncio
-async def test_execute_gpt_4v_request() -> None:
+def test_execute_gpt_4v_request() -> None:
     # given
-    client = AsyncMock()
+    client = MagicMock()
     client.chat.completions.create.return_value = ChatCompletion(
         id="38",
         choices=[
@@ -481,7 +481,7 @@ async def test_execute_gpt_4v_request() -> None:
     )
 
     # when
-    result = await execute_gpt_4v_request(
+    result = execute_gpt_4v_request(
         client=client,
         image={
             "type": "numpy_object",

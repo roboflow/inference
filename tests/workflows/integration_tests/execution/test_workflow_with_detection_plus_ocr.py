@@ -77,8 +77,7 @@ MULTI_STAGES_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
-async def test_detection_plus_ocr_workflow_when_minimal_valid_input_provided(
+def test_detection_plus_ocr_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
     roboflow_api_key: str,
@@ -96,7 +95,7 @@ async def test_detection_plus_ocr_workflow_when_minimal_valid_input_provided(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": license_plate_image,
         }

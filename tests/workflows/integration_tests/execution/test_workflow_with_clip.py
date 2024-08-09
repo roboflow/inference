@@ -30,8 +30,7 @@ CLIP_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
-async def test_clip_workflow_when_minimal_valid_input_provided(
+def test_clip_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
     crowd_image: np.ndarray,
@@ -49,7 +48,7 @@ async def test_clip_workflow_when_minimal_valid_input_provided(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [license_plate_image, crowd_image],
             "reference": ["car", "crowd"],

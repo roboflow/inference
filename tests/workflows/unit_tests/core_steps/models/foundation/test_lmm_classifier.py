@@ -3,19 +3,23 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.foundation.lmm import LMMConfig
-from inference.core.workflows.core_steps.models.foundation.lmm_classifier import (
+from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMConfig
+from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     BlockManifest,
 )
 
 
+@pytest.mark.parametrize(
+    "type_alias", ["roboflow_core/lmm_for_classification@v1", "LMMForClassification"]
+)
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 def test_llm_for_classification_step_validation_when_valid_input_given(
+    type_alias: str,
     images_field_alias: str,
 ) -> None:
     # given
     specification = {
-        "type": "LMMForClassification",
+        "type": type_alias,
         "name": "step_3",
         images_field_alias: "$steps.step_2.crops",
         "lmm_type": "$inputs.lmm_type",
@@ -28,7 +32,7 @@ def test_llm_for_classification_step_validation_when_valid_input_given(
 
     # then
     assert result == BlockManifest(
-        type="LMMForClassification",
+        type=type_alias,
         name="step_3",
         images="$steps.step_2.crops",
         lmm_type="$inputs.lmm_type",

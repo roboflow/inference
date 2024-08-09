@@ -3,14 +3,19 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.roboflow.keypoint_detection import (
+from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
     BlockManifest,
 )
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 @pytest.mark.parametrize(
-    "type_alias", ["RoboflowKeypointDetectionModel", "KeypointsDetectionModel"]
+    "type_alias",
+    [
+        "roboflow_core/roboflow_keypoint_detection_model@v1",
+        "RoboflowKeypointDetectionModel",
+        "KeypointsDetectionModel",
+    ],
 )
 def test_keypoints_detection_model_validation_when_minimalistic_config_is_provided(
     images_field_alias: str,

@@ -1,4 +1,5 @@
 import sqlite3
+
 from typing_extensions import Any, List
 
 from inference.core.env import LAMBDA

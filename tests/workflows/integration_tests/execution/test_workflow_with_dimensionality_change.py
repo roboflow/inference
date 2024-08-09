@@ -64,9 +64,8 @@ DETECTIONS_TO_PARENT_COORDINATES_BATCH_VARIANT_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_workflow_with_detections_coordinates_transformation_in_batch_variant(
+def test_workflow_with_detections_coordinates_transformation_in_batch_variant(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -108,7 +107,7 @@ async def test_workflow_with_detections_coordinates_transformation_in_batch_vari
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={"image": [crowd_image, crowd_image]}
     )
 
@@ -213,9 +212,8 @@ DETECTIONS_TO_PARENT_COORDINATES_NON_BATCH_VARIANT_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_workflow_with_detections_coordinates_transformation_in_non_batch_variant(
+def test_workflow_with_detections_coordinates_transformation_in_non_batch_variant(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -257,7 +255,7 @@ async def test_workflow_with_detections_coordinates_transformation_in_non_batch_
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={"image": [crowd_image, crowd_image]}
     )
 
@@ -360,9 +358,8 @@ DETECTIONS_STITCHING_BATCH_VARIANT_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_workflow_with_detections_stitching_in_batch_variant(
+def test_workflow_with_detections_stitching_in_batch_variant(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -405,7 +402,7 @@ async def test_workflow_with_detections_stitching_in_batch_variant(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={"image": [crowd_image, dogs_image]}
     )
 
@@ -482,9 +479,8 @@ DETECTIONS_STITCHING_NON_BATCH_VARIANT_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_workflow_with_detections_stitching_in_batch_variant(
+def test_workflow_with_detections_stitching_in_batch_variant(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -527,7 +523,7 @@ async def test_workflow_with_detections_stitching_in_batch_variant(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={"image": [crowd_image, dogs_image]}
     )
 
@@ -598,9 +594,8 @@ DETECTIONS_TILING_BATCH_VARIANT_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_workflow_with_detections_tiling_in_batch_variant(
+def test_workflow_with_detections_tiling_in_batch_variant(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -643,7 +638,7 @@ async def test_workflow_with_detections_tiling_in_batch_variant(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={"image": [crowd_image, dogs_image]}
     )
 
@@ -716,9 +711,8 @@ DETECTIONS_TILING_NON_BATCH_VARIANT_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_workflow_with_detections_tiling_in_non_batch_variant(
+def test_workflow_with_detections_tiling_in_non_batch_variant(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -761,7 +755,7 @@ async def test_workflow_with_detections_tiling_in_non_batch_variant(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={"image": [crowd_image, dogs_image]}
     )
 
