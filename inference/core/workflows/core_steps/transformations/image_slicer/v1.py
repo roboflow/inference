@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
@@ -52,11 +53,11 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/image_slicer@v1"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         title="Image to slice",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("images", "image"),
+        validation_alias=AliasChoices("image", "images"),
     )
     slice_width: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
         Field(
@@ -138,13 +139,24 @@ class ImageSlicerBlockV1(WorkflowBlock):
                     origin_height=image.numpy_image.shape[0],
                 ),
             )
+            workflow_root_ancestor_coordinates = replace(
+                image.workflow_root_ancestor_metadata.origin_coordinates,
+                left_top_x=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_x
+                + x_min,
+                left_top_y=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_y
+                + y_min,
+            )
+            workflow_root_ancestor_metadata = ImageParentMetadata(
+                parent_id=image.workflow_root_ancestor_metadata.parent_id,
+                origin_coordinates=workflow_root_ancestor_coordinates,
+            )
             cropped_image = WorkflowImageData(
                 parent_metadata=parent_metadata,
-                workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
+                workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
                 numpy_image=crop_numpy,
             )
-            slices.append(cropped_image)
-        return {"crops": slices}
+            slices.append({"crops": cropped_image})
+        return slices
 
 
 def generate_offsets(
