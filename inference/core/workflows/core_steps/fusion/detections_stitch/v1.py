@@ -10,7 +10,6 @@ from inference.core.workflows.core_steps.common.utils import scale_sv_detections
 from inference.core.workflows.execution_engine.constants import (
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
-    PARENT_ID_KEY,
     ROOT_PARENT_COORDINATES_KEY,
     SCALING_RELATIVE_TO_PARENT_KEY,
     SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
