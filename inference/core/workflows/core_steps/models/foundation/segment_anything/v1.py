@@ -16,6 +16,7 @@ from inference.core.entities.responses.inference import (
     InstanceSegmentationPrediction,
     Point,
 )
+from inference.core.entities.responses.sam2 import Sam2SegmentationPrediction
 from inference.core.managers.base import ModelManager
 from inference.core.utils.postprocess import masks2poly
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -164,8 +165,8 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             boxes = [None] * len(images)
 
         for single_image, boxes_for_image in zip(images, boxes):
-            prompt_class_ids = []
-            prompt_class_names = []
+            prompt_class_ids: List[int] = []
+            prompt_class_names: List[str] = []
             prompt_index = 0
 
             prompts = []
@@ -210,11 +211,13 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                 sam_model_id, inference_request
             )
 
-            prediction = self._convert_sam2_segmentation_response_to_inference_instances_seg_response(
-                sam2_segmentation_response.predictions,
-                single_image,
-                prompt_class_ids,
-                prompt_class_names,
+            prediction = (
+                convert_sam2_segmentation_response_to_inference_instances_seg_response(
+                    sam2_segmentation_response.predictions,
+                    single_image,
+                    prompt_class_ids,
+                    prompt_class_names,
+                )
             )
             predictions.append(prediction)
 
@@ -224,62 +227,6 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         return self._post_process_result(
             images=images,
             predictions=predictions,
-        )
-
-    def _convert_sam2_segmentation_response_to_inference_instances_seg_response(
-        self, sam2_segmentation_predictions, image, prompt_class_ids, prompt_class_names
-    ):
-        image_width = image.numpy_image.shape[1]
-        image_height = image.numpy_image.shape[0]
-        predictions = []
-
-        prediction_id = 0
-
-        if len(prompt_class_ids) == 0:
-            prompt_class_ids = [i for i in range(len(sam2_segmentation_predictions))]
-            prompt_class_names = [
-                str(i) for i in range(len(sam2_segmentation_predictions))
-            ]
-
-        for pred in sam2_segmentation_predictions:
-            mask = pred.mask
-
-            for polygon in mask:
-                # for some reason this list of points contains empty array elements
-                x_coords = [coord[0] for coord in polygon]
-                y_coords = [coord[1] for coord in polygon]
-
-                # Calculate min and max values
-                min_x = np.min(x_coords)
-                min_y = np.min(y_coords)
-                max_x = np.max(x_coords)
-                max_y = np.max(y_coords)
-
-                # Calculate center coordinates
-                center_x = (min_x + max_x) / 2
-                center_y = (min_y + max_y) / 2
-
-                predictions.append(
-                    InstanceSegmentationPrediction(
-                        **{
-                            "x": center_x,
-                            "y": center_y,
-                            "width": max_x - min_x,
-                            "height": max_y - min_y,
-                            "points": [
-                                Point(x=point[0], y=point[1]) for point in polygon
-                            ],
-                            "confidence": 0.5,  # TODO: get confidence from model
-                            "class": prompt_class_names[prediction_id],
-                            "class_id": prompt_class_ids[prediction_id],
-                        }
-                    )
-                )
-            prediction_id += 1
-
-        return InstanceSegmentationInferenceResponse(
-            predictions=predictions,
-            image=InferenceResponseImage(width=image_width, height=image_height),
         )
 
     def _post_process_result(
@@ -298,3 +245,59 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             predictions=predictions,
         )
         return [{"predictions": prediction} for prediction in predictions]
+
+
+def convert_sam2_segmentation_response_to_inference_instances_seg_response(
+    sam2_segmentation_predictions: List[Sam2SegmentationPrediction],
+    image: WorkflowImageData,
+    prompt_class_ids: List[int],
+    prompt_class_names: List[str],
+):
+    image_width = image.numpy_image.shape[1]
+    image_height = image.numpy_image.shape[0]
+    predictions = []
+
+    prediction_id = 0
+
+    if len(prompt_class_ids) == 0:
+        prompt_class_ids = [i for i in range(len(sam2_segmentation_predictions))]
+        prompt_class_names = [str(i) for i in range(len(sam2_segmentation_predictions))]
+
+    for pred in sam2_segmentation_predictions:
+        mask = pred.mask
+
+        for polygon in mask:
+            # for some reason this list of points contains empty array elements
+            x_coords = [coord[0] for coord in polygon]
+            y_coords = [coord[1] for coord in polygon]
+
+            # Calculate min and max values
+            min_x = np.min(x_coords)
+            min_y = np.min(y_coords)
+            max_x = np.max(x_coords)
+            max_y = np.max(y_coords)
+
+            # Calculate center coordinates
+            center_x = (min_x + max_x) / 2
+            center_y = (min_y + max_y) / 2
+
+            predictions.append(
+                InstanceSegmentationPrediction(
+                    **{
+                        "x": center_x,
+                        "y": center_y,
+                        "width": max_x - min_x,
+                        "height": max_y - min_y,
+                        "points": [Point(x=point[0], y=point[1]) for point in polygon],
+                        "confidence": 1.0,  # TODO: might be ossible to map score -> confidence?
+                        "class": prompt_class_names[prediction_id],
+                        "class_id": prompt_class_ids[prediction_id],
+                    }
+                )
+            )
+        prediction_id += 1
+
+    return InstanceSegmentationInferenceResponse(
+        predictions=predictions,
+        image=InferenceResponseImage(width=image_width, height=image_height),
+    )
