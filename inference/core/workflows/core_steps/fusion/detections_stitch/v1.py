@@ -1,4 +1,3 @@
-import logging
 import warnings
 from copy import deepcopy
 from typing import List, Literal, Optional, Tuple, Type, Union
@@ -8,7 +7,6 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from supervision import OverlapFilter, move_boxes, move_masks
 
-from inference.core.workflows.core_steps.common.utils import scale_sv_detections
 from inference.core.workflows.core_steps.warnings import (
     RoboflowCoreBlocksIncompatibilityWarning,
 )
@@ -18,7 +16,6 @@ from inference.core.workflows.execution_engine.constants import (
     PARENT_ID_KEY,
     ROOT_PARENT_COORDINATES_KEY,
     SCALING_RELATIVE_TO_PARENT_KEY,
-    SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -117,7 +114,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.1.0,<2.0.0"
 
 
 class DetectionsStitchBlockV1(WorkflowBlock):
@@ -232,7 +229,7 @@ def manage_crops_metadata(
             category=RoboflowCoreBlocksIncompatibilityWarning,
         )
         return detections
-    parent_id = image_lineage[-2].parent_id
+    parent_id = image_lineage[-2]
     detections.data[PARENT_ID_KEY] = np.array([parent_id] * len(detections))
     return detections
 

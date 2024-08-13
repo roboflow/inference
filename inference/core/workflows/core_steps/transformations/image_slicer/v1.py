@@ -109,7 +109,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.1.0,<2.0.0"
 
 
 class ImageSlicerBlockV1(WorkflowBlock):
@@ -138,7 +138,7 @@ class ImageSlicerBlockV1(WorkflowBlock):
             x_min, y_min, _, _ = offset
             crop_numpy = crop_image(image=image_numpy, xyxy=offset)
             parent_metadata = ImageParentMetadata(
-                parent_id=f"{uuid4()}",
+                parent_id=f"image_slicer.{uuid4()}",
                 origin_coordinates=OriginCoordinatesSystem(
                     left_top_x=x_min.item(),
                     left_top_y=y_min.item(),
@@ -163,7 +163,7 @@ class ImageSlicerBlockV1(WorkflowBlock):
                     parent_metadata=parent_metadata,
                     workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
                     numpy_image=crop_numpy,
-                    lineage=previous_lineage + [parent_metadata],
+                    lineage=previous_lineage + [parent_metadata.parent_id],
                 )
                 slices.append({"crops": cropped_image})
             else:

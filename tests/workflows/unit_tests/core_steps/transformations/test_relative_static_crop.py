@@ -58,3 +58,30 @@ def test_take_relative_static_crop() -> None:
             origin_height=100,
         )
     ), "Root Origin coordinates of crop and image size metadata must be maintained through the operation"
+    assert len(result.lineage) == 2, "Expected lineage to expand"
+    assert result.lineage[0] == "origin_image", \
+        "Expected first element of lineage to be preserved"
+    assert result.lineage[1].startswith(
+        "relative_static_crop."
+    ), "Parent in lineage must be set at crop step identifier"
+
+
+def test_take_relative_static_crop_when_output_crop_is_empty() -> None:
+    # given
+    np_image = np.zeros((100, 100, 3), dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="origin_image"),
+        numpy_image=np_image,
+    )
+
+    # when
+    result = take_static_crop(
+        image=image,
+        x_center=50,
+        y_center=60,
+        width=0,
+        height=0,
+    )
+
+    # then
+    assert result is None, "Expected no crop as result"

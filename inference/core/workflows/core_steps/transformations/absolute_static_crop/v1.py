@@ -81,7 +81,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.1.0,<2.0.0"
 
 
 class AbsoluteStaticCropBlockV1(WorkflowBlock):
@@ -151,5 +151,5 @@ def take_static_crop(
         parent_metadata=parent_metadata,
         workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
         numpy_image=cropped_image,
-        lineage=previous_lineage + [parent_metadata],
+        lineage=previous_lineage + [parent_metadata.parent_id],
     )
