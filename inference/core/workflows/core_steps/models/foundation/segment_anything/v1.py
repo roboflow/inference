@@ -142,7 +142,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             return self.run_locally(images=images, version=version, boxes=boxes)
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             raise NotImplementedError(
-                "Remote execution is not supported for Segment Anything."
+                "Remote execution is not supported for Segment Anything. Run a local or dedicated inference server to use this block (GPU recommended)."
             )
         else:
             raise ValueError(
