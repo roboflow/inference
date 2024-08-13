@@ -151,7 +151,7 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
             api_key=self._api_key,
             inference_ids=inference_ids,
             field_name=field_name,
-            field_value=field_value[0],
+            field_value=field_value,
         )
         error_status = False
         message = "Registration happens in the background task"
