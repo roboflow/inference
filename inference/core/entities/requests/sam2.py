@@ -57,16 +57,16 @@ class Sam2EmbeddingRequest(Sam2InferenceRequest):
 
 
 class Box(BaseModel):
-    x: float 
-    y: float 
-    width: float 
-    height: float 
+    x: float
+    y: float
+    width: float
+    height: float
 
 
 class Point(BaseModel):
-    x: float 
-    y: float 
-    positive: bool 
+    x: float
+    y: float
+    positive: bool
 
 
 class Sam2Prompt(BaseModel):
@@ -75,9 +75,10 @@ class Sam2Prompt(BaseModel):
 
 
 class Sam2PromptSet(BaseModel):
-    prompts: Optional[List[Sam2Prompt]] = Field(default=None, description="An optional list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points")
-
-
+    prompts: Optional[List[Sam2Prompt]] = Field(
+        default=None,
+        description="An optional list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points",
+    )
 
     def to_sam2_inputs(self):
         if self.prompts is None:
@@ -106,7 +107,7 @@ class Sam2PromptSet(BaseModel):
 
         if not len(lengths) in [0, 1]:
             raise ValueError("All prompts must have the same number of points")
-        
+
         return return_dict
 
 
@@ -134,9 +135,10 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
         examples=["image_id"],
         description="The ID of the image to be segmented used to retrieve cached embeddings. If an embedding is cached, it will be used instead of generating a new embedding. If no embedding is cached, a new embedding will be generated and cached.",
     )
-    prompts: Sam2PromptSet = Field(default=Sam2PromptSet(prompts=None), 
-        example=[{"prompts":[{"points": [{"x": 100, "y": 100, "positive": True}]}]}],
-        description="A list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points"
+    prompts: Sam2PromptSet = Field(
+        default=Sam2PromptSet(prompts=None),
+        example=[{"prompts": [{"points": [{"x": 100, "y": 100, "positive": True}]}]}],
+        description="A list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points",
     )
     mask_input: Optional[Union[List[List[List[float]]], Any]] = Field(
         default=None,

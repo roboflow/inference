@@ -47,6 +47,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+DETECTIONS_CLASS_NAME_FIELD = "class_name"
+
 LONG_DESCRIPTION = """
 Run Segment Anything 2, a zero-shot instance segmentation model, on an image.
 
@@ -166,13 +168,13 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             prompt_class_names = []
             prompt_index = 0
 
-            prompts = [] 
+            prompts = []
             if boxes_for_image is not None:
                 for x1, y1, x2, y2 in boxes_for_image.xyxy:
 
                     prompt_class_ids.append(boxes_for_image.class_id[prompt_index])
                     prompt_class_names.append(
-                        boxes_for_image.data["class_name"][prompt_index]
+                        boxes_for_image.data[DETECTIONS_CLASS_NAME_FIELD][prompt_index]
                     )
                     prompt_index += 1
 
