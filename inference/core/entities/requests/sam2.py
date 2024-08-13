@@ -135,8 +135,10 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
         examples=["image_id"],
         description="The ID of the image to be segmented used to retrieve cached embeddings. If an embedding is cached, it will be used instead of generating a new embedding. If no embedding is cached, a new embedding will be generated and cached.",
     )
-    prompts: Sam2PromptSet = Field(default=Sam2PromptSet(prompts=None))
-
+    prompts: Sam2PromptSet = Field(default=Sam2PromptSet(prompts=None), 
+        example=[{"prompts":[{"points": [{"x": 100, "y": 100, "positive": True}]}]}],
+        description="A list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points"
+    )
     mask_input: Optional[Union[List[List[List[float]]], Any]] = Field(
         default=None,
         description="The set of output masks. If request format is json, masks is a list of polygons, where each polygon is a list of points, where each point is a tuple containing the x,y pixel coordinates of the point. If request format is binary, masks is a list of binary numpy arrays. The dimensions of each mask are 256 x 256. This is the same as the output, low resolution mask from the previous inference.",
