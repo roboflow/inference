@@ -109,7 +109,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.1.0,<2.0.0"
+        return ">=1.0.0,<2.0.0"
 
 
 class ImageSlicerBlockV1(WorkflowBlock):
@@ -158,12 +158,10 @@ class ImageSlicerBlockV1(WorkflowBlock):
                 origin_coordinates=workflow_root_ancestor_coordinates,
             )
             if crop_numpy.size:
-                previous_lineage = image.lineage
                 cropped_image = WorkflowImageData(
                     parent_metadata=parent_metadata,
                     workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
                     numpy_image=crop_numpy,
-                    lineage=previous_lineage + [parent_metadata.parent_id],
                 )
                 slices.append({"crops": cropped_image})
             else:

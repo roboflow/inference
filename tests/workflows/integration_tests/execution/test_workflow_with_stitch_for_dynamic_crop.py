@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import numpy as np
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
@@ -34,7 +33,7 @@ WORKFLOW_WITH_DYNAMIC_CROP_AND_STITCH = {
         {
             "type": "roboflow_core/detections_stitch@v1",
             "name": "stitch",
-            "crops": "$steps.cropping.crops",
+            "reference_image": "$inputs.image",
             "predictions": "$steps.plates_detection.predictions",
             "overlap_filtering_strategy": "nms",
         },

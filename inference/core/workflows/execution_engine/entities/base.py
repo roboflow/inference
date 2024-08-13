@@ -178,10 +178,6 @@ class WorkflowImageData:
         image_reference: Optional[str] = None,
         base64_image: Optional[str] = None,
         numpy_image: Optional[np.ndarray] = None,
-        lineage: Optional[List[str]] = None,  # Lineage is optional property
-        # to avoid breaking changes. Roboflow blocks were adjusted to treat it as that, but external
-        # blocks may show inconsistency in adoption. In EE v2 this should be required and
-        # potentially replace parent_metadata and workflow_root_ancestor_metadata
     ):
         if not base64_image and numpy_image is None and not image_reference:
             raise ValueError("Could not initialise empty `WorkflowImageData`.")
@@ -194,19 +190,6 @@ class WorkflowImageData:
         self._image_reference = image_reference
         self._base64_image = base64_image
         self._numpy_image = numpy_image
-        self._lineage = lineage
-
-    @property
-    def lineage(self) -> List[str]:
-        if self._lineage is None:
-            lineage = [self._workflow_root_ancestor_metadata.parent_id]
-            if (
-                self._workflow_root_ancestor_metadata.parent_id
-                != self._parent_metadata.parent_id
-            ):
-                lineage.append(self._parent_metadata.parent_id)
-            return lineage
-        return copy(self._lineage)
 
     @property
     def parent_metadata(self) -> ImageParentMetadata:

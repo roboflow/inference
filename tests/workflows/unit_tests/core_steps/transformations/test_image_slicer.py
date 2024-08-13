@@ -2,9 +2,15 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.transformations.image_slicer.v1 import BlockManifest, ImageSlicerBlockV1
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData, ImageParentMetadata, \
-    OriginCoordinatesSystem
+from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
+    BlockManifest,
+    ImageSlicerBlockV1,
+)
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    OriginCoordinatesSystem,
+    WorkflowImageData,
+)
 
 
 @pytest.mark.parametrize("image_alias", ["image", "images"])
@@ -35,10 +41,7 @@ def test_manifest_v1_parsing_when_valid_input_given(image_alias: str) -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "field_to_delete",
-    ["image", "type", "name"]
-)
+@pytest.mark.parametrize("field_to_delete", ["image", "type", "name"])
 def test_manifest_v1_parsing_when_required_field_missing(field_to_delete: str) -> None:
     # given
     raw_manifest = {
@@ -95,7 +98,9 @@ def test_manifest_v1_parsing_when_slice_height_outside_of_range() -> None:
     "overlap_property", ["overlap_ratio_width", "overlap_ratio_height"]
 )
 @pytest.mark.parametrize("invalid_value", [-0.1, 1.0, 1.0])
-def test_manifest_v1_parsing_when_overlap_outside_of_range(overlap_property: str, invalid_value: float) -> None:
+def test_manifest_v1_parsing_when_overlap_outside_of_range(
+    overlap_property: str, invalid_value: float
+) -> None:
     # given
     raw_manifest = {
         "type": "roboflow_core/image_slicer@v1",
@@ -103,7 +108,7 @@ def test_manifest_v1_parsing_when_overlap_outside_of_range(overlap_property: str
         "image": "$inputs.image",
         "slice_width": 200,
         "slice_height": 200,
-        overlap_property: invalid_value
+        overlap_property: invalid_value,
     }
 
     # when
@@ -131,20 +136,26 @@ def test_running_block() -> None:
     # then
     assert len(result) == 4, "Expected exactly 4 crops"
     for i in range(4):
-        assert len(result[i]["crops"].lineage) == 2, "Expected lineage to be expanded"
-        assert result[i]["crops"].parent_metadata.parent_id.startswith("image_slicer."), \
-            f"Expected parent to be set properly for {i}th crop"
-        assert result[i]["crops"].lineage[-1].startswith("image_slicer."), \
-            f"Expected parent to be set properly for {i}th crop"
-    assert result[0]["crops"].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
+        assert result[i]["crops"].parent_metadata.parent_id.startswith(
+            "image_slicer."
+        ), f"Expected parent to be set properly for {i}th crop"
+    assert result[0][
+        "crops"
+    ].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
         left_top_x=0, left_top_y=0, origin_width=512, origin_height=256
     ), "Expected first crop to have the following coordinates regarding root"
-    assert result[1]["crops"].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
+    assert result[1][
+        "crops"
+    ].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
         left_top_x=256, left_top_y=0, origin_width=512, origin_height=256
     ), "Expected second crop to have the following coordinates regarding root"
-    assert result[2]["crops"].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
+    assert result[2][
+        "crops"
+    ].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
         left_top_x=0, left_top_y=128, origin_width=512, origin_height=256
     ), "Expected third crop to have the following coordinates regarding root"
-    assert result[3]["crops"].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
+    assert result[3][
+        "crops"
+    ].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
         left_top_x=256, left_top_y=128, origin_width=512, origin_height=256
     ), "Expected forth crop to have the following coordinates regarding root"

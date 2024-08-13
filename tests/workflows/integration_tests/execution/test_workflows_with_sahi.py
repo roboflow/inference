@@ -28,7 +28,7 @@ SAHI_WORKFLOW = {
         {
             "type": "roboflow_core/detections_stitch@v1",
             "name": "stitch",
-            "crops": "$steps.image_slicer.crops",
+            "reference_image": "$inputs.image",
             "predictions": "$steps.detection.predictions",
             "overlap_filtering_strategy": "$inputs.overlap_filtering_strategy",
         },

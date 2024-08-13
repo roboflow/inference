@@ -1,15 +1,11 @@
-import warnings
 from copy import deepcopy
-from typing import List, Literal, Optional, Tuple, Type, Union
+from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 from supervision import OverlapFilter, move_boxes, move_masks
 
-from inference.core.workflows.core_steps.warnings import (
-    RoboflowCoreBlocksIncompatibilityWarning,
-)
 from inference.core.workflows.execution_engine.constants import (
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
@@ -19,7 +15,6 @@ from inference.core.workflows.execution_engine.constants import (
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
-    ImageParentMetadata,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -64,9 +59,9 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/detections_stitch@v1"]
-    crops: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        description="Crops used to generate predictions to be merged.",
-        examples=["$steps.cropping.crops"],
+    reference_image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Image that was origin to take crops that yielded predictions.",
+        examples=["$inputs.image"],
     )
     predictions: StepOutputSelector(
         kind=[
@@ -97,8 +92,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def get_output_dimensionality_offset(cls) -> int:
-        return -1
+    def get_dimensionality_reference_property(cls) -> Optional[str]:
+        return "reference_image"
+
+    @classmethod
+    def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
+        return {"predictions": 1}
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -114,7 +113,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.1.0,<2.0.0"
+        return ">=1.0.0,<2.0.0"
 
 
 class DetectionsStitchBlockV1(WorkflowBlock):
@@ -125,20 +124,20 @@ class DetectionsStitchBlockV1(WorkflowBlock):
 
     def run(
         self,
-        crops: Batch[WorkflowImageData],
+        reference_image: WorkflowImageData,
         predictions: Batch[sv.Detections],
         overlap_filtering_strategy: Optional[Literal["none", "nms", "nmm"]],
         iou_threshold: Optional[float],
     ) -> BlockResult:
         re_aligned_predictions = []
-        for crop, detections in zip(crops, predictions):
+        for detections in predictions:
             detections_copy = deepcopy(detections)
             resolution_wh = retrieve_crop_wh(detections=detections_copy)
             offset = retrieve_crop_offset(detections=detections_copy)
             detections_copy = manage_crops_metadata(
                 detections=detections_copy,
                 offset=offset,
-                image_lineage=crop.lineage,
+                parent_id=reference_image.parent_metadata.parent_id,
             )
             re_aligned_detections = move_detections(
                 detections=detections_copy,
@@ -187,7 +186,7 @@ def retrieve_crop_offset(detections: sv.Detections) -> Optional[np.ndarray]:
 def manage_crops_metadata(
     detections: sv.Detections,
     offset: Optional[np.ndarray],
-    image_lineage: List[ImageParentMetadata],
+    parent_id: str,
 ) -> sv.Detections:
     if len(detections) == 0:
         return detections
@@ -209,27 +208,6 @@ def manage_crops_metadata(
         detections.data[PARENT_COORDINATES_KEY] -= offset
     if ROOT_PARENT_COORDINATES_KEY in detections.data:
         detections.data[ROOT_PARENT_COORDINATES_KEY] -= offset
-    warnings.warn(
-        f"Workflow block roboflow_core/detections_stitch@v1 could not correctly "
-        f"re-assign predictions parent ID unwrapping previous crop operation symmetrically. "
-        f"That may cause errors at latter stages of execution and is caused by change in "
-        f"`WorkflowImageData` - namely adding metadata lineage. If one of previous block "
-        f"executing custom crop operation do not maintain lineage, at this phase it is impossible "
-        f"to recover. This will produce error only if next blocks rely on lineage property.",
-        category=RoboflowCoreBlocksIncompatibilityWarning,
-    )
-    if len(image_lineage) < 2:
-        warnings.warn(
-            f"Workflow block roboflow_core/detections_stitch@v1 could not correctly "
-            f"re-assign predictions parent ID unwrapping previous crop operation symmetrically. "
-            f"That may cause errors at latter stages of execution and is caused by change in "
-            f"`WorkflowImageData` - namely adding metadata lineage. If one of previous block "
-            f"executing custom crop operation do not maintain lineage, at this phase it is impossible "
-            f"to recover. This will produce error only if next blocks rely on lineage property.",
-            category=RoboflowCoreBlocksIncompatibilityWarning,
-        )
-        return detections
-    parent_id = image_lineage[-2]
     detections.data[PARENT_ID_KEY] = np.array([parent_id] * len(detections))
     return detections
 

@@ -84,7 +84,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.1.0,<2.0.0"
+        return ">=1.0.0,<2.0.0"
 
 
 class DynamicCropBlockV1(WorkflowBlock):
@@ -135,12 +135,10 @@ def crop_image(
             origin_coordinates=workflow_root_ancestor_coordinates,
         )
         if cropped_image.size:
-            previous_lineage = image.lineage
             result = WorkflowImageData(
                 parent_metadata=parent_metadata,
                 workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
                 numpy_image=cropped_image,
-                lineage=previous_lineage + [parent_metadata.parent_id],
             )
         else:
             result = None

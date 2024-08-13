@@ -145,7 +145,6 @@ from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.warnings import setup_warnings
 from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
     BATCH_OF_BOOLEAN_KIND,
@@ -194,7 +193,6 @@ REGISTERED_INITIALIZERS = {
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
-    setup_warnings()
     return [
         DetectionsConsensusBlockV1,
         ClipComparisonBlockV1,

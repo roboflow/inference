@@ -124,6 +124,3 @@ def test_crop_image() -> None:
         origin_width=1000,
         origin_height=1000,
     ), "Appropriate origin coordinates must be attached"
-    assert len(result[0]["crops"].lineage) == 2, "Expected lineage to expand"
-    assert len(result[1]["crops"].lineage) == 2, "Expected lineage to expand"
-    assert len(result[2]["crops"].lineage) == 2, "Expected lineage to expand"
