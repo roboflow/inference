@@ -118,12 +118,14 @@ def take_static_crop(
     y_center: int,
     width: int,
     height: int,
-) -> WorkflowImageData:
+) -> Optional[WorkflowImageData]:
     x_min = round(x_center - width / 2)
     y_min = round(y_center - height / 2)
     x_max = round(x_min + width)
     y_max = round(y_min + height)
     cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
+    if not cropped_image.size:
+        return None
     workflow_root_ancestor_coordinates = replace(
         image.workflow_root_ancestor_metadata.origin_coordinates,
         left_top_x=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_x
@@ -135,16 +137,19 @@ def take_static_crop(
         parent_id=image.workflow_root_ancestor_metadata.parent_id,
         origin_coordinates=workflow_root_ancestor_coordinates,
     )
-    return WorkflowImageData(
-        parent_metadata=ImageParentMetadata(
-            parent_id=f"absolute_static_crop.{uuid4()}",
-            origin_coordinates=OriginCoordinatesSystem(
-                left_top_x=x_min,
-                left_top_y=y_min,
-                origin_width=image.numpy_image.shape[1],
-                origin_height=image.numpy_image.shape[0],
-            ),
+    previous_lineage = image.lineage
+    parent_metadata = ImageParentMetadata(
+        parent_id=f"absolute_static_crop.{uuid4()}",
+        origin_coordinates=OriginCoordinatesSystem(
+            left_top_x=x_min,
+            left_top_y=y_min,
+            origin_width=image.numpy_image.shape[1],
+            origin_height=image.numpy_image.shape[0],
         ),
+    )
+    return WorkflowImageData(
+        parent_metadata=parent_metadata,
         workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
         numpy_image=cropped_image,
+        lineage=previous_lineage + [parent_metadata],
     )

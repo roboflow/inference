@@ -36,6 +36,13 @@ instance segmentation) running against output images from this block. At the end
 Detections Stitch block must be applied on top of predictions to merge them as if 
 the prediction was made against input image, not its slices.
 
+We recommend adjusting the size of slices to match the model's input size and the scale of objects in the dataset 
+the model was trained on. Models generally perform best on data that is similar to what they encountered during 
+training. The default size of slices is 640, but this might not be optimal if the model's input size is 320, as each 
+slice would be downsized by a factor of two during inference. Similarly, if the model's input size is 1280, each slice 
+will be artificially up-scaled. The best setup should be determined experimentally based on the specific data and model 
+you are using.
+
 To learn more about SAHI please visit [Roboflow blog](https://blog.roboflow.com/how-to-use-sahi-to-detect-small-objects/)
 which describes the technique in details, yet not in context of Roboflow workflows.
 """
@@ -61,14 +68,14 @@ class BlockManifest(WorkflowBlockManifest):
     )
     slice_width: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
         Field(
-            default=320,
+            default=640,
             description="Width of each slice, in pixels",
             examples=[320, "$inputs.slice_width"],
         )
     )
     slice_height: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
         Field(
-            default=320,
+            default=640,
             description="Height of each slice, in pixels",
             examples=[320, "$inputs.slice_height"],
         )
@@ -150,12 +157,17 @@ class ImageSlicerBlockV1(WorkflowBlock):
                 parent_id=image.workflow_root_ancestor_metadata.parent_id,
                 origin_coordinates=workflow_root_ancestor_coordinates,
             )
-            cropped_image = WorkflowImageData(
-                parent_metadata=parent_metadata,
-                workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
-                numpy_image=crop_numpy,
-            )
-            slices.append({"crops": cropped_image})
+            if crop_numpy.size:
+                previous_lineage = image.lineage
+                cropped_image = WorkflowImageData(
+                    parent_metadata=parent_metadata,
+                    workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+                    numpy_image=crop_numpy,
+                    lineage=previous_lineage + [parent_metadata],
+                )
+                slices.append({"crops": cropped_image})
+            else:
+                slices.append({"crops": None})
         return slices
 
 

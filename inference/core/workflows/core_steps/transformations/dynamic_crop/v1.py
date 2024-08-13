@@ -135,10 +135,12 @@ def crop_image(
             origin_coordinates=workflow_root_ancestor_coordinates,
         )
         if cropped_image.size:
+            previous_lineage = image.lineage
             result = WorkflowImageData(
                 parent_metadata=parent_metadata,
                 workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
                 numpy_image=cropped_image,
+                lineage=previous_lineage + [parent_metadata],
             )
         else:
             result = None
