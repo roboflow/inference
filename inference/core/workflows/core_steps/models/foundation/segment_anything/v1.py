@@ -166,7 +166,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
             prompt_class_names = []
             prompt_index = 0
 
-            prompts = Sam2PromptSet()
+            prompts = [] 
             if boxes_for_image is not None:
                 for x1, y1, x2, y2 in boxes_for_image.xyxy:
 
@@ -189,14 +189,14 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                             height=height,
                         )
                     )
-                    prompts.add_prompt(prompt)
+                    prompts.append(prompt)
 
             inference_request = Sam2SegmentationRequest(
                 image=single_image.to_inference_format(numpy_preferred=True),
                 sam2_version_id=version,
                 api_key=self._api_key,
                 source="workflow-execution",
-                prompts=prompts,
+                prompts=Sam2PromptSet(prompts=prompts),
             )
             sam_model_id = load_core_model(
                 model_manager=self._model_manager,

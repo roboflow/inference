@@ -57,16 +57,16 @@ class Sam2EmbeddingRequest(Sam2InferenceRequest):
 
 
 class Box(BaseModel):
-    x: float = Field()
-    y: float = Field()
-    width: float = Field()
-    height: float = Field()
+    x: float 
+    y: float 
+    width: float 
+    height: float 
 
 
 class Point(BaseModel):
-    x: float = Field()
-    y: float = Field()
-    positive: bool = Field()
+    x: float 
+    y: float 
+    positive: bool 
 
 
 class Sam2Prompt(BaseModel):
@@ -77,10 +77,7 @@ class Sam2Prompt(BaseModel):
 class Sam2PromptSet(BaseModel):
     prompts: Optional[List[Sam2Prompt]] = Field(default=None, description="An optional list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points")
 
-    def add_prompt(self, prompt: Sam2Prompt):
-        if self.prompts is None:
-            self.prompts = []
-        self.prompts.append(prompt)
+
 
     def to_sam2_inputs(self):
         if self.prompts is None:
@@ -94,12 +91,12 @@ class Sam2PromptSet(BaseModel):
                 y2 = prompt.box.y + prompt.box.height / 2
                 return_dict["box"].append([x1, y1, x2, y2])
             if prompt.points is not None:
-                return_dict["point_coords"] = [
+                return_dict["point_coords"].append(
                     [point.x, point.y] for point in prompt.points
-                ]
-                return_dict["point_labels"] = [
+                )
+                return_dict["point_labels"].append(
                     int(point.positive) for point in prompt.points
-                ]
+                )
 
         return_dict = {k: v if v else None for k, v in return_dict.items()}
         lengths = set()
@@ -107,7 +104,9 @@ class Sam2PromptSet(BaseModel):
             if isinstance(v, list):
                 lengths.add(len(v))
 
-        assert len(lengths) in [0, 1], "All prompts must have the same number of points"
+        if not len(lengths) in [0, 1]:
+            raise ValueError("All prompts must have the same number of points")
+        
         return return_dict
 
 
