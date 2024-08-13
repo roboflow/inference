@@ -80,7 +80,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
     )
 
-    sam2_model: Union[
+    version: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]),
         Literal["hiera_large", "hiera_small", "hiera_tiny", "hiera_b_plus"],
     ] = Field(
@@ -130,11 +130,11 @@ class SegmentAnything2BlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        sam2_model: str,
+        version: str,
         boxes: Batch[sv.Detections],
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return self.run_locally(images=images, sam2_model=sam2_model, boxes=boxes)
+            return self.run_locally(images=images, version=version, boxes=boxes)
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             raise NotImplementedError(
                 "Remote execution is not supported for Segment Anything."
@@ -147,7 +147,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
     def run_locally(
         self,
         images: Batch[WorkflowImageData],
-        sam2_model: str,
+        version: str,
         boxes: Batch[sv.Detections],
     ) -> BlockResult:
 
@@ -188,7 +188,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
 
             inference_request = Sam2SegmentationRequest(
                 image=single_image.to_inference_format(numpy_preferred=True),
-                sam2_version_id=sam2_model,
+                sam2_version_id=version,
                 api_key=self._api_key,
                 source="workflow-execution",
                 prompts=prompts,
