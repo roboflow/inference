@@ -9,8 +9,8 @@ from inference.core.workflows.errors import (
     BlockInitParameterNotProvidedError,
     BlockInterfaceError,
 )
-from inference.core.workflows.execution_engine.compiler.core import compile_workflow
 from inference.core.workflows.execution_engine.introspection import blocks_loader
+from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
 
 VALID_DEFINITION = {
     "version": "1.0",
@@ -42,8 +42,7 @@ VALID_DEFINITION = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_where_required_init_parameter_are_not_delivered() -> (
+def test_compilation_of_workflow_where_required_init_parameter_are_not_delivered() -> (
     None
 ):
     # when
@@ -69,9 +68,8 @@ WORKFLOW_WITH_FAULTY_INIT_BLOCK = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_compilation_of_workflow_where_block_init_is_faulty(
+def test_compilation_of_workflow_where_block_init_is_faulty(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:

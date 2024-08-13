@@ -1,19 +1,18 @@
 import pytest
 
-from inference.core.workflows.core_steps.fusion.dimension_collapse import (
-    DimensionCollapseBlock,
+from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
+    DimensionCollapseBlockV1,
 )
-from inference.core.workflows.entities.base import Batch
+from inference.core.workflows.execution_engine.entities.base import Batch
 
 
-@pytest.mark.asyncio
-async def test_dimension_collapse() -> None:
+def test_dimension_collapse() -> None:
     # given
-    step = DimensionCollapseBlock()
+    step = DimensionCollapseBlockV1()
     data = Batch(content=[1, 2, 3, 4], indices=[(0, 1), (0, 2), (0, 3), (0, 4)])
 
     # when
-    result = await step.run(data=data)
+    result = step.run(data=data)
 
     # then
     assert result == {"output": [1, 2, 3, 4]}

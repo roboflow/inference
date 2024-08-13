@@ -117,8 +117,7 @@ WORKFLOW_WITH_BRANCHES_THAT_MAY_NOT_EXECUTE = {
 }
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_optional_execution_of_branches_impacting_results_in_batch_mode(
+def test_workflow_with_optional_execution_of_branches_impacting_results_in_batch_mode(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
     dogs_image: np.ndarray,
@@ -137,7 +136,7 @@ async def test_workflow_with_optional_execution_of_branches_impacting_results_in
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [crowd_image, dogs_image, license_plate_image],
             "model_id": "yolov8n-640",
@@ -167,8 +166,7 @@ async def test_workflow_with_optional_execution_of_branches_impacting_results_in
     ), "Expected 0 crops of dogs class instance for cars image"
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_optional_execution_of_branches_impacting_results_when_both_alternative_outputs_should_not_be_created(
+def test_workflow_with_optional_execution_of_branches_impacting_results_when_both_alternative_outputs_should_not_be_created(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
 ) -> None:
@@ -185,7 +183,7 @@ async def test_workflow_with_optional_execution_of_branches_impacting_results_wh
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": license_plate_image,
             "model_id": "yolov8n-640",
@@ -203,8 +201,7 @@ async def test_workflow_with_optional_execution_of_branches_impacting_results_wh
     ), "Expected 0 crops of dogs class instance for cars image"
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_optional_execution_of_branches_impacting_results_when_only_dogs_related_outputs_to_be_created(
+def test_workflow_with_optional_execution_of_branches_impacting_results_when_only_dogs_related_outputs_to_be_created(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
 ) -> None:
@@ -221,7 +218,7 @@ async def test_workflow_with_optional_execution_of_branches_impacting_results_wh
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": dogs_image,
             "model_id": "yolov8n-640",
@@ -239,8 +236,7 @@ async def test_workflow_with_optional_execution_of_branches_impacting_results_wh
     ), "Expected 2 crops of dogs class instance for dogs image"
 
 
-@pytest.mark.asyncio
-async def test_workflow_with_optional_execution_of_branches_impacting_results_when_only_people_related_outputs_to_be_created(
+def test_workflow_with_optional_execution_of_branches_impacting_results_when_only_people_related_outputs_to_be_created(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -257,7 +253,7 @@ async def test_workflow_with_optional_execution_of_branches_impacting_results_wh
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
             "model_id": "yolov8n-640",

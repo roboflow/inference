@@ -2,14 +2,14 @@ from typing import List
 
 import pytest
 
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.errors import ReferenceTypeError
+from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     STRING_KIND,
     WILDCARD_KIND,
     Kind,
 )
-from inference.core.workflows.errors import ReferenceTypeError
-from inference.core.workflows.execution_engine.compiler.reference_type_checker import (
+from inference.core.workflows.execution_engine.v1.compiler.reference_type_checker import (
     validate_reference_kinds,
 )
 

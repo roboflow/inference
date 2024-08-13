@@ -26,9 +26,13 @@ We recommend using CogVLM paired with inference HTTP API adjusted to run in GPU 
 with our `inference-cli` tool. Run the following command to set up environment and run the API under 
 `http://localhost:9001`
 
+!!! warning
+    Make sure that you are running this at machine with an NVidia GPU! Otherwise CogVLM will not be available.
+
+
 ```bash
 pip install inference inference-cli inference-sdk
-inference server start  # make sure that you are running this at machine with GPU! Otherwise CogVLM will not be available
+inference server start
 ```
 
 Let's ask a question about the following image:

@@ -2,9 +2,8 @@ from typing import Any, Dict, List, Literal, Tuple, Type, Union
 
 from pydantic import Field
 
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
-    FlowControl,
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     Kind,
     StepOutputSelector,
     WorkflowParameterSelector,
@@ -18,6 +17,7 @@ from inference.core.workflows.execution_engine.introspection.entities import (
     BlockPropertySelectorDefinition,
     BlocksDescription,
 )
+from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -46,7 +46,7 @@ class Block1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return Block1Manifest
 
-    async def run_locally(
+    def run(
         self, *args, **kwargs
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         pass
@@ -71,7 +71,7 @@ class Block2(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return Block2Manifest
 
-    async def run_locally(
+    def run(
         self, *args, **kwargs
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         pass
@@ -95,7 +95,7 @@ class Block3(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return Block3Manifest
 
-    async def run_locally(
+    def run(
         self, *args, **kwargs
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         pass
@@ -110,6 +110,7 @@ BLOCK_1_DESCRIPTION = BlockDescription(
     fully_qualified_block_class_name="some.Block1",
     human_friendly_block_name="Block 1",
     manifest_type_identifier="Block1Manifest",
+    execution_engine_compatibility=None,
 )
 BLOCK_2_DESCRIPTION = BlockDescription(
     manifest_class=Block2Manifest,
@@ -120,6 +121,7 @@ BLOCK_2_DESCRIPTION = BlockDescription(
     fully_qualified_block_class_name="some.Block2",
     human_friendly_block_name="Block 2",
     manifest_type_identifier="Block2Manifest",
+    execution_engine_compatibility=None,
 )
 BLOCK_3_DESCRIPTION = BlockDescription(
     manifest_class=Block3Manifest,
@@ -130,6 +132,7 @@ BLOCK_3_DESCRIPTION = BlockDescription(
     fully_qualified_block_class_name="some.Block3",
     human_friendly_block_name="Block 3",
     manifest_type_identifier="Block3Manifest",
+    execution_engine_compatibility=None,
 )
 
 BLOCKS_DESCRIPTION = BlocksDescription(

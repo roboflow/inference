@@ -3,7 +3,7 @@ from collections import OrderedDict, defaultdict
 from dataclasses import replace
 from typing import Dict, Optional, Type
 
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     KIND_KEY,
     REFERENCE_KEY,
     SELECTED_ELEMENT_KEY,

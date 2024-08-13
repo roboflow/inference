@@ -1,7 +1,7 @@
 import pytest
 
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
-from inference.core.workflows.execution_engine.executor.execution_data_manager.branching_manager import (
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.branching_manager import (
     BranchingManager,
 )
 

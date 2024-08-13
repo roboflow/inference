@@ -1,4 +1,4 @@
-from typing import Any, List, Literal, Tuple, Union
+from typing import Any, List, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
@@ -14,7 +14,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
     SequenceAggregationMode,
     StatementsGroupsOperator,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BOOLEAN_KIND,
     DETECTION_KIND,

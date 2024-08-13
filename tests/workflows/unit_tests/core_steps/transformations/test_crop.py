@@ -3,22 +3,27 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.transformations.dynamic_crop import (
+from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import (
     BlockManifest,
     crop_image,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     OriginCoordinatesSystem,
     WorkflowImageData,
 )
 
 
+@pytest.mark.parametrize(
+    "type_alias", ["roboflow_core/dynamic_crop@v1", "DynamicCrop", "Crop"]
+)
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_crop_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
+def test_crop_validation_when_valid_manifest_is_given(
+    type_alias: str, images_field_alias: str
+) -> None:
     # given
     data = {
-        "type": "Crop",
+        "type": type_alias,
         "name": "some",
         images_field_alias: "$inputs.image",
         "predictions": "$steps.detection.predictions",
@@ -29,7 +34,7 @@ def test_crop_validation_when_valid_manifest_is_given(images_field_alias: str) -
 
     # then
     assert result == BlockManifest(
-        type="Crop",
+        type=type_alias,
         name="some",
         images="$inputs.image",
         predictions="$steps.detection.predictions",

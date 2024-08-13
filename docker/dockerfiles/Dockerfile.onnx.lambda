@@ -38,7 +38,6 @@ RUN /var/lang/bin/python3.10 -m pip install --upgrade pip && rm -rf ~/.cache/pip
 RUN pip3 install \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     certifi==2022.12.07 \
-    setuptools==65.5.1 \
     -r _requirements.txt \
     -r requirements.clip.txt \
     -r requirements.cpu.txt \

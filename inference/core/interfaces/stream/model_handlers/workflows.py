@@ -1,16 +1,11 @@
 import asyncio
-from asyncio import AbstractEventLoop
 from typing import List, Optional
 
-from inference.core import logger
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
 
 class WorkflowRunner:
-
-    def __init__(self):
-        self._event_loop: Optional[AbstractEventLoop] = None
 
     def run_workflow(
         self,
@@ -19,12 +14,6 @@ class WorkflowRunner:
         execution_engine: ExecutionEngine,
         image_input_name: str,
     ) -> List[dict]:
-        if self._event_loop is None:
-            try:
-                event_loop = asyncio.get_event_loop()
-            except:
-                event_loop = asyncio.new_event_loop()
-            self._event_loop = event_loop
         if workflows_parameters is None:
             workflows_parameters = {}
         # TODO: pass fps reflecting each stream to workflows_parameters
@@ -34,6 +23,5 @@ class WorkflowRunner:
         ]
         return execution_engine.run(
             runtime_parameters=workflows_parameters,
-            event_loop=self._event_loop,
             fps=fps,
         )

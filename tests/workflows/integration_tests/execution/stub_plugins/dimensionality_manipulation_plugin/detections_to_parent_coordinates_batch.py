@@ -7,15 +7,14 @@ from typing import Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
-    BATCH_OF_IMAGES_KIND,
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -97,7 +96,7 @@ class DetectionsToParentCoordinatesBatchBlock(WorkflowBlock):
     def accepts_batch_input(cls) -> bool:
         return True
 
-    async def run(
+    def run(
         self,
         images: Batch[WorkflowImageData],
         images_predictions: Batch[Batch[sv.Detections]],

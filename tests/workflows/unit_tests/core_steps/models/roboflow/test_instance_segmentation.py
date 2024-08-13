@@ -3,14 +3,19 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation import (
+from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
     BlockManifest,
 )
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 @pytest.mark.parametrize(
-    "type_alias", ["RoboflowInstanceSegmentationModel", "InstanceSegmentationModel"]
+    "type_alias",
+    [
+        "roboflow_core/roboflow_instance_segmentation_model@v1",
+        "RoboflowInstanceSegmentationModel",
+        "InstanceSegmentationModel",
+    ],
 )
 def test_instance_segmentation_model_validation_when_minimalistic_config_is_provided(
     images_field_alias: str,

@@ -13,14 +13,14 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 from inference.core.workflows.core_steps.common.query_language.evaluation_engine.core import (
     build_eval_function,
 )
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
-    FlowControl,
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     StepOutputSelector,
     StepSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
+from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
@@ -45,7 +45,7 @@ class ABTestBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ABTestManifest
 
-    async def run(
+    def run(
         self,
         a_step: StepSelector,
         b_step: StepSelector,
@@ -103,7 +103,7 @@ class ConditionBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         condition_statement: StatementGroup,
         evaluation_parameters: Dict[str, Any],
