@@ -84,7 +84,7 @@ class BlockManifest(WorkflowBlockManifest):
         WorkflowParameterSelector(kind=[STRING_KIND]),
         Literal["hiera_large", "hiera_small", "hiera_tiny", "hiera_b_plus"],
     ] = Field(
-        default="hiera_large",
+        default="hiera_tiny",
         description="Model to be used.  One of hiera_large, hiera_small, hiera_tiny, hiera_b_plus",
         examples=["hiera_large", "$inputs.openai_model"],
     )
