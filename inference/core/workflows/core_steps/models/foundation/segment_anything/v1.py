@@ -48,7 +48,12 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Run Segment Anything 2 Model
+Run Segment Anything 2, a zero-shot instance segmentation model, on an image.
+
+** Dedicated inference server required (GPU recomended) **
+
+You can use pass in boxes/predictions from other models to Segment Anything 2 to use as prompts for the model.
+If you pass in box detections from another model, the class names of the boxes will be forwarded to the predicted masks.  If using the model unprompted, the model will assign intengers as class names / ids.
 """
 
 
@@ -64,7 +69,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/segment_anything@v1", "SegmentAnything2Model"]
+    type: Literal["roboflow_core/segment_anything@v1"]
 
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
 
