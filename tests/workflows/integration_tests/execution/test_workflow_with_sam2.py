@@ -13,7 +13,7 @@ SAM_WORKFLOW = {
     ],
     "steps": [
         {
-            "type": "SegmentAnything2Model",
+            "type": "roboflow_core/segment_anything@v1",
             "name": "segment_anything",
             "images": "$inputs.image"
         },
@@ -29,7 +29,7 @@ SAM_WORKFLOW = {
 
 
 @pytest.mark.asyncio
-async def test_clip_workflow_when_minimal_valid_input_provided(
+async def test_sam2_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     dogs_image: np.ndarray
 ) -> None:
@@ -46,14 +46,14 @@ async def test_clip_workflow_when_minimal_valid_input_provided(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image]
         }
     )
 
 
-    print("result")
+    print("result", result)
 
     # then
     assert isinstance(result, list), "Expected list to be delivered"
@@ -61,4 +61,6 @@ async def test_clip_workflow_when_minimal_valid_input_provided(
     assert set(result[0].keys()) == {
         "predictions",
     }, "Expected all declared outputs to be delivered"
-    
+    assert result[0]["predictions"].mask is not None, "Expected mask to be delivered"
+    assert result[0]["predictions"].mask.shape == (1, 427, 640)
+    assert result[0]["predictions"].data['prediction_type'][0] == 'instance-segmentation'
