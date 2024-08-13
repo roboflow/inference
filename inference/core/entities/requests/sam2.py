@@ -75,7 +75,7 @@ class Sam2Prompt(BaseModel):
 
 
 class Sam2PromptSet(BaseModel):
-    prompts: Optional[List[Sam2Prompt]] = Field(default=None)
+    prompts: Optional[List[Sam2Prompt]] = Field(default=None, description="An optional list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points")
 
     def add_prompt(self, prompt: Sam2Prompt):
         if self.prompts is None:
