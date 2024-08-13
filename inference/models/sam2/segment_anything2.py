@@ -302,7 +302,6 @@ class SegmentAnything2(RoboflowCoreModel):
             for mask, score, low_res_logit in zip(masks, scores, low_res_logits):
                 sorted_ind = np.argsort(score)[::-1]
                 mask = mask[sorted_ind]
-                score = score[sorted_ind]
                 low_res_logit = low_res_logit[sorted_ind]
                 mask = mask[:1]
                 low_res_logit = low_res_logit[:1]
