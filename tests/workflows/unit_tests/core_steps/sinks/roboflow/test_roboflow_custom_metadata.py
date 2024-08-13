@@ -295,3 +295,50 @@ def test_run_when_not_fire_and_forget(
         "message": "Custom metadata upload was successful",
     }, "Expected success message"
     add_custom_metadata_request_mock.assert_called_once()
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
+)
+def test_run_with_field_value(
+    add_custom_metadata_request_mock: MagicMock,
+) -> None:
+    # given
+    block = RoboflowCustomMetadataBlockV1(
+        cache=MemoryCache(),
+        api_key="my_api_key",
+        background_tasks=None,
+        thread_pool_executor=None,
+    )
+    add_custom_metadata_request_mock.return_value = (
+        False,
+        "Custom metadata upload was successful",
+    )
+    predictions = sv.Detections(
+        xyxy=np.array([[1, 2, 3, 4]]),
+        confidence=np.array([0.1]),
+        class_id=np.array([1]),
+    )
+    predictions.data["inference_id"] = np.array(["id1"])
+    field_value = "new_york"
+
+    # when
+    result = block.run(
+        fire_and_forget=False,
+        field_name="location",
+        field_value=field_value,
+        predictions=predictions,
+    )
+
+    # then
+    assert result == {
+        "error_status": False,
+        "message": "Custom metadata upload was successful",
+    }, "Expected success message"
+    add_custom_metadata_request_mock.assert_called_once_with(
+        cache=block._cache,
+        api_key=block._api_key,
+        inference_ids=["id1"],
+        field_name="location",
+        field_value=field_value,
+    )
