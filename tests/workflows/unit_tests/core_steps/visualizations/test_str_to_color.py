@@ -1,9 +1,8 @@
 import pytest
 import supervision as sv
 
-from inference.core.workflows.core_steps.visualizations.utils import (
-    str_to_color
-)
+from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
+
 
 def test_str_to_color_with_hex_color() -> None:
     # given
@@ -14,6 +13,7 @@ def test_str_to_color_with_hex_color() -> None:
 
     # then
     assert result == sv.Color.from_hex(color)
+
 
 def test_str_to_color_with_rgb_color() -> None:
     # given
@@ -26,6 +26,7 @@ def test_str_to_color_with_rgb_color() -> None:
     # then
     assert result == expected_color
 
+
 def test_str_to_color_with_bgr_color() -> None:
     # given
     color = "bgr(0, 0, 255)"
@@ -37,6 +38,7 @@ def test_str_to_color_with_bgr_color() -> None:
     # then
     assert result == expected_color
 
+
 def test_str_to_color_with_color_name() -> None:
     # given
     color = "WHITE"
@@ -46,6 +48,7 @@ def test_str_to_color_with_color_name() -> None:
 
     # then
     assert result == sv.Color.WHITE
+
 
 def test_str_to_color_with_invalid_color() -> None:
     # given

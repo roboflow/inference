@@ -1,135 +1,145 @@
-from typing import Callable, List, Tuple, Type, Union
+from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.flow_control.continue_if import ContinueIfBlock
-from inference.core.workflows.core_steps.formatters.expression import ExpressionBlock
-from inference.core.workflows.core_steps.formatters.first_non_empty_or_default import (
-    FirstNonEmptyOrDefaultBlock,
+from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
+    ContinueIfBlockV1,
 )
-from inference.core.workflows.core_steps.formatters.property_definition import (
-    PropertyDefinitionBlock,
+from inference.core.workflows.core_steps.formatters.expression.v1 import (
+    ExpressionBlockV1,
 )
-from inference.core.workflows.core_steps.fusion.detections_classes_replacement import (
-    DetectionsClassesReplacementBlock,
+from inference.core.workflows.core_steps.formatters.first_non_empty_or_default.v1 import (
+    FirstNonEmptyOrDefaultBlockV1,
 )
-from inference.core.workflows.core_steps.fusion.detections_consensus import (
-    DetectionsConsensusBlock,
+from inference.core.workflows.core_steps.formatters.property_definition.v1 import (
+    PropertyDefinitionBlockV1,
 )
-from inference.core.workflows.core_steps.fusion.dimension_collapse import (
-    DimensionCollapseBlock,
+from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
+    DetectionsClassesReplacementBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.clip_comparison import (
-    ClipComparisonBlock,
+from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
+    DetectionsConsensusBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.cogvlm import CogVLMBlock
-from inference.core.workflows.core_steps.models.foundation.lmm import LMMBlock
-from inference.core.workflows.core_steps.models.foundation.lmm_classifier import (
-    LMMForClassificationBlock,
+from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
+    DimensionCollapseBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.ocr import OCRModelBlock
-from inference.core.workflows.core_steps.models.foundation.openai import OpenAIBlock
-from inference.core.workflows.core_steps.models.foundation.yolo_world import (
-    YoloWorldModelBlock,
+from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
+    ClipComparisonBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.instance_segmentation import (
-    RoboflowInstanceSegmentationModelBlock,
+from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
+    CogVLMBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.keypoint_detection import (
-    RoboflowKeypointDetectionModelBlock,
+from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
+from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
+    LMMForClassificationBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.multi_class_classification import (
-    RoboflowClassificationModelBlock,
+from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
+from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
+    OpenAIBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.multi_label_classification import (
-    RoboflowMultiLabelClassificationModelBlock,
+from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
+    YoloWorldModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.roboflow.object_detection import (
-    RoboflowObjectDetectionModelBlock,
+from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
+    RoboflowInstanceSegmentationModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.third_party.barcode_detection import (
-    BarcodeDetectorBlock,
+from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
+    RoboflowKeypointDetectionModelBlockV1,
 )
-from inference.core.workflows.core_steps.models.third_party.qr_code_detection import (
-    QRCodeDetectorBlock,
+from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1 import (
+    RoboflowClassificationModelBlockV1,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.roboflow_custom_metadata import (
-    RoboflowCustomMetadataBlock,
+from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
+    RoboflowMultiLabelClassificationModelBlockV1,
 )
-from inference.core.workflows.core_steps.sinks.roboflow.roboflow_dataset_upload import (
-    RoboflowDatasetUploadBlock,
+from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 import (
+    RoboflowObjectDetectionModelBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.absolute_static_crop import (
-    AbsoluteStaticCropBlock,
+from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
+    BarcodeDetectorBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.detection_offset import (
-    DetectionOffsetBlock,
+from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
+    QRCodeDetectorBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.detections_filter import (
-    DetectionsFilterBlock,
+from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
+    RoboflowCustomMetadataBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.detections_transformation import (
-    DetectionsTransformationBlock,
+from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
+    RoboflowDatasetUploadBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.dynamic_crop import (
-    DynamicCropBlock,
+from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
+    AbsoluteStaticCropBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.dynamic_zones import (
-    DynamicZonesBlock,
+from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
+    DetectionOffsetBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.perspective_correction import (
-    PerspectiveCorrectionBlock,
+from inference.core.workflows.core_steps.transformations.detections_filter.v1 import (
+    DetectionsFilterBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.relative_static_crop import (
-    RelativeStaticCropBlock,
+from inference.core.workflows.core_steps.transformations.detections_transformation.v1 import (
+    DetectionsTransformationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.background_color import (
-    BackgroundColorVisualizationBlock,
+from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import (
+    DynamicCropBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
+    DynamicZonesBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
+    PerspectiveCorrectionBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
+    RelativeStaticCropBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
+    BackgroundColorVisualizationBlockV1,
 )
 
 # Visualizers
-from inference.core.workflows.core_steps.visualizations.blur import (
-    BlurVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.blur.v1 import (
+    BlurVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.bounding_box import (
-    BoundingBoxVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.bounding_box.v1 import (
+    BoundingBoxVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.circle import (
-    CircleVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.circle.v1 import (
+    CircleVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.color import (
-    ColorVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.color.v1 import (
+    ColorVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.corner import (
-    CornerVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.corner.v1 import (
+    CornerVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.crop import (
-    CropVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.crop.v1 import (
+    CropVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.dot import DotVisualizationBlock
-from inference.core.workflows.core_steps.visualizations.ellipse import (
-    EllipseVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.dot.v1 import (
+    DotVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.halo import (
-    HaloVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.ellipse.v1 import (
+    EllipseVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.label import (
-    LabelVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.halo.v1 import (
+    HaloVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.mask import (
-    MaskVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.label.v1 import (
+    LabelVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.pixelate import (
-    PixelateVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.mask.v1 import (
+    MaskVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.polygon import (
-    PolygonVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
+    PixelateVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.triangle import (
-    TriangleVisualizationBlock,
+from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
+    PolygonVisualizationBlockV1,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
+    TriangleVisualizationBlockV1,
+)
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
     BATCH_OF_BOOLEAN_KIND,
     BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
@@ -165,74 +175,65 @@ from inference.core.workflows.entities.types import (
     ZONE_KIND,
     Kind,
 )
-from inference.core.workflows.prototypes.block import (
-    WorkflowBlock,
-    WorkflowBlockManifest,
-)
+from inference.core.workflows.prototypes.block import WorkflowBlock
 
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
     "cache": cache,
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
+    "background_tasks": None,
+    "thread_pool_executor": None,
 }
 
 
-def load_blocks() -> List[
-    Union[
-        Type[WorkflowBlock],
-        Tuple[
-            Type[WorkflowBlockManifest],
-            Callable[[Type[WorkflowBlockManifest]], WorkflowBlock],
-        ],
-    ]
-]:
+def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
-        DetectionsConsensusBlock,
-        ClipComparisonBlock,
-        LMMBlock,
-        LMMForClassificationBlock,
-        OpenAIBlock,
-        CogVLMBlock,
-        OCRModelBlock,
-        YoloWorldModelBlock,
-        RoboflowInstanceSegmentationModelBlock,
-        RoboflowKeypointDetectionModelBlock,
-        RoboflowClassificationModelBlock,
-        RoboflowMultiLabelClassificationModelBlock,
-        RoboflowObjectDetectionModelBlock,
-        BarcodeDetectorBlock,
-        QRCodeDetectorBlock,
-        AbsoluteStaticCropBlock,
-        DynamicCropBlock,
-        DetectionsFilterBlock,
-        DetectionOffsetBlock,
-        RelativeStaticCropBlock,
-        DetectionsTransformationBlock,
-        RoboflowDatasetUploadBlock,
-        ContinueIfBlock,
-        PerspectiveCorrectionBlock,
-        DynamicZonesBlock,
-        DetectionsClassesReplacementBlock,
-        ExpressionBlock,
-        PropertyDefinitionBlock,
-        DimensionCollapseBlock,
-        FirstNonEmptyOrDefaultBlock,
-        BackgroundColorVisualizationBlock,
-        BlurVisualizationBlock,
-        BoundingBoxVisualizationBlock,
-        CircleVisualizationBlock,
-        ColorVisualizationBlock,
-        CornerVisualizationBlock,
-        CropVisualizationBlock,
-        DotVisualizationBlock,
-        EllipseVisualizationBlock,
-        HaloVisualizationBlock,
-        LabelVisualizationBlock,
-        MaskVisualizationBlock,
-        PixelateVisualizationBlock,
-        PolygonVisualizationBlock,
-        TriangleVisualizationBlock,
-        RoboflowCustomMetadataBlock,
+        DetectionsConsensusBlockV1,
+        ClipComparisonBlockV1,
+        LMMBlockV1,
+        LMMForClassificationBlockV1,
+        OpenAIBlockV1,
+        CogVLMBlockV1,
+        OCRModelBlockV1,
+        YoloWorldModelBlockV1,
+        RoboflowInstanceSegmentationModelBlockV1,
+        RoboflowKeypointDetectionModelBlockV1,
+        RoboflowClassificationModelBlockV1,
+        RoboflowMultiLabelClassificationModelBlockV1,
+        RoboflowObjectDetectionModelBlockV1,
+        BarcodeDetectorBlockV1,
+        QRCodeDetectorBlockV1,
+        AbsoluteStaticCropBlockV1,
+        DynamicCropBlockV1,
+        DetectionsFilterBlockV1,
+        DetectionOffsetBlockV1,
+        RelativeStaticCropBlockV1,
+        DetectionsTransformationBlockV1,
+        RoboflowDatasetUploadBlockV1,
+        ContinueIfBlockV1,
+        PerspectiveCorrectionBlockV1,
+        DynamicZonesBlockV1,
+        DetectionsClassesReplacementBlockV1,
+        ExpressionBlockV1,
+        PropertyDefinitionBlockV1,
+        DimensionCollapseBlockV1,
+        FirstNonEmptyOrDefaultBlockV1,
+        BackgroundColorVisualizationBlockV1,
+        BlurVisualizationBlockV1,
+        BoundingBoxVisualizationBlockV1,
+        CircleVisualizationBlockV1,
+        ColorVisualizationBlockV1,
+        CornerVisualizationBlockV1,
+        CropVisualizationBlockV1,
+        DotVisualizationBlockV1,
+        EllipseVisualizationBlockV1,
+        HaloVisualizationBlockV1,
+        LabelVisualizationBlockV1,
+        MaskVisualizationBlockV1,
+        PixelateVisualizationBlockV1,
+        PolygonVisualizationBlockV1,
+        TriangleVisualizationBlockV1,
+        RoboflowCustomMetadataBlockV1,
     ]
 
 

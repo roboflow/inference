@@ -4,12 +4,12 @@ from typing import Any, Dict, List, Optional, Type, Union
 from openai import BaseModel
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import FlowControl
 from inference.core.workflows.errors import BlockInterfaceError
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.introspection.utils import (
     get_full_type_name,
 )
+from inference.core.workflows.execution_engine.v1.entities import FlowControl
 
 BatchElementOutputs = Dict[str, Any]
 BatchElementResult = Union[BatchElementOutputs, FlowControl]
@@ -61,6 +61,10 @@ class WorkflowBlockManifest(BaseModel, ABC):
     def accepts_empty_values(cls) -> bool:
         return False
 
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return None
+
 
 class WorkflowBlock(ABC):
 
@@ -78,7 +82,7 @@ class WorkflowBlock(ABC):
         )
 
     @abstractmethod
-    async def run(
+    def run(
         self,
         *args,
         **kwargs,

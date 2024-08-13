@@ -33,7 +33,7 @@ Implementation:
 from typing import Literal, Union
 
 from pydantic import AliasChoices, ConfigDict, Field
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -81,8 +81,8 @@ from typing import List
 from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_IMAGES_KIND,
     BATCH_OF_PARENT_ID_KIND,
 )
@@ -127,8 +127,8 @@ import numpy as np
 
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
-    FlowControl,
 )
+from inference.core.workflows.execution_engine.v1.entities import FlowControl
 
 
 class DynamicCropBlock(WorkflowBlock):

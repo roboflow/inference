@@ -2,8 +2,8 @@ from typing import Dict, List, Literal, Optional, Set, Union
 
 from pydantic import BaseModel, Field
 
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
     BATCH_OF_IMAGES_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,

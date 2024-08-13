@@ -2,18 +2,22 @@ import importlib
 import logging
 import os
 from collections import Counter
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Optional, Union
+
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 
 from inference.core.workflows.core_steps.loader import (
     REGISTERED_INITIALIZERS,
     load_blocks,
     load_kinds,
 )
-from inference.core.workflows.entities.types import Kind
-from inference.core.workflows.errors import PluginInterfaceError, PluginLoadingError
-from inference.core.workflows.execution_engine.compiler.entities import (
-    BlockSpecification,
+from inference.core.workflows.errors import (
+    PluginInterfaceError,
+    PluginLoadingError,
+    WorkflowExecutionEngineVersionError,
 )
+from inference.core.workflows.execution_engine.entities.types import Kind
 from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
     BlocksDescription,
@@ -21,6 +25,9 @@ from inference.core.workflows.execution_engine.introspection.entities import (
 from inference.core.workflows.execution_engine.introspection.utils import (
     build_human_friendly_block_name,
     get_full_type_name,
+)
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    BlockSpecification,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
@@ -30,8 +37,12 @@ WORKFLOWS_CORE_PLUGIN_NAME = "workflows_core"
 
 def describe_available_blocks(
     dynamic_blocks: List[BlockSpecification],
+    execution_engine_version: Optional[Union[str, Version]] = None,
 ) -> BlocksDescription:
-    blocks = load_workflow_blocks() + dynamic_blocks
+    blocks = (
+        load_workflow_blocks(execution_engine_version=execution_engine_version)
+        + dynamic_blocks
+    )
     result = []
     for block in blocks:
         block_schema = block.manifest_class.model_json_schema()
@@ -54,9 +65,9 @@ def describe_available_blocks(
                 ),
                 manifest_type_identifier=manifest_type_identifiers[0],
                 manifest_type_identifier_aliases=manifest_type_identifiers[1:],
+                execution_engine_compatibility=block.manifest_class.get_execution_engine_compatibility(),
             )
         )
-    _validate_loaded_blocks_names_uniqueness(blocks=result)
     _validate_loaded_blocks_manifest_type_identifiers(blocks=result)
     declared_kinds = load_all_defined_kinds()
     return BlocksDescription(blocks=result, declared_kinds=declared_kinds)
@@ -71,7 +82,7 @@ def get_manifest_type_identifiers(
         raise PluginInterfaceError(
             public_message="Required `type` property not defined for block "
             f"`{block_identifier}` loaded from `{block_source}",
-            context="workflow_compilation | blocks_loading",
+            context="blocks_loading",
         )
     constant_literal = block_schema["properties"]["type"].get("const")
     if constant_literal is not None:
@@ -82,16 +93,39 @@ def get_manifest_type_identifiers(
     raise PluginInterfaceError(
         public_message="`type` property for block is required to be `Literal` "
         "defining at least one unique value to identify block in JSON "
-        f"definitions. Block `{block_identifier}` loaded from `{block_source} "
+        f"definitions. Block `{block_identifier}` loaded from `{block_source}` "
         f"does not fit that requirement.",
-        context="workflow_compilation | blocks_loading",
+        context="blocks_loading",
     )
 
 
-def load_workflow_blocks() -> List[BlockSpecification]:
+def load_workflow_blocks(
+    execution_engine_version: Optional[Union[str, Version]] = None,
+) -> List[BlockSpecification]:
+    if isinstance(execution_engine_version, str):
+        try:
+            execution_engine_version = Version(execution_engine_version)
+        except ValueError as error:
+            raise WorkflowExecutionEngineVersionError(
+                public_message=f"Could not parse execution engine version `{execution_engine_version}` while "
+                f"workflow blocks loading",
+                inner_error=error,
+                context="blocks_loading",
+            )
     core_blocks = load_core_workflow_blocks()
     plugins_blocks = load_plugins_blocks()
-    return core_blocks + plugins_blocks
+    all_blocks = core_blocks + plugins_blocks
+    filtered_blocks = []
+    for block in all_blocks:
+        if not is_block_compatible_with_execution_engine(
+            execution_engine_version=execution_engine_version,
+            block_execution_engine_compatibility=block.manifest_class.get_execution_engine_compatibility(),
+            block_source=block.block_source,
+            block_identifier=block.identifier,
+        ):
+            continue
+        filtered_blocks.append(block)
+    return filtered_blocks
 
 
 def load_core_workflow_blocks() -> List[BlockSpecification]:
@@ -130,14 +164,14 @@ def load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
         raise PluginLoadingError(
             public_message=f"It is not possible to load workflow plugin `{plugin_name}`. "
             f"Make sure the library providing custom step is correctly installed in Python environment.",
-            context="workflow_compilation | blocks_loading",
+            context="blocks_loading",
             inner_error=e,
         ) from e
     except AttributeError as e:
         raise PluginInterfaceError(
             public_message=f"Provided workflow plugin `{plugin_name}` do not implement blocks loading "
             f"interface correctly and cannot be loaded.",
-            context="workflow_compilation | blocks_loading",
+            context="blocks_loading",
             inner_error=e,
         ) from e
 
@@ -152,7 +186,7 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
             public_message=f"Provided workflow plugin `{plugin_name}` implement `load_blocks()` function "
             f"incorrectly. Expected to return list of entries being subclass of `WorkflowBlock`, "
             f"but entry of different characteristics found: {type(blocks)}.",
-            context="workflow_compilation | blocks_loading",
+            context="blocks_loading",
         )
     for i, block in enumerate(blocks):
         if not isinstance(block, type) or not issubclass(block, WorkflowBlock):
@@ -160,7 +194,7 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
                 public_message=f"Provided workflow plugin `{plugin_name}` implement `load_blocks()` function "
                 f"incorrectly. Expected to return list of entries being subclass of `WorkflowBlock`, "
                 f"but entry of different characteristics found: {block} at position: {i}.",
-                context="workflow_compilation | blocks_loading",
+                context="blocks_loading",
             )
         if block in already_spotted_blocks:
             continue
@@ -174,6 +208,28 @@ def _load_blocks_from_plugin(plugin_name: str) -> List[BlockSpecification]:
         )
         already_spotted_blocks.add(block)
     return result
+
+
+def is_block_compatible_with_execution_engine(
+    execution_engine_version: Optional[Version],
+    block_execution_engine_compatibility: Optional[str],
+    block_source: str,
+    block_identifier: str,
+) -> bool:
+    if block_execution_engine_compatibility is None or execution_engine_version is None:
+        return True
+    try:
+        return SpecifierSet(block_execution_engine_compatibility).contains(
+            execution_engine_version
+        )
+    except ValueError as error:
+        raise PluginInterfaceError(
+            public_message=f"Could not parse either version of Execution Engine ({execution_engine_version}) or "
+            f"EE version requirements ({block_execution_engine_compatibility}) for "
+            f"block `{block_identifier}` loaded from `{block_source}`.",
+            inner_error=error,
+            context="blocks_loading",
+        )
 
 
 def load_initializers() -> Dict[str, Union[Any, Callable[[None], Any]]]:
@@ -201,7 +257,7 @@ def load_initializers_from_plugin(
         raise PluginLoadingError(
             public_message=f"It is not possible to load workflow plugin `{plugin_name}`. "
             f"Make sure the library providing custom step is correctly installed in Python environment.",
-            context="workflow_compilation | blocks_loading",
+            context="blocks_loading",
             inner_error=e,
         ) from e
 
@@ -215,23 +271,6 @@ def _load_initializers_from_plugin(
         f"{plugin_name}.{parameter_name}": initializer
         for parameter_name, initializer in registered_initializers.items()
     }
-
-
-def _validate_loaded_blocks_names_uniqueness(blocks: List[BlockDescription]) -> None:
-    block_names_lookup = {}
-    for block in blocks:
-        if block.human_friendly_block_name in block_names_lookup:
-            clashing_block = block_names_lookup[block.human_friendly_block_name]
-            raise PluginLoadingError(
-                public_message=f"Block defined in {block.block_source} plugin with fully qualified class "
-                f"name {block.fully_qualified_block_class_name} clashes in terms of "
-                f"the human friendly name (value={block.human_friendly_block_name}) with other "
-                f"block - defined in {clashing_block.block_source} with fully qualified class name: "
-                f"{clashing_block.fully_qualified_block_class_name}.",
-                context="workflow_compilation | blocks_loading",
-            )
-        block_names_lookup[block.human_friendly_block_name] = block
-    return None
 
 
 def _validate_loaded_blocks_manifest_type_identifiers(
@@ -251,7 +290,7 @@ def _validate_loaded_blocks_manifest_type_identifiers(
                     f"the manifest type identifier (or its alias): {type_name} - defined in "
                     f"{clashing_block.block_source} with fully qualified class name: "
                     f"{clashing_block.fully_qualified_block_class_name}.",
-                    context="workflow_compilation | blocks_loading",
+                    context="blocks_loading",
                 )
             types_already_defined[type_name] = block
     return None
@@ -266,7 +305,7 @@ def _validate_used_kinds_uniqueness(declared_kinds: List[Kind]) -> None:
             f"(problematic kinds: {non_unique_kinds}). This is most likely caused "
             f"by loading plugins that defines custom kinds which accidentally hold "
             f"the same name.",
-            context="workflow_compilation | blocks_loading",
+            context="blocks_loading",
         )
 
 
@@ -294,14 +333,14 @@ def load_plugin_kinds(plugin_name: str) -> List[Kind]:
         raise PluginLoadingError(
             public_message=f"It is not possible to load kinds from workflow plugin `{plugin_name}`. "
             f"Make sure the library providing custom step is correctly installed in Python environment.",
-            context="workflow_compilation | blocks_loading",
+            context="blocks_loading",
             inner_error=e,
         ) from e
     except AttributeError as e:
         raise PluginInterfaceError(
             public_message=f"Provided workflow plugin `{plugin_name}` do not implement blocks loading "
             f"interface correctly and cannot be loaded.",
-            context="workflow_compilation | blocks_loading",
+            context="blocks_loading",
             inner_error=e,
         ) from e
 
@@ -323,7 +362,7 @@ def _load_plugin_kinds(plugin_name: str) -> List[Kind]:
             public_message=f"Provided workflow plugin `{plugin_name}` do not implement blocks loading "
             f"interface correctly and cannot be loaded. Return value of `load_kinds()` "
             f"is not list of objects `Kind`.",
-            context="workflow_compilation | blocks_loading",
+            context="blocks_loading",
         )
     return kinds
 

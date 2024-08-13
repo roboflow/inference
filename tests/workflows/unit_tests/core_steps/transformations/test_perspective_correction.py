@@ -1,12 +1,9 @@
-from typing import Any
-
 import cv2 as cv
 import numpy as np
 import pytest
 import supervision as sv
 
-from inference.core.workflows.constants import KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
-from inference.core.workflows.core_steps.transformations.perspective_correction import (
+from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     correct_detections,
     extend_perspective_polygon,
     generate_transformation_matrix,
@@ -14,7 +11,10 @@ from inference.core.workflows.core_steps.transformations.perspective_correction 
     roll_polygon_vertices_to_start_from_leftmost_bottom,
     sort_polygon_vertices_clockwise,
 )
-from inference.core.workflows.entities.base import Batch
+from inference.core.workflows.execution_engine.constants import (
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+)
+from inference.core.workflows.execution_engine.entities.base import Batch
 
 
 @pytest.mark.parametrize("broken_input", [1, "cat", np.array([])])
