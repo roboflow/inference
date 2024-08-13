@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import supervision as sv
 
@@ -324,3 +325,101 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
         detections_obtained_directly.class_id
         == workflow_result[0]["predictions"].class_id
     ), "Expected class ids to be the same for workflow SAHI and direct SAHI"
+
+
+SAHI_WORKFLOW_FOR_SEGMENTATION = {
+    "version": "1.0.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "overlap_filtering_strategy"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/image_slicer@v1",
+            "name": "image_slicer",
+            "image": "$inputs.image",
+        },
+        {
+            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "name": "detection",
+            "image": "$steps.image_slicer.crops",
+            "model_id": "yolov8n-seg-640",
+        },
+        {
+            "type": "roboflow_core/detections_stitch@v1",
+            "name": "stitch",
+            "reference_image": "$inputs.image",
+            "predictions": "$steps.detection.predictions",
+            "overlap_filtering_strategy": "$inputs.overlap_filtering_strategy",
+        },
+        {
+            "type": "roboflow_core/mask_visualization@v1",
+            "name": "mask_visualiser",
+            "predictions": "$steps.stitch.predictions",
+            "image": "$inputs.image",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.stitch.predictions",
+            "coordinates_system": "own",
+        },
+        {
+            "type": "JsonField",
+            "name": "visualisation",
+            "selector": "$steps.mask_visualiser.image",
+        },
+    ],
+}
+
+
+def test_sahi_workflow_for_segmentation_with_nms_as_filtering_strategy(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=SAHI_WORKFLOW_FOR_SEGMENTATION,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [crowd_image],
+            "overlap_filtering_strategy": "nms",
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert np.allclose(
+        result[0]["predictions"].xyxy,
+        np.array(
+            [
+                [553, 259, 598, 365],
+                [181, 272, 243, 385],
+                [271, 266, 329, 384],
+                [158, 268, 184, 349],
+                [113, 269, 144, 347],
+                [415, 258, 458, 365],
+                [386, 263, 415, 342],
+                [143, 264, 164, 329],
+                [239, 250, 249, 282],
+                [248, 250, 261, 284],
+                [323, 256, 346, 319],
+                [342, 260, 361, 335],
+                [522, 258, 557, 361],
+                [525, 274, 550, 318],
+            ]
+        ),
+        atol=1e-1,
+    ), "Expected boxes for first image to be exactly as measured during test creation"

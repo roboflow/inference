@@ -166,8 +166,8 @@ def retrieve_crop_wh(detections: sv.Detections) -> Optional[Tuple[int, int]]:
             f"lack this part of implementation or has a bug."
         )
     return (
-        detections.data[PARENT_COORDINATES_KEY][0][1].item(),
-        detections.data[PARENT_COORDINATES_KEY][0][0].item(),
+        detections.data[PARENT_DIMENSIONS_KEY][0][1].item(),
+        detections.data[PARENT_DIMENSIONS_KEY][0][0].item(),
     )
 
 
