@@ -91,7 +91,7 @@ class SegmentAnything2(RoboflowCoreModel):
         """
         return ["weights.pt"]
 
-    def embed_image(self, image: Any, image_id: Optional[str] = None, **kwargs):
+    def embed_image(self, image: InferenceRequestImage, image_id: Optional[str] = None, **kwargs):
         """
         Embeds an image and caches the result if an image_id is provided. If the image has been embedded before and cached,
         the cached result will be returned.
@@ -210,7 +210,7 @@ class SegmentAnything2(RoboflowCoreModel):
 
     def segment_image(
         self,
-        image: Any,
+        image: InferenceRequestImage,
         image_id: Optional[str] = None,
         prompts: Sam2PromptSet = None,
         mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
