@@ -12,6 +12,7 @@ SIMPLE_SAM_WORKFLOW = {
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
         {"type": "WorkflowParameter", "name": "mask_threshold", "default_value": 0.0},
+        {"type": "WorkflowParameter", "name": "version", "default_value": "hiera_tiny"},
     ],
     "steps": [
         {
@@ -19,6 +20,7 @@ SIMPLE_SAM_WORKFLOW = {
             "name": "segment_anything",
             "images": "$inputs.image",
             "threshold": "$inputs.mask_threshold",
+            "version": "$inputs.version",
         },
     ],
     "outputs": [
@@ -159,11 +161,11 @@ def test_grounded_sam2_workflow(
     }, "Expected all declared outputs to be delivered"
     assert np.allclose(
         result[0]["sam_predictions"].xyxy,
-        np.array([[321, 223, 581, 405], [226, 73, 381, 380]]),
+        np.array([[321, 223, 582, 405], [226, 73, 382, 381]]),
         atol=1e-1,
     ), "Expected bboxes to be the same as measured while test creation"
     assert np.allclose(
-        result[0]["sam_predictions"].confidence, np.array([0.85599, 0.50392]), atol=1e-4
+        result[0]["sam_predictions"].confidence, np.array([0.9602, 0.93673]), atol=1e-4
     ), "Expected confidence to be the same as measured while test creation"
     assert result[0]["sam_predictions"]["class_name"].tolist() == [
         "dog",

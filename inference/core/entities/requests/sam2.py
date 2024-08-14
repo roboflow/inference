@@ -93,10 +93,10 @@ class Sam2PromptSet(BaseModel):
                 return_dict["box"].append([x1, y1, x2, y2])
             if prompt.points is not None:
                 return_dict["point_coords"].append(
-                    [point.x, point.y] for point in prompt.points
+                    list([point.x, point.y] for point in prompt.points)
                 )
                 return_dict["point_labels"].append(
-                    int(point.positive) for point in prompt.points
+                    list(int(point.positive) for point in prompt.points)
                 )
 
         return_dict = {k: v if v else None for k, v in return_dict.items()}
@@ -149,13 +149,18 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
         examples=["json"],
         description="The format of the mask input. Must be one of json or binary. If binary, mask input is expected to be a binary numpy array.",
     )
+    multimask_output: bool = Field(
+        default=True,
+        examples=[True],
+        description="If true, the model will return three masks. "
+        "For ambiguous input prompts (such as a single click), this will often "
+        "produce better masks than a single prediction. If only a single "
+        "mask is needed, the model's predicted quality score can be used "
+        "to select the best mask. For non-ambiguous prompts, such as multiple "
+        "input prompts, multimask_output=False can give better results.",
+    )
     use_mask_input_cache: Optional[bool] = Field(
         default=False,
         examples=[False],
         description="Whether or not to use the mask input cache. If true, the mask input cache will be used if it exists. If false, the mask input cache will not be used.",
-    )
-    threshold: float = Field(
-        default=0.0,
-        examples=[0.5],
-        description="Threshold value for predicted mask scores",
     )

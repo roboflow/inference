@@ -4,8 +4,9 @@ import logging
 import os
 from io import BytesIO
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+import matplotlib.pyplot as plt
 import numpy as np
 import rasterio.features
 import sam2.utils.misc
@@ -164,47 +165,18 @@ class SegmentAnything2(RoboflowCoreModel):
             inference_time = perf_counter() - t1
             return Sam2EmbeddingResponse(time=inference_time, image_id=image_id)
         elif isinstance(request, Sam2SegmentationRequest):
-            masks, low_res_masks = self.segment_image(**request.dict())
+            masks, scores, low_resolution_logits = self.segment_image(**request.dict())
             if request.format == "json":
-
-                predictions = []
-                for mask, low_res_mask in zip(masks, low_res_masks):
-                    binary_mask = mask >= request.threshold
-                    mask_poly = masks2poly(binary_mask)
-                    low_res_binary_mask = low_res_mask >= request.threshold
-                    low_res_mask_poly = masks2poly(low_res_binary_mask)
-                    pixels_in_binary_mask = low_res_binary_mask.sum()
-                    average_mask_score = 0.0
-                    if pixels_in_binary_mask > 0:
-                        average_mask_score = (
-                            (low_res_mask * low_res_binary_mask).sum()
-                            / pixels_in_binary_mask
-                        ).item()
-                    serialised_mask, serialised_low_res_mask = [], []
-                    for polygon in mask_poly:
-                        serialised_polygon = polygon.tolist()
-                        if len(serialised_polygon) > 0:
-                            serialised_mask.append(serialised_polygon)
-                    for polygon in low_res_mask_poly:
-                        serialised_polygon = polygon.tolist()
-                        if len(serialised_polygon) > 0:
-                            serialised_low_res_mask.append(polygon)
-                    pred = Sam2SegmentationPrediction(
-                        mask=serialised_mask,
-                        low_res_mask=serialised_low_res_mask,
-                        average_mask_score=average_mask_score,
-                    )
-                    predictions.append(pred)
-
-                return Sam2SegmentationResponse(
-                    time=perf_counter() - t1, predictions=predictions
+                return turn_segmentation_results_into_api_response(
+                    masks=masks,
+                    scores=scores,
+                    mask_threshold=self.predictor.mask_threshold,
+                    inference_start_timestamp=t1,
                 )
-
             elif request.format == "binary":
-                # TODO: thresholding of masks!
                 binary_vector = BytesIO()
                 np.savez_compressed(
-                    binary_vector, masks=masks, low_res_masks=low_res_masks
+                    binary_vector, masks=masks, low_res_masks=low_resolution_logits
                 )
                 binary_vector.seek(0)
                 binary_data = binary_vector.getvalue()
@@ -235,6 +207,7 @@ class SegmentAnything2(RoboflowCoreModel):
         mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
         mask_input_format: Optional[str] = "json",
         use_mask_input_cache: Optional[bool] = False,
+        multimask_output: bool = True,
         **kwargs,
     ):
         """
@@ -245,11 +218,19 @@ class SegmentAnything2(RoboflowCoreModel):
             image (Any): The image to be segmented.
             image_id (Optional[str]): A cached identifier for the image. Useful for accessing cached embeddings or masks.
             prompts (Optional[List[Sam2Prompt]]): List of prompts to use for segmentation. Defaults to None.
+            multimask_output: (bool): Flag to decide if multiple masks proposal to be predicted (among which the most
+                promising will be returned
+            )
             **kwargs: Additional keyword arguments.
 
         Returns:
-            Tuple[np.ndarray, np.ndarray]: A tuple where the first element is the segmentation masks of the image
-                                          and the second element is the low resolution segmentation masks.
+            Tuple[np.ndarray, np.ndarray, np.ndarray]: Tuple of np.array, where:
+                - first element is of size (prompt_set_size, h, w) and represent mask with the highest confidence
+                    for each prompt element
+                - second element is of size (prompt_set_size, ) and represents ths score for most confident mask
+                    of each prompt element
+                - third element is of size (prompt_set_size, 256, 256) and represents the low resolution logits
+                    for most confident mask of each prompt element
 
         Raises:
             ValueError: If necessary inputs are missing or inconsistent.
@@ -290,6 +271,8 @@ class SegmentAnything2(RoboflowCoreModel):
                     mask_input = np.load(BytesIO(binary_data))
 
             elif use_mask_input_cache:
+                # TODO: verify shapes of cache! According to docs this should be ok with
+                #    dimension
                 mask_input = self.low_res_logits_cache.get(image_id, None)
 
             self.predictor._is_image_set = True
@@ -303,36 +286,103 @@ class SegmentAnything2(RoboflowCoreModel):
                 else:
                     args = prompts.to_sam2_inputs()
 
-            masks, scores, low_res_logits = self.predictor.predict(
+            masks, scores, low_resolution_logits = self.predictor.predict(
                 mask_input=mask_input,
-                multimask_output=True,
+                multimask_output=multimask_output,
                 return_logits=True,
                 normalize_coords=True,
                 **args,
             )
-
-            if len(masks.shape) == 3:
-                masks = np.expand_dims(masks, axis=0)
-                low_res_logits = np.expand_dims(low_res_logits, axis=0)
-                scores = np.expand_dims(scores, axis=0)
-
-            predicted_masks = []
-            low_res_masks = []
-            for mask, score, low_res_logit in zip(masks, scores, low_res_logits):
-                sorted_ind = np.argsort(score)[::-1]
-                mask = mask[sorted_ind]
-                low_res_logit = low_res_logit[sorted_ind]
-                mask = mask[:1]
-                low_res_logit = low_res_logit[:1]
-                predicted_masks.append(mask)
-                low_res_masks.append(low_res_logit)
-
-            self.low_res_logits_cache[image_id] = np.asarray(low_res_masks)
-
+            masks, scores, low_resolution_logits = choose_most_confident_sam_prediction(
+                masks=masks,
+                scores=scores,
+                low_resolution_logits=low_resolution_logits,
+            )
+            self.low_res_logits_cache[image_id] = low_resolution_logits
             if image_id not in self.segmentation_cache_keys:
                 self.segmentation_cache_keys.append(image_id)
             if len(self.segmentation_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
                 cache_key = self.segmentation_cache_keys.pop(0)
                 del self.low_res_logits_cache[cache_key]
+            return masks, scores, low_resolution_logits
 
-            return np.asarray(predicted_masks), np.asarray(low_res_masks)
+
+def choose_most_confident_sam_prediction(
+    masks: np.ndarray,
+    scores: np.ndarray,
+    low_resolution_logits: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    This function is supposed to post-process SAM2 inference and choose most confident
+    mask regardless of `multimask_output` parameter value
+    Args:
+        masks: np array with values 0.0 and 1.0 representing predicted mask of size
+            (prompt_set_size, proposed_maks, h, w) or (proposed_maks, h, w) - depending on
+            prompt set size - unfortunately, prompt_set_size=1 causes squeeze operation
+            in SAM2 library, so to handle inference uniformly, we need to compensate with
+            this function.
+        scores: array of size (prompt_set_size, proposed_maks) or (proposed_maks, ) depending
+            on prompt set size - this array gives confidence score for mask proposal
+        low_resolution_logits: array of size (prompt_set_size, proposed_maks, 256, 256) or
+            (proposed_maks, 256, 256) - depending on prompt set size. These low resolution logits
+             can be passed to a subsequent iteration as mask input.
+    Returns:
+        Tuple of np.array, where:
+            - first element is of size (prompt_set_size, h, w) and represent mask with the highest confidence
+                for each prompt element
+            - second element is of size (prompt_set_size, ) and represents ths score for most confident mask
+                of each prompt element
+            - third element is of size (prompt_set_size, 256, 256) and represents the low resolution logits
+                for most confident mask of each prompt element
+    """
+    if len(masks.shape) == 3:
+        masks = np.expand_dims(masks, axis=0)
+        scores = np.expand_dims(scores, axis=0)
+        low_resolution_logits = np.expand_dims(low_resolution_logits, axis=0)
+    selected_masks, selected_scores, selected_low_resolution_logits = [], [], []
+    for mask, score, low_resolution_logit in zip(masks, scores, low_resolution_logits):
+        selected_mask, selected_score, selected_low_resolution_logit = (
+            choose_most_confident_prompt_set_element_prediction(
+                mask=mask,
+                score=score,
+                low_resolution_logit=low_resolution_logit,
+            )
+        )
+        selected_masks.append(selected_mask)
+        selected_scores.append(selected_score)
+        selected_low_resolution_logits.append(selected_low_resolution_logit)
+    return (
+        np.asarray(selected_masks),
+        np.asarray(selected_scores),
+        np.asarray(selected_low_resolution_logits),
+    )
+
+
+def choose_most_confident_prompt_set_element_prediction(
+    mask: np.ndarray, score: np.ndarray, low_resolution_logit: np.ndarray
+) -> Tuple[np.ndarray, float, np.ndarray]:
+    max_score_index = np.argsort(score)[-1]
+    selected_mask = mask[max_score_index]
+    selected_score = score[max_score_index].item()
+    selected_low_resolution_logit = low_resolution_logit[max_score_index]
+    return selected_mask, selected_score, selected_low_resolution_logit
+
+
+def turn_segmentation_results_into_api_response(
+    masks: np.ndarray,
+    scores: np.ndarray,
+    mask_threshold: float,
+    inference_start_timestamp: float,
+) -> Sam2SegmentationResponse:
+    predictions = []
+    masks_plygons = masks2poly(masks >= mask_threshold)
+    for mask_polygon, score in zip(masks_plygons, scores):
+        prediction = Sam2SegmentationPrediction(
+            mask=mask_polygon.tolist(),
+            confidence=score.item(),
+        )
+        predictions.append(prediction)
+    return Sam2SegmentationResponse(
+        time=perf_counter() - inference_start_timestamp,
+        predictions=predictions,
+    )
