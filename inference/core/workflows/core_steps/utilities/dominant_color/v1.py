@@ -83,15 +83,15 @@ class DominantColorBlockV1(WorkflowBlock):
 
         pixels = np_image.reshape(-1, 3).astype(np.float32)
 
-        k = 4 
-        max_iterations = 100 
+        k = 4
+        max_iterations = 100
         centroids = pixels[np.random.choice(pixels.shape[0], k, replace=False)]
-        
+
         for _ in range(max_iterations):
             # Assign pixels to nearest centroid
             distances = np.sqrt(((pixels[:, np.newaxis] - centroids) ** 2).sum(axis=2))
             labels = np.argmin(distances, axis=1)
-            
+
             # Update centroids
             new_centroids = np.zeros_like(centroids)
             for i in range(k):
@@ -101,7 +101,7 @@ class DominantColorBlockV1(WorkflowBlock):
                 else:
                     # If cluster is empty, reinitialize to a random point
                     new_centroids[i] = pixels[np.random.choice(pixels.shape[0])]
-            
+
             # Check for convergence
             if np.allclose(centroids, new_centroids):
                 break
