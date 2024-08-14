@@ -157,6 +157,27 @@ def yolov10_det_model() -> Generator[str, None, None]:
     shutil.rmtree(model_cache_dir)
 
 
+@pytest.fixture(scope="function")
+def sam2_tiny_model() -> Generator[str, None, None]:
+    model_id = "sam2/hiera_tiny"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/sam2_tiny.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
+@pytest.fixture(scope="function")
+def sam2_small_model() -> Generator[str, None, None]:
+    model_id = "sam2/hiera_small"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/sam2_small.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
+
 def fetch_and_place_model_in_cache(
     model_id: str,
     model_package_url: str,
