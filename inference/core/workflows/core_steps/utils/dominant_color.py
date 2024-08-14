@@ -1,19 +1,14 @@
-from abc import ABC, abstractmethod
-from typing import List, Literal, Optional, Type, Union
+from typing import List, Literal, Type, Union
 
 import numpy as np
-import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 from sklearn.cluster import MiniBatchKMeans
 
-from inference.core.workflows.core_steps.visualizations.utils import str_to_color
 from inference.core.workflows.entities.base import OutputDefinition, WorkflowImageData
 from inference.core.workflows.entities.types import (
-    BATCH_OF_STRING_KIND,
+    BATCH_OF_INTEGER_KIND,
     StepOutputImageSelector,
-    StepOutputSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -47,7 +42,7 @@ class DominantColorManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="rgb_color", kind=[BATCH_OF_STRING_KIND]),
+            OutputDefinition(name="rgb_color", kind=[BATCH_OF_INTEGER_KIND]),
         ]
 
 
