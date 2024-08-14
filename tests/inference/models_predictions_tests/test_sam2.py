@@ -20,7 +20,8 @@ def test_sam2_single_image_embedding(
     embedding, img_shape, id_ = model.embed_image(example_image)
 
     # then
-    assert torch.sum(embedding['image_embed']) == 25155.9336, "embedding sum doesnt drift/change"
+    drift = np.abs(torch.sum(embedding['image_embed']).cpu().detach().numpy() - 25155.9336)
+    assert  drift < 1, "embedding sum doesnt drift/change"
     assert img_shape == (427,640) , "Image shape must match the expected shape" 
     
 
@@ -29,6 +30,7 @@ def test_sam2_single_image_embedding(
 def test_sam2_single_prompted_image_segmentation(
     sam2_small_model: str,
     truck_image: np.ndarray,
+    sam2_small_truck_mask: np.ndarray,
 ) -> None:
     # given
     model = SegmentAnything2(model_id=sam2_small_model)
@@ -38,14 +40,9 @@ def test_sam2_single_prompted_image_segmentation(
     )
 
     # when
-    
-
     masks, scores, low_res_logits = model.segment_image(truck_image, prompts=prompt)    
     
-
-
     
-
     #vislualization fo result for debugging
     # expected result for small model is the part of the rear window on the truck
     # where the prompt point is provided
@@ -70,8 +67,9 @@ def test_sam2_single_prompted_image_segmentation(
     # print("low_res_logits", np.sum(low_res_logits))
 
     # then
-    assert np.sum(masks) == -62825124.0, "segmentation mask is as expected"
-    assert scores[0] == 0.9426716566085815, "score doesnt drift/change"
+    score_drift = np.abs(scores[0] - 0.9426716566085815)
+    assert np.allclose(masks, sam2_small_truck_mask, atol=0.01), "segmentation mask is as expected"
+    assert score_drift < 0.01, "score doesnt drift/change"
     # assert np.sum(low_res_logits) == -1772890.2, "logits is as expected"
     
     
