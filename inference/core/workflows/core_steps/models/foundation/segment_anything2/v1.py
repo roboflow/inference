@@ -36,6 +36,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     FLOAT_KIND,
     STRING_KIND,
+    BOOLEAN_KIND,
     ImageInputField,
     StepOutputImageSelector,
     StepOutputSelector,
@@ -106,6 +107,14 @@ class BlockManifest(WorkflowBlockManifest):
         default=0.0, description="Threshold for predicted masks scores", examples=[0.3]
     )
 
+    multimask_output: Union[
+        Optional[bool], WorkflowParameterSelector(kind=[BOOLEAN_KIND])
+    ] = Field(
+        default=True,
+        description="Flag to determine whether to use sam2 internal multimask or single mask mode. For ambiguous prompts setting to True is recomended.",
+        examples=[True, "$inputs.multimask_output"],
+    )
+
     @classmethod
     def accepts_batch_input(cls) -> bool:
         return True
@@ -150,10 +159,11 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         boxes: Batch[sv.Detections],
         version: str,
         threshold: float,
+        multimask_output: bool,
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
-                images=images, boxes=boxes, version=version, threshold=threshold
+                images=images, boxes=boxes, version=version, threshold=threshold, multimask_output=multimask_output
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             raise NotImplementedError(
@@ -170,6 +180,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         boxes: Optional[Batch[sv.Detections]],
         version: str,
         threshold: float,
+        multimask_output: bool,
     ) -> BlockResult:
 
         predictions = []
@@ -206,6 +217,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                 source="workflow-execution",
                 prompts=Sam2PromptSet(prompts=prompts),
                 threshold=threshold,
+                multimask_output=multimask_output,
             )
             sam_model_id = load_core_model(
                 model_manager=self._model_manager,
