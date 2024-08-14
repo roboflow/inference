@@ -415,6 +415,13 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
+
+        app.mount(
+            "/static",
+            StaticFiles(directory="./inference/landing/out/static"),
+            name="static_static",
+        )
+
         if METLO_KEY:
             app.add_middleware(
                 ASGIMiddleware, host="https://app.metlo.com", api_key=METLO_KEY
