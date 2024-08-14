@@ -1,10 +1,8 @@
 import base64
 import hashlib
-
 from io import BytesIO
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
-
 
 import numpy as np
 import rasterio.features

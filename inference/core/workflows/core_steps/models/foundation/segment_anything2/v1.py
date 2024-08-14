@@ -34,9 +34,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    BOOLEAN_KIND,
     FLOAT_KIND,
     STRING_KIND,
-    BOOLEAN_KIND,
     ImageInputField,
     StepOutputImageSelector,
     StepOutputSelector,
@@ -163,7 +163,11 @@ class SegmentAnything2BlockV1(WorkflowBlock):
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
-                images=images, boxes=boxes, version=version, threshold=threshold, multimask_output=multimask_output
+                images=images,
+                boxes=boxes,
+                version=version,
+                threshold=threshold,
+                multimask_output=multimask_output,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             raise NotImplementedError(
