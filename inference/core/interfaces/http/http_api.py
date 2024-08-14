@@ -472,6 +472,7 @@ class HttpInterface(BaseInterface):
                     request.method not in ["GET", "POST"]
                     or request.url.path in ["/", "/info"]
                     or request.url.path.startswith("/_next/")
+                    or request.url.path.startswith("/static/")
                     or request.url.path.endswith(".svg")
                     or request.url.path.endswith(".png")
                     or request.url.path.endswith(".webp")
