@@ -2,7 +2,6 @@ from typing import List, Literal, Optional, Type, Union
 
 import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
-from sklearn.cluster import MiniBatchKMeans
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -25,7 +24,8 @@ LONG_DESCRIPTION: str = """
 Extract the dominant color from an input image using K-means clustering.
 
 This block identifies the most prevalent color in an image.
-It's designed to work quickly, processing most images in under half a second.
+Processing time is dependant on color complexity and image size.
+Most images should complete in under half a second.
 
 The output is a list of RGB values representing the dominant color, making it easy 
 to use in further processing or visualization tasks.
@@ -74,20 +74,46 @@ class DominantColorBlockV1(WorkflowBlock):
         return DominantColorManifest
 
     def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
-
         np_image = image.numpy_image
+
+        # Downsample the image to speed up processing
+        height, width = np_image.shape[:2]
+        scale_factor = max(1, min(width, height) // 100)
+        np_image = np_image[::scale_factor, ::scale_factor]
+
         pixels = np_image.reshape(-1, 3).astype(np.float32)
 
-        # Use MiniBatchKMeans for faster processing
-        kmeans = MiniBatchKMeans(n_clusters=3, random_state=42, batch_size=1000)
-        kmeans.fit(pixels)
+        k = 4 
+        max_iterations = 100 
+        centroids = pixels[np.random.choice(pixels.shape[0], k, replace=False)]
+        
+        for _ in range(max_iterations):
+            # Assign pixels to nearest centroid
+            distances = np.sqrt(((pixels[:, np.newaxis] - centroids) ** 2).sum(axis=2))
+            labels = np.argmin(distances, axis=1)
+            
+            # Update centroids
+            new_centroids = np.zeros_like(centroids)
+            for i in range(k):
+                cluster_points = pixels[labels == i]
+                if len(cluster_points) > 0:
+                    new_centroids[i] = cluster_points.mean(axis=0)
+                else:
+                    # If cluster is empty, reinitialize to a random point
+                    new_centroids[i] = pixels[np.random.choice(pixels.shape[0])]
+            
+            # Check for convergence
+            if np.allclose(centroids, new_centroids):
+                break
+
+            centroids = new_centroids
 
         # Get the colors and their counts
-        colors = kmeans.cluster_centers_
-        counts = np.bincount(kmeans.labels_)
+        colors = centroids
+        _, counts = np.unique(labels, return_counts=True)
 
         # Find the most dominant color
         dominant_color = colors[np.argmax(counts)]
-        rgb_color = np.round(dominant_color[::-1]).astype(int).tolist()
+        rgb_color = [int(np.clip(round(x), 0, 255)) for x in reversed(dominant_color)]
 
         return {"rgb_color": rgb_color}
