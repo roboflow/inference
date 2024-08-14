@@ -1,4 +1,4 @@
-from typing import List, Literal, Type, Union
+from typing import List, Literal, Type, Union, Optional
 
 import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
@@ -9,7 +9,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_INTEGER_KIND,
+    LIST_OF_VALUES_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
@@ -20,12 +20,25 @@ from inference.core.workflows.prototypes.block import (
 )
 
 TYPE: str = "roboflow_core/dominant_color@v1"
-SHORT_DESCRIPTION: str = "Get the dominant color of an image."
-LONG_DESCRIPTION: str = "Get the dominant color of an image as a list of RGB values."
+SHORT_DESCRIPTION: str = "Get the dominant color of an image in RGB format."
+LONG_DESCRIPTION: str = """
+Extract the dominant color from an input image using K-means clustering.
+
+This block identifies the most prevalent color in an image.
+It's designed to work quickly, processing most images in under half a second.
+
+The output is a list of RGB values representing the dominant color, making it easy 
+to use in further processing or visualization tasks.
+
+Note: The block operates on the assumption that the input image is in RGB format. 
+"""
 
 
 class DominantColorManifest(WorkflowBlockManifest):
-    type: Literal[f"{TYPE}"]
+    type: Literal[
+        "roboflow_core/dominant_color@v1", 
+        "DominantColor"
+    ]
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Dominant Color",
@@ -47,8 +60,12 @@ class DominantColorManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="rgb_color", kind=[BATCH_OF_INTEGER_KIND]),
+            OutputDefinition(name="rgb_color", kind=[LIST_OF_VALUES_KIND]),
         ]
+    
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.0.0,<2.0.0"
 
 
 class DominantColorBlockV1(WorkflowBlock):

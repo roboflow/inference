@@ -140,8 +140,8 @@ from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
 
-# Utils
-from inference.core.workflows.core_steps.utils.dominant_color.v1 import (
+# Utilities
+from inference.core.workflows.core_steps.utilities.dominant_color.v1 import (
     DominantColorBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.types import (
