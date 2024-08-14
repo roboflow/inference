@@ -139,8 +139,10 @@ from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.utils.dominant_color import (
-    DominantColorBlock,
+
+# Utils
+from inference.core.workflows.core_steps.utils.dominant_color.v1 import (
+    DominantColorBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_BAR_CODE_DETECTION_KIND,
@@ -237,6 +239,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PolygonVisualizationBlockV1,
         TriangleVisualizationBlockV1,
         RoboflowCustomMetadataBlockV1,
+        DominantColorBlockV1,
     ]
 
 

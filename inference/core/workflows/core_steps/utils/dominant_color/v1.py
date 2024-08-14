@@ -4,8 +4,11 @@ import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
 from sklearn.cluster import MiniBatchKMeans
 
-from inference.core.workflows.entities.base import OutputDefinition, WorkflowImageData
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import (
+    OutputDefinition,
+    WorkflowImageData,
+)
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_INTEGER_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -16,7 +19,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-TYPE: str = "DominantColor"
+TYPE: str = "roboflow_core/dominant_color@v1"
 SHORT_DESCRIPTION: str = "Get the dominant color of an image."
 LONG_DESCRIPTION: str = "Get the dominant color of an image as a list of RGB values."
 
@@ -25,10 +28,12 @@ class DominantColorManifest(WorkflowBlockManifest):
     type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
+            "name": "Dominant Color",
+            "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
-            "block_type": "visualization",
+            "block_type": "util",
         }
     )
 
@@ -46,7 +51,7 @@ class DominantColorManifest(WorkflowBlockManifest):
         ]
 
 
-class DominantColorBlock(WorkflowBlock):
+class DominantColorBlockV1(WorkflowBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -54,7 +59,7 @@ class DominantColorBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[DominantColorManifest]:
         return DominantColorManifest
 
-    async def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
+    def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
 
         np_image = image.numpy_image
         pixels = np_image.reshape(-1, 3).astype(np.float32)
