@@ -1,12 +1,11 @@
 import base64
 import hashlib
-import logging
-import os
+
 from io import BytesIO
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import matplotlib.pyplot as plt
+
 import numpy as np
 import rasterio.features
 import sam2.utils.misc
