@@ -1,4 +1,4 @@
-from typing import List, Literal, Type, Union, Optional
+from typing import List, Literal, Optional, Type, Union
 
 import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
@@ -35,10 +35,7 @@ Note: The block operates on the assumption that the input image is in RGB format
 
 
 class DominantColorManifest(WorkflowBlockManifest):
-    type: Literal[
-        "roboflow_core/dominant_color@v1", 
-        "DominantColor"
-    ]
+    type: Literal["roboflow_core/dominant_color@v1", "DominantColor"]
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Dominant Color",
@@ -62,7 +59,7 @@ class DominantColorManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(name="rgb_color", kind=[LIST_OF_VALUES_KIND]),
         ]
-    
+
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
