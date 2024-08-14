@@ -68,10 +68,10 @@ nav:
           - Retrieve Your API Key: quickstart/configure_api_key.md
           - Model Licenses: https://roboflow.com/licensing
   - Workflows:
-      - What is a Workflow?: workflows/about.md
+      - What is Roboflow Workflows?: workflows/about.md
+      - How to Create and Run a Workflow?: workflows/create_and_run.md
       - Understanding Workflows: workflows/understanding.md
       - Workflows definitions: workflows/definitions.md
-      - How to Create and Run a Workflow: workflows/create_and_run.md
       - Blocks: workflows/blocks.md
       - Kinds: workflows/kinds.md
       - Advanced Topics:
