@@ -154,3 +154,8 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
         examples=[False],
         description="Whether or not to use the mask input cache. If true, the mask input cache will be used if it exists. If false, the mask input cache will not be used.",
     )
+    threshold: float = Field(
+        default=0.0,
+        examples=[0.5],
+        description="Threshold value for predicted mask scores",
+    )

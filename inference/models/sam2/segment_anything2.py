@@ -169,14 +169,30 @@ class SegmentAnything2(RoboflowCoreModel):
 
                 predictions = []
                 for mask, low_res_mask in zip(masks, low_res_masks):
-                    mask = mask >= self.predictor.mask_threshold
-                    mask = masks2poly(mask)
-                    low_res_mask = low_res_mask > self.predictor.mask_threshold
-                    low_res_mask = masks2poly(low_res_mask)
-
+                    binary_mask = mask >= request.threshold
+                    mask_poly = masks2poly(binary_mask)
+                    low_res_binary_mask = low_res_mask >= request.threshold
+                    low_res_mask_poly = masks2poly(low_res_binary_mask)
+                    pixels_in_binary_mask = low_res_binary_mask.sum()
+                    average_mask_score = 0.0
+                    if pixels_in_binary_mask > 0:
+                        average_mask_score = (
+                            (low_res_mask * low_res_binary_mask).sum()
+                            / pixels_in_binary_mask
+                        ).item()
+                    serialised_mask, serialised_low_res_mask = [], []
+                    for polygon in mask_poly:
+                        serialised_polygon = polygon.tolist()
+                        if len(serialised_polygon) > 0:
+                            serialised_mask.append(serialised_polygon)
+                    for polygon in low_res_mask_poly:
+                        serialised_polygon = polygon.tolist()
+                        if len(serialised_polygon) > 0:
+                            serialised_low_res_mask.append(polygon)
                     pred = Sam2SegmentationPrediction(
-                        mask=[polygon.tolist() for polygon in mask],
-                        low_res_mask=[polygon.tolist() for polygon in low_res_mask],
+                        mask=serialised_mask,
+                        low_res_mask=serialised_low_res_mask,
+                        average_mask_score=average_mask_score,
                     )
                     predictions.append(pred)
 
@@ -185,6 +201,7 @@ class SegmentAnything2(RoboflowCoreModel):
                 )
 
             elif request.format == "binary":
+                # TODO: thresholding of masks!
                 binary_vector = BytesIO()
                 np.savez_compressed(
                     binary_vector, masks=masks, low_res_masks=low_res_masks
