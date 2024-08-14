@@ -20,7 +20,7 @@ export default function Home() {
           <div className="flex  pt-12 flex-col gap-1 items-center relative z-10">
             <a href="https://roboflow.com" target="_blank">
               <img
-                src="/roboflow_full_logo_color.svg"
+                src="/static/roboflow_full_logo_color.svg"
                 alt="Roboflow Logo"
                 width={200}
               
