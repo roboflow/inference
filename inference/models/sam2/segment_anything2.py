@@ -204,7 +204,7 @@ class SegmentAnything2(RoboflowCoreModel):
         mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
         mask_input_format: Optional[str] = "json",
         use_mask_input_cache: Optional[bool] = False,
-        multimask_output: bool = True,
+        multimask_output: Optional[bool] = True,
         **kwargs,
     ):
         """
@@ -239,9 +239,9 @@ class SegmentAnything2(RoboflowCoreModel):
               the oldest entries are removed.
         """
         with torch.inference_mode():
-            if not image and not image_id:
+            if image is None and not image_id:
                 raise ValueError("Must provide either image or  cached image_id")
-            elif image_id and not image and image_id not in self.embedding_cache:
+            elif image_id and image is None and image_id not in self.embedding_cache:
                 raise ValueError(
                     f"Image ID {image_id} not in embedding cache, must provide the image or embeddings"
                 )
