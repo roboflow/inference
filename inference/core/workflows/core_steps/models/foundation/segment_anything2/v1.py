@@ -156,7 +156,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        boxes: Batch[sv.Detections],
+        boxes: Optional[Batch[sv.Detections]],
         version: str,
         threshold: float,
         multimask_output: bool,
