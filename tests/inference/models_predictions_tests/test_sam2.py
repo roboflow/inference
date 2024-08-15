@@ -40,31 +40,7 @@ def test_sam2_single_prompted_image_segmentation(
     )
 
     # when
-    masks, scores, low_res_logits = model.segment_image(truck_image, prompts=prompt)    
-    
-    
-    #vislualization fo result for debugging
-    # expected result for small model is the part of the rear window on the truck
-    # where the prompt point is provided
-    #
-    # import supervision as sv
-    # import matplotlib.pyplot as plt
-    # from PIL import Image
-    
-    # raw_masks = raw_masks >= model.predictor.mask_threshold
-    # mask_annotator = sv.MaskAnnotator()
-    # detections = sv.Detections(
-    #     xyxy=np.array([[0, 0, 100, 100]]),
-    #     mask=np.array(raw_masks)
-    # )
-    # detections.class_id = [i for i in range(len(detections))]
-    # annotated_image = mask_annotator.annotate(truck_image.copy(), detections)
-    # im = Image.fromarray(annotated_image)
-    # im.save("sam-test.png")
-    
-    # print("mask", np.sum(masks))
-    # print("scores", scores)
-    # print("low_res_logits", np.sum(low_res_logits))
+    masks, scores, low_res_logits = model.segment_image(truck_image, prompts=prompt)
 
     # then
     score_drift = np.abs(scores[0] - 0.9426716566085815)
