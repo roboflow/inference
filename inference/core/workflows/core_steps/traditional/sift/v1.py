@@ -36,7 +36,6 @@ from inference.core.workflows.prototypes.block import (
 ####
 
 
-
 TYPE: str = "SIFT"
 SHORT_DESCRIPTION: str = "Apply SIFT to an image."
 LONG_DESCRIPTION: str = "Apply SIFT to an image."
