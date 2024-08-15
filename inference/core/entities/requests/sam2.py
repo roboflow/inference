@@ -140,15 +140,6 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
         example=[{"prompts": [{"points": [{"x": 100, "y": 100, "positive": True}]}]}],
         description="A list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points",
     )
-    mask_input: Optional[Union[List[List[List[float]]], Any]] = Field(
-        default=None,
-        description="The set of output masks. If request format is json, masks is a list of polygons, where each polygon is a list of points, where each point is a tuple containing the x,y pixel coordinates of the point. If request format is binary, masks is a list of binary numpy arrays. The dimensions of each mask are 256 x 256. This is the same as the output, low resolution mask from the previous inference.",
-    )
-    mask_input_format: Optional[str] = Field(
-        default="json",
-        examples=["json"],
-        description="The format of the mask input. Must be one of json or binary. If binary, mask input is expected to be a binary numpy array.",
-    )
     multimask_output: bool = Field(
         default=True,
         examples=[True],
@@ -158,9 +149,4 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
         "mask is needed, the model's predicted quality score can be used "
         "to select the best mask. For non-ambiguous prompts, such as multiple "
         "input prompts, multimask_output=False can give better results.",
-    )
-    use_mask_input_cache: Optional[bool] = Field(
-        default=False,
-        examples=[False],
-        description="Whether or not to use the mask input cache. If true, the mask input cache will be used if it exists. If false, the mask input cache will not be used.",
     )

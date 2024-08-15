@@ -49,8 +49,7 @@ class SegmentAnything2(RoboflowCoreModel):
         embedding_cache: Cache for embeddings.
         image_size_cache: Cache for image sizes.
         embedding_cache_keys: Keys for the embedding cache.
-        low_res_logits_cache: Cache for low resolution logits.
-        segmentation_cache_keys: Keys for the segmentation cache.
+
     """
 
     def __init__(self, *args, model_id: str = f"sam2/{SAM2_VERSION_ID}", **kwargs):
@@ -77,8 +76,6 @@ class SegmentAnything2(RoboflowCoreModel):
         self.image_size_cache = {}
         self.embedding_cache_keys = []
 
-        self.low_res_logits_cache = {}
-        self.segmentation_cache_keys = []
         self.task_type = "unsupervised-segmentation"
 
     def get_infer_bucket_file_list(self) -> List[str]:
@@ -90,7 +87,10 @@ class SegmentAnything2(RoboflowCoreModel):
         return ["weights.pt"]
 
     def embed_image(
-        self, image: InferenceRequestImage, image_id: Optional[str] = None, **kwargs
+        self,
+        image: Optional[InferenceRequestImage],
+        image_id: Optional[str] = None,
+        **kwargs,
     ):
         """
         Embeds an image and caches the result if an image_id is provided. If the image has been embedded before and cached,
@@ -198,12 +198,10 @@ class SegmentAnything2(RoboflowCoreModel):
 
     def segment_image(
         self,
-        image: InferenceRequestImage,
+        image: Optional[InferenceRequestImage],
         image_id: Optional[str] = None,
-        prompts: Sam2PromptSet = None,
+        prompts: Optional[Union[Sam2PromptSet, dict]] = None,
         mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
-        mask_input_format: Optional[str] = "json",
-        use_mask_input_cache: Optional[bool] = False,
         multimask_output: Optional[bool] = True,
         **kwargs,
     ):
@@ -249,29 +247,6 @@ class SegmentAnything2(RoboflowCoreModel):
                 image=image, image_id=image_id
             )
 
-            if mask_input is not None:
-                if use_mask_input_cache:
-                    raise ValueError(
-                        "Cannot use mask input cache when mask input is provided"
-                    )
-                if mask_input_format == "json":
-                    polys = mask_input
-                    mask_input = np.zeros((1, len(polys), 256, 256), dtype=np.uint8)
-                    for i, poly in enumerate(polys):
-                        poly = ShapelyPolygon(poly)
-                        raster = rasterio.features.rasterize(
-                            [poly], out_shape=(256, 256)
-                        )
-                        mask_input[0, i, :, :] = raster
-                elif mask_input_format == "binary":
-                    binary_data = base64.b64decode(mask_input)
-                    mask_input = np.load(BytesIO(binary_data))
-
-            elif use_mask_input_cache:
-                # TODO: verify shapes of cache! According to docs this should be ok with
-                #    dimension
-                mask_input = self.low_res_logits_cache.get(image_id, None)
-
             self.predictor._is_image_set = True
             self.predictor._features = embedding
             self.predictor._orig_hw = [original_image_size]
@@ -295,12 +270,7 @@ class SegmentAnything2(RoboflowCoreModel):
                 scores=scores,
                 low_resolution_logits=low_resolution_logits,
             )
-            self.low_res_logits_cache[image_id] = low_resolution_logits
-            if image_id not in self.segmentation_cache_keys:
-                self.segmentation_cache_keys.append(image_id)
-            if len(self.segmentation_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
-                cache_key = self.segmentation_cache_keys.pop(0)
-                del self.low_res_logits_cache[cache_key]
+
             return masks, scores, low_resolution_logits
 
 

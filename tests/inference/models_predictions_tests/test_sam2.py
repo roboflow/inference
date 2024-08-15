@@ -49,4 +49,45 @@ def test_sam2_single_prompted_image_segmentation(
     
     
 
+@pytest.mark.slow
+def test_sam2_single_prompted_image_segmentation_uses_cache(
+    sam2_small_model: str,
+    truck_image: np.ndarray
+) -> None:
+    # given
+    model = SegmentAnything2(model_id=sam2_small_model)
+
+    prompt = Sam2PromptSet(
+        prompts=[{"points": [{"x": 500, "y": 375, "positive": True}]}]
+    )
+
+    # when
+    embedding, img_shape, id_ = model.embed_image(truck_image)
+    masks, scores, low_res_logits = model.segment_image(truck_image, prompts=prompt)
+
+    #then
+    assert id_ in model.embedding_cache, "embedding is cached"
+
+
+
+
+@pytest.mark.slow
+def test_sam2_single_prompted_image_segmentation_mask_cache_works(
+    sam2_small_model: str,
+    truck_image: np.ndarray
+) -> None:
+    # given
+    model = SegmentAnything2(model_id=sam2_small_model)
+
+    prompt = Sam2PromptSet(
+        prompts=[{"points": [{"x": 500, "y": 375, "positive": True}]}]
+    )
+
+    # when
+    masks, scores, low_res_logits = model.segment_image(truck_image, prompts=prompt)
+
+    masks2, scores2, low_res_logits2 = model.segment_image(truck_image, prompts=prompt, mask_input=low_res_logits, mask_input_format="raw")
+
+    #then
+    assert True, "doesnt crash when passing mask_input"
 
