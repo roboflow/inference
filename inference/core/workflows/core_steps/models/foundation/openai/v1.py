@@ -84,6 +84,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         description="Your OpenAI API key",
         examples=["xxx-xxx", "$inputs.openai_api_key"],
+        private=True,
     )
     openai_model: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt-4o", "gpt-4o-mini"]
