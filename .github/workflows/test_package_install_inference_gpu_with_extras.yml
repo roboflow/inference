@@ -34,7 +34,7 @@ jobs:
       - name: 📦 Installing `inference` package...
         run: |
           wheel_name=`ls ./dist/inference_gpu-*-py3-none-any.whl | head -n 1`
-          pip install "${wheel_name}[clip,gaze,grounding-dino,sam,waf,yolo-world,http,hosted]"
+          pip install "${wheel_name}[clip,gaze,grounding-dino,sam,waf,yolo-world,http,hosted,transformers]"
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |
@@ -44,3 +44,4 @@ jobs:
           python -c "from inference.models.sam import SegmentAnything"
           python -c "from inference.models.grounding_dino import GroundingDINO"
           python -c "from inference.models.yolo_world import YOLOWorld"
+          python -c "from inference.models.paligemmma import PaliGemma"
