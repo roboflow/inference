@@ -136,7 +136,7 @@ class PixelationCountBlockV1(WorkflowBlock):  # Ensure the class name matches th
         mask = cv2.inRange(image, lower_bound, upper_bound)
         
         # Count the number of pixels that match the target color
-        color_pixels = np.sum(mask > 0)
+        color_pixels = int(np.sum(mask > 0))  # Ensure the count is an integer
         
         return color_pixels
 

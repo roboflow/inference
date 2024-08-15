@@ -106,7 +106,7 @@ from inference.core.workflows.core_steps.traditional.pixelationCount.v1 import (
     PixelationCountBlockV1,
 )
 
-from inference.core.workflows.core_steps.traditional.templateMaching.v1 import (
+from inference.core.workflows.core_steps.traditional.templateMatching.v1 import (
     TemplateMatchingBlockV1,
 )
 
