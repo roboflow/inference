@@ -48,7 +48,7 @@ and run it in various environments using the Workflows Compiler and Execution En
 
 You have two options for creating a workflow definition: UI to design it visually or write it from scratch 
 if you’re comfortable with the workflows language. More details on writing definitions manually 
-are available [here](todo). For now, it's important to grasp the role of the definition within the ecosystem.
+are available [here](#TODO). For now, it's important to grasp the role of the definition within the ecosystem.
 
 A workflow definition outlines:
 
@@ -60,3 +60,36 @@ outputs of previous steps. The sequence and connections between steps determine 
 
 - **Outputs:** specify field names in execution result and reference step outputs. During runtime, referred values
 are dynamically provide based on results of workflow execution.
+
+
+## Workflow blocks
+For users of Roboflow Workflows, blocks are essentially black boxes engineered to perform specific operations. 
+They act as templates for the steps executed within a workflow, each defining its own set of inputs, 
+configuration properties, and outputs.
+
+When adding a block to your workflow, you need to provide its inputs by referencing either the workflow’s input 
+or the output of another step. You also specify the values for any required parameters. Once the step is incorporated, 
+its outputs can be referenced by subsequent steps, allowing for seamless integration and chaining of operations.
+
+The creation of blocks is a more advanced topic, which you can explore [here](#TODO). It’s essential to understand that 
+blocks are grouped in workflow plugins, which are standard Python libraries. Roboflow offers its own set of plugins,
+and community members are encouraged to create their own. The process of importing a plugin into your 
+environment is detailed [here](#TODO).
+
+Feel encouraged to explore [Workflows blocks prepared by Roboflow](/workflows/blocks/).
+
+## Workflows Compiler and Execution Engine
+
+The Compiler and Execution Engine are essential components of the Roboflow Workflows ecosystem, doing the heavy 
+lifting so you don't have to.
+
+Much like a traditional programming compiler or interpreter, these components translate your workflow definition — 
+a program you create using reusable blocks — into a format that can be executed by a computer. The workflow definition 
+acts as a blueprint, with blocks functioning like functions in programming, connected to produce the desired outcomes.
+
+Roboflow provides these tools as part of their [Inference Server](/#inference-server) (which can be deployed locally or 
+accessed via the Roboflow Hosted platform), [video processing component](/using_inference/inference_pipeline/), 
+and [Python package](https://pypi.org/project/inference/), making it easy to run your workflows in 
+various environments.
+
+For a deeper dive into the Compiler and Execution Engine, please refer to our detailed documentation.

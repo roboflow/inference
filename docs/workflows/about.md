@@ -23,7 +23,7 @@ With Workflows, you can:
 - Introduce elements of business logic to translate model predictions into your domain language
 
 <div class="button-holder">
-<a href="https://inference.roboflow.com/workflows/blocks/" class="button half-button">Explore all Workflows blocks</a>
+<a href="/workflows/blocks/" class="button half-button">Explore all Workflows blocks</a>
 <a href="https://app.roboflow.com/workflows" class="button half-button">Begin building with Workflows</a>
 </div>
 

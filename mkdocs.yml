@@ -71,12 +71,13 @@ nav:
       - What is Roboflow Workflows?: workflows/about.md
       - How to Create and Run a Workflow?: workflows/create_and_run.md
       - Understanding Workflows: workflows/understanding.md
-      - Workflows definitions: workflows/definitions.md
       - Blocks: workflows/blocks.md
-      - Kinds: workflows/kinds.md
-      - Advanced Topics:
-          - Create a New Workflow Block: workflows/workflows_contribution.md
-          - Modes of Running Workflows: workflows/modes_of_running.md
+      - User guide:
+        - Workflows definitions: workflows/definitions.md
+      - Developer guide:
+        - Kinds: workflows/kinds.md
+        - Create a New Workflow Block: workflows/workflows_contribution.md
+        - Modes of Running Workflows: workflows/modes_of_running.md
   - Reference:
       - Inference Pipeline: using_inference/inference_pipeline.md
       - Active Learning:
