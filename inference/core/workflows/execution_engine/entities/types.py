@@ -325,6 +325,12 @@ ZONE_KIND = Kind(
     docs=None,
 )
 
+NUMPY_ARRAY_KIND = Kind(
+    name="numpy_array",
+    description="Numpy array",
+    docs=None,
+)
+
 OBJECT_DETECTION_PREDICTION_KIND_DOCS = """
 This kind represents single object detection prediction in form of 
 [`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object.

@@ -41,9 +41,6 @@ from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRMode
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
-    SegmentAnything2BlockV1,
-)
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
 )
@@ -103,6 +100,21 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop.v1
 )
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
     BackgroundColorVisualizationBlockV1,
+)
+
+from inference.core.workflows.core_steps.traditional.pixelationCount.v1 import (
+    PixelationCountBlockV1,
+)
+
+from inference.core.workflows.core_steps.traditional.templateMatching.v1 import (
+    TemplateMatchingBlockV1,
+)
+
+from inference.core.workflows.core_steps.traditional.sift.v1 import (
+    SIFTBlockV1,
+)
+from inference.core.workflows.core_steps.traditional.siftComparison.v1 import (
+    SIFTComparisonBlockV1,
 )
 
 # Visualizers
@@ -197,7 +209,6 @@ REGISTERED_INITIALIZERS = {
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
-        SegmentAnything2BlockV1,
         DetectionsConsensusBlockV1,
         ClipComparisonBlockV1,
         LMMBlockV1,
@@ -246,6 +257,10 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowCustomMetadataBlockV1,
         DetectionsStitchBlockV1,
         ImageSlicerBlockV1,
+        PixelationCountBlockV1,
+        SIFTComparisonBlockV1,
+        SIFTBlockV1,
+        TemplateMatchingBlockV1,
     ]
 
 
