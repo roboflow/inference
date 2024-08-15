@@ -1,3 +1,15 @@
+# What are the options for running workflows?
+
+There are few ways on how to run Workflow, including:
+
+- Request to HTTP API (Roboflow Hosted API or self-hosted `inference` server) running Workflows Execution Engine
+
+- Video processing using [InferencePipeline](/using_inference/inference_pipeline/)
+
+- `inference` Python package, where you can use Workflows Execution Engine directly in your Python app
+
+In this section of documentation we will 
+
 Workflows can be executed in `local` environment, or `remote` environment can be used. `local` means that model steps
 will be executed within the context of process running the code. `remote` will re-direct model steps into remote API
 using HTTP requests to send images and get predictions back. 

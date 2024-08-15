@@ -73,11 +73,12 @@ nav:
       - Understanding Workflows: workflows/understanding.md
       - Blocks: workflows/blocks.md
       - User guide:
-        - Workflows definitions: workflows/definitions.md
+        - Running Workflows: workflows/modes_of_running.md
+        - Workflows Definitions: workflows/definitions.md
+        - Batch processing in Workflows: workflows/simd_in_workflows.md
       - Developer guide:
         - Kinds: workflows/kinds.md
         - Create a New Workflow Block: workflows/workflows_contribution.md
-        - Modes of Running Workflows: workflows/modes_of_running.md
   - Reference:
       - Inference Pipeline: using_inference/inference_pipeline.md
       - Active Learning:

@@ -85,7 +85,7 @@ To see code snippets, click `Deploy Workflow` button:
 
 To make it easier to reproduce the workflow, below you can find workflow definition you can copy-paste to UI editor.
 
-??? Tip "Workflow definitiom"
+??? Tip "Workflow definition"
     
     ```json
     {

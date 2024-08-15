@@ -50,7 +50,7 @@ You have two options for creating a workflow definition: UI to design it visuall
 if you’re comfortable with the workflows language. More details on writing definitions manually 
 are available [here](#TODO). For now, it's important to grasp the role of the definition within the ecosystem.
 
-A workflow definition outlines:
+A workflow definition is in fact JSON document which outlines:
 
 - **Inputs:** These are either images or configuration parameters that influence how the workflow operates. 
 Instead of hardcoding values, inputs are placeholders that will be replaced with actual data during execution.
