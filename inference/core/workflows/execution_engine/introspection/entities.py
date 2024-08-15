@@ -1,10 +1,10 @@
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Set, Type, Union
+from typing import Dict, List, Optional, Set, Type, Union
 
 from pydantic import BaseModel, Field
 
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import Kind
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import Kind
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -118,6 +118,20 @@ class BlockDescription(BaseModel):
     manifest_type_identifier_aliases: List[str] = Field(
         description="Aliases of `manifest_type_identifier` that are in use.",
         default_factory=list,
+    )
+    execution_engine_compatibility: Optional[str] = Field(
+        description="Execution Engine versions compatible with block.",
+        default=None,
+    )
+    input_dimensionality_offsets: Dict[str, int] = Field(
+        description="Dimensionality offsets for input parameters",
+    )
+    dimensionality_reference_property: Optional[str] = Field(
+        description="Selected dimensionality reference property provided if different dimensionality for "
+        "different inputs are supported.",
+    )
+    output_dimensionality_offset: int = Field(
+        description="Dimensionality offset for block output.",
     )
 
 

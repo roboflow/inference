@@ -4,10 +4,10 @@ from inference.core.workflows.errors import (
     BlockInitParameterNotProvidedError,
     BlockInterfaceError,
 )
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
 )
-from inference.core.workflows.execution_engine.compiler.steps_initialiser import (
+from inference.core.workflows.execution_engine.v1.compiler.steps_initialiser import (
     call_if_callable,
     initialise_step,
     retrieve_init_parameter_values,

@@ -44,7 +44,6 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.cli.txt \
     -r requirements.sdk.http.txt \
     wheel>=0.38.0 \
-    setuptools>=65.5.1 \
     --upgrade \
     && rm -rf ~/.cache/pip
 RUN apt-get update && apt-get install -y lsb-release curl gpg

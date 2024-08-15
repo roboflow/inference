@@ -215,6 +215,12 @@ try:
     ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
 except:
     pass
+try:
+    from inference.models import SegmentAnything2
+
+    ROBOFLOW_MODEL_TYPES[("embed", "sam2")] = SegmentAnything2
+except:
+    pass
 
 try:
     from inference.models import Clip

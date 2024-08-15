@@ -1,7 +1,7 @@
 from collections import defaultdict
 from typing import Dict, Generator, List, Set, Tuple, Type
 
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     STEP_AS_SELECTED_ELEMENT,
     STEP_OUTPUT_AS_SELECTED_ELEMENT,
     WILDCARD_KIND,

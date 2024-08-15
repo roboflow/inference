@@ -2,7 +2,7 @@ import setuptools
 from setuptools import find_packages
 
 
-with open("README.md", "r") as fh:
+with open("README.md", "r", encoding='utf-8') as fh:
     long_description = fh.read()
 
 
@@ -61,6 +61,7 @@ setuptools.setup(
     ),
     extras_require={
         "sam": read_requirements("requirements/requirements.sam.txt"),
+        "sam2": read_requirements("requirements/requirements.sam2.txt"),
     },
     classifiers=[
         "Programming Language :: Python :: 3",

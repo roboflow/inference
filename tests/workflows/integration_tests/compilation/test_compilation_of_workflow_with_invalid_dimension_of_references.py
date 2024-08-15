@@ -9,8 +9,8 @@ from inference.core.workflows.errors import (
     StepInputDimensionalityError,
     StepOutputLineageError,
 )
-from inference.core.workflows.execution_engine.compiler.core import compile_workflow
 from inference.core.workflows.execution_engine.introspection import blocks_loader
+from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
 
 WORKFLOW_WITH_INVALID_DIMENSIONALITY_OF_INPUT = {
     "version": "1.0",
@@ -36,9 +36,8 @@ WORKFLOW_WITH_INVALID_DIMENSIONALITY_OF_INPUT = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_compilation_of_workflow_where_step_input_dimensionality_is_mismatched(
+def test_compilation_of_workflow_where_step_input_dimensionality_is_mismatched(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:
@@ -102,9 +101,8 @@ WORKFLOW_WITH_INVALID_DIMENSIONALITY_OF_INPUT_BASED_ON_STEP_OUTPUT_DIMENSION = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_compilation_of_workflow_where_step_input_dimensionality_is_mismatched_based_on_step_output(
+def test_compilation_of_workflow_where_step_input_dimensionality_is_mismatched_based_on_step_output(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:
@@ -162,9 +160,8 @@ WORKFLOW_WITH_DIFFERENT_DIMENSIONALITIES_PROVIDED_FOR_STEP_REQUIRING_THE_SAME = 
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_compilation_of_workflow_where_step_expects_the_same_dimensionality_but_different_provided(
+def test_compilation_of_workflow_where_step_expects_the_same_dimensionality_but_different_provided(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:
@@ -208,9 +205,8 @@ WORKFLOW_ATTEMPTING_TO_REDUCE_DIM_TO_ZERO = {
 }
 
 
-@pytest.mark.asyncio
 @mock.patch.object(blocks_loader, "get_plugin_modules")
-async def test_compilation_of_workflow_where_step_attempts_decreasing_dimensionality_to_zero(
+def test_compilation_of_workflow_where_step_attempts_decreasing_dimensionality_to_zero(
     get_plugin_modules_mock: MagicMock,
     model_manager: ModelManager,
 ) -> None:

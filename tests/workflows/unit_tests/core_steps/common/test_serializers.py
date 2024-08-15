@@ -8,7 +8,7 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
     serialise_sv_detections,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )

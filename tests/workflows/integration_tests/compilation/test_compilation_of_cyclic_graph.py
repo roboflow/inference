@@ -3,7 +3,7 @@ import pytest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import ExecutionGraphStructureError
-from inference.core.workflows.execution_engine.compiler.core import compile_workflow
+from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
 
 CYCLIC_WORKFLOW = {
     "version": "1.0",
@@ -35,8 +35,7 @@ CYCLIC_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_cyclic_workflow(
+def test_compilation_of_cyclic_workflow(
     model_manager: ModelManager,
 ) -> None:
     # given

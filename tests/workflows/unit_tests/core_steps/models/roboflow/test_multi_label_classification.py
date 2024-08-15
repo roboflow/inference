@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.roboflow.multi_label_classification import (
+from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
     BlockManifest,
 )
 
@@ -9,7 +9,11 @@ from inference.core.workflows.core_steps.models.roboflow.multi_label_classificat
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 @pytest.mark.parametrize(
     "type_alias",
-    ["RoboflowMultiLabelClassificationModel", "MultiLabelClassificationModel"],
+    [
+        "roboflow_core/roboflow_multi_label_classification_model@v1",
+        "RoboflowMultiLabelClassificationModel",
+        "MultiLabelClassificationModel",
+    ],
 )
 def test_multi_label_classification_model_validation_when_minimalistic_config_is_provided(
     images_field_alias: str,

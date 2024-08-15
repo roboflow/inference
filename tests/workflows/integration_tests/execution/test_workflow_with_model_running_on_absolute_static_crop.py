@@ -50,8 +50,7 @@ ABSOLUTE_STATIC_CROP_WORKFLOW = {
 }
 
 
-@pytest.mark.asyncio
-async def test_static_crop_workflow_when_minimal_valid_input_provided(
+def test_static_crop_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -68,7 +67,7 @@ async def test_static_crop_workflow_when_minimal_valid_input_provided(
     )
 
     # when
-    result = await execution_engine.run_async(
+    result = execution_engine.run(
         runtime_parameters={
             "image": crowd_image,
             "model_id": "yolov8n-640",
@@ -129,8 +128,7 @@ async def test_static_crop_workflow_when_minimal_valid_input_provided(
     ), "Expected detections in own coordinates to be as manually validated at test creation"
 
 
-@pytest.mark.asyncio
-async def test_test_static_crop_workflow_when_crop_coordinate_not_provided(
+def test_test_static_crop_workflow_when_crop_coordinate_not_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -148,7 +146,7 @@ async def test_test_static_crop_workflow_when_crop_coordinate_not_provided(
 
     # when
     with pytest.raises(RuntimeInputError):
-        _ = await execution_engine.run_async(
+        _ = execution_engine.run(
             runtime_parameters={
                 "image": crowd_image,
                 "model_id": "yolov8n-640",
@@ -159,8 +157,7 @@ async def test_test_static_crop_workflow_when_crop_coordinate_not_provided(
         )
 
 
-@pytest.mark.asyncio
-async def test_test_static_crop_workflow_when_invalid_crop_coordinates_defined(
+def test_test_static_crop_workflow_when_invalid_crop_coordinates_defined(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
@@ -178,7 +175,7 @@ async def test_test_static_crop_workflow_when_invalid_crop_coordinates_defined(
 
     # when
     with pytest.raises(RuntimeInputError):
-        _ = await execution_engine.run_async(
+        _ = execution_engine.run(
             runtime_parameters={
                 "image": crowd_image,
                 "model_id": "yolov8n-640",
