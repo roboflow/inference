@@ -1,219 +1,160 @@
 # How to Create and Run a Workflow
 
-In this example, we are going to build a Workflow from scratch that detects license plates, crops the license plate, 
-and then runs OCR on the license plate using our UI.
+In this example, we are going to build a Workflow from scratch that detect dogs, classify their breeds and
+visualize results.
 
 ## Step 1: Create a Workflow
 
-Navigate to the Workflows tab at the top of your workspace and select the Create Workflows button. We are going to start with a Single Model Workflow.
+Open [https://app.roboflow.com/](https://app.roboflow.com/) in your browser, and navigate to Workflows tab to click 
+Create Workflows button. Select Custom Workflow to start creation process.
 
-![Workflow start](https://media.roboflow.com/inference/workflow-example-start.png)
+![Workflow start](https://media.roboflow.com/inference/getting_started_workflows.png)
 
-## Step 2: Add Crop
+
+## Step 2: Add object detection model
+We need to add block with object detection model to existing workflow. We will use `yolov8n-640` model.
+
+![Add object detection model](https://media.roboflow.com/inference/adding_object_detection_model.png)
+
+## Step 3: Crop each detected object to run breed classification
 
 Next, we are going to add a block to our Workflow that crops the objects that our first model detects.
 
-![Add crop](https://media.roboflow.com/inference/add-crop.gif)
+![Add crop](https://media.roboflow.com/inference/adding_crop.png)
 
-## Step 3: Add OCR
+## Step 4: Classify dog breeds with second stage model
 
-We are then going to add an OCR model for text recognition to our Workflow. We will need to adjust the parameters in order to set the cropped object from our previous block as the input for this block.
+We are then going to add an classification model thar runs on each crop to classify its content. We will use
+Roboflow Universe model `dog-breed-xpaq6/1`. Please make sure that in block configuration, property `Image`
+points to Dynamic Crop output named `crops`.
 
-![Add OCR](https://media.roboflow.com/inference/add-ocr.gif)
 
-## Step 4: Add outputs to our response
+![Add OCR](https://media.roboflow.com/inference/adding_secondary_model.png)
 
-Finally, we are going to add an output to our response which includes the object that we cropped, alongside the outputs of both our detection model and our OCR model.
+## Step 5: Replace Bounding Boxes classes with classification model prediction
 
-![Add OCR](https://media.roboflow.com/inference/add-output.gif)
+When each crop is classified, we would like to assign class predicted for each crop (dog breed) as a class 
+of bounding box with dog. To do this we use Detections Classes Replacement block, which accepts 
+reference to predictions of object detection model, as well as reference to classification results on crops.
 
-## Run the Workflow
+![Add Classes Replacement](https://media.roboflow.com/inference/detections_classes_replacement.png)
 
-Selecting the Run Workflow button generates the code snippets to then deploy your Workflow via the Roboflow Hosted API, locally on images via the Inference Server, and locally on video streams via the Inference Pipeline. 
 
-![Workflow code snippet](https://media.roboflow.com/inference/workflow-code-snippet.png)
+## Step 6: Visualise predictions
 
-You now have a workflow you can run on your own hardware!
+As a final step of workflow, we would like to visualize our predictions. We will use two 
+visualization blocks: Bounding Box Visualization and Label Visualization chained together.
+At first, add Bounding Box Visualization referring to `$inputs.image` in Image property (that's the
+image sent as your input to workflow), the second step (Label Visualization) however, should point to 
+the output of Bounding Box Visualization step. Both visualization steps should refer to predictions 
+from Detections Classes Replacement step.
 
-## Example (Code, Advanced)
+![Add Visualisation](https://media.roboflow.com/inference/adding_visualization.png)
 
-Workflows allow you to define multi-step processes that run one or more models and return a result based on the output of the models.
+## Step 7: Construct output
+You have everything ready to construct your workflow output. You can use any intermediate step output that you
+need, but in this example we will only select bounding boxes with replaced classes (output from Detections 
+Classes Replacement step) and visualisation (output from Label Visualization step).
 
-You can create and deploy workflows in the cloud or in Inference.
 
-To create an advanced workflow for use with Inference, you need to define a specification. A specification is a JSON document that states:
+## Step 8: Running the workflow
+Now your workflow, is ready. You can click `Save` button and move to `Run Preview` panel.
 
-1. The version of workflows you are using.
-2. The expected inputs.
-3. The steps the workflow should run (i.e. models to run, filters to apply, etc.).
-4. The expected output format.
+We will run our workflow against the following example image `https://media.roboflow.com/inference/dog.jpeg`.
+Here are the results
 
-In this guide, we walk through how to create a basic workflow that completes three steps:
+![Results](https://media.roboflow.com/inference/workflow_preview.png)
 
-1. Run a model to detect objects in an image.
-2. Crops each region.
-3. Runs OCR on each region.
+Clicking on `Show Visual` button you will find results of our visualisation efforts.
+<center><img src="https://media.roboflow.com/inference/workflow_visualisation_result.png" width="50%"/></center>
 
-You can use the guidance below as a template to learn the structure of workflows, or verbatim to create your own detect-then-OCR workflows.
 
-## Step #1: Define an Input
+## Different ways of running your workflow
+Your workflow is now saved at Roboflow Platform. This means you can run it in multiple different ways, including:
 
-Workflows require a specification to run. A specification takes the follwoing form:
+- HTTP request to Roboflow Hosted API
 
-```python
-SPECIFICATION = {
-    "specification": {
-        "version": "1.0",
-        "inputs": [],
-        "steps": [],
-        "outputs": []
-    }
-}
-```
+- HTTP request to your local instance of `inference server`
 
-Within this structure, we need to define our:
+- on video
 
-1. Model inputs
-2. The steps to run
-3. The expected output
+To see code snippets, click `Deploy Workflow` button:
+<center><img src="https://media.roboflow.com/inference/deploy_workflow.png" width="50%"/></center>
 
-First, let's define our inputs.
+## Workflow definition for quick reproduction
 
-For this workflow, we will specify an image input:
+To make it easier to reproduce the workflow, below you can find workflow definition you can copy-paste to UI editor.
 
-```json
-"steps": [
-    { "type": "InferenceImage", "name": "image" },   # definition of input image
-]
-```
-
-## Step #2: Define Processing Steps
-
-Next, we need to define our processing steps. For this guide, we want to:
-
-1. Run a model to detect license plates.
-2. Crop each license plate.
-3. Run OCR on each license plate.
-
-We can define these steps as follows:
-
-```json
-"steps": [
+??? Tip "Workflow definitiom"
+    
+    ```json
     {
-        "type": "ObjectDetectionModel",   # definition of object detection model
-        "name": "plates_detector",  
-        "image": "$inputs.image",  # linking input image into detection model
-        "model_id": "vehicle-registration-plates-trudk/2",  # pointing model to be used
-    },
+      "version": "1.0",
+      "inputs": [
         {
-        "type": "DetectionOffset",  # DocTR model usually works better if there is slight padding around text to be detected - hence we are offseting predictions
-        "name": "offset",
-        "predictions": "$steps.plates_detector.predictions",  # reference to the object detection model output
-        "offset_x": 200,  # value of offset
-        "offset_y": 40,  # value of offset
-    },
-    {
-        "type": "Crop",   # we would like to run OCR against each and every plate detected - hece we are cropping inputr image using offseted predictions
-        "name": "cropping",
-        "image": "$inputs.image",  # we need to point image to crop
-        "detections": "$steps.offset.predictions",  # we need to point detections that will be used to crop image (in this case - we use offseted prediction)
-    },        
-    {
-        "type": "OCRModel",  # we define OCR model
-        "name": "step_ocr",
-        "image": "$steps.cropping.crops",  # OCR model as an input takes a reference to crops that were created based on detections
-    },
-],
-```
-
-## Step #3: Define an Output
-
-Finally, we need to define the output for our workflow:
-
-```json
-"outputs": [
-    { "type": "JsonField", "name": "predictions", "selector": "$steps.plates_detector.predictions" },  # output with object detection model predictions
-    { "type": "JsonField", "name": "image", "selector": "$steps.plates_detector.image" },  # output with image metadata - required by `supervision`
-    { "type": "JsonField", "name": "recognised_plates", "selector": "$steps.step_ocr.result" },  # field that will retrieve OCR result
-    { "type": "JsonField", "name": "crops", "selector": "$steps.cropping.crops" },  # crops that were made based on plates detections - used here just to ease visualisation
-]   
-```
-
-## Step #4: Run Your Workflow
-
-Now that we have our specification, we can run our workflow using the Inference SDK.
-
-=== "Run Locally with Inference"
-
-    Use `inference_cli` to start server
-
-    ```bash
-    inference server start
+          "type": "InferenceImage",
+          "name": "image"
+        }
+      ],
+      "steps": [
+        {
+          "type": "roboflow_core/roboflow_object_detection_model@v1",
+          "name": "model",
+          "images": "$inputs.image",
+          "model_id": "yolov8n-640"
+        },
+        {
+          "type": "roboflow_core/dynamic_crop@v1",
+          "name": "dynamic_crop",
+          "images": "$inputs.image",
+          "predictions": "$steps.model.predictions"
+        },
+        {
+          "type": "roboflow_core/roboflow_classification_model@v1",
+          "name": "model_1",
+          "images": "$steps.dynamic_crop.crops",
+          "model_id": "dog-breed-xpaq6/1"
+        },
+        {
+          "type": "roboflow_core/detections_classes_replacement@v1",
+          "name": "detections_classes_replacement",
+          "object_detection_predictions": "$steps.model.predictions",
+          "classification_predictions": "$steps.model_1.predictions"
+        },
+        {
+          "type": "roboflow_core/bounding_box_visualization@v1",
+          "name": "bounding_box_visualization",
+          "predictions": "$steps.detections_classes_replacement.predictions",
+          "image": "$inputs.image"
+        },
+        {
+          "type": "roboflow_core/label_visualization@v1",
+          "name": "label_visualization",
+          "predictions": "$steps.detections_classes_replacement.predictions",
+          "image": "$steps.bounding_box_visualization.image"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "JsonField",
+          "name": "detections",
+          "coordinates_system": "own",
+          "selector": "$steps.detections_classes_replacement.predictions"
+        },
+        {
+          "type": "JsonField",
+          "name": "visualisation",
+          "coordinates_system": "own",
+          "selector": "$steps.label_visualization.image"
+        }
+      ]
+    }
     ```
 
-    ```python
-    from inference_sdk import InferenceHTTPClient, VisualisationResponseFormat, InferenceConfiguration
-    import supervision as sv
-    import cv2
-    from matplotlib import pyplot as plt
-
-    client = InferenceHTTPClient(
-        api_url="http://127.0.0.1:9001",
-        api_key="YOUR_API_KEY"
-    )
-
-    client.configure(
-        InferenceConfiguration(output_visualisation_format=VisualisationResponseFormat.NUMPY)
-    )
-
-    license_plate_image_1 = cv2.imread("./images/license_plate_1.jpg")
-
-    license_plate_result_1 = client.infer_from_workflow(
-        specification=READING_PLATES_SPECIFICATION["specification"],
-        images={"image": license_plate_image_1},
-    )
-
-    plt.title(f"Recognised plate: {license_plate_result_1['recognised_plates']}")
-    plt.imshow(license_plate_result_1["crops"][0]["value"][:, :, ::-1])
-    plt.show()
-    ```
-
-    Here are the results:
-
-    ![Recognised plate: "34 6511"](https://media.roboflow.com/inference/license_plate_1.png)
-
-=== "Run in the Roboflow Cloud"
-
-    ```python
-    from inference_sdk import InferenceHTTPClient
-
-    client = InferenceHTTPClient(
-        api_url="https://detect.roboflow.com",
-        api_key="YOUR_API_KEY"
-    )
-
-    client.configure(
-        InferenceConfiguration(output_visualisation_format=VisualisationResponseFormat.NUMPY)
-    )
-
-    license_plate_image_1 = cv2.imread("./images/license_plate_1.jpg")
-
-    license_plate_result_1 = client.infer_from_workflow(
-        specification=READING_PLATES_SPECIFICATION["specification"],
-        images={"image": license_plate_image_1},
-    )
-
-    plt.title(f"Recognised plate: {license_plate_result_1['recognised_plates']}")
-    plt.imshow(license_plate_result_1["crops"][0]["value"][:, :, ::-1])
-    plt.show()
-    ```
-
-    Here are the results:
-
-    ![Recognised plate: "34 6511"](https://media.roboflow.com/inference/license_plate_1.png)
 
 ## Next Steps
 
 Now that you have created and run your first workflow, you can explore our other supported blocks and create a more complex workflow.
 
 Refer to our [Supported Blocks](/workflows/blocks/) documentation to learn more about what blocks are supported.
+We also recommend reading [Understanding workflows](/workflows/understanding/) page.
