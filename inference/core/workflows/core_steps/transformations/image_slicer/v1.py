@@ -104,7 +104,7 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
+            OutputDefinition(name="slices", kind=[BATCH_OF_IMAGES_KIND]),
         ]
 
     @classmethod
@@ -163,9 +163,9 @@ class ImageSlicerBlockV1(WorkflowBlock):
                     workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
                     numpy_image=crop_numpy,
                 )
-                slices.append({"crops": cropped_image})
+                slices.append({"slices": cropped_image})
             else:
-                slices.append({"crops": None})
+                slices.append({"slices": None})
         return slices
 
 

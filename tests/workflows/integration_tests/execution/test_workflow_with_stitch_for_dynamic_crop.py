@@ -87,7 +87,6 @@ def test_workflow_with_stitch_and_dynamic_crop(
     result = execution_engine.run(
         runtime_parameters={
             "image": [license_plate_image],
-            "overlap_filtering_strategy": "none",
         }
     )
 

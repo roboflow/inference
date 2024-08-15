@@ -23,7 +23,7 @@ SAHI_WORKFLOW = {
         {
             "type": "roboflow_core/roboflow_object_detection_model@v1",
             "name": "detection",
-            "image": "$steps.image_slicer.crops",
+            "image": "$steps.image_slicer.slices",
             "model_id": "yolov8n-640",
         },
         {
@@ -61,6 +61,14 @@ def test_sahi_workflow_with_none_as_filtering_strategy(
     license_plate_image: np.ndarray,
     crowd_image: np.ndarray,
 ) -> None:
+    """
+    In this test we check how all blocks that form SAHI technique behave.
+    Blocks involved in tests:
+    - "roboflow_core/image_slicer@v1" from inference.core.workflows.core_steps.transformations.image_slicer.v1
+    - "roboflow_core/detections_stitch@v1", from inference.core.workflows.core_steps.fusion.detections_stitch.v1
+
+    This scenario covers usage of SAHI when overlapping predictions are not post-processed.
+    """
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -134,6 +142,14 @@ def test_sahi_workflow_with_nms_as_filtering_strategy(
     license_plate_image: np.ndarray,
     crowd_image: np.ndarray,
 ) -> None:
+    """
+    In this test we check how all blocks that form SAHI technique behave.
+    Blocks involved in tests:
+    - "roboflow_core/image_slicer@v1" from inference.core.workflows.core_steps.transformations.image_slicer.v1
+    - "roboflow_core/detections_stitch@v1", from inference.core.workflows.core_steps.fusion.detections_stitch.v1
+
+    This scenario covers usage of SAHI when overlapping predictions are post-processed with NMS
+    """
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -200,6 +216,14 @@ def test_sahi_workflow_with_nmm_as_filtering_strategy(
     license_plate_image: np.ndarray,
     crowd_image: np.ndarray,
 ) -> None:
+    """
+    In this test we check how all blocks that form SAHI technique behave.
+    Blocks involved in tests:
+    - "roboflow_core/image_slicer@v1" from inference.core.workflows.core_steps.transformations.image_slicer.v1
+    - "roboflow_core/detections_stitch@v1", from inference.core.workflows.core_steps.fusion.detections_stitch.v1
+
+    This scenario covers usage of SAHI when overlapping predictions are post-processed with NMM
+    """
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -265,6 +289,15 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
 ) -> None:
+    """
+    In this test we check how all blocks that form SAHI technique behave.
+    Blocks involved in tests:
+    - "roboflow_core/image_slicer@v1" from inference.core.workflows.core_steps.transformations.image_slicer.v1
+    - "roboflow_core/detections_stitch@v1", from inference.core.workflows.core_steps.fusion.detections_stitch.v1
+
+    This scenario covers checking if sv.InferenceSlicer gives the same results as
+    SAHI technique in workflows.
+    """
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -342,7 +375,7 @@ SAHI_WORKFLOW_FOR_SEGMENTATION = {
         {
             "type": "roboflow_core/roboflow_object_detection_model@v1",
             "name": "detection",
-            "image": "$steps.image_slicer.crops",
+            "image": "$steps.image_slicer.slices",
             "model_id": "yolov8n-seg-640",
         },
         {
@@ -380,6 +413,15 @@ def test_sahi_workflow_for_segmentation_with_nms_as_filtering_strategy(
     license_plate_image: np.ndarray,
     crowd_image: np.ndarray,
 ) -> None:
+    """
+    In this test we check how all blocks that form SAHI technique behave.
+    Blocks involved in tests:
+    - "roboflow_core/image_slicer@v1" from inference.core.workflows.core_steps.transformations.image_slicer.v1
+    - "roboflow_core/detections_stitch@v1", from inference.core.workflows.core_steps.fusion.detections_stitch.v1
+
+    This scenario covers usage of SAHI when overlapping predictions are post-processed with NMS in context
+    of instance segmentation model.
+    """
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
