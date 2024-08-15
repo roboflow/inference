@@ -41,6 +41,9 @@ from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRMode
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
+    SegmentAnything2BlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
 )
@@ -194,6 +197,7 @@ REGISTERED_INITIALIZERS = {
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
+        SegmentAnything2BlockV1,
         DetectionsConsensusBlockV1,
         ClipComparisonBlockV1,
         LMMBlockV1,
