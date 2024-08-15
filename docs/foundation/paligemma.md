@@ -8,16 +8,6 @@ You can use PaliGemma to:
 
 You can deploy PaliGemma object detection models with Inference, and use PaliGemma for object detection.
 
-### Installation
-
-To install inference with the extra dependencies necessary to run PaliGemma, run
-
-```pip install inference[transformers]```
-
-or
-
-```pip install inference-gpu[transformers]```
-
 ### How to Use PaliGemma (VQA)
 
 Create a new Python file called `app.py` and add the following code:
@@ -27,7 +17,7 @@ import inference
 
 from inference.models.paligemma.paligemma import PaliGemma
 
-pg = PaliGemma("paligemma-3b-mix-224", api_key="YOUR ROBOFLOW API KEY")
+pg = PaliGemma(api_key="YOUR ROBOFLOW API KEY")
 
 from PIL import Image
 
