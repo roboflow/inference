@@ -136,26 +136,26 @@ def test_running_block() -> None:
     # then
     assert len(result) == 4, "Expected exactly 4 crops"
     for i in range(4):
-        assert result[i]["crops"].parent_metadata.parent_id.startswith(
+        assert result[i]["slices"].parent_metadata.parent_id.startswith(
             "image_slicer."
         ), f"Expected parent to be set properly for {i}th crop"
     assert result[0][
-        "crops"
+        "slices"
     ].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
         left_top_x=0, left_top_y=0, origin_width=512, origin_height=256
     ), "Expected first crop to have the following coordinates regarding root"
     assert result[1][
-        "crops"
+        "slices"
     ].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
         left_top_x=256, left_top_y=0, origin_width=512, origin_height=256
     ), "Expected second crop to have the following coordinates regarding root"
     assert result[2][
-        "crops"
+        "slices"
     ].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
         left_top_x=0, left_top_y=128, origin_width=512, origin_height=256
     ), "Expected third crop to have the following coordinates regarding root"
     assert result[3][
-        "crops"
+        "slices"
     ].workflow_root_ancestor_metadata.origin_coordinates == OriginCoordinatesSystem(
         left_top_x=256, left_top_y=128, origin_width=512, origin_height=256
     ), "Expected forth crop to have the following coordinates regarding root"
