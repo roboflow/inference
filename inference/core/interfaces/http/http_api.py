@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
@@ -414,12 +415,6 @@ class HttpInterface(BaseInterface):
                 "url": "https://www.apache.org/licenses/LICENSE-2.0.html",
             },
             root_path=root_path,
-        )
-
-        app.mount(
-            "/static",
-            StaticFiles(directory="./inference/landing/out/static"),
-            name="static_static",
         )
 
         if METLO_KEY:
@@ -1640,9 +1635,19 @@ class HttpInterface(BaseInterface):
                         return RedirectResponse(f"/notebook-instructions.html")
 
         if LEGACY_ROUTE_ENABLED:
+
+            class IntStringConvertor(StringConvertor):
+                """
+                Match digits but keep them as string.
+                """
+
+                regex = "\d+"
+
+            register_url_convertor("int_string", IntStringConvertor())
+
             # Legacy object detection inference path for backwards compatability
             @app.get(
-                "/{dataset_id}/{version_id}",
+                "/{dataset_id}/{version_id:int_string}",
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
                 response_model=Union[
                     InstanceSegmentationInferenceResponse,
@@ -1656,7 +1661,7 @@ class HttpInterface(BaseInterface):
                 response_model_exclude_none=True,
             )
             @app.post(
-                "/{dataset_id}/{version_id}",
+                "/{dataset_id}/{version_id:int_string}",
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
                 response_model=Union[
                     InstanceSegmentationInferenceResponse,
