@@ -30,7 +30,7 @@ def test_sam2_single_image_embedding(
 def test_sam2_single_prompted_image_segmentation(
     sam2_small_model: str,
     truck_image: np.ndarray,
-    sam2_small_truck_mask: np.ndarray,
+    sam2_small_truck_logits: np.ndarray,
 ) -> None:
     # given
     model = SegmentAnything2(model_id=sam2_small_model)
@@ -44,9 +44,8 @@ def test_sam2_single_prompted_image_segmentation(
 
     # then
     score_drift = np.abs(scores[0] - 0.9426716566085815)
-    assert np.allclose(masks, sam2_small_truck_mask, atol=0.01), "segmentation mask is as expected"
+    assert np.allclose(low_res_logits, sam2_small_truck_logits, atol=0.01), "logits mask is as expected"
     assert score_drift < 0.01, "score doesnt drift/change"
-    # assert np.sum(low_res_logits) == -1772890.2, "logits is as expected"
     
     
 
