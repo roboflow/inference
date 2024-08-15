@@ -8,12 +8,13 @@ from pydantic import AliasChoices, ConfigDict, Field
 import cv2
 ####
 
-from inference.core.workflows.core_steps.visualizations.utils import str_to_color
-from inference.core.workflows.core_steps.visualizations.base import (
+from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
+    VisualizationBlock,
+    VisualizationManifest,
 )
-from inference.core.workflows.entities.base import OutputDefinition, WorkflowImageData, Batch
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition, WorkflowImageData, Batch
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
@@ -39,6 +40,8 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
     type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
+            "name": "Pixel Count Color",
+            "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -62,6 +65,11 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
         default=10,
         description="Tolerance for color matching.", examples=[10, "$inputs.tolerance"],
     )
+    
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.0.0,<2.0.0"
+
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -81,7 +89,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
         ]
 
 
-class PixelationCountBlock(WorkflowBlock):  # Ensure the class name matches the import
+class PixelationCountBlockV1(WorkflowBlock):  # Ensure the class name matches the import
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -132,7 +140,7 @@ class PixelationCountBlock(WorkflowBlock):  # Ensure the class name matches the 
         
         return color_pixels
 
-    async def run(self, image: WorkflowImageData, target_color: Union[str, tuple], tolerance: int, *args, **kwargs) -> BlockResult:
+    def run(self, image: WorkflowImageData, target_color: Union[str, tuple], tolerance: int, *args, **kwargs) -> BlockResult:
         # Count the specific color pixels in the image
         color_pixel_count = self.count_specific_color_pixels(image.numpy_image, target_color, tolerance)
 

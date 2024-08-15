@@ -102,6 +102,21 @@ from inference.core.workflows.core_steps.visualizations.background_color.v1 impo
     BackgroundColorVisualizationBlockV1,
 )
 
+from inference.core.workflows.core_steps.traditional.pixelationCount.v1 import (
+    PixelationCountBlockV1,
+)
+
+from inference.core.workflows.core_steps.traditional.templateMaching.v1 import (
+    TemplateMatchingBlockV1,
+)
+
+from inference.core.workflows.core_steps.traditional.sift.v1 import (
+    SIFTBlockV1,
+)
+from inference.core.workflows.core_steps.traditional.siftComparison.v1 import (
+    SIFTComparisonBlockV1,
+)
+
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.blur.v1 import (
     BlurVisualizationBlockV1,
@@ -242,6 +257,10 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowCustomMetadataBlockV1,
         DetectionsStitchBlockV1,
         ImageSlicerBlockV1,
+        PixelationCountBlockV1,
+        SIFTComparisonBlockV1,
+        SIFTBlockV1,
+        TemplateMatchingBlockV1,
     ]
 
 
