@@ -1,26 +1,28 @@
 from abc import ABC, abstractmethod
 from typing import List, Literal, Optional, Type, Union
 
+#### Traditional CV (Opencv) Import
+import cv2
 import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
-
-#### Traditional CV (Opencv) Import 
-import cv2
-####
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
     VisualizationBlock,
     VisualizationManifest,
 )
-from inference.core.workflows.execution_engine.entities.base import OutputDefinition, WorkflowImageData, Batch
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.execution_engine.entities.types import (
+    BATCH_OF_IMAGES_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_IMAGES_KIND,
-    STRING_KIND,
     INTEGER_KIND,
+    STRING_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
@@ -32,9 +34,17 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+####
+
+
 TYPE: str = "ColorPixelCount"
-SHORT_DESCRIPTION: str = "Count the number of pixels that match a specific color within a given tolerance."
-LONG_DESCRIPTION: str = "Count the number of pixels that match a specific color within a given tolerance."
+SHORT_DESCRIPTION: str = (
+    "Count the number of pixels that match a specific color within a given tolerance."
+)
+LONG_DESCRIPTION: str = (
+    "Count the number of pixels that match a specific color within a given tolerance."
+)
+
 
 class ColorPixelCountManifest(WorkflowBlockManifest):
     type: Literal[f"{TYPE}"]
@@ -56,20 +66,22 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("image", "images"),
     )
 
-    target_color: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str, tuple] = Field(
-        description="Target color to count in the image. Can be a hex string (e.g., '#431112') or a BGR tuple (e.g., (18, 17, 67)).",
-        examples=["#431112", "$inputs.target_color", (18, 17, 67)]
+    target_color: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str, tuple] = (
+        Field(
+            description="Target color to count in the image. Can be a hex string (e.g., '#431112') or a BGR tuple (e.g., (18, 17, 67)).",
+            examples=["#431112", "$inputs.target_color", (18, 17, 67)],
+        )
     )
 
     tolerance: Union[WorkflowParameterSelector(kind=[INTEGER_KIND]), int] = Field(
         default=10,
-        description="Tolerance for color matching.", examples=[10, "$inputs.tolerance"],
+        description="Tolerance for color matching.",
+        examples=[10, "$inputs.tolerance"],
     )
-    
+
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
-
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -85,7 +97,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
                 kind=[
                     INTEGER_KIND,
                 ],
-            )
+            ),
         ]
 
 
@@ -96,8 +108,10 @@ class PixelationCountBlockV1(WorkflowBlock):  # Ensure the class name matches th
     @classmethod
     def get_manifest(cls) -> Type[ColorPixelCountManifest]:
         return ColorPixelCountManifest
-    
-    def count_specific_color_pixels(self, image, target_color: Union[str, tuple], tolerance: int = 10) -> int:
+
+    def count_specific_color_pixels(
+        self, image, target_color: Union[str, tuple], tolerance: int = 10
+    ) -> int:
         """
         Counts the number of pixels that match the target color within the given tolerance.
 
@@ -111,16 +125,20 @@ class PixelationCountBlockV1(WorkflowBlock):  # Ensure the class name matches th
         """
         # Convert hex color to BGR if necessary
         if isinstance(target_color, str):
-            if target_color.startswith('#') and len(target_color) == 7:
+            if target_color.startswith("#") and len(target_color) == 7:
                 try:
-                    target_color_bgr = tuple(int(target_color[i:i+2], 16) for i in (5, 3, 1))
+                    target_color_bgr = tuple(
+                        int(target_color[i : i + 2], 16) for i in (5, 3, 1)
+                    )
                 except ValueError as e:
                     raise ValueError(f"Invalid hex color format: {target_color}") from e
-            elif target_color.startswith('(') and target_color.endswith(')'):
+            elif target_color.startswith("(") and target_color.endswith(")"):
                 try:
-                    target_color_bgr = tuple(map(int, target_color[1:-1].split(',')))
+                    target_color_bgr = tuple(map(int, target_color[1:-1].split(",")))
                 except ValueError as e:
-                    raise ValueError(f"Invalid tuple color format: {target_color}") from e
+                    raise ValueError(
+                        f"Invalid tuple color format: {target_color}"
+                    ) from e
             else:
                 raise ValueError(f"Invalid hex color format: {target_color}")
         elif isinstance(target_color, tuple) and len(target_color) == 3:
@@ -129,20 +147,41 @@ class PixelationCountBlockV1(WorkflowBlock):  # Ensure the class name matches th
             raise ValueError(f"Invalid color format: {target_color}")
 
         # Define the target color and the tolerance range
-        lower_bound = np.array([target_color_bgr[0] - tolerance, target_color_bgr[1] - tolerance, target_color_bgr[2] - tolerance])
-        upper_bound = np.array([target_color_bgr[0] + tolerance, target_color_bgr[1] + tolerance, target_color_bgr[2] + tolerance])
-        
+        lower_bound = np.array(
+            [
+                target_color_bgr[0] - tolerance,
+                target_color_bgr[1] - tolerance,
+                target_color_bgr[2] - tolerance,
+            ]
+        )
+        upper_bound = np.array(
+            [
+                target_color_bgr[0] + tolerance,
+                target_color_bgr[1] + tolerance,
+                target_color_bgr[2] + tolerance,
+            ]
+        )
+
         # Create a mask that isolates the target color
         mask = cv2.inRange(image, lower_bound, upper_bound)
-        
+
         # Count the number of pixels that match the target color
         color_pixels = int(np.sum(mask > 0))  # Ensure the count is an integer
-        
+
         return color_pixels
 
-    def run(self, image: WorkflowImageData, target_color: Union[str, tuple], tolerance: int, *args, **kwargs) -> BlockResult:
+    def run(
+        self,
+        image: WorkflowImageData,
+        target_color: Union[str, tuple],
+        tolerance: int,
+        *args,
+        **kwargs,
+    ) -> BlockResult:
         # Count the specific color pixels in the image
-        color_pixel_count = self.count_specific_color_pixels(image.numpy_image, target_color, tolerance)
+        color_pixel_count = self.count_specific_color_pixels(
+            image.numpy_image, target_color, tolerance
+        )
 
         output = WorkflowImageData(
             parent_metadata=image.parent_metadata,

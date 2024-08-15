@@ -1,24 +1,27 @@
 from abc import ABC, abstractmethod
 from typing import List, Literal, Optional, Type, Union
 
-import numpy as np
 import cv2
+import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
-
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
 )
-from inference.core.workflows.execution_engine.entities.base import OutputDefinition, WorkflowImageData, Batch
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_IMAGES_KIND,
-    STRING_KIND,
     INTEGER_KIND,
+    NUMPY_ARRAY_KIND,
+    STRING_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
-    NUMPY_ARRAY_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -29,6 +32,7 @@ from inference.core.workflows.prototypes.block import (
 TYPE: str = "TemplateMatching"
 SHORT_DESCRIPTION: str = "Apply Template Matching to an image."
 LONG_DESCRIPTION: str = "Apply Template Matching to an image."
+
 
 class TemplateMatchingManifest(WorkflowBlockManifest):
     type: Literal[f"{TYPE}"]
@@ -56,13 +60,13 @@ class TemplateMatchingManifest(WorkflowBlockManifest):
         examples=["$inputs.template", "$steps.cropping.template"],
         validation_alias=AliasChoices("template", "templates"),
     )
-    
+
     threshold: float = Field(
         title="Matching Threshold",
         description="The threshold value for template matching.",
         default=0.8,
     )
-    
+
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
@@ -93,7 +97,9 @@ class TemplateMatchingBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[TemplateMatchingManifest]:
         return TemplateMatchingManifest
 
-    def apply_template_matching(self, image: np.ndarray, template: np.ndarray, threshold: float = 0.8) -> (np.ndarray, int):
+    def apply_template_matching(
+        self, image: np.ndarray, template: np.ndarray, threshold: float = 0.8
+    ) -> (np.ndarray, int):
         """
         Applies Template Matching to the image.
         Args:
@@ -120,11 +126,20 @@ class TemplateMatchingBlockV1(WorkflowBlock):
 
         return image, num_matches
 
-    def run(self, image: Union[WorkflowImageData, str], template: Union[WorkflowImageData, str], threshold: float = 0.8, *args, **kwargs) -> BlockResult:
+    def run(
+        self,
+        image: Union[WorkflowImageData, str],
+        template: Union[WorkflowImageData, str],
+        threshold: float = 0.8,
+        *args,
+        **kwargs,
+    ) -> BlockResult:
         # Ensure inputs are WorkflowImageData objects
 
         # Apply Template Matching to the image
-        template_with_matches, num_matches = self.apply_template_matching(image.numpy_image, template.numpy_image, threshold)
+        template_with_matches, num_matches = self.apply_template_matching(
+            image.numpy_image, template.numpy_image, threshold
+        )
 
         output_image = WorkflowImageData(
             parent_metadata=template.parent_metadata,

@@ -2,30 +2,30 @@
 from abc import ABC, abstractmethod
 from typing import List, Literal, Optional, Type, Union
 
+#### Traditional CV (Opencv) Import
+import cv2
 import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
-#### Traditional CV (Opencv) Import 
-import cv2
-####
-
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
-
 )
-
-from inference.core.workflows.execution_engine.entities.base  import OutputDefinition, WorkflowImageData, Batch
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BATCH_OF_IMAGES_KIND,
-    STRING_KIND,
+    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     INTEGER_KIND,
+    NUMPY_ARRAY_KIND,
+    STRING_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
-    NUMPY_ARRAY_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -33,9 +33,14 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+####
+
+
+
 TYPE: str = "SIFT"
 SHORT_DESCRIPTION: str = "Apply SIFT to an image."
 LONG_DESCRIPTION: str = "Apply SIFT to an image."
+
 
 class SIFTDetectionManifest(WorkflowBlockManifest):
     type: Literal[f"{TYPE}"]
@@ -56,7 +61,7 @@ class SIFTDetectionManifest(WorkflowBlockManifest):
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
-    
+
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
@@ -117,7 +122,7 @@ class SIFTBlockV1(WorkflowBlock):
                 "angle": point.angle,
                 "response": point.response,
                 "octave": point.octave,
-                "class_id": point.class_id
+                "class_id": point.class_id,
             }
             for point in kp
         ]

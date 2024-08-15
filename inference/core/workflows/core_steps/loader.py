@@ -41,11 +41,11 @@ from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRMode
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
-    YoloWorldModelBlockV1,
-)
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
+    YoloWorldModelBlockV1,
 )
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
     RoboflowInstanceSegmentationModelBlockV1,
@@ -73,6 +73,16 @@ from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 impor
 )
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
     RoboflowDatasetUploadBlockV1,
+)
+from inference.core.workflows.core_steps.traditional.pixelationCount.v1 import (
+    PixelationCountBlockV1,
+)
+from inference.core.workflows.core_steps.traditional.sift.v1 import SIFTBlockV1
+from inference.core.workflows.core_steps.traditional.siftComparison.v1 import (
+    SIFTComparisonBlockV1,
+)
+from inference.core.workflows.core_steps.traditional.templateMatching.v1 import (
+    TemplateMatchingBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
@@ -103,21 +113,6 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop.v1
 )
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
     BackgroundColorVisualizationBlockV1,
-)
-
-from inference.core.workflows.core_steps.traditional.pixelationCount.v1 import (
-    PixelationCountBlockV1,
-)
-
-from inference.core.workflows.core_steps.traditional.templateMatching.v1 import (
-    TemplateMatchingBlockV1,
-)
-
-from inference.core.workflows.core_steps.traditional.sift.v1 import (
-    SIFTBlockV1,
-)
-from inference.core.workflows.core_steps.traditional.siftComparison.v1 import (
-    SIFTComparisonBlockV1,
 )
 
 # Visualizers
