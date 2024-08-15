@@ -21,6 +21,9 @@ from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v
 from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
     DetectionsConsensusBlockV1,
 )
+from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
+    DetectionsStitchBlockV1,
+)
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
@@ -85,6 +88,9 @@ from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import 
 )
 from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
     DynamicZonesBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
+    ImageSlicerBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
@@ -234,6 +240,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PolygonVisualizationBlockV1,
         TriangleVisualizationBlockV1,
         RoboflowCustomMetadataBlockV1,
+        DetectionsStitchBlockV1,
+        ImageSlicerBlockV1,
     ]
 
 

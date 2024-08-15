@@ -123,6 +123,16 @@ class BlockDescription(BaseModel):
         description="Execution Engine versions compatible with block.",
         default=None,
     )
+    input_dimensionality_offsets: Dict[str, int] = Field(
+        description="Dimensionality offsets for input parameters",
+    )
+    dimensionality_reference_property: Optional[str] = Field(
+        description="Selected dimensionality reference property provided if different dimensionality for "
+        "different inputs are supported.",
+    )
+    output_dimensionality_offset: int = Field(
+        description="Dimensionality offset for block output.",
+    )
 
 
 class BlocksDescription(BaseModel):
