@@ -115,6 +115,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
         examples=["xxx-xxx", "$inputs.api_key"],
+        private=True,
     )
     json_output: Optional[Dict[str, str]] = Field(
         default=None,
