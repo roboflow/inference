@@ -1,6 +1,6 @@
 from typing import Any, List, Optional, Union
 
-from pydantic import Field, root_validator, validator
+from pydantic import BaseModel, Field, root_validator, validator
 
 from inference.core.entities.requests.inference import (
     BaseRequest,
@@ -56,6 +56,61 @@ class Sam2EmbeddingRequest(Sam2InferenceRequest):
     )
 
 
+class Box(BaseModel):
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+class Point(BaseModel):
+    x: float
+    y: float
+    positive: bool
+
+
+class Sam2Prompt(BaseModel):
+    box: Optional[Box] = Field(default=None)
+    points: Optional[List[Point]] = Field(default=None)
+
+
+class Sam2PromptSet(BaseModel):
+    prompts: Optional[List[Sam2Prompt]] = Field(
+        default=None,
+        description="An optional list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points",
+    )
+
+    def to_sam2_inputs(self):
+        if self.prompts is None:
+            return {"point_coords": None, "point_labels": None, "box": None}
+        return_dict = {"point_coords": [], "point_labels": [], "box": []}
+        for prompt in self.prompts:
+            if prompt.box is not None:
+                x1 = prompt.box.x - prompt.box.width / 2
+                y1 = prompt.box.y - prompt.box.height / 2
+                x2 = prompt.box.x + prompt.box.width / 2
+                y2 = prompt.box.y + prompt.box.height / 2
+                return_dict["box"].append([x1, y1, x2, y2])
+            if prompt.points is not None:
+                return_dict["point_coords"].append(
+                    list([point.x, point.y] for point in prompt.points)
+                )
+                return_dict["point_labels"].append(
+                    list(int(point.positive) for point in prompt.points)
+                )
+
+        return_dict = {k: v if v else None for k, v in return_dict.items()}
+        lengths = set()
+        for v in return_dict.values():
+            if isinstance(v, list):
+                lengths.add(len(v))
+
+        if not len(lengths) in [0, 1]:
+            raise ValueError("All prompts must have the same number of points")
+
+        return return_dict
+
+
 class Sam2SegmentationRequest(Sam2InferenceRequest):
     """SAM segmentation request.
 
@@ -80,13 +135,18 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
         examples=["image_id"],
         description="The ID of the image to be segmented used to retrieve cached embeddings. If an embedding is cached, it will be used instead of generating a new embedding. If no embedding is cached, a new embedding will be generated and cached.",
     )
-    point_coords: Optional[List[List[float]]] = Field(
-        default=[[0.0, 0.0]],
-        examples=[[[10.0, 10.0]]],
-        description="The coordinates of the interactive points used during decoding. Each point (x,y pair) corresponds to a label in point_labels.",
+    prompts: Sam2PromptSet = Field(
+        default=Sam2PromptSet(prompts=None),
+        example=[{"prompts": [{"points": [{"x": 100, "y": 100, "positive": True}]}]}],
+        description="A list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points",
     )
-    point_labels: Optional[List[float]] = Field(
-        default=[0],
-        examples=[[1]],
-        description="The labels of the interactive points used during decoding. A 1 represents a positive point (part of the object to be segmented). A 0 represents a negative point (not part of the object to be segmented). Each label corresponds to a point in point_coords.",
+    multimask_output: bool = Field(
+        default=True,
+        examples=[True],
+        description="If true, the model will return three masks. "
+        "For ambiguous input prompts (such as a single click), this will often "
+        "produce better masks than a single prediction. If only a single "
+        "mask is needed, the model's predicted quality score can be used "
+        "to select the best mask. For non-ambiguous prompts, such as multiple "
+        "input prompts, multimask_output=False can give better results.",
     )

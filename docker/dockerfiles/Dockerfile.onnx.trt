@@ -42,6 +42,7 @@ COPY docker/config/gpu_http.py gpu_http.py
 
 
 # RUN sudo apt install --only-upgrade libstdc++6
+ENV CORE_MODEL_SAM2_ENABLED=true
 ENV VERSION_CHECK_MODE=continuous
 ENV ONNXRUNTIME_EXECUTION_PROVIDERS=TensorrtExecutionProvider
 ENV REQUIRED_ONNX_PROVIDERS=TensorrtExecutionProvider

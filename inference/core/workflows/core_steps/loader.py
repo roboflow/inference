@@ -21,6 +21,9 @@ from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v
 from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
     DetectionsConsensusBlockV1,
 )
+from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
+    DetectionsStitchBlockV1,
+)
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
@@ -37,6 +40,9 @@ from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 imp
 from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
+    SegmentAnything2BlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
@@ -86,17 +92,25 @@ from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import 
 from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
     DynamicZonesBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
+    ImageSlicerBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
     RelativeStaticCropBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
-    BackgroundColorVisualizationBlockV1,
+
+# Utilities
+from inference.core.workflows.core_steps.utilities.dominant_color.v1 import (
+    DominantColorBlockV1,
 )
 
 # Visualizers
+from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
+    BackgroundColorVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.blur.v1 import (
     BlurVisualizationBlockV1,
 )
@@ -188,6 +202,7 @@ REGISTERED_INITIALIZERS = {
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
+        SegmentAnything2BlockV1,
         DetectionsConsensusBlockV1,
         ClipComparisonBlockV1,
         LMMBlockV1,
@@ -234,6 +249,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PolygonVisualizationBlockV1,
         TriangleVisualizationBlockV1,
         RoboflowCustomMetadataBlockV1,
+        DetectionsStitchBlockV1,
+        ImageSlicerBlockV1,
+        DominantColorBlockV1,
     ]
 
 
