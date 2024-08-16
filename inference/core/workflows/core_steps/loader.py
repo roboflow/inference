@@ -111,11 +111,16 @@ from inference.core.workflows.core_steps.transformations.perspective_correction.
 from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
     RelativeStaticCropBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
-    BackgroundColorVisualizationBlockV1,
+
+# Utilities
+from inference.core.workflows.core_steps.utilities.dominant_color.v1 import (
+    DominantColorBlockV1,
 )
 
 # Visualizers
+from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
+    BackgroundColorVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.blur.v1 import (
     BlurVisualizationBlockV1,
 )
@@ -256,6 +261,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowCustomMetadataBlockV1,
         DetectionsStitchBlockV1,
         ImageSlicerBlockV1,
+        DominantColorBlockV1,
         PixelationCountBlockV1,
         SIFTComparisonBlockV1,
         SIFTBlockV1,

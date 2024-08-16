@@ -6,14 +6,16 @@ from inference.core.workflows.core_steps.traditional.siftComparison.v1 import (
     SIFTComparisonBlockManifest,
     SIFTComparisonBlockV1,
 )
-
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
 
+
 @pytest.mark.parametrize("descriptors_field_alias", ["descriptor1", "descriptor2"])
-def test_sift_comparison_validation_when_valid_manifest_is_given(descriptors_field_alias: str) -> None:
+def test_sift_comparison_validation_when_valid_manifest_is_given(
+    descriptors_field_alias: str,
+) -> None:
     # given
     data = {
         "type": "SIFTComparison",  # Correct type
@@ -59,14 +61,18 @@ async def test_sift_comparison_block() -> None:
     # given
     block = SIFTComparisonBlockV1()
 
-    descriptor1 = np.random.rand(100, 128).astype(np.float32)  # Random descriptors for testing
-    descriptor2 = np.random.rand(100, 128).astype(np.float32)  # Random descriptors for testing
+    descriptor1 = np.random.rand(100, 128).astype(
+        np.float32
+    )  # Random descriptors for testing
+    descriptor2 = np.random.rand(100, 128).astype(
+        np.float32
+    )  # Random descriptors for testing
 
     output = block.run(
         descriptor1=descriptor1,
         descriptor2=descriptor2,
         good_matches_threshold=50,
-        ratio_threshold=0.7
+        ratio_threshold=0.7,
     )
 
     assert output is not None

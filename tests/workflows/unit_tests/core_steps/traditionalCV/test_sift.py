@@ -3,14 +3,14 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.traditional.sift.v1 import (
-    SIFTDetectionManifest,
     SIFTBlockV1,
+    SIFTDetectionManifest,
 )
-
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 def test_sift_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
@@ -60,7 +60,7 @@ async def test_sift_block() -> None:
     assert output is not None
     assert "image" in output
     assert hasattr(output.get("image"), "numpy_image")
-    
+
     # dimensions of output match input
     assert output.get("image").numpy_image.shape == (1000, 1000, 3)
     # check if the image is modified
