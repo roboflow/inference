@@ -168,3 +168,4 @@ docs/workflows/kinds/*
 !tests/workflows/integration_tests/execution/assets/*.jpg
 !tests/workflows/integration_tests/execution/assets/rock_paper_scissors/*.jpg
 !tests/workflows/unit_tests/core_steps/models/third_party/assets/*.png
+!tests/workflows/integration_tests/execution/assets/*.png
