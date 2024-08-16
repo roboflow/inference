@@ -176,7 +176,9 @@ class SegmentAnything2(RoboflowCoreModel):
                 )
             elif request.format == "binary":
                 binary_vector = BytesIO()
-                np.savez_compressed(binary_vector, masks=masks)
+                np.savez_compressed(
+                    binary_vector, masks=masks, low_res_masks=low_resolution_logits
+                )
                 binary_vector.seek(0)
                 binary_data = binary_vector.getvalue()
                 return binary_data
