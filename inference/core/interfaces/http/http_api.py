@@ -469,8 +469,13 @@ class HttpInterface(BaseInterface):
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
-                # exclude / and /info (health check)
-                if request.url.path in ["/", "/info"]:
+                # exclusions
+                skip_check = (
+                    request.method not in ["GET", "POST"]
+                    or request.url.path in ["/", "/info"]
+                    or request.url.path.startswith("/static/")
+                )
+                if skip_check:
                     return await call_next(request)
 
                 def _unauthorized_response(msg):
