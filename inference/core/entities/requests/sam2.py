@@ -98,16 +98,11 @@ class Sam2PromptSet(BaseModel):
                 return_dict["point_labels"].append(
                     list(int(point.positive) for point in prompt.points)
                 )
+            else:
+                return_dict["point_coords"].append([])
+                return_dict["point_labels"].append([])
 
         return_dict = {k: v if v else None for k, v in return_dict.items()}
-        lengths = set()
-        for v in return_dict.values():
-            if isinstance(v, list):
-                lengths.add(len(v))
-
-        if not len(lengths) in [0, 1]:
-            raise ValueError("All prompts must have the same number of points")
-
         return return_dict
 
 

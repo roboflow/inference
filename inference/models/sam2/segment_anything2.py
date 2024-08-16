@@ -9,6 +9,7 @@ import rasterio.features
 import sam2.utils.misc
 import torch
 from torch.nn.attention import SDPBackend
+import copy
 
 sam2.utils.misc.get_sdp_backends = lambda z: [
     SDPBackend.EFFICIENT_ATTENTION,
@@ -23,6 +24,7 @@ from inference.core.entities.requests.sam2 import (
     Sam2EmbeddingRequest,
     Sam2InferenceRequest,
     Sam2PromptSet,
+    Sam2Prompt,
     Sam2SegmentationRequest,
 )
 from inference.core.entities.responses.sam2 import (
@@ -30,7 +32,7 @@ from inference.core.entities.responses.sam2 import (
     Sam2SegmentationPrediction,
     Sam2SegmentationResponse,
 )
-from inference.core.env import DEVICE, SAM2_VERSION_ID, SAM_MAX_EMBEDDING_CACHE_SIZE
+from inference.core.env import DEVICE, SAM2_VERSION_ID, SAM2_MAX_CACHE_SIZE
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
@@ -75,6 +77,8 @@ class SegmentAnything2(RoboflowCoreModel):
         self.embedding_cache = {}
         self.image_size_cache = {}
         self.embedding_cache_keys = []
+        self.low_res_logits_cache = {}
+        self.low_res_logits_cache_keys = []
 
         self.task_type = "unsupervised-segmentation"
 
@@ -127,7 +131,7 @@ class SegmentAnything2(RoboflowCoreModel):
         if image_id is None:
             image_id = hashlib.md5(img_in.tobytes()).hexdigest()[:12]
 
-        if image_id and image_id in self.embedding_cache:
+        if image_id in self.embedding_cache:
             return (
                 self.embedding_cache[image_id],
                 self.image_size_cache[image_id],
@@ -141,7 +145,7 @@ class SegmentAnything2(RoboflowCoreModel):
         self.embedding_cache[image_id] = embedding_dict
         self.image_size_cache[image_id] = img_in.shape[:2]
         self.embedding_cache_keys.append(image_id)
-        if len(self.embedding_cache_keys) > SAM_MAX_EMBEDDING_CACHE_SIZE:
+        if len(self.embedding_cache_keys) > SAM2_MAX_CACHE_SIZE:
             cache_key = self.embedding_cache_keys.pop(0)
             del self.embedding_cache[cache_key]
             del self.image_size_cache[cache_key]
@@ -172,9 +176,7 @@ class SegmentAnything2(RoboflowCoreModel):
                 )
             elif request.format == "binary":
                 binary_vector = BytesIO()
-                np.savez_compressed(
-                    binary_vector, masks=masks, low_res_masks=low_resolution_logits
-                )
+                np.savez_compressed(binary_vector, masks=masks)
                 binary_vector.seek(0)
                 binary_data = binary_vector.getvalue()
                 return binary_data
@@ -201,8 +203,9 @@ class SegmentAnything2(RoboflowCoreModel):
         image: Optional[InferenceRequestImage],
         image_id: Optional[str] = None,
         prompts: Optional[Union[Sam2PromptSet, dict]] = None,
+        multimask_output: Optional[bool] = False,
         mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
-        multimask_output: Optional[bool] = True,
+        use_logits_cache: bool = True,
         **kwargs,
     ):
         """
@@ -213,9 +216,11 @@ class SegmentAnything2(RoboflowCoreModel):
             image (Any): The image to be segmented.
             image_id (Optional[str]): A cached identifier for the image. Useful for accessing cached embeddings or masks.
             prompts (Optional[List[Sam2Prompt]]): List of prompts to use for segmentation. Defaults to None.
+            mask_input (Optional[Union[np.ndarray, List[List[List[float]]]]]): Input low_res_logits for the image.
             multimask_output: (bool): Flag to decide if multiple masks proposal to be predicted (among which the most
                 promising will be returned
             )
+            use_logits_cache: (bool): Flag to decide to use cached logits from prior prompting
             **kwargs: Additional keyword arguments.
 
         Returns:
@@ -252,12 +257,23 @@ class SegmentAnything2(RoboflowCoreModel):
             self.predictor._orig_hw = [original_image_size]
             self.predictor._is_batch = False
             args = dict()
+            prompt_set: Sam2PromptSet
             if prompts:
                 if type(prompts) is dict:
-                    args = Sam2PromptSet(**prompts).to_sam2_inputs()
+                    prompt_set = Sam2PromptSet(**prompts)
+                    args = prompt_set.to_sam2_inputs()
                 else:
+                    prompt_set = prompts
                     args = prompts.to_sam2_inputs()
+            else:
+                prompt_set = Sam2PromptSet()
 
+            if mask_input is None and use_logits_cache:
+                mask_input = maybe_load_low_res_logits_from_cache(
+                    image_id, prompt_set, self.low_res_logits_cache
+                )
+
+            args = pad_points(args)
             masks, scores, low_resolution_logits = self.predictor.predict(
                 mask_input=mask_input,
                 multimask_output=multimask_output,
@@ -271,7 +287,75 @@ class SegmentAnything2(RoboflowCoreModel):
                 low_resolution_logits=low_resolution_logits,
             )
 
+            if use_logits_cache:
+                self.add_low_res_logits_to_cache(
+                    low_resolution_logits, image_id, prompt_set
+                )
+
             return masks, scores, low_resolution_logits
+
+    def add_low_res_logits_to_cache(
+        self, logits: np.ndarray, image_id: str, prompt_set: Sam2PromptSet
+    ) -> None:
+        logits = logits[:, None, :, :]
+        prompt_id = hash_prompt_set(image_id, prompt_set)
+        self.low_res_logits_cache[prompt_id] = logits
+        if prompt_id in self.low_res_logits_cache_keys:
+            self.low_res_logits_cache_keys.remove(prompt_id)
+        self.low_res_logits_cache_keys.append(image_id)
+        if len(self.low_res_logits_cache_keys) > SAM2_MAX_CACHE_SIZE:
+            cache_key = self.low_res_logits_cache_keys.pop(0)
+            del self.low_res_logits_cache[cache_key]
+
+
+def hash_prompt_set(image_id: str, prompt_set: Sam2PromptSet) -> str:
+    """Computes unique hash from a prompt set."""
+    md5_hash = hashlib.md5()
+    md5_hash.update(image_id.encode("utf8"))
+    md5_hash.update(str(prompt_set).encode("utf-8"))
+    return md5_hash.hexdigest()[:12]
+
+
+def maybe_load_low_res_logits_from_cache(
+    image_id: str, prompt_set: Sam2PromptSet, cache: Dict[str, np.ndarray]
+) -> Optional[np.ndarray]:
+    "Loads prior masks from the cache by searching over possibel prior prompts."
+    prompts = prompt_set.prompts
+    if not prompts:
+        return None
+
+    prior_prompts_id = find_prior_prompt_in_cache(prompt_set, image_id, cache)
+    return_val = cache.get(prior_prompts_id)
+    return return_val
+
+
+def find_prior_prompt_in_cache(
+    initial_prompt_set: Sam2PromptSet, image_id: str, cache: Dict[str, np.ndarray]
+) -> Optional[str]:
+    """
+    Performs breadth first search over the cache to see if prior used prompts appear in the cache.
+
+    Searches over prompt sets by removing a point from one of the prompts and checking if it is in the cache, then repeating.
+    """
+    prompt_set_stack = [initial_prompt_set]
+    while prompt_set_stack:
+        prompt_set = prompt_set_stack.pop(0)
+        prompts = prompt_set.prompts
+        for index, prompt in enumerate(prompts):
+            if not prompt.points:
+                continue
+            new_prompt = Sam2Prompt(box=prompt.box, points=prompt.points[:-1])
+            if not new_prompt.points:
+                new_prompt.points = None
+
+            trial_prompts = prompts[:index] + [new_prompt] + prompts[index + 1 :]
+            trial_prompts = Sam2PromptSet(prompts=trial_prompts)
+            prior_id = hash_prompt_set(image_id, trial_prompts)
+            if prior_id in cache:
+                return prior_id
+            else:
+                prompt_set_stack.append(trial_prompts)
+    return None
 
 
 def choose_most_confident_sam_prediction(
@@ -353,3 +437,22 @@ def turn_segmentation_results_into_api_response(
         time=perf_counter() - inference_start_timestamp,
         predictions=predictions,
     )
+
+
+def pad_points(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Pad arguments to be passed to sam2 model with not_a_point label (-1).
+    This is necessary when there are multiple prompts per image so that a tensor can be created.
+
+
+    Also pads empty point lists with a dummy non-point entry.
+    """
+    args = copy.deepcopy(args)
+    max_len = max(max(len(prompt) for prompt in args["point_coords"]), 1)
+    for prompt in args["point_coords"]:
+        for _ in range(max_len - len(prompt)):
+            prompt.append([0, 0])
+    for label in args["point_labels"]:
+        for _ in range(max_len - len(label)):
+            label.append(-1)
+    return args

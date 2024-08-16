@@ -283,6 +283,8 @@ ROBOFLOW_SERVICE_SECRET = os.getenv("ROBOFLOW_SERVICE_SECRET", None)
 
 # Maximum embedding cache size for SAM, default is 10
 SAM_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM_MAX_EMBEDDING_CACHE_SIZE", 10))
+# The sam2 low_res_masks are the biggest memory usage, and 1000 of them take 256*256*4*1000/1024/1024 MB = 250MB
+SAM2_MAX_CACHE_SIZE = int(os.getenv("SAM_MAX_EMBEDDING_CACHE_SIZE", 1000))
 
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")

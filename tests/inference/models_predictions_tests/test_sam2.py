@@ -4,8 +4,7 @@ import torch
 
 from inference.models.sam2 import SegmentAnything2
 from inference.core.entities.requests.sam2 import Sam2PromptSet
-
-
+from inference.models.sam2.segment_anything2 import hash_prompt_set, maybe_load_low_res_logits_from_cache
 
 
 @pytest.mark.slow
@@ -80,13 +79,20 @@ def test_sam2_single_prompted_image_segmentation_mask_cache_works(
     model = SegmentAnything2(model_id=sam2_small_model)
 
     prompt = Sam2PromptSet(
-        prompts=[{"points": [{"x": 500, "y": 375, "positive": True}]}]
+        prompts=[{"points": [{"x": 1235, "y": 530, "positive": True}]}]
     )
 
     # when
-    masks, scores, low_res_logits = model.segment_image(truck_image, prompts=prompt)
+    image_id = "truck"
+    masks, scores, low_res_logits = model.segment_image(truck_image, image_id=image_id, prompts=prompt)
+    assert hash_prompt_set(image_id, prompt) in model.low_res_logits_cache
 
-    masks2, scores2, low_res_logits2 = model.segment_image(truck_image, prompts=prompt, mask_input=low_res_logits, mask_input_format="raw")
+    prompt = Sam2PromptSet(
+        prompts=[{"points": [{"x": 1235, "y": 530, "positive": True},
+                             {"x": 10, "y": 500, "positive": False}]}]
+    )
+    assert maybe_load_low_res_logits_from_cache(image_id, prompt, model.low_res_logits_cache) is not None
+    masks2, scores2, low_res_logits2 = model.segment_image(truck_image, prompts=prompt)
 
     #then
     assert True, "doesnt crash when passing mask_input"
