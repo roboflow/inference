@@ -144,6 +144,8 @@ class SegmentAnything2(RoboflowCoreModel):
 
         self.embedding_cache[image_id] = embedding_dict
         self.image_size_cache[image_id] = img_in.shape[:2]
+        if image_id in self.embedding_cache_keys:
+            self.embedding_cache_keys.remove(image_id)
         self.embedding_cache_keys.append(image_id)
         if len(self.embedding_cache_keys) > SAM2_MAX_CACHE_SIZE:
             cache_key = self.embedding_cache_keys.pop(0)
@@ -207,7 +209,8 @@ class SegmentAnything2(RoboflowCoreModel):
         prompts: Optional[Union[Sam2PromptSet, dict]] = None,
         multimask_output: Optional[bool] = False,
         mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
-        use_logits_cache: bool = True,
+        save_logits_to_cache: bool = True,
+        load_logits_from_cache: bool = True,
         **kwargs,
     ):
         """
@@ -270,7 +273,7 @@ class SegmentAnything2(RoboflowCoreModel):
             else:
                 prompt_set = Sam2PromptSet()
 
-            if mask_input is None and use_logits_cache:
+            if mask_input is None and load_logits_from_cache:
                 mask_input = maybe_load_low_res_logits_from_cache(
                     image_id, prompt_set, self.low_res_logits_cache
                 )
@@ -289,7 +292,7 @@ class SegmentAnything2(RoboflowCoreModel):
                 low_resolution_logits=low_resolution_logits,
             )
 
-            if use_logits_cache:
+            if save_logits_to_cache:
                 self.add_low_res_logits_to_cache(
                     low_resolution_logits, image_id, prompt_set
                 )
