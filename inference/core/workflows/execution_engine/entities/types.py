@@ -128,6 +128,45 @@ LIST_OF_VALUES_KIND = Kind(
     docs=LIST_OF_VALUES_KIND_DOCS,
 )
 
+RGB_COLOR_KIND_DOCS = """
+This kind represents RGB color as a tuple (R, G, B).
+
+Examples:
+```
+(128, 32, 64)
+(255, 255, 255)
+```
+"""
+
+RGB_COLOR_KIND = Kind(
+    name="rgb_color",
+    description="RGB color",
+    docs=RGB_COLOR_KIND_DOCS,
+)
+
+IMAGE_KEYPOINTS_KIND_DOCS = """
+The kind represents image keypoints that are detected by classical Computer Vision methods.
+Underlying representation is serialised OpenCV KeyPoint object.
+
+Examples:
+```
+{
+    "pt": (2.429290294647217, 1197.7939453125),
+    "size": 1.9633429050445557,
+    "angle": 183.4322509765625,
+    "response": 0.03325376659631729,
+    "octave": 6423039,
+    "class_id": -1
+}
+``` 
+"""
+
+IMAGE_KEYPOINTS_KIND = Kind(
+    name="image_keypoints",
+    description="Image keypoints detected by classical Computer Vision method",
+    docs=IMAGE_KEYPOINTS_KIND_DOCS,
+)
+
 BATCH_OF_SERIALISED_PAYLOADS_KIND_DOCS = f"""
 This value represents list of serialised values. Each serialised value is either
 string or bytes - if something else is provided - it will be attempted to be serialised 

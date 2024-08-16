@@ -2,6 +2,19 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
+    DominantColorBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
+    PixelationCountBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
+from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import (
+    SIFTComparisonBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
+    TemplateMatchingBlockV1,
+)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
@@ -74,16 +87,6 @@ from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 impor
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
     RoboflowDatasetUploadBlockV1,
 )
-from inference.core.workflows.core_steps.traditional.pixelationCount.v1 import (
-    PixelationCountBlockV1,
-)
-from inference.core.workflows.core_steps.traditional.sift.v1 import SIFTBlockV1
-from inference.core.workflows.core_steps.traditional.siftComparison.v1 import (
-    SIFTComparisonBlockV1,
-)
-from inference.core.workflows.core_steps.traditional.templateMatching.v1 import (
-    TemplateMatchingBlockV1,
-)
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
@@ -110,11 +113,6 @@ from inference.core.workflows.core_steps.transformations.perspective_correction.
 )
 from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
     RelativeStaticCropBlockV1,
-)
-
-# Utilities
-from inference.core.workflows.core_steps.utilities.dominant_color.v1 import (
-    DominantColorBlockV1,
 )
 
 # Visualizers

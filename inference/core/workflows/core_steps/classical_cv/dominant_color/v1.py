@@ -9,7 +9,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
-    LIST_OF_VALUES_KIND,
+    RGB_COLOR_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -20,9 +20,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-TYPE: str = "roboflow_core/dominant_color@v1"
-SHORT_DESCRIPTION: str = "Get the dominant color of an image in RGB format."
-LONG_DESCRIPTION: str = """
+SHORT_DESCRIPTION = "Get the dominant color of an image in RGB format."
+LONG_DESCRIPTION = """
 Extract the dominant color from an input image using K-means clustering.
 
 This block identifies the most prevalent color in an image.
@@ -37,7 +36,7 @@ Note: The block operates on the assumption that the input image is in RGB format
 
 
 class DominantColorManifest(WorkflowBlockManifest):
-    type: Literal["roboflow_core/dominant_color@v1", "DominantColor"]
+    type: Literal["roboflow_core/dominant_color@v1"]
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Dominant Color",
@@ -45,17 +44,15 @@ class DominantColorManifest(WorkflowBlockManifest):
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
-            "block_type": "util",
+            "block_type": "classical_computer_vision",
         }
     )
-
     image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
-
     color_clusters: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Color Clusters",
         description="Number of dominant colors to identify. Higher values increase precision but may slow processing.",
@@ -64,7 +61,6 @@ class DominantColorManifest(WorkflowBlockManifest):
         gt=0,
         le=10,
     )
-
     max_iterations: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Max Iterations",
         description="Max number of iterations to perform. Higher values increase precision but may slow processing.",
@@ -73,7 +69,6 @@ class DominantColorManifest(WorkflowBlockManifest):
         gt=0,
         le=500,
     )
-
     target_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Target Size",
         description="Sets target for the smallest dimension of the downsampled image in pixels. Lower values increase speed but may reduce precision.",
@@ -86,7 +81,7 @@ class DominantColorManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="rgb_color", kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(name="rgb_color", kind=[RGB_COLOR_KIND]),
         ]
 
     @classmethod
@@ -151,6 +146,8 @@ class DominantColorBlockV1(WorkflowBlock):
 
         # Find the most dominant color
         dominant_color = colors[np.argmax(counts)]
-        rgb_color = [int(np.clip(round(x), 0, 255)) for x in reversed(dominant_color)]
+        rgb_color = tuple(
+            int(np.clip(round(x), 0, 255)) for x in reversed(dominant_color)
+        )
 
         return {"rgb_color": rgb_color}

@@ -3,7 +3,7 @@ import pytest
 import supervision as sv
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.traditional.pixelationCount.v1 import (
+from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
     ColorPixelCountManifest,
     PixelationCountBlockV1,
 )
@@ -19,7 +19,7 @@ def test_pixelation_validation_when_valid_manifest_is_given(
 ) -> None:
     # given
     data = {
-        "type": "ColorPixelCount",  # Correct type
+        "type": "roboflow_core/pixel_color_count@v1",  # Correct type
         "name": "pixelation1",
         "predictions": "$steps.od_model.predictions",
         images_field_alias: "$inputs.image",
@@ -32,7 +32,7 @@ def test_pixelation_validation_when_valid_manifest_is_given(
 
     # then
     assert result == ColorPixelCountManifest(
-        type="ColorPixelCount",
+        type="roboflow_core/pixel_color_count@v1",
         name="pixelation1",
         images="$inputs.image",
         predictions="$steps.od_model.predictions",
@@ -44,7 +44,7 @@ def test_pixelation_validation_when_valid_manifest_is_given(
 def test_pixelation_validation_when_invalid_image_is_given() -> None:
     # given
     data = {
-        "type": "ColorPixelCount",  # Correct type
+        "type": "roboflow_core/pixel_color_count@v1",  # Correct type
         "name": "pixelation1",
         "images": "invalid",
         "predictions": "$steps.od_model.predictions",
@@ -57,29 +57,25 @@ def test_pixelation_validation_when_invalid_image_is_given() -> None:
         _ = ColorPixelCountManifest.model_validate(data)
 
 
-@pytest.mark.parametrize(
-    "target_color, tolerance",
-    [
-        ((255, 0, 0), 10),  # Red color with tolerance 10
-        ((0, 255, 0), 15),  # Green color with tolerance 15
-        ((0, 0, 255), 20),  # Blue color with tolerance 20
-    ],
-)
-def test_pixelation_block(target_color, tolerance) -> None:
+def test_pixelation_block() -> None:
     # given
     block = PixelationCountBlockV1()
+    image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    image[0:100, 0:100] = (0, 0, 245)
+    image[0:10, 0:10] = (0, 0, 255)
 
+    # when
     output = block.run(
         image=WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id="some"),
-            numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+            numpy_image=image,
         ),
-        target_color=target_color,  # Parametrized target_color
-        tolerance=tolerance,  # Parametrized tolerance
+        target_color=(255, 0, 0),
+        tolerance=10,
     )
 
     assert output is not None
-    assert "image" in output
-    assert hasattr(output.get("image"), "numpy_image")
-    assert output["color_pixel_count"] >= 0
-    assert isinstance(output["color_pixel_count"], (int))
+    assert output["color_pixel_count"] == 100 * 100, (
+        "Expected 100*100 square to be matched, as 100 pixels match dominant color, "
+        "and remaining are within margin"
+    )

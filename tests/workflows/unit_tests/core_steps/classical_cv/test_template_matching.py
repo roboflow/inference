@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.traditional.templateMatching.v1 import (
+from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
     TemplateMatchingBlockV1,
     TemplateMatchingManifest,
 )
@@ -18,11 +18,13 @@ def test_template_matching_validation_when_valid_manifest_is_given(
 ) -> None:
     # given
     data = {
-        "type": "TemplateMatching",  # Correct type
+        "type": "roboflow_core/template_matching@v1",
         "name": "template_matching1",
         images_field_alias: "$inputs.image",
         "template": "$inputs.template",
-        "threshold": 0.8,
+        "matching_threshold": 0.8,
+        "apply_nms": False,
+        "nms_threshold": 0.6,
     }
 
     # when
@@ -30,18 +32,20 @@ def test_template_matching_validation_when_valid_manifest_is_given(
 
     # then
     assert result == TemplateMatchingManifest(
-        type="TemplateMatching",
+        type="roboflow_core/template_matching@v1",
         name="template_matching1",
         image="$inputs.image",
         template="$inputs.template",
-        threshold=0.8,
+        matching_threshold=0.8,
+        apply_nms=False,
+        nms_threshold=0.6,
     )
 
 
 def test_template_matching_validation_when_invalid_image_is_given() -> None:
     # given
     data = {
-        "type": "TemplateMatching",  # Correct type
+        "type": "roboflow_core/template_matching@v1",
         "name": "template_matching1",
         "image": "invalid",
         "template": "$inputs.template",
@@ -53,34 +57,35 @@ def test_template_matching_validation_when_invalid_image_is_given() -> None:
         _ = TemplateMatchingManifest.model_validate(data)
 
 
-@pytest.mark.asyncio
-async def test_template_matching_block() -> None:
+def test_template_matching_block(dogs_image: np.ndarray) -> None:
     # given
     block = TemplateMatchingBlockV1()
+    template = dogs_image[220:280, 310:410]  # dog's head
 
+    # when
     output = block.run(
         image=WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id="some"),
-            numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+            numpy_image=dogs_image,
         ),
         template=WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id="some"),
-            numpy_image=np.zeros((100, 100, 3), dtype=np.uint8),
+            numpy_image=template,
         ),
-        threshold=0.8,
+        matching_threshold=0.8,
+        apply_nms=True,
+        nms_threshold=0.5,
     )
 
-    assert output is not None
-    assert "image" in output
-    assert hasattr(output.get("image"), "numpy_image")
-
-    # dimensions of output match input
-    assert output.get("image").numpy_image.shape == (1000, 1000, 3)
-    # check if the image is modified
-    assert not np.array_equal(
-        output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
-    )
-    # check if num_matches is present and is an integer
-    assert "num_matches" in output
-    assert isinstance(output["num_matches"], int)
-    assert output["num_matches"] >= 0
+    # then
+    assert np.allclose(
+        output["predictions"].xyxy, np.array([312, 222, 412, 282])
+    ), "Expected to find single template match"
+    assert output["predictions"].class_id.tolist() == [0], "Expected fixed class id 0"
+    assert output["predictions"]["class_name"].tolist() == [
+        "template_match"
+    ], "Expected fixed class name"
+    assert np.allclose(
+        output["predictions"].confidence, np.array([1.0])
+    ), "Expected fixed confidence"
+    assert output["number_of_matches"] == 1, "Expected one match to be reported"

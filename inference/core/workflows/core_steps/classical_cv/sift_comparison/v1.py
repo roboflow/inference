@@ -1,26 +1,11 @@
-from typing import (
-    Any,
-    Dict,
-    Generator,
-    List,
-    Literal,
-    Optional,
-    Set,
-    Tuple,
-    Type,
-    Union,
-)
+from typing import List, Literal, Optional, Type, Union
 
 import cv2
 import numpy as np
-from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
+from pydantic import ConfigDict, Field, PositiveInt
 
-from inference.core.workflows.execution_engine.entities.base import (
-    Batch,
-    OutputDefinition,
-)
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
     INTEGER_KIND,
     NUMPY_ARRAY_KIND,
@@ -50,23 +35,18 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
-            "block_type": "comparison",
+            "block_type": "classical_computer_vision",
         }
     )
-    type: Literal["SIFTComparison"]
-
-    descriptor1: StepOutputSelector(kind=[NUMPY_ARRAY_KIND]) = Field(
+    type: Literal["roboflow_core/sift_comparison@v1"]
+    descriptor_1: StepOutputSelector(kind=[NUMPY_ARRAY_KIND]) = Field(
         description="Reference to SIFT descriptors from the first image to compare",
         examples=["$steps.sift.descriptors"],
-        validation_alias=AliasChoices("descriptor1", "descriptor_1"),
     )
-
-    descriptor2: StepOutputSelector(kind=[NUMPY_ARRAY_KIND]) = Field(
+    descriptor_2: StepOutputSelector(kind=[NUMPY_ARRAY_KIND]) = Field(
         description="Reference to SIFT descriptors from the second image to compare",
         examples=["$steps.sift.descriptors"],
-        validation_alias=AliasChoices("descriptor2", "descriptor_2"),
     )
-
     good_matches_threshold: Union[
         PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
     ] = Field(
@@ -74,11 +54,12 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
         description="Threshold for the number of good matches to consider the images as matching",
         examples=[200, "$inputs.good_matches_threshold"],
     )
-
     ratio_threshold: Union[float, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
         Field(
             default=0.7,
-            description="Ratio threshold for the ratio test, which is used to filter out poor matches by comparing the distance of the closest match to the distance of the second closest match. A lower ratio indicates stricter filtering.",
+            description="Ratio threshold for the ratio test, which is used to filter out poor matches by comparing "
+            "the distance of the closest match to the distance of the second closest match. A lower "
+            "ratio indicates stricter filtering.",
             examples=[0.7, "$inputs.ratio_threshold"],
         )
     )
@@ -89,9 +70,6 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        """
-        Define the outputs of the SIFTComparison block.
-        """
         return [
             OutputDefinition(name="good_matches_count", kind=[INTEGER_KIND]),
             OutputDefinition(name="images_match", kind=[BOOLEAN_KIND]),
@@ -105,36 +83,25 @@ class SIFTComparisonBlockV1(WorkflowBlock):
 
     def run(
         self,
-        descriptor1: np.ndarray,
-        descriptor2: np.ndarray,
+        descriptor_1: np.ndarray,
+        descriptor_2: np.ndarray,
         good_matches_threshold: int = 50,
         ratio_threshold: float = 0.7,
     ) -> BlockResult:
-
-        # Ensure descriptors are numpy arrays and convert to float32
-        # descriptor1 = np.array(descriptor1).astype(np.float32)
-        # descriptor2 = np.array(descriptor2).astype(np.float32)
-
         # Check if both descriptor arrays have at least 2 descriptors
-        if len(descriptor1) < 2 or len(descriptor2) < 2:
+        if len(descriptor_1) < 2 or len(descriptor_2) < 2:
             return {
                 "good_matches_count": 0,
                 "images_match": False,
             }
-
-        # Implement the SIFT comparison logic
         flann = cv2.FlannBasedMatcher(dict(algorithm=1, trees=5), dict(checks=50))
-        matches = flann.knnMatch(descriptor1, descriptor2, k=2)
-
-        # Apply ratio test
+        matches = flann.knnMatch(descriptor_1, descriptor_2, k=2)
         good_matches = []
         for m, n in matches:
             if m.distance < ratio_threshold * n.distance:
                 good_matches.append(m)
-
         good_matches_count = len(good_matches)
         images_match = good_matches_count >= good_matches_threshold
-
         return {
             "good_matches_count": good_matches_count,
             "images_match": images_match,
