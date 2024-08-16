@@ -98,13 +98,13 @@ class SIFTComparisonBlockV1(WorkflowBlock):
         print(
             "descriptor_1",
             type(descriptor_1),
-            descriptor_1.shape if hasattr(descriptor_1, "shape") else "N/A",
+            descriptor_1.shape if hasattr(descriptor_1, "shape") else descriptor_1,
             flush=True,
         )
         print(
             "descriptor_2",
             type(descriptor_1),
-            descriptor_1.shape if hasattr(descriptor_1, "shape") else "N/A",
+            descriptor_1.shape if hasattr(descriptor_1, "shape") else descriptor_2,
             flush=True,
         )
         matches = flann.knnMatch(descriptor_1, descriptor_2, k=2)
