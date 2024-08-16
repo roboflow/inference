@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
     ColorPixelCountManifest,
     PixelationCountBlockV1,
+    convert_color_to_bgr_tuple,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -21,10 +22,8 @@ def test_pixelation_validation_when_valid_manifest_is_given(
     data = {
         "type": "roboflow_core/pixel_color_count@v1",  # Correct type
         "name": "pixelation1",
-        "predictions": "$steps.od_model.predictions",
         images_field_alias: "$inputs.image",
-        "pixel_size": 10,
-        "target_color": [255, 0, 0],  # Add target_color field
+        "target_color": (255, 0, 0),  # Add target_color field
     }
 
     # when
@@ -35,9 +34,7 @@ def test_pixelation_validation_when_valid_manifest_is_given(
         type="roboflow_core/pixel_color_count@v1",
         name="pixelation1",
         images="$inputs.image",
-        predictions="$steps.od_model.predictions",
-        pixel_size=10,
-        target_color=[255, 0, 0],
+        target_color=(255, 0, 0),
     )
 
 
@@ -47,9 +44,7 @@ def test_pixelation_validation_when_invalid_image_is_given() -> None:
         "type": "roboflow_core/pixel_color_count@v1",  # Correct type
         "name": "pixelation1",
         "images": "invalid",
-        "predictions": "$steps.od_model.predictions",
-        "pixel_size": 10,
-        "target_color": [255, 0, 0],  # Add target_color field
+        "target_color": (255, 0, 0),  # Add target_color field
     }
 
     # when
@@ -75,7 +70,63 @@ def test_pixelation_block() -> None:
     )
 
     assert output is not None
-    assert output["color_pixel_count"] == 100 * 100, (
+    assert output["matching_pixels_count"] == 100 * 100, (
         "Expected 100*100 square to be matched, as 100 pixels match dominant color, "
         "and remaining are within margin"
     )
+
+
+def test_convert_color_to_bgr_tuple_when_valid_tuple_given() -> None:
+    # when
+    result = convert_color_to_bgr_tuple(color=(255, 0, 0))
+
+    # then
+    assert result == (0, 0, 255), "Expected RGB to be converted into BGR"
+
+
+def test_convert_color_to_bgr_tuple_when_invalid_tuple_given() -> None:
+    # when
+    with pytest.raises(ValueError):
+        _ = convert_color_to_bgr_tuple(color=(256, 0, 0, 0))
+
+
+def test_convert_color_to_bgr_tuple_when_valid_hex_string_given() -> None:
+    # when
+    result = convert_color_to_bgr_tuple(color="#ff000A")
+
+    # then
+    assert result == (10, 0, 255), "Expected RGB to be converted into BGR"
+
+
+def test_convert_color_to_bgr_tuple_when_valid_short_hex_string_given() -> None:
+    # when
+    result = convert_color_to_bgr_tuple(color="#f0A")
+
+    # then
+    assert result == (170, 0, 255), "Expected RGB to be converted into BGR"
+
+
+def test_convert_color_to_bgr_tuple_when_invalid_hex_string_given() -> None:
+    # when
+    with pytest.raises(ValueError):
+        _ = convert_color_to_bgr_tuple(color="#invalid")
+
+
+def test_convert_color_to_bgr_tuple_when_tuple_string_given() -> None:
+    # when
+    result = convert_color_to_bgr_tuple(color="(255, 0, 128)")
+
+    # then
+    assert result == (128, 0, 255), "Expected RGB to be converted into BGR"
+
+
+def test_convert_color_to_bgr_tuple_when_invalid_tuple_string_given() -> None:
+    # when
+    with pytest.raises(ValueError):
+        _ = convert_color_to_bgr_tuple(color="(255, 0, a)")
+
+
+def test_convert_color_to_bgr_tuple_when_invalid_value() -> None:
+    # when
+    with pytest.raises(ValueError):
+        _ = convert_color_to_bgr_tuple(color="invalid")

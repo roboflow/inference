@@ -43,6 +43,14 @@ Apply Template Matching to an image. Block is based on OpenCV library function c
 that searches for a template image within a larger image. This is often used in computer vision tasks where 
 you need to find a specific object or pattern in a scene, like detecting logos, objects, or 
 specific regions in an image.
+
+Please take into account the following characteristics of block:
+* it tends to produce overlapping and duplicated predictions, hence we added NMS which can be disabled
+* block may find very large number of matches in some cases due to simplicity of methods being used - 
+in that cases NMS may be computationally intractable and should be disabled
+
+Output from the block is in a form of sv.Detections objects which can be nicely paired with other blocks
+accepting this kind of input (like visualization blocks).
 """
 
 
@@ -153,6 +161,8 @@ def apply_template_matching(
         class_id.append(0)
         class_name.append("template_match")
         detections_id.append(str(uuid4()))
+    if len(xyxy) == 0:
+        return sv.Detections.empty()
     detections = sv.Detections(
         xyxy=np.array(xyxy).astype(np.int32),
         confidence=np.array(confidence),

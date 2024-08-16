@@ -70,7 +70,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="color_pixel_count",
+                name="matching_pixels_count",
                 kind=[BATCH_OF_INTEGER_KIND],
             ),
         ]
@@ -91,7 +91,7 @@ class PixelationCountBlockV1(WorkflowBlock):
         color_pixel_count = count_specific_color_pixels(
             image.numpy_image, target_color, tolerance
         )
-        return {"color_pixel_count": color_pixel_count}
+        return {"matching_pixels_count": color_pixel_count}
 
 
 def count_specific_color_pixels(
@@ -143,6 +143,11 @@ def convert_string_color_to_bgr_tuple(color: str) -> Tuple[int, int, int]:
     if color.startswith("#") and len(color) == 7:
         try:
             return tuple(int(color[i : i + 2], 16) for i in (5, 3, 1))
+        except ValueError as e:
+            raise ValueError(f"Invalid hex color format: {color}") from e
+    if color.startswith("#") and len(color) == 4:
+        try:
+            return tuple(int(color[i] + color[i], 16) for i in (3, 2, 1))
         except ValueError as e:
             raise ValueError(f"Invalid hex color format: {color}") from e
     if color.startswith("(") and color.endswith(")"):

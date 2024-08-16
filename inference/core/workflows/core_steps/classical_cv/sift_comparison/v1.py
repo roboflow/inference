@@ -50,9 +50,9 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
     good_matches_threshold: Union[
         PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
     ] = Field(
-        default=200,
+        default=50,
         description="Threshold for the number of good matches to consider the images as matching",
-        examples=[200, "$inputs.good_matches_threshold"],
+        examples=[50, "$inputs.good_matches_threshold"],
     )
     ratio_threshold: Union[float, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
         Field(
@@ -101,6 +101,7 @@ class SIFTComparisonBlockV1(WorkflowBlock):
             if m.distance < ratio_threshold * n.distance:
                 good_matches.append(m)
         good_matches_count = len(good_matches)
+        print("good_matches_count", good_matches_count)
         images_match = good_matches_count >= good_matches_threshold
         return {
             "good_matches_count": good_matches_count,
