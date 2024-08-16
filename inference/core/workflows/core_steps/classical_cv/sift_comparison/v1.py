@@ -113,7 +113,6 @@ class SIFTComparisonBlockV1(WorkflowBlock):
             if m.distance < ratio_threshold * n.distance:
                 good_matches.append(m)
         good_matches_count = len(good_matches)
-        print("good_matches_count", good_matches_count)
         images_match = good_matches_count >= good_matches_threshold
         return {
             "good_matches_count": good_matches_count,
