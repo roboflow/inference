@@ -111,3 +111,76 @@ def test_workflow_with_classical_pattern_matching(
     assert np.allclose(
         result[1]["predictions"].confidence, np.array([1.0])
     ), "Expected fixed confidence"
+
+
+WORKFLOW_WITH_CLASSICAL_PATTERN_MATCHING_REFERRING_THE_SAME_AS_IMAGE_AND_TEMPLATE = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "InferenceImage", "name": "image"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/template_matching@v1",
+            "name": "template_matching",
+            "image": "$inputs.image",
+            "template": "$inputs.image",
+            "matching_threshold": 0.8,
+        }
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "coordinates_system": "own",
+            "selector": "$steps.template_matching.predictions",
+        }
+    ],
+}
+
+
+def test_workflow_with_classical_pattern_matching_using_the_same_images_as_templates(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    """
+    In this test set we check how classical pattern matching block integrates with
+    other blocks that accept sv.Detections.
+
+    In this case we are checking what happens when the same input is referred twice in step.
+    We are doing it to compensate for bug detected in Execution engine while working on
+    adding classical CV steps.
+    """
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CLASSICAL_PATTERN_MATCHING_REFERRING_THE_SAME_AS_IMAGE_AND_TEMPLATE,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [crowd_image, dogs_image],
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "Two images provided, so two outputs expected"
+    assert set(result[0].keys()) == {
+        "predictions",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "predictions",
+    }, "Expected all declared outputs to be delivered"
+    assert (
+        len(result[0]["predictions"]) == 1
+    ), "Expected single pattern matched in first image"
+    assert (
+        len(result[1]["predictions"]) == 1
+    ), "Expected single pattern match in second image"

@@ -147,7 +147,6 @@ def apply_template_matching(
     apply_nms: bool,
     nms_threshold: float,
 ) -> sv.Detections:
-    print("image.numpy_image", image, flush=True)
     img_gray = cv2.cvtColor(image.numpy_image, cv2.COLOR_BGR2GRAY)
     template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
     w, h = template_gray.shape[::-1]
