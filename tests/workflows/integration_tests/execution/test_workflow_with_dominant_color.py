@@ -56,7 +56,7 @@ def test_dominant_color_workflow_when_minimal_valid_input_provided(
         "color",
     }, "Expected all declared outputs to be delivered"
     assert len(result[0]["color"]) == 3, "Expected 3 RGB values in the color field"
-    assert result[0]["color"] == [255, 0, 0], "Expected red dominant color in the image"
+    assert result[0]["color"] == (255, 0, 0), "Expected red dominant color in the image"
 
 
 DOMINANT_COLOR_WORKFLOW = {
@@ -113,4 +113,4 @@ def test_dominant_color_workflow_when_additional_input_provided(
         "color",
     }, "Expected all declared outputs to be delivered"
     assert len(result[0]["color"]) == 3, "Expected 3 RGB values in the color field"
-    assert result[0]["color"] == [255, 0, 0], "Expected red dominant color in the image"
+    assert result[0]["color"] == (255, 0, 0), "Expected red dominant color in the image"

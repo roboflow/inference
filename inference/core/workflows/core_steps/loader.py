@@ -2,6 +2,19 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
+    DominantColorBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
+    PixelationCountBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
+from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import (
+    SIFTComparisonBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
+    TemplateMatchingBlockV1,
+)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
@@ -102,11 +115,6 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop.v1
     RelativeStaticCropBlockV1,
 )
 
-# Utilities
-from inference.core.workflows.core_steps.utilities.dominant_color.v1 import (
-    DominantColorBlockV1,
-)
-
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
     BackgroundColorVisualizationBlockV1,
@@ -174,6 +182,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
     FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KEYPOINTS_KIND,
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
@@ -181,6 +190,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     POINT_KIND,
+    RGB_COLOR_KIND,
     ROBOFLOW_API_KEY_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
@@ -252,6 +262,10 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsStitchBlockV1,
         ImageSlicerBlockV1,
         DominantColorBlockV1,
+        PixelationCountBlockV1,
+        SIFTComparisonBlockV1,
+        SIFTBlockV1,
+        TemplateMatchingBlockV1,
     ]
 
 
@@ -290,4 +304,6 @@ def load_kinds() -> List[Kind]:
         BATCH_OF_PREDICTION_TYPE_KIND,
         BATCH_OF_PARENT_ID_KIND,
         BATCH_OF_IMAGE_METADATA_KIND,
+        RGB_COLOR_KIND,
+        IMAGE_KEYPOINTS_KIND,
     ]
