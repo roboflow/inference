@@ -95,6 +95,18 @@ class SIFTComparisonBlockV1(WorkflowBlock):
                 "images_match": False,
             }
         flann = cv2.FlannBasedMatcher(dict(algorithm=1, trees=5), dict(checks=50))
+        print(
+            "descriptor_1",
+            type(descriptor_1),
+            descriptor_1.shape if hasattr(descriptor_1, "shape") else "N/A",
+            flush=True,
+        )
+        print(
+            "descriptor_2",
+            type(descriptor_1),
+            descriptor_1.shape if hasattr(descriptor_1, "shape") else "N/A",
+            flush=True,
+        )
         matches = flann.knnMatch(descriptor_1, descriptor_2, k=2)
         good_matches = []
         for m, n in matches:

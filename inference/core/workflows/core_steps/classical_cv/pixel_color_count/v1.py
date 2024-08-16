@@ -14,9 +14,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     RGB_COLOR_KIND,
     STRING_KIND,
     StepOutputImageSelector,
+    StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
-    StepOutputSelector
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
