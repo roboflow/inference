@@ -8,9 +8,11 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -54,6 +56,33 @@ class DominantColorManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("image", "images"),
     )
 
+    color_clusters: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        title="Color Clusters",
+        description="Number of dominant colors to identify. Higher values increase precision but may slow processing.",
+        default=4,
+        examples=[4, "$inputs.color_clusters"],
+        gt=0,
+        le=10,
+    )
+
+    max_iterations: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        title="Max Iterations",
+        description="Max number of iterations to perform. Higher values increase precision but may slow processing.",
+        default=100,
+        examples=[100, "$inputs.max_iterations"],
+        gt=0,
+        le=500,
+    )
+
+    target_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        title="Target Size",
+        description="Sets target for the smallest dimension of the downsampled image in pixels. Lower values increase speed but may reduce precision.",
+        default=100,
+        examples=[100, "$inputs.target_size"],
+        gt=0,
+        le=250,
+    )
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -73,19 +102,27 @@ class DominantColorBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[DominantColorManifest]:
         return DominantColorManifest
 
-    def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
+    def run(
+        self,
+        image: WorkflowImageData,
+        color_clusters: Optional[int],
+        max_iterations: Optional[int],
+        target_size: Optional[int],
+        *args,
+        **kwargs
+    ) -> BlockResult:
         np_image = image.numpy_image
 
         # Downsample the image to speed up processing
         height, width = np_image.shape[:2]
-        scale_factor = max(1, min(width, height) // 100)
+        scale_factor = max(1, min(width, height) // target_size)
         np_image = np_image[::scale_factor, ::scale_factor]
 
         pixels = np_image.reshape(-1, 3).astype(np.float32)
 
-        k = 4
-        max_iterations = 100
-        centroids = pixels[np.random.choice(pixels.shape[0], k, replace=False)]
+        centroids = pixels[
+            np.random.choice(pixels.shape[0], color_clusters, replace=False)
+        ]
 
         for _ in range(max_iterations):
             # Assign pixels to nearest centroid
@@ -94,7 +131,7 @@ class DominantColorBlockV1(WorkflowBlock):
 
             # Update centroids
             new_centroids = np.zeros_like(centroids)
-            for i in range(k):
+            for i in range(color_clusters):
                 cluster_points = pixels[labels == i]
                 if len(cluster_points) > 0:
                     new_centroids[i] = cluster_points.mean(axis=0)
