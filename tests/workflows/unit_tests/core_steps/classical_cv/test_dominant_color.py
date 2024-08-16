@@ -14,11 +14,11 @@ from inference.core.workflows.execution_engine.entities.base import (
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 def test_dominant_color_validation_when_valid_manifest_is_given(
-    type_alias: str, images_field_alias: str
+    images_field_alias: str,
 ) -> None:
     # given
     data = {
-        "type": type_alias,
+        "type": "roboflow_core/dominant_color@v1",
         "name": "dominant_color1",
         "images": "$inputs.image",
     }
@@ -68,13 +68,13 @@ def test_dominant_color_block() -> None:
     )
 
     assert output is not None, "Expected an output but got None"
-    assert isinstance(output["rgb_color"], list), " Expected rgb_color to be a list"
+    assert isinstance(output["rgb_color"], tuple), " Expected rgb_color to be a tuple"
     assert len(output["rgb_color"]) == 3, " Expected rgb_color to have 3 elements"
     assert all(
         0 <= color <= 255 for color in output["rgb_color"]
     ), " Expected all elements in rgb_color to be between 0 and 255"
-    assert output["rgb_color"] == [
+    assert output["rgb_color"] == (
         255,
         0,
         0,
-    ], " Expected rgb_color to be [255, 0, 0], aka a red image"
+    ), " Expected rgb_color to be [255, 0, 0], aka a red image"

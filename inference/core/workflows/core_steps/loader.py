@@ -182,6 +182,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
     FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KEYPOINTS_KIND,
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
@@ -189,6 +190,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     POINT_KIND,
+    RGB_COLOR_KIND,
     ROBOFLOW_API_KEY_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
@@ -302,4 +304,6 @@ def load_kinds() -> List[Kind]:
         BATCH_OF_PREDICTION_TYPE_KIND,
         BATCH_OF_PARENT_ID_KIND,
         BATCH_OF_IMAGE_METADATA_KIND,
+        RGB_COLOR_KIND,
+        IMAGE_KEYPOINTS_KIND,
     ]

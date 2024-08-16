@@ -45,7 +45,7 @@ def test_sift_validation_when_invalid_image_is_given() -> None:
         _ = SIFTDetectionManifest.model_validate(data)
 
 
-def test_sift_block() -> None:
+def test_sift_block(dogs_image: np.ndarray) -> None:
     # given
     block = SIFTBlockV1()
 
@@ -53,14 +53,14 @@ def test_sift_block() -> None:
     output = block.run(
         image=WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id="some"),
-            numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
+            numpy_image=dogs_image,
         )
     )
 
     # then
     assert "image" in output
     assert isinstance(output["image"], WorkflowImageData)
-    assert output.get("image").numpy_image.shape == (1000, 1000, 3)
+    assert output.get("image").numpy_image.shape == (427, 640, 3)
     assert "keypoints" in output
     assert isinstance(output["keypoints"], list)
     assert "descriptors" in output
