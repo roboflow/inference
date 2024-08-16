@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-import supervision as sv
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
