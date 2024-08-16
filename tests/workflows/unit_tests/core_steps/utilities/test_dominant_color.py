@@ -4,8 +4,8 @@ import supervision as sv
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.utilities.dominant_color.v1 import (
-    DominantColorManifest,
     DominantColorBlockV1,
+    DominantColorManifest,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -59,7 +59,7 @@ def test_dominant_color_block() -> None:
 
     # generate a red image to test
     red_image = np.zeros((1000, 1000, 3), dtype=np.uint8)
-    red_image[:, :, 2] = 255 
+    red_image[:, :, 2] = 255
 
     output = block.run(
         image=WorkflowImageData(
@@ -72,7 +72,13 @@ def test_dominant_color_block() -> None:
     )
 
     assert output is not None, "Expected an output but got None"
-    assert isinstance(output['rgb_color'], list), " Expected rgb_color to be a list"
-    assert len(output['rgb_color']) == 3, " Expected rgb_color to have 3 elements"
-    assert all(0 <= color <= 255 for color in output['rgb_color']), " Expected all elements in rgb_color to be between 0 and 255"
-    assert output['rgb_color'] == [255, 0, 0], " Expected rgb_color to be [255, 0, 0], aka a red image"
+    assert isinstance(output["rgb_color"], list), " Expected rgb_color to be a list"
+    assert len(output["rgb_color"]) == 3, " Expected rgb_color to have 3 elements"
+    assert all(
+        0 <= color <= 255 for color in output["rgb_color"]
+    ), " Expected all elements in rgb_color to be between 0 and 255"
+    assert output["rgb_color"] == [
+        255,
+        0,
+        0,
+    ], " Expected rgb_color to be [255, 0, 0], aka a red image"

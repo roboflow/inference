@@ -111,6 +111,9 @@ BLOCK_1_DESCRIPTION = BlockDescription(
     human_friendly_block_name="Block 1",
     manifest_type_identifier="Block1Manifest",
     execution_engine_compatibility=None,
+    input_dimensionality_offsets={},
+    dimensionality_reference_property=None,
+    output_dimensionality_offset=0,
 )
 BLOCK_2_DESCRIPTION = BlockDescription(
     manifest_class=Block2Manifest,
@@ -122,6 +125,9 @@ BLOCK_2_DESCRIPTION = BlockDescription(
     human_friendly_block_name="Block 2",
     manifest_type_identifier="Block2Manifest",
     execution_engine_compatibility=None,
+    input_dimensionality_offsets={},
+    dimensionality_reference_property=None,
+    output_dimensionality_offset=0,
 )
 BLOCK_3_DESCRIPTION = BlockDescription(
     manifest_class=Block3Manifest,
@@ -133,6 +139,9 @@ BLOCK_3_DESCRIPTION = BlockDescription(
     human_friendly_block_name="Block 3",
     manifest_type_identifier="Block3Manifest",
     execution_engine_compatibility=None,
+    input_dimensionality_offsets={},
+    dimensionality_reference_property=None,
+    output_dimensionality_offset=0,
 )
 
 BLOCKS_DESCRIPTION = BlocksDescription(
