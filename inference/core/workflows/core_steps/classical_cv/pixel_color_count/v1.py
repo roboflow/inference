@@ -16,6 +16,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
+    StepOutputSelector
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -47,7 +48,8 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("image", "images"),
     )
     target_color: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND, RGB_COLOR_KIND]),
+        WorkflowParameterSelector(kind=[STRING_KIND]),
+        StepOutputSelector(kind=[RGB_COLOR_KIND]),
         str,
         Tuple[int, int, int],
     ] = Field(
