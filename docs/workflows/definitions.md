@@ -117,7 +117,7 @@ value is not expected to be a batch of elements, so when you provide a list, it 
 elements, rather than batch of elements, each to be processed individually.
 
 More details about the nature of batch-oriented data processing in workflows can be found 
-[here](/workflows/simd_in_workflows).
+[here](/workflows/workflow_execution).
 
 
 ## Steps
@@ -187,4 +187,4 @@ To ensure these coordinates are not translated back to the parent coordinate sys
 Additionally, outputs selectors support wildcards (`$steps.step_nane.*"`) to grab all outputs of specific step.
 
 To fully understand how output structure is created - read about 
-[data processing in Workflows](/workflows/simd_in_workflows/).
+[data processing in Workflows](/workflows/workflow_execution/).

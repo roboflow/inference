@@ -1,0 +1,279 @@
+# How Workflow execution looks like?
+
+Workflow execution is a complex subject, but you don’t need to understand every detail to get started effectively. 
+Grasping some basic concepts can significantly speed up your learning process with the Workflows ecosystem. 
+This document provides a clear and straightforward overview, designed to help you quickly understand the 
+fundamentals and build more powerful applications.
+
+For those interested in a deeper technical understanding, we invite you to explore the developer guide 
+for more detailed information.
+
+## Compilation
+
+Workflow execution begins with compiling the Workflow definition. As you know, a Workflow definition is a 
+JSON document that outlines inputs, steps, outputs, and connections between elements. To turn this document 
+into an executable format, it must be compiled.
+
+From the Execution Engine’s perspective, this process involves creating a computation graph and checking its 
+integrity and correctness. This verification step is crucial because it helps identify and alert you to errors 
+early on, making it easier and faster to debug issues. For instance, if you connect incompatible blocks, use an
+invalid selector, or create a loop in your workflow, the compiler will notify you with error messages. 
+
+
+Once the compilation is complete, it means your Workflow is ready to run. This confirms that:
+
+- Your Workflow is compatible with the version of the Execution Engine in your environment.
+
+- All blocks in your Workflow were successfully loaded and initialized.
+
+- The connections between blocks are valid.
+
+- The input data you provided for the Workflow has been validated.
+
+At this point, the Execution Engine can begin execution of the Workflow.
+
+
+## Data in Workflow execution
+
+When you run a Workflow, you provide input data each time. Just like a function in programming that 
+can handle different input values, a Workflow can process different pieces of data each time you run it. 
+Let's see what happens with the data once you trigger Workflow execution. 
+
+You provide input data substituting inputs' placeholders defined in the Workflow. These placeholders are 
+referenced by steps of your Workflow using selectors. When a step runs, the actual piece of data you 
+provided at that moment is used to make the computation. Its outputs can be later used by other steps, based
+on steps outputs selectors declared in Workflow definition, continuing this process until the Workflow 
+completes and all outputs are generated.
+
+Apart from parameters with fixed values in the Workflow definition, the definition itself does not include 
+actual data values. It simply tells the Execution Engine how to direct and handle the data you provide as input.
+
+
+## What is the data?
+
+Input data in a Workflow can be divided into two types:
+
+- Data to be processed: This can be submitted as a batch of data points.
+
+- Parameters: These are single values used for specific settings or configurations.
+
+To clarify the difference, consider this simple Python function:
+
+```python
+def is_even(number: int) -> bool:
+    return number % 2 == 0
+```
+You use this function like this, providing one number at a time:
+
+```python
+is_even(number=1)
+is_even(number=2)
+is_even(number=3)
+```
+
+The situation becomes more complex with machine learning models. Unlike a simple function like `is_even(...)`, 
+which processes one number at a time, ML models often handle multiple pieces of data at once. For example, 
+instead of providing just one image to a classification model, you can usually submit a list of images and 
+receive predictions for all of them at once.
+
+This is different from our `is_even(...)` function, which would need to be called separately 
+for each number to get a list of results. The difference comes from how ML models work, especially how 
+GPUs process data - applying the same operation to many pieces of data simultaneously. 
+
+<center><iframe width="560" height="315" src="https://www.youtube.com/embed/-P28LKWTzrI?si=o_jORHPT8dqinQ3_" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></center>
+
+The `is_even(...)` function can be adapted to handle batches of data by using a loop, like this:
+
+```python
+results = []
+for number in [1, 2, 3, 4]:
+    results.append(is_even(number))
+```
+
+In Workflows, similar methods are used to handle non-batch-oriented steps facing batch input data. But what if 
+step expects batch-oriented data and is given singular data point? Let's look at inference process from example
+classification model:
+
+```python
+images = [PIL.Image(...), PIL.Image(...), PIL.Image(...), PIL.Image(...)]
+model = MyClassificationModel()
+
+predictions = model.infer(images=images, confidence_threshold=0.5)
+```
+
+As you may imagine, this code has chance to run correctly, as there is substantial difference in meaning of
+`images` and `confidence_threshold` parameter. Former is batch of data to apply single operation (prediction 
+from a model) and the latter is parameter influencing the processing for all elements in the batch. Virtually, 
+`confidence_threshold` gets propagated (broadcast) at each element of `images` list with the same value, 
+as if `confidence_threshold` was the following list: `[0.5, 0.5, 0.5, 0.5]`.
+
+As mentioned earlier, Workflow inputs can be of two types:
+
+- `WorkflowImage`: This is similar to the images parameter in our example.
+
+- `WorkflowParameters`: This works like the confidence_threshold.
+
+When you provide a single image as a `WorkflowImage` input, it is automatically expanded to form a batch. 
+If your Workflow definition includes multiple `WorkflowImage` placeholders, the actual data you provide for 
+execution must have the same batch size for all these inputs. The only exception is when you submit a 
+single image; it will be broadcast to fit the batch size requirements of other inputs.
+
+Currently, `WorkflowImage` is the only type of batch-oriented input you can use in Workflows. 
+This was introduced because the ecosystem started in the Computer Vision field, where images are a key data type. 
+However, as the field evolves and expands to include multi-modal models (LMMs) and other types of data, 
+you can expect additional batch-oriented data types to be introduced in the future.
+
+
+## Steps interactions with data
+
+If we asked you about the nature of step outputs in these scenarios:
+
+- **A**: The step receives non-batch-oriented parameters as input.
+
+- **B**: The step receives batch-oriented data as input.
+
+- **C**: The step receives both non-batch-oriented parameters and batch-oriented data as input.
+
+You would likely say:
+
+- In option A, the output will be non-batch.
+
+- In options B and C, the output will be a batch. In option C, the non-batch-oriented parameters will be 
+broadcast to match the batch size of the data.
+
+And you’d be correct. If you understand that, you probably only have two more concepts to understand before
+you can comfortably say you understand everything needed to successfully build and run complex Workflows.
+
+
+Let’s say you want to create a Workflow with these steps:
+
+1. Detect objects in a batch of input images.
+
+2. Crop each detected object from the images.
+
+3. Classify each cropped object with a second model to add detailed labels.
+
+Here’s what happens with the data in the cropping step:
+
+1. You start with a batch of images, let’s say you have `n` images.
+
+2. The object detection model finds a different number of objects in each image.
+
+3. The cropping step then creates new images for each detected object, resulting in a new batch of images 
+for each original image.
+
+So, you end up with a nested list of images, with sizes like `[(k[1], ), (k[2], ), ... (k[n])]`, where each `k[i]` 
+is a batch of images with a variable size based on the number of detections. The second model (classifier)
+will process these nested batches of cropped images. There is also nothing that stops you from going deeper 
+in nested batches world.
+
+Here’s where it gets tricky, but Execution Engine simplifies this complexity. It manages the nesting of 
+data virtually, so blocks always receive data in a flattened, non-nested format. This makes it easier to apply 
+the same block, like an object detection model or classifier, regardless of how deeply nested your data is. But 
+there is a price - the notion of `dimensionality level` which dictates which steps may be connected, which not.
+
+`dimensionality level` concept refers to the level of nesting of batch. Batch oriented Workflow inputs 
+have `dimensionality level 1`, crops that we described in our example have `dimensionality level 2` and so on.
+What matters from the perspective of plugging inputs to specific step is:
+
+* the difference in `dimensionality level` across step inputs
+
+* the impact of step on `dimensionality level` of output (step may decrease, keep the same or increase dimensionality)
+
+Majority of blocks are designed to work with inputs at the same dimensionality level, not changing dimensionality of
+its outputs, with some being exceptions to that rule. In our example, predictions from object-detection model
+occupy `dimensionality level 1`, while classification results are at `dimensionality level 2`, due to the fact that
+cropping step introduced new, dynamic level of dimensionality.
+
+Now, if you can find a block that accepts both object detection predictions and classification predictions, you could
+use our predictions together only if block specifies explicitly it accepts such combination of `dimensionality levels`, 
+otherwise you would end up seeing compilation error. Hopefully, there is a block you could use in this context. 
+
+![Detections Classes Replacement](https://media.roboflow.com/inference/detections_classes_replacement.png)
+
+Detections Classes Replacement block is designed to substitute bounding boxes classes labels with predictions from
+classification model performed at crops of original image with respect to bounding boxes predicted by first model.
+
+!!! Warning
+
+    We are working hard to change it, but so far the Workflow UI in Roboflow APP is not capable of displaying the 
+    concept of `dimensionality level`. We know that it is suboptimal from UX perspective and very confusing but we
+    must ask for patience until this situation gets better.
+
+
+!!! Note
+
+    Workflows Compiler keeps track of `data lineage` in Workflow definition, making it impossible to mix 
+    together data at higher `dimensionality levels` that do not come from the same origin. This concept is 
+    described in details in developer guide. From the user perspective it is important to understand that if  
+    image is cropped based on predictions from different models (or even the same model, using cropping step twice), 
+    cropping outputs despite being at the same dimensionality level cannot be used as inputs to the same step.
+
+
+## Conditional execution
+
+Let’s be honest—programmers love branching, and for good reason. It’s a common and useful construct in 
+programming languages.
+
+For example, it’s easy to understand what’s happening in this code:
+
+```python
+def is_string_lower_cased(my_string: str) -> str:
+    if my_string.lower() == my_string:
+        return "String was lower-cased"
+    return "String was not lower-cased"
+```
+
+
+But what about this code?
+
+```python
+def is_string_lower_cased_batched(my_string: Batch[str]) -> str:
+    pass
+```
+
+In this case, it’s not immediately clear how branching would work with a batch of strings. 
+The concept of handling decisions for a single item is straightforward, but when working with batches, 
+the logic needs to account for multiple inputs at once. The problem arises due to the fact that independent
+decision must be made for each element of batch - which may lead to different execution branches for 
+different elements of a batch. In such simplistic example as provided it can be easily addressed:
+
+```python
+def is_string_lower_cased_batched(my_string: Batch[str]) -> Batch[str]:
+    result = []
+    for element in my_string:
+        if element.lower() == my_string:
+            result.append("String was lower-cased")
+        else:
+            result.append("String was not lower-cased") 
+    return result
+```
+
+In Workflows, however we want blocks to decide where execution goes, not implement conditional statements
+inside block body and return merged results. This is why whole mechanism of conditional execution 
+emerged in Workflows Execution engine. This concept is important and has its own technical depth, but from 
+user perspective there are few things important to understand:
+
+- some Workflows blocks can impact execution flow - steps made out of those blocks will be specified a bunch 
+of step selectors, dictating possible next steps to be decided for **each element of batch** (non-batch oriented
+steps work as traditional if-else statements in programming)
+
+- once data element is discarded from batch by conditional execution, it will be hidden from all 
+affected steps down the processing path and denoted in outputs as `None`
+
+- multiple flow-control steps may affect single next step, union of conditional execution masks will be created
+and dynamically applied
+
+- step may be not executed if there is no inputs to the step left after conditional execution logic evaluation
+
+- there are special blocks capable of merging alternative execution branches, such that data from that branches
+can be referred by single selector (for instance to build outputs). Example of such block is 
+`First Non Empty Or Default` - which collapses execution branches taking first value encountered or defaulting to
+specified value if no value spotted
+
+- conditional execution usually impacts Workflow outputs - all values that are affected by branching are in 
+fact optional (if special blocks filling empty values are not used) and nested results may not be filled with data, 
+leaving empty lists in results - see details in [section describing output construction](#output-construction).
+
+## Output construction
+
