@@ -1,4 +1,6 @@
-from typing import Any, DefaultDict, Dict, List, Optional, Union
+from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
+
+import requests
 
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
@@ -108,3 +110,40 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
         ]
         zipped_payloads.append({system_info_api_key_hash: system_info_payload})
     return zipped_payloads
+
+
+def send_usage_payload(
+    payload: UsagePayload,
+    api_usage_endpoint_url: str,
+    hashes_to_api_keys: Optional[Dict[APIKeyHash, APIKey]] = None,
+    ssl_verify: bool = False,
+) -> Set[APIKeyHash]:
+    hashes_to_api_keys = hashes_to_api_keys or {}
+    api_keys_hashes_failed = set()
+    for api_key_hash, workflow_payloads in payload.items():
+        if hashes_to_api_keys and api_key_hash not in hashes_to_api_keys:
+            api_keys_hashes_failed.add(api_key_hash)
+            continue
+        api_key = hashes_to_api_keys.get(api_key_hash) or api_key_hash
+        complete_workflow_payloads = [
+            w for w in workflow_payloads.values() if "processed_frames" in w
+        ]
+        try:
+            for workflow_payload in complete_workflow_payloads:
+                if "api_key_hash" in workflow_payload:
+                    del workflow_payload["api_key_hash"]
+                workflow_payload["api_key"] = api_key
+            response = requests.post(
+                api_usage_endpoint_url,
+                json=complete_workflow_payloads,
+                verify=ssl_verify,
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=1,
+            )
+        except Exception:
+            api_keys_hashes_failed.add(api_key_hash)
+            continue
+        if response.status_code != 200:
+            api_keys_hashes_failed.add(api_key_hash)
+            continue
+    return api_keys_hashes_failed

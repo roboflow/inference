@@ -12,7 +12,6 @@ from queue import Queue
 from threading import Event, Lock, Thread
 from uuid import uuid4
 
-import requests
 from typing_extensions import (
     Any,
     Callable,
@@ -33,7 +32,7 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 )
 from inference.usage_tracking.utils import collect_func_params
 
-from .collector_utils import (
+from .payload_helpers import (
     APIKey,
     APIKeyHash,
     APIKeyUsage,
@@ -41,6 +40,7 @@ from .collector_utils import (
     ResourceID,
     SystemDetails,
     UsagePayload,
+    send_usage_payload,
     zip_usage_payloads,
 )
 from .config import TelemetrySettings, get_telemetry_settings
@@ -475,45 +475,18 @@ class UsageCollector:
 
         hashes_to_api_keys = dict(a[::-1] for a in self._hashed_api_keys.items())
 
-        api_keys_hashes_failed = set()
         for payload in payloads:
-            for api_key_hash, workflow_payloads in payload.items():
-                if api_key_hash not in hashes_to_api_keys:
-                    api_keys_hashes_failed.add(api_key_hash)
-                    continue
-                api_key = hashes_to_api_keys[api_key_hash]
-                complete_workflow_payloads = [
-                    w for w in workflow_payloads.values() if "processed_frames" in w
-                ]
-                try:
-                    for workflow_payload in complete_workflow_payloads:
-                        if "api_key_hash" in workflow_payload:
-                            del workflow_payload["api_key_hash"]
-                        workflow_payload["api_key"] = api_key
-                    logger.debug(
-                        "Offloading usage to %s, payload: %s",
-                        self._settings.api_usage_endpoint_url,
-                        complete_workflow_payloads,
-                    )
-                    response = requests.post(
-                        self._settings.api_usage_endpoint_url,
-                        json=complete_workflow_payloads,
-                        verify=ssl_verify,
-                        headers={"Authorization": f"Bearer {api_key}"},
-                        timeout=1,
-                    )
-                except Exception as exc:
-                    logger.debug("Failed to send usage - %s", exc)
-                    api_keys_hashes_failed.add(api_key_hash)
-                    continue
-                if response.status_code != 200:
-                    logger.debug(
-                        "Failed to send usage - got %s status code (%s)",
-                        response.status_code,
-                        response.content,
-                    )
-                    api_keys_hashes_failed.add(api_key_hash)
-                    continue
+            api_keys_hashes_failed = send_usage_payload(
+                payloads=payloads,
+                api_usage_endpoint_url=self._settings.api_usage_endpoint_url,
+                hashes_to_api_keys=hashes_to_api_keys,
+                ssl_verify=ssl_verify,
+            )
+            if api_keys_hashes_failed:
+                logger.debug(
+                    "Failed to send usage following usage payloads: %s",
+                    api_keys_hashes_failed,
+                )
             for api_key_hash in list(payload.keys()):
                 if api_key_hash not in api_keys_hashes_failed:
                     del payload[api_key_hash]

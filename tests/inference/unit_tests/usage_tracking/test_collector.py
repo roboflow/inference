@@ -5,7 +5,7 @@ import pytest
 
 from inference.core.env import LAMBDA
 from inference.usage_tracking.collector import UsageCollector
-from inference.usage_tracking.collector_utils import get_api_key_usage_containing_resource, merge_usage_dicts, zip_usage_payloads
+from inference.usage_tracking.payload_helpers import get_api_key_usage_containing_resource, merge_usage_dicts, zip_usage_payloads
 
 
 def test_create_empty_usage_dict():
