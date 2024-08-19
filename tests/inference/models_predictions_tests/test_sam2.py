@@ -46,8 +46,6 @@ def test_sam2_single_prompted_image_segmentation(
     masks, scores, low_res_logits = model.segment_image(
         truck_image,
         prompts=prompt,
-        save_logits_to_cache=False,
-        load_logits_from_cache=False,
     )
 
     # then

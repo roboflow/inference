@@ -1,4 +1,5 @@
 import base64
+import copy
 import hashlib
 from io import BytesIO
 from time import perf_counter
@@ -9,7 +10,6 @@ import rasterio.features
 import sam2.utils.misc
 import torch
 from torch.nn.attention import SDPBackend
-import copy
 
 sam2.utils.misc.get_sdp_backends = lambda z: [
     SDPBackend.EFFICIENT_ATTENTION,
@@ -23,8 +23,8 @@ from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam2 import (
     Sam2EmbeddingRequest,
     Sam2InferenceRequest,
-    Sam2PromptSet,
     Sam2Prompt,
+    Sam2PromptSet,
     Sam2SegmentationRequest,
 )
 from inference.core.entities.responses.sam2 import (
@@ -32,7 +32,7 @@ from inference.core.entities.responses.sam2 import (
     Sam2SegmentationPrediction,
     Sam2SegmentationResponse,
 )
-from inference.core.env import DEVICE, SAM2_VERSION_ID, SAM2_MAX_CACHE_SIZE
+from inference.core.env import DEVICE, SAM2_MAX_CACHE_SIZE, SAM2_VERSION_ID
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
@@ -209,8 +209,8 @@ class SegmentAnything2(RoboflowCoreModel):
         prompts: Optional[Union[Sam2PromptSet, dict]] = None,
         multimask_output: Optional[bool] = True,
         mask_input: Optional[Union[np.ndarray, List[List[List[float]]]]] = None,
-        save_logits_to_cache: bool = True,
-        load_logits_from_cache: bool = True,
+        save_logits_to_cache: bool = False,
+        load_logits_from_cache: bool = False,
         **kwargs,
     ):
         """
