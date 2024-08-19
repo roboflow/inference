@@ -1,14 +1,14 @@
-from typing import Any, Dict, List, Literal, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import Field
 
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import (
-    FlowControl,
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
     Kind,
     StepOutputSelector,
     WorkflowParameterSelector,
 )
+from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
@@ -29,6 +29,10 @@ class Block1Manifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [OutputDefinition(name="output_1", kind=[MY_KIND_1])]
 
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.0.0,<2.0.0"
+
 
 class Block1(WorkflowBlock):
 
@@ -36,7 +40,7 @@ class Block1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return Block1Manifest
 
-    async def run_locally(
+    def run(
         self, *args, **kwargs
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         pass
@@ -54,6 +58,10 @@ class Block2Manifest(WorkflowBlockManifest):
             OutputDefinition(name="output_2", kind=[MY_KIND_2]),
         ]
 
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.0.0,<2.0.0"
+
 
 class Block2(WorkflowBlock):
 
@@ -61,7 +69,7 @@ class Block2(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return Block2Manifest
 
-    async def run_locally(
+    def run(
         self, *args, **kwargs
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], FlowControl]]:
         pass

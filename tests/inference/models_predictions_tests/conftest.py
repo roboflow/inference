@@ -19,6 +19,8 @@ ASSETS_DIR = os.path.abspath(
 EXAMPLE_IMAGE_PATH = os.path.join(ASSETS_DIR, "example_image.jpg")
 PERSON_IMAGE_PATH = os.path.join(ASSETS_DIR, "person_image.jpg")
 BEER_IMAGE_PATH = os.path.join(ASSETS_DIR, "beer.jpg")
+TRUCK_IMAGE_PATH = os.path.join(ASSETS_DIR, "truck.jpg")
+SAM2_TRUCK_LOGITS = os.path.join(ASSETS_DIR, "low_res_logits.npy")
 
 
 @pytest.fixture(scope="function")
@@ -34,6 +36,11 @@ def person_image() -> np.ndarray:
 @pytest.fixture(scope="function")
 def beer_image() -> np.ndarray:
     return cv2.imread(BEER_IMAGE_PATH)
+
+
+@pytest.fixture(scope="function")
+def truck_image() -> np.ndarray:
+    return cv2.imread(TRUCK_IMAGE_PATH)
 
 
 @pytest.fixture(scope="function")
@@ -155,6 +162,33 @@ def yolov10_det_model() -> Generator[str, None, None]:
     )
     yield model_id
     shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def sam2_tiny_model() -> Generator[str, None, None]:
+    model_id = "sam2/hiera_tiny"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/sam2_tiny.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def sam2_small_model() -> Generator[str, None, None]:
+    model_id = "sam2/hiera_small"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/sam2_small.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def sam2_small_truck_logits() -> Generator[np.ndarray, None, None]:
+    yield np.load(SAM2_TRUCK_LOGITS)
 
 
 def fetch_and_place_model_in_cache(

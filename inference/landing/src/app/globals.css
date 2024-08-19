@@ -19,7 +19,7 @@ body {
 }
 
 #aboveFold {
-  background: url("/gradient-bg.webp");
+  background: url("/static/gradient-bg.webp");
   background-repeat: no-repeat;
   background-size: cover;
   background-position: 50% 50%;

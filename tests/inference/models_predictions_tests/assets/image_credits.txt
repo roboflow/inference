@@ -1,2 +1,3 @@
 example_image.jpg: https://pixabay.com/users/emiliaxd-39480146/
 person_image.jpg: https://pixabay.com/photos/suitcase-girl-leaving-child-person-1412996/
+truck.jpg: https://github.com/facebookresearch/segment-anything-2/blob/main/notebooks/images/truck.jpg

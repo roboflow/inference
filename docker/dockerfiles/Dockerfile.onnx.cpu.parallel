@@ -44,7 +44,6 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.cli.txt \
     -r requirements.sdk.http.txt \
     wheel>=0.38.0 \
-    setuptools>=65.5.1 \
     --upgrade \
     && rm -rf ~/.cache/pip
 RUN apt-get update && apt-get install -y lsb-release curl gpg
@@ -74,6 +73,7 @@ ENV CORE_MODELS_ENABLED=false
 ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV API_LOGGING_ENABLED=True
+ENV CORE_MODEL_SAM2_ENABLED=True
 
 ENTRYPOINT redis-server --io-threads 3 --save --port $REDIS_PORT & \
     celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier 2 --concurrency $NUM_CELERY_WORKERS -Q pre --loglevel=WARNING & \

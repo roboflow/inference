@@ -19,8 +19,8 @@ export default function Home() {
         <div className="flex flex-col items-center gap-6 px-8 text-center ">
           <div className="flex flex-col gap-1 items-center relative z-10">
             <a href="https://roboflow.com" target="_blank">
-              <img
-                src="/roboflow_full_logo_color.svg"
+              <Image
+                src="/static/roboflow_full_logo_color.svg"
                 alt="Roboflow Logo"
                 width={200}
               />
@@ -36,26 +36,26 @@ export default function Home() {
             >
               developer-friendly vision inference
             </div>
-            <img
-              src="/cone.svg"
+            <Image
+              src="/static/cone.svg"
               alt="Roboflow Logo"
               width={120}
               className="hidden md:flex flex-none absolute left-[-400px] -top-20 xl:left-[-450px] xl:-top-28 z-0"
             />
-            <img
-              src="/trash.svg"
+            <Image
+              src="/static/trash.svg"
               alt="Roboflow Logo"
               width={110}
               className="hidden md:flex flex-none absolute -left-56 top-4 xl:-left-64 xl:top-6 z-0"
             />
-            <img
-              src="/boat.svg"
+            <Image
+              src="/static/boat.svg"
               alt="Roboflow Logo"
               width={100}
               className="hidden md:flex flex-none absolute right-[-375px] top-36 xl:right-[-420px] xl:top-12 z-0"
             />
-            <img
-              src="/car.svg"
+            <Image
+              src="/static/car.svg"
               alt="Roboflow Logo"
               width={140}
               className="hidden md:flex flex-none absolute -right-56 top- xl:-right-56 xl:-top-6 z-0"

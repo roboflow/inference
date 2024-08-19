@@ -1,11 +1,12 @@
 import json
 import os
 import re
+from collections import defaultdict
 from typing import Dict, List, Set, Tuple, Type
 
 from inference.core.utils.file_system import dump_text_lines, read_text_file
-from inference.core.workflows.entities.base import OutputDefinition
-from inference.core.workflows.entities.types import STEP_AS_SELECTED_ELEMENT
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import STEP_AS_SELECTED_ELEMENT
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
 )
@@ -41,27 +42,39 @@ USER_CONFIGURATION_HEADER = [
     "|:---------|:---------|:----------------|:-----|",
 ]
 
-BLOCK_DOCUMENTATION_TEMPLATE = """
-# {class_name}
+BLOCK_FAMILY_TEMPLATE = """
+# {family_name}
+
+{versions}
+"""
+
+
+BLOCK_VERSION_TEMPLATE = """
+## Version `{version}`
 
 {description}
 
-## Properties
+### Type identifier
+
+Use the following identifier in step `"type"` field: `{type_identifier}`to add the block as
+as step in your workflow.
+
+### Properties
 
 {block_inputs}
 
 The **Refs** column marks possibility to parametrise the property with dynamic values available 
 in `workflow` runtime. See *Bindings* for more info.
 
-## Available Connections
+### Available Connections
 
-Check what blocks you can connect to `{class_name}`.
+Check what blocks you can connect to `{family_name}` in version `{version}`.
 
 - inputs: {input_connections}
 - outputs: {output_connections}
 
 The available connections depend on its binding kinds. Check what binding kinds 
-`{class_name}` has.
+`{family_name}` in version `{version}`  has.
 
 ??? tip "Bindings"
 
@@ -74,7 +87,7 @@ The available connections depend on its binding kinds. Check what binding kinds
 {block_output_bindings}
 
 
-??? tip "Example JSON definition of {class_name} step"
+??? tip "Example JSON definition of step `{family_name}` in version `{version}`"
 
     ```json
     {example}
@@ -106,7 +119,7 @@ def main() -> None:
     block_card_lines = []
     blocks_description = describe_available_blocks(dynamic_blocks=[])
     block_type2manifest_type_identifier = {
-        block.block_class: block.manifest_type_identifier
+        block.block_class: block.human_friendly_block_name
         for block in blocks_description.blocks
     }
     blocks_connections = discover_blocks_connections(
@@ -153,47 +166,70 @@ def main() -> None:
         allow_override=True,
         lines_connector="",
     )
+    block_families = defaultdict(list)
     for block in blocks_description.blocks:
-        block_type = block.block_schema.get("block_type", "").upper()
-        block_license = block.block_schema.get("license", "").upper()
-
-        short_description = block.block_schema.get("short_description", "")
-        long_description = block.block_schema.get("long_description", "")
-
-        documentation_file_name = camel_to_snake(block.manifest_type_identifier) + ".md"
+        block_families[block.human_friendly_block_name].append(block)
+    for family_name, family_members in block_families.items():
+        block_families[family_name] = sorted(
+            family_members,
+            key=lambda block: int(block.block_schema.get("version", "v0")[1:]),
+            reverse=True,
+        )
+    for family_name, family_members in block_families.items():
+        block_types_in_family = set()
+        block_licenses_in_family = set()
+        documentation_file_name = slugify_block_name(family_name) + ".md"
         documentation_file_path = os.path.join(
             BLOCK_DOCUMENTATION_DIRECTORY, documentation_file_name
         )
-        example_definition = generate_example_step_definition(block=block)
-        parsed_manifest = parse_block_manifest(manifest_type=block.manifest_class)
-        documentation_content = BLOCK_DOCUMENTATION_TEMPLATE.format(
-            class_name=block.manifest_type_identifier,
-            description=long_description,
-            block_inputs=format_block_inputs(parsed_manifest),
-            block_input_bindings=format_input_bindings(parsed_manifest),
-            block_output_bindings=format_block_outputs(block.outputs_manifest),
-            input_connections=format_block_connections(
-                connections=blocks_connections.input_connections.block_wise[
-                    block.block_class
-                ],
-                block_type2manifest_type_identifier=block_type2manifest_type_identifier,
-            ),
-            output_connections=format_block_connections(
-                connections=blocks_connections.output_connections.block_wise[
-                    block.block_class
-                ],
-                block_type2manifest_type_identifier=block_type2manifest_type_identifier,
-            ),
-            example="\n\t".join(json.dumps(example_definition, indent=4).split("\n")),
+        short_descriptions = []
+        versions_content = []
+        for block in family_members:
+            block_type = block.block_schema.get("block_type", "").upper()
+            block_types_in_family.add(block_type)
+            block_license = block.block_schema.get("license", "").upper()
+            block_licenses_in_family.add(block_license)
+            example_definition = generate_example_step_definition(block=block)
+            parsed_manifest = parse_block_manifest(manifest_type=block.manifest_class)
+            long_description = block.block_schema.get("long_description", "Description not available")
+            short_description = block.block_schema.get("short_description", "Description not available")
+            short_descriptions.append(short_description)
+            version_content = BLOCK_VERSION_TEMPLATE.format(
+                family_name=family_name,
+                version=block.block_schema.get("version", "undefined"),
+                type_identifier=block.manifest_type_identifier,
+                description=long_description,
+                block_inputs=format_block_inputs(parsed_manifest),
+                block_input_bindings=format_input_bindings(parsed_manifest),
+                block_output_bindings=format_block_outputs(block.outputs_manifest),
+                input_connections=format_block_connections(
+                    connections=blocks_connections.input_connections.block_wise[
+                        block.block_class
+                    ],
+                    block_type2manifest_type_identifier=block_type2manifest_type_identifier,
+                ),
+                output_connections=format_block_connections(
+                    connections=blocks_connections.output_connections.block_wise[
+                        block.block_class
+                    ],
+                    block_type2manifest_type_identifier=block_type2manifest_type_identifier,
+                ),
+                example="\n\t".join(json.dumps(example_definition, indent=4).split("\n")),
+            )
+            versions_content.append(version_content)
+        all_versions_compact = "\n\n".join(versions_content)
+        family_document_content = BLOCK_FAMILY_TEMPLATE.format(
+            family_name=family_name,
+            versions=all_versions_compact,
         )
         with open(documentation_file_path, "w") as documentation_file:
-            documentation_file.write(documentation_content)
+            documentation_file.write(family_document_content)
         block_card_line = BLOCK_CARD_TEMPLATE.format(
-            data_url=camel_to_snake(block.manifest_type_identifier),
-            data_name=block.manifest_type_identifier,
-            data_desc=short_description,
-            data_labels=", ".join([block_type, block_license]),
-            data_authors="",
+            data_url=slugify_block_name(family_name),
+            data_name=family_name,
+            data_desc=short_descriptions[-1],
+            data_labels=", ".join(list(block_types_in_family) + list(block_licenses_in_family)),
+            data_authors="dummy",
         )
         block_card_lines.append(block_card_line)
 
@@ -238,6 +274,11 @@ def slugify_kind_name(kind_name: str) -> str:
     kind_name = re.sub(r"[\[\] ]+", r"_", kind_name.lower())
     kind_name = camel_to_snake(name=kind_name)
     return kind_name.strip("_")
+
+
+def slugify_block_name(name: str) -> str:
+    name = re.sub(r"[/\- ]+", r"", name)
+    return camel_to_snake(name=name)
 
 
 def camel_to_snake(name: str) -> str:
