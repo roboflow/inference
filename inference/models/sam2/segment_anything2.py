@@ -279,7 +279,6 @@ class SegmentAnything2(RoboflowCoreModel):
                 )
 
             args = pad_points(args)
-            print(args)
             masks, scores, low_resolution_logits = self.predictor.predict(
                 mask_input=mask_input,
                 multimask_output=multimask_output,
