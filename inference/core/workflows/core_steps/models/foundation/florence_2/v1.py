@@ -1,4 +1,3 @@
-import json
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import numpy as np
@@ -10,11 +9,9 @@ from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.constants import (
-    HEIGHT_KEY,
     IMAGE_DIMENSIONS_KEY,
     PARENT_ID_KEY,
     ROOT_PARENT_ID_KEY,
-    WIDTH_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -239,7 +236,7 @@ class Florence2BlockV1(WorkflowBlock):
 
         return formatted_predictions
 
-    async def get_florence2_generations_locally(
+    def get_florence2_generations_locally(
         self,
         image: List[dict],
         prompt: str,
@@ -263,7 +260,7 @@ class Florence2BlockV1(WorkflowBlock):
                 api_key=api_key,
             )
             model_manager.add_model(model_id, api_key=api_key)
-            result = await model_manager.infer_from_request(model_id, inference_request)
+            result = model_manager.infer_from_request_sync(model_id, inference_request)
             serialised_result.append(
                 {
                     "raw_output": result.response,

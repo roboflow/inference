@@ -367,7 +367,7 @@ DETECTION_KIND = Kind(
     docs=DETECTION_KIND_DOCS,
 )
 
-DETECTION_KIND_DOCS = """
+BATCH_OF_DETECTION_KIND_DOCS = """
 This kind represents a batch of detections from a model that detects multiple elements
 (like object detection or instance segmentation model). It is represented as a tuple
 that is created from `sv.Detections(...)` object while iterating over its content. `workflows`
@@ -383,6 +383,7 @@ More technical details about
 BATCH_OF_DETECTION_KIND = Kind(
     name="Batch[detection]",
     description="Batch of detections",
+    docs=BATCH_OF_DETECTION_KIND_DOCS,
 )
 
 
