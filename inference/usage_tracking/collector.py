@@ -33,7 +33,16 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 )
 from inference.usage_tracking.utils import collect_func_params
 
-from .collector_utils import APIKey, APIKeyHash, APIKeyUsage, ResourceDetails, ResourceID, SystemDetails, UsagePayload, zip_usage_payloads
+from .collector_utils import (
+    APIKey,
+    APIKeyHash,
+    APIKeyUsage,
+    ResourceDetails,
+    ResourceID,
+    SystemDetails,
+    UsagePayload,
+    zip_usage_payloads,
+)
 from .config import TelemetrySettings, get_telemetry_settings
 from .redis_queue import RedisQueue
 from .sqlite_queue import SQLiteQueue

@@ -1,6 +1,5 @@
 from typing import Any, DefaultDict, Dict, List, Optional, Union
 
-
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
 ResourceUsage = Union[DefaultDict[ResourceID, Usage], Dict[ResourceID, Usage]]
@@ -17,9 +16,7 @@ def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload):
     if d1 and d2 and d1.get("resource_id") != d2.get("resource_id"):
         raise ValueError("Cannot merge usage for different resource IDs")
     if "timestamp_start" in d1 and "timestamp_start" in d2:
-        merged["timestamp_start"] = min(
-            d1["timestamp_start"], d2["timestamp_start"]
-        )
+        merged["timestamp_start"] = min(d1["timestamp_start"], d2["timestamp_start"])
     if "timestamp_stop" in d1 and "timestamp_stop" in d2:
         merged["timestamp_stop"] = max(d1["timestamp_stop"], d2["timestamp_stop"])
     if "processed_frames" in d1 and "processed_frames" in d2:
@@ -59,11 +56,9 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                     or list(resource_payloads.keys()) != [""]
                 ):
                     continue
-                api_key_usage_with_resource = (
-                    get_api_key_usage_containing_resource(
-                        api_key_hash=api_key_hash,
-                        usage_payloads=usage_payloads,
-                    )
+                api_key_usage_with_resource = get_api_key_usage_containing_resource(
+                    api_key_hash=api_key_hash,
+                    usage_payloads=usage_payloads,
                 )
                 if not api_key_usage_with_resource:
                     system_info_payload = resource_payloads
@@ -82,11 +77,9 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                 resource_usage_payload,
             ) in resource_payloads.items():
                 if resource_usage_key == "":
-                    api_key_usage_with_resource = (
-                        get_api_key_usage_containing_resource(
-                            api_key_hash=api_key_hash,
-                            usage_payloads=usage_payloads,
-                        )
+                    api_key_usage_with_resource = get_api_key_usage_containing_resource(
+                        api_key_hash=api_key_hash,
+                        usage_payloads=usage_payloads,
                     )
                     if not api_key_usage_with_resource:
                         system_info_payload = {"": resource_usage_payload}
@@ -103,11 +96,9 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                 merged_resource_payload = merged_api_key_payload.setdefault(
                     resource_usage_key, {}
                 )
-                merged_api_key_payload[resource_usage_key] = (
-                    merge_usage_dicts(
-                        merged_resource_payload,
-                        resource_usage_payload,
-                    )
+                merged_api_key_payload[resource_usage_key] = merge_usage_dicts(
+                    merged_resource_payload,
+                    resource_usage_payload,
                 )
 
     zipped_payloads = [merged_api_key_usage_payloads]
