@@ -463,5 +463,7 @@ def pad_points(args: Dict[str, Any]) -> Dict[str, Any]:
                 label.append(-1)
     else:
         if args["point_labels"] is not None:
-            raise ValueError("Can't have point labels without corresponding point coordinates")
+            raise ValueError(
+                "Can't have point labels without corresponding point coordinates"
+            )
     return args
