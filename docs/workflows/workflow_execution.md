@@ -273,7 +273,90 @@ specified value if no value spotted
 
 - conditional execution usually impacts Workflow outputs - all values that are affected by branching are in 
 fact optional (if special blocks filling empty values are not used) and nested results may not be filled with data, 
-leaving empty lists in results - see details in [section describing output construction](#output-construction).
+leaving empty (potentially nested) lists in results - see details 
+in [section describing output construction](#output-construction).
 
 ## Output construction
 
+The most important thing to understand is that a Workflow's output is aligned with its input regarding 
+batch elements order. This means the output will always be a list of dictionaries, with each dictionary 
+corresponding to an item in the input batch. This structure makes it easier to parse results and handle 
+them iteratively, matching the outputs to the inputs.
+
+```python
+input_images = [...]
+workflow_results = execution_engine.run(
+    runtime_parameters={"images": input_images}
+)
+
+for image, result in zip(input_images, workflow_results):
+    pass
+```
+
+Each element of the list is a dictionary with keys specified in Workflow definition via declaration like:
+
+```json
+{"type": "JsonField", "name": "predictions", "selector": "$steps.detection.predictions"}
+```
+
+what you may expect as a value under those keys, however, is dependent on the structure of the workflow. 
+All non-batch results got broadcast and placed in each and every output dictionary with the same value. 
+Elements at `dimensionality level 1` will be distributed evenly, with values in each dictionary corresponding 
+to the alignment of input data (predictions for input image 3, will be placed in third dictionary). Elements at 
+higher `dimensionality levels` will be embedded into lists of objects of types specific to the step output 
+being referred. 
+
+For example, let's consider again our example with object-detection model, crops and secondary classification model.
+Assuming that predictions from object detection model are registered in the output under the name 
+`"object_detection_predictions"` and results of classifier are registered as `"classifier_predictions"`, you 
+may expect following output once three images are submitted as input for Workflow execution:
+
+```json
+[
+  {
+    "object_detection_predictions": "here sv.Detections object with 2 bounding boxes",
+    "classifier_predictions": [
+      {"classifier_prediction":  "for first crop"},
+      {"classifier_prediction":  "for second crop"}
+    ]
+  },
+  {
+    "object_detection_predictions": "empty sv.Detections",
+    "classifier_predictions": []
+  },
+  {
+    "object_detection_predictions": "here sv.Detections object with 3 bounding boxes",
+    "classifier_predictions": [
+      {"classifier_prediction":  "for first crop"},
+      {"classifier_prediction":  "for second crop"},
+      {"classifier_prediction":  "for third crop"}
+    ]
+  }
+]
+```
+
+As you can see, `"classifier_predictions"` field is populated with list of results, of size equivalent to number 
+of bounding boxes for `"object_detection_predictions"`. 
+
+Interestingly, if our workflows has ContinueIf block that only runs cropping and classifier if number of bounding boxes
+is different from two - it will turn `classifier_predictions` in first dictionary into empty list. If conditional 
+execution excludes steps at higher `dimensionality levels` from producing outputs as a side effect of execution - 
+output field selecting that values will be presented as nested list of empty lists, with depth matching  
+`dimensionality level - 1` of referred output.
+
+Some outputs would require serialisation when Workflows Execution Engine runs behind HTTP API. We use the following
+serialisation strategies:
+
+- images got serialised into `base64`
+
+- numpy arrays are serialised into lists
+
+- sv.Detections are serialised into `inference` format which can be decoded on the other end of the wire using 
+`sv.Detections.from_inference(...)`
+
+!!! Note
+
+    sv.Detections, which is our standard representation of detection-based predictions is treated specially 
+    by output constructor. `JsonField` output definition can specify optionally `coordinates_system` property,
+    which may enforce translation of detection coordinates into coordinates system of parent image in workflow.
+    See more in [docs page describing outputs definitions](/workflows/definitions/)
