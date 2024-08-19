@@ -37,6 +37,7 @@ def person_image() -> np.ndarray:
 def beer_image() -> np.ndarray:
     return cv2.imread(BEER_IMAGE_PATH)
 
+
 @pytest.fixture(scope="function")
 def truck_image() -> np.ndarray:
     return cv2.imread(TRUCK_IMAGE_PATH)
@@ -173,6 +174,7 @@ def sam2_tiny_model() -> Generator[str, None, None]:
     yield model_id
     shutil.rmtree(model_cache_dir)
 
+
 @pytest.fixture(scope="function")
 def sam2_small_model() -> Generator[str, None, None]:
     model_id = "sam2/hiera_small"
@@ -182,6 +184,7 @@ def sam2_small_model() -> Generator[str, None, None]:
     )
     yield model_id
     shutil.rmtree(model_cache_dir)
+
 
 @pytest.fixture(scope="function")
 def sam2_small_truck_logits() -> Generator[np.ndarray, None, None]:

@@ -1,32 +1,27 @@
-import pytest
-
 from typing import Any
-from pydantic import ValidationError
 
 import numpy as np
-
+import pytest
+from pydantic import ValidationError
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
+    BlockManifest,
+)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-
-
-from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import BlockManifest
-
-
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 def test_sam2_model_validation_when_minimalistic_config_is_provided(
-    images_field_alias: str
-    
+    images_field_alias: str,
 ) -> None:
     # given
     data = {
         "type": "roboflow_core/segment_anything@v1",
         "name": "some",
-        images_field_alias: "$inputs.image"
+        images_field_alias: "$inputs.image",
     }
 
     # when
@@ -34,9 +29,7 @@ def test_sam2_model_validation_when_minimalistic_config_is_provided(
 
     # then
     assert result == BlockManifest(
-        type="roboflow_core/segment_anything@v1",
-        name="some",
-        images="$inputs.image"
+        type="roboflow_core/segment_anything@v1", name="some", images="$inputs.image"
     )
 
 
@@ -58,15 +51,12 @@ def test_sam2_model_validation_when_parameters_have_invalid_type(
         "type": "roboflow_core/segment_anything@v1",
         "name": "some",
         "images": "$inputs.image",
-        parameter: value
+        parameter: value,
     }
 
     # when
     with pytest.raises(ValidationError):
         _ = BlockManifest.model_validate(data)
-
-
-
 
 
 SIMPLE_SAM_WORKFLOW = {

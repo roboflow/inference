@@ -8,9 +8,9 @@ T = TypeVar("T")
 def run_steps_in_parallel(
     steps: List[Callable[[], T]], max_workers: int = 1
 ) -> List[T]:
-    results = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(step) for step in steps]
-        for future in concurrent.futures.as_completed(futures):
-            results.append(future.result())
-    return results
+        return list(executor.map(_run, steps))
+
+
+def _run(fun: Callable[[], T]) -> T:
+    return fun()

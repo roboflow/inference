@@ -2,12 +2,12 @@ import numpy as np
 import pytest
 import torch
 
-from inference.models.sam2 import SegmentAnything2
 from inference.core.entities.requests.sam2 import Sam2PromptSet
 from inference.models.sam2.segment_anything2 import (
     hash_prompt_set,
     maybe_load_low_res_logits_from_cache,
 )
+from inference.models.sam2 import SegmentAnything2
 
 
 @pytest.mark.slow
@@ -111,7 +111,9 @@ def test_sam2_single_prompted_image_segmentation_mask_cache_works(
         )
         is not None
     )
-    masks2, scores2, low_res_logits2 = model.segment_image(truck_image, prompts=prompt)
+    masks2, scores2, low_res_logits2 = model.segment_image(
+        truck_image, prompts=prompt, mask_input=low_res_logits
+    )
 
     # then
     assert True, "doesnt crash when passing mask_input"
