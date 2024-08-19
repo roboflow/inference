@@ -89,7 +89,7 @@ def test_sam2_single_prompted_image_segmentation_mask_cache_works(
     # when
     image_id = "truck"
     masks, scores, low_res_logits = model.segment_image(
-        truck_image, image_id=image_id, prompts=prompt
+        truck_image, image_id=image_id, prompts=prompt, save_logits_to_cache=True
     )
     assert hash_prompt_set(image_id, prompt) in model.low_res_logits_cache
 
