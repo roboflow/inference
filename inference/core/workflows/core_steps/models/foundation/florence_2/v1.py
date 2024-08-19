@@ -8,20 +8,20 @@ from pydantic import ConfigDict, Field
 from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import load_image
-from inference.core.workflows.constants import (
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.execution_engine.constants import (
     HEIGHT_KEY,
     IMAGE_DIMENSIONS_KEY,
     PARENT_ID_KEY,
     ROOT_PARENT_ID_KEY,
     WIDTH_KEY,
 )
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_DETECTION_KIND,
     BATCH_OF_DICTIONARY_KIND,
     BATCH_OF_IMAGE_METADATA_KIND,
@@ -123,7 +123,7 @@ class BlockManifest(WorkflowBlockManifest):
         return result
 
 
-class Florence2ModelBlock(WorkflowBlock):
+class Florence2BlockV1(WorkflowBlock):
 
     def __init__(
         self,
@@ -143,7 +143,7 @@ class Florence2ModelBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         images: Batch[WorkflowImageData],
         vision_task: str,
@@ -151,7 +151,7 @@ class Florence2ModelBlock(WorkflowBlock):
         model_id: str,
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return await self.run_locally(
+            return self.run_locally(
                 images=images, vision_task=vision_task, prompt=prompt, model_id=model_id
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
@@ -163,7 +163,7 @@ class Florence2ModelBlock(WorkflowBlock):
                 f"Unknown step execution mode: {self._step_execution_mode}"
             )
 
-    async def run_locally(
+    def run_locally(
         self,
         images: Batch[WorkflowImageData],
         vision_task: str,
@@ -176,7 +176,7 @@ class Florence2ModelBlock(WorkflowBlock):
         ]
 
         # infer on florence2 model
-        predictions = await self.get_florence2_generations_locally(
+        predictions = self.get_florence2_generations_locally(
             image=images_prepared_for_processing,
             prompt=(
                 vision_task

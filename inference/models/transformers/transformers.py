@@ -119,9 +119,7 @@ class TransformerModel(RoboflowInferenceModel):
             prepared_inputs, decoder_inputs = self.prepare_generation_params(
                 preprocessed_inputs=model_inputs
             )
-            generation = self.model.generate(
-                **prepared_inputs
-            )
+            generation = self.model.generate(**prepared_inputs)
             generation = generation[0]
             if self.generation_includes_input:
                 generation = generation[input_len:]
@@ -131,9 +129,12 @@ class TransformerModel(RoboflowInferenceModel):
 
     def prepare_generation_params(
         self, preprocessed_inputs: Dict[str, Any]
-    ) ->Tuple[ Dict[str, Any]]:
+    ) -> Tuple[Dict[str, Any]]:
         # (generation params (dict), decoder params (dict))
-        return ({**preprocessed_inputs, "do_sample": False, "max_new_tokens": 100},{"skip_special_tokens": True})
+        return (
+            {**preprocessed_inputs, "do_sample": False, "max_new_tokens": 100},
+            {"skip_special_tokens": True},
+        )
 
     def get_infer_bucket_file_list(self) -> list:
         """Get the list of required files for inference.

@@ -46,6 +46,9 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 im
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.florence_2.v1 import (
+    Florence2BlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
@@ -212,6 +215,7 @@ REGISTERED_INITIALIZERS = {
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
+        Florence2BlockV1,
         SegmentAnything2BlockV1,
         DetectionsConsensusBlockV1,
         ClipComparisonBlockV1,
