@@ -453,11 +453,15 @@ def pad_points(args: Dict[str, Any]) -> Dict[str, Any]:
     Also pads empty point lists with a dummy non-point entry.
     """
     args = copy.deepcopy(args)
-    max_len = max(max(len(prompt) for prompt in args["point_coords"]), 1)
-    for prompt in args["point_coords"]:
-        for _ in range(max_len - len(prompt)):
-            prompt.append([0, 0])
-    for label in args["point_labels"]:
-        for _ in range(max_len - len(label)):
-            label.append(-1)
+    if args["point_coords"] is not None:
+        max_len = max(max(len(prompt) for prompt in args["point_coords"]), 1)
+        for prompt in args["point_coords"]:
+            for _ in range(max_len - len(prompt)):
+                prompt.append([0, 0])
+        for label in args["point_labels"]:
+            for _ in range(max_len - len(label)):
+                label.append(-1)
+    else:
+        if args["point_labels"] is not None:
+            raise ValueError("Can't have point labels without corresponding point coordinates")
     return args
