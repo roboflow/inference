@@ -102,6 +102,11 @@ class Sam2PromptSet(BaseModel):
                 return_dict["point_coords"].append([])
                 return_dict["point_labels"].append([])
 
+        if not any(return_dict["point_coords"]):
+            return_dict["point_coords"] = None
+        if not any(return_dict["point_labels"]):
+            return_dict["point_labels"] = None
+            
         return_dict = {k: v if v else None for k, v in return_dict.items()}
         return return_dict
 
