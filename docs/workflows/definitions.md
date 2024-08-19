@@ -184,5 +184,7 @@ the secondary model’s predictions are based on the coordinates of the crops, n
 To ensure these coordinates are not translated back to the parent coordinate system, set 
 `"coordinates_system": "own"` (`parent` is default option).
 
+Additionally, outputs selectors support wildcards (`$steps.step_nane.*"`) to grab all outputs of specific step.
+
 To fully understand how output structure is created - read about 
 [data processing in Workflows](/workflows/simd_in_workflows/).
