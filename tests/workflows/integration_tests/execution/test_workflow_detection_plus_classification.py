@@ -5,6 +5,9 @@ from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 DETECTION_PLUS_CLASSIFICATION_WORKFLOW = {
     "version": "1.0",
@@ -40,6 +43,25 @@ DETECTION_PLUS_CLASSIFICATION_WORKFLOW = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with multiple models",
+    use_case_title="Workflow detection model followed by classifier",
+    use_case_description="""
+This example showcases how to stack models on top of each other - in this particular
+case, we detect objects using object detection models, requesting only "dogs" bounding boxes
+in the output of prediction. 
+
+Based on the model predictions, we take each bounding box with dog and apply dynamic cropping
+to be able to run classification model for each and every instance of dog separately.
+Please note that for each inserted image we will have nested batch of crops (with size 
+dynamically determined in runtime, based on first model predictions) and for each crop
+we apply secondary model.
+
+Secondary model is supposed to predict make prediction from dogs breed classifier model 
+to assign detailed class for each dog instance.
+    """,
+    workflow_definition=DETECTION_PLUS_CLASSIFICATION_WORKFLOW,
+)
 def test_detection_plus_classification_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     dogs_image: np.ndarray,

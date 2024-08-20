@@ -7,6 +7,9 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 ABSOLUTE_STATIC_CROP_WORKFLOW = {
     "version": "1.0",
@@ -50,6 +53,21 @@ ABSOLUTE_STATIC_CROP_WORKFLOW = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Basic Workflows",
+    use_case_title="Workflow with static crop and object detection model",
+    use_case_description="""
+This is the basic workflow that contains single transformation (static crop)
+followed by object detection model. This example may be inspiration for anyone
+that would like to run specific model only on specific part of the image.
+The Region of Interest do not necessarily must be defined statically - 
+please note that coordinates of static crops are referred via input selectors, 
+which means that each time you run the workflow (for instance in each different
+physical location, where RoI for static crop is location-dependent) you may 
+provide different RoI coordinates. 
+    """,
+    workflow_definition=ABSOLUTE_STATIC_CROP_WORKFLOW,
+)
 def test_static_crop_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,

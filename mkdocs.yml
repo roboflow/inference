@@ -71,7 +71,9 @@ nav:
       - What is Roboflow Workflows?: workflows/about.md
       - How to Create and Run a Workflow?: workflows/create_and_run.md
       - Understanding Workflows: workflows/understanding.md
+      - Blocks connections: workflows/blocks_connections.md
       - Blocks: workflows/blocks.md
+      - Gallery of Workflows: workflows/gallery_index.md
       - User guide:
         - Running Workflows: workflows/modes_of_running.md
         - Workflows Definitions: workflows/definitions.md

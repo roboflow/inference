@@ -7,6 +7,9 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 OBJECT_DETECTION_WORKFLOW = {
     "version": "1.0",
@@ -63,6 +66,18 @@ EXPECTED_OBJECT_DETECTION_CONFIDENCES = np.array(
 )
 
 
+@add_to_workflows_gallery(
+    category="Basic Workflows",
+    use_case_title="Workflow with single object detection model",
+    use_case_description="""
+This is the basic workflow that only contains a single object detection model. 
+
+Please take a look on how batch-oriented WorkflowImage data is plugged to 
+detection step via input selector (`$inputs.image`) and how non-batch parameters
+are dynamically specify - via `$inputs.model_id` and `$inputs.confidence` selectors.
+    """,
+    workflow_definition=OBJECT_DETECTION_WORKFLOW,
+)
 def test_object_detection_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
