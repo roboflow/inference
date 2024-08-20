@@ -19,6 +19,8 @@ class SQLiteQueue:
         self._db_file_path: str = db_file_path
 
         if not connection:
+            if not os.path.exists(MODEL_CACHE_DIR):
+                os.makedirs(MODEL_CACHE_DIR)
             connection: sqlite3.Connection = sqlite3.connect(db_file_path, timeout=1)
             self._create_table(connection=connection)
             connection.close()
