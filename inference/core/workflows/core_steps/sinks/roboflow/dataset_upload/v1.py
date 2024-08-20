@@ -169,7 +169,7 @@ class BlockManifest(WorkflowBlockManifest):
             "registration is needed, use `False` while debugging and if error handling is needed",
         )
     )
-    labeling_batch_prefix: str = Field(
+    labeling_batch_prefix: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
         default="workflows_data_collector",
         description="Prefix of the name for labeling batches that will be registered in Roboflow app",
         examples=["my_labeling_batch_name"],
