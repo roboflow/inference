@@ -151,5 +151,5 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
         "input prompts, multimask_output=False can give better results.",
     )
 
-    save_logits_to_cache: bool = Field(default=True)
-    load_logits_from_cache: bool = Field(default=True)
+    save_logits_to_cache: bool = Field(default=False)
+    load_logits_from_cache: bool = Field(default=False)
