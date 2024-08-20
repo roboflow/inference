@@ -691,7 +691,7 @@ def test_get_versions_of_execution_engine(server_url: str) -> None:
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert response_data["versions"] == ["1.0.0"]
+    assert response_data["versions"] == ["1.0.1"]
 
 
 def test_getting_block_schema_using_get_endpoint(server_url) -> None:
@@ -710,3 +710,60 @@ def test_getting_block_schema_using_get_endpoint(server_url) -> None:
     ), "Response expected to define required schema properties"
     assert "title" in schema, "Response expected to define unique schema title"
     assert "type" in schema, "Response expected to define schema type"
+
+
+WORKFLOW_WITH_CUSTOM_DATA_TO_SERIALISE = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "InferenceImage", "name": "image"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/sift@v1",
+            "name": "image_sift",
+            "image": "$inputs.image",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "results",
+            "coordinates_system": "own",
+            "selector": "$steps.image_sift.*",
+        }
+    ],
+}
+
+
+def test_workflow_run_when_when_custom_serialisation_is_needed(
+    server_url: str,
+) -> None:
+    # when
+    response = requests.post(
+        f"{server_url}/workflows/run",
+        json={
+            "specification": WORKFLOW_WITH_CUSTOM_DATA_TO_SERIALISE,
+            "api_key": "some",
+            "inputs": {
+                "image": [
+                    {
+                        "type": "url",
+                        "value": "https://media.roboflow.com/fruit.png",
+                    }
+                ],
+            },
+        },
+    )
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert isinstance(
+        response_data["outputs"], list
+    ), "Expected list of elements to be returned"
+    assert (
+        len(response_data["outputs"]) == 1
+    ), "One image submitted - two responses expected"
+    assert set(response_data["outputs"][0].keys()) == {
+        "results"
+    }, "Expected only `results` output"
