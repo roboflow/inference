@@ -186,8 +186,9 @@ if LAMBDA:
 if METLO_KEY:
     from metlo.fastapi import ASGIMiddleware
 
-from inference.core.version import __version__
 import time
+
+from inference.core.version import __version__
 
 
 def with_route_exceptions(route):
