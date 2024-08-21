@@ -90,14 +90,17 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/roboflow_dataset_upload@v1", "RoboflowDatasetUpload"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    predictions: StepOutputSelector(
-        kind=[
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
-        ]
-    ) = Field(
+    predictions: Optional[
+        StepOutputSelector(
+            kind=[
+                BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+                BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+                BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
+            ]
+        )
+    ] = Field(
+        default=None,
         description="Reference q detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
@@ -169,10 +172,12 @@ class BlockManifest(WorkflowBlockManifest):
             "registration is needed, use `False` while debugging and if error handling is needed",
         )
     )
-    labeling_batch_prefix: str = Field(
-        default="workflows_data_collector",
-        description="Prefix of the name for labeling batches that will be registered in Roboflow app",
-        examples=["my_labeling_batch_name"],
+    labeling_batch_prefix: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = (
+        Field(
+            default="workflows_data_collector",
+            description="Prefix of the name for labeling batches that will be registered in Roboflow app",
+            examples=["my_labeling_batch_name"],
+        )
     )
     labeling_batches_recreation_frequency: BatchCreationFrequency = Field(
         default="never",
@@ -223,7 +228,7 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        predictions: Batch[Union[sv.Detections, dict]],
+        predictions: Optional[Batch[Union[sv.Detections, dict]]],
         target_project: str,
         usage_quota_name: str,
         minutely_usage_limit: int,
@@ -254,6 +259,7 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
                 for _ in range(len(images))
             ]
         result = []
+        predictions = [None] * len(images) if predictions is None else predictions
         for image, prediction in zip(images, predictions):
             error_status, message = register_datapoint_at_roboflow(
                 image=image,
@@ -281,7 +287,7 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
 
 def register_datapoint_at_roboflow(
     image: WorkflowImageData,
-    prediction: Union[sv.Detections, dict],
+    prediction: Optional[Union[sv.Detections, dict]],
     target_project: str,
     usage_quota_name: str,
     persist_predictions: bool,

@@ -60,7 +60,7 @@ Run Segment Anything 2, a zero-shot instance segmentation model, on an image.
 ** Dedicated inference server required (GPU recomended) **
 
 You can use pass in boxes/predictions from other models to Segment Anything 2 to use as prompts for the model.
-If you pass in box detections from another model, the class names of the boxes will be forwarded to the predicted masks.  If using the model unprompted, the model will assign intengers as class names / ids.
+If you pass in box detections from another model, the class names of the boxes will be forwarded to the predicted masks.  If using the model unprompted, the model will assign integers as class names / ids.
 """
 
 
@@ -69,10 +69,11 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Segment Anything 2 Model",
             "version": "v1",
-            "short_description": "Segment Anything 2",
+            "short_description": "Convert bounding boxes to polygons, or run SAM2 on an entire image to generate a mask.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "search_keywords": ["SAM2", "META"],
         },
         protected_namespaces=(),
     )
