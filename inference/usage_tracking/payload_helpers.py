@@ -125,6 +125,9 @@ def send_usage_payload(
             api_keys_hashes_failed.add(api_key_hash)
             continue
         api_key = hashes_to_api_keys.get(api_key_hash) or api_key_hash
+        if not api_key:
+            api_keys_hashes_failed.add(api_key_hash)
+            continue
         complete_workflow_payloads = [
             w for w in workflow_payloads.values() if "processed_frames" in w
         ]

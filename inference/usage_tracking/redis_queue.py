@@ -20,6 +20,9 @@ class RedisQueue:
         hash_tag: str = "UsageCollector",
         redis_cache: Optional[RedisCache] = None,
     ):
+        # prefix must contain hash-tag to avoid CROSSLOT errors when using mget
+        # hash-tag is common part of the key wrapped within '{}'
+        # removing hash-tag will cause clients utilizing mget to fail
         self._prefix: str = f"{{{hash_tag}}}:{uuid4().hex[:5]}:{time.time()}"
         self._redis_cache: RedisCache = redis_cache or cache
         self._increment: int = 0
