@@ -15,6 +15,10 @@ from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import 
 from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
     TemplateMatchingBlockV1,
 )
+
+from inference.core.workflows.core_steps.classical_cv.measurement_bounding_box.v2 import (
+    MeasurementBoundingBoxBlockV1,
+)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
@@ -119,6 +123,8 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop.v1
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
     BackgroundColorVisualizationBlockV1,
 )
+
+
 from inference.core.workflows.core_steps.visualizations.blur.v1 import (
     BlurVisualizationBlockV1,
 )
@@ -266,6 +272,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV1,
         SIFTBlockV1,
         TemplateMatchingBlockV1,
+        MeasurementBoundingBoxBlockV1,
     ]
 
 
