@@ -184,7 +184,7 @@ def assembly_video_metadata(
             parameter=parameter,
             video_metadata=element,
         )
-        for element in enumerate(video_metadata)
+        for element in video_metadata
     ]
     if len(result) != input_batch_size:
         raise RuntimeInputError(
