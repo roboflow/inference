@@ -228,7 +228,7 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        predictions: Batch[Union[sv.Detections, dict]],
+        predictions: Optional[Batch[Union[sv.Detections, dict]]],
         target_project: str,
         usage_quota_name: str,
         minutely_usage_limit: int,
@@ -259,8 +259,8 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
                 for _ in range(len(images))
             ]
         result = []
-        for i, image in enumerate(images):
-            prediction = predictions[i] if predictions else None
+        predictions = [None] * len(images) if predictions is None else predictions
+        for image, prediction in zip(images, predictions):
             error_status, message = register_datapoint_at_roboflow(
                 image=image,
                 prediction=prediction,
@@ -287,7 +287,7 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
 
 def register_datapoint_at_roboflow(
     image: WorkflowImageData,
-    prediction: Union[sv.Detections, dict],
+    prediction: Optional[Union[sv.Detections, dict]],
     target_project: str,
     usage_quota_name: str,
     persist_predictions: bool,

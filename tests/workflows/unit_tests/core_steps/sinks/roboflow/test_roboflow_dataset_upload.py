@@ -207,6 +207,35 @@ def test_register_datapoint_when_duplicate_found(
     ), "No inference id found in sv detection"
 
 
+@mock.patch.object(v1, "annotate_image_at_roboflow")
+@mock.patch.object(v1, "register_image_at_roboflow")
+def test_register_datapoint_when_prediction_is_not_delivered(
+    register_image_at_roboflow_mock: MagicMock,
+    annotate_image_at_roboflow: MagicMock,
+) -> None:
+    # given
+    register_image_at_roboflow_mock.return_value = {"duplicate": True}
+
+    # when
+    result = register_datapoint(
+        target_project="my_project",
+        encoded_image=b"image",
+        local_image_id="local_id",
+        prediction=None,
+        api_key="my_api_key",
+        batch_name="my_batch",
+        tags=[],
+    )
+
+    # then
+    assert result == "Duplicated image", "Duplicate status is expected to be reported"
+    register_image_at_roboflow_mock.assert_called_once()
+    assert (
+        register_image_at_roboflow_mock.call_args[1]["inference_id"] is None
+    ), "No inference id found in sv detection"
+    annotate_image_at_roboflow.assert_not_called()
+
+
 @mock.patch.object(v1, "register_image_at_roboflow")
 def test_register_datapoint_when_prediction_registration_should_be_forbidden(
     register_image_at_roboflow_mock: MagicMock,
@@ -1063,6 +1092,81 @@ def test_run_sink_when_registration_should_happen_in_foreground_despite_providin
             call(
                 image=image,
                 prediction=prediction,
+                target_project="my_project",
+                usage_quota_name="my_quota",
+                persist_predictions=True,
+                minutely_usage_limit=10,
+                hourly_usage_limit=100,
+                daily_usage_limit=1000,
+                max_image_size=(128, 128),
+                compression_level=75,
+                registration_tags=["some"],
+                labeling_batch_prefix="my_batch",
+                new_labeling_batch_frequency="never",
+                cache=cache,
+                api_key="my_api_key",
+            )
+        ]
+        * 3
+    )
+    assert len(background_tasks.tasks) == 0, "Async tasks not to be added"
+
+
+@mock.patch.object(v1, "execute_registration")
+def test_run_sink_when_predictions_not_provided(
+    execute_registration_mock: MagicMock,
+) -> None:
+    # given
+    background_tasks = BackgroundTasks()
+    cache = MemoryCache()
+    data_collector_block = RoboflowDatasetUploadBlockV1(
+        cache=cache,
+        api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((512, 256, 3), dtype=np.uint8),
+    )
+    execute_registration_mock.return_value = False, "OK"
+    indices = [(0,), (1,), (2,)]
+
+    # when
+    result = data_collector_block.run(
+        images=Batch(content=[image, image, image], indices=indices),
+        predictions=None,
+        target_project="my_project",
+        usage_quota_name="my_quota",
+        persist_predictions=True,
+        minutely_usage_limit=10,
+        hourly_usage_limit=100,
+        daily_usage_limit=1000,
+        max_image_size=(128, 128),
+        compression_level=75,
+        registration_tags=["some"],
+        disable_sink=False,
+        fire_and_forget=False,
+        labeling_batch_prefix="my_batch",
+        labeling_batches_recreation_frequency="never",
+    )
+
+    # then
+    assert (
+        result
+        == [
+            {
+                "error_status": False,
+                "message": "OK",
+            }
+        ]
+        * 3
+    ), "Expected sync execution status to be presented"
+    execute_registration_mock.assert_has_calls(
+        [
+            call(
+                image=image,
+                prediction=None,
                 target_project="my_project",
                 usage_quota_name="my_quota",
                 persist_predictions=True,
