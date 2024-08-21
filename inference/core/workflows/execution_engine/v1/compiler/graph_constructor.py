@@ -81,7 +81,7 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 NODE_DEFINITION_KEY = "definition"
-STEP_INPUT_SELECTOR_PROPERTY = "step_input_selector"
+STEP_INPUT_SELECTORS_PROPERTY = "step_input_selectors"
 EXCLUDED_FIELDS = {"type", "name"}
 
 
@@ -285,11 +285,19 @@ def add_edge_for_step(
         actual=actual_input_kind,
         error_message=error_message,
     )
-    execution_graph.add_edge(
-        target_step_selector,
-        source_step_selector,
-        **{STEP_INPUT_SELECTOR_PROPERTY: target_step_parsed_selector},
-    )
+    if execution_graph.has_edge(target_step_selector, source_step_selector):
+        edge_data = execution_graph.edges[(target_step_selector, source_step_selector)]
+        if STEP_INPUT_SELECTORS_PROPERTY not in edge_data:
+            edge_data[STEP_INPUT_SELECTORS_PROPERTY] = []
+        edge_data[STEP_INPUT_SELECTORS_PROPERTY].append(
+            target_step_parsed_selector,
+        )
+    else:
+        execution_graph.add_edge(
+            target_step_selector,
+            source_step_selector,
+            **{STEP_INPUT_SELECTORS_PROPERTY: [target_step_parsed_selector]},
+        )
     return execution_graph
 
 
@@ -687,20 +695,19 @@ def get_predecessors_for_step_manifest_properties(
     predecessors_by_property_name = defaultdict(list)
     for predecessor in data_providing_predecessors:
         edge_data = execution_graph.edges[(predecessor, step_node)]
-        if STEP_INPUT_SELECTOR_PROPERTY not in edge_data:
-            # this is needed, as special <super-input> node may be directly
-            # connected to step
-            continue
-        selector_associated_to_edge: ParsedSelector = edge_data[
-            STEP_INPUT_SELECTOR_PROPERTY
-        ]
-        definition = PropertyPredecessorDefinition(
-            predecessor_selector=predecessor,
-            parsed_selector=selector_associated_to_edge,
+        # STEP_INPUT_SELECTORS_PROPERTY is optional, as special <super-input> node may be directly
+        # connected to step
+        selectors_associated_to_edge: List[ParsedSelector] = edge_data.get(
+            STEP_INPUT_SELECTORS_PROPERTY, []
         )
-        predecessors_by_property_name[
-            selector_associated_to_edge.definition.property_name
-        ].append(definition)
+        for selector_associated_to_edge in selectors_associated_to_edge:
+            definition = PropertyPredecessorDefinition(
+                predecessor_selector=predecessor,
+                parsed_selector=selector_associated_to_edge,
+            )
+            predecessors_by_property_name[
+                selector_associated_to_edge.definition.property_name
+            ].append(definition)
     return predecessors_by_property_name
 
 

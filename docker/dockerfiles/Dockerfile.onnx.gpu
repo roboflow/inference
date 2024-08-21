@@ -28,6 +28,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.pali.flash_attn.txt \
     ./
 
+RUN python3 -m pip install -U pip
 RUN python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cu118 \
     -r _requirements.txt \
     -r requirements.sam.txt \
@@ -76,5 +77,6 @@ ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV API_LOGGING_ENABLED=True
 ENV LMM_ENABLED=True
+ENV CORE_MODEL_SAM2_ENABLED=True
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
