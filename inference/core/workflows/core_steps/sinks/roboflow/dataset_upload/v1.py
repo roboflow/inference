@@ -90,14 +90,15 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/roboflow_dataset_upload@v1", "RoboflowDatasetUpload"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    predictions: StepOutputSelector(
+    predictions: Optional[StepOutputSelector(
         kind=[
             BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
             BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
             BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
             BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
         ]
-    ) = Field(
+    )] = Field(
+        default=None,
         description="Reference q detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
@@ -256,7 +257,8 @@ class RoboflowDatasetUploadBlockV1(WorkflowBlock):
                 for _ in range(len(images))
             ]
         result = []
-        for image, prediction in zip(images, predictions):
+        for i, image in enumerate(images):
+            prediction = predictions[i] if predictions else None
             error_status, message = register_datapoint_at_roboflow(
                 image=image,
                 prediction=prediction,
