@@ -11,6 +11,7 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 
     BlockManifest,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import add_to_workflows_gallery
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
@@ -85,6 +86,17 @@ SIMPLE_SAM_WORKFLOW = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with foundation models",
+    use_case_title="Workflow with Segment Anything 2 model",
+    use_case_description="""
+Meta AI introduced very capable segmentation model called [SAM 2](https://ai.meta.com/sam2/) which
+has capabilities of producing segmentation masks for instances of objects. 
+
+It can be used within workflows in couple of ways -  
+    """,
+    workflow_definition=SIMPLE_SAM_WORKFLOW,
+)
 def test_sam2_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager, dogs_image: np.ndarray
 ) -> None:
