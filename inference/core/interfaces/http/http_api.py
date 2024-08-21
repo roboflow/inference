@@ -472,8 +472,15 @@ class HttpInterface(BaseInterface):
                 # exclusions
                 skip_check = (
                     request.method not in ["GET", "POST"]
-                    or request.url.path in ["/", "/info"]
+                    or request.url.path
+                    in [
+                        "/",
+                        "/info",
+                        "/workflows/blocks/describe",
+                        "/workflows/definition/schema",
+                    ]
                     or request.url.path.startswith("/static/")
+                    or request.url.path.startswith("/_next/")
                 )
                 if skip_check:
                     return await call_next(request)
