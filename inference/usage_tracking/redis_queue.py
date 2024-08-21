@@ -1,3 +1,4 @@
+import json
 import time
 from threading import Lock
 
@@ -24,6 +25,12 @@ class RedisQueue:
         self._lock: Lock = Lock()
 
     def put(self, payload: Any):
+        if not isinstance(payload, str):
+            try:
+                payload = json.dumps(payload)
+            except Exception as exc:
+                logger.error("Failed to parse payload '%s' to JSON - %s", payload, exc)
+                return
         with self._lock:
             try:
                 self._increment += 1
