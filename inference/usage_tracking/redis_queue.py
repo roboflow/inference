@@ -29,7 +29,7 @@ class RedisQueue:
                 self._increment += 1
                 redis_key = f"{self._prefix}:{self._increment}"
                 self._redis_cache.client.set(
-                    key=redis_key,
+                    name=redis_key,
                     value=payload,
                 )
                 self._redis_cache.client.zadd(
