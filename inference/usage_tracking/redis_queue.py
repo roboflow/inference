@@ -11,15 +11,15 @@ from inference.core.logger import logger
 
 class RedisQueue:
     """
-    Store and forget, keys with specified prefix are handled by external service
+    Store and forget, keys with specified hash tag are handled by external service
     """
 
     def __init__(
         self,
-        prefix: str = f"UsageCollector:{time.time()}",
+        hash_tag: str = "UsageCollector",
         redis_cache: Optional[RedisCache] = None,
     ):
-        self._prefix: str = prefix
+        self._prefix: str = f"{{{hash_tag}}}:{time.time()}"
         self._redis_cache: RedisCache = redis_cache or cache
         self._increment: int = 0
         self._lock: Lock = Lock()
