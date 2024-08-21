@@ -3,7 +3,7 @@ import copy
 import hashlib
 from io import BytesIO
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 
 import numpy as np
 import rasterio.features
@@ -32,13 +32,23 @@ from inference.core.entities.responses.sam2 import (
     Sam2SegmentationPrediction,
     Sam2SegmentationResponse,
 )
-from inference.core.env import DEVICE, SAM2_MAX_CACHE_SIZE, SAM2_VERSION_ID
+from inference.core.env import (
+    DEVICE,
+    SAM2_MAX_EMBEDDING_CACHE_SIZE,
+    SAM2_MAX_LOGITS_CACHE_SIZE,
+    SAM2_VERSION_ID,
+)
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import masks2poly
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
+class LogitsCacheType(TypedDict):
+    logits: np.ndarray
+    prompt_set: Sam2PromptSet
 
 
 class SegmentAnything2(RoboflowCoreModel):
@@ -77,7 +87,7 @@ class SegmentAnything2(RoboflowCoreModel):
         self.embedding_cache = {}
         self.image_size_cache = {}
         self.embedding_cache_keys = []
-        self.low_res_logits_cache = {}
+        self.low_res_logits_cache: LogitsCacheType = {}
         self.low_res_logits_cache_keys = []
 
         self.task_type = "unsupervised-segmentation"
@@ -112,7 +122,7 @@ class SegmentAnything2(RoboflowCoreModel):
 
         Notes:
             - Embeddings and image sizes are cached to improve performance on repeated requests for the same image.
-            - The cache has a maximum size defined by SAM_MAX_EMBEDDING_CACHE_SIZE. When the cache exceeds this size,
+            - The cache has a maximum size defined by SAM2_MAX_CACHE_SIZE. When the cache exceeds this size,
               the oldest entries are removed.
 
         Example:
@@ -147,7 +157,7 @@ class SegmentAnything2(RoboflowCoreModel):
         if image_id in self.embedding_cache_keys:
             self.embedding_cache_keys.remove(image_id)
         self.embedding_cache_keys.append(image_id)
-        if len(self.embedding_cache_keys) > SAM2_MAX_CACHE_SIZE:
+        if len(self.embedding_cache_keys) > SAM2_MAX_EMBEDDING_CACHE_SIZE:
             cache_key = self.embedding_cache_keys.pop(0)
             del self.embedding_cache[cache_key]
             del self.image_size_cache[cache_key]
@@ -304,63 +314,88 @@ class SegmentAnything2(RoboflowCoreModel):
     ) -> None:
         logits = logits[:, None, :, :]
         prompt_id = hash_prompt_set(image_id, prompt_set)
-        self.low_res_logits_cache[prompt_id] = logits
+        self.low_res_logits_cache[prompt_id] = {
+            "logits": logits,
+            "prompt_set": prompt_set,
+        }
         if prompt_id in self.low_res_logits_cache_keys:
             self.low_res_logits_cache_keys.remove(prompt_id)
         self.low_res_logits_cache_keys.append(image_id)
-        if len(self.low_res_logits_cache_keys) > SAM2_MAX_CACHE_SIZE:
+        if len(self.low_res_logits_cache_keys) > SAM2_MAX_LOGITS_CACHE_SIZE:
             cache_key = self.low_res_logits_cache_keys.pop(0)
             del self.low_res_logits_cache[cache_key]
 
 
-def hash_prompt_set(image_id: str, prompt_set: Sam2PromptSet) -> str:
+def hash_prompt_set(image_id: str, prompt_set: Sam2PromptSet) -> Tuple[str, str]:
     """Computes unique hash from a prompt set."""
     md5_hash = hashlib.md5()
-    md5_hash.update(image_id.encode("utf8"))
     md5_hash.update(str(prompt_set).encode("utf-8"))
-    return md5_hash.hexdigest()[:12]
+    return image_id, md5_hash.hexdigest()[:12]
 
 
 def maybe_load_low_res_logits_from_cache(
-    image_id: str, prompt_set: Sam2PromptSet, cache: Dict[str, np.ndarray]
+    image_id: str, prompt_set: Sam2PromptSet, cache: LogitsCacheType
 ) -> Optional[np.ndarray]:
     "Loads prior masks from the cache by searching over possibel prior prompts."
     prompts = prompt_set.prompts
     if not prompts:
         return None
 
-    prior_prompts_id = find_prior_prompt_in_cache(prompt_set, image_id, cache)
-    return_val = cache.get(prior_prompts_id)
-    return return_val
+    return find_prior_prompt_in_cache(prompt_set, image_id, cache)
 
 
 def find_prior_prompt_in_cache(
-    initial_prompt_set: Sam2PromptSet, image_id: str, cache: Dict[str, np.ndarray]
+    initial_prompt_set: Sam2PromptSet, image_id: str, cache: LogitsCacheType
 ) -> Optional[str]:
     """
-    Performs breadth first search over the cache to see if prior used prompts appear in the cache.
-
-    Searches over prompt sets by removing a point from one of the prompts and checking if it is in the cache, then repeating.
+    Performs search over the cache to see if prior used prompts are subset of this one.
     """
-    prompt_set_stack = [initial_prompt_set]
-    while prompt_set_stack:
-        prompt_set = prompt_set_stack.pop(0)
-        prompts = prompt_set.prompts
-        for index, prompt in enumerate(prompts):
-            if not prompt.points:
-                continue
-            new_prompt = Sam2Prompt(box=prompt.box, points=prompt.points[:-1])
-            if not new_prompt.points:
-                new_prompt.points = None
 
-            trial_prompts = prompts[:index] + [new_prompt] + prompts[index + 1 :]
-            trial_prompts = Sam2PromptSet(prompts=trial_prompts)
-            prior_id = hash_prompt_set(image_id, trial_prompts)
-            if prior_id in cache:
-                return prior_id
-            else:
-                prompt_set_stack.append(trial_prompts)
-    return None
+    logits_for_image = [cache[k] for k in cache if k[0] == image_id]
+    maxed_size = 0
+    best_match: Optional[np.ndarray] = None
+    desired_size = initial_prompt_set.num_points() - 1
+    for cached_dict in logits_for_image[::-1]:
+        logits = cached_dict["logits"]
+        prompt_set: Sam2PromptSet = cached_dict["prompt_set"]
+        is_viable = is_prompt_strict_subset(prompt_set, initial_prompt_set)
+        if not is_viable:
+            continue
+
+        size = prompt_set.num_points()
+        # short circuit search if we find prompt with one less point (most recent possible mask)
+        if size == desired_size:
+            return logits
+        if size >= maxed_size:
+            maxed_size = size
+            best_match = logits
+
+    return best_match
+
+
+def is_prompt_strict_subset(
+    prompt_set_sub: Sam2PromptSet, prompt_set_super: Sam2PromptSet
+) -> bool:
+    if prompt_set_sub == prompt_set_super:
+        return False
+
+    super_copy = [p for p in prompt_set_super.prompts]
+    for prompt_sub in prompt_set_sub.prompts:
+        found_match = False
+        for prompt_super in super_copy:
+            is_sub = prompt_sub.box == prompt_super.box
+            is_sub = is_sub and set(
+                p.to_hashable() for p in prompt_sub.points or []
+            ) <= set(p.to_hashable() for p in prompt_super.points or [])
+            if is_sub:
+                super_copy.remove(prompt_super)
+                found_match = True
+                break
+        if not found_match:
+            return False
+
+    # every prompt in prompt_set_sub has a matching super prompt
+    return True
 
 
 def choose_most_confident_sam_prediction(

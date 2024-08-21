@@ -68,10 +68,16 @@ class Point(BaseModel):
     y: float
     positive: bool
 
+    def to_hashable(self):
+        return (self.x, self.y, self.positive)
+
 
 class Sam2Prompt(BaseModel):
     box: Optional[Box] = Field(default=None)
     points: Optional[List[Point]] = Field(default=None)
+
+    def num_points(self):
+        return len(self.points or [])
 
 
 class Sam2PromptSet(BaseModel):
@@ -79,6 +85,11 @@ class Sam2PromptSet(BaseModel):
         default=None,
         description="An optional list of prompts for masks to predict. Each prompt can include a bounding box and / or a set of postive or negative points",
     )
+
+    def num_points(self):
+        if not self.prompts:
+            return 0
+        return sum(prompt.num_points() for prompt in self.prompts)
 
     def to_sam2_inputs(self):
         if self.prompts is None:
