@@ -48,7 +48,8 @@ and run it in various environments using the Workflows Compiler and Execution En
 
 You have two options for creating a workflow definition: UI to design it visually or write it from scratch 
 if you’re comfortable with the workflows language. More details on writing definitions manually 
-are available [here](#TODO). For now, it's important to grasp the role of the definition within the ecosystem.
+are available [here](/workflows/definitions/). For now, it's important to grasp the role of the definition 
+within the ecosystem.
 
 A workflow definition is in fact JSON document which outlines:
 
@@ -71,10 +72,10 @@ When adding a block to your workflow, you need to provide its inputs by referenc
 or the output of another step. You also specify the values for any required parameters. Once the step is incorporated, 
 its outputs can be referenced by subsequent steps, allowing for seamless integration and chaining of operations.
 
-The creation of blocks is a more advanced topic, which you can explore [here](#TODO). It’s essential to understand that 
-blocks are grouped in workflow plugins, which are standard Python libraries. Roboflow offers its own set of plugins,
-and community members are encouraged to create their own. The process of importing a plugin into your 
-environment is detailed [here](#TODO).
+The creation of blocks is a more advanced topic, which you can explore [here](/workflows/create_workflow_block). 
+It’s essential to understand that blocks are grouped in workflow plugins, which are standard Python libraries. 
+Roboflow offers its own set of plugins, and community members are encouraged to create their own. 
+The process of importing a plugin into your environment is detailed [here](/workflows/blocks_bundling).
 
 Feel encouraged to explore [Workflows blocks prepared by Roboflow](/workflows/blocks/).
 

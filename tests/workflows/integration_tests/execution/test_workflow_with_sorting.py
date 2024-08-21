@@ -99,15 +99,12 @@ def test_sorting_workflow_for_when_nothing_to_sort(
 
 
 @add_to_workflows_gallery(
-    category="Workflows with UQL operations",
+    category="Workflows with data transformations",
     use_case_title="Workflow with detections sorting",
     use_case_description="""
-This workflow presents how to use Detections Transformation block powered by extension 
-that we call Universal Query Language. UQL let you build expressions that can be easily injected
-into your Workflow Definition. 
-
-In this example, we present how to build a workflow that is going to align predictions from
-object detection model such that results are sorted ascending regarding confidence.
+This workflow presents how to use Detections Transformation block that is going to 
+align predictions from object detection model such that results are sorted 
+ascending regarding confidence.
     """,
     workflow_definition=build_sorting_workflow_definition(
         sort_operation_mode=DetectionsSortProperties.CONFIDENCE,

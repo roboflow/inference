@@ -112,14 +112,11 @@ EXPECTED_OBJECT_DETECTION_CONFIDENCES = np.array(
 
 
 @add_to_workflows_gallery(
-    category="Workflows with UQL operations",
-    use_case_title="Workflow with detections sorting",
+    category="Workflows with data transformations",
+    use_case_title="Workflow with detections filtering",
     use_case_description="""
-This workflow presents how to use Detections Transformation block powered by extension 
-that we call Universal Query Language. UQL let you build expressions that can be easily injected
-into your Workflow Definition. 
-
-In this example, we present how to build a workflow that is going to filter predictions based on:
+This example presents how to use Detections Transformation block to build workflow
+that is going to filter predictions based on:
 
 - predicted classes
 

@@ -79,8 +79,14 @@ nav:
         - Workflows Definitions: workflows/definitions.md
         - Workflow execution: workflows/workflow_execution.md
       - Developer guide:
+        - Workflows Compiler: workflows/workflows_compiler.md
+        - Workflows Execution Engine: workflows/workflows_execution_engine.md
         - Kinds: workflows/kinds.md
-        - Create a New Workflow Block: workflows/workflows_contribution.md
+        - How to create Workflow Block?: workflows/create_workflow_block.md
+        - Blocks bundling: workflows/blocks_bundling.md
+        - Dynamic Python Blocks: workflows/custom_python_code_blocks.md
+        - Versioning in Workflows: workflows/versioning.md
+        - Testing - best practices: workflows/testing.md
   - Reference:
       - Inference Pipeline: using_inference/inference_pipeline.md
       - Active Learning:

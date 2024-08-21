@@ -101,7 +101,7 @@ In practical use-cases you may find the need to inject pieces of business logic 
 your Workflow, such that it is easier to integrate with app created in Workflows ecosystem.
 
 Translation of model predictions into domain-specific language of your business is possible 
-with specialised blocks powered by UQL, that let you parametrise such programming constructs 
+with specialised blocks that let you parametrise such programming constructs 
 as switch-case statements.
 
 In this example, our goal is to:
@@ -111,7 +111,7 @@ In this example, our goal is to:
 - verify that the picture presents exactly two dogs
 
 To achieve that goal, we run generic object detection model as first step, then we use special
-block called Property Definition that is capable of executing arbitrary UQL operation to
+block called Property Definition that is capable of executing various operations to
 transform input data into desired output. We have two such blocks:
 
 - `instances_counter` which takes object detection predictions and apply operation to extract sequence length - 
@@ -122,7 +122,7 @@ effectively calculating number of instances of objects that were predicted
 `instances_counter` basically completes first goal of the workflow, but to satisfy the second one we need to 
 build evaluation logic that will tell "PASS" / "FAIL" based on comparison of extracted class names with 
 reference parameter (provided via Workflow input `$inputs.reference`). We can use Expression block to achieve 
-that goal - using UQL to build case statements (checking if class names being list of classes 
+that goal - building custom case statements (checking if class names being list of classes 
 extracted from object detection prediction matches reference passed in the input). 
     """,
     workflow_definition=WORKFLOW_WITH_EXTRACTION_OF_CLASSES_FOR_DETECTIONS,
@@ -295,7 +295,7 @@ In practical use-cases you may find the need to inject pieces of business logic 
 your Workflow, such that it is easier to integrate with app created in Workflows ecosystem.
 
 Translation of model predictions into domain-specific language of your business is possible 
-with specialised blocks powered by UQL, that let you parametrise such programming constructs 
+with specialised blocks that let you parametrise such programming constructs 
 as switch-case statements.
 
 In this example, our goal is to:
@@ -331,8 +331,8 @@ suboptimal. To compensate for that, we may use First Non Empty Or Default block 
 equivalent of not detecting any dog).
 
 Such prepared output of `empty_values_replacement` step may be now plugged into Expression block, 
-performing switch-case like logic powered by UQL operations to deduce if breeds of detected dogs 
-match with reference value passed to workflow execution. 
+performing switch-case like logic to deduce if breeds of detected dogs match with reference value 
+passed to workflow execution. 
     """,
     workflow_definition=WORKFLOW_WITH_EXTRACTION_OF_CLASS_NAME_FROM_CROPS_AND_CONCATENATION_OF_RESULTS,
 )

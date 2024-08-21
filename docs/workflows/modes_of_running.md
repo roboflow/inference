@@ -181,9 +181,10 @@ Explore the example below to see how to combine `InferencePipeline` with Workflo
 
     ```python
     from inference import InferencePipeline
-    
-    def my_sink(result, video_frame):
-        print(result) # do something with the predictions of each frame
+    from inference.core.interfaces.camera.entities import VideoFrame
+
+    def my_sink(result: dict, video_frame: VideoFrame):
+        print(result) # here you can find dictionary with outputs from your workflow
         
     
     # initialize a pipeline object
@@ -192,7 +193,9 @@ Explore the example below to see how to combine `InferencePipeline` with Workflo
         workspace_name="<your-workspace-name>",
         workflow_id="<your-workflow-id>",
         video_reference=0, # Path to video, device id (int, usually 0 for built in webcams), or RTSP stream url
-        on_prediction=my_sink
+        on_prediction=my_sink,
+        image_input_name="image",  # this parameter holds the name of Workflow input that represents 
+        # image to be processed - please ADJUST it to your Workflow Definition 
     )
     pipeline.start() #start the pipeline
     pipeline.join() #wait for the pipeline thread to finish

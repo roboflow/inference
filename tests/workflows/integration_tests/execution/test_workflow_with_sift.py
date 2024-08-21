@@ -4,6 +4,7 @@ from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import add_to_workflows_gallery
 
 WORKFLOW_WITH_SIFT = {
     "version": "1.0",
@@ -77,22 +78,33 @@ WORKFLOW_WITH_SIFT = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with classical Computer Vision methods",
+    use_case_title="SIFT in Workflows",
+    use_case_description="""
+In this example we check how SIFT-based pattern matching works in cooperation
+with expression block.
+
+The Workflow first calculates SIFT features for input image and reference template, 
+then image features are compared to template features. At the end - switch-case 
+statement is built with Expression block to produce output. 
+
+Important detail: If there is empty output from SIFT descriptors calculation
+for (which is a valid output if no feature gets recognised) the sift comparison won't 
+execute - hence First Non Empty Or Default block is used to provide default outcome 
+for `images_match` output of SIFT comparison block.
+
+Please point out that a single image can be passed as template, and batch of images
+are passed as images to look for template. This workflow does also validate
+Execution Engine capabilities to broadcast batch-oriented inputs properly.
+    """,
+    workflow_definition=WORKFLOW_WITH_SIFT,
+)
 def test_workflow_with_classical_pattern_matching(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
 ) -> None:
-    """
-    In this test set we check how SIFT-based pattern matching works in cooperation
-    with expression block.
-
-    Please point out that a single image is passed as template, and batch of images
-    are passed as images to look for template. This workflow does also validate
-    Execution Engine capabilities to broadcast batch-oriented inputs properly.
-
-    Additionally, there is empty output from SIFT descriptors calculation
-    for blank input, which is nicely handled by first_non_empty_or_default block.
-    """
     # given
     template = np.ascontiguousarray(dogs_image[::-1, ::-1], dtype=np.uint8)
     empty_image_without_descriptors = np.zeros((256, 256, 3), dtype=np.uint8)
