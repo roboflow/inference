@@ -638,9 +638,10 @@ class VideoSource:
         try:
             if self._state is not StreamState.TERMINATING:
                 self._change_state(target_state=StreamState.RUNNING)
-            declared_source_fps = None
+            declared_source_fps, is_video_file = None, None
             if self._source_properties is not None:
                 declared_source_fps = self._source_properties.fps
+                is_video_file = self._source_properties.is_file
             while self._video.isOpened():
                 if self._state is StreamState.TERMINATING:
                     break
@@ -648,6 +649,7 @@ class VideoSource:
                 success = self._video_consumer.consume_frame(
                     video=self._video,
                     declared_source_fps=declared_source_fps,
+                    is_source_video_file=is_video_file,
                     buffer=self._frames_buffer,
                     frames_buffering_allowed=self._frames_buffering_allowed,
                     source_id=self._source_id,
@@ -806,6 +808,7 @@ class VideoConsumer:
         self,
         video: VideoFrameProducer,
         declared_source_fps: Optional[float],
+        is_source_video_file: Optional[bool],
         buffer: Queue,
         frames_buffering_allowed: bool,
         source_id: Optional[int] = None,
@@ -829,6 +832,7 @@ class VideoConsumer:
         return self._consume_stream_frame(
             video=video,
             declared_source_fps=declared_source_fps,
+            is_source_video_file=is_source_video_file,
             frame_timestamp=frame_timestamp,
             buffer=buffer,
             frames_buffering_allowed=frames_buffering_allowed,
@@ -847,6 +851,7 @@ class VideoConsumer:
         self,
         video: VideoFrameProducer,
         declared_source_fps: Optional[float],
+        is_source_video_file: Optional[bool],
         frame_timestamp: datetime,
         buffer: Queue,
         frames_buffering_allowed: bool,
@@ -889,6 +894,7 @@ class VideoConsumer:
                 decoding_pace_monitor=self._decoding_pace_monitor,
                 source_id=source_id,
                 fps=declared_source_fps,
+                comes_from_video_file=is_source_video_file,
             )
         if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
             return self._process_stream_frame_dropping_oldest(
@@ -896,6 +902,7 @@ class VideoConsumer:
                 video=video,
                 buffer=buffer,
                 source_id=source_id,
+                is_video_file=is_source_video_file,
             )
         send_frame_drop_update(
             frame_timestamp=frame_timestamp,
@@ -965,6 +972,7 @@ class VideoConsumer:
         video: VideoFrameProducer,
         buffer: Queue,
         source_id: Optional[int],
+        is_video_file: bool,
     ) -> bool:
         drop_single_frame_from_buffer(
             buffer=buffer,
@@ -978,6 +986,7 @@ class VideoConsumer:
             buffer=buffer,
             decoding_pace_monitor=self._decoding_pace_monitor,
             source_id=source_id,
+            comes_from_video_file=is_video_file,
         )
 
 
@@ -1083,7 +1092,8 @@ def decode_video_frame_to_buffer(
     buffer: Queue,
     decoding_pace_monitor: sv.FPSMonitor,
     source_id: Optional[int],
-    fps: float = 0,
+    fps: Optional[float] = 0,
+    comes_from_video_file: Optional[bool] = None,
 ) -> bool:
     success, image = video.retrieve()
     if not success:
@@ -1095,6 +1105,7 @@ def decode_video_frame_to_buffer(
         frame_timestamp=frame_timestamp,
         fps=fps,
         source_id=source_id,
+        comes_from_video_file=comes_from_video_file,
     )
     buffer.put(video_frame)
     return True

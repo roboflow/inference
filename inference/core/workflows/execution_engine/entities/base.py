@@ -1,6 +1,7 @@
 import base64
 from copy import copy
 from dataclasses import dataclass, replace
+from datetime import datetime
 from enum import Enum
 from typing import (
     Any,
@@ -27,6 +28,7 @@ from inference.core.utils.image_utils import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_IMAGES_KIND,
+    VIDEO_METADATA_KIND,
     WILDCARD_KIND,
     Kind,
 )
@@ -69,6 +71,16 @@ class WorkflowImage(WorkflowInput):
         return True
 
 
+class WorkflowVideoMetadata(WorkflowInput):
+    type: Literal["WorkflowVideoMetadata"]
+    name: str
+    kind: List[Kind] = Field(default=[VIDEO_METADATA_KIND])
+
+    @classmethod
+    def is_batch_oriented(cls) -> bool:
+        return True
+
+
 class WorkflowParameter(WorkflowInput):
     type: Literal["WorkflowParameter", "InferenceParameter"]
     name: str
@@ -79,7 +91,8 @@ class WorkflowParameter(WorkflowInput):
 
 
 InputType = Annotated[
-    Union[WorkflowImage, WorkflowParameter], Field(discriminator="type")
+    Union[WorkflowImage, WorkflowVideoMetadata, WorkflowParameter],
+    Field(discriminator="type"),
 ]
 
 B = TypeVar("B")
@@ -259,3 +272,20 @@ class WorkflowImageData:
         if self._base64_image:
             return {"type": "base64", "value": self.base64_image}
         return {"type": "numpy_object", "value": self.numpy_image}
+
+
+class VideoMetadata(BaseModel):
+    video_identifier: str = Field(
+        description="Identifier string for video. To be treated as opaque."
+    )
+    frame_number: int
+    frame_timestamp: datetime
+    fps: Optional[float] = Field(
+        description="Field represents FPS value (if possible to be retrieved)",
+        default=None,
+    )
+    comes_from_video_file: Optional[bool] = Field(
+        description="Field is a flag telling if frame comes from video file or stream - "
+        "if not possible to be determined - pass None",
+        default=None,
+    )
