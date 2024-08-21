@@ -187,6 +187,7 @@ if METLO_KEY:
     from metlo.fastapi import ASGIMiddleware
 
 from inference.core.version import __version__
+import time
 
 
 def with_route_exceptions(route):
@@ -464,8 +465,8 @@ class HttpInterface(BaseInterface):
                 return response
 
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
-            cached_api_keys = set()
-            cached_projects = set()
+            cached_api_keys = dict()
+            cached_projects = dict()
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -505,7 +506,7 @@ class HttpInterface(BaseInterface):
                     "api_key", None
                 )
 
-                if api_key not in cached_api_keys:
+                if cached_api_keys.get(api_key, 0) < time.time():
                     try:
                         workspace_url = (
                             get_roboflow_workspace(api_key)
@@ -516,7 +517,7 @@ class HttpInterface(BaseInterface):
                         if workspace_url != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
                             return _unauthorized_response("Unauthorized api_key")
 
-                        cached_api_keys.add(api_key)
+                        cached_api_keys[api_key] = time.time() + 3600 # expired after 1 hour
                     except RoboflowAPINotAuthorizedError as e:
                         return _unauthorized_response("Unauthorized api_key")
 
@@ -527,13 +528,13 @@ class HttpInterface(BaseInterface):
                     or json_params.get("project", None)
                     or model_id.split("/")[0]
                 )
-                if project_url is not None and project_url not in cached_projects:
+                if cached_projects.get(project_url, 0) < time.time():
                     try:
                         _ = get_roboflow_dataset_type(
                             api_key, DEDICATED_DEPLOYMENT_WORKSPACE_URL, project_url
                         )
 
-                        cached_projects.add(project_url)
+                        cached_projects[project_url] = time.time() # expired after 1 hour
                     except RoboflowAPINotNotFoundError as e:
                         return _unauthorized_response("Unauthorized project")
 
