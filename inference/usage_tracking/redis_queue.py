@@ -1,6 +1,7 @@
 import json
 import time
 from threading import Lock
+from uuid import uuid4
 
 from typing_extensions import Any, Dict, List, Optional
 
@@ -19,7 +20,7 @@ class RedisQueue:
         hash_tag: str = "UsageCollector",
         redis_cache: Optional[RedisCache] = None,
     ):
-        self._prefix: str = f"{{{hash_tag}}}:{time.time()}"
+        self._prefix: str = f"{{{hash_tag}}}:{uuid4().hex[:5]}:{time.time()}"
         self._redis_cache: RedisCache = redis_cache or cache
         self._increment: int = 0
         self._lock: Lock = Lock()
