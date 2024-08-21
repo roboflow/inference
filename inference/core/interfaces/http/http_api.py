@@ -542,7 +542,7 @@ class HttpInterface(BaseInterface):
                         )
 
                         cached_projects[project_url] = (
-                            time.time()
+                            time.time() + 3600
                         )  # expired after 1 hour
                     except RoboflowAPINotNotFoundError as e:
                         return _unauthorized_response("Unauthorized project")
