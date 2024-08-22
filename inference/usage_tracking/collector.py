@@ -20,7 +20,6 @@ from typing_extensions import (
     List,
     Optional,
     ParamSpec,
-    Tuple,
     TypeVar,
 )
 
@@ -593,6 +592,18 @@ class UsageCollector:
                 source = image.get("value")
             elif hasattr(image, "_image_reference"):
                 source = image._image_reference
+
+        if not usage_api_key:
+            _self = func_kwargs.get("self")
+            if "api_key" in func_kwargs and func_kwargs["api_key"]:
+                usage_api_key = func_kwargs["api_key"]
+            elif _self and hasattr(_self, "api_key") and _self.api_key:
+                usage_api_key = _self.api_key
+            elif "kwargs" in func_kwargs and isinstance(func_kwargs["kwargs"], dict) and "api_key" in func_kwargs["kwargs"] and func_kwargs["kwargs"]["api_key"]:
+                usage_api_key = func_kwargs["kwargs"]["api_key"]
+            else:
+                logger.debug("Could not obtain API key from func kwargs")
+
         return {
             "source": source,
             "api_key": usage_api_key,
