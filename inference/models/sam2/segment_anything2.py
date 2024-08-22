@@ -487,7 +487,7 @@ def turn_segmentation_results_into_api_response(
     masks_plygons = masks2multipoly(masks >= mask_threshold)
     for mask_polygon, score in zip(masks_plygons, scores):
         prediction = Sam2SegmentationPrediction(
-            mask=mask_polygon.tolist(),
+            masks=[mask.tolist() for mask in mask_polygon],
             confidence=score.item(),
         )
         predictions.append(prediction)
