@@ -61,10 +61,12 @@ class ExecutionEngine(BaseExecutionEngine):
         self,
         runtime_parameters: Dict[str, Any],
         fps: float = 0,
+        _is_preview: bool = False,
     ) -> List[Dict[str, Any]]:
         return self._engine.run(
             runtime_parameters=runtime_parameters,
             fps=fps,
+            _is_preview=_is_preview,
         )
 
 
