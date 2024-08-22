@@ -1,3 +1,6 @@
+import time
+from datetime import datetime
+from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -6,8 +9,10 @@ import pytest
 
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
+    VideoMetadata,
     WorkflowImage,
     WorkflowParameter,
+    WorkflowVideoMetadata,
 )
 from inference.core.workflows.execution_engine.v1.executor import (
     runtime_input_assembler,
@@ -17,7 +22,7 @@ from inference.core.workflows.execution_engine.v1.executor.runtime_input_assembl
 )
 
 
-def test_assembly_runtime_parameters_when_image_is_not_provided() -> None:
+def test_assemble_runtime_parameters_when_image_is_not_provided() -> None:
     # given
     runtime_parameters = {}
     defined_inputs = [WorkflowImage(type="WorkflowImage", name="image")]
@@ -31,7 +36,7 @@ def test_assembly_runtime_parameters_when_image_is_not_provided() -> None:
 
 
 @mock.patch.object(runtime_input_assembler, "load_image_from_url")
-def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_dict(
+def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_dict(
     load_image_from_url_mock: MagicMock,
 ) -> None:
     # given
@@ -62,7 +67,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_di
     ), "Expected parent id to be given after input param name"
 
 
-def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_dict_pointing_local_file_when_load_of_local_files_allowed(
+def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_dict_pointing_local_file_when_load_of_local_files_allowed(
     example_image_file: str,
 ) -> None:
     # given
@@ -92,7 +97,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_di
     ), "Expected parent id to be given after input param name"
 
 
-def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_dict_pointing_local_file_when_load_of_local_files_not_allowed(
+def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_dict_pointing_local_file_when_load_of_local_files_not_allowed(
     example_image_file: str,
 ) -> None:
     # given
@@ -113,7 +118,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_di
         )
 
 
-def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_np_array() -> (
+def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_np_array() -> (
     None
 ):
     # given
@@ -136,7 +141,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_np
     )
 
 
-def test_assembly_runtime_parameters_when_image_is_provided_as_unknown_element() -> (
+def test_assemble_runtime_parameters_when_image_is_provided_as_unknown_element() -> (
     None
 ):
     # given
@@ -151,7 +156,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_unknown_element()
         )
 
 
-def test_assembly_runtime_parameters_when_image_is_provided_in_batch() -> None:
+def test_assemble_runtime_parameters_when_image_is_provided_in_batch() -> None:
     # given
     runtime_parameters = {
         "image1": [
@@ -185,7 +190,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_in_batch() -> None:
     )
 
 
-def test_assembly_runtime_parameters_when_parameter_not_provided() -> None:
+def test_assemble_runtime_parameters_when_parameter_not_provided() -> None:
     # given
     runtime_parameters = {}
     defined_inputs = [WorkflowParameter(type="WorkflowParameter", name="parameter")]
@@ -200,7 +205,7 @@ def test_assembly_runtime_parameters_when_parameter_not_provided() -> None:
     assert result["parameter"] is None
 
 
-def test_assembly_runtime_parameters_when_parameter_provided() -> None:
+def test_assemble_runtime_parameters_when_parameter_provided() -> None:
     # given
     runtime_parameters = {"parameter": 37}
     defined_inputs = [WorkflowParameter(type="WorkflowParameter", name="parameter")]
@@ -213,3 +218,237 @@ def test_assembly_runtime_parameters_when_parameter_provided() -> None:
 
     # then
     assert result["parameter"] == 37
+
+
+def test_assemble_runtime_parameters_when_images_with_different_matching_batch_sizes_provided() -> (
+    None
+):
+    # given
+    runtime_parameters = {
+        "image1": [
+            np.zeros((192, 168, 3), dtype=np.uint8),
+            {
+                "type": "numpy_object",
+                "value": np.ones((256, 256, 3), dtype=np.uint8),
+            },
+        ],
+        "image2": np.zeros((192, 168, 3), dtype=np.uint8),
+    }
+    defined_inputs = [
+        WorkflowImage(type="WorkflowImage", name="image1"),
+        WorkflowImage(type="WorkflowImage", name="image2"),
+    ]
+
+    # when
+    result = assemble_runtime_parameters(
+        runtime_parameters=runtime_parameters,
+        defined_inputs=defined_inputs,
+    )
+
+    # then
+    assert (
+        len(result["image1"]) == 2
+    ), "Expected 2 elements in batch of `image1` parameter"
+    assert (
+        len(result["image2"]) == 2
+    ), "Expected 2 elements in batch of `image2` parameter - broadcasting should happen"
+    assert np.allclose(
+        result["image2"][0].numpy_image, np.zeros((192, 168, 3), dtype=np.uint8)
+    ), "Empty image expected"
+    assert np.allclose(
+        result["image2"][1].numpy_image, np.zeros((192, 168, 3), dtype=np.uint8)
+    ), "Empty image expected"
+
+
+def test_assemble_runtime_parameters_when_images_with_different_and_not_matching_batch_sizes_provided() -> (
+    None
+):
+    # given
+    runtime_parameters = {
+        "image1": [
+            np.zeros((192, 168, 3), dtype=np.uint8),
+            {
+                "type": "numpy_object",
+                "value": np.ones((256, 256, 3), dtype=np.uint8),
+            },
+        ],
+        "image2": [np.zeros((192, 168, 3), dtype=np.uint8)] * 3,
+    }
+    defined_inputs = [
+        WorkflowImage(type="WorkflowImage", name="image1"),
+        WorkflowImage(type="WorkflowImage", name="image2"),
+    ]
+
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = assemble_runtime_parameters(
+            runtime_parameters=runtime_parameters,
+            defined_inputs=defined_inputs,
+        )
+
+
+def test_assemble_runtime_parameters_when_video_metadata_with_different_matching_batch_sizes_provided() -> (
+    None
+):
+    # given
+    runtime_parameters = {
+        "meta1": [
+            {
+                "video_identifier": "a",
+                "frame_number": 1,
+                "frame_timestamp": datetime.now().isoformat(),
+                "fps": 50,
+                "comes_from_video_file": True,
+            },
+            {
+                "video_identifier": "b",
+                "frame_number": 1,
+                "frame_timestamp": datetime.now().isoformat(),
+                "fps": 50,
+                "comes_from_video_file": True,
+            },
+        ],
+        "meta2": {
+            "video_identifier": "c",
+            "frame_number": 1,
+            "frame_timestamp": datetime.now().isoformat(),
+            "fps": 50,
+            "comes_from_video_file": True,
+        },
+    }
+    defined_inputs = [
+        WorkflowVideoMetadata(type="WorkflowVideoMetadata", name="meta1"),
+        WorkflowVideoMetadata(type="WorkflowVideoMetadata", name="meta2"),
+    ]
+
+    # when
+    result = assemble_runtime_parameters(
+        runtime_parameters=runtime_parameters,
+        defined_inputs=defined_inputs,
+    )
+
+    # then
+    assert (
+        len(result["meta1"]) == 2
+    ), "Expected 2 elements in batch of `image1` parameter"
+    assert (
+        len(result["meta2"]) == 2
+    ), "Expected 2 elements in batch of `image2` parameter - broadcasting should happen"
+    assert [
+        result["meta2"][0].video_identifier,
+        result["meta2"][1].video_identifier,
+    ] == ["c", "c"], "Expected broadcasting of meta2 value"
+
+
+def test_assemble_runtime_parameters_when_video_metadata_declared_but_not_provided() -> (
+    None
+):
+    # given
+    defined_inputs = [WorkflowVideoMetadata(type="WorkflowVideoMetadata", name="meta1")]
+
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = assemble_runtime_parameters(
+            runtime_parameters={},
+            defined_inputs=defined_inputs,
+        )
+
+
+@pytest.mark.parametrize(
+    "timestamp", [1, time.time(), datetime.now(), datetime.now().isoformat()]
+)
+def test_assemble_runtime_parameters_when_video_metadata_declared_and_provided_as_dict(
+    timestamp: Any,
+) -> None:
+    # given
+    defined_inputs = [WorkflowVideoMetadata(type="WorkflowVideoMetadata", name="meta1")]
+    runtime_parameters = {
+        "meta1": {
+            "video_identifier": "a",
+            "frame_number": 1,
+            "frame_timestamp": timestamp,
+            "fps": 50,
+            "comes_from_video_file": True,
+        },
+    }
+
+    # when
+    result = assemble_runtime_parameters(
+        runtime_parameters=runtime_parameters,
+        defined_inputs=defined_inputs,
+    )
+
+    # then
+    assert result["meta1"][0].video_identifier == "a"
+    assert isinstance(result["meta1"][0].frame_timestamp, datetime)
+
+
+def test_assemble_runtime_parameters_when_video_metadata_declared_and_provided_as_object() -> (
+    None
+):
+    # given
+    defined_inputs = [WorkflowVideoMetadata(type="WorkflowVideoMetadata", name="meta1")]
+    runtime_parameters = {
+        "meta1": VideoMetadata(
+            video_identifier="a",
+            frame_number=1,
+            frame_timestamp=datetime.now(),
+            fps=50,
+            comes_from_video_file=False,
+        ),
+    }
+
+    # when
+    result = assemble_runtime_parameters(
+        runtime_parameters=runtime_parameters,
+        defined_inputs=defined_inputs,
+    )
+
+    # then
+    assert result["meta1"][0].video_identifier == "a"
+    assert isinstance(result["meta1"][0].frame_timestamp, datetime)
+
+
+def test_assemble_runtime_parameters_when_video_metadata_with_different_and_not_matching_batch_sizes_provided() -> (
+    None
+):
+    # given
+    runtime_parameters = {
+        "meta1": [
+            {
+                "video_identifier": "a",
+                "frame_number": 1,
+                "frame_timestamp": datetime.now().isoformat(),
+                "fps": 50,
+                "comes_from_video_file": True,
+            },
+            {
+                "video_identifier": "b",
+                "frame_number": 1,
+                "frame_timestamp": datetime.now().isoformat(),
+                "fps": 50,
+                "comes_from_video_file": True,
+            },
+        ],
+        "meta2": [
+            {
+                "video_identifier": "c",
+                "frame_number": 1,
+                "frame_timestamp": datetime.now().isoformat(),
+                "fps": 50,
+                "comes_from_video_file": True,
+            }
+        ]
+        * 3,
+    }
+    defined_inputs = [
+        WorkflowVideoMetadata(type="WorkflowVideoMetadata", name="meta1"),
+        WorkflowVideoMetadata(type="WorkflowVideoMetadata", name="meta2"),
+    ]
+
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = assemble_runtime_parameters(
+            runtime_parameters=runtime_parameters,
+            defined_inputs=defined_inputs,
+        )
