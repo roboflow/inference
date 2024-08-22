@@ -1,4 +1,5 @@
 from typing import List, Literal, Optional, Type, Union
+
 import cv2
 import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
@@ -77,7 +78,7 @@ class ImageBlurManifest(WorkflowBlockManifest):
                 ],
             ),
         ]
-    
+
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
