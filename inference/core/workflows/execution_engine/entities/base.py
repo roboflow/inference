@@ -279,7 +279,11 @@ class VideoMetadata(BaseModel):
         description="Identifier string for video. To be treated as opaque."
     )
     frame_number: int
-    frame_timestamp: datetime
+    frame_timestamp: datetime = Field(
+        description="The timestamp of video frame. When processing video it is suggested that "
+        "blocks rely on `fps` and `frame_number`, as real-world time-elapse will not "
+        "match time-elapse in video file",
+    )
     fps: Optional[float] = Field(
         description="Field represents FPS value (if possible to be retrieved)",
         default=None,
