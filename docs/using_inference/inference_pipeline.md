@@ -188,7 +188,7 @@ pipeline = InferencePipeline.init_with_workflow(
     workflow_specification=workflow_specification,
     on_prediction=workflows_sink,
     image_input_name="image",  # adjust according to name of WorkflowImage input you define
-    video_metadata_input_name="video_metadata" # AVAILABLE from v0.17.0! adjust according to name of WorkflowVideoMetadata input you define - 
+    video_metadata_input_name="video_metadata" # AVAILABLE from v0.17.0! adjust according to name of WorkflowVideoMetadata input you define
 )
 
 # start the pipeline
