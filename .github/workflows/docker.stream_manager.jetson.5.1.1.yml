@@ -19,6 +19,7 @@ env:
 jobs:
   docker:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - name: Remove unnecessary files
         run: |
