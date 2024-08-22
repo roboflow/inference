@@ -508,7 +508,7 @@ class UsageCollector:
     @staticmethod
     def _resource_details_from_workflow_json(
         workflow_json: Dict[str, Any]
-    ) -> Tuple[ResourceID, ResourceDetails]:
+    ) -> ResourceDetails:
         if not isinstance(workflow_json, dict):
             raise ValueError("workflow_json must be dict")
         return {
@@ -524,6 +524,7 @@ class UsageCollector:
         usage_fps: float,
         usage_api_key: str,
         usage_workflow_id: str,
+        usage_workflow_preview: bool,
         usage_inference_test_run: bool,
         func: Callable[[Any], Any],
         args: List[Any],
@@ -550,6 +551,7 @@ class UsageCollector:
             resource_details = UsageCollector._resource_details_from_workflow_json(
                 workflow_json=workflow_json,
             )
+            resource_details["is_preview"] = usage_workflow_preview
             resource_id = usage_workflow_id
             if not resource_id and resource_details:
                 usage_workflow_id = UsageCollector._calculate_resource_hash(
@@ -609,6 +611,7 @@ class UsageCollector:
             usage_fps: float = 0,
             usage_api_key: APIKey = "",
             usage_workflow_id: str = "",
+            usage_workflow_preview: bool = False,
             usage_inference_test_run: bool = False,
             **kwargs: P.kwargs,
         ) -> T:
@@ -617,6 +620,7 @@ class UsageCollector:
                     usage_fps=usage_fps,
                     usage_api_key=usage_api_key,
                     usage_workflow_id=usage_workflow_id,
+                    usage_workflow_preview=usage_workflow_preview,
                     usage_inference_test_run=usage_inference_test_run,
                     func=func,
                     args=args,
@@ -631,6 +635,7 @@ class UsageCollector:
             usage_fps: float = 0,
             usage_api_key: APIKey = "",
             usage_workflow_id: str = "",
+            usage_workflow_preview: bool = False,
             usage_inference_test_run: bool = False,
             **kwargs: P.kwargs,
         ) -> T:
@@ -639,6 +644,7 @@ class UsageCollector:
                     usage_fps=usage_fps,
                     usage_api_key=usage_api_key,
                     usage_workflow_id=usage_workflow_id,
+                    usage_workflow_preview=usage_workflow_preview,
                     usage_inference_test_run=usage_inference_test_run,
                     func=func,
                     args=args,

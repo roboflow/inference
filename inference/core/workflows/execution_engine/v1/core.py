@@ -61,6 +61,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         self,
         runtime_parameters: Dict[str, Any],
         fps: float = 0,
+        _is_preview: bool = False,
     ) -> List[Dict[str, Any]]:
         runtime_parameters = assembly_runtime_parameters(
             runtime_parameters=runtime_parameters,
@@ -77,4 +78,5 @@ class ExecutionEngineV1(BaseExecutionEngine):
             max_concurrent_steps=self._max_concurrent_steps,
             usage_fps=fps,
             usage_workflow_id=self._workflow_id,
+            usage_workflow_preview=_is_preview,
         )
