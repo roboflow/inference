@@ -10,6 +10,8 @@ jobs:
     if: ${{ !github.event.act }}
     runs-on: Roboflow-GPU-VM-Runner
 
+    timeout-minutes: 60
+
     steps:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2

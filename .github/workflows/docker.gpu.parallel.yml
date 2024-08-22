@@ -19,6 +19,7 @@ jobs:
   docker:
     runs-on:
       group: group8core
+    timeout-minutes: 120
     steps:
       - name: Remove unnecessary files
         run: |
