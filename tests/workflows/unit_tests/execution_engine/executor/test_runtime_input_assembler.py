@@ -13,7 +13,7 @@ from inference.core.workflows.execution_engine.v1.executor import (
     runtime_input_assembler,
 )
 from inference.core.workflows.execution_engine.v1.executor.runtime_input_assembler import (
-    assembly_runtime_parameters,
+    assemble_runtime_parameters,
 )
 
 
@@ -24,7 +24,7 @@ def test_assembly_runtime_parameters_when_image_is_not_provided() -> None:
 
     # when
     with pytest.raises(RuntimeInputError):
-        _ = assembly_runtime_parameters(
+        _ = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
         )
@@ -45,7 +45,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_di
     defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
 
     # when
-    result = assembly_runtime_parameters(
+    result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
     )
@@ -75,7 +75,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_di
     defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
 
     # when
-    result = assembly_runtime_parameters(
+    result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
     )
@@ -106,7 +106,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_di
 
     # when
     with pytest.raises(RuntimeInputError):
-        _ = assembly_runtime_parameters(
+        _ = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
             prevent_local_images_loading=True,
@@ -121,7 +121,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_single_element_np
     defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
 
     # when
-    result = assembly_runtime_parameters(
+    result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
     )
@@ -145,7 +145,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_as_unknown_element()
 
     # when
     with pytest.raises(RuntimeInputError):
-        _ = assembly_runtime_parameters(
+        _ = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
         )
@@ -165,7 +165,7 @@ def test_assembly_runtime_parameters_when_image_is_provided_in_batch() -> None:
     defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
 
     # when
-    result = assembly_runtime_parameters(
+    result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
     )
@@ -191,7 +191,7 @@ def test_assembly_runtime_parameters_when_parameter_not_provided() -> None:
     defined_inputs = [WorkflowParameter(type="WorkflowParameter", name="parameter")]
 
     # when
-    result = assembly_runtime_parameters(
+    result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
     )
@@ -206,7 +206,7 @@ def test_assembly_runtime_parameters_when_parameter_provided() -> None:
     defined_inputs = [WorkflowParameter(type="WorkflowParameter", name="parameter")]
 
     # when
-    result = assembly_runtime_parameters(
+    result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
     )

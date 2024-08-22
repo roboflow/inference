@@ -22,7 +22,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 BATCH_ORIENTED_PARAMETER_TYPES = {WorkflowImage, WorkflowVideoMetadata}
 
 
-def assembly_runtime_parameters(
+def assemble_runtime_parameters(
     runtime_parameters: Dict[str, Any],
     defined_inputs: List[InputType],
     prevent_local_images_loading: bool = False,
@@ -33,20 +33,20 @@ def assembly_runtime_parameters(
     )
     for defined_input in defined_inputs:
         if isinstance(defined_input, WorkflowImage):
-            runtime_parameters[defined_input.name] = assembly_input_image(
+            runtime_parameters[defined_input.name] = assemble_input_image(
                 parameter=defined_input.name,
                 image=runtime_parameters.get(defined_input.name),
                 input_batch_size=input_batch_size,
                 prevent_local_images_loading=prevent_local_images_loading,
             )
         elif isinstance(defined_input, WorkflowVideoMetadata):
-            runtime_parameters[defined_input.name] = assembly_video_metadata(
+            runtime_parameters[defined_input.name] = assemble_video_metadata(
                 parameter=defined_input.name,
                 video_metadata=runtime_parameters.get(defined_input.name),
                 input_batch_size=input_batch_size,
             )
         else:
-            runtime_parameters[defined_input.name] = assembly_inference_parameter(
+            runtime_parameters[defined_input.name] = assemble_inference_parameter(
                 parameter=defined_input.name,
                 runtime_parameters=runtime_parameters,
                 default_value=defined_input.default_value,
@@ -66,7 +66,7 @@ def determine_input_batch_size(
     return 1
 
 
-def assembly_input_image(
+def assemble_input_image(
     parameter: str,
     image: Any,
     input_batch_size: int,
@@ -80,14 +80,14 @@ def assembly_input_image(
         )
     if not isinstance(image, list):
         return [
-            _assembly_input_image(
+            _assemble_input_image(
                 parameter=parameter,
                 image=image,
                 prevent_local_images_loading=prevent_local_images_loading,
             )
         ] * input_batch_size
     result = [
-        _assembly_input_image(
+        _assemble_input_image(
             parameter=parameter,
             image=element,
             identifier=idx,
@@ -105,7 +105,7 @@ def assembly_input_image(
     return result
 
 
-def _assembly_input_image(
+def _assemble_input_image(
     parameter: str,
     image: Any,
     identifier: Optional[int] = None,
@@ -161,7 +161,7 @@ def _assembly_input_image(
     )
 
 
-def assembly_video_metadata(
+def assemble_video_metadata(
     parameter: str,
     video_metadata: Any,
     input_batch_size: int,
@@ -174,13 +174,13 @@ def assembly_video_metadata(
         )
     if not isinstance(video_metadata, list):
         return [
-            _assembly_video_metadata(
+            _assemble_video_metadata(
                 parameter=parameter,
                 video_metadata=video_metadata,
             )
         ] * input_batch_size
     result = [
-        _assembly_video_metadata(
+        _assemble_video_metadata(
             parameter=parameter,
             video_metadata=element,
         )
@@ -196,7 +196,7 @@ def assembly_video_metadata(
     return result
 
 
-def _assembly_video_metadata(
+def _assemble_video_metadata(
     parameter: str,
     video_metadata: Any,
 ) -> VideoMetadata:
@@ -220,7 +220,7 @@ def _assembly_video_metadata(
         )
 
 
-def assembly_inference_parameter(
+def assemble_inference_parameter(
     parameter: str,
     runtime_parameters: Dict[str, Any],
     default_value: Any,
