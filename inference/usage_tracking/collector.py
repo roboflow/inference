@@ -599,7 +599,12 @@ class UsageCollector:
                 usage_api_key = func_kwargs["api_key"]
             elif _self and hasattr(_self, "api_key") and _self.api_key:
                 usage_api_key = _self.api_key
-            elif "kwargs" in func_kwargs and isinstance(func_kwargs["kwargs"], dict) and "api_key" in func_kwargs["kwargs"] and func_kwargs["kwargs"]["api_key"]:
+            elif (
+                "kwargs" in func_kwargs
+                and isinstance(func_kwargs["kwargs"], dict)
+                and "api_key" in func_kwargs["kwargs"]
+                and func_kwargs["kwargs"]["api_key"]
+            ):
                 usage_api_key = func_kwargs["kwargs"]["api_key"]
             else:
                 logger.debug("Could not obtain API key from func kwargs")
