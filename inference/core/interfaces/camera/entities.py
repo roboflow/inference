@@ -53,14 +53,18 @@ class VideoFrame:
         image (np.ndarray): The image data of the frame as a NumPy array.
         frame_id (FrameID): A unique identifier for the frame.
         frame_timestamp (FrameTimestamp): The timestamp when the frame was captured.
-        source_id (int): The index of the video_reference element which was passed to InferencePipeline for this frame (useful when multiple streams are passed to InferencePipeline).
+        source_id (int): The index of the video_reference element which was passed to InferencePipeline for this frame
+            (useful when multiple streams are passed to InferencePipeline).
+        fps (Optional[float]): FPS of source (if possible to be acquired)
+        comes_from_video_file (Optional[bool]): flag to determine if frame comes from video file
     """
 
     image: np.ndarray
     frame_id: FrameID
     frame_timestamp: FrameTimestamp
-    fps: float = 0
+    fps: Optional[float] = None
     source_id: Optional[int] = None
+    comes_from_video_file: Optional[bool] = None
 
 
 @dataclass(frozen=True)

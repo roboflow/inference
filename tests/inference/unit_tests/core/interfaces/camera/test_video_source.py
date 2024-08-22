@@ -759,6 +759,7 @@ def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:
     result = consumer.consume_frame(
         video=video,
         declared_source_fps=source_properties.fps,
+        is_source_video_file=source_properties.is_file,
         buffer=buffer,
         frames_buffering_allowed=True,
     )
@@ -790,6 +791,7 @@ def test_stream_consumption_when_buffering_not_allowed() -> None:
     result = consumer.consume_frame(
         video=video,
         declared_source_fps=source_properties.fps,
+        is_source_video_file=source_properties.is_file,
         buffer=buffer,
         frames_buffering_allowed=False,
     )
@@ -826,6 +828,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_but_decoding_fa
     result = consumer.consume_frame(
         video=video,
         declared_source_fps=source_properties.fps,
+        is_source_video_file=source_properties.is_file,
         buffer=buffer,
         frames_buffering_allowed=True,
     )
@@ -864,6 +867,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_and_decoding_su
     result = consumer.consume_frame(
         video=video,
         declared_source_fps=source_properties.fps,
+        is_source_video_file=source_properties.is_file,
         buffer=buffer,
         frames_buffering_allowed=True,
     )
@@ -905,6 +909,7 @@ def test_stream_consumption_when_buffer_full_and_latest_frames_to_be_dropped() -
     result = consumer.consume_frame(
         video=video,
         declared_source_fps=source_properties.fps,
+        is_source_video_file=source_properties.is_file,
         buffer=buffer,
         frames_buffering_allowed=True,
     )
@@ -940,6 +945,7 @@ def test_stream_consumption_when_buffer_full_and_oldest_frames_to_be_dropped() -
     result = consumer.consume_frame(
         video=video,
         declared_source_fps=source_properties.fps,
+        is_source_video_file=source_properties.is_file,
         buffer=buffer,
         frames_buffering_allowed=True,
     )
@@ -987,6 +993,7 @@ def test_stream_consumption_when_adaptive_strategy_does_not_prevent_decoding_due
     result = consumer.consume_frame(
         video=video,
         declared_source_fps=source_properties.fps,
+        is_source_video_file=source_properties.is_file,
         buffer=buffer,
         frames_buffering_allowed=True,
     )
@@ -1038,6 +1045,7 @@ def test_stream_consumption_when_adaptive_strategy_eventually_stops_preventing_d
         result = consumer.consume_frame(
             video=video,
             declared_source_fps=source_properties.fps,
+            is_source_video_file=source_properties.is_file,
             buffer=buffer,
             frames_buffering_allowed=True,
         )
@@ -1051,6 +1059,7 @@ def test_stream_consumption_when_adaptive_strategy_eventually_stops_preventing_d
         result = consumer.consume_frame(
             video=video,
             declared_source_fps=source_properties.fps,
+            is_source_video_file=source_properties.is_file,
             buffer=buffer,
             frames_buffering_allowed=True,
         )
@@ -1109,6 +1118,7 @@ def test_stream_consumption_when_adaptive_strategy_is_disabled_as_announced_fps_
         result = consumer.consume_frame(
             video=video,
             declared_source_fps=None,
+            is_source_video_file=None,
             buffer=buffer,
             frames_buffering_allowed=True,
         )
@@ -1122,6 +1132,7 @@ def test_stream_consumption_when_adaptive_strategy_is_disabled_as_announced_fps_
         result = consumer.consume_frame(
             video=video,
             declared_source_fps=None,
+            is_source_video_file=None,
             buffer=buffer,
             frames_buffering_allowed=True,
         )
@@ -1179,6 +1190,7 @@ def test_stream_consumption_when_adaptive_strategy_drops_frames_due_to_reader_la
         result = consumer.consume_frame(
             video=video,
             declared_source_fps=None,
+            is_source_video_file=None,
             buffer=buffer,
             frames_buffering_allowed=True,
         )
@@ -1190,6 +1202,7 @@ def test_stream_consumption_when_adaptive_strategy_drops_frames_due_to_reader_la
         result = consumer.consume_frame(
             video=video,
             declared_source_fps=None,
+            is_source_video_file=None,
             buffer=buffer,
             frames_buffering_allowed=True,
         )
