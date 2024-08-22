@@ -115,3 +115,43 @@ def test_sam2_single_prompted_image_segmentation_mask_cache_works(
 
     # then
     assert True, "doesnt crash when passing mask_input"
+
+@pytest.mark.slow
+def test_sam2_single_prompted_image_segmentation_mask_cache_changes_behavior(
+    sam2_small_model: str, truck_image: np.ndarray,
+    sam2_small_truck_mask_from_cached_logits: np.ndarray,
+) -> None:
+    # given
+    model = SegmentAnything2(model_id=sam2_small_model)
+
+    prompt = Sam2PromptSet(
+        prompts=[{"points": [{"x": 1235, "y": 530, "positive": True}]}]
+    )
+
+    # when
+    image_id = "truck"
+    masks, scores, low_res_logits = model.segment_image(
+        truck_image, image_id=image_id, prompts=prompt, save_logits_to_cache=True
+    )
+    assert hash_prompt_set(image_id, prompt) in model.low_res_logits_cache
+
+    prompt = Sam2PromptSet(
+        prompts=[
+            {
+                "points": [
+                    {"x": 1235, "y": 530, "positive": True},
+                    {"x": 10, "y": 500, "positive": False},
+                ]
+            }
+        ]
+    )
+    assert (
+        maybe_load_low_res_logits_from_cache(
+            image_id, prompt, model.low_res_logits_cache
+        )
+        is not None
+    )
+    masks2, scores2, low_res_logits2 = model.segment_image(
+        truck_image, prompts=prompt, mask_input=low_res_logits, load_logits_from_cache=True
+    )
+    assert np.allclose(sam2_small_truck_mask_from_cached_logits, masks2)
