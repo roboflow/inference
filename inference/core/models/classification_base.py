@@ -256,6 +256,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         responses = self.infer(**request.dict(), return_image_dims=True)
         for response in responses:
             response.time = perf_counter() - t1
+            response.inference_id = getattr(request, "id", None)
 
         if request.visualize_predictions:
             for response in responses:
