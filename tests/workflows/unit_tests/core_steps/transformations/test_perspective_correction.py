@@ -4,6 +4,7 @@ import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
+    PerspectiveCorrectionBlockV1,
     correct_detections,
     extend_perspective_polygon,
     generate_transformation_matrix,
@@ -16,13 +17,10 @@ from inference.core.workflows.execution_engine.constants import (
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
+    ImageParentMetadata,
     WorkflowImageData,
-    ImageParentMetadata
 )
 
-from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
-    PerspectiveCorrectionBlockV1,
-)
 
 @pytest.mark.parametrize("broken_input", [1, "cat", np.array([])])
 def test_pick_largest_perspective_polygons_raises_on_unexpected_type_of_input(
@@ -301,7 +299,9 @@ def test_warp_image():
     dummy_predictions = sv.Detections(xyxy=np.array([[10, 10, 20, 20]]))
     perspective_correction_block = PerspectiveCorrectionBlockV1()
 
-    workflow_image_data = WorkflowImageData(parent_metadata=ImageParentMetadata(parent_id="test"), numpy_image=dummy_image)
+    workflow_image_data = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="test"), numpy_image=dummy_image
+    )
 
     # when
     result = perspective_correction_block.run(
@@ -316,4 +316,6 @@ def test_warp_image():
 
     # then
     assert "warped_image" in result[0], "warped_image key must be present in the result"
-    assert isinstance(result[0]["warped_image"], WorkflowImageData), f"warped_image must be of type WorkflowImageData"
+    assert isinstance(
+        result[0]["warped_image"], WorkflowImageData
+    ), f"warped_image must be of type WorkflowImageData"
