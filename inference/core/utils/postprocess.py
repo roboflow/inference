@@ -40,6 +40,7 @@ def masks2poly(masks: np.ndarray) -> List[np.ndarray]:
         segments.append(mask2poly(mask))
     return segments
 
+
 def masks2multipoly(masks: np.ndarray) -> List[np.ndarray]:
     """Converts binary masks to polygonal segments.
 
@@ -54,7 +55,6 @@ def masks2multipoly(masks: np.ndarray) -> List[np.ndarray]:
     for mask in masks:
         segments.append(mask2multipoly(mask))
     return segments
-
 
 
 def mask2poly(mask: np.ndarray) -> np.ndarray:
@@ -76,6 +76,7 @@ def mask2poly(mask: np.ndarray) -> np.ndarray:
         contours = np.zeros((0, 2))
     return contours.astype("float32")
 
+
 def mask2multipoly(mask: np.ndarray) -> np.ndarray:
     """
     Find all contours in the mask and return them as a float32 array.
@@ -92,6 +93,7 @@ def mask2multipoly(mask: np.ndarray) -> np.ndarray:
     else:
         contours = np.zeros((0, 2))
     return contours.astype("float32")
+
 
 def post_process_bboxes(
     predictions: List[List[List[float]]],
