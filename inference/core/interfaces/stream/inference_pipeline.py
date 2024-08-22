@@ -443,6 +443,7 @@ class InferencePipeline:
         workflow_init_parameters: Optional[Dict[str, Any]] = None,
         workflows_thread_pool_workers: int = 4,
         cancel_thread_pool_tasks_on_exit: bool = True,
+        video_metadata_input_name: str = "video_metadata",
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -462,8 +463,9 @@ class InferencePipeline:
             workflow_id (Optional[str]): When using registered workflows - Roboflow workflow id needs to be given.
             api_key (Optional[str]): Roboflow API key - if not passed - will be looked in env under "ROBOFLOW_API_KEY"
                 and "API_KEY" variables. API key, passed in some form is required.
-            image_input_name (str): Name of input image defined in `workflow_specification`. `InferencePipeline` will be
-                injecting video frames to workflow through that parameter name.
+            image_input_name (str): Name of input image defined in `workflow_specification` or Workflow definition saved
+                at Roboflow Platform. `InferencePipeline` will be injecting video frames to workflow through that
+                parameter name.
             workflows_parameters (Optional[Dict[str, Any]]): Dictionary with additional parameters that can be
                 defined within `workflow_specification`.
             on_prediction (Callable[AnyPrediction, VideoFrame], None]): Function to be called
@@ -497,7 +499,9 @@ class InferencePipeline:
             cancel_thread_pool_tasks_on_exit (bool): Flag to decide if unstated background tasks should be
                 canceled at the end of InferencePipeline processing. By default, when video file ends or
                 pipeline is stopped, tasks that has not started will be cancelled.
-
+            video_metadata_input_name (str): Name of input for video metadata defined in `workflow_specification` or
+                Workflow definition saved  at Roboflow Platform. `InferencePipeline` will be injecting video frames
+                metadata to workflows through that parameter name.
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
         * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
