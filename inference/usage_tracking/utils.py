@@ -20,7 +20,13 @@ def collect_func_params(
     for default_arg in defaults:
         params[default_arg] = signature.parameters[default_arg].default
 
-    if set(params) != set(signature.parameters):
-        logger.error("Params mismatch for %s.%s", func.__module__, func.__name__)
+    signature_params = set(signature.parameters)
+    if set(params) != signature_params:
+        if "kwargs" in signature_params:
+            params["kwargs"] = kwargs
+        if "args" in signature_params:
+            params["args"] = args
+        if not set(params).issuperset(signature_params):
+            logger.error("Params mismatch for %s.%s", func.__module__, func.__name__)
 
     return params

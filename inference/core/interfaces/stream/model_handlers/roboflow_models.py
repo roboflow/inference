@@ -15,6 +15,8 @@ def default_process_frame(
     predictions = wrap_in_list(
         model.infer(
             [f.image for f in video_frame],
+            usage_fps=video_frame[0].fps,
+            usage_api_key=model.api_key,
             **postprocessing_args,
         )
     )
