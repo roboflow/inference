@@ -22,6 +22,10 @@ class WorkflowInferenceRequest(BaseModel):
 
 class WorkflowSpecificationInferenceRequest(WorkflowInferenceRequest):
     specification: dict
+    is_preview: bool = Field(
+        default=False,
+        description="Reserved, used internally by Roboflow to distinguish between preview and non-preview runs",
+    )
 
 
 class DescribeBlocksRequest(BaseModel):
