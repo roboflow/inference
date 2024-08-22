@@ -1,4 +1,5 @@
 from typing import List, Literal, Optional, Type, Union
+
 import cv2
 import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
@@ -78,9 +79,9 @@ class ImageContoursManifest(WorkflowBlockManifest):
                 kind=[
                     INTEGER_KIND,
                 ],
-            )
+            ),
         ]
-    
+
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
@@ -94,7 +95,13 @@ class ImageContoursBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[ImageContoursManifest]:
         return ImageContoursManifest
 
-    def find_and_draw_contours(self, image: np.ndarray, image_draw: np.ndarray, color: tuple = (255, 0, 255), thickness: int = 3) -> tuple[np.ndarray, int]:
+    def find_and_draw_contours(
+        self,
+        image: np.ndarray,
+        image_draw: np.ndarray,
+        color: tuple = (255, 0, 255),
+        thickness: int = 3,
+    ) -> tuple[np.ndarray, int]:
         """
         Finds and draws contours on the image.
 
@@ -107,7 +114,9 @@ class ImageContoursBlockV1(WorkflowBlock):
             tuple: Image with contours drawn and number of contours.
         """
         # Find contours
-        contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         # Draw contours on a copy of the original image
         contour_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
@@ -116,9 +125,18 @@ class ImageContoursBlockV1(WorkflowBlock):
         # Return the image with contours and the number of contours
         return contour_image, len(contours)
 
-    def run(self, image: WorkflowImageData, raw_image: WorkflowImageData, line_thickness: int, *args, **kwargs) -> BlockResult:
+    def run(
+        self,
+        image: WorkflowImageData,
+        raw_image: WorkflowImageData,
+        line_thickness: int,
+        *args,
+        **kwargs
+    ) -> BlockResult:
         # Find and draw contours
-        contour_image, num_contours = self.find_and_draw_contours(image.numpy_image, raw_image.numpy_image, thickness=line_thickness)
+        contour_image, num_contours = self.find_and_draw_contours(
+            image.numpy_image, raw_image.numpy_image, thickness=line_thickness
+        )
 
         output = WorkflowImageData(
             parent_metadata=image.parent_metadata,

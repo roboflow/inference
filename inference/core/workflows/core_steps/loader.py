@@ -2,20 +2,17 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
+    ImageContoursBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
+    ConvertGrayscaleBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
     DominantColorBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
     ImageBlurBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
-    ConvertGrayscaleBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
-    ImageThresholdBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
-    ImageContoursBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
     PixelationCountBlockV1,
@@ -26,6 +23,9 @@ from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import 
 )
 from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
     TemplateMatchingBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
+    ImageThresholdBlockV1,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
