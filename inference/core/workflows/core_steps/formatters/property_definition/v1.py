@@ -31,7 +31,7 @@ Example use-cases:
 * extraction ocr text from OCR result
 """
 
-SHORT_DESCRIPTION = "Define a field using properties from previous workflow steps."
+SHORT_DESCRIPTION = "Define a variable from model predictions, such as the class names, confidences, or number of detections."
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -43,6 +43,16 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "formatter",
+            "search_keywords": [
+                "property",
+                "field",
+                "number",
+                "count",
+                "classes",
+                "confidences",
+                "labels",
+                "coordinates",
+            ],
         }
     )
     type: Literal[
