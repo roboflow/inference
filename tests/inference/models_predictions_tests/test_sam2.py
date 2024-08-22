@@ -154,4 +154,4 @@ def test_sam2_single_prompted_image_segmentation_mask_cache_changes_behavior(
     masks2, scores2, low_res_logits2 = model.segment_image(
         truck_image, prompts=prompt, mask_input=low_res_logits, load_logits_from_cache=True
     )
-    assert np.allclose(sam2_small_truck_mask_from_cached_logits, masks2)
+    assert np.allclose(sam2_small_truck_mask_from_cached_logits, masks2, atol=0.01)

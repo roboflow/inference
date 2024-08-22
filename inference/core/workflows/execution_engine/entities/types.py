@@ -62,6 +62,29 @@ BATCH_OF_IMAGES_KIND = Kind(
     name="Batch[image]", description="Image in workflows", docs=IMAGE_KIND_DOCS
 )
 
+VIDEO_METADATA_KIND_DOCS = """
+This is representation of metadata that describe images that come from videos.  
+It is helpful in cases of stateful video processing, as the metadata may bring 
+pieces of information that are required by specific blocks.
+
+Example of actual data:
+```
+{
+    "video_identifier": "rtsp://some.com/stream1",
+    "comes_from_video_file": False,
+    "fps": 23.99,
+    "frame_number": 24,
+    "frame_timestamp": "2024-08-21T11:13:44.313999", 
+}   
+```
+"""
+
+VIDEO_METADATA_KIND = Kind(
+    name="video_metadata",
+    description="Video image metadata",
+    docs=VIDEO_METADATA_KIND_DOCS,
+)
+
 ROBOFLOW_MODEL_ID_KIND_DOCS = """
 This kind represents value specific for Roboflow platform. At the platform, models are
 identified with special strings in the format: `<project_name>/<version>`. You should
@@ -730,3 +753,16 @@ StepOutputImageSelector = Annotated[
 ]
 
 FloatZeroToOne = Annotated[float, Field(ge=0.0, le=1.0)]
+
+
+WorkflowVideoMetadataSelector = Annotated[
+    str,
+    StringConstraints(pattern=r"^\$inputs.[A-Za-z_0-9\-]+$"),
+    Field(
+        json_schema_extra={
+            REFERENCE_KEY: True,
+            SELECTED_ELEMENT_KEY: "workflow_video_metadata",
+            KIND_KEY: [VIDEO_METADATA_KIND.dict()],
+        }
+    ),
+]

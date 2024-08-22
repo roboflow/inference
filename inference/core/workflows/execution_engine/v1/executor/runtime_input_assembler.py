@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 
 import cv2
 import numpy as np
+from pydantic import ValidationError
 
 from inference.core.utils.image_utils import (
     attempt_loading_image_from_string,
@@ -12,28 +13,40 @@ from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     InputType,
+    VideoMetadata,
     WorkflowImage,
     WorkflowImageData,
+    WorkflowVideoMetadata,
 )
 
+BATCH_ORIENTED_PARAMETER_TYPES = {WorkflowImage, WorkflowVideoMetadata}
 
-def assembly_runtime_parameters(
+
+def assemble_runtime_parameters(
     runtime_parameters: Dict[str, Any],
     defined_inputs: List[InputType],
     prevent_local_images_loading: bool = False,
 ) -> Dict[str, Any]:
-    batch_input_size: Optional[int] = None
+    input_batch_size = determine_input_batch_size(
+        runtime_parameters=runtime_parameters,
+        defined_inputs=defined_inputs,
+    )
     for defined_input in defined_inputs:
         if isinstance(defined_input, WorkflowImage):
-            runtime_parameters[defined_input.name] = assembly_input_image(
+            runtime_parameters[defined_input.name] = assemble_input_image(
                 parameter=defined_input.name,
                 image=runtime_parameters.get(defined_input.name),
-                batch_input_size=batch_input_size,
+                input_batch_size=input_batch_size,
                 prevent_local_images_loading=prevent_local_images_loading,
             )
-            batch_input_size = len(runtime_parameters[defined_input.name])
+        elif isinstance(defined_input, WorkflowVideoMetadata):
+            runtime_parameters[defined_input.name] = assemble_video_metadata(
+                parameter=defined_input.name,
+                video_metadata=runtime_parameters.get(defined_input.name),
+                input_batch_size=input_batch_size,
+            )
         else:
-            runtime_parameters[defined_input.name] = assembly_inference_parameter(
+            runtime_parameters[defined_input.name] = assemble_inference_parameter(
                 parameter=defined_input.name,
                 runtime_parameters=runtime_parameters,
                 default_value=defined_input.default_value,
@@ -41,29 +54,40 @@ def assembly_runtime_parameters(
     return runtime_parameters
 
 
-def assembly_input_image(
+def determine_input_batch_size(
+    runtime_parameters: Dict[str, Any], defined_inputs: List[InputType]
+) -> int:
+    for defined_input in defined_inputs:
+        if type(defined_input) not in BATCH_ORIENTED_PARAMETER_TYPES:
+            continue
+        parameter_value = runtime_parameters.get(defined_input.name)
+        if isinstance(parameter_value, list) and len(parameter_value) > 1:
+            return len(parameter_value)
+    return 1
+
+
+def assemble_input_image(
     parameter: str,
     image: Any,
-    batch_input_size: Optional[int],
+    input_batch_size: int,
     prevent_local_images_loading: bool = False,
 ) -> List[WorkflowImageData]:
     if image is None:
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` defined as "
-            f"`InferenceImage`, but value is not provided.",
+            f"`WorkflowImage`, but value is not provided.",
             context="workflow_execution | runtime_input_validation",
         )
     if not isinstance(image, list):
-        expected_input_length = 1 if batch_input_size is None else batch_input_size
         return [
-            _assembly_input_image(
+            _assemble_input_image(
                 parameter=parameter,
                 image=image,
                 prevent_local_images_loading=prevent_local_images_loading,
             )
-        ] * expected_input_length
+        ] * input_batch_size
     result = [
-        _assembly_input_image(
+        _assemble_input_image(
             parameter=parameter,
             image=element,
             identifier=idx,
@@ -71,20 +95,17 @@ def assembly_input_image(
         )
         for idx, element in enumerate(image)
     ]
-    expected_input_length = (
-        len(result) if batch_input_size is None else batch_input_size
-    )
-    if len(result) != expected_input_length:
+    if len(result) != input_batch_size:
         raise RuntimeInputError(
             public_message="Expected all batch-oriented workflow inputs be the same length, or of length 1 - "
             f"but parameter: {parameter} provided with batch size {len(result)}, where expected "
-            f"batch size based on remaining parameters is: {expected_input_length}.",
+            f"batch size based on remaining parameters is: {input_batch_size}.",
             context="workflow_execution | runtime_input_validation",
         )
     return result
 
 
-def _assembly_input_image(
+def _assemble_input_image(
     parameter: str,
     image: Any,
     identifier: Optional[int] = None,
@@ -140,7 +161,66 @@ def _assembly_input_image(
     )
 
 
-def assembly_inference_parameter(
+def assemble_video_metadata(
+    parameter: str,
+    video_metadata: Any,
+    input_batch_size: int,
+) -> List[VideoMetadata]:
+    if video_metadata is None:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` defined as "
+            f"`WorkflowVideoMetadata`, but value is not provided.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    if not isinstance(video_metadata, list):
+        return [
+            _assemble_video_metadata(
+                parameter=parameter,
+                video_metadata=video_metadata,
+            )
+        ] * input_batch_size
+    result = [
+        _assemble_video_metadata(
+            parameter=parameter,
+            video_metadata=element,
+        )
+        for element in video_metadata
+    ]
+    if len(result) != input_batch_size:
+        raise RuntimeInputError(
+            public_message="Expected all batch-oriented workflow inputs be the same length, or of length 1 - "
+            f"but parameter: {parameter} provided with batch size {len(result)}, where expected "
+            f"batch size based on remaining parameters is: {input_batch_size}.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return result
+
+
+def _assemble_video_metadata(
+    parameter: str,
+    video_metadata: Any,
+) -> VideoMetadata:
+    if isinstance(video_metadata, VideoMetadata):
+        return video_metadata
+    if not isinstance(video_metadata, dict):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` defined as "
+            f"`WorkflowVideoMetadata`, but provided value is not a dict.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    try:
+        return VideoMetadata.model_validate(video_metadata)
+    except ValidationError as error:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` defined as "
+            f"`WorkflowVideoMetadata`, but provided value is malformed. "
+            f"See details in inner error.",
+            context="workflow_execution | runtime_input_validation",
+            inner_error=error,
+        )
+
+
+def assemble_inference_parameter(
     parameter: str,
     runtime_parameters: Dict[str, Any],
     default_value: Any,

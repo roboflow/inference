@@ -406,10 +406,14 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
             result_image = image
             if warp_image:
                 # https://docs.opencv.org/4.9.0/da/d54/group__imgproc__transform.html#gaf73673a7e8e18ec6963e3774e6a94b87
-                result_image = cv.warpPerspective(
+                warped_image = cv.warpPerspective(
                     src=image.numpy_image,
                     M=perspective_transformer,
                     dsize=(transformed_rect_width, transformed_rect_height),
+                )
+                result_image = WorkflowImageData(
+                    parent_metadata=image.parent_metadata,
+                    numpy_image=warped_image,
                 )
 
             if detections is None:

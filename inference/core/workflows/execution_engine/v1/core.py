@@ -11,13 +11,13 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 )
 from inference.core.workflows.execution_engine.v1.executor.core import run_workflow
 from inference.core.workflows.execution_engine.v1.executor.runtime_input_assembler import (
-    assembly_runtime_parameters,
+    assemble_runtime_parameters,
 )
 from inference.core.workflows.execution_engine.v1.executor.runtime_input_validator import (
     validate_runtime_input,
 )
 
-EXECUTION_ENGINE_V1_VERSION = Version("1.0.1")
+EXECUTION_ENGINE_V1_VERSION = Version("1.1.0")
 
 
 class ExecutionEngineV1(BaseExecutionEngine):
@@ -61,8 +61,9 @@ class ExecutionEngineV1(BaseExecutionEngine):
         self,
         runtime_parameters: Dict[str, Any],
         fps: float = 0,
+        _is_preview: bool = False,
     ) -> List[Dict[str, Any]]:
-        runtime_parameters = assembly_runtime_parameters(
+        runtime_parameters = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=self._compiled_workflow.workflow_definition.inputs,
             prevent_local_images_loading=self._prevent_local_images_loading,
@@ -77,4 +78,5 @@ class ExecutionEngineV1(BaseExecutionEngine):
             max_concurrent_steps=self._max_concurrent_steps,
             usage_fps=fps,
             usage_workflow_id=self._workflow_id,
+            usage_workflow_preview=_is_preview,
         )
