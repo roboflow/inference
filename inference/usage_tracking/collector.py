@@ -461,7 +461,7 @@ class UsageCollector:
         usage_payloads = self._dump_usage_queue_with_lock()
         if not usage_payloads:
             return
-        merged_payloads: APIKeyUsage = self._zip_usage_payloads(
+        merged_payloads: APIKeyUsage = zip_usage_payloads(
             usage_payloads=usage_payloads,
         )
         self._offload_to_api(payloads=merged_payloads)
@@ -477,7 +477,7 @@ class UsageCollector:
 
         for payload in payloads:
             api_keys_hashes_failed = send_usage_payload(
-                payloads=payloads,
+                payload=payload,
                 api_usage_endpoint_url=self._settings.api_usage_endpoint_url,
                 hashes_to_api_keys=hashes_to_api_keys,
                 ssl_verify=ssl_verify,
