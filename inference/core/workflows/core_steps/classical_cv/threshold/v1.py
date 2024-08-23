@@ -126,7 +126,9 @@ class ImageThresholdBlockV1(WorkflowBlock):
 
         return {OUTPUT_IMAGE_KEY: output}
 
-def apply_thresholding(image: np.ndarray, threshold_type: str, thresh_value: int, max_value: int
+
+def apply_thresholding(
+    image: np.ndarray, threshold_type: str, thresh_value: int, max_value: int
 ) -> np.ndarray:
     """
     Applies the specified thresholding to the image.

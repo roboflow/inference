@@ -72,22 +72,16 @@ class ImageContoursDetectionBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[ImageContoursDetectionManifest]:
         return ImageContoursDetectionManifest
 
-    def run(
-        self,
-        image: WorkflowImageData,
-        *args,
-        **kwargs
-    ) -> BlockResult:
+    def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
         # Find and draw contours
-        num_contours = count_contours(
-            image.numpy_image
-        )
+        num_contours = count_contours(image.numpy_image)
 
         return {"number_contours": num_contours}
 
+
 def count_contours(
-        image: np.ndarray,
-    ) -> tuple[np.ndarray, int]:
+    image: np.ndarray,
+) -> tuple[np.ndarray, int]:
     """
     Finds and draws contours on the image.
 
@@ -100,9 +94,7 @@ def count_contours(
         tuple: Image with contours drawn and number of contours.
     """
     # Find contours
-    contours, _ = cv2.findContours(
-        image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
+    contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     # Return the image with contours and the number of contours
     return len(contours)
