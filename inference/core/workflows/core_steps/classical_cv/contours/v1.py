@@ -7,7 +7,6 @@ from pydantic import AliasChoices, ConfigDict, Field
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
 )
-from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -15,7 +14,6 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_IMAGES_KIND,
     INTEGER_KIND,
-    STRING_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
