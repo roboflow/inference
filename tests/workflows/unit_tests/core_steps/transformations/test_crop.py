@@ -124,3 +124,73 @@ def test_crop_image() -> None:
         origin_width=1000,
         origin_height=1000,
     ), "Appropriate origin coordinates must be attached"
+
+
+def test_crop_image_on_empty_detections() -> None:
+    # given
+    np_image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="origin_image"),
+        numpy_image=np_image,
+    )
+    detections = sv.Detections.empty()
+
+    # when
+    result = crop_image(image=image, detections=detections)
+
+    # then
+    assert result == [], "Expected empty list"
+
+
+def test_crop_image_on_zero_size_detections() -> None:
+    # given
+    np_image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="origin_image"),
+        numpy_image=np_image,
+    )
+    detections = sv.Detections(
+        xyxy=np.array(
+            [[0, 0, 0, 0], [80, 80, 120, 120], [0, 0, 0, 0]], dtype=np.float64
+        ),
+        class_id=np.array([1, 1, 1]),
+        confidence=np.array([0.5, 0.5, 0.5], dtype=np.float64),
+        data={
+            "detection_id": np.array(["one", "two", "three"]),
+            "class_name": np.array(["cat", "cat", "cat"]),
+        },
+    )
+
+    # when
+    result = crop_image(image=image, detections=detections)
+
+    # then
+    assert len(result) == 3, "Expected 3 outputs"
+    assert result[0] == {"crops": None}, "Expected first element empty"
+    assert (
+        result[1]["crops"].parent_metadata.parent_id == "two"
+    ), "Appropriate parent id (from detection id) must be attached"
+    assert result[2] == {"crops": None}, "Expected last element empty"
+
+
+def test_crop_image_when_detections_without_ids_provided() -> None:
+    # given
+    np_image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="origin_image"),
+        numpy_image=np_image,
+    )
+    detections = sv.Detections(
+        xyxy=np.array(
+            [[0, 0, 20, 20], [80, 80, 120, 120], [450, 450, 550, 550]], dtype=np.float64
+        ),
+        class_id=np.array([1, 1, 1]),
+        confidence=np.array([0.5, 0.5, 0.5], dtype=np.float64),
+        data={
+            "class_name": np.array(["cat", "cat", "cat"]),
+        },
+    )
+
+    # when
+    with pytest.raises(ValueError):
+        _ = crop_image(image=image, detections=detections)
