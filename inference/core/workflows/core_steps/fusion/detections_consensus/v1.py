@@ -336,7 +336,7 @@ def agree_on_consensus_for_all_detections_sources(
     if does_not_detect_objects_in_any_source(
         detections_from_sources=detections_from_sources
     ):
-        return "undefined", False, {}, []
+        return "undefined", False, {}, sv.Detections.empty()
     parent_id = get_parent_id_of_detections_from_sources(
         detections_from_sources=detections_from_sources,
     )
