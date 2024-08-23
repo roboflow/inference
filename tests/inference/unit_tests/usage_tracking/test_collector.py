@@ -5,7 +5,11 @@ import pytest
 
 from inference.core.env import LAMBDA
 from inference.usage_tracking.collector import UsageCollector
-from inference.usage_tracking.payload_helpers import get_api_key_usage_containing_resource, merge_usage_dicts, zip_usage_payloads
+from inference.usage_tracking.payload_helpers import (
+    get_api_key_usage_containing_resource,
+    merge_usage_dicts,
+    zip_usage_payloads,
+)
 
 
 def test_create_empty_usage_dict():
@@ -61,14 +65,8 @@ def test_merge_usage_dicts_merge_with_empty():
     }
     usage_payload_2 = {"resource_id": "some", "api_key_hash": "some"}
 
-    assert (
-        merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2)
-        == usage_payload_1
-    )
-    assert (
-        merge_usage_dicts(d1=usage_payload_2, d2=usage_payload_1)
-        == usage_payload_1
-    )
+    assert merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2) == usage_payload_1
+    assert merge_usage_dicts(d1=usage_payload_2, d2=usage_payload_1) == usage_payload_1
 
 
 def test_merge_usage_dicts():
@@ -90,9 +88,7 @@ def test_merge_usage_dicts():
         "source_duration": 1,
     }
 
-    assert merge_usage_dicts(
-        d1=usage_payload_1, d2=usage_payload_2
-    ) == {
+    assert merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2) == {
         "resource_id": "some",
         "api_key_hash": "some",
         "timestamp_start": 1721032989934855000,
@@ -304,9 +300,7 @@ def test_zip_usage_payloads():
     ]
 
     # when
-    zipped_usage_payloads = zip_usage_payloads(
-        usage_payloads=dumped_usage_payloads
-    )
+    zipped_usage_payloads = zip_usage_payloads(usage_payloads=dumped_usage_payloads)
 
     # then
     assert zipped_usage_payloads == [
@@ -396,9 +390,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource
     ]
 
     # when
-    zipped_usage_payloads = zip_usage_payloads(
-        usage_payloads=dumped_usage_payloads
-    )
+    zipped_usage_payloads = zip_usage_payloads(usage_payloads=dumped_usage_payloads)
 
     # then
     assert zipped_usage_payloads == [
@@ -459,9 +451,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id():
     ]
 
     # when
-    zipped_usage_payloads = zip_usage_payloads(
-        usage_payloads=dumped_usage_payloads
-    )
+    zipped_usage_payloads = zip_usage_payloads(usage_payloads=dumped_usage_payloads)
 
     # then
     assert zipped_usage_payloads == [
@@ -514,9 +504,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
     ]
 
     # when
-    zipped_usage_payloads = zip_usage_payloads(
-        usage_payloads=dumped_usage_payloads
-    )
+    zipped_usage_payloads = zip_usage_payloads(usage_payloads=dumped_usage_payloads)
 
     # then
     assert zipped_usage_payloads == [

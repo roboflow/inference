@@ -109,6 +109,13 @@ def crop_image(
     detections: sv.Detections,
     detection_id_key: str = DETECTION_ID_KEY,
 ) -> List[Dict[str, WorkflowImageData]]:
+    if len(detections) == 0:
+        return []
+    if detection_id_key not in detections.data:
+        raise ValueError(
+            f"sv.Detections object passed to crop step do not fulfill contract - lack of {detection_id_key} key "
+            f"in data dictionary."
+        )
     crops = []
     for (x_min, y_min, x_max, y_max), detection_id in zip(
         detections.xyxy.round().astype(dtype=int), detections[detection_id_key]
