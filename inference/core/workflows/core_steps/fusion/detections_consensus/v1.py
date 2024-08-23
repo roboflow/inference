@@ -366,9 +366,6 @@ def agree_on_consensus_for_all_detections_sources(
         )
         consensus_detections += consensus_detections_update
     consensus_detections = sv.Detections.merge(consensus_detections)
-    if len(consensus_detections) == 0:
-        # we need to add all metadata that were lost
-        pass
     (
         object_present,
         presence_confidence,
