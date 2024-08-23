@@ -4,15 +4,14 @@ import cv2
 import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference.core.workflows.core_steps.visualizations.common.base import (
-    OUTPUT_IMAGE_KEY,
-)
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    CONTOURS_KIND,
     INTEGER_KIND,
+    NUMPY_ARRAY_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
@@ -52,6 +51,18 @@ class ImageContoursDetectionManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
+                name="contours",
+                kind=[
+                    CONTOURS_KIND,
+                ],
+            ),
+            OutputDefinition(
+                name="hierarchy",
+                kind=[
+                    NUMPY_ARRAY_KIND,
+                ],
+            ),
+            OutputDefinition(
                 name="number_contours",
                 kind=[
                     INTEGER_KIND,
@@ -74,9 +85,13 @@ class ImageContoursDetectionBlockV1(WorkflowBlock):
 
     def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
         # Find and draw contours
-        num_contours = count_contours(image.numpy_image)
+        contours, hierarchy = count_contours(image.numpy_image)
 
-        return {"number_contours": num_contours}
+        return {
+            "contours": contours,
+            "hierarchy": hierarchy,
+            "number_contours": len(contours),
+        }
 
 
 def count_contours(
@@ -94,7 +109,9 @@ def count_contours(
         tuple: Image with contours drawn and number of contours.
     """
     # Find contours
-    contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, hierarchy = cv2.findContours(
+        image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
 
     # Return the image with contours and the number of contours
-    return len(contours)
+    return contours, hierarchy

@@ -397,6 +397,28 @@ POINT_KIND = Kind(
     docs=None,
 )
 
+CONTOURS_KIND_DOCS = """
+This kind represents a value of a list of numpy arrays where each array represents contour points.
+
+Example:
+```
+[
+    np.array([[10, 10],
+              [20, 20],
+              [30, 30]], dtype=np.int32),
+    np.array([[50, 50],
+              [60, 60],
+              [70, 70]], dtype=np.int32)
+]
+```
+"""
+
+CONTOURS_KIND = Kind(
+    name="contours",
+    description="List of numpy arrays where each array represents contour points",
+    docs=CONTOURS_KIND_DOCS,
+)
+
 ZONE_KIND = Kind(
     name="zone",
     description="Definition of polygon zone",

@@ -58,4 +58,9 @@ def test_contours_block() -> None:
     )
 
     assert output is not None
+    assert "contours" in output
+    assert "hierarchy" in output
     assert "number_contours" in output
+
+    assert output["hierarchy"].size > 0
+    assert output["number_contours"] > 0
