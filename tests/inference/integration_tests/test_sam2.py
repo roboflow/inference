@@ -60,6 +60,33 @@ def test_sam2(version_id, test, clean_loaded_models_fixture):
     except Exception as e:
         raise e
 
+def test_sam2_multi_poly(clean_loaded_models_fixture):
+    version_id = "hiera_tiny"
+    payload = deepcopy(payload_)
+    payload["api_key"] = api_key
+    payload["sam2_version_id"] = version_id
+    payload["image"]["value"] = "https://media.roboflow.com/inference/seawithdock.jpeg"
+    payload["prompts"] = {"prompts": [{"points": [{"x": 58, "y": 379, "positive": True}]}]}
+    response = requests.post(
+        f"{base_url}:{port}/sam2/segment_image",
+        json=payload,
+    )
+    try:
+        response.raise_for_status()
+        data = response.json()
+        print(len(data["predictions"][0]["masks"]))
+        import json
+        with open("test_result.json", "w") as f:
+            json.dump(data, f)
+        try:
+            assert "masks" in data
+        except:
+            print(f"Invalid response: {data}, expected 'masks' in response")
+            raise
+    except Exception as e:
+        raise e
+
+
 
 @pytest.fixture(scope="session", autouse=True)
 def setup():
@@ -87,3 +114,4 @@ def setup():
 
 if __name__ == "__main__":
     test_sam2()
+
