@@ -34,6 +34,7 @@ from inference.core.entities.responses.sam2 import (
 )
 from inference.core.env import (
     DEVICE,
+    DISABLE_SAM2_LOGITS_CACHE,
     SAM2_MAX_EMBEDDING_CACHE_SIZE,
     SAM2_MAX_LOGITS_CACHE_SIZE,
     SAM2_VERSION_ID,
@@ -87,7 +88,7 @@ class SegmentAnything2(RoboflowCoreModel):
         self.embedding_cache = {}
         self.image_size_cache = {}
         self.embedding_cache_keys = []
-        self.low_res_logits_cache: LogitsCacheType = {}
+        self.low_res_logits_cache: Dict[Tuple[str, str], LogitsCacheType] = {}
         self.low_res_logits_cache_keys = []
 
         self.task_type = "unsupervised-segmentation"
@@ -256,6 +257,10 @@ class SegmentAnything2(RoboflowCoreModel):
             - The cache has a maximum size defined by SAM_MAX_EMBEDDING_CACHE_SIZE. When the cache exceeds this size,
               the oldest entries are removed.
         """
+        load_logits_from_cache = (
+            load_logits_from_cache and not DISABLE_SAM2_LOGITS_CACHE
+        )
+        save_logits_to_cache = save_logits_to_cache and not DISABLE_SAM2_LOGITS_CACHE
         with torch.inference_mode():
             if image is None and not image_id:
                 raise ValueError("Must provide either image or  cached image_id")
@@ -336,7 +341,9 @@ def hash_prompt_set(image_id: str, prompt_set: Sam2PromptSet) -> Tuple[str, str]
 
 
 def maybe_load_low_res_logits_from_cache(
-    image_id: str, prompt_set: Sam2PromptSet, cache: LogitsCacheType
+    image_id: str,
+    prompt_set: Sam2PromptSet,
+    cache: Dict[Tuple[str, str], LogitsCacheType],
 ) -> Optional[np.ndarray]:
     "Loads prior masks from the cache by searching over possibel prior prompts."
     prompts = prompt_set.prompts
@@ -347,8 +354,10 @@ def maybe_load_low_res_logits_from_cache(
 
 
 def find_prior_prompt_in_cache(
-    initial_prompt_set: Sam2PromptSet, image_id: str, cache: LogitsCacheType
-) -> Optional[str]:
+    initial_prompt_set: Sam2PromptSet,
+    image_id: str,
+    cache: Dict[Tuple[str, str], LogitsCacheType],
+) -> Optional[np.ndarray]:
     """
     Performs search over the cache to see if prior used prompts are subset of this one.
     """

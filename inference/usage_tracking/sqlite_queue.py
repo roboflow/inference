@@ -19,6 +19,8 @@ class SQLiteQueue:
         self._db_file_path: str = db_file_path
 
         if not connection:
+            if not os.path.exists(MODEL_CACHE_DIR):
+                os.makedirs(MODEL_CACHE_DIR)
             connection: sqlite3.Connection = sqlite3.connect(db_file_path, timeout=1)
             self._create_table(connection=connection)
             connection.close()
@@ -70,7 +72,7 @@ class SQLiteQueue:
                 self._insert(payload=payload_str, connection=connection)
                 connection.close()
             except Exception as exc:
-                logger.debug("Failed to store usage records, %s", exc)
+                logger.debug("Failed to store usage records '%s', %s", payload, exc)
                 return []
         else:
             self._insert(payload=payload_str, connection=connection)
@@ -95,7 +97,7 @@ class SQLiteQueue:
             count = int(cursor.fetchone()[0])
             connection.commit()
         except Exception as exc:
-            logger.debug("Failed to store usage payload, %s", exc)
+            logger.debug("Failed to obtain records count, %s", exc)
             connection.rollback()
 
         cursor.close()
@@ -118,10 +120,12 @@ class SQLiteQueue:
 
         return rows_count == 0
 
-    def _flush_db(self, connection: sqlite3.Connection) -> List[Dict[str, Any]]:
+    def _flush_db(
+        self, connection: sqlite3.Connection, limit: int = 100
+    ) -> List[Dict[str, Any]]:
         cursor = connection.cursor()
-        sql_select = f"SELECT {self._col_name} FROM {self._tbl_name}"
-        sql_delete = f"DELETE FROM {self._tbl_name}"
+        sql_select = f"SELECT id, {self._col_name} FROM {self._tbl_name} ORDER BY id ASC LIMIT {limit}"
+        sql_delete = f"DELETE FROM {self._tbl_name} WHERE id >= ? and id <= ?"
 
         try:
             cursor.execute("BEGIN EXCLUSIVE")
@@ -133,21 +137,32 @@ class SQLiteQueue:
         try:
             cursor.execute(sql_select)
             payloads = cursor.fetchall()
-            cursor.execute(sql_delete)
-            connection.commit()
-            cursor.close()
         except Exception as exc:
-            logger.debug("Failed to store usage payload, %s", exc)
+            logger.debug("Failed to obtain records, %s", exc)
             connection.rollback()
             return []
 
         parsed_payloads = []
-        for (payload,) in payloads:
+        top_id = -1
+        bottom_id = -1
+        for _id, payload in payloads:
+            top_id = max(top_id, _id)
+            if bottom_id == -1:
+                bottom_id = _id
+            bottom_id = min(bottom_id, _id)
             try:
                 parsed_payload = json.loads(payload)
                 parsed_payloads.append(parsed_payload)
             except Exception as exc:
                 logger.debug("Failed to parse usage payload %s, %s", payload, exc)
+
+        try:
+            cursor.execute(sql_delete, [bottom_id, top_id])
+            connection.commit()
+            cursor.close()
+        except Exception as exc:
+            logger.debug("Failed to obtain records, %s", exc)
+            connection.rollback()
 
         return parsed_payloads
 

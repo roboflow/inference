@@ -116,6 +116,8 @@ class VideoSourceStub:
 
 
 class ModelStub:
+    def __init__(self):
+        self.api_key = None
     def infer(self, image: Any, **kwargs) -> List[ObjectDetectionInferenceResponse]:
         return [
             ObjectDetectionInferenceResponse(

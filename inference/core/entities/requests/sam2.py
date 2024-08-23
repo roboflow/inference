@@ -162,5 +162,15 @@ class Sam2SegmentationRequest(Sam2InferenceRequest):
         "input prompts, multimask_output=False can give better results.",
     )
 
-    save_logits_to_cache: bool = Field(default=False)
-    load_logits_from_cache: bool = Field(default=False)
+    save_logits_to_cache: bool = Field(
+        default=False,
+        description="If True, saves the low-resolution logits to the cache for potential future use. "
+        "This can speed up subsequent requests with similar prompts on the same image. "
+        "This feature is ignored if DISABLE_SAM2_LOGITS_CACHE env variable is set True",
+    )
+    load_logits_from_cache: bool = Field(
+        default=False,
+        description="If True, attempts to load previously cached low-resolution logits for the given image and prompt set. "
+        "This can significantly speed up inference when making multiple similar requests on the same image. "
+        "This feature is ignored if DISABLE_SAM2_LOGITS_CACHE env variable is set True",
+    )
