@@ -325,7 +325,7 @@ class SegmentAnything2(RoboflowCoreModel):
         }
         if prompt_id in self.low_res_logits_cache_keys:
             self.low_res_logits_cache_keys.remove(prompt_id)
-        self.low_res_logits_cache_keys.append(image_id)
+        self.low_res_logits_cache_keys.append(prompt_id)
         if len(self.low_res_logits_cache_keys) > SAM2_MAX_LOGITS_CACHE_SIZE:
             cache_key = self.low_res_logits_cache_keys.pop(0)
             del self.low_res_logits_cache[cache_key]
