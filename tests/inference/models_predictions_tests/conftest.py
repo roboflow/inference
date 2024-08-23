@@ -216,11 +216,6 @@ def sam2_small_truck_logits() -> Generator[np.ndarray, None, None]:
 def sam2_small_truck_mask_from_cached_logits() -> Generator[np.ndarray, None, None]:
     yield np.load(SAM2_TRUCK_MASK_FROM_CACHE)
 
-@pytest.fixture(scope="function")
-def sam2_small_truck_mask_from_cached_logits() -> Generator[np.ndarray, None, None]:
-    yield np.load(SAM2_TRUCK_MASK_FROM_CACHE)
-
-
 def fetch_and_place_model_in_cache(
     model_id: str,
     model_package_url: str,
