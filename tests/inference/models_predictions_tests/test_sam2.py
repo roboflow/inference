@@ -13,7 +13,6 @@ from inference.models.sam2.segment_anything2 import (
     hash_prompt_set,
     maybe_load_low_res_logits_from_cache,
 )
-from inference.models.sam2 import SegmentAnything2
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     convert_sam2_segmentation_response_to_inference_instances_seg_response,
 )
