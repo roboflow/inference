@@ -121,8 +121,6 @@ def test_sam2_multi_poly(clean_loaded_models_fixture, sam2_multipolygon_response
         ground_truth = convert_response_dict_to_sv_detections(
             image, sam2_multipolygon_response
         )
-        print(preds.mask.min(), preds.mask.max(), preds.mask.shape)
-        print(ground_truth.mask.min(), ground_truth.mask.max(), ground_truth.mask.shape)
         preds_bool_mask = np.logical_or.reduce(preds.mask, axis=0)
         ground_truth_bool_mask = np.logical_or.reduce(ground_truth.mask, axis=0)
         iou = (
