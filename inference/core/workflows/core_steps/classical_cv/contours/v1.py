@@ -12,11 +12,9 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_IMAGES_KIND,
     INTEGER_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -24,9 +22,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION: str = "Find and draw contours on an image."
+SHORT_DESCRIPTION: str = "Find and count the contours on an image."
 LONG_DESCRIPTION: str = """
-Finds the contours in an image. It returns the image with the contours drawn on it as well as the number of contours. The input image should be thresholded before using this block.
+Finds the contours in an image. It returns the contours and number of contours. The input image should be thresholded before using this block.
 """
 
 
@@ -50,30 +48,11 @@ class ImageContoursDetectionManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("image", "images"),
     )
 
-    raw_image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        title="RGB Draw Image",
-        description="The image to draw the contours on.",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("raw_image", "raw_images"),
-    )
-
-    line_thickness: Union[WorkflowParameterSelector(kind=[INTEGER_KIND]), int] = Field(
-        description="Line thickness for drawing contours.",
-        default=3,
-        examples=[3, "$inputs.line_thickness"],
-    )
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name=OUTPUT_IMAGE_KEY,
-                kind=[
-                    BATCH_OF_IMAGES_KIND,
-                ],
-            ),
-            OutputDefinition(
-                name="Number of Contours",
+                name="number_contours",
                 kind=[
                     INTEGER_KIND,
                 ],
@@ -93,53 +72,37 @@ class ImageContoursDetectionBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[ImageContoursDetectionManifest]:
         return ImageContoursDetectionManifest
 
-    def find_and_draw_contours(
-        self,
-        image: np.ndarray,
-        image_draw: np.ndarray,
-        color: tuple = (255, 0, 255),
-        thickness: int = 3,
-    ) -> tuple[np.ndarray, int]:
-        """
-        Finds and draws contours on the image.
-
-        Args:
-            image (np.ndarray): Input thresholded image.
-            color (tuple, optional): Color of the contour lines in BGR. Defaults to purple (255, 0, 255).
-            thickness (int, optional): Thickness of the contour lines. Defaults to 3.
-
-        Returns:
-            tuple: Image with contours drawn and number of contours.
-        """
-        # Find contours
-        contours, _ = cv2.findContours(
-            image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
-
-        # Draw contours on a copy of the original image
-        contour_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-        cv2.drawContours(contour_image, contours, -1, color, thickness)
-
-        # Return the image with contours and the number of contours
-        return contour_image, len(contours)
-
     def run(
         self,
         image: WorkflowImageData,
-        raw_image: WorkflowImageData,
-        line_thickness: int,
         *args,
         **kwargs
     ) -> BlockResult:
         # Find and draw contours
-        contour_image, num_contours = self.find_and_draw_contours(
-            image.numpy_image, raw_image.numpy_image, thickness=line_thickness
+        num_contours = count_contours(
+            image.numpy_image
         )
 
-        output = WorkflowImageData(
-            parent_metadata=image.parent_metadata,
-            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
-            numpy_image=contour_image,
-        )
+        return {"number_contours": num_contours}
 
-        return {OUTPUT_IMAGE_KEY: output, "Number of Contours": num_contours}
+def count_contours(
+        image: np.ndarray,
+    ) -> tuple[np.ndarray, int]:
+    """
+    Finds and draws contours on the image.
+
+    Args:
+        image (np.ndarray): Input thresholded image.
+        color (tuple, optional): Color of the contour lines in BGR. Defaults to purple (255, 0, 255).
+        thickness (int, optional): Thickness of the contour lines. Defaults to 3.
+
+    Returns:
+        tuple: Image with contours drawn and number of contours.
+    """
+    # Find contours
+    contours, _ = cv2.findContours(
+        image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    # Return the image with contours and the number of contours
+    return len(contours)

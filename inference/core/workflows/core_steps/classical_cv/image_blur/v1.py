@@ -91,34 +91,6 @@ class ImageBlurBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[ImageBlurManifest]:
         return ImageBlurManifest
 
-    def apply_blur(
-        self, image: np.ndarray, blur_type: str, ksize: int = 5
-    ) -> np.ndarray:
-        """
-        Applies the specified blur to the image.
-
-        Args:
-            image: Input image.
-            blur_type (str): Type of blur ('average', 'gaussian', 'median', 'bilateral').
-            ksize (int, optional): Kernel size for the blur. Defaults to 5.
-
-        Returns:
-            np.ndarray: Blurred image.
-        """
-
-        if blur_type == "average":
-            blurred_image = cv2.blur(image, (ksize, ksize))
-        elif blur_type == "gaussian":
-            blurred_image = cv2.GaussianBlur(image, (ksize, ksize), 0)
-        elif blur_type == "median":
-            blurred_image = cv2.medianBlur(image, ksize)
-        elif blur_type == "bilateral":
-            blurred_image = cv2.bilateralFilter(image, ksize, 75, 75)
-        else:
-            raise ValueError(f"Unknown blur type: {blur_type}")
-
-        return blurred_image
-
     def run(
         self,
         image: WorkflowImageData,
@@ -128,7 +100,7 @@ class ImageBlurBlockV1(WorkflowBlock):
         **kwargs,
     ) -> BlockResult:
         # Apply blur to the image
-        blurred_image = self.apply_blur(image.numpy_image, blur_type, kernel_size)
+        blurred_image = apply_blur(image.numpy_image, blur_type, kernel_size)
 
         output = WorkflowImageData(
             parent_metadata=image.parent_metadata,
@@ -137,3 +109,30 @@ class ImageBlurBlockV1(WorkflowBlock):
         )
 
         return {OUTPUT_IMAGE_KEY: output}
+
+def apply_blur(image: np.ndarray, blur_type: str, ksize: int = 5
+) -> np.ndarray:
+    """
+    Applies the specified blur to the image.
+
+    Args:
+        image: Input image.
+        blur_type (str): Type of blur ('average', 'gaussian', 'median', 'bilateral').
+        ksize (int, optional): Kernel size for the blur. Defaults to 5.
+
+    Returns:
+        np.ndarray: Blurred image.
+    """
+
+    if blur_type == "average":
+        blurred_image = cv2.blur(image, (ksize, ksize))
+    elif blur_type == "gaussian":
+        blurred_image = cv2.GaussianBlur(image, (ksize, ksize), 0)
+    elif blur_type == "median":
+        blurred_image = cv2.medianBlur(image, ksize)
+    elif blur_type == "bilateral":
+        blurred_image = cv2.bilateralFilter(image, ksize, 75, 75)
+    else:
+        raise ValueError(f"Unknown blur type: {blur_type}")
+
+    return blurred_image
