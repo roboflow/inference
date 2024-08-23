@@ -308,9 +308,7 @@ def convert_sam2_segmentation_response_to_inference_instances_seg_response(
                         "y": center_y,
                         "width": max_x - min_x,
                         "height": max_y - min_y,
-                        "points": [
-                            Point(x=point[0], y=point[1]) for point in mask
-                        ],
+                        "points": [Point(x=point[0], y=point[1]) for point in mask],
                         "confidence": prediction.confidence,
                         "class": class_name,
                         "class_id": class_id,
