@@ -30,8 +30,8 @@ Finds the contours in an image. It returns the image with the contours drawn on 
 """
 
 
-class ImageContoursManifest(WorkflowBlockManifest):
-    type: Literal["roboflow_core/contours@v1"]
+class ImageContoursDetectionManifest(WorkflowBlockManifest):
+    type: Literal["roboflow_core/contours_detection@v1"]
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Image Contours",
@@ -85,13 +85,13 @@ class ImageContoursManifest(WorkflowBlockManifest):
         return ">=1.0.0,<2.0.0"
 
 
-class ImageContoursBlockV1(WorkflowBlock):
+class ImageContoursDetectionBlockV1(WorkflowBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
     @classmethod
-    def get_manifest(cls) -> Type[ImageContoursManifest]:
-        return ImageContoursManifest
+    def get_manifest(cls) -> Type[ImageContoursDetectionManifest]:
+        return ImageContoursDetectionManifest
 
     def find_and_draw_contours(
         self,
