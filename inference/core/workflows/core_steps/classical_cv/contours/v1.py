@@ -4,16 +4,21 @@ import cv2
 import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
 
+from inference.core.workflows.core_steps.visualizations.common.base import (
+    OUTPUT_IMAGE_KEY,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    BATCH_OF_IMAGES_KIND,
     CONTOURS_KIND,
     INTEGER_KIND,
     NUMPY_ARRAY_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -47,9 +52,21 @@ class ImageContoursDetectionManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("image", "images"),
     )
 
+    line_thickness: Union[WorkflowParameterSelector(kind=[INTEGER_KIND]), int] = Field(
+        description="Line thickness for drawing contours.",
+        default=3,
+        examples=[3, "$inputs.line_thickness"],
+    )
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
+            OutputDefinition(
+                name=OUTPUT_IMAGE_KEY,
+                kind=[
+                    BATCH_OF_IMAGES_KIND,
+                ],
+            ),
             OutputDefinition(
                 name="contours",
                 kind=[
@@ -83,19 +100,30 @@ class ImageContoursDetectionBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[ImageContoursDetectionManifest]:
         return ImageContoursDetectionManifest
 
-    def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
+    def run(
+        self, image: WorkflowImageData, line_thickness: int, *args, **kwargs
+    ) -> BlockResult:
         # Find and draw contours
-        contours, hierarchy = count_contours(image.numpy_image)
+        contour_image, contours, hierarchy = find_and_draw_contours(
+            image.numpy_image, thickness=line_thickness
+        )
+
+        output = WorkflowImageData(
+            parent_metadata=image.parent_metadata,
+            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
+            numpy_image=contour_image,
+        )
 
         return {
+            OUTPUT_IMAGE_KEY: output,
             "contours": contours,
             "hierarchy": hierarchy,
             "number_contours": len(contours),
         }
 
 
-def count_contours(
-    image: np.ndarray,
+def find_and_draw_contours(
+    image: np.ndarray, color: tuple = (255, 0, 255), thickness: int = 3
 ) -> tuple[np.ndarray, int]:
     """
     Finds and draws contours on the image.
@@ -108,10 +136,18 @@ def count_contours(
     Returns:
         tuple: Image with contours drawn and number of contours.
     """
+    # If not in grayscale, convert to grayscale
+    if len(image.shape) == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
     # Find contours
     contours, hierarchy = cv2.findContours(
         image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
 
+    # Draw contours on a copy of the original image
+    contour_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    cv2.drawContours(contour_image, contours, -1, color, thickness)
+
     # Return the image with contours and the number of contours
-    return contours, hierarchy
+    return contour_image, contours, hierarchy
