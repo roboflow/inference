@@ -110,8 +110,8 @@ class ImageBlurBlockV1(WorkflowBlock):
 
         return {OUTPUT_IMAGE_KEY: output}
 
-def apply_blur(image: np.ndarray, blur_type: str, ksize: int = 5
-) -> np.ndarray:
+
+def apply_blur(image: np.ndarray, blur_type: str, ksize: int = 5) -> np.ndarray:
     """
     Applies the specified blur to the image.
 
