@@ -1908,7 +1908,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_empty_predictions_gi
     )
 
     # then
-    assert result == ("undefined", False, {}, [])
+    assert result == ("undefined", False, {}, sv.Detections.empty())
 
 
 def test_agree_on_consensus_for_all_detections_sources_when_predictions_do_not_match_classes() -> (

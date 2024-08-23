@@ -593,6 +593,7 @@ def test_infer_from_classification_model_when_valid_response_expected(
     assert set(response.keys()) == {
         "image",
         "predictions",
+        "inference_id",
         "predicted_classes",
         "time",
     }, "Expected all required keys to be provided in response"
@@ -657,6 +658,7 @@ def test_infer_from_classification_model_when_valid_response_expected_with_visua
     assert set(response.keys()) == {
         "visualization",
         "image",
+        "inference_id",
         "predictions",
         "predicted_classes",
         "time",

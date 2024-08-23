@@ -65,7 +65,14 @@ class SegmentAnything2(RoboflowCoreModel):
 
     """
 
-    def __init__(self, *args, model_id: str = f"sam2/{SAM2_VERSION_ID}", **kwargs):
+    def __init__(
+        self,
+        *args,
+        model_id: str = f"sam2/{SAM2_VERSION_ID}",
+        low_res_logits_cache_size: int = SAM2_MAX_LOGITS_CACHE_SIZE,
+        embedding_cache_size: int = SAM2_MAX_EMBEDDING_CACHE_SIZE,
+        **kwargs,
+    ):
         """Initializes the SegmentAnything.
 
         Args:
@@ -82,6 +89,8 @@ class SegmentAnything2(RoboflowCoreModel):
         }[self.version_id]
 
         self.sam = build_sam2(model_cfg, checkpoint, device=DEVICE)
+        self.low_res_logits_cache_size = low_res_logits_cache_size
+        self.embedding_cache_size = embedding_cache_size
 
         self.predictor = SAM2ImagePredictor(self.sam)
 
@@ -158,7 +167,7 @@ class SegmentAnything2(RoboflowCoreModel):
         if image_id in self.embedding_cache_keys:
             self.embedding_cache_keys.remove(image_id)
         self.embedding_cache_keys.append(image_id)
-        if len(self.embedding_cache_keys) > SAM2_MAX_EMBEDDING_CACHE_SIZE:
+        if len(self.embedding_cache_keys) > self.embedding_cache_size:
             cache_key = self.embedding_cache_keys.pop(0)
             del self.embedding_cache[cache_key]
             del self.image_size_cache[cache_key]
@@ -327,8 +336,8 @@ class SegmentAnything2(RoboflowCoreModel):
         }
         if prompt_id in self.low_res_logits_cache_keys:
             self.low_res_logits_cache_keys.remove(prompt_id)
-        self.low_res_logits_cache_keys.append(image_id)
-        if len(self.low_res_logits_cache_keys) > SAM2_MAX_LOGITS_CACHE_SIZE:
+        self.low_res_logits_cache_keys.append(prompt_id)
+        if len(self.low_res_logits_cache_keys) > self.low_res_logits_cache_size:
             cache_key = self.low_res_logits_cache_keys.pop(0)
             del self.low_res_logits_cache[cache_key]
 
