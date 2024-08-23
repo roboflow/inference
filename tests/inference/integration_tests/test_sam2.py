@@ -60,7 +60,7 @@ def test_sam2(version_id, test, clean_loaded_models_fixture):
     except Exception as e:
         raise e
 
-def test_sam2_multi_poly(clean_loaded_models_fixture):
+def test_sam2_multi_poly(clean_loaded_models_fixture, sam2_multipolygon_response):
     version_id = "hiera_tiny"
     payload = deepcopy(payload_)
     payload["api_key"] = api_key
@@ -74,14 +74,11 @@ def test_sam2_multi_poly(clean_loaded_models_fixture):
     try:
         response.raise_for_status()
         data = response.json()
-        print(len(data["predictions"][0]["masks"]))
-        import json
-        with open("test_result.json", "w") as f:
-            json.dump(data, f)
+        assert data == sam2_multipolygon_response
         try:
-            assert "masks" in data
+            assert "predictions" in data
         except:
-            print(f"Invalid response: {data}, expected 'masks' in response")
+            print(f"Invalid response: {data}, expected 'predictions' in response")
             raise
     except Exception as e:
         raise e

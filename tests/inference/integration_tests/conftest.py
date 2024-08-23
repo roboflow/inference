@@ -1,7 +1,8 @@
 import logging
 import os
 import time
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict
+import json
 
 import pytest
 import requests
@@ -11,6 +12,21 @@ logging.getLogger().setLevel(logging.WARNING)
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
+ASSETS_DIR = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__),
+        "assets",
+    )
+)
+SAM2_MULTI_POLY_RESPONSE_PATH = os.path.join(
+    ASSETS_DIR, "sam2_multipolygon_response.json"
+)
+
+
+@pytest.fixture(scope="function")
+def sam2_multipolygon_response() -> Dict:
+    with open(SAM2_MULTI_POLY_RESPONSE_PATH) as f:
+        return json.load(f)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -44,9 +60,11 @@ def server_url() -> str:
 def clean_loaded_models_fixture() -> None:
     on_demand_clean_loaded_models()
 
+
 @pytest.fixture()
 def clean_loaded_models_every_test_fixture() -> None:
     on_demand_clean_loaded_models()
+
 
 def on_demand_clean_loaded_models() -> None:
     response = requests.post(f"{base_url}:{port}/model/clear")
