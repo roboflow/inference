@@ -20,7 +20,6 @@ from typing_extensions import (
     List,
     Optional,
     ParamSpec,
-    Tuple,
     TypeVar,
 )
 
@@ -461,7 +460,7 @@ class UsageCollector:
         usage_payloads = self._dump_usage_queue_with_lock()
         if not usage_payloads:
             return
-        merged_payloads: APIKeyUsage = self._zip_usage_payloads(
+        merged_payloads: APIKeyUsage = zip_usage_payloads(
             usage_payloads=usage_payloads,
         )
         self._offload_to_api(payloads=merged_payloads)
@@ -477,7 +476,7 @@ class UsageCollector:
 
         for payload in payloads:
             api_keys_hashes_failed = send_usage_payload(
-                payloads=payloads,
+                payload=payload,
                 api_usage_endpoint_url=self._settings.api_usage_endpoint_url,
                 hashes_to_api_keys=hashes_to_api_keys,
                 ssl_verify=ssl_verify,
@@ -593,6 +592,23 @@ class UsageCollector:
                 source = image.get("value")
             elif hasattr(image, "_image_reference"):
                 source = image._image_reference
+
+        if not usage_api_key:
+            _self = func_kwargs.get("self")
+            if "api_key" in func_kwargs and func_kwargs["api_key"]:
+                usage_api_key = func_kwargs["api_key"]
+            elif _self and hasattr(_self, "api_key") and _self.api_key:
+                usage_api_key = _self.api_key
+            elif (
+                "kwargs" in func_kwargs
+                and isinstance(func_kwargs["kwargs"], dict)
+                and "api_key" in func_kwargs["kwargs"]
+                and func_kwargs["kwargs"]["api_key"]
+            ):
+                usage_api_key = func_kwargs["kwargs"]["api_key"]
+            else:
+                logger.debug("Could not obtain API key from func kwargs")
+
         return {
             "source": source,
             "api_key": usage_api_key,
