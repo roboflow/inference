@@ -190,6 +190,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_STRING_KIND,
     BATCH_OF_TOP_CLASS_KIND,
     BOOLEAN_KIND,
+    CONTOURS_KIND,
     DETECTION_KIND,
     DICTIONARY_KIND,
     FLOAT_KIND,
@@ -322,4 +323,5 @@ def load_kinds() -> List[Kind]:
         BATCH_OF_IMAGE_METADATA_KIND,
         RGB_COLOR_KIND,
         IMAGE_KEYPOINTS_KIND,
+        CONTOURS_KIND,
     ]
