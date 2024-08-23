@@ -286,36 +286,37 @@ def convert_sam2_segmentation_response_to_inference_instances_seg_response(
     for prediction, class_id, class_name in zip(
         sam2_segmentation_predictions, prompt_class_ids, prompt_class_names
     ):
-        if len(prediction.mask) == 0:
-            # skipping empty masks
-            continue
-        if prediction.confidence < threshold:
-            # skipping maks below threshold
-            continue
-        x_coords = [coord[0] for coord in prediction.mask]
-        y_coords = [coord[1] for coord in prediction.mask]
-        min_x = np.min(x_coords)
-        max_x = np.max(x_coords)
-        min_y = np.min(y_coords)
-        max_y = np.max(y_coords)
-        center_x = (min_x + max_x) / 2
-        center_y = (min_y + max_y) / 2
-        predictions.append(
-            InstanceSegmentationPrediction(
-                **{
-                    "x": center_x,
-                    "y": center_y,
-                    "width": max_x - min_x,
-                    "height": max_y - min_y,
-                    "points": [
-                        Point(x=point[0], y=point[1]) for point in prediction.mask
-                    ],
-                    "confidence": prediction.confidence,
-                    "class": class_name,
-                    "class_id": class_id,
-                }
+        for mask in prediction.masks:
+            if len(mask) == 0:
+                # skipping empty masks
+                continue
+            if prediction.confidence < threshold:
+                # skipping maks below threshold
+                continue
+            x_coords = [coord[0] for coord in mask]
+            y_coords = [coord[1] for coord in mask]
+            min_x = np.min(x_coords)
+            max_x = np.max(x_coords)
+            min_y = np.min(y_coords)
+            max_y = np.max(y_coords)
+            center_x = (min_x + max_x) / 2
+            center_y = (min_y + max_y) / 2
+            predictions.append(
+                InstanceSegmentationPrediction(
+                    **{
+                        "x": center_x,
+                        "y": center_y,
+                        "width": max_x - min_x,
+                        "height": max_y - min_y,
+                        "points": [
+                            Point(x=point[0], y=point[1]) for point in mask
+                        ],
+                        "confidence": prediction.confidence,
+                        "class": class_name,
+                        "class_id": class_id,
+                    }
+                )
             )
-        )
     return InstanceSegmentationInferenceResponse(
         predictions=predictions,
         image=InferenceResponseImage(width=image_width, height=image_height),

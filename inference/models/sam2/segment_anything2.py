@@ -303,6 +303,8 @@ class SegmentAnything2(RoboflowCoreModel):
                 )
 
             args = pad_points(args)
+            if not any(args.values()):
+                args = {"point_coords": [[0, 0]], "point_labels": [-1], "box": None}
             masks, scores, low_resolution_logits = self.predictor.predict(
                 mask_input=mask_input,
                 multimask_output=multimask_output,

@@ -125,8 +125,9 @@ def test_sam2_workflow_when_minimal_valid_input_provided(
     assert set(result[0].keys()) == {
         "predictions",
     }, "Expected all declared outputs to be delivered"
+    print(type(result[0]["predictions"]))
     assert result[0]["predictions"].mask is not None, "Expected mask to be delivered"
-    assert result[0]["predictions"].mask.shape == (1, 427, 640)
+    assert result[0]["predictions"].mask.shape == (10, 427, 640) # many masks in multi polygon mode
     assert (
         result[0]["predictions"].data["prediction_type"][0] == "instance-segmentation"
     )
