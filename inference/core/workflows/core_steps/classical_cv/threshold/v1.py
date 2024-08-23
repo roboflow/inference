@@ -104,63 +104,6 @@ class ImageThresholdBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[ImageThresholdManifest]:
         return ImageThresholdManifest
 
-    def apply_thresholding(
-        self, image: np.ndarray, threshold_type: str, thresh_value: int, max_value: int
-    ) -> np.ndarray:
-        """
-        Applies the specified thresholding to the image.
-
-        Args:
-            image (np.ndarray): Input image in grayscale.
-            threshold_type (str): Type of thresholding ('binary', 'binary_inv', 'trunc', 'tozero', 'tozero_inv', 'adaptive_mean', 'adaptive_gaussian', 'otsu').
-            thresh_value (int, optional): Threshold value.
-            max_value (int, optional): Maximum value to use with the THRESH_BINARY and THRESH_BINARY_INV thresholding types.
-
-        Returns:
-            np.ndarray: Image with thresholding applied.
-        """
-        if threshold_type == "binary":
-            _, thresh_image = cv2.threshold(
-                image, thresh_value, max_value, cv2.THRESH_BINARY
-            )
-        elif threshold_type == "binary_inv":
-            _, thresh_image = cv2.threshold(
-                image, thresh_value, max_value, cv2.THRESH_BINARY_INV
-            )
-        elif threshold_type == "trunc":
-            _, thresh_image = cv2.threshold(
-                image, thresh_value, max_value, cv2.THRESH_TRUNC
-            )
-        elif threshold_type == "tozero":
-            _, thresh_image = cv2.threshold(
-                image, thresh_value, max_value, cv2.THRESH_TOZERO
-            )
-        elif threshold_type == "tozero_inv":
-            _, thresh_image = cv2.threshold(
-                image, thresh_value, max_value, cv2.THRESH_TOZERO_INV
-            )
-        elif threshold_type == "adaptive_mean":
-            thresh_image = cv2.adaptiveThreshold(
-                image, max_value, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 11, 2
-            )
-        elif threshold_type == "adaptive_gaussian":
-            thresh_image = cv2.adaptiveThreshold(
-                image,
-                max_value,
-                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                cv2.THRESH_BINARY,
-                11,
-                2,
-            )
-        elif threshold_type == "otsu":
-            _, thresh_image = cv2.threshold(
-                image, 0, max_value, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-            )
-        else:
-            raise ValueError(f"Unknown threshold type: {threshold_type}")
-
-        return thresh_image
-
     def run(
         self,
         image: WorkflowImageData,
@@ -171,7 +114,7 @@ class ImageThresholdBlockV1(WorkflowBlock):
         **kwargs,
     ) -> BlockResult:
         # Apply threshold to the image
-        thresholded_image = self.apply_thresholding(
+        thresholded_image = apply_thresholding(
             image.numpy_image, threshold_type, thresh_value, max_value
         )
 
@@ -182,3 +125,59 @@ class ImageThresholdBlockV1(WorkflowBlock):
         )
 
         return {OUTPUT_IMAGE_KEY: output}
+
+def apply_thresholding(image: np.ndarray, threshold_type: str, thresh_value: int, max_value: int
+) -> np.ndarray:
+    """
+    Applies the specified thresholding to the image.
+
+    Args:
+        image (np.ndarray): Input image in grayscale.
+        threshold_type (str): Type of thresholding ('binary', 'binary_inv', 'trunc', 'tozero', 'tozero_inv', 'adaptive_mean', 'adaptive_gaussian', 'otsu').
+        thresh_value (int, optional): Threshold value.
+        max_value (int, optional): Maximum value to use with the THRESH_BINARY and THRESH_BINARY_INV thresholding types.
+
+    Returns:
+        np.ndarray: Image with thresholding applied.
+    """
+    if threshold_type == "binary":
+        _, thresh_image = cv2.threshold(
+            image, thresh_value, max_value, cv2.THRESH_BINARY
+        )
+    elif threshold_type == "binary_inv":
+        _, thresh_image = cv2.threshold(
+            image, thresh_value, max_value, cv2.THRESH_BINARY_INV
+        )
+    elif threshold_type == "trunc":
+        _, thresh_image = cv2.threshold(
+            image, thresh_value, max_value, cv2.THRESH_TRUNC
+        )
+    elif threshold_type == "tozero":
+        _, thresh_image = cv2.threshold(
+            image, thresh_value, max_value, cv2.THRESH_TOZERO
+        )
+    elif threshold_type == "tozero_inv":
+        _, thresh_image = cv2.threshold(
+            image, thresh_value, max_value, cv2.THRESH_TOZERO_INV
+        )
+    elif threshold_type == "adaptive_mean":
+        thresh_image = cv2.adaptiveThreshold(
+            image, max_value, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 11, 2
+        )
+    elif threshold_type == "adaptive_gaussian":
+        thresh_image = cv2.adaptiveThreshold(
+            image,
+            max_value,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            11,
+            2,
+        )
+    elif threshold_type == "otsu":
+        _, thresh_image = cv2.threshold(
+            image, 0, max_value, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
+    else:
+        raise ValueError(f"Unknown threshold type: {threshold_type}")
+
+    return thresh_image

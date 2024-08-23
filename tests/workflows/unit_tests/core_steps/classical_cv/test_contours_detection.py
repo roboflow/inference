@@ -19,7 +19,6 @@ def test_contours_validation_when_valid_manifest_is_given(images_field_alias: st
       "type": "roboflow_core/contours_detection@v1",
       "name": "image_contours",
       images_field_alias: "$inputs.image",
-      "raw_image": "$inputs.image",
     }
 
     # when
@@ -30,8 +29,6 @@ def test_contours_validation_when_valid_manifest_is_given(images_field_alias: st
         type="roboflow_core/contours_detection@v1",
         name="image_contours",
         image="$inputs.image",
-        raw_image="$inputs.image",
-        line_thickness=3,
     )
 
 def test_contours_validation_when_invalid_image_is_given() -> None:
@@ -40,8 +37,6 @@ def test_contours_validation_when_invalid_image_is_given() -> None:
       "type": "roboflow_core/contours_detection@v1",
       "name": "image_contours",
       "image": "invalid",
-      "raw_image": "$inputs.image",
-      "line_thickness": 3,
     }
 
     # when
@@ -60,18 +55,7 @@ def test_contours_block() -> None:
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=start_image,
         ),
-        raw_image=WorkflowImageData(
-            parent_metadata=ImageParentMetadata(parent_id="some"),
-            numpy_image=start_image,
-        ),
-        line_thickness=3,
     )
 
     assert output is not None
-    assert "image" in output
-    assert hasattr(output.get("image"), "numpy_image")
-
-    # dimensions of output must be 3 dimensional
-    assert output.get("image").numpy_image.shape == (1000, 1000, 3)
-    # check if the image is modified
-    assert not np.array_equal(output.get("image").numpy_image, start_image)
+    assert "number_contours" in output
