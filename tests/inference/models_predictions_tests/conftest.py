@@ -7,6 +7,8 @@ import cv2
 import numpy as np
 import pytest
 import requests
+import json
+from typing import Dict
 
 from inference.core.env import MODEL_CACHE_DIR
 
@@ -22,7 +24,16 @@ BEER_IMAGE_PATH = os.path.join(ASSETS_DIR, "beer.jpg")
 TRUCK_IMAGE_PATH = os.path.join(ASSETS_DIR, "truck.jpg")
 SAM2_TRUCK_LOGITS = os.path.join(ASSETS_DIR, "low_res_logits.npy")
 SAM2_TRUCK_MASK_FROM_CACHE = os.path.join(ASSETS_DIR, "mask_from_cached_logits.npy")
+SAM2_MULTI_POLY_RESPONSE_PATH = os.path.join(
+    ASSETS_DIR, "sam2_multipolygon_response.json"
+)
 
+
+
+@pytest.fixture(scope="function")
+def sam2_multipolygon_response() -> Dict:
+    with open(SAM2_MULTI_POLY_RESPONSE_PATH) as f:
+        return json.load(f)
 
 @pytest.fixture(scope="function")
 def example_image() -> np.ndarray:
@@ -186,10 +197,24 @@ def sam2_small_model() -> Generator[str, None, None]:
     yield model_id
     shutil.rmtree(model_cache_dir)
 
+@pytest.fixture(scope="function")
+def sam2_tiny_model() -> Generator[str, None, None]:
+    model_id = "sam2/hiera_tiny"
+    model_cache_dir = fetch_and_place_model_in_cache(
+        model_id=model_id,
+        model_package_url="https://storage.googleapis.com/roboflow-tests-assets/sam2_tiny.zip",
+    )
+    yield model_id
+    shutil.rmtree(model_cache_dir)
+
 
 @pytest.fixture(scope="function")
 def sam2_small_truck_logits() -> Generator[np.ndarray, None, None]:
     yield np.load(SAM2_TRUCK_LOGITS)
+
+@pytest.fixture(scope="function")
+def sam2_small_truck_mask_from_cached_logits() -> Generator[np.ndarray, None, None]:
+    yield np.load(SAM2_TRUCK_MASK_FROM_CACHE)
 
 @pytest.fixture(scope="function")
 def sam2_small_truck_mask_from_cached_logits() -> Generator[np.ndarray, None, None]:
