@@ -19,6 +19,7 @@ def test_contours_validation_when_valid_manifest_is_given(images_field_alias: st
       "type": "roboflow_core/contours_detection@v1",
       "name": "image_contours",
       images_field_alias: "$inputs.image",
+      "line_thickness": 3,
     }
 
     # when
@@ -29,6 +30,7 @@ def test_contours_validation_when_valid_manifest_is_given(images_field_alias: st
         type="roboflow_core/contours_detection@v1",
         name="image_contours",
         image="$inputs.image",
+        line_thickness=3,
     )
 
 def test_contours_validation_when_invalid_image_is_given() -> None:
@@ -37,6 +39,7 @@ def test_contours_validation_when_invalid_image_is_given() -> None:
       "type": "roboflow_core/contours_detection@v1",
       "name": "image_contours",
       "image": "invalid",
+      "line_thickness": 3,
     }
 
     # when
@@ -55,6 +58,7 @@ def test_contours_block() -> None:
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=start_image,
         ),
+        line_thickness=3,
     )
 
     assert output is not None
