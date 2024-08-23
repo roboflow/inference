@@ -284,6 +284,10 @@ ROBOFLOW_SERVICE_SECRET = os.getenv("ROBOFLOW_SERVICE_SECRET", None)
 # Maximum embedding cache size for SAM, default is 10
 SAM_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM_MAX_EMBEDDING_CACHE_SIZE", 10))
 
+SAM2_MAX_EMBEDDING_CACHE_SIZE = int(os.getenv("SAM2_MAX_EMBEDDING_CACHE_SIZE", 100))
+SAM2_MAX_LOGITS_CACHE_SIZE = int(os.getenv("SAM2_MAX_LOGITS_CACHE_SIZE", 1000))
+DISABLE_SAM2_LOGITS_CACHE = str2bool(os.getenv("DISABLE_SAM2_LOGITS_CACHE", False))
+
 # SAM version ID, default is "vit_h"
 SAM_VERSION_ID = os.getenv("SAM_VERSION_ID", "vit_h")
 SAM2_VERSION_ID = os.getenv("SAM2_VERSION_ID", "hiera_large")

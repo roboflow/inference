@@ -577,6 +577,7 @@ class InferencePipeline:
                 workflows_parameters=workflows_parameters,
                 execution_engine=execution_engine,
                 image_input_name=image_input_name,
+                video_metadata_input_name=video_metadata_input_name,
             )
         except ImportError as error:
             raise CannotInitialiseModelError(
