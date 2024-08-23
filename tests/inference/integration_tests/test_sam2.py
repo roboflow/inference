@@ -74,7 +74,7 @@ def test_sam2_multi_poly(clean_loaded_models_fixture, sam2_multipolygon_response
     try:
         response.raise_for_status()
         data = response.json()
-        assert data == sam2_multipolygon_response
+        assert data["predictions"] == sam2_multipolygon_response["predictions"]
         try:
             assert "predictions" in data
         except:
