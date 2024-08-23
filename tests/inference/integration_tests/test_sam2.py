@@ -104,6 +104,7 @@ def test_sam2_multi_poly(clean_loaded_models_fixture, sam2_multipolygon_response
     payload["prompts"] = {
         "prompts": [{"points": [{"x": 58, "y": 379, "positive": True}]}]
     }
+    payload["image_id"] = "test_seawithdock"
     response = requests.post(
         f"{base_url}:{port}/sam2/segment_image",
         json=payload,
