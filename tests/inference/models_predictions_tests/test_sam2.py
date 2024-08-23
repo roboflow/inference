@@ -13,7 +13,6 @@ from inference.models.sam2.segment_anything2 import (
     hash_prompt_set,
     maybe_load_low_res_logits_from_cache,
 )
-<<<<<<< HEAD
 from inference.models.sam2 import SegmentAnything2
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     convert_sam2_segmentation_response_to_inference_instances_seg_response,
@@ -24,8 +23,6 @@ from inference.core.workflows.core_steps.common.utils import (
 from inference.core.entities.responses.sam2 import Sam2SegmentationPrediction
 from inference.core.entities.requests.sam2 import Sam2SegmentationRequest
 from typing import Dict
-=======
->>>>>>> main
 
 
 @pytest.mark.slow
