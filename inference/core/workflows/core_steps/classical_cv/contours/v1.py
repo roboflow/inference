@@ -137,7 +137,7 @@ def find_and_draw_contours(
         tuple: Image with contours drawn and number of contours.
     """
     # If not in grayscale, convert to grayscale
-    if len(image.shape) == 3:
+    if len(image.shape) == 3 and image.shape[2] == 3:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     # Find contours
