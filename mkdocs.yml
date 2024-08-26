@@ -68,25 +68,25 @@ nav:
           - Retrieve Your API Key: quickstart/configure_api_key.md
           - Model Licenses: https://roboflow.com/licensing
   - Workflows:
-      - What is Roboflow Workflows?: workflows/about.md
-      - How to Create and Run a Workflow?: workflows/create_and_run.md
-      - Understanding Workflows: workflows/understanding.md
-      - Blocks connections: workflows/blocks_connections.md
-      - Blocks: workflows/blocks.md
-      - Gallery of Workflows: workflows/gallery_index.md
+      - About Workflows: workflows/about.md
+      - Create and Run: workflows/create_and_run.md
+      - Ecosystem: workflows/understanding.md
+      - Blocks overview: workflows/blocks_connections.md
+      - Blocks gallery: workflows/blocks.md
+      - Examples: workflows/gallery_index.md
       - User guide:
         - Running Workflows: workflows/modes_of_running.md
         - Workflows Definitions: workflows/definitions.md
         - Workflow execution: workflows/workflow_execution.md
       - Developer guide:
-        - Workflows Compiler: workflows/workflows_compiler.md
-        - Workflows Execution Engine: workflows/workflows_execution_engine.md
+        - Compiler: workflows/workflows_compiler.md
+        - Execution Engine: workflows/workflows_execution_engine.md
         - Kinds: workflows/kinds.md
-        - How to create Workflow Block?: workflows/create_workflow_block.md
-        - Blocks bundling: workflows/blocks_bundling.md
-        - Dynamic Python Blocks: workflows/custom_python_code_blocks.md
-        - Versioning in Workflows: workflows/versioning.md
-        - Testing - best practices: workflows/testing.md
+        - Blocks development: workflows/create_workflow_block.md
+        - Plugins: workflows/blocks_bundling.md
+        - Blocks with Python code: workflows/custom_python_code_blocks.md
+        - Versioning: workflows/versioning.md
+        - Testing: workflows/testing.md
   - Reference:
       - Inference Pipeline: using_inference/inference_pipeline.md
       - Active Learning:
