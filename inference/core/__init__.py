@@ -3,7 +3,7 @@ import time
 
 import requests
 
-from packaging import version
+import packaging
 
 from inference.core.env import DISABLE_VERSION_CHECK, VERSION_CHECK_MODE
 from inference.core.logger import logger
@@ -35,8 +35,8 @@ def check_latest_release_against_current():
     get_latest_release_version()
     if latest_release is not None and latest_release != __version__:
 
-        running_ver = version.parse(__version__)
-        current_ver = version.parse(latest_release)
+        running_ver = packaging.version.parse(__version__)
+        current_ver = packaging.version.parse(latest_release)
 
         if running_ver < current_ver:
             logger.warning(
