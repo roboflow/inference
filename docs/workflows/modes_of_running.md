@@ -253,7 +253,7 @@ Here you can find example on how to run simple workflow in Python code.
     # (required by core blocks exposing Roboflow models)
     model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
     model_manager = ModelManager(model_registry=model_registry)
-    return WithFixedSizeCache(model_manager, max_size=MAX_ACTIVE_MODELS)
+    model_manager = WithFixedSizeCache(model_manager, max_size=MAX_ACTIVE_MODELS)
     
     # workflow definition
     OBJECT_DETECTION_WORKFLOW = {

@@ -192,3 +192,118 @@ unpredictable results during execution if the situation is not prevented.
     some blocks from "dimensionality collapse" category - we will align the results of secondary classifiers 
     into batches at `dimensionality level` 1 with matching lineage.
 
+
+As outlined in the section dedicated to [blocks development](/workflows/create_workflow_block), each block can define 
+the expected dimensionality of its inputs and outputs. This refers to how the data should be structured. 
+For example, if a block needs an `image` input that's one level above a batch of `predictions`, the Compiler will 
+check that this requirement is met when verifying the Workflow step. If the connections between steps don’t match 
+the expected dimensionality, an error will occur. Additionally, each input is also verified to ensure it is compatible 
+based on data lineage. Once the step passes validation, the output dimensionality is determined and will be used to 
+check compatibility with subsequent steps.
+
+It’s important to note that blocks define dimensionality requirements in relative terms, not absolute. This means 
+a block specifies the difference (or offset) in dimensionality between its inputs and outputs. This approach allows 
+blocks to work flexibly at any dimensionality level.
+
+
+!!! Note
+
+    In version 1, the Workflows Compiler only supports blocks that work across two different `dimensionality levels`. 
+    This was done to keep the design straightforward. If there's a need for blocks that handle more 
+    `dimensionality levels` in the future, we will consider expanding this support.
+
+
+#### Denoting flow-control
+
+The Workflows Compiler helps the Execution Engine manage flow-control structures in workflows. It marks specific 
+attributes that allow the system to understand how flow-control impacts building inputs for certain steps and the 
+execution of the workflow graph (for more details, see the 
+[Execution Engine docs](/workflows/workflows_execution_engine/)).
+
+To ensure the workflow structure is correct, the Compiler checks data lineage for flow-control steps in a 
+similar way as described in the section on [data-lineage verification](#data-lineage-verification).
+
+The Compiler assumes flow-control steps can affect other steps if:
+
+* **The flow-control step operates on non-batch-oriented inputs** - in this case, the flow-control step can 
+either allow or prevent the connected step (and related steps) from running entirely, even if the input 
+is a batch of data - all batch elements are affected.
+
+* **The flow-control step operates on batch-oriented inputs with compatible lineage** - here, the flow-control step 
+can decide separately for each element in the batch which ones will proceed and which ones will be stopped.
+
+
+## Initializing Workflow steps from blocks
+
+The documentation often refers to a Workflow Step as an instance of a Workflow Block, which serves as its prototype. 
+To put it simply, a Workflow Block is a class that implements specific behavior, which can be customized by 
+configuration—whether it's set by the environment running the Execution Engine, the Workflow definition, 
+or inputs at runtime.
+
+In programming, we create an instance of a class using a constructor, usually requiring initialization parameters. 
+One the same note, Workflow Blocks are initialized by the Workflows Compiler whenever a step in the Workflow 
+references that block. Some blocks may need specific initialization parameters, while others won't.
+
+When a block requires initialization parameters:
+
+* The block must declare the parameters it needs, as explained in detail in 
+the [blocks development guide](/workflows/create_workflow_block)
+
+* The values for these parameters must be provided from the environment where the Workflow is being executed.
+
+* The values for these parameters must be provided from the environment where the Workflow is being executed.
+
+This second part might seem tricky, so let’s look at an example. In the [in user guide](/workflows/modes_of_running/),
+under the section showing how to integrate with Workflows using the `inference` Python package, you might come 
+across code like this:
+
+```python
+[...]
+# example init paramaters for blocks - dependent on set of blocks 
+# used in your workflow
+workflow_init_parameters = {
+    "workflows_core.model_manager": model_manager,
+    "workflows_core.api_key": "<YOUR-API-KEY>,
+    "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+}
+
+# instance of Execution Engine - init(...) method invocation triggers
+# the compilation process
+execution_engine = ExecutionEngine.init(
+    ...,
+    init_parameters=workflow_init_parameters,
+    ...,
+)
+[...]
+```
+
+In this example, `workflow_init_parameters contains` values that the Compiler uses when 
+initializing Workflow steps based on block requests.
+
+
+Initialization parameters (often called "init parameters") can be passed to the Compiler in two ways:
+
+* **Explicitly:** You provide specific values (numbers, strings, objects, etc.).
+
+* **Implicitly:** Default values are defined within the Workflows plugin, which can either be specific values or 
+functions (taking no parameters) that generate values dynamically, such as from environmental variables.
+
+
+The dictionary `workflow_init_parameters` shows explicitly passed init parameters. The structure of the keys 
+is important: `{plugin_name}.{init_parameter_name}`. You can also specify just `{init_parameter_name}`, but this 
+changes how parameters are resolved.
+
+### How Parameters Are Resolved?
+
+When the Compiler looks for a block’s required init parameter, it follows this process:
+
+1. **Exact Match:** It first checks the explicitly provided parameters for an exact match to 
+`{plugin_name}.{init_parameter_name}`.
+
+2. **Default Parameters:** If no match is found, it checks the plugin’s default parameters.
+
+3. **General Match:** Finally, it looks for a general match with just `{init_parameter_name}` in the explicitly 
+provided parameters.
+
+This mechanism allows flexibility, as some block parameters can have default values while others must be 
+provided explicitly. Additionally, it lets certain parameters be shared across different plugins.
