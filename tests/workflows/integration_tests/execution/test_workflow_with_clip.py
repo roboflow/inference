@@ -4,6 +4,7 @@ import pytest
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 
 CLIP_WORKFLOW = {
@@ -215,3 +216,58 @@ def test_workflow_with_clip_comparison_v2_and_property_definition_with_valid_inp
     assert (
         result[1]["class_name"] == "crowd"
     ), "Expected property definition step to cooperate nicely with clip output"
+
+
+def test_workflow_with_clip_comparison_v2_and_property_definition_with_empty_class_list(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CLIP_COMPARISON_V2,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = execution_engine.run(
+            runtime_parameters={
+                "image": [license_plate_image, crowd_image],
+                "reference": [],
+            }
+        )
+
+
+def test_workflow_with_clip_comparison_v2_and_property_definition_with_invalid_model_version(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_CLIP_COMPARISON_V2,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = execution_engine.run(
+            runtime_parameters={
+                "image": [license_plate_image, crowd_image],
+                "reference": ["car", "crowd"],
+                "version": "invalid",
+            }
+        )

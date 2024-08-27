@@ -57,18 +57,6 @@ in an image, or if an image contains NSFW material.
 
 EXPECTED_OUTPUT_KEYS = {"similarity", "parent_id", "root_parent_id", "prediction_type"}
 
-ALL_CLIP_VARIANTS = {
-    "RN101",
-    "RN50",
-    "RN50x16",
-    "RN50x4",
-    "RN50x64",
-    "ViT-B-16",
-    "ViT-B-32",
-    "ViT-L-14-336px",
-    "ViT-L-14",
-}
-
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -88,6 +76,7 @@ class BlockManifest(WorkflowBlockManifest):
         Field(
             description="List of classes to calculate similarity against each input image",
             examples=[["a", "b", "c"], "$inputs.texts"],
+            min_items=1,
         )
     )
     version: Union[
@@ -161,10 +150,6 @@ class ClipComparisonBlockV2(WorkflowBlock):
         classes: List[str],
         version: str,
     ) -> BlockResult:
-        if version not in ALL_CLIP_VARIANTS:
-            raise ValueError(f"Supported CLIP versions do not involve {version}")
-        if not classes:
-            raise ValueError("Provided empty class list for CLIP Comparison step")
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(images=images, classes=classes, version=version)
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
