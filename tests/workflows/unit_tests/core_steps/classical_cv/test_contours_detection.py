@@ -3,23 +3,25 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
-    ImageContoursDetectionManifest,
     ImageContoursDetectionBlockV1,
+    ImageContoursDetectionManifest,
 )
-
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
 
+
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_contours_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
+def test_contours_validation_when_valid_manifest_is_given(
+    images_field_alias: str,
+) -> None:
     # given
     data = {
-      "type": "roboflow_core/contours_detection@v1",
-      "name": "image_contours",
-      images_field_alias: "$inputs.image",
-      "line_thickness": 3,
+        "type": "roboflow_core/contours_detection@v1",
+        "name": "image_contours",
+        images_field_alias: "$inputs.image",
+        "line_thickness": 3,
     }
 
     # when
@@ -33,13 +35,14 @@ def test_contours_validation_when_valid_manifest_is_given(images_field_alias: st
         line_thickness=3,
     )
 
+
 def test_contours_validation_when_invalid_image_is_given() -> None:
     # given
     data = {
-      "type": "roboflow_core/contours_detection@v1",
-      "name": "image_contours",
-      "image": "invalid",
-      "line_thickness": 3,
+        "type": "roboflow_core/contours_detection@v1",
+        "name": "image_contours",
+        "image": "invalid",
+        "line_thickness": 3,
     }
 
     # when
