@@ -107,3 +107,18 @@ def test_offset_detection() -> None:
     assert result["detection_id"] != str(
         detections["parent_id"][0]
     ), "New detection id (random) must be assigned"
+
+
+def test_offset_detection_when_nothing_predicted() -> None:
+    # given
+    detections = sv.Detections.empty()
+
+    # when
+    result = offset_detections(
+        detections=detections,
+        offset_width=50,
+        offset_height=100,
+    )
+
+    # then
+    assert len(detections) == 0, "Expected empty detections in output"
