@@ -3,11 +3,11 @@ import pytest
 import torch
 
 from inference.core.entities.requests.sam2 import Sam2PromptSet
+from inference.models.sam2 import SegmentAnything2
 from inference.models.sam2.segment_anything2 import (
     hash_prompt_set,
     maybe_load_low_res_logits_from_cache,
 )
-from inference.models.sam2 import SegmentAnything2
 
 
 @pytest.mark.slow
@@ -116,9 +116,11 @@ def test_sam2_single_prompted_image_segmentation_mask_cache_works(
     # then
     assert True, "doesnt crash when passing mask_input"
 
+
 @pytest.mark.slow
 def test_sam2_single_prompted_image_segmentation_mask_cache_changes_behavior(
-    sam2_small_model: str, truck_image: np.ndarray,
+    sam2_small_model: str,
+    truck_image: np.ndarray,
     sam2_small_truck_mask_from_cached_logits: np.ndarray,
 ) -> None:
     # given
@@ -152,6 +154,33 @@ def test_sam2_single_prompted_image_segmentation_mask_cache_changes_behavior(
         is not None
     )
     masks2, scores2, low_res_logits2 = model.segment_image(
-        truck_image, prompts=prompt, mask_input=low_res_logits, load_logits_from_cache=True
+        truck_image,
+        prompts=prompt,
+        mask_input=low_res_logits,
+        load_logits_from_cache=True,
     )
     assert np.allclose(sam2_small_truck_mask_from_cached_logits, masks2, atol=0.01)
+
+
+def test_model_clears_cache_properly(sam2_small_model, truck_image):
+    cache_size = 2
+    model = SegmentAnything2(
+        model_id=sam2_small_model,
+        low_res_logits_cache_size=cache_size,
+        embedding_cache_size=cache_size,
+    )
+
+    prompt = Sam2PromptSet(
+        prompts=[{"points": [{"x": 1235, "y": 530, "positive": True}]}]
+    )
+    for i in range(5):
+        masks, scores, low_res_logits = model.segment_image(
+            truck_image,
+            image_id = f"truck_{i}",
+            prompts=prompt,
+            save_logits_to_cache=True,
+            load_logits_from_cache=True,
+        )
+        assert masks is not None
+        assert scores is not None
+        assert low_res_logits is not None

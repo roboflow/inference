@@ -191,6 +191,7 @@ def sam2_small_model() -> Generator[str, None, None]:
 def sam2_small_truck_logits() -> Generator[np.ndarray, None, None]:
     yield np.load(SAM2_TRUCK_LOGITS)
 
+
 @pytest.fixture(scope="function")
 def sam2_small_truck_mask_from_cached_logits() -> Generator[np.ndarray, None, None]:
     yield np.load(SAM2_TRUCK_MASK_FROM_CACHE)

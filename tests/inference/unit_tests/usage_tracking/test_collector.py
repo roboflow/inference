@@ -1,11 +1,17 @@
 import hashlib
 import json
+import sys
 
 import pytest
 
 from inference.core.env import LAMBDA
+from inference.core.version import __version__ as inference_version
 from inference.usage_tracking.collector import UsageCollector
-from inference.usage_tracking.payload_helpers import get_api_key_usage_containing_resource, merge_usage_dicts, zip_usage_payloads
+from inference.usage_tracking.payload_helpers import (
+    get_api_key_usage_containing_resource,
+    merge_usage_dicts,
+    zip_usage_payloads,
+)
 
 
 def test_create_empty_usage_dict():
@@ -26,13 +32,19 @@ def test_create_empty_usage_dict():
                     "timestamp_start": None,
                     "timestamp_stop": None,
                     "exec_session_id": "exec_session_id",
+                    "ip_address_hash": "",
                     "processed_frames": 0,
                     "fps": 0,
                     "source_duration": 0,
                     "category": "",
                     "resource_id": "",
+                    "resource_details": {},
                     "hosted": LAMBDA,
                     "api_key_hash": "",
+                    "is_gpu_available": False,
+                    "api_key_hash": "",
+                    "python_version": sys.version.split()[0],
+                    "inference_version": inference_version,
                     "enterprise": False,
                 }
             }
@@ -61,14 +73,8 @@ def test_merge_usage_dicts_merge_with_empty():
     }
     usage_payload_2 = {"resource_id": "some", "api_key_hash": "some"}
 
-    assert (
-        merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2)
-        == usage_payload_1
-    )
-    assert (
-        merge_usage_dicts(d1=usage_payload_2, d2=usage_payload_1)
-        == usage_payload_1
-    )
+    assert merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2) == usage_payload_1
+    assert merge_usage_dicts(d1=usage_payload_2, d2=usage_payload_1) == usage_payload_1
 
 
 def test_merge_usage_dicts():
@@ -90,9 +96,7 @@ def test_merge_usage_dicts():
         "source_duration": 1,
     }
 
-    assert merge_usage_dicts(
-        d1=usage_payload_1, d2=usage_payload_2
-    ) == {
+    assert merge_usage_dicts(d1=usage_payload_1, d2=usage_payload_2) == {
         "resource_id": "some",
         "api_key_hash": "some",
         "timestamp_start": 1721032989934855000,
@@ -304,9 +308,7 @@ def test_zip_usage_payloads():
     ]
 
     # when
-    zipped_usage_payloads = zip_usage_payloads(
-        usage_payloads=dumped_usage_payloads
-    )
+    zipped_usage_payloads = zip_usage_payloads(usage_payloads=dumped_usage_payloads)
 
     # then
     assert zipped_usage_payloads == [
@@ -396,9 +398,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource
     ]
 
     # when
-    zipped_usage_payloads = zip_usage_payloads(
-        usage_payloads=dumped_usage_payloads
-    )
+    zipped_usage_payloads = zip_usage_payloads(usage_payloads=dumped_usage_payloads)
 
     # then
     assert zipped_usage_payloads == [
@@ -459,9 +459,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id():
     ]
 
     # when
-    zipped_usage_payloads = zip_usage_payloads(
-        usage_payloads=dumped_usage_payloads
-    )
+    zipped_usage_payloads = zip_usage_payloads(usage_payloads=dumped_usage_payloads)
 
     # then
     assert zipped_usage_payloads == [
@@ -514,9 +512,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
     ]
 
     # when
-    zipped_usage_payloads = zip_usage_payloads(
-        usage_payloads=dumped_usage_payloads
-    )
+    zipped_usage_payloads = zip_usage_payloads(usage_payloads=dumped_usage_payloads)
 
     # then
     assert zipped_usage_payloads == [
@@ -542,15 +538,12 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
 def test_system_info():
     # given
     system_info = UsageCollector.system_info(
-        exec_session_id="exec_session_id", time_ns=1, ip_address="w.x.y.z"
+        ip_address="w.x.y.z"
     )
 
     # then
     expected_system_info = {
-        "timestamp_start": 1,
-        "exec_session_id": "exec_session_id",
         "ip_address_hash": hashlib.sha256("w.x.y.z".encode()).hexdigest()[:5],
-        "api_key_hash": "",
         "is_gpu_available": False,
     }
     for k, v in expected_system_info.items():
