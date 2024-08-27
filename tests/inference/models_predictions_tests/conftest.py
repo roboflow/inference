@@ -21,6 +21,7 @@ PERSON_IMAGE_PATH = os.path.join(ASSETS_DIR, "person_image.jpg")
 BEER_IMAGE_PATH = os.path.join(ASSETS_DIR, "beer.jpg")
 TRUCK_IMAGE_PATH = os.path.join(ASSETS_DIR, "truck.jpg")
 SAM2_TRUCK_LOGITS = os.path.join(ASSETS_DIR, "low_res_logits.npy")
+SAM2_TRUCK_MASK_FROM_CACHE = os.path.join(ASSETS_DIR, "mask_from_cached_logits.npy")
 
 
 @pytest.fixture(scope="function")
@@ -189,6 +190,11 @@ def sam2_small_model() -> Generator[str, None, None]:
 @pytest.fixture(scope="function")
 def sam2_small_truck_logits() -> Generator[np.ndarray, None, None]:
     yield np.load(SAM2_TRUCK_LOGITS)
+
+
+@pytest.fixture(scope="function")
+def sam2_small_truck_mask_from_cached_logits() -> Generator[np.ndarray, None, None]:
+    yield np.load(SAM2_TRUCK_MASK_FROM_CACHE)
 
 
 def fetch_and_place_model_in_cache(
