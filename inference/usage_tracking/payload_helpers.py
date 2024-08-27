@@ -8,6 +8,7 @@ ResourceUsage = Union[DefaultDict[ResourceID, Usage], Dict[ResourceID, Usage]]
 APIKey = str
 APIKeyHash = str
 APIKeyUsage = Union[DefaultDict[APIKey, ResourceUsage], Dict[APIKey, ResourceUsage]]
+ResourceCategory = str
 ResourceDetails = Dict[str, Any]
 SystemDetails = Dict[str, Any]
 UsagePayload = Union[APIKeyUsage, ResourceDetails, SystemDetails]
