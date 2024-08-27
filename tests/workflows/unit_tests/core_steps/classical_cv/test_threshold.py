@@ -3,25 +3,27 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
-    ImageThresholdManifest,
     ImageThresholdBlockV1,
+    ImageThresholdManifest,
 )
-
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
 
+
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_threshold_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
+def test_threshold_validation_when_valid_manifest_is_given(
+    images_field_alias: str,
+) -> None:
     # given
     data = {
-      "type": "roboflow_core/threshold@v1",
-      "name": "threshold1",
-      images_field_alias: "$inputs.image",
-      "threshold_type": "binary",
-      "thresh_value": 210,
-      "max_value": 255,
+        "type": "roboflow_core/threshold@v1",
+        "name": "threshold1",
+        images_field_alias: "$inputs.image",
+        "threshold_type": "binary",
+        "thresh_value": 210,
+        "max_value": 255,
     }
 
     # when
@@ -34,8 +36,9 @@ def test_threshold_validation_when_valid_manifest_is_given(images_field_alias: s
         image="$inputs.image",
         threshold_type="binary",
         thresh_value=210,
-        max_value=255
+        max_value=255,
     )
+
 
 def test_threshold_validation_when_invalid_image_is_given() -> None:
     # given
@@ -62,9 +65,9 @@ def test_threshold_block(dogs_image: np.ndarray) -> None:
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=dogs_image,
         ),
-        threshold_type= "binary",
-        thresh_value= 210,
-        max_value= 255,
+        threshold_type="binary",
+        thresh_value=210,
+        max_value=255,
     )
 
     assert output is not None

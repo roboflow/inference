@@ -3,17 +3,19 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
-    ImageBlurManifest,
     ImageBlurBlockV1,
+    ImageBlurManifest,
 )
-
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
 
+
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_image_blur_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
+def test_image_blur_validation_when_valid_manifest_is_given(
+    images_field_alias: str,
+) -> None:
     # given
     data = {
         "type": "roboflow_core/image_blur@v1",
@@ -32,7 +34,7 @@ def test_image_blur_validation_when_valid_manifest_is_given(images_field_alias: 
         type="roboflow_core/image_blur@v1",
         name="blur1",
         image="$inputs.image",
-        blur_type= "gaussian",
+        blur_type="gaussian",
         kernel_size=5,
     )
 
@@ -63,7 +65,7 @@ def test_image_blur_block() -> None:
             parent_metadata=ImageParentMetadata(parent_id="some"),
             numpy_image=start_image,
         ),
-        blur_type='gaussian',
+        blur_type="gaussian",
         kernel_size=5,
     )
 

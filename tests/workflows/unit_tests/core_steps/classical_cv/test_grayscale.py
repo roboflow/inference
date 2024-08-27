@@ -3,22 +3,24 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
-    ConvertGrayscaleManifest,
     ConvertGrayscaleBlockV1,
+    ConvertGrayscaleManifest,
 )
-
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
 
+
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-def test_convert_grayscale_validation_when_valid_manifest_is_given(images_field_alias: str) -> None:
+def test_convert_grayscale_validation_when_valid_manifest_is_given(
+    images_field_alias: str,
+) -> None:
     # given
     data = {
-      "type": "roboflow_core/convert_grayscale@v1",
-      "name": "grayscale1",
-      images_field_alias: "$inputs.image"
+        "type": "roboflow_core/convert_grayscale@v1",
+        "name": "grayscale1",
+        images_field_alias: "$inputs.image",
     }
 
     # when
@@ -30,6 +32,7 @@ def test_convert_grayscale_validation_when_valid_manifest_is_given(images_field_
         name="grayscale1",
         image="$inputs.image",
     )
+
 
 def test_convert_grayscale_validation_when_invalid_image_is_given() -> None:
     # given
