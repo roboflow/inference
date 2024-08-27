@@ -820,7 +820,7 @@ batch element (SIMD flow-control) or whole workflow execution (non-SIMD flow-con
     
     
     class BlockManifest(WorkflowBlockManifest):
-        type: Literal["roboflow_core/random_continue@v1"]
+        type: Literal["my_plugin/random_continue@v1"]
         name: str
         image: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
         probability: float
@@ -896,7 +896,7 @@ batch element (SIMD flow-control) or whole workflow execution (non-SIMD flow-con
     
     
     class BlockManifest(WorkflowBlockManifest):
-        type: Literal["roboflow_core/random_continue@v1"]
+        type: Literal["my_plugin/random_continue@v1"]
         name: str
         probability: float
         next_steps: List[StepSelector] = Field(
@@ -941,12 +941,16 @@ batch element (SIMD flow-control) or whole workflow execution (non-SIMD flow-con
     `list of strings` - `None` represent flow termination for the batch element, strings are expected to be selectors 
     for next steps, passed in input.
 
-## Nested selectors
+### Nested selectors
 
 Some block will require list of selectors or dictionary of selectors to be 
-provided in block manifest field. Use cases that may require this are outlined below
+provided in block manifest field. Version `v1` of Execution Engine do only support 
+one level of nesting - so list of lists of selectors or dictionary with list of selectors 
+will not be recognised properly.
 
-### Fusion of predictions from variable number of models
+Practical use cases showcasing usage of nested selectors are presented below.
+
+#### Fusion of predictions from variable number of models
 
 Let's assume that you want to build a block to get majority vote on multiple classifiers predictions - then you would 
 like your run method to look like that:
@@ -958,3 +962,474 @@ def run(self, predictions: List[dict]) -> BlockResult:
     counts = Counter(predicted_classes)
     return {"top_class": counts.most_common(1)[0]}
 ```
+
+??? example "Nested selectors - models ensemble"
+
+    ```{ .py linenums="1" hl_lines="23-26 50"}
+    from typing import List, Literal, Optional, Type
+    
+    from pydantic import Field
+    import supervision as sv
+    from inference.core.workflows.execution_engine.entities.base import (
+      OutputDefinition,
+    )
+    from inference.core.workflows.execution_engine.entities.types import (
+        StepOutputSelector,
+        BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    )
+    from inference.core.workflows.prototypes.block import (
+        BlockResult,
+        WorkflowBlock,
+        WorkflowBlockManifest,
+    )
+    
+    
+    
+    class BlockManifest(WorkflowBlockManifest):
+        type: Literal["my_plugin/fusion_of_predictions@v1"]
+        name: str
+        predictions: List[StepOutputSelector(kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND])] = Field(
+            description="Selectors to step outputs",
+            examples=[["$steps.model_1.predictions", "$steps.model_2.predictions"]],
+        )
+    
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return [
+              OutputDefinition(
+                name="predictions", 
+                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+              )
+            ]
+    
+        @classmethod
+        def get_execution_engine_compatibility(cls) -> Optional[str]:
+            return ">=1.0.0,<2.0.0"
+    
+    
+    class FusionBlockV1(WorkflowBlock):
+    
+        @classmethod
+        def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+            return BlockManifest
+    
+        def run(
+            self,
+            predictions: List[sv.Detections],
+        ) -> BlockResult:
+            merged = sv.Detections.merge(predictions)
+            return {"predictions": merged}
+    ```
+
+    * lines `23-26` depict how to define manifest field capable of accepting 
+    list of selectors
+
+    * line `50` shows what to expect as input to block's `run(...)` method - 
+    list of objects which are representation of specific kind. If the block accepted 
+    batches, the input type of `predictions` field would be `List[Batch[sv.Detections]`
+
+Such block is compatible with the following step declaration:
+
+```{ .json linenums="1" hl_lines="4-7"}
+{
+  "type": "my_plugin/fusion_of_predictions@v1",
+  "name": "my_step",
+  "predictions": [
+    "$steps.model_1.predictions",
+    "$steps.model_2.predictions"  
+  ]
+}
+```
+
+#### Block with data transformations allowing dynamic parameters
+
+Occasionally, blocks may need to accept group of "named" selectors, 
+which names and values are to be defined by creator of Workflow definition. 
+In such cases, block manifest shall accept dictionary of selectors, where
+keys serves as names for those selectors.
+
+??? example "Nested selectors - named selectors"
+
+    ```{ .py linenums="1" hl_lines="23-26 47"}
+    from typing import List, Literal, Optional, Type, Any
+    
+    from pydantic import Field
+    import supervision as sv
+    from inference.core.workflows.execution_engine.entities.base import (
+      OutputDefinition,
+    )
+    from inference.core.workflows.execution_engine.entities.types import (
+        StepOutputSelector,
+        WorkflowParameterSelector,
+    )
+    from inference.core.workflows.prototypes.block import (
+        BlockResult,
+        WorkflowBlock,
+        WorkflowBlockManifest,
+    )
+    
+    
+    
+    class BlockManifest(WorkflowBlockManifest):
+        type: Literal["my_plugin/named_selectors_example@v1"]
+        name: str
+        data: Dict[str, StepOutputSelector(), WorkflowParameterSelector()] = Field(
+            description="Selectors to step outputs",
+            examples=[{"a": $steps.model_1.predictions", "b": "$Inputs.data"}],
+        )
+    
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return [
+              OutputDefinition(name="my_output", kind=[]),
+            ]
+    
+        @classmethod
+        def get_execution_engine_compatibility(cls) -> Optional[str]:
+            return ">=1.0.0,<2.0.0"
+    
+    
+    class BlockWithNamedSelectorsV1(WorkflowBlock):
+    
+        @classmethod
+        def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+            return BlockManifest
+    
+        def run(
+            self,
+            data: Dict[str, Any],
+        ) -> BlockResult:
+            ...
+            return {"my_output": ...}
+    ```
+
+    * lines `23-26` depict how to define manifest field capable of accepting 
+    list of selectors
+
+    * line `47` shows what to expect as input to block's `run(...)` method - 
+    dict of objects which are reffered with selectors. If the block accepted 
+    batches, the input type of `data` field would be `Dict[str, Union[Batch[Any], Any]]`.
+    In non-batch cases, non-batch-oriented data referenced by selector is automatically 
+    broadcasted, whereas for blocks accepting batches - `Batch` container wraps only 
+    batch-oriented inputs, with other inputs being passed as singular values.
+
+Such block is compatible with the following step declaration:
+
+```{ .json linenums="1" hl_lines="4-7"}
+{
+  "type": "my_plugin/named_selectors_example@v1",
+  "name": "my_step",
+  "data": {
+    "a": "$steps.model_1.predictions",
+    "b": "$inputs.my_parameter"  
+  }
+}
+```
+
+Practical implications will be the following:
+
+* under `data["a"]` inside `run(...)` you will be able to find model's predictions - 
+like `sv.Detections` if `model_1` is object-detection model
+
+* under `data["b"]` inside `run(...)`, you will find value of input parameter named `my_parameter`
+
+## Inputs and output dimensionality vs `run(...)` method
+
+
+The dimensionality of block inputs plays a crucial role in shaping the `run(...)` method’s signature, and that's 
+why the system enforces strict bounds on the differences in dimensionality levels between inputs 
+(with the maximum allowed difference being `1`). This restriction is critical for ensuring consistency and 
+predictability when writing blocks.
+
+If dimensionality differences weren't controlled, it would be difficult to predict the structure of 
+the `run(...)` method, making development harder and less reliable. That’s why validation of this property 
+is strictly enforced during the Workflow compilation process.
+
+Similarly, the output dimensionality also affects the method signature and the format of the expected output. 
+The ecosystem supports the following scenarios:
+
+* all inputs have **the same dimensionality** and output **do not change** dimensionality - baseline case
+
+* all inputs have **the same dimensionality** and output **decreases** dimensionality
+
+* all inputs have **the same dimensionality** and output **decreases** increases
+
+* inputs have **different dimensionality** and output is allowed to keep the dimensionality of 
+**reference input**
+
+Other combinations of input/output dimensionalities are not allowed to ensure consistency and to prevent ambiguity in 
+the method signatures.
+
+??? example "Impact of dimensionality on `run(...)` method - batches disabled"
+
+    === "output dimensionality increase"
+
+        In this example, we perform dynamic crop of image based on predictions.
+
+        ```{ .py linenums="1" hl_lines="30-32 65 66-67"}
+        from typing import Dict, List, Literal, Optional, Type, Union
+        from uuid import uuid4
+
+        from inference.core.workflows.execution_engine.constants import DETECTION_ID_KEY
+        from inference.core.workflows.execution_engine.entities.base import (
+            OutputDefinition,
+            WorkflowImageData,
+            ImageParentMetadata,
+        )
+        from inference.core.workflows.execution_engine.entities.types import (
+            BATCH_OF_IMAGES_KIND,
+            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            StepOutputImageSelector,
+            StepOutputSelector,
+            WorkflowImageSelector,
+        )
+        from inference.core.workflows.prototypes.block import (
+            BlockResult,
+            WorkflowBlock,
+            WorkflowBlockManifest,
+        )
+        
+        class BlockManifest(WorkflowBlockManifest):
+            type: Literal["my_block/dynamic_crop@v1"]
+            image: Union[WorkflowImageSelector, StepOutputImageSelector]
+            predictions: StepOutputSelector(
+                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+            )
+        
+            @classmethod
+            def get_output_dimensionality_offset(cls) -> int:
+                return 1
+        
+            @classmethod
+            def describe_outputs(cls) -> List[OutputDefinition]:
+                return [
+                    OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
+                ]
+        
+            @classmethod
+            def get_execution_engine_compatibility(cls) -> Optional[str]:
+                return ">=1.0.0,<2.0.0"
+
+        class DynamicCropBlockV1(WorkflowBlock):
+
+            @classmethod
+            def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+                return BlockManifest
+            
+            def run(
+                self,
+                image: WorkflowImageData,
+                predictions: sv.Detections,
+            ) -> BlockResult:
+                crops = []
+                for (x_min, y_min, x_max, y_max) in predictions.xyxy.round().astype(dtype=int):
+                    cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
+                    parent_metadata = ImageParentMetadata(parent_id=f"{uuid4()}")
+                    if cropped_image.size:
+                        result = WorkflowImageData(
+                            parent_metadata=parent_metadata,
+                            numpy_image=cropped_image,
+                        )
+                    else:
+                        result = None
+                    crops.append({"crops": result})
+                return crops
+        ```
+
+        * in lines `30-32` manifest class declares output dimensionality 
+        offset - value `1` should be understand as adding `1` to dimensionality level
+        
+        * point out, that in line `65`, block eliminates empty images from further processing but 
+        placing `None` instead of dictionatry with outputs. This would utilise the same 
+        Execution Engine behaviour that is used for conditional execution - datapoint will
+        be eliminated from downstream processing (unless steps requesting empty inputs 
+        are present down the line).
+
+        * in lines `66-67` results for single input `image` and `predictions` are collected - 
+        it is meant to be list of dictionares containing all registered outputs as keys. Execution
+        engine will understand that the step returns batch of elements for each input element and
+        create nested sturcures of indices to keep track of during execution of downstream steps.
+
+    === "output dimensionality decrease"
+      
+        In this example, the block visualises crops predictions and create tiles
+        presenting all crops predictions in single output image.
+
+        ```{ .py linenums="1" hl_lines="31-33 50-51 61-62"}
+        from typing import List, Literal, Type, Union
+
+        import supervision as sv
+        
+        from inference.core.workflows.execution_engine.entities.base import (
+            Batch,
+            OutputDefinition,
+            WorkflowImageData,
+        )
+        from inference.core.workflows.execution_engine.entities.types import (
+            BATCH_OF_IMAGES_KIND,
+            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            StepOutputImageSelector,
+            StepOutputSelector,
+            WorkflowImageSelector,
+        )
+        from inference.core.workflows.prototypes.block import (
+            BlockResult,
+            WorkflowBlock,
+            WorkflowBlockManifest,
+        )
+        
+        
+        class BlockManifest(WorkflowBlockManifest):
+            type: Literal["my_plugin/tile_detections@v1"]
+            crops: Union[WorkflowImageSelector, StepOutputImageSelector]
+            crops_predictions: StepOutputSelector(
+                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+            )
+        
+            @classmethod
+            def get_output_dimensionality_offset(cls) -> int:
+                return -1
+        
+            @classmethod
+            def describe_outputs(cls) -> List[OutputDefinition]:
+                return [
+                    OutputDefinition(name="visualisations", kind=[BATCH_OF_IMAGES_KIND]),
+                ]
+        
+        
+        class TileDetectionsBlock(WorkflowBlock):
+        
+            @classmethod
+            def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+                return BlockManifest
+        
+            def run(
+                self,
+                crops: Batch[WorkflowImageData],
+                crops_predictions: Batch[sv.Detections],
+            ) -> BlockResult:
+                annotator = sv.BoundingBoxAnnotator()
+                visualisations = []
+                for image, prediction in zip(crops, crops_predictions):
+                    annotated_image = annotator.annotate(
+                        image.numpy_image.copy(),
+                        prediction,
+                    )
+                    visualisations.append(annotated_image)
+                tile = sv.create_tiles(visualisations)
+                return {"visualisations": tile}
+        ```
+
+        * in lines `31-33` manifest class declares output dimensionality 
+        offset - value `-1` should be understand as decreasing dimensionality level by `1`
+
+        * in lines `50-51` you can see the impact of output dimensionality decrease
+        on the method signature. Both inputs are artificially wrapped in `Batch[]` container.
+        This is done by Execution Engine automatically on output dimensionality decrease when 
+        all inputs have the same dimensionality to enable access to all elements occupying 
+        the last dimensionality level. Obviously, only elements related to the same element 
+        from top-level batch will be grouped. For instance, if you had two input images that you 
+        cropped - crops from those two different images will be grouped separately.
+
+        * lines `61-62` illustrate how output is constructed - single value is returned and that value 
+        will be indexed by Execution Engine in output batch with reduced dimensionality
+
+    === "different input dimensionalities"
+        
+        In this example, block merges detections which were predicted based on 
+        crops of original image - result is to provide single detections with 
+        all partial ones being merged.
+
+        ```{ .py linenums="1" hl_lines="32-37 39-41 63-64 70"}
+        from copy import deepcopy
+        from typing import Dict, List, Literal, Optional, Type, Union
+        
+        import numpy as np
+        import supervision as sv
+        
+        from inference.core.workflows.execution_engine.entities.base import (
+            Batch,
+            OutputDefinition,
+            WorkflowImageData,
+        )
+        from inference.core.workflows.execution_engine.entities.types import (
+            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            StepOutputImageSelector,
+            StepOutputSelector,
+            WorkflowImageSelector,
+        )
+        from inference.core.workflows.prototypes.block import (
+            BlockResult,
+            WorkflowBlock,
+            WorkflowBlockManifest,
+        )
+        
+        
+        class BlockManifest(WorkflowBlockManifest):
+            type: Literal["my_plugin/stitch@v1"]
+            image: Union[WorkflowImageSelector, StepOutputImageSelector]
+            image_predictions: StepOutputSelector(
+                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+            )
+        
+            @classmethod
+            def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
+                return {
+                    "image": 0,
+                    "image_predictions": 1,
+                }
+        
+            @classmethod
+            def get_dimensionality_reference_property(cls) -> Optional[str]:
+                return "image"
+        
+            @classmethod
+            def describe_outputs(cls) -> List[OutputDefinition]:
+                return [
+                    OutputDefinition(
+                        name="predictions",
+                        kind=[
+                            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+                        ],
+                    ),
+                ]
+        
+        
+        class StitchDetectionsNonBatchBlock(WorkflowBlock):
+        
+            @classmethod
+            def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+                return BlockManifest
+        
+            def run(
+                self,
+                image: WorkflowImageData,
+                image_predictions: Batch[sv.Detections],
+            ) -> BlockResult:
+                image_predictions = [deepcopy(p) for p in image_predictions if len(p)]
+                for p in image_predictions:
+                    coords = p["parent_coordinates"][0]
+                    p.xyxy += np.concatenate((coords, coords))
+                return {"predictions": sv.Detections.merge(image_predictions)}
+
+        ```
+
+        * in lines `32-37` manifest class declares input dimensionalities offset, indicating
+        `image` parameter being top-level and `image_predictions` being nested batch of predictions
+
+        * whenever different input dimensionalities are declared, dimensionality reference property
+        must be pointed (see lines `39-41`) - this dimensionality level would be used to calculate 
+        output dimensionality - in this particular case, we specify `image`. This choice 
+        has an implication in the expected format of result - in the chosen scenario we are supposed
+        to return single dictionary with all registered outputs keys. If our choice is `image_predictions`,
+        we would return list of dictionaries (of size equal to length of `image_predictions` batch). In other worlds,
+        `get_dimensionality_reference_property(...)` which dimensionality level should be associated
+        to the output.
+
+        * lines `63-64` present impact of dimensionality offsets specified in lines `32-37`. It is clearly
+        visibla that `image_predictions` is a nested batch regarding `image`. Obviously, only nested predictions
+        relevant for the specific `images` are grouped in batch and provided to the method in runtime.
+
+        * as mentioned earlier, line `70` construct output being single dictionary, as we register output 
+        at dimensionality level of `image` (which was also shipped as single element)
+
