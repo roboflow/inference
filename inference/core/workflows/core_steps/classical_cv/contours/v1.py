@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2
 import numpy as np
@@ -123,8 +123,8 @@ class ImageContoursDetectionBlockV1(WorkflowBlock):
 
 
 def find_and_draw_contours(
-    image: np.ndarray, color: tuple = (255, 0, 255), thickness: int = 3
-) -> tuple[np.ndarray, int]:
+    image: np.ndarray, color: Tuple[int, int, int] = (255, 0, 255), thickness: int = 3
+) -> Tuple[np.ndarray, int]:
     """
     Finds and draws contours on the image.
 
