@@ -10,6 +10,7 @@ from collections import defaultdict
 from functools import wraps
 from queue import Queue
 from threading import Event, Lock, Thread
+from typing import Tuple
 from uuid import uuid4
 
 from typing_extensions import (
@@ -36,6 +37,7 @@ from .payload_helpers import (
     APIKey,
     APIKeyHash,
     APIKeyUsage,
+    ResourceCategory,
     ResourceDetails,
     ResourceID,
     SystemDetails,
@@ -105,11 +107,12 @@ class UsageCollector:
                 self._api_keys_hashing_enabled = False
         self._queue_lock = Lock()
 
-        self._system_info_sent: bool = False
+        self._system_info_lock = Lock()
+        self._system_info: Dict[str, Any] = {}
         self._resource_details_lock = Lock()
-        self._resource_details: DefaultDict[APIKey, Dict[ResourceID, bool]] = (
-            defaultdict(dict)
-        )
+        self._resource_details: DefaultDict[
+            APIKey, Dict[Tuple[ResourceCategory, ResourceID], Dict[str, Any]]
+        ] = defaultdict(dict)
 
         self._terminate_collector_thread = Event()
         self._collector_thread = Thread(target=self._usage_collector, daemon=True)
@@ -129,13 +132,18 @@ class UsageCollector:
                     "timestamp_start": None,
                     "timestamp_stop": None,
                     "exec_session_id": exec_session_id,
+                    "ip_address_hash": "",
                     "processed_frames": 0,
                     "fps": 0,
                     "source_duration": 0,
                     "category": "",
                     "resource_id": "",
+                    "resource_details": "{}",
                     "hosted": LAMBDA,
                     "api_key_hash": "",
+                    "is_gpu_available": False,
+                    "python_version": sys.version.split()[0],
+                    "inference_version": inference_version,
                     "enterprise": False,
                 }
             )
@@ -204,50 +212,27 @@ class UsageCollector:
         resource_details: Dict[str, Any],
         resource_id: str = "",
         api_key: str = "",
-        enterprise: bool = False,
     ):
         if not category:
             raise ValueError("Category is compulsory when recording resource details.")
-        if not resource_details and not resource_id:
-            return
-        if not isinstance(resource_details, dict) and not resource_id:
+        if not resource_details or not isinstance(resource_details, dict):
+            logger.debug(
+                "Tried to record non-dict resource details, '%s'", resource_details
+            )
             return
 
-        api_key_hash = self._calculate_api_key_hash(api_key=api_key)
         if not resource_id:
             resource_id = UsageCollector._calculate_resource_hash(
                 resource_details=resource_details
             )
 
         with self._resource_details_lock:
-            api_key_specifications = self._resource_details[api_key_hash]
-            if resource_id in api_key_specifications:
-                return
-            api_key_specifications[resource_id] = True
-
-        resource_details_payload: ResourceDetails = {
-            api_key_hash: {
-                f"{category}:{resource_id}": {
-                    "timestamp_start": time.time_ns(),
-                    "category": category,
-                    "resource_id": resource_id,
-                    "hosted": LAMBDA,
-                    "resource_details": json.dumps(resource_details),
-                    "api_key_hash": api_key_hash,
-                    "enterprise": enterprise,
-                }
-            }
-        }
-        logger.debug("Usage (%s details): %s", category, resource_details_payload)
-        self._enqueue_payload(payload=resource_details_payload)
+            api_key_resource_details = self._resource_details[api_key]
+            api_key_resource_details[(category, resource_id)] = resource_details
 
     @staticmethod
     def system_info(
-        exec_session_id: str,
-        api_key_hash: APIKeyHash = "",
         ip_address: Optional[str] = None,
-        time_ns: Optional[int] = None,
-        enterprise: bool = False,
     ) -> SystemDetails:
         if ip_address:
             ip_address_hash_hex = UsageCollector._hash(ip_address)
@@ -268,43 +253,22 @@ class UsageCollector:
 
             ip_address_hash_hex = UsageCollector._hash(ip_address)
 
-        if not time_ns:
-            time_ns = time.time_ns()
-
         return {
-            "timestamp_start": time_ns,
-            "exec_session_id": exec_session_id,
             "ip_address_hash": ip_address_hash_hex,
-            "api_key_hash": api_key_hash,
-            "hosted": LAMBDA,
             "is_gpu_available": False,  # TODO
-            "python_version": sys.version.split()[0],
-            "inference_version": inference_version,
-            "enterprise": enterprise,
         }
 
     def record_system_info(
         self,
-        api_key: str,
         ip_address: Optional[str] = None,
-        enterprise: bool = False,
     ):
-        if self._system_info_sent:
+        if self._system_info:
             return
-        api_key_hash = self._calculate_api_key_hash(api_key=api_key)
-        system_info_payload = {
-            api_key_hash: {
-                "": self.system_info(
-                    exec_session_id=self._exec_session_id,
-                    api_key_hash=api_key_hash,
-                    ip_address=ip_address,
-                    enterprise=enterprise,
-                )
-            }
-        }
-        logger.debug("Usage (system info): %s", system_info_payload)
-        self._enqueue_payload(payload=system_info_payload)
-        self._system_info_sent = True
+        with self._system_info_lock:
+            self._system_info = self.system_info(
+                ip_address=ip_address,
+            )
+        logger.debug("Usage (system info): %s", self._system_info)
 
     @staticmethod
     def _guess_source_type(source: str) -> str:
@@ -342,6 +306,13 @@ class UsageCollector:
         api_key_hash = self._calculate_api_key_hash(api_key=api_key)
         if not resource_id and resource_details:
             resource_id = UsageCollector._calculate_resource_hash(resource_details)
+        with self._resource_details_lock:
+            resource_details = self._resource_details.get(api_key, {}).get(
+                (category, resource_id), {}
+            )
+        with self._system_info_lock:
+            ip_address_hash = self._system_info["ip_address_hash"]
+            is_gpu_available = self._system_info["is_gpu_available"]
         with UsageCollector._lock:
             source_usage = self._usage[api_key_hash][f"{category}:{resource_id}"]
             if not source_usage["timestamp_start"]:
@@ -354,8 +325,11 @@ class UsageCollector:
             )
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
+            source_usage["resource_details"] = json.dumps(resource_details)
             source_usage["api_key_hash"] = api_key_hash
             source_usage["enterprise"] = enterprise
+            source_usage["ip_address_hash"] = ip_address_hash
+            source_usage["is_gpu_available"] = is_gpu_available
             logger.debug("Updated usage: %s", source_usage)
 
     def record_usage(
@@ -372,16 +346,12 @@ class UsageCollector:
     ) -> DefaultDict[str, Any]:
         if self._settings.opt_out and not enterprise:
             return
-        self.record_system_info(
-            api_key=api_key,
-            enterprise=enterprise,
-        )
+        self.record_system_info()
         self.record_resource_details(
             category=category,
             resource_details=resource_details,
             resource_id=resource_id,
             api_key=api_key,
-            enterprise=enterprise,
         )
         self._update_usage_payload(
             source=source,
@@ -475,6 +445,7 @@ class UsageCollector:
         hashes_to_api_keys = dict(a[::-1] for a in self._hashed_api_keys.items())
 
         for payload in payloads:
+            logger.debug("Sending usage payload %s", payload)
             api_keys_hashes_failed = send_usage_payload(
                 payload=payload,
                 api_usage_endpoint_url=self._settings.api_usage_endpoint_url,
@@ -508,8 +479,6 @@ class UsageCollector:
     def _resource_details_from_workflow_json(
         workflow_json: Dict[str, Any]
     ) -> ResourceDetails:
-        if not isinstance(workflow_json, dict):
-            raise ValueError("workflow_json must be dict")
         return {
             "steps": [
                 f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"
@@ -546,7 +515,12 @@ class UsageCollector:
                     usage_api_key = init_parameters["workflows_core.api_key"]
             workflow_json = {}
             if hasattr(workflow, "workflow_json"):
-                workflow_json = workflow.workflow_json
+                if isinstance(workflow.workflow_json, dict):
+                    workflow_json = workflow.workflow_json
+                else:
+                    logger.debug(
+                        "Got non-dict workflow JSON, '%s'", workflow.workflow_json
+                    )
             resource_details = UsageCollector._resource_details_from_workflow_json(
                 workflow_json=workflow_json,
             )
