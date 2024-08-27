@@ -116,6 +116,42 @@ def run_function(self, a, b) -> BlockResult:
     }, "Expected result of 3 + 5 + 6 (last value from init)"
 
 
+def test_assembly_custom_python_block_when_init_not_provided() -> None:
+    # given
+    manifest = BlockManifest
+    run_function = """
+def run_function(self, a, b) -> BlockResult:
+    return {"result": a + b + len(self._init_results)}
+    """
+    python_code = PythonCode(
+        type="PythonCode",
+        run_function_code=run_function,
+        run_function_name="run_function",
+        imports=["import math"],
+    )
+
+    # when
+    workflow_block_class = assembly_custom_python_block(
+        block_type_name="some",
+        unique_identifier="unique-id",
+        manifest=manifest,
+        python_code=python_code,
+    )
+    workflow_block_instance = workflow_block_class()
+    execution_result = workflow_block_instance.run(a=3, b=5)
+
+    # then
+    assert (
+        workflow_block_class.get_init_parameters() == []
+    ), "Expected no init parameters defined"
+    assert (
+        workflow_block_class.get_manifest() == BlockManifest
+    ), "Expected manifest to be returned"
+    assert execution_result == {
+        "result": 8
+    }, "Expected result of 3 + 5 + 0 (last value from init)"
+
+
 def test_assembly_custom_python_block_when_run_function_not_found() -> None:
     # given
     manifest = BlockManifest
