@@ -38,7 +38,7 @@ def test_create_empty_usage_dict():
                     "source_duration": 0,
                     "category": "",
                     "resource_id": "",
-                    "resource_details": {},
+                    "resource_details": "{}",
                     "hosted": LAMBDA,
                     "api_key_hash": "",
                     "is_gpu_available": False,
@@ -537,9 +537,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
 
 def test_system_info():
     # given
-    system_info = UsageCollector.system_info(
-        ip_address="w.x.y.z"
-    )
+    system_info = UsageCollector.system_info(ip_address="w.x.y.z")
 
     # then
     expected_system_info = {

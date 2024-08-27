@@ -131,6 +131,8 @@ def offset_detections(
     parent_id_key: str = PARENT_ID_KEY,
     detection_id_key: str = DETECTION_ID_KEY,
 ) -> sv.Detections:
+    if len(detections) == 0:
+        return detections
     _detections = deepcopy(detections)
     _detections.xyxy = np.array(
         [
