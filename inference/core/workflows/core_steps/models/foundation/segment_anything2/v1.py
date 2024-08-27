@@ -53,6 +53,7 @@ T = TypeVar("T")
 K = TypeVar("K")
 
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
+DETECTION_ID_FIELD = "detection_id"
 
 LONG_DESCRIPTION = """
 Run Segment Anything 2, a zero-shot instance segmentation model, on an image.
@@ -195,6 +196,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
         for single_image, boxes_for_image in zip(images, boxes):
             prompt_class_ids: List[Optional[int]] = []
             prompt_class_names: List[str] = []
+            prompt_detection_ids: List[Optional[str]] = []
 
             prompts = []
             if boxes_for_image is not None:
@@ -202,6 +204,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                     x1, y1, x2, y2 = xyxy
                     prompt_class_ids.append(class_id)
                     prompt_class_names.append(bbox_data[DETECTIONS_CLASS_NAME_FIELD])
+                    prompt_detection_ids.append(bbox_data[DETECTION_ID_FIELD])
                     width = x2 - x1
                     height = y2 - y1
                     cx = x1 + width / 2
@@ -239,6 +242,7 @@ class SegmentAnything2BlockV1(WorkflowBlock):
                 image=single_image,
                 prompt_class_ids=prompt_class_ids,
                 prompt_class_names=prompt_class_names,
+                prompt_detection_ids=prompt_detection_ids,
                 threshold=threshold,
             )
             predictions.append(prediction)
@@ -273,6 +277,7 @@ def convert_sam2_segmentation_response_to_inference_instances_seg_response(
     image: WorkflowImageData,
     prompt_class_ids: List[Optional[int]],
     prompt_class_names: List[Optional[str]],
+    prompt_detection_ids: List[Optional[str]],
     threshold: float,
 ) -> InstanceSegmentationInferenceResponse:
     image_width = image.numpy_image.shape[1]
@@ -283,8 +288,12 @@ def convert_sam2_segmentation_response_to_inference_instances_seg_response(
         prompt_class_names = [
             "foreground" for _ in range(len(sam2_segmentation_predictions))
         ]
-    for prediction, class_id, class_name in zip(
-        sam2_segmentation_predictions, prompt_class_ids, prompt_class_names
+        prompt_detection_ids = [None for _ in range(len(sam2_segmentation_predictions))]
+    for prediction, class_id, class_name, detection_id in zip(
+        sam2_segmentation_predictions,
+        prompt_class_ids,
+        prompt_class_names,
+        prompt_detection_ids,
     ):
         for mask in prediction.masks:
             if len(mask) == 0:
@@ -312,6 +321,7 @@ def convert_sam2_segmentation_response_to_inference_instances_seg_response(
                         "confidence": prediction.confidence,
                         "class": class_name,
                         "class_id": class_id,
+                        "parent_id": detection_id,
                     }
                 )
             )

@@ -187,6 +187,7 @@ def convert_response_dict_to_sv_detections(image: Image, response_dict: Dict):
         image_object,
         [],
         [],
+        [],
         0,
     )
     preds = preds.model_dump(by_alias=True, exclude_none=True)
@@ -194,9 +195,14 @@ def convert_response_dict_to_sv_detections(image: Image, response_dict: Dict):
 
 
 def test_sam2_multi_poly(sam2_tiny_model: str, sam2_multipolygon_response: Dict):
-    payload = deepcopy(payload_)
     image_url = "https://media.roboflow.com/inference/seawithdock.jpeg"
-    payload["image"]["value"] = image_url
+    payload = {
+        "image": {
+            "type": "url",
+            "value": image_url,
+        },
+        "image_id": "test",
+    }
     payload["prompts"] = {
         "prompts": [{"points": [{"x": 58, "y": 379, "positive": True}]}]
     }
@@ -229,13 +235,6 @@ def test_sam2_multi_poly(sam2_tiny_model: str, sam2_multipolygon_response: Dict)
             raise
     except Exception as e:
         raise e
-payload_ = {
-    "image": {
-        "type": "url",
-        "value": "https://source.roboflow.com/D8zLgnZxdqtqF0plJINA/DqK7I0rUz5HBvu1hdNi6/original.jpg",
-    },
-    "image_id": "test",
-}
 
 def test_model_clears_cache_properly(sam2_small_model, truck_image):
     cache_size = 2

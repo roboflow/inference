@@ -113,9 +113,13 @@ def test_sam2_workflow_when_minimal_valid_input_provided(
     assert set(result[0].keys()) == {
         "predictions",
     }, "Expected all declared outputs to be delivered"
-    print(type(result[0]["predictions"]))
+    assert result[0]["predictions"].data["class_name"].tolist() == ["foreground"] * 10
     assert result[0]["predictions"].mask is not None, "Expected mask to be delivered"
-    assert result[0]["predictions"].mask.shape == (10, 427, 640) # many masks in multi polygon mode
+    assert result[0]["predictions"].mask.shape == (
+        10,
+        427,
+        640,
+    )  # many masks in multi polygon mode
     assert (
         result[0]["predictions"].data["prediction_type"][0] == "instance-segmentation"
     )
@@ -224,3 +228,6 @@ def test_grounded_sam2_workflow(
         "dog",
         "dog",
     ], "Expected class names to be correct"
+    assert result[0]["sam_predictions"].data["parent_id"].tolist() == [
+        'image.[0]', 'image.[0]'
+    ], "Expected parent_ids to be correct"
