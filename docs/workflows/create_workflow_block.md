@@ -1133,8 +1133,7 @@ like `sv.Detections` if `model_1` is object-detection model
 
 * under `data["b"]` inside `run(...)`, you will find value of input parameter named `my_parameter`
 
-## Inputs and output dimensionality vs `run(...)` method
-
+### Inputs and output dimensionality vs `run(...)` method
 
 The dimensionality of block inputs plays a crucial role in shaping the `run(...)` method’s signature, and that's 
 why the system enforces strict bounds on the differences in dimensionality levels between inputs 
@@ -1427,9 +1426,473 @@ the method signatures.
         to the output.
 
         * lines `63-64` present impact of dimensionality offsets specified in lines `32-37`. It is clearly
-        visibla that `image_predictions` is a nested batch regarding `image`. Obviously, only nested predictions
+        visible that `image_predictions` is a nested batch regarding `image`. Obviously, only nested predictions
         relevant for the specific `images` are grouped in batch and provided to the method in runtime.
 
         * as mentioned earlier, line `70` construct output being single dictionary, as we register output 
         at dimensionality level of `image` (which was also shipped as single element)
 
+
+??? example "Impact of dimensionality on `run(...)` method - batches enabled"
+
+    === "output dimensionality increase"
+
+        In this example, we perform dynamic crop of image based on predictions.
+
+        ```{ .py linenums="1" hl_lines="31-33 35-37 57-58 72 73-75"}
+        from typing import Dict, List, Literal, Optional, Type, Union
+        from uuid import uuid4
+
+        from inference.core.workflows.execution_engine.constants import DETECTION_ID_KEY
+        from inference.core.workflows.execution_engine.entities.base import (
+            OutputDefinition,
+            WorkflowImageData,
+            ImageParentMetadata,
+            Batch,
+        )
+        from inference.core.workflows.execution_engine.entities.types import (
+            BATCH_OF_IMAGES_KIND,
+            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            StepOutputImageSelector,
+            StepOutputSelector,
+            WorkflowImageSelector,
+        )
+        from inference.core.workflows.prototypes.block import (
+            BlockResult,
+            WorkflowBlock,
+            WorkflowBlockManifest,
+        )
+        
+        class BlockManifest(WorkflowBlockManifest):
+            type: Literal["my_block/dynamic_crop@v1"]
+            image: Union[WorkflowImageSelector, StepOutputImageSelector]
+            predictions: StepOutputSelector(
+                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+            )
+
+            @classmethod
+            def accepts_batch_input(cls) -> bool:
+                return True
+        
+            @classmethod
+            def get_output_dimensionality_offset(cls) -> int:
+                return 1
+        
+            @classmethod
+            def describe_outputs(cls) -> List[OutputDefinition]:
+                return [
+                    OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
+                ]
+        
+            @classmethod
+            def get_execution_engine_compatibility(cls) -> Optional[str]:
+                return ">=1.0.0,<2.0.0"
+
+        class DynamicCropBlockV1(WorkflowBlock):
+
+            @classmethod
+            def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+                return BlockManifest
+            
+            def run(
+                self,
+                image: Batch[WorkflowImageData],
+                predictions: Batch[sv.Detections],
+            ) -> BlockResult:
+                results = []
+                for single_image, detections in zip(image, predictions):
+                    crops = []
+                    for (x_min, y_min, x_max, y_max) in detections.xyxy.round().astype(dtype=int):
+                        cropped_image = single_image.numpy_image[y_min:y_max, x_min:x_max]
+                        parent_metadata = ImageParentMetadata(parent_id=f"{uuid4()}")
+                        if cropped_image.size:
+                            result = WorkflowImageData(
+                                parent_metadata=parent_metadata,
+                                numpy_image=cropped_image,
+                            )
+                        else:
+                            result = None
+                        crops.append({"crops": result})
+                    results.append(crops)
+                return results
+        ```
+      
+        * in lines `31-33` manifest declares that block accepts batches of inputs
+
+        * in lines `35-37` manifest class declares output dimensionality 
+        offset - value `1` should be understand as adding `1` to dimensionality level
+        
+        * in lines `57-68`, signature of input parameters reflects that the `run(...)` method
+        runs against inputs of the same dimensionality and those inputs are provided in batches
+
+        * point out, that in line `72`, block eliminates empty images from further processing but 
+        placing `None` instead of dictionatry with outputs. This would utilise the same 
+        Execution Engine behaviour that is used for conditional execution - datapoint will
+        be eliminated from downstream processing (unless steps requesting empty inputs 
+        are present down the line).
+
+        * construction of the output, presented in lines `73-75` indicates two levels of nesting.
+        First of all, block operates on batches, so it is expected to return list of outputs, one 
+        output for each input batch element. Addiotionally, this output element for each input batch 
+        element turns out to be nested batch - hence for each input iage and prediction, block 
+        generates list of outputs - elements of that list are dictionaries providing values 
+        for each declared output.
+
+    === "output dimensionality decrease"
+      
+        In this example, the block visualises crops predictions and create tiles
+        presenting all crops predictions in single output image.
+
+        ```{ .py linenums="1" hl_lines="31-33 35-37 54-55 68-69"}
+        from typing import List, Literal, Type, Union
+
+        import supervision as sv
+        
+        from inference.core.workflows.execution_engine.entities.base import (
+            Batch,
+            OutputDefinition,
+            WorkflowImageData,
+        )
+        from inference.core.workflows.execution_engine.entities.types import (
+            BATCH_OF_IMAGES_KIND,
+            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            StepOutputImageSelector,
+            StepOutputSelector,
+            WorkflowImageSelector,
+        )
+        from inference.core.workflows.prototypes.block import (
+            BlockResult,
+            WorkflowBlock,
+            WorkflowBlockManifest,
+        )
+        
+        
+        class BlockManifest(WorkflowBlockManifest):
+            type: Literal["my_plugin/tile_detections@v1"]
+            images_crops: Union[WorkflowImageSelector, StepOutputImageSelector]
+            crops_predictions: StepOutputSelector(
+                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+            )
+
+            @classmethod
+            def accepts_batch_input(cls) -> bool:
+                return True
+        
+            @classmethod
+            def get_output_dimensionality_offset(cls) -> int:
+                return -1
+        
+            @classmethod
+            def describe_outputs(cls) -> List[OutputDefinition]:
+                return [
+                    OutputDefinition(name="visualisations", kind=[BATCH_OF_IMAGES_KIND]),
+                ]
+        
+        
+        class TileDetectionsBlock(WorkflowBlock):
+        
+            @classmethod
+            def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+                return BlockManifest
+        
+            def run(
+                self,
+                images_crops: Batch[Batch[WorkflowImageData]],
+                crops_predictions: Batch[Batch[sv.Detections]],
+            ) -> BlockResult:
+                annotator = sv.BoundingBoxAnnotator()
+                visualisations = []
+                for image_crops, crop_predictions in zip(images_crops, crops_predictions):
+                    visualisations_batch_element = []
+                    for image, prediction in zip(image_crops, crop_predictions):
+                        annotated_image = annotator.annotate(
+                            image.numpy_image.copy(),
+                            prediction,
+                        )
+                        visualisations_batch_element.append(annotated_image)
+                    tile = sv.create_tiles(visualisations_batch_element)
+                    visualisations.append({"visualisations": tile})
+                return visualisations
+        ```
+        
+        * lines `31-33` manifest that block is expected to take batches as input
+
+        * in lines `35-37` manifest class declares output dimensionality 
+        offset - value `-1` should be understand as decreasing dimensionality level by `1`
+
+        * in lines `54-55` you can see the impact of output dimensionality decrease
+        and batch processing on the method signature. First "layer" of `Batch[]` is a side effect of the 
+        fact that manifest declared that block accepts batches of inputs. The second "layer" comes 
+        from output dimensionality decrease. Execution Engine wrapps up the dimension to be reduced into 
+        additional `Batch[]` container porvided in inputs, such that programmer is able to collect all nested
+        batches elements that belong to specific top-level batch element.
+
+        * lines `68-69` illustrate how output is constructed - for each top-level batch element, block
+        aggregates all crops and predictions and create a single tile. As block accepts batches of inputs,
+        this procedure end up with one tile for each top-level batch element - hence list of dictionaries
+        is expected to be returned.
+
+    === "different input dimensionalities"
+        
+        In this example, block merges detections which were predicted based on 
+        crops of original image - result is to provide single detections with 
+        all partial ones being merged.
+
+        ```{ .py linenums="1" hl_lines="32-34 36-41 43-45 67-68 77-78"}
+        from copy import deepcopy
+        from typing import Dict, List, Literal, Optional, Type, Union
+        
+        import numpy as np
+        import supervision as sv
+        
+        from inference.core.workflows.execution_engine.entities.base import (
+            Batch,
+            OutputDefinition,
+            WorkflowImageData,
+        )
+        from inference.core.workflows.execution_engine.entities.types import (
+            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            StepOutputImageSelector,
+            StepOutputSelector,
+            WorkflowImageSelector,
+        )
+        from inference.core.workflows.prototypes.block import (
+            BlockResult,
+            WorkflowBlock,
+            WorkflowBlockManifest,
+        )
+        
+        
+        class BlockManifest(WorkflowBlockManifest):
+            type: Literal["my_plugin/stitch@v1"]
+            images: Union[WorkflowImageSelector, StepOutputImageSelector]
+            images_predictions: StepOutputSelector(
+                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+            )
+
+            @classmethod
+            def accepts_batch_input(cls) -> bool:
+                return True
+                
+            @classmethod
+            def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
+                return {
+                    "image": 0,
+                    "image_predictions": 1,
+                }
+        
+            @classmethod
+            def get_dimensionality_reference_property(cls) -> Optional[str]:
+                return "image"
+        
+            @classmethod
+            def describe_outputs(cls) -> List[OutputDefinition]:
+                return [
+                    OutputDefinition(
+                        name="predictions",
+                        kind=[
+                            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+                        ],
+                    ),
+                ]
+        
+        
+        class StitchDetectionsBatchBlock(WorkflowBlock):
+        
+            @classmethod
+            def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+                return BlockManifest
+        
+            def run(
+                self,
+                images: Batch[WorkflowImageData],
+                images_predictions: Batch[Batch[sv.Detections]],
+            ) -> BlockResult:
+                result = []
+                for image, image_predictions in zip(images, images_predictions):
+                    image_predictions = [deepcopy(p) for p in image_predictions if len(p)]
+                    for p in image_predictions:
+                        coords = p["parent_coordinates"][0]
+                        p.xyxy += np.concatenate((coords, coords))
+                    merged_prediction = sv.Detections.merge(image_predictions)
+                    result.append({"predictions": merged_prediction})
+                return result
+        ```
+
+        * lines `32-34` manifest that block is expected to take batches as input
+
+        * in lines `36-41` manifest class declares input dimensionalities offset, indicating
+        `image` parameter being top-level and `image_predictions` being nested batch of predictions
+
+        * whenever different input dimensionalities are declared, dimensionality reference property
+        must be pointed (see lines `43-45`) - this dimensionality level would be used to calculate 
+        output dimensionality - in this particular case, we specify `image`. This choice 
+        has an implication in the expected format of result - in the chosen scenario we are supposed
+        to return single dictionary for each element of `image` batch. If our choice is `image_predictions`,
+        we would return list of dictionaries (of size equal to length of nested `image_predictions` batch) for each
+        input `image` batch element.
+
+        * lines `67-68` present impact of dimensionality offsets specified in lines `36-41` as well as 
+        the declararion of batch processing from lines `32-34`. First "layer" of `Batch[]` container comes 
+        from the latter, nested `Batch[Batch[]]` for `images_predictions` comes from the definition of input 
+        dimensionality offset. It is clearly visible that `image_predictions` holds batch of predictions relevant
+        for specific elements of `image` batch.
+        
+        * as mentioned earlier, lines `77-78` construct output being single dictionary for each element of `image` 
+        batch
+
+
+### Block accepting empty inputs
+
+As discussed earlier, some batch elements may become "empty" during the execution of a Workflow. 
+This can happen due to several factors:
+
+* **Flow-control mechanisms:** Certain branches of execution can mask specific batch elements, preventing them 
+from being processed in subsequent steps.
+
+* **In data-processing blocks:** In some cases, a block may not be able to produce a meaningful output for 
+a specific data point. For example, a Dynamic Crop block cannot generate a cropped image if the bounding box 
+size is zero.
+
+Some blocks are designed to handle these empty inputs, such as block that can replace missing outputs with default 
+values. This block can be particularly useful when constructing structured outputs in a Workflow, ensuring 
+that even if some elements are empty, the output lacks missing elements making it harder to parse.
+
+??? example "Block accepting empty inputs"
+
+    ```{ .py linenums="1" hl_lines="20-22 41"}
+    from typing import Any, List, Literal, Optional, Type
+
+    from inference.core.workflows.execution_engine.entities.base import (
+        Batch,
+        OutputDefinition,
+    )
+    from inference.core.workflows.execution_engine.entities.types import StepOutputSelector
+    from inference.core.workflows.prototypes.block import (
+        BlockResult,
+        WorkflowBlock,
+        WorkflowBlockManifest,
+    )
+
+
+    class BlockManifest(WorkflowBlockManifest):
+        type: Literal["my_plugin/first_non_empty_or_default@v1"]
+        data: List[StepOutputSelector()]
+        default: Any
+    
+        @classmethod
+        def accepts_empty_values(cls) -> bool:
+            return True
+    
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return [OutputDefinition(name="output")]
+    
+        @classmethod
+        def get_execution_engine_compatibility(cls) -> Optional[str]:
+            return ">=1.0.0,<2.0.0"
+    
+    
+    class FirstNonEmptyOrDefaultBlockV1(WorkflowBlock):
+    
+        @classmethod
+        def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+            return BlockManifest
+    
+        def run(
+            self,
+            data: Batch[Optional[Any]],
+            default: Any,
+        ) -> BlockResult:
+            result = default
+            for data_element in data:
+                if data_element is not None:
+                    return {"output": data_element}
+            return {"output": result}
+    ```
+
+    * in lines `20-22` you may find declaration stating that block acccepts empt inputs 
+    
+    * a consequence of lines `20-22` is visible in line `41`, when signature states that 
+    input `Batch` may contain empty elements that needs to be handled. In fact - the block 
+    generates "artificial" output substituting empty value, which makes it possible for 
+    those outputs to be "visible" for blocks not accepting empty inputs that refer to the 
+    output of this block. You should assume that each input that is substituted by Execution
+    Engine with data generated in runtime may provide optional elements.
+
+
+### Block with custom constructor parameters
+
+Some blocks may require objects constructed by outside world to work. In such
+scenario, Workflows Execution Engine job is to transfer those entities to the block, 
+making it possible to be used. The mechanism is described in 
+[the page presenting Workflows Compiler](/workflows/workflows_compiler/), as this is the 
+component responsible for dynamic construction of steps from blocks classes.
+
+Constructor parameters must be:
+
+* requested by block - using class method `WorkflowBlock.get_init_parameters(...)`
+
+* provided in the environment running Workflows Execution Engine:
+
+    * directly, as shown in [this](/workflows/modes_of_running/#workflows-in-python-package) example
+    
+    * using defaults [registered for Workflow plugin](/workflows/blocks_bundling)
+
+Let's see how to request init parameters while defining block.
+
+??? example "Block requesting constructor parameters"
+
+    ```{ .py linenums="1" hl_lines="30-31 33-35"}
+    from typing import Any, List, Literal, Optional, Type
+
+    from inference.core.workflows.execution_engine.entities.base import (
+        Batch,
+        OutputDefinition,
+    )
+    from inference.core.workflows.execution_engine.entities.types import StepOutputSelector
+    from inference.core.workflows.prototypes.block import (
+        BlockResult,
+        WorkflowBlock,
+        WorkflowBlockManifest,
+    )
+
+
+    class BlockManifest(WorkflowBlockManifest):
+        type: Literal["my_plugin/example@v1"]
+        data: List[StepOutputSelector()]
+    
+        @classmethod
+        def describe_outputs(cls) -> List[OutputDefinition]:
+            return [OutputDefinition(name="output")]
+    
+        @classmethod
+        def get_execution_engine_compatibility(cls) -> Optional[str]:
+            return ">=1.0.0,<2.0.0"
+    
+    
+    class ExampleBlock(WorkflowBlock):
+      
+        def __init__(my_parameter: int):
+            self._my_parameter = my_parameter
+
+        @classmethod
+        def get_init_parameters(cls) -> List[str]:
+            return ["my_parameter"]
+        
+        @classmethod
+        def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+            return BlockManifest
+    
+        def run(
+            self,
+            data: Batch[Any],
+        ) -> BlockResult:
+            pass
+    ```
+
+    * lines `30-31` declare class constructor which is not parameter-freee
+
+    * to inform Execution Engine that block requires custom initialisation, 
+    `get_init_parameters(...)` method in lines `33-35` enlists names of all 
+    parameters that must be provided

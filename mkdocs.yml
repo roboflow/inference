@@ -84,7 +84,7 @@ nav:
         - Kinds: workflows/kinds.md
         - Blocks development: workflows/create_workflow_block.md
         - Plugins: workflows/blocks_bundling.md
-        - Blocks with Python code: workflows/custom_python_code_blocks.md
+        - Dynamic Python blocks: workflows/custom_python_code_blocks.md
         - Versioning: workflows/versioning.md
         - Testing: workflows/testing.md
   - Reference:
