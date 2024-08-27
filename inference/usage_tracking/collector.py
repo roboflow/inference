@@ -138,7 +138,7 @@ class UsageCollector:
                     "source_duration": 0,
                     "category": "",
                     "resource_id": "",
-                    "resource_details": {},
+                    "resource_details": "{}",
                     "hosted": LAMBDA,
                     "api_key_hash": "",
                     "is_gpu_available": False,
@@ -325,7 +325,7 @@ class UsageCollector:
             )
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
-            source_usage["resource_details"] = resource_details
+            source_usage["resource_details"] = json.dumps(resource_details)
             source_usage["api_key_hash"] = api_key_hash
             source_usage["enterprise"] = enterprise
             source_usage["ip_address_hash"] = ip_address_hash

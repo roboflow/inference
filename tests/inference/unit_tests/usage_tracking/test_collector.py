@@ -38,7 +38,7 @@ def test_create_empty_usage_dict():
                     "source_duration": 0,
                     "category": "",
                     "resource_id": "",
-                    "resource_details": {},
+                    "resource_details": "{}",
                     "hosted": LAMBDA,
                     "api_key_hash": "",
                     "is_gpu_available": False,
