@@ -41,7 +41,7 @@ from inference.core.env import (
 )
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
-from inference.core.utils.postprocess import masks2poly
+from inference.core.utils.postprocess import masks2multipoly
 
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -303,6 +303,8 @@ class SegmentAnything2(RoboflowCoreModel):
                 )
 
             args = pad_points(args)
+            if not any(args.values()):
+                args = {"point_coords": [[0, 0]], "point_labels": [-1], "box": None}
             masks, scores, low_resolution_logits = self.predictor.predict(
                 mask_input=mask_input,
                 multimask_output=multimask_output,
@@ -484,10 +486,10 @@ def turn_segmentation_results_into_api_response(
     inference_start_timestamp: float,
 ) -> Sam2SegmentationResponse:
     predictions = []
-    masks_plygons = masks2poly(masks >= mask_threshold)
+    masks_plygons = masks2multipoly(masks >= mask_threshold)
     for mask_polygon, score in zip(masks_plygons, scores):
         prediction = Sam2SegmentationPrediction(
-            mask=mask_polygon.tolist(),
+            masks=[mask.tolist() for mask in mask_polygon],
             confidence=score.item(),
         )
         predictions.append(prediction)

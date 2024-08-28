@@ -26,7 +26,7 @@ class Sam2SegmentationPrediction(BaseModel):
         time (float): The time in seconds it took to produce the segmentation including preprocessing.
     """
 
-    mask: List[List[int]] = Field(
+    masks: List[List[List[int]]] = Field(
         description="The set of points for output mask as polygon. Each element of list represents single point.",
     )
     confidence: float = Field(description="Masks confidences")

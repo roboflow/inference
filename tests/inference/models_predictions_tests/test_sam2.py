@@ -1,13 +1,27 @@
 import numpy as np
 import pytest
 import torch
+import json
+import requests
+from copy import deepcopy
 
+from PIL import Image
+from io import BytesIO
 from inference.core.entities.requests.sam2 import Sam2PromptSet
 from inference.models.sam2 import SegmentAnything2
 from inference.models.sam2.segment_anything2 import (
     hash_prompt_set,
     maybe_load_low_res_logits_from_cache,
 )
+from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
+    convert_sam2_segmentation_response_to_inference_instances_seg_response,
+)
+from inference.core.workflows.core_steps.common.utils import (
+    convert_inference_detections_batch_to_sv_detections,
+)
+from inference.core.entities.responses.sam2 import Sam2SegmentationPrediction
+from inference.core.entities.requests.sam2 import Sam2SegmentationRequest
+from typing import Dict
 
 
 @pytest.mark.slow
@@ -162,6 +176,66 @@ def test_sam2_single_prompted_image_segmentation_mask_cache_changes_behavior(
     assert np.allclose(sam2_small_truck_mask_from_cached_logits, masks2, atol=0.01)
 
 
+def convert_response_dict_to_sv_detections(image: Image, response_dict: Dict):
+    class DummyImage:
+        def __init__(self, image_array):
+            self.numpy_image = image_array
+
+    image_object = DummyImage(np.asarray(image))
+    preds = convert_sam2_segmentation_response_to_inference_instances_seg_response(
+        [Sam2SegmentationPrediction(**p) for p in response_dict["predictions"]],
+        image_object,
+        [],
+        [],
+        [],
+        0,
+    )
+    preds = preds.model_dump(by_alias=True, exclude_none=True)
+    return convert_inference_detections_batch_to_sv_detections([preds])[0]
+
+
+def test_sam2_multi_poly(sam2_tiny_model: str, sam2_multipolygon_response: Dict):
+    image_url = "https://media.roboflow.com/inference/seawithdock.jpeg"
+    payload = {
+        "image": {
+            "type": "url",
+            "value": image_url,
+        },
+        "image_id": "test",
+    }
+    payload["prompts"] = {
+        "prompts": [{"points": [{"x": 58, "y": 379, "positive": True}]}]
+    }
+    payload["image_id"] = "test_seawithdock"
+    model = SegmentAnything2(model_id=sam2_tiny_model)
+    request = Sam2SegmentationRequest(**payload)
+    response = model.infer_from_request(request)
+    try:
+        sam2_multipolygon_response = deepcopy(sam2_multipolygon_response)
+        data = response.model_dump()
+        with open("test_multi.json", "w") as f:
+            json.dump(data, f)
+        response = requests.get(image_url)
+        image = Image.open(BytesIO(response.content))
+        preds = convert_response_dict_to_sv_detections(image, data)
+        ground_truth = convert_response_dict_to_sv_detections(
+            image, sam2_multipolygon_response
+        )
+        preds_bool_mask = np.logical_or.reduce(preds.mask, axis=0)
+        ground_truth_bool_mask = np.logical_or.reduce(ground_truth.mask, axis=0)
+        iou = (
+            np.logical_and(preds_bool_mask, ground_truth_bool_mask).sum()
+            / np.logical_or(preds_bool_mask, ground_truth_bool_mask).sum()
+        )
+        assert iou > 0.99
+        try:
+            assert "predictions" in data
+        except:
+            print(f"Invalid response: {data}, expected 'predictions' in response")
+            raise
+    except Exception as e:
+        raise e
+
 def test_model_clears_cache_properly(sam2_small_model, truck_image):
     cache_size = 2
     model = SegmentAnything2(
@@ -176,7 +250,7 @@ def test_model_clears_cache_properly(sam2_small_model, truck_image):
     for i in range(5):
         masks, scores, low_res_logits = model.segment_image(
             truck_image,
-            image_id = f"truck_{i}",
+            image_id=f"truck_{i}",
             prompts=prompt,
             save_logits_to_cache=True,
             load_logits_from_cache=True,
