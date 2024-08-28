@@ -57,7 +57,7 @@ Please note that for each inserted image we will have nested batch of crops (wit
 dynamically determined in runtime, based on first model predictions) and for each crop
 we apply secondary model.
 
-Secondary model is supposed to predict make prediction from dogs breed classifier model 
+Secondary model is supposed to make prediction from dogs breed classifier model 
 to assign detailed class for each dog instance.
     """,
     workflow_definition=DETECTION_PLUS_CLASSIFICATION_WORKFLOW,

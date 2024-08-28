@@ -6,7 +6,7 @@ especially from blocks developer perspective. Those are rules that apply:
 * Workflows is part of `inference` - the package itself has a release whenever 
 any of its component changes and those changes are ready to be published
 
-* Workflows Execution Engine declare it's version. The game plan is the following:
+* Workflows Execution Engine declares it's version. The game plan is the following:
 
     * core of workflows is capable to host multiple versions of Execution Engine - 
     for instance current stable version and development version
@@ -20,7 +20,7 @@ any of its component changes and those changes are ready to be published
     be left as is. During grace period we will call blocks creators to upgrade 
     their plugins according to requirements of new version
 
-    * core library do only maintain single Execution Engine version for each major -
+    * core library only maintains single Execution Engine version for each major -
     making a promise that features within major will be non-breaking and Workflow 
     created under version `1.0.0` will be fully functional under version `1.4.3` of 
     Execution Engine

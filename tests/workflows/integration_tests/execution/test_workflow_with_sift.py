@@ -94,7 +94,7 @@ for (which is a valid output if no feature gets recognised) the sift comparison 
 execute - hence First Non Empty Or Default block is used to provide default outcome 
 for `images_match` output of SIFT comparison block.
 
-Please point out that a single image can be passed as template, and batch of images
+Please note that a single image can be passed as template, and batch of images
 are passed as images to look for template. This workflow does also validate
 Execution Engine capabilities to broadcast batch-oriented inputs properly.
     """,

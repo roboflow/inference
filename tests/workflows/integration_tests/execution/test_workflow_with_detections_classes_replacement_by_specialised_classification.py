@@ -59,7 +59,7 @@ DETECTION_CLASSES_REPLACEMENT_WORKFLOW = {
     use_case_title="Workflow with classifier providing detailed labels for detected objects",
     use_case_description="""
 This example illustrates how helpful Workflows could be when you have generic object detection model 
-(capable to detect common classes - like dogs) and specific classifier (capable to provide granular 
+(capable of detecting common classes - like dogs) and specific classifier (capable of providing granular 
 predictions for narrow high-level classes of objects - like dogs breed classifier). Having list
 of classifier predictions for each detected dog is not handy way of dealing with output - 
 as you kind of loose the information about location of specific dog. To avoid this problem, you
@@ -69,7 +69,7 @@ classes predicted by classifier.
 In this example, we use Detections Classes Replacement block which is also interesting from the 
 perspective of difference of its inputs dimensionality levels. `object_detection_predictions` input
 has level 1 (there is one prediction with bboxes for each input image) and `classification_predictions`
-has level 2 (there is bunch of classification results for each input image). The block combines that
+has level 2 (there are bunch of classification results for each input image). The block combines that
 two inputs and produces result at dimensionality level 1 - exactly the same as predictions from 
 object detection model.
     """,

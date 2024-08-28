@@ -39,7 +39,7 @@ CLIP_WORKFLOW = {
     use_case_description="""
 This is the basic workflow that only contains a single CLIP model block. 
 
-Please take a look on how batch-oriented WorkflowImage data is plugged to 
+Please take a look at how batch-oriented WorkflowImage data is plugged to 
 detection step via input selector (`$inputs.image`) and how non-batch parameters 
 (reference set of texts that the each image in batch will be compared to)
 is dynamically specified - via `$inputs.reference` selector.

@@ -98,8 +98,8 @@ to make the job easier for the secondary (plates detection) model we enlarge bou
 offsetting its dimensions with Detections Offset block - later we apply cropping to be able to run
 license plate detection for every detected car instance (increasing the depth of the batch). Once secondary model
 runs and we have bounding boxes for license plates - we crop previously cropped cars images to extract plates.
-Once this is done, plates crops are passed to OCR step which turn images of plates into text. 
-    """,
+Once this is done, plates crops are passed to OCR step which turns images of plates into text. 
+""",
     workflow_definition=MULTI_STAGES_WORKFLOW,
 )
 def test_detection_plus_ocr_workflow_when_minimal_valid_input_provided(

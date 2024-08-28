@@ -59,8 +59,8 @@ ABSOLUTE_STATIC_CROP_WORKFLOW = {
     use_case_description="""
 This is the basic workflow that contains single transformation (static crop)
 followed by object detection model. This example may be inspiration for anyone
-that would like to run specific model only on specific part of the image.
-The Region of Interest do not necessarily must be defined statically - 
+who would like to run specific model only on specific part of the image.
+The Region of Interest does not necessarily have to be defined statically - 
 please note that coordinates of static crops are referred via input selectors, 
 which means that each time you run the workflow (for instance in each different
 physical location, where RoI for static crop is location-dependent) you may 

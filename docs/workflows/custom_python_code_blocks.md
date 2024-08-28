@@ -9,8 +9,8 @@ Execution Engine. These in-place blocks function similarly to those statically d
 
 !!! Warning
 
-    Dynamic blocks only work in your local deployment of `inference` and is not supported 
-    at Roboflow hosted platform.
+    Dynamic blocks only work in your local deployment of `inference` and are not supported 
+    on the Roboflow hosted platform.
 
     If you wish to disable the functionality, `export ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False`
 
@@ -18,7 +18,7 @@ Execution Engine. These in-place blocks function similarly to those statically d
 
 The high-level overview of Dynamic Python blocks functionality:
 
-* user provide definition of dynamic block in JSON
+* user provides definition of dynamic block in JSON
 
 * definition contains information required by Execution Engine to
 construct `WorkflowBlockManifest` and `WorkflowBlock` out of the 
@@ -253,7 +253,7 @@ Python code is shipped in JSON document with the following fields:
 * `run_function_name` - name of run function
 
 * `init_function_code` - optional code for your init function that will 
-assembly step state - it is expected to return dictionary, which will be available for `run()`
+assemble step state - it is expected to return dictionary, which will be available for `run()`
 function under `self._init_results`
 
 * `init_function_name` - name of init function
@@ -267,7 +267,7 @@ automatically installed)
 You must know the following:
 
 * `run(...)` function must be defined, as if that was class instance method - with 
-the first argument being `self` and remaining argument be based on dynamic block manifest
+the first argument being `self` and remaining arguments compatible with dynamic block manifest
 declared in definition of dynamic block
 
 * you should expect baseline symbols to be provided, including your import statements and
@@ -288,7 +288,7 @@ from inference.core.workflows.execution_engine.entities.base import Batch, Workf
 from inference.core.workflows.prototypes.block import BlockResult
 ```
 
-So example function may look the following (for clarity, we provide here 
+So example function may look like the following (for clarity, we provide here
 Python code formatted nicely, but you must stringify the code to place it in definition):
 
 ```python
@@ -331,7 +331,7 @@ def my_init() -> Dict[str, Any]:
 ### Usage of Dynamic Python block as step
 
 As shown in example Workflow definition, you may simply use the block 
-as if that were normal block exposed through static plugin:
+as if that was normal block exposed through static plugin:
 
 ```json
 {

@@ -27,12 +27,12 @@ Running Workflows with Roboflow Hosted API has several limitations:
 - Workflow runtime is limited to 20s
 
 - Response payload is limited to 6MB, which means that some blocks (especially visualization ones) if used
-in to large numbers, or with input images that are too large may fail request
+in too large numbers, or with input images that are too large may result in failed request
 
 
 
 Integrating via HTTP is simple: just send a [request](https://detect.roboflow.com/docs#/default/infer_from_predefined_workflow__workspace_name__workflows__workflow_id__post)
-to the server. You can do this using an HTTP client library in your preferred programming language, 
+to the server. You can do this using a HTTP client library in your preferred programming language, 
 leverage our Inference SDK in Python, or even use cURL. Explore the examples below to see how it’s done.
 
 !!! example "HTTP integration"
@@ -58,7 +58,7 @@ leverage our Inference SDK in Python, or even use cURL. Explore the examples bel
         - `<your-workspace-name>`, `<your-workflow-id>`, `<YOUR-API-KEY>` must be replaced with actual values - 
         valid for your Roboflow account
         
-        - keys of `inputs` dictionary are dicated by your Workflow, names may differ **dependent on 
+        - keys of `inputs` dictionary are dictated by your Workflow, names may differ **dependent on 
         parameters you define**
     
         - values of `inputs` dictionary are also dependent on your Workflow definition - inputs declared as
@@ -85,7 +85,7 @@ leverage our Inference SDK in Python, or even use cURL. Explore the examples bel
             },
             parameters={
                 "parameter": "some-value"
-            }           
+            }     
         )
         ```
 
@@ -127,7 +127,7 @@ leverage our Inference SDK in Python, or even use cURL. Explore the examples bel
             },
             parameters={
                 "parameter": "some-value"
-            }           
+            }    
         )
         ```
 
@@ -207,7 +207,7 @@ Explore the example below to see how to combine `InferencePipeline` with Workflo
     valid for your Roboflow account
     
     - your Workflow must accept video frames under `image` parameter - when multiple video streams are 
-    given for processing, all collected video frames will be submited in batch under `image` parameter 
+    given for processing, all collected video frames will be submitted in batch under `image` parameter  
     for workflow run. `image` parameter must be single batch oriented input of your workflow
 
     - additional (non-batch oriented) inputs for your workflow can be passed as parameter to `init_with_workflow(...)` 
@@ -215,21 +215,21 @@ Explore the example below to see how to combine `InferencePipeline` with Workflo
 
     !!! note
         
-        Make sure you have `inference` package installed in your Python environment
+        Make sure you have `inference` or `inference-gpu` package installed in your Python environment
 
 
 ## Workflows in Python package
 
-Workflows Compiler and Execution Engine is bundled with [`inference`](https://pypi.org/project/inference/) package.
+Workflows Compiler and Execution Engine are bundled with [`inference`](https://pypi.org/project/inference/) package.
 Running Workflow directly may be ideal for clients who:
 
 - maintain their applications in Python
 
 - agree for resource-heavy computations directly in their app
 
-- wants to avoid additional latency and errors related to sending HTTP requests
+- want to avoid additional latency and errors related to sending HTTP requests
 
-- expects full control over Workflow execution
+- expect full control over Workflow execution
 
 In this scenario, you are supposed to provide all required initialisation values for blocks used in your Workflow, what
 makes this mode most technologically challenging, requiring you to understand handful of topics that we cover in 

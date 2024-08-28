@@ -72,9 +72,9 @@ EXPECTED_OBJECT_DETECTION_CONFIDENCES = np.array(
     use_case_description="""
 This is the basic workflow that only contains a single object detection model. 
 
-Please take a look on how batch-oriented WorkflowImage data is plugged to 
+Please take a look at how batch-oriented WorkflowImage data is plugged to 
 detection step via input selector (`$inputs.image`) and how non-batch parameters
-are dynamically specify - via `$inputs.model_id` and `$inputs.confidence` selectors.
+are dynamically specified - via `$inputs.model_id` and `$inputs.confidence` selectors.
     """,
     workflow_definition=OBJECT_DETECTION_WORKFLOW,
 )
