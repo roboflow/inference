@@ -218,7 +218,7 @@ def test_describe_available_blocks_when_valid_plugins_are_loaded(
     assert result.blocks[0].manifest_class == plugin_with_valid_blocks.Block1Manifest
     assert result.blocks[1].block_class == plugin_with_valid_blocks.Block2
     assert result.blocks[1].manifest_class == plugin_with_valid_blocks.Block2Manifest
-    assert len(result.declared_kinds) == 36
+    assert len(result.declared_kinds) == 29
 
 
 @mock.patch.object(blocks_loader, "load_workflow_blocks")
@@ -259,7 +259,7 @@ def test_describe_available_blocks_when_valid_plugins_are_loaded_and_multiple_ve
         result.blocks[2].manifest_class
         == plugin_with_multiple_versions_of_blocks.Block2Manifest
     )
-    assert len(result.declared_kinds) == 36
+    assert len(result.declared_kinds) == 29
 
 
 @mock.patch.object(blocks_loader, "load_workflow_blocks")
