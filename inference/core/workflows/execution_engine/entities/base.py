@@ -27,7 +27,7 @@ from inference.core.utils.image_utils import (
     load_image_from_url,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_IMAGES_KIND,
+    IMAGE_KIND,
     VIDEO_METADATA_KIND,
     WILDCARD_KIND,
     Kind,
@@ -64,7 +64,7 @@ class WorkflowInput(BaseModel):
 class WorkflowImage(WorkflowInput):
     type: Literal["WorkflowImage", "InferenceImage"]
     name: str
-    kind: List[Kind] = Field(default=[BATCH_OF_IMAGES_KIND])
+    kind: List[Kind] = Field(default=[IMAGE_KIND])
 
     @classmethod
     def is_batch_oriented(cls) -> bool:

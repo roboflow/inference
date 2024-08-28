@@ -9,7 +9,6 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_INTEGER_KIND,
     INTEGER_KIND,
     RGB_COLOR_KIND,
     STRING_KIND,
@@ -73,7 +72,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="matching_pixels_count",
-                kind=[BATCH_OF_INTEGER_KIND],
+                kind=[INTEGER_KIND],
             ),
         ]
 

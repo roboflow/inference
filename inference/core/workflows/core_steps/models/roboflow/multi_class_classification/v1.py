@@ -23,8 +23,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BOOLEAN_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
@@ -106,9 +106,7 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(
-                name="predictions", kind=[BATCH_OF_CLASSIFICATION_PREDICTION_KIND]
-            ),
+            OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
         ]
 
     @classmethod

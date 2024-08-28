@@ -26,9 +26,9 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
@@ -166,7 +166,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="predictions",
-                kind=[BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND],
+                kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
             ),
         ]
 

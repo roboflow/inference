@@ -12,8 +12,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_IMAGES_KIND,
     CONTOURS_KIND,
+    IMAGE_KIND,
     INTEGER_KIND,
     NUMPY_ARRAY_KIND,
     StepOutputImageSelector,
@@ -64,7 +64,7 @@ class ImageContoursDetectionManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name=OUTPUT_IMAGE_KEY,
                 kind=[
-                    BATCH_OF_IMAGES_KIND,
+                    IMAGE_KIND,
                 ],
             ),
             OutputDefinition(

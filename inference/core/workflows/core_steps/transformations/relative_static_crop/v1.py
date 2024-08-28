@@ -12,8 +12,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_IMAGES_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
     FloatZeroToOne,
     ImageInputField,
     StepOutputImageSelector,
@@ -81,7 +81,7 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
+            OutputDefinition(name="crops", kind=[IMAGE_KIND]),
         ]
 
     @classmethod
