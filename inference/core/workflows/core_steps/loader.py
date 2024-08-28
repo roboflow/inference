@@ -27,6 +27,9 @@ from inference.core.workflows.core_steps.classical_cv.template_matching.v1 impor
 from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
     ImageThresholdBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
+    CameraFocusBlockV1,
+)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
@@ -283,6 +286,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ConvertGrayscaleBlockV1,
         ImageThresholdBlockV1,
         ImageContoursDetectionBlockV1,
+        CameraFocusBlockV1,
     ]
 
 
