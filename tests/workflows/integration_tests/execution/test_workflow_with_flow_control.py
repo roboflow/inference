@@ -9,6 +9,9 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 AB_TEST_WORKFLOW = {
     "version": "1.0",
@@ -413,29 +416,26 @@ WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with flow control",
+    use_case_title="Workflow with if statement applied on nested batches",
+    use_case_description="""
+In this test scenario we verify if we can successfully apply conditional
+branching when data dimensionality increases.
+We first make detections on input images and perform crop increasing
+dimensionality to 2. Then we make another detections on cropped images
+and check if inside crop we only see one instance of class dog (very naive
+way of making sure that bboxes contain only single objects).
+Only if that condition is true, we run classification model - to
+classify dog breed.
+    """,
+    workflow_definition=WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS,
+)
 def test_flow_control_step_affecting_data_with_increased_dimensionality(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
     dogs_image: np.ndarray,
 ) -> None:
-    """
-    In this test scenario we verify if we can successfully apply conditional
-    branching when data dimensionality increases.
-    We first make detections on input images and perform crop increasing
-    dimensionality to 2. Then we make another detections on cropped images
-    and check if inside crop we only see one instance of class dog (very naive
-    way of making sure that bboxes contain only single objects).
-    Only if that condition is true, we run classification model - to
-    classify dog breed.
-
-    What is verified from EE standpoint:
-    * Creating execution branches for each batch element separately on deeper
-    dimensionality levels and then executing downstream step according to
-    decision made previously - with execution branches being independent
-    * proper behavior of steps expecting non-empty inputs w.r.t. masks for
-    execution branches
-    * correctness of building nested outputs
-    """
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -564,6 +564,18 @@ WORKFLOW_WITH_NON_BATCH_CONDITION_BASED_ON_INPUT_AFFECTING_FURTHER_EXECUTION = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with flow control",
+    use_case_title="Workflow with if statement applied on non batch-oriented input",
+    use_case_description="""
+In this test scenario we show that we can use non-batch oriented conditioning (ContinueIf block).
+
+If statement is effectively applied on input parameter that would determine path of execution for
+all data passed in `image` input. When the value matches expectation - all dependent steps
+will be executed, otherwise only the independent ones.
+    """,
+    workflow_definition=WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS,
+)
 def test_flow_control_workflow_where_non_batch_nested_parameter_affects_further_execution_when_condition_is_met(
     model_manager: ModelManager,
     crowd_image: np.ndarray,

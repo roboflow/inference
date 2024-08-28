@@ -133,7 +133,7 @@ class InferencePipeline:
         to reflect changes in sink function signature.
 
         Args:
-            model_id (str): Name and version of model at Roboflow platform (example: "my-model/3")
+            model_id (str): Name and version of model on the Roboflow platform (example: "my-model/3")
             video_reference (Union[str, int, List[Union[str, int]]]): Reference of source or sources to be used to make
                 predictions against. It can be video file path, stream URL and device (like camera) id
                 (we handle whatever cv2 handles). It can also be a list of references (since v0.9.18) - and then
@@ -464,7 +464,7 @@ class InferencePipeline:
             api_key (Optional[str]): Roboflow API key - if not passed - will be looked in env under "ROBOFLOW_API_KEY"
                 and "API_KEY" variables. API key, passed in some form is required.
             image_input_name (str): Name of input image defined in `workflow_specification` or Workflow definition saved
-                at Roboflow Platform. `InferencePipeline` will be injecting video frames to workflow through that
+                on the Roboflow Platform. `InferencePipeline` will be injecting video frames to workflow through that
                 parameter name.
             workflows_parameters (Optional[Dict[str, Any]]): Dictionary with additional parameters that can be
                 defined within `workflow_specification`.
@@ -500,7 +500,7 @@ class InferencePipeline:
                 canceled at the end of InferencePipeline processing. By default, when video file ends or
                 pipeline is stopped, tasks that has not started will be cancelled.
             video_metadata_input_name (str): Name of input for video metadata defined in `workflow_specification` or
-                Workflow definition saved  at Roboflow Platform. `InferencePipeline` will be injecting video frames
+                Workflow definition saved  on the Roboflow Platform. `InferencePipeline` will be injecting video frames
                 metadata to workflows through that parameter name.
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching

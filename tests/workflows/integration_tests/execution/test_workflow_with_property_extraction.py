@@ -6,6 +6,9 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import StepOutputLineageError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 WORKFLOW_WITH_EXTRACTION_OF_CLASSES_FOR_DETECTIONS = {
     "version": "1.0",
@@ -90,6 +93,40 @@ WORKFLOW_WITH_EXTRACTION_OF_CLASSES_FOR_DETECTIONS = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with business logic",
+    use_case_title="Workflow with extraction of classes for detections (1)",
+    use_case_description="""
+In practical use-cases you may find the need to inject pieces of business logic inside 
+your Workflow, such that it is easier to integrate with app created in Workflows ecosystem.
+
+Translation of model predictions into domain-specific language of your business is possible 
+with specialised blocks that let you parametrise such programming constructs 
+as switch-case statements.
+
+In this example, our goal is to:
+
+- tell how many objects are detected
+
+- verify that the picture presents exactly two dogs
+
+To achieve that goal, we run generic object detection model as first step, then we use special
+block called Property Definition that is capable of executing various operations to
+transform input data into desired output. We have two such blocks:
+
+- `instances_counter` which takes object detection predictions and apply operation to extract sequence length - 
+effectively calculating number of instances of objects that were predicted
+
+- `property_extraction` which extracts class names from all detected bounding boxes
+
+`instances_counter` basically completes first goal of the workflow, but to satisfy the second one we need to 
+build evaluation logic that will tell "PASS" / "FAIL" based on comparison of extracted class names with 
+reference parameter (provided via Workflow input `$inputs.reference`). We can use Expression block to achieve 
+that goal - building custom case statements (checking if class names being list of classes 
+extracted from object detection prediction matches reference passed in the input). 
+    """,
+    workflow_definition=WORKFLOW_WITH_EXTRACTION_OF_CLASSES_FOR_DETECTIONS,
+)
 def test_workflow_with_extraction_of_classes_for_detections(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
@@ -250,6 +287,55 @@ WORKFLOW_WITH_EXTRACTION_OF_CLASS_NAME_FROM_CROPS_AND_CONCATENATION_OF_RESULTS =
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with business logic",
+    use_case_title="Workflow with extraction of classes for detections (2)",
+    use_case_description="""
+In practical use-cases you may find the need to inject pieces of business logic inside 
+your Workflow, such that it is easier to integrate with app created in Workflows ecosystem.
+
+Translation of model predictions into domain-specific language of your business is possible 
+with specialised blocks that let you parametrise such programming constructs 
+as switch-case statements.
+
+In this example, our goal is to:
+
+- run generic object detection model to find instances of dogs
+
+- crop dogs detection
+
+- run specialised dogs breed classifier to assign granular label for each dog
+
+- compare predicted dogs breeds to verify if detected labels matches exactly reverence value passed in input.
+
+This example is quite complex as it requires quite deep understanding of Workflows ecosystem. Let's start from
+the beginning - we run object detection model, crop its detections according to dogs class to perform 
+classification. This is quite typical for workflows (you may find such pattern in remaining examples). 
+
+The complexity increases when we try to handle classification output. We need to have a list of classes
+for each input image, but for now we have complex objects with all classification predictions details
+provided by `breds_classification` step - what is more - we have batch of such predictions for
+each input image (as we created dogs crops based on object detection model predictions). To solve the 
+problem, at first we apply Property Definition step taking classifier predictions and turning them into
+strings representing predicted classes. We still have batch of class names at dimensionality level 2, 
+which needs to be brought into dimensionality level 1 to make a single comparison against reference 
+value for each input image. To achieve that effect we use Dimension Collapse block which does nothing
+else but grabs the batch of classes and turns it into list of classes at dimensionality level 1 - one 
+list for each input image.
+
+That would solve our problems, apart from one nuance that must be taken into account. First-stage model
+is not guaranteed to detect any dogs - and if that happens we do not execute cropping and further 
+processing for that image, leaving all outputs derived from downstream computations `None` which is
+suboptimal. To compensate for that, we may use First Non Empty Or Default block which will take 
+`outputs_concatenation` step output and replace missing values with empty list (as effectively this is 
+equivalent of not detecting any dog).
+
+Such prepared output of `empty_values_replacement` step may be now plugged into Expression block, 
+performing switch-case like logic to deduce if breeds of detected dogs match with reference value 
+passed to workflow execution. 
+    """,
+    workflow_definition=WORKFLOW_WITH_EXTRACTION_OF_CLASS_NAME_FROM_CROPS_AND_CONCATENATION_OF_RESULTS,
+)
 def test_workflow_with_extraction_of_classes_for_classification_on_crops(
     model_manager: ModelManager,
     dogs_image: np.ndarray,

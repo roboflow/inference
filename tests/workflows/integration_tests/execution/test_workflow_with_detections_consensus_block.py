@@ -7,6 +7,9 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 CONSENSUS_WORKFLOW = {
     "version": "1.0",
@@ -61,6 +64,25 @@ EXPECTED_OBJECT_DETECTION_CONFIDENCES = np.array(
 )
 
 
+@add_to_workflows_gallery(
+    category="Workflows with multiple models",
+    use_case_title="Workflow presenting models ensemble",
+    use_case_description="""
+This workflow presents how to combine predictions from multiple models running against the same 
+input image with the block called Detections Consensus. 
+
+First, we run two object detections models steps and we combine their predictions. Fusion may be 
+performed in different scenarios based on Detections Consensus step configuration:
+
+- you may combine predictions from models detecting different objects and then require only single 
+model vote to add predicted bounding box to the output prediction
+
+- you may combine predictions from models detecting the same objects and expect multiple positive 
+votes to accept bounding box to the output prediction - this way you may improve the quality of 
+predictions
+    """,
+    workflow_definition=CONSENSUS_WORKFLOW,
+)
 def test_consensus_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,

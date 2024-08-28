@@ -18,7 +18,7 @@ In this guide, we will show:
 ## How can I use CLIP model in `inference`?
 
 - directly from `inference[clip]` package, integrating the model directly into your code
-- using `inference` HTTP API (hosted locally, or at Roboflow platform), integrating via HTTP protocol
+- using `inference` HTTP API (hosted locally, or on the Roboflow platform), integrating via HTTP protocol
   - using `inference-sdk` package (`pip install inference-sdk`) and [`InferenceHTTPClient`](/docs/inference_sdk/http_client.md)
   - creating custom code to make HTTP requests (see [API Reference](/api/))
 

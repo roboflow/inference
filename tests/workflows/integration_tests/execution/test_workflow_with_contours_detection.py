@@ -4,6 +4,7 @@ from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import add_to_workflows_gallery
 
 WORKFLOW_WITH_CONTOUR_DETECTION = {
     "version": "1.0",
@@ -75,18 +76,19 @@ WORKFLOW_WITH_CONTOUR_DETECTION = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with classical Computer Vision methods",
+    use_case_title="Workflow detecting contours",
+    use_case_description="""
+In this example we show how classical contour detection works in cooperation
+with blocks performing its pre-processing (conversion to gray and blur).
+    """,
+    workflow_definition=WORKFLOW_WITH_CONTOUR_DETECTION,
+)
 def test_workflow_with_classical_contour_detection(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
 ) -> None:
-    """
-    In this test set we check how classical contour detection works in cooperation
-    with expression block.
-
-    Please point out that a single image is passed as input, and the output is a
-    number of contours detected in the image.
-    """
-
     # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -104,8 +106,6 @@ def test_workflow_with_classical_contour_detection(
             "image": dogs_image,
         }
     )
-
-    print(result)
 
     # then
     assert isinstance(result, list), "Expected result to be list"
