@@ -3,6 +3,8 @@ import time
 
 import requests
 
+from packaging import version as packaging_version
+
 from inference.core.env import DISABLE_VERSION_CHECK, VERSION_CHECK_MODE
 from inference.core.logger import logger
 from inference.core.version import __version__
@@ -32,9 +34,14 @@ def get_latest_release_version():
 def check_latest_release_against_current():
     get_latest_release_version()
     if latest_release is not None and latest_release != __version__:
-        logger.warning(
-            f"Your inference package version {__version__} is out of date! Please upgrade to version {latest_release} of inference for the latest features and bug fixes by running `pip install --upgrade inference`."
-        )
+
+        running_ver = packaging_version.parse(__version__)
+        current_ver = packaging_version.parse(latest_release)
+
+        if running_ver < current_ver:
+            logger.warning(
+                f"Your inference package version {__version__} is out of date! Please upgrade to version {latest_release} of inference for the latest features and bug fixes by running `pip install --upgrade inference`."
+            )
 
 
 def check_latest_release_against_current_continuous():
