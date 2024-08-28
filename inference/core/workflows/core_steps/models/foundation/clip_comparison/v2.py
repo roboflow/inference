@@ -55,8 +55,6 @@ classification model. For example, you could use CLIP to classify the type of ve
 in an image, or if an image contains NSFW material.
 """
 
-EXPECTED_OUTPUT_KEYS = {"similarity", "parent_id", "root_parent_id", "prediction_type"}
-
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -94,7 +92,7 @@ class BlockManifest(WorkflowBlockManifest):
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(
         default="ViT-B-16",
-        description="Variant of YoloWorld model",
+        description="Variant of CLIP model",
         examples=["ViT-B-16", "$inputs.variant"],
     )
 
@@ -114,7 +112,6 @@ class BlockManifest(WorkflowBlockManifest):
                 name="classification_predictions",
                 kind=[BATCH_OF_CLASSIFICATION_PREDICTION_KIND],
             ),
-            OutputDefinition(name="inference_id", kind=[STRING_KIND]),
             OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
             OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
         ]
@@ -235,7 +232,6 @@ class ClipComparisonBlockV2(WorkflowBlock):
         results = []
         for prediction, image in zip(predictions, images):
             similarities = prediction["similarity"]
-            inference_id = prediction.get("inference_id")
             max_similarity = np.max(similarities)
             max_similarity_id = np.argmax(similarities)
             min_similarity = np.min(similarities)
@@ -260,12 +256,10 @@ class ClipComparisonBlockV2(WorkflowBlock):
                 "top": most_similar_class_name,
                 "confidence": max_similarity,
                 "parent_id": image.parent_metadata.parent_id,
-                "inference_id": inference_id,
             }
             result = {
                 PARENT_ID_KEY: image.parent_metadata.parent_id,
                 ROOT_PARENT_ID_KEY: image.workflow_root_ancestor_metadata.parent_id,
-                "inference_id": inference_id,
                 "similarities": similarities,
                 "max_similarity": max_similarity,
                 "most_similar_class": most_similar_class_name,
