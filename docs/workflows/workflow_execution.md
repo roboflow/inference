@@ -172,7 +172,7 @@ data virtually, so blocks always receive data in a flattened, non-nested format.
 the same block, like an object detection model or classifier, regardless of how deeply nested your data is. But 
 there is a price - the notion of `dimensionality level` which dictates which steps may be connected, which not.
 
-`dimensionality level` concept refers to the level of nesting of batch. Batch oriented Workflow inputs 
+<span id="dimensionality-level">`dimensionality level`</span> concept refers to the level of nesting of batch. Batch oriented Workflow inputs 
 have `dimensionality level 1`, crops that we described in our example have `dimensionality level 2` and so on.
 What matters from the perspective of plugging inputs to specific step is:
 

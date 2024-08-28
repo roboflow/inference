@@ -1,18 +1,18 @@
 # How to Create and Run a Workflow
 
-In this example, we are going to build a Workflow from scratch that detect dogs, classify their breeds and
-visualize results.
+In this example, we are going to build a Workflow from scratch that detects dogs, classifies their breeds and
+visualizes results.
 
 ## Step 1: Create a Workflow
 
-Open [https://app.roboflow.com/](https://app.roboflow.com/) in your browser, and navigate to Workflows tab to click 
-Create Workflows button. Select Custom Workflow to start creation process.
+Open [https://app.roboflow.com/](https://app.roboflow.com/) in your browser, and navigate to the Workflows tab to click 
+the Create Workflows button. Select Custom Workflow to start the creation process.
 
 ![Workflow start](https://media.roboflow.com/inference/getting_started_workflows.png)
 
 
-## Step 2: Add object detection model
-We need to add block with object detection model to existing workflow. We will use `yolov8n-640` model.
+## Step 2: Add an object detection model
+We need to add a block with an object detection model to the existing workflow. We will use the `yolov8n-640` model.
 
 ![Add object detection model](https://media.roboflow.com/inference/adding_object_detection_model.png)
 
@@ -24,30 +24,31 @@ Next, we are going to add a block to our Workflow that crops the objects that ou
 
 ## Step 4: Classify dog breeds with second stage model
 
-We are then going to add an classification model thar runs on each crop to classify its content. We will use
-Roboflow Universe model `dog-breed-xpaq6/1`. Please make sure that in block configuration, property `Image`
-points to Dynamic Crop output named `crops`.
+We are then going to add a classification model that runs on each crop to classify its content. We will use
+Roboflow Universe model `dog-breed-xpaq6/1`. Please make sure that in the block configuration, the `Image` property
+points to the `crops` output of the  Dynamic Crop block.
 
 
 ![Add OCR](https://media.roboflow.com/inference/adding_secondary_model.png)
 
-## Step 5: Replace Bounding Boxes classes with classification model prediction
+## Step 5: Replace Bounding Box classes with classification model predictions
 
-When each crop is classified, we would like to assign class predicted for each crop (dog breed) as a class 
-of bounding box with dog. To do this we use Detections Classes Replacement block, which accepts 
-reference to predictions of object detection model, as well as reference to classification results on crops.
+When each crop is classified, we would like to assign the class predicted for each crop (dog breed) as a class 
+of the dog bounding boxes from the object detection model . To do this we use Detections Classes Replacement block, 
+which accepts a reference to predictions of a object detection model, as well as a reference to the classification 
+results on the crops.
 
 ![Add Classes Replacement](https://media.roboflow.com/inference/detections_classes_replacement.png)
 
 
 ## Step 6: Visualise predictions
 
-As a final step of workflow, we would like to visualize our predictions. We will use two 
+As a final step of the workflow, we would like to visualize our predictions. We will use two 
 visualization blocks: Bounding Box Visualization and Label Visualization chained together.
-At first, add Bounding Box Visualization referring to `$inputs.image` in Image property (that's the
+At first, add Bounding Box Visualization referring to `$inputs.image` for the Image property (that's the
 image sent as your input to workflow), the second step (Label Visualization) however, should point to 
 the output of Bounding Box Visualization step. Both visualization steps should refer to predictions 
-from Detections Classes Replacement step.
+from the Detections Classes Replacement step.
 
 ![Add Visualisation](https://media.roboflow.com/inference/adding_visualization.png)
 
@@ -58,19 +59,19 @@ Classes Replacement step) and visualisation (output from Label Visualization ste
 
 
 ## Step 8: Running the workflow
-Now your workflow, is ready. You can click `Save` button and move to `Run Preview` panel.
+Now your workflow, is ready. You can click the `Save` button and move to the `Run Preview` panel.
 
 We will run our workflow against the following example image `https://media.roboflow.com/inference/dog.jpeg`.
 Here are the results
 
 ![Results](https://media.roboflow.com/inference/workflow_preview.png)
 
-Clicking on `Show Visual` button you will find results of our visualisation efforts.
+Clicking on the `Show Visual` button you will find results of our visualization efforts.
 <center><img src="https://media.roboflow.com/inference/workflow_visualisation_result.png" width="50%"/></center>
 
 
 ## Different ways of running your workflow
-Your workflow is now saved at Roboflow Platform. This means you can run it in multiple different ways, including:
+Your workflow is now saved on the Roboflow Platform. This means you can run it in multiple different ways, including:
 
 - HTTP request to Roboflow Hosted API
 
@@ -78,12 +79,12 @@ Your workflow is now saved at Roboflow Platform. This means you can run it in mu
 
 - on video
 
-To see code snippets, click `Deploy Workflow` button:
+To see code snippets, click the `Deploy Workflow` button:
 <center><img src="https://media.roboflow.com/inference/deploy_workflow.png" width="50%"/></center>
 
 ## Workflow definition for quick reproduction
 
-To make it easier to reproduce the workflow, below you can find workflow definition you can copy-paste to UI editor.
+To make it easier to reproduce the workflow, below you can find a workflow definition you can copy-paste to UI editor.
 
 ??? Tip "Workflow definition"
     
@@ -157,4 +158,4 @@ To make it easier to reproduce the workflow, below you can find workflow definit
 Now that you have created and run your first workflow, you can explore our other supported blocks and create a more complex workflow.
 
 Refer to our [Supported Blocks](/workflows/blocks/) documentation to learn more about what blocks are supported.
-We also recommend reading [Understanding workflows](/workflows/understanding/) page.
+We also recommend reading the [Understanding workflows](/workflows/understanding/) page.

@@ -5,9 +5,9 @@
 Roboflow Workflows is an ecosystem that enables users to create machine learning applications using a wide range 
 of pluggable and reusable blocks. These blocks are organized in a way that makes it easy for users to design 
 and connect different components. Graphical interface allows to visually construct workflows 
-without needing extensive technical expertise. Once the workflow is designed, ecosystem compiles and runs the application, 
-ensuring all the components work together seamlessly, providing a rapid transition 
-from prototype to production-ready solutions, allowing to quickly iterate and deploy applications.  
+without needing extensive technical expertise. Once the workflow is designed, Workflows engine runs the 
+application, ensuring all the components work together seamlessly, providing a rapid transition 
+from prototype to production-ready solutions, allowing you to quickly iterate and deploy applications.  
 
 Roboflow offers a growing selection of workflows blocks, and the community can also create new blocks, ensuring 
 that the ecosystem is continuously expanding and evolving. Moreover, Roboflow provides flexible deployment options, 

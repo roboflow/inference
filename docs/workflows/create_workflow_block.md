@@ -1,8 +1,8 @@
-# Creating Workflow block
+# Creating Workflow blocks
 
-Workflows blocks development is the process that requires understanding of 
-Workflow Ecosystem. Before diving deep in the details, let's summarise the 
-knowledge that would be required:
+Workflows blocks development requires an understanding of the
+Workflow Ecosystem. Before diving deeper into the details, let's summarize the 
+required knowledge:
 
 Understanding of [Workflow execution](/workflows/workflow_execution/), in particular:
     
@@ -12,12 +12,12 @@ Understanding of [Workflow execution](/workflows/workflow_execution/), in partic
 
 * what is the `dimensionality level` of batch-oriented data passing through Workflow
 
-* how [Execution Engine](/workflows/workflows_execution_engine/) interact with step, regarding 
+* how [Execution Engine](/workflows/workflows_execution_engine/) interacts with step, regarding 
 its inputs and outputs
 
 * what is the nature and role of [Workflow `kinds`](/workflows/kinds/)
 
-* understands how [`pydantic`](https://docs.pydantic.dev/latest/) works
+* understanding how [`pydantic`](https://docs.pydantic.dev/latest/) works
 
 ## Prototypes
 
@@ -51,8 +51,8 @@ The most important are:
 ## Block manifest
 
 A manifest is a crucial component of a Workflow block that defines a prototype 
-for step declaration that can be placed in Workflow definition to use the block. 
-In particular it: 
+for step declaration that can be placed in a Workflow definition to use the block. 
+In particular, it: 
 
 * **Uses `pydantic` to power syntax parsing of Workflows definitions:** 
 It inherits from  [`pydantic BaseModel`](https://docs.pydantic.dev/latest/api/base_model/) features to parse and 
@@ -88,14 +88,14 @@ class ImagesSimilarityManifest(WorkflowBlockManifest):
     name: str
 ```
 
-This is the minimal representation of manifest. It defines two special fields that are important for 
+This is the minimal representation of a manifest. It defines two special fields that are important for 
 Compiler and Execution engine:
 
 * `type` - required to parse syntax of Workflows definitions based on dynamic pool of blocks - this is the 
-[`pydantic` type discriminator](https://docs.pydantic.dev/latest/concepts/unions/#discriminated-unions) that let
-Compiler understand which block manifest is to be verified when parsing specific step in Workflow definition
+[`pydantic` type discriminator](https://docs.pydantic.dev/latest/concepts/unions/#discriminated-unions) that lets the Compiler understand which block manifest is to be verified when 
+parsing specific steps in a Workflow definition
 
-* `name` - this property will be used to give the step unique name and let other steps selects it via selectors
+* `name` - this property will be used to give the step a unique name and let other steps selects it via selectors
 
 ### Adding batch-oriented inputs
 
@@ -131,7 +131,7 @@ we will be creating SIMD block.
         )
     ```
     
-    * in the lines `2-9`, we've added a couple of imports ro ensure that we have everything needed
+    * in the lines `2-9`, we've added a couple of imports to ensure that we have everything needed
     
     * line `17` defines `image_1` parameter - as manifest is prototype for Workflow Definition, 
     the only way to tell about image to be used by step is to provide selector - we have 
@@ -158,16 +158,16 @@ Such definition of manifest can handle the following step declaration in Workflo
 }
 ```
 
-This definition will make Compiler and Execution Engine to:
+This definition will make the Compiler and Execution Engine:
 
 * select as a step prototype the block which declared manifest with type discriminator being 
 `my_plugin/images_similarity@v1`
 
-* ship into step run method two parameters:
+* supply two parameters for the steps run method:
 
   * `input_1` of type `WorkflowImageData` which will be filled with image submitted as Workflow execution input
   
-  * `imput_2` of type `WorkflowImageData` which will be generated in the runtime, by other step called 
+  * `imput_2` of type `WorkflowImageData` which will be generated at runtime, by another step called 
   `image_transformation`
 
 
@@ -293,8 +293,8 @@ or alternatively:
 
 ### Declaring block outputs
 
-Our manifest is ready regarding properties that can be declared in Workflow definition, 
-but we still need to provide additional information for Execution Engine to successfully 
+Our manifest is ready regarding properties that can be declared in Workflow definitions, 
+but we still need to provide additional information for the Execution Engine to successfully 
 run the block.
 
 ??? example "Declaring block outputs"
@@ -370,7 +370,7 @@ As a result of those changes:
 are supposed to deliver specified outputs and other steps can refer to those outputs
 in their inputs
 
-* blocks loading mechanism will not load the block given that Execution Engine is not in version `v1`
+* the blocks loading mechanism will not load the block given that Execution Engine is not in version `v1`
 
 ??? hint "LEARN MORE: Dynamic outputs"
 
@@ -439,9 +439,9 @@ in their inputs
 
 ## Definition of block class
 
-At this stage, manifest of our simple block is ready, we will continue 
-with our example, letting [advanced topics](#advanced-topics) section to
-cover more details that would be just distractions at this stage.
+At this stage, the manifest of our simple block is ready, we will continue 
+with our example. You can check out the [advanced topics](#advanced-topics) section for more details that would just 
+be a distractions now.
 
 ### Base implementation
 
@@ -529,13 +529,13 @@ block.
 
 ### Providing implementation for block logic
 
-Let's now add example implementation of `run(...)` method to our block, such that
+Let's now add an example implementation of  the `run(...)` method to our block, such that
 it can produce meaningful results.
 
 !!! Note
     
-    Content of this section is supposed to provide example on how to interact 
-    with Workflow ecosystem as block creator, rather than providing robust 
+    The Content of this section is supposed to provide examples on how to interact 
+    with the Workflow ecosystem as block creator, rather than providing robust 
     implementation of the block.
 
 ??? example "Implementation of `run(...)` method"
@@ -645,12 +645,27 @@ You may ask yourself how it is possible that implemented block accepts batch-ori
 operate on batches directly. This is due to the fact that the default block behaviour is to run one-by-one against
 all elements of input batches. We will show how to change that in [advanced topics](#advanced-topics) section.
 
+!!! note
+    
+    One important note: blocks, like all other classes, have constructors that may initialize a state. This state can 
+    persist across multiple Workflow runs when using the same instance of the Execution Engine. If the state management 
+    needs to be aware of which batch element it processes (e.g., in object tracking scenarios), the block creator 
+    should use dedicated batch-oriented inputs. These inputs, provide relevant metadatadata — like the 
+    `WorkflowVideoMetadata` input, which is crucial for tracking use cases and can be used along with `WorkflowImage` 
+    input in a block implementing tracker.
+    
+    The ecosystem is evolving, and new input types will be introduced over time. If a specific input type needed for 
+    a use case is not available, an alternative is to design the block to process entire input batches. This way, 
+    you can rely on the Batch container's indices property, which provides an index for each batch element, allowing 
+    you to maintain the correct order of processing.
+
+
 ## Exposing block in `plugin`
 
 Now, your block is ready to be used, but if you declared step using it in your Workflow definition you 
 would see an error. This is because no plugin exports the block you just created. Details of blocks bundling 
 will be covered in [separate page](/workflows/blocks_bundling/), but the remaining thing to do is to 
-add block class into list returned from your plugind `load_blocks(...)` function:
+add block class into list returned from your plugins' `load_blocks(...)` function:
 
 ```python
 # __init__.py of your plugin
@@ -787,7 +802,7 @@ how to create a flow control block, but first - a little bit of theory:
 * flow-control block is the block that declares compatibility with step selectors in their manifest (selector to step
 is defined as `$steps.{step_name}` - similar to step output selector, but without specification of output name)
 
-* flow-control blocks cannot register outputs, they are meant tu return `FlowControl` objects
+* flow-control blocks cannot register outputs, they are meant to return `FlowControl` objects
 
 * `FlowControl` object specify next steps (from selectors provided in step manifest) that for given 
 batch element (SIMD flow-control) or whole workflow execution (non-SIMD flow-control) should pick up next
@@ -858,7 +873,7 @@ batch element (SIMD flow-control) or whole workflow execution (non-SIMD flow-con
     * line `10` imports type annotation for step selector which will be used to 
     notify Execution Engine that the block controls the flow
 
-    * line `14` imports `FlowControl` class which is the only viabe response from
+    * line `14` imports `FlowControl` class which is the only viable response from
     flow-control block
 
     * line `26` specifies `image` which is batch-oriented input making the block SIMD - 
@@ -932,7 +947,7 @@ batch element (SIMD flow-control) or whole workflow execution (non-SIMD flow-con
     * line `9` imports type annotation for step selector which will be used to 
     notify Execution Engine that the block controls the flow
 
-    * line `11` imports `FlowControl` class which is the only viabe response from
+    * line `11` imports `FlowControl` class which is the only viable response from
     flow-control block
 
     * lines `24-27` defines list of step selectors **which effectively turns the block into flow-control one**
@@ -944,7 +959,7 @@ batch element (SIMD flow-control) or whole workflow execution (non-SIMD flow-con
 ### Nested selectors
 
 Some block will require list of selectors or dictionary of selectors to be 
-provided in block manifest field. Version `v1` of Execution Engine do only support 
+provided in block manifest field. Version `v1` of Execution Engine supports only 
 one level of nesting - so list of lists of selectors or dictionary with list of selectors 
 will not be recognised properly.
 
@@ -1046,7 +1061,7 @@ Such block is compatible with the following step declaration:
 Occasionally, blocks may need to accept group of "named" selectors, 
 which names and values are to be defined by creator of Workflow definition. 
 In such cases, block manifest shall accept dictionary of selectors, where
-keys serves as names for those selectors.
+keys serve as names for those selectors.
 
 ??? example "Nested selectors - named selectors"
 
@@ -1147,11 +1162,11 @@ is strictly enforced during the Workflow compilation process.
 Similarly, the output dimensionality also affects the method signature and the format of the expected output. 
 The ecosystem supports the following scenarios:
 
-* all inputs have **the same dimensionality** and output **do not change** dimensionality - baseline case
+* all inputs have **the same dimensionality** and outputs **does not change** dimensionality - baseline case
 
 * all inputs have **the same dimensionality** and output **decreases** dimensionality
 
-* all inputs have **the same dimensionality** and output **decreases** increases
+* all inputs have **the same dimensionality** and output **increases** dimensionality
 
 * inputs have **different dimensionality** and output is allowed to keep the dimensionality of 
 **reference input**
@@ -1236,7 +1251,7 @@ the method signatures.
         ```
 
         * in lines `30-32` manifest class declares output dimensionality 
-        offset - value `1` should be understand as adding `1` to dimensionality level
+        offset - value `1` should be understood as adding `1` to dimensionality level
         
         * point out, that in line `65`, block eliminates empty images from further processing but 
         placing `None` instead of dictionatry with outputs. This would utilise the same 
@@ -1251,7 +1266,7 @@ the method signatures.
 
     === "output dimensionality decrease"
       
-        In this example, the block visualises crops predictions and create tiles
+        In this example, the block visualises crops predictions and creates tiles
         presenting all crops predictions in single output image.
 
         ```{ .py linenums="1" hl_lines="31-33 50-51 61-62"}
@@ -1320,7 +1335,7 @@ the method signatures.
         ```
 
         * in lines `31-33` manifest class declares output dimensionality 
-        offset - value `-1` should be understand as decreasing dimensionality level by `1`
+        offset - value `-1` should be understood as decreasing dimensionality level by `1`
 
         * in lines `50-51` you can see the impact of output dimensionality decrease
         on the method signature. Both inputs are artificially wrapped in `Batch[]` container.
@@ -1520,7 +1535,7 @@ the method signatures.
         * in lines `31-33` manifest declares that block accepts batches of inputs
 
         * in lines `35-37` manifest class declares output dimensionality 
-        offset - value `1` should be understand as adding `1` to dimensionality level
+        offset - value `1` should be understood as adding `1` to dimensionality level
         
         * in lines `57-68`, signature of input parameters reflects that the `run(...)` method
         runs against inputs of the same dimensionality and those inputs are provided in batches
@@ -1533,14 +1548,14 @@ the method signatures.
 
         * construction of the output, presented in lines `73-75` indicates two levels of nesting.
         First of all, block operates on batches, so it is expected to return list of outputs, one 
-        output for each input batch element. Addiotionally, this output element for each input batch 
+        output for each input batch element. Additionally, this output element for each input batch 
         element turns out to be nested batch - hence for each input iage and prediction, block 
         generates list of outputs - elements of that list are dictionaries providing values 
         for each declared output.
 
     === "output dimensionality decrease"
       
-        In this example, the block visualises crops predictions and create tiles
+        In this example, the block visualises crops predictions and creates tiles
         presenting all crops predictions in single output image.
 
         ```{ .py linenums="1" hl_lines="31-33 35-37 54-55 68-69"}
@@ -1618,7 +1633,7 @@ the method signatures.
         * lines `31-33` manifest that block is expected to take batches as input
 
         * in lines `35-37` manifest class declares output dimensionality 
-        offset - value `-1` should be understand as decreasing dimensionality level by `1`
+        offset - value `-1` should be understood as decreasing dimensionality level by `1`
 
         * in lines `54-55` you can see the impact of output dimensionality decrease
         and batch processing on the method signature. First "layer" of `Batch[]` is a side effect of the 
@@ -1628,7 +1643,7 @@ the method signatures.
         batches elements that belong to specific top-level batch element.
 
         * lines `68-69` illustrate how output is constructed - for each top-level batch element, block
-        aggregates all crops and predictions and create a single tile. As block accepts batches of inputs,
+        aggregates all crops and predictions and creates a single tile. As block accepts batches of inputs,
         this procedure end up with one tile for each top-level batch element - hence list of dictionaries
         is expected to be returned.
 
@@ -1891,7 +1906,7 @@ Let's see how to request init parameters while defining block.
             pass
     ```
 
-    * lines `30-31` declare class constructor which is not parameter-freee
+    * lines `30-31` declare class constructor which is not parameter-free
 
     * to inform Execution Engine that block requires custom initialisation, 
     `get_init_parameters(...)` method in lines `33-35` enlists names of all 

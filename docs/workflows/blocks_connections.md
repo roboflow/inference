@@ -8,19 +8,19 @@ blocks are possible, while others may not be.
 
 !!! Note 
     
-    Using Workflows UI in Roboflow APP you may find compatible connections between steps found 
-    automatocally without need for your input. This page explains briefly how to deduce if two 
+    Using the Workflows UI in the Roboflow APP you may find compatible connections between steps found
+    automatically without need for your input. This page explains briefly how to deduce if two 
     blocks can be connected, making it possible to connect steps manually if needed. Logically,
-    the page must appear before link to [blocks gallery](/workflows/blocks/), as it explains 
+    the page must appear before a link to [blocks gallery](/workflows/blocks/), as it explains 
     how to effectively use these docs. At the same time, it introduces references to concepts 
-    further explained in User Guide and Developer Guide. Please continue reading that sections
-    if you find some concepts presented here to be further explained.
+    further explained in the User and Developer Guide. Please continue reading those sections
+    if you find some concepts presented here needing further explanation.
 
 
-## Navigation in blocks documentation
+## Navigation the blocks documentation
 
 When you open the blocks documentation, you’ll see a list of all blocks supported by Roboflow. Each block entry 
-includes its name, a brief description, its category, and its license. You can click on any block to see more 
+includes a name, brief description, category, and license for the block. You can click on any block to see more 
 detailed information.
 
 On the block details page, you’ll find documentation for all supported versions of that block, 
@@ -51,7 +51,7 @@ and this is further explained in the developer guide.
 ## What makes connections valid?
 
 Each block provides a manifest that lists the fields to be included in the Workflow Definition when creating a step. 
-Values of these fields in Workflow Definition may contain:
+The Values of these fields in a Workflow Definition may contain:
 
 - References ([selectors](/workflows/definitions/)) to data the block will process, such as step outputs or 
 [batch-oriented workflow inputs](/workflows/workflow_execution)
@@ -69,7 +69,7 @@ will replace the [selector](/workflows/definitions/) during block execution.
 To ensure steps are correctly connected, the Workflow Compiler checks if the input and output [kinds](/workflows/kinds)
 match. If they do, the connection is valid.
 
-Additionally, the [`dimensionality level`](/workflows/workflow_execution) of the data is considered when 
+Additionally, the [`dimensionality level`](/workflows/workflow_execution#dimensionality-level) of the data is considered when 
 validating connections. This ensures that data from multiple sources is compatible across the entire Workflow, 
 not just between two connected steps. More details on dimensionality levels can be found in the 
 [user guide describing workflow execution](/workflows/workflow_execution).

@@ -33,7 +33,7 @@ compared to standard Python library:
 
 * `load_blocks()` function to provide list of blocks' classes (required)
 
-* `load_kinds()` function to return all custom kinds the plugin defines (optional)
+* `load_kinds()` function to return all custom [kinds](/workflows/kinds/) the plugin defines (optional)
 
 * `REGISTERED_INITIALIZERS` module property which is a dict mapping name of block 
 init parameter into default value or parameter-free function constructing that value - optional 
@@ -52,13 +52,13 @@ from inference.core.workflows.prototypes.block import WorkflowBlock
 
 # example assumes that your plugin name is `my_plugin` and
 # you defined the blocks that are imported here
-from my_plugin.block_1.v1 import Block1
-from my_plugin.block_2.v1 import Block2
+from my_plugin.block_1.v1 import Block1V1
+from my_plugin.block_2.v1 import Block2V1
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
-        Block1,
-        Block2,
+        Block1V1,
+        Block2V1,
 ]
 ```
 
@@ -85,33 +85,36 @@ def load_kinds() -> List[Kind]:
 
 ## `REGISTERED_INITIALIZERS` dictionary
 
-As you know from [page describing Workflows Compiler](/workflows/workflows_compiler/) 
-and [blocks development guide](/workflows/create_workflow_block/), Workflow
-blocs are dynamically initialised during compilation and may require constructor 
-parameters. Those parameters can default into values registered in `REGISTERED_INITIALIZERS`
-dictionary. To expose default value for init parameter of your block - 
-simply register name of init param and value (of function generating value) in the dictionary.
-It is optional part of plugin interface, as not every blocks requires constructor.
+As you know from [the docs describing the Workflows Compiler](/workflows/workflows_compiler/) 
+and the [blocks development guide](/workflows/create_workflow_block/), Workflow
+blocs are dynamically initialized during compilation and may require constructor 
+parameters. Those parameters can default to values registered in the `REGISTERED_INITIALIZERS`
+dictionary. To expose default a value for an init parameter of your block - 
+simply register the name of the init param and its value (or a function generating a value) in the dictionary.
+This is optional part of the plugin interface, as not every block requires a constructor.
 
 Example:
 
 ```python
 import os
 
+def init_my_param() -> str:
+    # do init here
+    return "some-value"
 
 REGISTERED_INITIALIZERS = {
     "param_1": 37,
-    "param_2": lambda: os.getenv("MY_ENV_VARIABLE")
+    "param_2": init_my_param,
 }
 ```
 
 ## Enabling plugin in your Workflows ecosystem
 
-To load plugin you must:
+To load a plugin you must:
 
-* install Python package with the plugin in the environment you run Workflows
+* install the Python package with the plugin in the environment you run Workflows
 
-* export environment variable `WORKFLOWS_PLUGINS` with comma-separated list of names
+* export an environment variable named `WORKFLOWS_PLUGINS` set to a comma-separated list of names
 of plugins you want to load. 
   
   * Example: to load two plugins `plugin_a` and `plugin_b`, you need to run 
