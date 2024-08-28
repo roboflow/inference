@@ -41,6 +41,22 @@ def masks2poly(masks: np.ndarray) -> List[np.ndarray]:
     return segments
 
 
+def masks2multipoly(masks: np.ndarray) -> List[np.ndarray]:
+    """Converts binary masks to polygonal segments.
+
+    Args:
+        masks (numpy.ndarray): A set of binary masks, where masks are multiplied by 255 and converted to uint8 type.
+
+    Returns:
+        list: A list of segments, where each segment is obtained by converting the corresponding mask.
+    """
+    segments = []
+    masks = (masks * 255.0).astype(np.uint8)
+    for mask in masks:
+        segments.append(mask2multipoly(mask))
+    return segments
+
+
 def mask2poly(mask: np.ndarray) -> np.ndarray:
     """
     Find contours in the mask and return them as a float32 array.
@@ -59,6 +75,24 @@ def mask2poly(mask: np.ndarray) -> np.ndarray:
     else:
         contours = np.zeros((0, 2))
     return contours.astype("float32")
+
+
+def mask2multipoly(mask: np.ndarray) -> np.ndarray:
+    """
+    Find all contours in the mask and return them as a float32 array.
+
+    Args:
+        mask (np.ndarray): A binary mask.
+
+    Returns:
+        np.ndarray: Contours represented as a float32 array.
+    """
+    contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+    if contours:
+        contours = [c.reshape(-1, 2).astype("float32") for c in contours]
+    else:
+        contours = [np.zeros((0, 2)).astype("float32")]
+    return contours
 
 
 def post_process_bboxes(
