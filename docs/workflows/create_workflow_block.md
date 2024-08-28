@@ -303,7 +303,7 @@ run the block.
     to increase block stability, we advise to provide information about execution engine 
     compatibility.
     
-    ```{ .py linenums="1" hl_lines="1 5 13 33-44 46-48"}
+    ```{ .py linenums="1" hl_lines="1 5 13 33-40 42-44"}
     from typing import Literal, Union, List, Optional
     from pydantic import Field
     from inference.core.workflows.prototypes.block import (
@@ -357,11 +357,11 @@ run the block.
     * line `13` imports [`boolean`](/workflows/kinds/boolean) `kind` to be used 
     in outputs definitions
   
-    * lines `33-44` declare class method to specify outputs from the block - 
+    * lines `33-40` declare class method to specify outputs from the block - 
     each entry in list declare one return property for each batch element and its `kind`.
     Our block will return boolean flag `images_match` for each pair of images.
   
-    * lines `46-48` declare compatibility of the block with Execution Engine -
+    * lines `42-44` declare compatibility of the block with Execution Engine -
     see [versioning page](/workflows/versioning/) for more details
 
 As a result of those changes:
