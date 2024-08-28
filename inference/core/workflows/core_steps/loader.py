@@ -2,6 +2,9 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
+    CameraFocusBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
@@ -26,9 +29,6 @@ from inference.core.workflows.core_steps.classical_cv.template_matching.v1 impor
 )
 from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
     ImageThresholdBlockV1,
-)
-from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
-    CameraFocusBlockV1,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (

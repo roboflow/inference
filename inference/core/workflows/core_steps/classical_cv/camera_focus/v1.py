@@ -83,9 +83,7 @@ class CameraFocusBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[CameraFocusManifest]:
         return CameraFocusManifest
 
-    def run(
-        self, image: WorkflowImageData, *args, **kwargs
-    ) -> BlockResult:
+    def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
         # Calculate the Brenner measure
         brenner_image, brenner_value = calculate_brenner_measure(image.numpy_image)
 
