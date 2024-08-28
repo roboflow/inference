@@ -405,7 +405,7 @@ def execute_registration(
         return False, status
     except Exception as error:
         credit_to_be_returned = True
-        logging.exception("Failed to register datapoint at Roboflow platform")
+        logging.exception("Failed to register datapoint on the Roboflow platform")
         return (
             True,
             f"Error while registration. Error type: {type(error)}. Details: {error}",

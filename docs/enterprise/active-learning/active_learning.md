@@ -36,7 +36,7 @@ Active learning can be disabled by setting `ACTIVE_LEARNING_ENABLED=false` in th
 ## Usage patterns
 Active Learning data collection may be combined with different components of the Roboflow ecosystem. In particular:
 
-- the `inference` Python package can be used to get predictions from the model and register them at Roboflow platform
+- the `inference` Python package can be used to get predictions from the model and register them on the Roboflow platform
   - one may want to use `InferencePipeline` to get predictions from video and register its video frames using Active Learning
 - self-hosted `inference` server - where data is collected while processing requests
 - Roboflow hosted `inference` - where you let us make sure you get your predictions and data registered. No 
