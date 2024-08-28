@@ -204,10 +204,19 @@ class SQLiteWrapper:
             connection.rollback()
             return []
 
-        return payloads
+        rows = []
+        for _id, *row in payloads:
+            row = {
+                k: v
+                for k, v in zip([k for k in self._columns.keys() if k != "id"], row)
+            }
+            row["id"] = _id
+            rows.append(row)
+
+        return rows
 
     def flush(
-        self, connection: Optional[sqlite3.Connection] = None, limit: int = 100
+        self, connection: Optional[sqlite3.Connection] = None, limit: int = 0
     ) -> List[Dict[str, Any]]:
         if not connection:
             try:
@@ -224,7 +233,7 @@ class SQLiteWrapper:
         return payloads
 
     def _flush(
-        self, connection: sqlite3.Connection, limit: int = 100
+        self, connection: sqlite3.Connection, limit: int = 0
     ) -> List[Dict[str, Any]]:
         cursor = connection.cursor()
         try:
@@ -233,22 +242,16 @@ class SQLiteWrapper:
             logger.debug("Failed to obtain records - %s", exc)
             return []
 
-        payloads = self.select(connection=connection, cursor=cursor, limit=limit)
+        rows = self.select(connection=connection, cursor=cursor, limit=limit)
 
-        flushed_rows = []
         top_id = -1
         bottom_id = -1
-        for _id, *row in payloads:
+        for row in rows:
+            _id = row["id"]
             top_id = max(top_id, _id)
             if bottom_id == -1:
                 bottom_id = _id
             bottom_id = min(bottom_id, _id)
-            flushed_rows.append(
-                {
-                    k: v
-                    for k, v in zip([k for k in self._columns.keys() if k != "id"], row)
-                }
-            )
 
         sql_delete = f"DELETE FROM {self._tbl_name} WHERE id >= ? and id <= ?"
         try:
@@ -260,4 +263,4 @@ class SQLiteWrapper:
             connection.rollback()
             return []
 
-        return flushed_rows
+        return rows

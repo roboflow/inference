@@ -39,4 +39,4 @@ class SQLiteQueue(SQLiteWrapper):
     def get_nowait(
         self, connection: Optional[sqlite3.Connection] = None
     ) -> List[Dict[str, Any]]:
-        return self.flush(connection=connection)
+        return self.flush(connection=connection, limit=100)

@@ -1,8 +1,5 @@
 import sqlite3
 
-from typing_extensions import Any, List
-
-from inference.core.env import LAMBDA
 from inference.usage_tracking.sqlite_queue import SQLiteQueue
 
 
@@ -13,6 +10,7 @@ def test_empty():
 
     # then
     assert q.empty(connection=conn) is True
+    conn.close()
 
 
 def test_not_empty():
