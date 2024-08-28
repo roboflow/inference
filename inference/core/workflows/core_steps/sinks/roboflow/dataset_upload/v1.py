@@ -145,7 +145,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[(1920, 1080), (512, 512)],
     )
     compression_level: int = Field(
-        default=100,
+        default=95,
         gt=0,
         le=100,
         description="Compression level for images registered",
