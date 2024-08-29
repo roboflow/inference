@@ -1,5 +1,7 @@
 import sqlite3
 
+import pytest
+
 from inference.core.utils.sqlite_wrapper import SQLiteWrapper
 
 
@@ -23,6 +25,17 @@ def test_insert():
 
     # then
     assert q.count(connection=conn) == 1
+    conn.close()
+
+
+def test_insert_incorrect_columns():
+    # given
+    conn = sqlite3.connect(":memory:")
+    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+
+    with pytest.raises(ValueError):
+        q.insert(values={"col2": "lorem"}, connection=conn)
+
     conn.close()
 
 
