@@ -46,6 +46,14 @@ class SQLiteQueue(SQLiteWrapper):
         self, connection: Optional[sqlite3.Connection] = None
     ) -> List[Dict[str, Any]]:
         try:
-            return self.flush(connection=connection, limit=100)
+            sqlite_payloads = self.flush(connection=connection, limit=100)
         except Exception:
             return []
+
+        usage_payloads = []
+        for p in sqlite_payloads:
+            try:
+                usage_payloads.append(json.loads(p[self._col_name]))
+            except Exception as exc:
+                logger.debug("Failed to process sqlite payload %s - %s", p, exc)
+        return usage_payloads
