@@ -77,11 +77,11 @@ class SQLiteWrapper:
     def _insert(self, values: Dict[ColName, ColValue], connection: sqlite3.Connection):
         if not set(values.keys()).issubset(self._columns.keys()):
             logger.debug(
-                "Cannot to store '%s' in %s, requested column names do not match with table columns",
+                "Cannot store '%s' in %s, requested column names do not match with table columns",
                 values,
                 self._tbl_name,
             )
-            raise exc
+            raise ValueError("Columns mismatch")
         cursor = connection.cursor()
         values = {k: v for k, v in values.items() if k != "id"}
         sql_insert = f"""INSERT INTO {self._tbl_name} ({', '.join(values.keys())})
