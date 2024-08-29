@@ -32,11 +32,12 @@ def test_get_nowait():
     q = SQLiteQueue(connection=conn)
 
     # when
-    q.put("test", connection=conn)
-    q.put("test", connection=conn)
-    q.put("test", connection=conn)
+    q.put({"test": "test"}, connection=conn)
+    q.put({"test": "test"}, connection=conn)
+    q.put({"test": "test"}, connection=conn)
 
     # then
-    assert len(q.get_nowait(connection=conn)) == 3
+    usage_payloads = q.get_nowait(connection=conn)
+    assert usage_payloads == [{"test": "test"}, {"test": "test"}, {"test": "test"}]
     assert q.empty(connection=conn) is True
     conn.close()
