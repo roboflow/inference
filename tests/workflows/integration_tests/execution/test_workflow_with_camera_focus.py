@@ -74,4 +74,4 @@ def test_workflow_with_camera_focus(
         "camera_focus_measure",
     }, "Expected all declared outputs to be delivered"
     assert isinstance(result[0]["camera_focus_measure"], float), "Expected camera focus output to be a float"
-    assert abs(result[0]["camera_focus_measure"] - 131.16) < 1e-, "Expected focus score to be close to 131.16"
+    assert abs(result[0]["camera_focus_measure"] - 131.16) < 1e-2, "Expected focus score to be close to 131.16"
