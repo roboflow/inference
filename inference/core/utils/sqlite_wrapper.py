@@ -22,8 +22,7 @@ class SQLiteWrapper:
         self._columns = {**columns, **{"id": "INTEGER PRIMARY KEY"}}
 
         if not connection:
-            if not os.path.exists(os.path.dirname(db_file_path)):
-                os.makedirs(os.path.dirname(db_file_path))
+            os.makedirs(os.path.dirname(db_file_path), exists_ok=True)
             connection: sqlite3.Connection = sqlite3.connect(db_file_path, timeout=1)
             self.create_table(connection=connection)
             connection.close()
@@ -71,7 +70,7 @@ class SQLiteWrapper:
                 logger.debug(
                     "Failed to store '%s' in %s - %s", values, self._tbl_name, exc
                 )
-                return []
+                raise exc
         else:
             self._insert(values=values, connection=connection)
 
@@ -82,7 +81,7 @@ class SQLiteWrapper:
                 values,
                 self._tbl_name,
             )
-            return
+            raise exc
         cursor = connection.cursor()
         values = {k: v for k, v in values.items() if k != "id"}
         sql_insert = f"""INSERT INTO {self._tbl_name} ({', '.join(values.keys())})
@@ -93,7 +92,7 @@ class SQLiteWrapper:
             cursor.execute("BEGIN EXCLUSIVE")
         except Exception as exc:
             logger.debug("Failed to store '%s' in %s - %s", values, self._tbl_name, exc)
-            return
+            raise exc
 
         try:
             cursor.execute(sql_insert, list(values.values()))
@@ -113,7 +112,7 @@ class SQLiteWrapper:
                 connection.close()
             except Exception as exc:
                 logger.debug("Failed to obtain records count - %s", exc)
-                return 0
+                raise exc
         else:
             count = self._count(connection=connection)
         return count
@@ -126,7 +125,7 @@ class SQLiteWrapper:
             cursor.execute("BEGIN EXCLUSIVE")
         except Exception as exc:
             logger.debug("Failed to obtain records count - %s", exc)
-            return 0
+            raise exc
 
         count = 0
         try:
@@ -158,7 +157,7 @@ class SQLiteWrapper:
                 connection.close()
             except Exception as exc:
                 logger.debug("Failed to obtain records - %s", exc)
-                return 0
+                raise exc
         elif connection and not cursor:
             payloads = self._select(
                 connection=connection, with_exclusive=with_exclusive, limit=limit
@@ -168,8 +167,7 @@ class SQLiteWrapper:
         elif cursor and not with_exclusive:
             payloads = self._select(cursor=cursor, limit=limit)
         else:
-            logger.debug("Unsupported mode")
-            payloads = []
+            raise RuntimeError("Unsupported mode")
         return payloads
 
     def _select(
@@ -186,7 +184,7 @@ class SQLiteWrapper:
                 cursor.execute("BEGIN EXCLUSIVE")
             except Exception as exc:
                 logger.debug("Failed to obtain records - %s", exc)
-                return []
+                raise exc
         sql_select = f"""SELECT id, {', '.join(k for k in self._columns.keys() if k != 'id')}
                 FROM {self._tbl_name}
                 ORDER BY id ASC
@@ -202,7 +200,7 @@ class SQLiteWrapper:
         except Exception as exc:
             logger.debug("Failed to obtain records - %s", exc)
             connection.rollback()
-            return []
+            raise exc
 
         rows = []
         for _id, *row in payloads:
@@ -227,7 +225,7 @@ class SQLiteWrapper:
                 connection.close()
             except Exception as exc:
                 logger.debug("Failed to flush db - %s", exc)
-                return 0
+                raise exc
         else:
             payloads = self._flush(connection=connection, limit=limit)
         return payloads
@@ -240,7 +238,7 @@ class SQLiteWrapper:
             cursor.execute("BEGIN EXCLUSIVE")
         except Exception as exc:
             logger.debug("Failed to obtain records - %s", exc)
-            return []
+            raise exc
 
         rows = self.select(connection=connection, cursor=cursor, limit=limit)
 
@@ -261,6 +259,6 @@ class SQLiteWrapper:
         except Exception as exc:
             logger.debug("Failed to delete records - %s", exc)
             connection.rollback()
-            return []
+            raise exc
 
         return rows

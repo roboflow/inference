@@ -27,16 +27,25 @@ class SQLiteQueue(SQLiteWrapper):
 
     def put(self, payload: Any, connection: Optional[sqlite3.Connection] = None):
         payload_str = json.dumps(payload)
-        self.insert(values={self._col_name: payload_str}, connection=connection)
+        try:
+            self.insert(values={self._col_name: payload_str}, connection=connection)
+        except Exception:
+            pass
 
     @staticmethod
     def full() -> bool:
         return False
 
     def empty(self, connection: Optional[sqlite3.Connection] = None) -> bool:
-        return self.count(connection=connection) == 0
+        try:
+            return self.count(connection=connection) == 0
+        except Exception:
+            return True
 
     def get_nowait(
         self, connection: Optional[sqlite3.Connection] = None
     ) -> List[Dict[str, Any]]:
-        return self.flush(connection=connection, limit=100)
+        try:
+            return self.flush(connection=connection, limit=100)
+        except Exception:
+            return []
