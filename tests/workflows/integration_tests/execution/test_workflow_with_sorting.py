@@ -13,6 +13,9 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 )
 from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 
 def build_sorting_workflow_definition(
@@ -95,6 +98,19 @@ def test_sorting_workflow_for_when_nothing_to_sort(
     assert len(detections) == 0, "Expected nothing to pass confidence threshold"
 
 
+@add_to_workflows_gallery(
+    category="Workflows with data transformations",
+    use_case_title="Workflow with detections sorting",
+    use_case_description="""
+This workflow presents how to use Detections Transformation block that is going to 
+align predictions from object detection model such that results are sorted 
+ascending regarding confidence.
+    """,
+    workflow_definition=build_sorting_workflow_definition(
+        sort_operation_mode=DetectionsSortProperties.CONFIDENCE,
+        ascending=True,
+    ),
+)
 def test_sorting_workflow_for_confidence_ascending(
     model_manager: ModelManager,
     crowd_image: np.ndarray,

@@ -6,6 +6,9 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 CLIP_WORKFLOW = {
     "version": "1.0",
@@ -31,6 +34,19 @@ CLIP_WORKFLOW = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Basic Workflows",
+    use_case_title="Workflow with CLIP model",
+    use_case_description="""
+This is the basic workflow that only contains a single CLIP model block. 
+
+Please take a look at how batch-oriented WorkflowImage data is plugged to 
+detection step via input selector (`$inputs.image`) and how non-batch parameters 
+(reference set of texts that the each image in batch will be compared to)
+is dynamically specified - via `$inputs.reference` selector.
+    """,
+    workflow_definition=CLIP_WORKFLOW,
+)
 def test_clip_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,

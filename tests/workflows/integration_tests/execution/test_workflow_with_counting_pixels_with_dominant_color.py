@@ -5,6 +5,7 @@ from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import add_to_workflows_gallery
 
 WORKFLOW_WITH_PIXELS_COUNTING = {
     "version": "1.0",
@@ -35,6 +36,16 @@ WORKFLOW_WITH_PIXELS_COUNTING = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with classical Computer Vision methods",
+    use_case_title="Workflow calculating pixels with dominant color",
+    use_case_description="""
+This example shows how Dominant Color block and Pixel Color Count block can be used together.
+
+First, dominant color gets detected and then number of pixels with that color is calculated.
+    """,
+    workflow_definition=WORKFLOW_WITH_PIXELS_COUNTING,
+)
 def test_workflow_with_color_of_pixels_counting(
     model_manager: ModelManager,
 ) -> None:
