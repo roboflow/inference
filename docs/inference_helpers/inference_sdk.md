@@ -7,7 +7,7 @@ You can use this client to run models hosted:
 1. On the Roboflow platform (use client version `v0`), and;
 2. On device with Inference.
 
-For models trained at Roboflow platform, client accepts the following inputs:
+For models trained on the Roboflow platform, client accepts the following inputs:
 
 - A single image (Given as a local path, URL, `np.ndarray` or `PIL.Image`);
 - Multiple images;
@@ -60,7 +60,7 @@ result = loop.run_until_complete(
 )
 ```
 
-## Configuration options (used for models trained at Roboflow platform)
+## Configuration options (used for models trained on the Roboflow platform)
 
 ### configuring with context managers
 
@@ -195,8 +195,8 @@ Methods that support batching / parallelism:
 
 ## Client for core models
 
-`InferenceHTTPClient` now supports core models hosted via `inference`. Part of the models can be used at Roboflow hosted
-inference platform (use `https://infer.roboflow.com` as url), other are possible to be deployed locally (usually
+`InferenceHTTPClient` now supports core models hosted via `inference`. Part of the models can be used on the Roboflow 
+hosted inference platform (use `https://infer.roboflow.com` as url), other are possible to be deployed locally (usually
 local server will be available under `http://localhost:9001`).
 
 !!! tip
@@ -705,12 +705,12 @@ to prevent errors)
 ## Why does the Inference client have two modes (`v0` and `v1`)?
 
 We are constantly improving our `infrence` package - initial version (`v0`) is compatible with
-models deployed at Roboflow platform (task types: `classification`, `object-detection`, `instance-segmentation` and
+models deployed on the Roboflow platform (task types: `classification`, `object-detection`, `instance-segmentation` and
 `keypoints-detection`)
 are supported. Version `v1` is available in locally hosted Docker images with HTTP API.
 
 Locally hosted `inference` server exposes endpoints for model manipulations, but those endpoints are not available
-at the moment for models deployed at Roboflow platform.
+at the moment for models deployed on the Roboflow platform.
 
 `api_url` parameter passed to `InferenceHTTPClient` will decide on default client mode - URLs with `*.roboflow.com`
 will be defaulted to version `v0`.

@@ -5,6 +5,9 @@ from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 MULTI_STAGES_WORKFLOW = {
     "version": "1.0",
@@ -77,6 +80,28 @@ MULTI_STAGES_WORKFLOW = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with multiple models",
+    use_case_title="Workflow detection models and OCR",
+    use_case_description="""
+This example showcases quite sophisticated workflows usage scenario that assume the following:
+
+- we have generic object detection model capable of recognising cars
+
+- we have specialised object detection model trained to detect license plates in the images depicting **single car only**
+
+- we have generic OCR model capable of recognising lines of texts from images
+
+Our goal is to read license plates of every car we detect in the picture. We can achieve that goal with 
+workflow from this example. In the definition we can see that generic object detection model is applied first, 
+to make the job easier for the secondary (plates detection) model we enlarge bounding boxes, slightly 
+offsetting its dimensions with Detections Offset block - later we apply cropping to be able to run
+license plate detection for every detected car instance (increasing the depth of the batch). Once secondary model
+runs and we have bounding boxes for license plates - we crop previously cropped cars images to extract plates.
+Once this is done, plates crops are passed to OCR step which turns images of plates into text. 
+""",
+    workflow_definition=MULTI_STAGES_WORKFLOW,
+)
 def test_detection_plus_ocr_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,

@@ -10,6 +10,9 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 )
 from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 FILTERING_WORKFLOW = {
     "version": "1.0",
@@ -108,6 +111,19 @@ EXPECTED_OBJECT_DETECTION_CONFIDENCES = np.array(
 )
 
 
+@add_to_workflows_gallery(
+    category="Workflows with data transformations",
+    use_case_title="Workflow with detections filtering",
+    use_case_description="""
+This example presents how to use Detections Transformation block to build workflow
+that is going to filter predictions based on:
+
+- predicted classes
+
+- size of predicted bounding box relative to size of input image 
+    """,
+    workflow_definition=FILTERING_WORKFLOW,
+)
 def test_filtering_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     crowd_image: np.ndarray,

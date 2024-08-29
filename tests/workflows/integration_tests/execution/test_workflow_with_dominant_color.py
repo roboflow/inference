@@ -4,6 +4,7 @@ from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import add_to_workflows_gallery
 
 MINIMAL_DOMINANT_COLOR_WORKFLOW = {
     "version": "1.0",
@@ -26,6 +27,14 @@ MINIMAL_DOMINANT_COLOR_WORKFLOW = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with classical Computer Vision methods",
+    use_case_title="Workflow calculating dominant color",
+    use_case_description="""
+This example shows how Dominant Color block can be used against input image. 
+    """,
+    workflow_definition=MINIMAL_DOMINANT_COLOR_WORKFLOW,
+)
 def test_dominant_color_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
     red_image: np.ndarray,
