@@ -22,7 +22,7 @@ class SQLiteWrapper:
         self._columns = {**columns, **{"id": "INTEGER PRIMARY KEY"}}
 
         if not connection:
-            os.makedirs(os.path.dirname(db_file_path), exists_ok=True)
+            os.makedirs(os.path.dirname(db_file_path), exist_ok=True)
             connection: sqlite3.Connection = sqlite3.connect(db_file_path, timeout=1)
             self.create_table(connection=connection)
             connection.close()
