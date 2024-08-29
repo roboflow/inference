@@ -135,6 +135,7 @@ class SQLiteWrapper:
         except Exception as exc:
             logger.debug("Failed to obtain records count - %s", exc)
             connection.rollback()
+            raise exc
         cursor.close()
 
         return count
