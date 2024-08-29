@@ -100,6 +100,7 @@ class SQLiteWrapper:
         except Exception as exc:
             logger.debug("Failed to store '%s' in %s - %s", values, self._tbl_name, exc)
             connection.rollback()
+            raise exc
         cursor.close()
 
     def count(self, connection: Optional[sqlite3.Connection] = None) -> int:
