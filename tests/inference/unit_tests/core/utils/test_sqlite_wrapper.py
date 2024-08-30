@@ -8,7 +8,9 @@ from inference.core.utils.sqlite_wrapper import SQLiteWrapper
 def test_count_empty_table():
     # given
     conn = sqlite3.connect(":memory:")
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     # then
     assert q.count(connection=conn) == 0
@@ -18,7 +20,9 @@ def test_count_empty_table():
 def test_insert():
     # given
     conn = sqlite3.connect(":memory:")
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     # when
     q.insert(values={"col1": "lorem"}, connection=conn)
@@ -31,7 +35,9 @@ def test_insert():
 def test_insert_incorrect_columns():
     # given
     conn = sqlite3.connect(":memory:")
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     with pytest.raises(ValueError):
         q.insert(values={"col2": "lorem"}, connection=conn)
@@ -42,7 +48,9 @@ def test_insert_incorrect_columns():
 def test_select_no_limit():
     # given
     conn = sqlite3.connect(":memory:")
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     # when
     q.insert(values={"col1": "lorem"}, connection=conn)
@@ -50,17 +58,16 @@ def test_select_no_limit():
     values = q.select(connection=conn)
 
     # then
-    assert values == [
-        {"id": 1, "col1": "lorem"},
-        {"id": 2, "col1": "ipsum"}
-    ]
+    assert values == [{"id": 1, "col1": "lorem"}, {"id": 2, "col1": "ipsum"}]
     conn.close()
 
 
 def test_select_limit():
     # given
     conn = sqlite3.connect(":memory:")
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     # when
     q.insert(values={"col1": "lorem"}, connection=conn)
@@ -77,7 +84,9 @@ def test_select_limit():
 def test_flush_no_limit():
     # given
     conn = sqlite3.connect(":memory:")
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     # when
     q.insert(values={"col1": "lorem"}, connection=conn)
@@ -85,10 +94,7 @@ def test_flush_no_limit():
     values = q.flush(connection=conn)
 
     # then
-    assert values == [
-        {"id": 1, "col1": "lorem"},
-        {"id": 2, "col1": "ipsum"}
-    ]
+    assert values == [{"id": 1, "col1": "lorem"}, {"id": 2, "col1": "ipsum"}]
     assert q.count(connection=conn) == 0
     conn.close()
 
@@ -96,7 +102,9 @@ def test_flush_no_limit():
 def test_flush_limit():
     # given
     conn = sqlite3.connect(":memory:")
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     # when
     q.insert(values={"col1": "lorem"}, connection=conn)

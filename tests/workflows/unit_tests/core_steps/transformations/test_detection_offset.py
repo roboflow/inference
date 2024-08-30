@@ -109,6 +109,7 @@ def test_offset_detection() -> None:
         detections["parent_id"][0]
     ), "New detection id (random) must be assigned"
 
+
 def test_offset_detection_when_larger_than_image() -> None:
     # given
     detections = sv.Detections(
@@ -142,8 +143,6 @@ def test_offset_detection_when_larger_than_image() -> None:
     assert result["detection_id"] != str(
         detections["parent_id"][0]
     ), "New detection id (random) must be assigned"
-
-
 
 
 def test_offset_detection_when_nothing_predicted() -> None:
