@@ -2,7 +2,6 @@ import threading
 import time
 
 import requests
-
 from packaging import version as packaging_version
 
 from inference.core.env import DISABLE_VERSION_CHECK, VERSION_CHECK_MODE
