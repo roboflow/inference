@@ -102,6 +102,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 impor
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
     RoboflowDatasetUploadBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
+    RoboflowDatasetUploadBlockV2,
+)
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
@@ -287,6 +290,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ImageThresholdBlockV1,
         ImageContoursDetectionBlockV1,
         ClipComparisonBlockV2,
+        RoboflowDatasetUploadBlockV2,
     ]
 
 
