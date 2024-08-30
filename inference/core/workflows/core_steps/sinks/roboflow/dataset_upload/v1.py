@@ -139,13 +139,13 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[10, 60],
     )
     max_image_size: Tuple[int, int] = Field(
-        default=(1920, 1080),
+        default=(512, 512),
         description="Maximum size of the image to be registered - bigger images will be "
         "downsized preserving aspect ratio. Format of data: `(width, height)`",
-        examples=[(1920, 1080), (512, 512)],
+        examples=[(512, 512), (1920, 1080)],
     )
     compression_level: int = Field(
-        default=95,
+        default=75,
         gt=0,
         le=100,
         description="Compression level for images registered",
