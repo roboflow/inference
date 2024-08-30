@@ -4,37 +4,35 @@ from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import add_to_workflows_gallery
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 WORKFLOW_WITH_CAMERA_FOCUS = {
-  "version": "1.0",
-  "inputs": [
-    {
-      "type": "InferenceImage",
-      "name": "image"
-    }
-  ],
-  "steps": [
-    {
-      "type": "roboflow_core/camera_focus@v1",
-      "name": "camera_focus",
-      "image": "$inputs.image"
-    }
-  ],
-  "outputs": [
-    {
-      "type": "JsonField",
-      "name": "camera_focus_image",
-      "coordinates_system": "own",
-      "selector": "$steps.camera_focus.image"
-    },
-    {
-      "type": "JsonField",
-      "name": "camera_focus_measure",
-      "selector": "$steps.camera_focus.focus_measure"
-    }
-  ]
+    "version": "1.0",
+    "inputs": [{"type": "InferenceImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "roboflow_core/camera_focus@v1",
+            "name": "camera_focus",
+            "image": "$inputs.image",
+        }
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "camera_focus_image",
+            "coordinates_system": "own",
+            "selector": "$steps.camera_focus.image",
+        },
+        {
+            "type": "JsonField",
+            "name": "camera_focus_measure",
+            "selector": "$steps.camera_focus.focus_measure",
+        },
+    ],
 }
+
 
 @add_to_workflows_gallery(
     category="Workflows with classical Computer Vision methods",
@@ -73,5 +71,9 @@ def test_workflow_with_camera_focus(
         "camera_focus_image",
         "camera_focus_measure",
     }, "Expected all declared outputs to be delivered"
-    assert isinstance(result[0]["camera_focus_measure"], float), "Expected camera focus output to be a float"
-    assert abs(result[0]["camera_focus_measure"] - 131.16) < 1e-2, "Expected focus score to be close to 131.16"
+    assert isinstance(
+        result[0]["camera_focus_measure"], float
+    ), "Expected camera focus output to be a float"
+    assert (
+        abs(result[0]["camera_focus_measure"] - 131.16) < 1e-2
+    ), "Expected focus score to be close to 131.16"

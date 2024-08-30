@@ -1,14 +1,13 @@
+import json
 import os.path
 import shutil
 import zipfile
-from typing import Generator
+from typing import Dict, Generator
 
 import cv2
 import numpy as np
 import pytest
 import requests
-import json
-from typing import Dict
 
 from inference.core.env import MODEL_CACHE_DIR
 
@@ -29,11 +28,11 @@ SAM2_MULTI_POLY_RESPONSE_PATH = os.path.join(
 )
 
 
-
 @pytest.fixture(scope="function")
 def sam2_multipolygon_response() -> Dict:
     with open(SAM2_MULTI_POLY_RESPONSE_PATH) as f:
         return json.load(f)
+
 
 @pytest.fixture(scope="function")
 def example_image() -> np.ndarray:
@@ -197,6 +196,7 @@ def sam2_small_model() -> Generator[str, None, None]:
     yield model_id
     shutil.rmtree(model_cache_dir)
 
+
 @pytest.fixture(scope="function")
 def sam2_tiny_model() -> Generator[str, None, None]:
     model_id = "sam2/hiera_tiny"
@@ -216,6 +216,7 @@ def sam2_small_truck_logits() -> Generator[np.ndarray, None, None]:
 @pytest.fixture(scope="function")
 def sam2_small_truck_mask_from_cached_logits() -> Generator[np.ndarray, None, None]:
     yield np.load(SAM2_TRUCK_MASK_FROM_CACHE)
+
 
 def fetch_and_place_model_in_cache(
     model_id: str,

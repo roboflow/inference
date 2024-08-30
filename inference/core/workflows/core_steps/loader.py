@@ -58,6 +58,9 @@ from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
 from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
     ClipComparisonBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 import (
+    ClipComparisonBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
@@ -286,6 +289,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ConvertGrayscaleBlockV1,
         ImageThresholdBlockV1,
         ImageContoursDetectionBlockV1,
+        ClipComparisonBlockV2,
         CameraFocusBlockV1,
     ]
 
