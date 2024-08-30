@@ -25,7 +25,6 @@ from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
-from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
     InferenceRequest,
@@ -47,6 +46,7 @@ from inference.core.entities.requests.server_state import (
     AddModelRequest,
     ClearModelRequest,
 )
+from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
     WorkflowInferenceRequest,
