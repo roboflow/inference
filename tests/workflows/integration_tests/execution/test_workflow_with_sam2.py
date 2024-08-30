@@ -11,7 +11,9 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 
     BlockManifest,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import add_to_workflows_gallery
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
@@ -241,5 +243,6 @@ def test_grounded_sam2_workflow(
         "dog",
     ], "Expected class names to be correct"
     assert result[0]["sam_predictions"].data["parent_id"].tolist() == [
-        'image.[0]', 'image.[0]'
+        "image.[0]",
+        "image.[0]",
     ], "Expected parent_ids to be correct"

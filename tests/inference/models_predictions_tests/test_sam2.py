@@ -1,27 +1,27 @@
+import json
+from copy import deepcopy
+from io import BytesIO
+from typing import Dict
+
 import numpy as np
 import pytest
-import torch
-import json
 import requests
-from copy import deepcopy
-
+import torch
 from PIL import Image
-from io import BytesIO
-from inference.core.entities.requests.sam2 import Sam2PromptSet
+
+from inference.core.entities.requests.sam2 import Sam2PromptSet, Sam2SegmentationRequest
+from inference.core.entities.responses.sam2 import Sam2SegmentationPrediction
+from inference.core.workflows.core_steps.common.utils import (
+    convert_inference_detections_batch_to_sv_detections,
+)
+from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
+    convert_sam2_segmentation_response_to_inference_instances_seg_response,
+)
 from inference.models.sam2 import SegmentAnything2
 from inference.models.sam2.segment_anything2 import (
     hash_prompt_set,
     maybe_load_low_res_logits_from_cache,
 )
-from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
-    convert_sam2_segmentation_response_to_inference_instances_seg_response,
-)
-from inference.core.workflows.core_steps.common.utils import (
-    convert_inference_detections_batch_to_sv_detections,
-)
-from inference.core.entities.responses.sam2 import Sam2SegmentationPrediction
-from inference.core.entities.requests.sam2 import Sam2SegmentationRequest
-from typing import Dict
 
 
 @pytest.mark.slow
@@ -235,6 +235,7 @@ def test_sam2_multi_poly(sam2_tiny_model: str, sam2_multipolygon_response: Dict)
             raise
     except Exception as e:
         raise e
+
 
 def test_model_clears_cache_properly(sam2_small_model, truck_image):
     cache_size = 2

@@ -73,11 +73,12 @@ MODELS_TO_BE_USED = {
 }
 
 TARGET_PROJECTS_TO_BE_USED = {
-    PlatformEnvironment.ROBOFLOW_PLATFORM: "coin-counting",
-    PlatformEnvironment.ROBOFLOW_STAGING: "active-learning-demo",
+    PlatformEnvironment.ROBOFLOW_PLATFORM: "active-learning-demo",
+    PlatformEnvironment.ROBOFLOW_STAGING: "coin-counting",
 }
 
 ROBOFLOW_API_KEY = os.environ["HOSTED_PLATFORM_TESTS_API_KEY"]
+OPENAI_KEY = os.getenv("OPENAI_KEY")
 
 
 @pytest.fixture(scope="session")

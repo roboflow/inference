@@ -41,6 +41,11 @@ ACTIVE_LEARNING_WORKFLOW = {
             "name": "error",
             "selector": "$steps.data_collection.error_status",
         },
+        {
+            "type": "JsonField",
+            "name": "message",
+            "selector": "$steps.data_collection.message",
+        },
     ],
 }
 
@@ -87,10 +92,12 @@ def test_detection_plus_classification_workflow(
     assert set(result[0].keys()) == {
         "detection_predictions",
         "error",
+        "message",
     }, "Expected all outputs to be registered"
     assert set(result[1].keys()) == {
         "detection_predictions",
         "error",
+        "message",
     }, "Expected all outputs to be registered"
     assert (
         len(result[0]["detection_predictions"]["predictions"]) == 2
