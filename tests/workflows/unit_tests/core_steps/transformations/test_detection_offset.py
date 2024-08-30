@@ -85,6 +85,7 @@ def test_offset_detection() -> None:
             "detection_id": np.array(["two"]),
             "class_name": np.array(["car"]),
             "parent_id": np.array(["p2"]),
+            "image_dimensions": np.array([[640, 640]]),
         },
     )
 
@@ -107,6 +108,42 @@ def test_offset_detection() -> None:
     assert result["detection_id"] != str(
         detections["parent_id"][0]
     ), "New detection id (random) must be assigned"
+
+def test_offset_detection_when_larger_than_image() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[90, 190, 110, 210]], dtype=np.float64),
+        class_id=np.array([1]),
+        confidence=np.array([0.5], dtype=np.float64),
+        data={
+            "detection_id": np.array(["two"]),
+            "class_name": np.array(["car"]),
+            "parent_id": np.array(["p2"]),
+            "image_dimensions": np.array([[640, 640]]),
+        },
+    )
+
+    # when
+    result = offset_detections(
+        detections=detections,
+        offset_width=2000,
+        offset_height=2000,
+    )
+
+    # then
+    x1, y1, x2, y2 = result.xyxy[0]
+    assert x1 == 0, "Left corner should be at the image border"
+    assert y1 == 0, "Top corner should be at the image border"
+    assert x2 == 640, "Right corner should be at the image border"
+    assert y2 == 640, "Bottom corner should be at the image border"
+    assert result["parent_id"] == str(
+        detections["detection_id"][0]
+    ), "Parent id should be set to origin detection id"
+    assert result["detection_id"] != str(
+        detections["parent_id"][0]
+    ), "New detection id (random) must be assigned"
+
+
 
 
 def test_offset_detection_when_nothing_predicted() -> None:
