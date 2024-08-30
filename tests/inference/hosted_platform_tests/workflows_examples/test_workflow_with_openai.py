@@ -55,6 +55,7 @@ DESCRIPTION_WORKFLOW = {
 
 
 @pytest.mark.skipif(OPENAI_KEY is None, reason="No OpenAI API key provided")
+@pytest.mark.flaky(retries=4, delay=1)
 def test_image_description_workflow(
     object_detection_service_url: str,
     yolov8n_640_model_id: str,

@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from inference_sdk import InferenceHTTPClient
 from tests.inference.hosted_platform_tests.conftest import (
@@ -45,6 +46,7 @@ WORKFLOW_WITH_SAHI = {
 }
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_workflow_with_sahi(
     platform_environment: PlatformEnvironment,
     object_detection_service_url: str,

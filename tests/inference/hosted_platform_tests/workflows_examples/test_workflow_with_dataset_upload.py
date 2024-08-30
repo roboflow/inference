@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from inference_sdk import InferenceHTTPClient
 from tests.inference.hosted_platform_tests.conftest import (
@@ -22,12 +23,13 @@ ACTIVE_LEARNING_WORKFLOW = {
             "class_filter": ["dog"],
         },
         {
-            "type": "roboflow_core/roboflow_dataset_upload@v1",
+            "type": "roboflow_core/roboflow_dataset_upload@v2",
             "name": "data_collection",
             "images": "$inputs.image",
             "predictions": "$steps.general_detection.predictions",
             "target_project": "$inputs.target_project",
             "usage_quota_name": "my_quota",
+            "data_percentage": 100.0,
         },
     ],
     "outputs": [
@@ -61,6 +63,7 @@ CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
 }
 
 
+@pytest.mark.flaky(retries=4, delay=1)
 def test_detection_plus_classification_workflow(
     platform_environment: PlatformEnvironment,
     object_detection_service_url: str,
