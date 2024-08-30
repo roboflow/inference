@@ -25,6 +25,7 @@ from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
+from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
     InferenceRequest,
@@ -699,6 +700,17 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The YOLO World model ID.
+        """
+
+        load_trocr_model = partial(load_core_model, core_model="trocr")
+        """Loads the TrOCR model into the model manager.
+
+        Args:
+        inference_request: The request containing version and other details.
+        api_key: The API key for the request.
+
+        Returns:
+        The TrOCR model ID.
         """
 
         @app.get(
@@ -1615,6 +1627,48 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(cog_model_id, actor)
+                    return response
+
+            if CORE_MODEL_TROCR_ENABLED:
+
+                @app.post(
+                    "/trocr/ocr",
+                    response_model=OCRInferenceResponse,
+                    summary="TrOCR OCR response",
+                    description="Run the TrOCR model to retrieve text in an image.",
+                )
+                @with_route_exceptions
+                async def trocr_retrieve_text(
+                    inference_request: TrOCRInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Retrieves text from image data using the TrOCR model.
+
+                    Args:
+                        inference_request (TrOCRInferenceRequest): The request containing the image from which to retrieve text.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        OCRInferenceResponse: The response containing the retrieved text.
+                    """
+                    logger.debug(f"Reached /trocr/ocr")
+                    trocr_model_id = load_trocr_model(
+                        inference_request, api_key=api_key
+                    )
+                    response = await self.model_manager.infer_from_request(
+                        trocr_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(trocr_model_id, actor)
                     return response
 
         if not LAMBDA:

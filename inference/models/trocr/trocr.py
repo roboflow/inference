@@ -74,16 +74,6 @@ class TrOCR(RoboflowCoreModel):
         response.time = perf_counter() - t1
         return response
 
-    def get_infer_bucket_file_list(self) -> list:
-        """Get the list of required files for inference.
-
-        Returns:
-            list: A list of required files for inference, e.g., ["model.pt"].
-        """
-        # TODO: Add model files to bucket
-        # TODO: Add list of model files here
-        return []
-
 
 if __name__ == "__main__":
     import cv2
