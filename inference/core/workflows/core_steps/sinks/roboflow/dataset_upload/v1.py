@@ -170,6 +170,7 @@ class BlockManifest(WorkflowBlockManifest):
             description="Boolean flag dictating if sink is supposed to be executed in the background, "
             "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
             "registration is needed, use `False` while debugging and if error handling is needed",
+            examples=[True],
         )
     )
     labeling_batch_prefix: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = (
