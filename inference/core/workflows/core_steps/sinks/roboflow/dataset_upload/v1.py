@@ -1,3 +1,20 @@
+"""
+*****************************************************************
+*                           WARNING!                            *
+*****************************************************************
+This module contains the utility functions used by
+RoboflowDatasetUploadBlockV2.
+
+We do not recommend making multiple blocks dependent on the same code,
+but the change between v1 and v2 was basically the default value of
+some parameter - hence we decided not to replicate the code.
+
+If you need to modify this module beware that you may introduce
+change to RoboflowDatasetUploadBlockV2! If that happens,
+probably that's the time to disentangle those blocks and copy the
+code.
+"""
+
 import hashlib
 import json
 import logging
