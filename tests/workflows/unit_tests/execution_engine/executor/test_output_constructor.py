@@ -6,12 +6,12 @@ import pytest
 import supervision as sv
 from networkx import DiGraph
 
-from inference.core.workflows.entities.base import JsonField
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.entities.base import JsonField
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     NodeCategory,
     OutputNode,
 )
-from inference.core.workflows.execution_engine.executor.output_constructor import (
+from inference.core.workflows.execution_engine.v1.executor.output_constructor import (
     construct_workflow_output,
     convert_sv_detections_coordinates,
     create_array,
@@ -522,6 +522,7 @@ def test_construct_workflow_output_when_batch_outputs_present() -> None:
         return [batch_data_lookup[selector][index] for index in indices]
 
     execution_data_manager.get_batch_data = get_batch_data
+    execution_data_manager.get_lineage_indices.return_value = [(0,), (1,), (2,)]
 
     # when
     result = construct_workflow_output(

@@ -7,7 +7,7 @@ You can use this client to run models hosted:
 1. On the Roboflow platform (use client version `v0`), and;
 2. On device with Inference.
 
-For models trained at Roboflow platform, client accepts the following inputs:
+For models trained on the Roboflow platform, client accepts the following inputs:
 
 - A single image (Given as a local path, URL, `np.ndarray` or `PIL.Image`);
 - Multiple images;
@@ -60,7 +60,7 @@ result = loop.run_until_complete(
 )
 ```
 
-## Configuration options (used for models trained at Roboflow platform)
+## Configuration options (used for models trained on the Roboflow platform)
 
 ### configuring with context managers
 
@@ -195,8 +195,8 @@ Methods that support batching / parallelism:
 
 ## Client for core models
 
-`InferenceHTTPClient` now supports core models hosted via `inference`. Part of the models can be used at Roboflow hosted
-inference platform (use `https://infer.roboflow.com` as url), other are possible to be deployed locally (usually
+`InferenceHTTPClient` now supports core models hosted via `inference`. Part of the models can be used on the Roboflow 
+hosted inference platform (use `https://infer.roboflow.com` as url), other are possible to be deployed locally (usually
 local server will be available under `http://localhost:9001`).
 
 !!! tip
@@ -673,14 +673,14 @@ you cannot use different type of models in `project_a` and `project_b` - if that
 registered) - since `v0.9.18`
 
 ### Configuration of client
-
 - `output_visualisation_format`: one of (`VisualisationResponseFormat.BASE64`, `VisualisationResponseFormat.NUMPY`,
   `VisualisationResponseFormat.PILLOW`) - given that server-side visualisation is enabled - one may choose what
   format should be used in output
 - `image_extensions_for_directory_scan`: while using `CLIENT.infer_on_stream(...)` with local directory
   this parameter controls type of files (extensions) allowed to be processed -
   default: `["jpg", "jpeg", "JPG", "JPEG", "png", "PNG"]`
-- `client_downsizing_disabled`: set to `True` if you want to avoid client-side downsizing - default `False`.
+- `client_downsizing_disabled`: set to `False` if you want to perform client-side downsizing - default `True` (
+  changed in version `0.16.0` - previously was `False`).
   Client-side scaling is only supposed to down-scale (keeping aspect-ratio) the input for inference -
   to utilise internet connection more efficiently (but for the price of images manipulation / transcoding).
   If model registry endpoint is available (mode `v1`) - model input size information will be used, if not:
@@ -690,17 +690,27 @@ registered) - since `v0.9.18`
 support a single image in payload for the majority of endpoints - hence in this case, value will be overriden with `1`
 to prevent errors)
 
+!!! warning
+
+    The default value for flag `client_downsizing_disabled` was changed from `False` to `True` in release `0.16.0`!
+    For clients using models with input size above `1024x1024` running models on hosted 
+    platform it should improve predictions quality (as previous default behaviour was causing that input was downsized 
+    and then artificially upsized on the server side with worse image quality). 
+    There may be some clients that would like to remain previous settings to potentially improve speed (
+    when internet connection is a bottleneck and large images are submitted despite small 
+    model input size). 
+
 ## FAQs
 
 ## Why does the Inference client have two modes (`v0` and `v1`)?
 
 We are constantly improving our `infrence` package - initial version (`v0`) is compatible with
-models deployed at Roboflow platform (task types: `classification`, `object-detection`, `instance-segmentation` and
+models deployed on the Roboflow platform (task types: `classification`, `object-detection`, `instance-segmentation` and
 `keypoints-detection`)
 are supported. Version `v1` is available in locally hosted Docker images with HTTP API.
 
 Locally hosted `inference` server exposes endpoints for model manipulations, but those endpoints are not available
-at the moment for models deployed at Roboflow platform.
+at the moment for models deployed on the Roboflow platform.
 
 `api_url` parameter passed to `InferenceHTTPClient` will decide on default client mode - URLs with `*.roboflow.com`
 will be defaulted to version `v0`.

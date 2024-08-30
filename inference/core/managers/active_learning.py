@@ -48,6 +48,25 @@ class ActiveLearningManager(ModelManager):
         self.register(prediction=prediction, model_id=model_id, request=request)
         return prediction
 
+    def infer_from_request_sync(
+        self, model_id: str, request: InferenceRequest, **kwargs
+    ) -> InferenceResponse:
+        prediction = super().infer_from_request_sync(
+            model_id=model_id, request=request, **kwargs
+        )
+        active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
+        active_learning_disabled_for_request = getattr(
+            request, DISABLE_ACTIVE_LEARNING_PARAM, False
+        )
+        if (
+            not active_learning_eligible
+            or active_learning_disabled_for_request
+            or request.api_key is None
+        ):
+            return prediction
+        self.register(prediction=prediction, model_id=model_id, request=request)
+        return prediction
+
     def register(
         self, prediction: InferenceResponse, model_id: str, request: InferenceRequest
     ) -> None:
@@ -145,6 +164,36 @@ class BackgroundTaskActiveLearningManager(ActiveLearningManager):
         )
         kwargs[ACTIVE_LEARNING_ELIGIBLE_PARAM] = False  # disabling AL in super-classes
         prediction = await super().infer_from_request(
+            model_id=model_id, request=request, **kwargs
+        )
+        if (
+            not active_learning_eligible
+            or active_learning_disabled_for_request
+            or request.api_key is None
+        ):
+            return prediction
+        if BACKGROUND_TASKS_PARAM not in kwargs:
+            logger.warning(
+                "BackgroundTaskActiveLearningManager used against rules - `background_tasks` argument not "
+                "provided making Active Learning registration running sequentially."
+            )
+            self.register(prediction=prediction, model_id=model_id, request=request)
+        else:
+            background_tasks: BackgroundTasks = kwargs["background_tasks"]
+            background_tasks.add_task(
+                self.register, prediction=prediction, model_id=model_id, request=request
+            )
+        return prediction
+
+    def infer_from_request_sync(
+        self, model_id: str, request: InferenceRequest, **kwargs
+    ) -> InferenceResponse:
+        active_learning_eligible = kwargs.get(ACTIVE_LEARNING_ELIGIBLE_PARAM, False)
+        active_learning_disabled_for_request = getattr(
+            request, DISABLE_ACTIVE_LEARNING_PARAM, False
+        )
+        kwargs[ACTIVE_LEARNING_ELIGIBLE_PARAM] = False  # disabling AL in super-classes
+        prediction = super().infer_from_request_sync(
             model_id=model_id, request=request, **kwargs
         )
         if (

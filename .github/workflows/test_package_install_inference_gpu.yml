@@ -3,6 +3,8 @@ name: Test package install - inference-gpu
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -10,7 +12,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: group8core
+    timeout-minutes: 15
     strategy:
       matrix:
         python-version: ["3.8", "3.9", "3.10", "3.11"]

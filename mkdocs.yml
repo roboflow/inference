@@ -33,10 +33,10 @@ nav:
       - Enterprise Features: enterprise/enterprise.md
       - Inference Basics:
           - Roboflow Ecosystem: quickstart/roboflow_ecosystem.md
-          - "Models: Popular": quickstart/aliases.md
-          - "Models: Fine-tuned": quickstart/explore_models.md
-          - "Models: Universe": quickstart/load_from_universe.md
-          - "Models: Local Weights": models/from_local_weights.md
+          - 'Models: Popular': quickstart/aliases.md
+          - 'Models: Fine-tuned': quickstart/explore_models.md
+          - 'Models: Universe': quickstart/load_from_universe.md
+          - 'Models: Local Weights': models/from_local_weights.md
       - Supported Fine-Tuned Models:
           - YOLOv10: fine-tuned/yolov10.md
           - YOLOv9: fine-tuned/yolov9.md
@@ -53,8 +53,10 @@ nav:
           - L2CS-Net (Gaze Detection): foundation/gaze.md
           - PaliGemma: foundation/paligemma.md
           - Segment Anything (Segmentation): foundation/sam.md
+          - Segment Anything 2 (Segmentation): foundation/sam2.md
           - YOLO-World (Object Detection): foundation/yolo_world.md
       - Run a Model:
+          - Getting started: quickstart/run_a_model.md
           - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
           - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
           - Predict Over UDP: quickstart/run_model_over_udp.md
@@ -66,15 +68,25 @@ nav:
           - Retrieve Your API Key: quickstart/configure_api_key.md
           - Model Licenses: https://roboflow.com/licensing
   - Workflows:
-      - What is a Workflow?: workflows/about.md
-      - Understanding Workflows: workflows/understanding.md
-      - Workflows definitions: workflows/definitions.md
-      - How to Create and Run a Workflow: workflows/create_and_run.md
-      - Blocks: workflows/blocks.md
-      - Kinds: workflows/kinds.md
-      - Advanced Topics:
-          - Create a New Workflow Block: workflows/workflows_contribution.md
-          - Modes of Running Workflows: workflows/modes_of_running.md
+      - About Workflows: workflows/about.md
+      - Create and Run: workflows/create_and_run.md
+      - Ecosystem: workflows/understanding.md
+      - Blocks overview: workflows/blocks_connections.md
+      - Blocks gallery: workflows/blocks.md
+      - Examples: workflows/gallery_index.md
+      - User guide:
+        - Running Workflows: workflows/modes_of_running.md
+        - Workflows Definitions: workflows/definitions.md
+        - Workflow execution: workflows/workflow_execution.md
+      - Developer guide:
+        - Compiler: workflows/workflows_compiler.md
+        - Execution Engine: workflows/workflows_execution_engine.md
+        - Kinds: workflows/kinds.md
+        - Blocks development: workflows/create_workflow_block.md
+        - Plugins: workflows/blocks_bundling.md
+        - Dynamic Python blocks: workflows/custom_python_code_blocks.md
+        - Versioning: workflows/versioning.md
+        - Testing: workflows/testing.md
   - Reference:
       - Inference Pipeline: using_inference/inference_pipeline.md
       - Active Learning:
@@ -91,16 +103,20 @@ nav:
           - Inference Landing Page: inference_helpers/inference_landing_page.md
           - Inference CLI: inference_helpers/inference_cli.md
           - Inference SDK: inference_helpers/inference_sdk.md
+      - inference configuration:
+          - Environmental variables: server_configuration/environmental_variables.md
+          - Security of input formats: server_configuration/accepted_input_formats.md
       - Reference:
           - Inference API Reference: docs/reference/
           - Running With Docker: quickstart/docker.md
           - Docker Configuration Options: quickstart/docker_configuration_options.md
+          - Install “bare metal” Inference GPU on Windows: quickstart/inference_gpu_windows.md
           - Contribute to Inference: contributing.md
           - Changelog: https://github.com/roboflow/inference/releases
   - Cookbooks: cookbooks.md
 
 theme:
-  name: "material"
+  name: 'material'
   logo: inference-icon.png
   favicon: inference-icon.png
   custom_dir: docs/theme
@@ -120,13 +136,13 @@ theme:
 
   palette:
     - scheme: default
-      primary: "custom"
+      primary: 'custom'
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
 
     - scheme: slate
-      primary: "custom"
+      primary: 'custom'
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -162,6 +178,6 @@ markdown_extensions:
       permalink: true
 
 extra_javascript:
-  - "https://widget.kapa.ai/kapa-widget.bundle.js"
-  - "javascript/init_kapa_widget.js"
-  - "javascript/cookbooks.js"
+  - 'https://widget.kapa.ai/kapa-widget.bundle.js'
+  - 'javascript/init_kapa_widget.js'
+  - 'javascript/cookbooks.js'

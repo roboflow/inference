@@ -16,7 +16,7 @@ class BaseRequest(BaseModel):
     """
 
     def __init__(self, **kwargs):
-        kwargs["id"] = str(uuid4())
+        kwargs["id"] = kwargs.get("id", str(uuid4()))
         super().__init__(**kwargs)
 
     model_config = ConfigDict(protected_namespaces=())
@@ -248,5 +248,5 @@ def request_from_type(model_type, request_dict):
         request = ObjectDetectionInferenceRequest(**request_dict)
     else:
         raise ValueError(f"Uknown task type {model_type}")
-    request.id = request_dict.get("id")
+    request.id = request_dict.get("id", request.id)
     return request

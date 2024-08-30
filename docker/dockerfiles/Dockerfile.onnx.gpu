@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04 as base
+FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 as base
 
 WORKDIR /app
 
@@ -10,6 +10,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     python3-pip \
     git \
     libgdal-dev \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
@@ -22,16 +23,13 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.groundingdino.txt \
     requirements/requirements.cogvlm.txt \
     requirements/requirements.yolo_world.txt \
-    requirements/requirements.pali.local.txt \
-    requirements/requirements.pali.server.txt \
     requirements/_requirements.txt \
+    requirements/requirements.pali.server.txt \
+    requirements/requirements.pali.flash_attn.txt \
     ./
 
-# Pali server has a seperate index to get torch for cuda 11
-RUN pip3 install --upgrade pip && pip3 install -r requirements.pali.server.txt
-# Remove torch installed cudnn since we already have it in the dockerfile
-RUN pip3 uninstall -y nvidia-cudnn-cu11
-RUN pip3 install \
+RUN python3 -m pip install -U pip
+RUN python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cu118 \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
@@ -43,10 +41,16 @@ RUN pip3 install \
     -r requirements.doctr.txt \
     -r requirements.cogvlm.txt \
     -r requirements.yolo_world.txt \
-    -r requirements.pali.local.txt \
+    -r requirements.pali.server.txt \
     jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip
+
+# Install setup.py requirements for flash_attn
+RUN python3 -m pip install packaging==24.1  && rm -rf ~/.cache/pip
+
+# Install flash_attn required for Paligemma and Florence2
+RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-build-isolation && rm -rf ~/.cache/pip
 
 FROM scratch
 COPY --from=base / /
@@ -72,5 +76,7 @@ ENV PORT=9001
 ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV API_LOGGING_ENABLED=True
+ENV LMM_ENABLED=True
+ENV CORE_MODEL_SAM2_ENABLED=True
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

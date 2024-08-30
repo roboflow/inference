@@ -10,7 +10,7 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 from inference.core.workflows.core_steps.common.query_language.operations.utils import (
     safe_stringify,
 )
-from inference.core.workflows.entities.base import WorkflowImageData
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 PROPERTY_EXTRACTORS = {
     ImageProperty.SIZE: lambda image: image.numpy_image.shape[0]

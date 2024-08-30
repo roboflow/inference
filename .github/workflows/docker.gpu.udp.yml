@@ -3,14 +3,21 @@ name: Build and Push UDP GPU Container
 on:
   release:
     types: [created]
+  push:
+    branches: [ main ]
   workflow_dispatch:
-
+    inputs:
+      force_push:
+        type: boolean
+        description: "Do you want to push image after build?"
+        default: false
 env:
   VERSION: '0.0.0' # Default version, will be overwritten
 
 jobs:
   docker:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - name: Remove unnecessary files
         run: |
@@ -38,7 +45,7 @@ jobs:
         name: Build and Push
         uses: docker/build-push-action@v4
         with:
-          push: true
+          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           tags: roboflow/roboflow-inference-server-udp-gpu:latest,roboflow/roboflow-inference-server-udp-gpu:${{env.VERSION}}
           cache-from: type=registry,ref=roboflow/roboflow-inference-server-udp-gpu:cache
           cache-to: type=registry,ref=roboflow/roboflow-inference-server-udp-gpu:cache,mode=max

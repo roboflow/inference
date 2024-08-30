@@ -1,16 +1,9 @@
-from copy import deepcopy
-
 import pytest
-from pydantic import ValidationError
 
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.errors import (
-    DuplicatedNameError,
-    ExecutionGraphStructureError,
-    WorkflowSyntaxError,
-)
-from inference.core.workflows.execution_engine.compiler.core import compile_workflow
+from inference.core.workflows.errors import DuplicatedNameError
+from inference.core.workflows.execution_engine.v1.compiler.core import compile_workflow
 
 DEFINITION_WITH_DUPLICATED_INPUTS = {
     "version": "1.0",
@@ -37,8 +30,7 @@ DEFINITION_WITH_DUPLICATED_INPUTS = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_with_duplicated_inputs(
+def test_compilation_of_workflow_with_duplicated_inputs(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -87,8 +79,7 @@ DEFINITION_WITH_DUPLICATED_STEPS = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_with_duplicated_steps(
+def test_compilation_of_workflow_with_duplicated_steps(
     model_manager: ModelManager,
 ) -> None:
     # given
@@ -135,8 +126,7 @@ DEFINITION_WITH_DUPLICATED_OUTPUTS = {
 }
 
 
-@pytest.mark.asyncio
-async def test_compilation_of_workflow_with_duplicated_outputs(
+def test_compilation_of_workflow_with_duplicated_outputs(
     model_manager: ModelManager,
 ) -> None:
     # given

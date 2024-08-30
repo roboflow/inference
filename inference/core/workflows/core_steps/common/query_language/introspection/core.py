@@ -79,12 +79,13 @@ def prepare_operators_descriptions() -> List[OperatorDescription]:
     results = []
     for operator_type in operator_types:
         operator_schema = operator_type.schema()
-        results.append(
-            OperatorDescription(
-                operator_type=operator_schema["properties"]["type"]["const"],
-                operands_number=operator_schema["operands_number"],
-                operands_kinds=operator_schema["operands_kinds"],
-                description=operator_schema.get("description"),
+        for alias in operator_schema["properties"]["type"].get("enum", []):
+            results.append(
+                OperatorDescription(
+                    operator_type=alias,
+                    operands_number=operator_schema["operands_number"],
+                    operands_kinds=operator_schema["operands_kinds"],
+                    description=operator_schema.get("description"),
+                )
             )
-        )
     return results

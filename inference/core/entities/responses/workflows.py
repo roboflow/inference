@@ -6,7 +6,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.introspe
     OperationDescription,
     OperatorDescription,
 )
-from inference.core.workflows.entities.types import Kind
+from inference.core.workflows.execution_engine.entities.types import Kind
 from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
 )
@@ -146,3 +146,14 @@ class WorkflowsBlocksDescription(BaseModel):
     universal_query_language_description: UniversalQueryLanguageDescription = Field(
         description="Definitions of Universal Query Language operations and operators"
     )
+    dynamic_block_definition_schema: dict = Field(
+        description="Schema for dynamic block definition"
+    )
+
+
+class ExecutionEngineVersions(BaseModel):
+    versions: List[str]
+
+
+class WorkflowsBlocksSchemaDescription(BaseModel):
+    schema: dict = Field(description="Schema for validating block definitions")

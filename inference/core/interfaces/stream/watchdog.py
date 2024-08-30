@@ -244,7 +244,7 @@ class BasePipelineWatchDog(PipelineWatchDog):
         latency_reports = [
             monitor.summarise_reports() for monitor in self._latency_monitors.values()
         ]
-        if hasattr(self._inference_throughput_monitor(), "fps"):
+        if hasattr(self._inference_throughput_monitor, "fps"):
             _inference_throughput_fps = self._inference_throughput_monitor.fps
         else:
             _inference_throughput_fps = self._inference_throughput_monitor()

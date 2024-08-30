@@ -4,26 +4,24 @@ from unittest.mock import MagicMock
 import networkx as nx
 import pytest
 
-from inference.core.workflows.core_steps.common.query_language.entities.operations import (
-    IsTrue,
-    StatementGroup,
-    StaticOperand,
-    UnaryStatement,
+from inference.core.workflows.core_steps.models.roboflow.object_detection import (
+    v1 as object_detection_version_1,
 )
-from inference.core.workflows.core_steps.models.roboflow import object_detection
-from inference.core.workflows.core_steps.transformations import dynamic_crop
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.core_steps.transformations.dynamic_crop import (
+    v1 as dynamic_crop_version_1,
+)
+from inference.core.workflows.execution_engine.entities.base import (
     JsonField,
     WorkflowImage,
     WorkflowParameter,
 )
-from inference.core.workflows.execution_engine.compiler.entities import (
+from inference.core.workflows.execution_engine.v1.compiler.entities import (
     InputNode,
     NodeCategory,
     OutputNode,
     StepNode,
 )
-from inference.core.workflows.execution_engine.compiler.utils import (
+from inference.core.workflows.execution_engine.v1.compiler.utils import (
     construct_input_selector,
     get_input_parameters_selectors,
     get_last_chunk_of_selector,
@@ -199,13 +197,13 @@ def test_get_output_names() -> None:
 def test_get_steps_selectors() -> None:
     # given
     steps = [
-        dynamic_crop.BlockManifest(
+        dynamic_crop_version_1.BlockManifest(
             type="Crop",
             name="my_crop",
             image="$inputs.image",
             detections="$steps.detect_2.predictions",
         ),
-        object_detection.BlockManifest(
+        object_detection_version_1.BlockManifest(
             type="ObjectDetectionModel",
             name="my_model",
             image="$inputs.image",

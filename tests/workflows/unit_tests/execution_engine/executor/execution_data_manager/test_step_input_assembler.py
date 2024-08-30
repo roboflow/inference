@@ -2,9 +2,9 @@ from typing import Any
 
 import pytest
 
-from inference.core.workflows.entities.base import Batch
 from inference.core.workflows.errors import ExecutionEngineRuntimeError
-from inference.core.workflows.execution_engine.executor.execution_data_manager.step_input_assembler import (
+from inference.core.workflows.execution_engine.entities.base import Batch
+from inference.core.workflows.execution_engine.v1.executor.execution_data_manager.step_input_assembler import (
     GuardForIndicesWrapping,
     ensure_compound_input_indices_match,
     get_empty_batch_elements_indices,
@@ -513,6 +513,7 @@ def test_reduce_batch_dimensionality_when_reduction_is_legal() -> None:
     # when
     result = reduce_batch_dimensionality(
         indices=[(0, 0), (0, 1), (1, 2), (1, 3)],
+        upper_level_index=[(0,), (1,)],
         data=["a", "b", "c", "d"],
         guard_of_indices_wrapping=guard_of_indices_wrapping,
     )
@@ -541,6 +542,46 @@ def test_reduce_batch_dimensionality_when_reduction_is_legal() -> None:
     ], "Part of original index must be preserved"
 
 
+def test_reduce_batch_dimensionality_when_reduction_is_legal_but_nested_result_skip_high_level_index_element() -> (
+    None
+):
+    # given
+    guard_of_indices_wrapping = GuardForIndicesWrapping()
+
+    # when
+    result = reduce_batch_dimensionality(
+        indices=[(0, 0), (0, 1), (2, 2), (2, 3)],
+        upper_level_index=[(0,), (1,), (2,)],
+        data=["a", "b", "c", "d"],
+        guard_of_indices_wrapping=guard_of_indices_wrapping,
+    )
+
+    # then
+    assert len(result) == 3, "Expected 3 output batches"
+    assert result.indices == [
+        (0,),
+        (1,),
+        (2,),
+    ], "Expected index to be reduced 1 lvl of dimensionality"
+    assert list(result[0]) == [
+        "a",
+        "b",
+    ], "Expected 1st batch to contain elements with prefix (0, ) in index"
+    assert result[0].indices == [
+        (0, 0),
+        (0, 1),
+    ], "Part of original index must be preserved"
+    assert result[1] is None, "Expected missing element to be None"
+    assert list(result[2]) == [
+        "c",
+        "d",
+    ], "Expected 3rd batch to contain elements with prefix (2, ) in index"
+    assert result[2].indices == [
+        (2, 2),
+        (2, 3),
+    ], "Part of original index must be preserved"
+
+
 def test_reduce_batch_dimensionality_when_reduction_is_illegal() -> None:
     # given
     guard_of_indices_wrapping = GuardForIndicesWrapping()
@@ -552,6 +593,7 @@ def test_reduce_batch_dimensionality_when_reduction_is_illegal() -> None:
     with pytest.raises(ExecutionEngineRuntimeError):
         _ = reduce_batch_dimensionality(
             indices=[(0, 0), (0, 1), (1, 2), (1, 3)],
+            upper_level_index=[(0,), (1,)],
             data=["a", "b", "c", "d"],
             guard_of_indices_wrapping=guard_of_indices_wrapping,
         )

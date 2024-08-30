@@ -2,19 +2,17 @@
 This is just example, test implementation, please do not assume it being fully functional.
 """
 
-from copy import deepcopy
-from typing import List, Literal, Optional, Type, Union
+from typing import List, Literal, Type, Union
 
-import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_IMAGES_KIND,
     BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
@@ -79,7 +77,7 @@ class TileDetectionsBatchBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    async def run(
+    def run(
         self,
         images_crops: Batch[Batch[WorkflowImageData]],
         crops_predictions: Batch[Batch[sv.Detections]],

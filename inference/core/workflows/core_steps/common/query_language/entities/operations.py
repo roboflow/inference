@@ -1,9 +1,10 @@
-from typing import Any, List, Literal, Tuple, Union
+from typing import Any, List, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
 
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
+    ClassificationProperty,
     DetectionsProperty,
     DetectionsSelectionMode,
     DetectionsSortProperties,
@@ -13,7 +14,8 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
     SequenceAggregationMode,
     StatementsGroupsOperator,
 )
-from inference.core.workflows.entities.types import (
+from inference.core.workflows.execution_engine.entities.types import (
+    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BOOLEAN_KIND,
     DETECTION_KIND,
     DICTIONARY_KIND,
@@ -203,6 +205,22 @@ class DetectionsPropertyExtract(OperationDefinition):
     )
     type: Literal["DetectionsPropertyExtract"]
     property_name: DetectionsProperty
+
+
+class ClassificationPropertyExtract(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Extracts property from detections-based prediction"
+            "(as a list of elements - one element represents single detection)",
+            "compound": False,
+            "input_kind": [
+                BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
+            ],
+            "output_kind": [STRING_KIND, LIST_OF_VALUES_KIND, FLOAT_ZERO_TO_ONE_KIND],
+        },
+    )
+    type: Literal["ClassificationPropertyExtract"]
+    property_name: ClassificationProperty
 
 
 class DetectionsSelection(OperationDefinition):
@@ -459,6 +477,7 @@ AllOperationsType = Annotated[
         Divide,
         DetectionsSelection,
         SortDetections,
+        ClassificationPropertyExtract,
     ],
     Field(discriminator="type"),
 ]
@@ -484,6 +503,7 @@ class Equals(BinaryOperator):
                     FLOAT_KIND,
                     FLOAT_ZERO_TO_ONE_KIND,
                     BOOLEAN_KIND,
+                    LIST_OF_VALUES_KIND,
                 ],
                 [
                     INTEGER_KIND,
@@ -491,12 +511,13 @@ class Equals(BinaryOperator):
                     FLOAT_KIND,
                     FLOAT_ZERO_TO_ONE_KIND,
                     BOOLEAN_KIND,
+                    LIST_OF_VALUES_KIND,
                 ],
             ],
             "output_kind": [BOOLEAN_KIND],
         },
     )
-    type: Literal["(Number) =="]
+    type: Literal["(Number) ==", "=="]
 
 
 class NotEquals(BinaryOperator):
@@ -511,6 +532,7 @@ class NotEquals(BinaryOperator):
                     FLOAT_KIND,
                     FLOAT_ZERO_TO_ONE_KIND,
                     BOOLEAN_KIND,
+                    LIST_OF_VALUES_KIND,
                 ],
                 [
                     INTEGER_KIND,
@@ -518,12 +540,13 @@ class NotEquals(BinaryOperator):
                     FLOAT_KIND,
                     FLOAT_ZERO_TO_ONE_KIND,
                     BOOLEAN_KIND,
+                    LIST_OF_VALUES_KIND,
                 ],
             ],
             "output_kind": [BOOLEAN_KIND],
         },
     )
-    type: Literal["(Number) !="]
+    type: Literal["(Number) !=", "!="]
 
 
 class NumberGreater(BinaryOperator):

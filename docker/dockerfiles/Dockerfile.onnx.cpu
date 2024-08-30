@@ -39,7 +39,6 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.yolo_world.txt \
     jupyterlab \
     wheel>=0.38.0 \
-    setuptools>=65.5.1 \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -71,5 +70,6 @@ ENV PORT=9001
 ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV API_LOGGING_ENABLED=True
+ENV CORE_MODEL_SAM2_ENABLED=True
 
 ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

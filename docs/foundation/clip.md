@@ -18,7 +18,7 @@ In this guide, we will show:
 ## How can I use CLIP model in `inference`?
 
 - directly from `inference[clip]` package, integrating the model directly into your code
-- using `inference` HTTP API (hosted locally, or at Roboflow platform), integrating via HTTP protocol
+- using `inference` HTTP API (hosted locally, or on the Roboflow platform), integrating via HTTP protocol
   - using `inference-sdk` package (`pip install inference-sdk`) and [`InferenceHTTPClient`](/docs/inference_sdk/http_client.md)
   - creating custom code to make HTTP requests (see [API Reference](/api/))
 
@@ -52,7 +52,7 @@ Below is a demo of CLIP classifying video frames in real time. The code for the 
 First, install the Inference CLIP extension:
 
 ```
-pip install inference[clip]
+pip install "inference[clip]"
 ```
 
 Then, create a new Python file and add the following code:
@@ -137,7 +137,7 @@ CLIENT = InferenceHTTPClient(
     api_url="https://infer.roboflow.com",
     api_key=os.environ["ROBOFLOW_API_KEY"],
 )
-embeddings = CLIENT.get_clip_image_embeddings(inference_input="https://i.imgur.com/Q6lDy8B.jpg")
+embeddings = CLIENT.get_clip_image_embeddings(inference_input="https://media.roboflow.com/inference/people-walking.jpg")
 print(embeddings)
 
 # since release `0.9.17`, you may pass extra argument `clip_version` to get_clip_image_embeddings(...) to select

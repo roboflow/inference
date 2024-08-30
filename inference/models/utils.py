@@ -182,9 +182,43 @@ except:
     pass
 
 try:
+    from inference.models import Florence2, LoRAFlorence2
+
+    florence2_models = {
+        (
+            "object-detection",
+            "florence-2-base",
+        ): Florence2,  # TODO: change when we have a new project type
+        ("object-detection", "florence-2-large"): Florence2,
+        (
+            "instance-segmentation",
+            "florence-2-base",
+        ): Florence2,  # TODO: change when we have a new project type
+        ("instance-segmentation", "florence-2-large"): Florence2,
+        (
+            "object-detection",
+            "florence-2-base-peft",
+        ): LoRAFlorence2,  # TODO: change when we have a new project type
+        ("object-detection", "florence-2-large-peft"): LoRAFlorence2,
+        (
+            "instance-segmentation",
+            "florence-2-base-peft",
+        ): LoRAFlorence2,  # TODO: change when we have a new project type
+        ("instance-segmentation", "florence-2-large-peft"): LoRAFlorence2,
+    }
+    ROBOFLOW_MODEL_TYPES.update(florence2_models)
+except:
+    pass
+try:
     from inference.models import SegmentAnything
 
     ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
+except:
+    pass
+try:
+    from inference.models import SegmentAnything2
+
+    ROBOFLOW_MODEL_TYPES[("embed", "sam2")] = SegmentAnything2
 except:
     pass
 

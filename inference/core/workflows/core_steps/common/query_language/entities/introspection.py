@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel
 
-from inference.core.workflows.entities.types import Kind
+from inference.core.workflows.execution_engine.entities.types import Kind
 
 
 class OperationDescription(BaseModel):

@@ -7,6 +7,7 @@ from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.usage_tracking.collector import usage_collector
 
 
 class BaseInference:
@@ -15,6 +16,7 @@ class BaseInference:
     This class provides a basic interface for inference tasks.
     """
 
+    @usage_collector
     def infer(self, image: Any, **kwargs) -> Any:
         """Runs inference on given data.
         - image:
@@ -128,6 +130,8 @@ class Model(BaseInference):
         responses = self.infer(**request.dict(), return_image_dims=False)
         for response in responses:
             response.time = perf_counter() - t1
+            if request.id:
+                response.inference_id = request.id
 
         if request.visualize_predictions:
             for response in responses:

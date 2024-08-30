@@ -2,11 +2,11 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.models.third_party.barcode_detection import (
-    BarcodeDetectorBlock,
+from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
+    BarcodeDetectorBlockV1,
     BlockManifest,
 )
-from inference.core.workflows.entities.base import (
+from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     WorkflowImageData,
@@ -14,7 +14,10 @@ from inference.core.workflows.entities.base import (
 
 
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
-@pytest.mark.parametrize("type_alias", ["BarcodeDetector", "BarcodeDetection"])
+@pytest.mark.parametrize(
+    "type_alias",
+    ["roboflow_core/barcode_detector@v1", "BarcodeDetector", "BarcodeDetection"],
+)
 def test_manifest_parsing_when_data_is_valid(
     images_field_alias: str, type_alias: str
 ) -> None:
@@ -49,10 +52,9 @@ def test_manifest_parsing_when_image_is_invalid_valid() -> None:
         _ = BlockManifest.model_validate(data)
 
 
-@pytest.mark.asyncio
-async def test_barcode_detection(barcode_image: np.ndarray) -> None:
+def test_barcode_detection(barcode_image: np.ndarray) -> None:
     # given
-    step = BarcodeDetectorBlock()
+    step = BarcodeDetectorBlockV1()
     images = Batch(
         content=[
             WorkflowImageData(
@@ -64,7 +66,7 @@ async def test_barcode_detection(barcode_image: np.ndarray) -> None:
     )
 
     # when
-    result = await step.run(images=images)
+    result = step.run(images=images)
 
     # then
     actual_parent_id = result[0]["predictions"]["parent_id"]

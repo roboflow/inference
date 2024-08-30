@@ -1,11 +1,10 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from enum import Enum
 from functools import partial
 from queue import Queue
 from threading import Thread
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
-
-from fastapi import BackgroundTasks
 
 from inference.core import logger
 from inference.core.active_learning.middlewares import (
@@ -134,7 +133,7 @@ class InferencePipeline:
         to reflect changes in sink function signature.
 
         Args:
-            model_id (str): Name and version of model at Roboflow platform (example: "my-model/3")
+            model_id (str): Name and version of model on the Roboflow platform (example: "my-model/3")
             video_reference (Union[str, int, List[Union[str, int]]]): Reference of source or sources to be used to make
                 predictions against. It can be video file path, stream URL and device (like camera) id
                 (we handle whatever cv2 handles). It can also be a list of references (since v0.9.18) - and then
@@ -442,6 +441,9 @@ class InferencePipeline:
         source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None,
         video_source_properties: Optional[Dict[str, float]] = None,
         workflow_init_parameters: Optional[Dict[str, Any]] = None,
+        workflows_thread_pool_workers: int = 4,
+        cancel_thread_pool_tasks_on_exit: bool = True,
+        video_metadata_input_name: str = "video_metadata",
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -461,8 +463,9 @@ class InferencePipeline:
             workflow_id (Optional[str]): When using registered workflows - Roboflow workflow id needs to be given.
             api_key (Optional[str]): Roboflow API key - if not passed - will be looked in env under "ROBOFLOW_API_KEY"
                 and "API_KEY" variables. API key, passed in some form is required.
-            image_input_name (str): Name of input image defined in `workflow_specification`. `InferencePipeline` will be
-                injecting video frames to workflow through that parameter name.
+            image_input_name (str): Name of input image defined in `workflow_specification` or Workflow definition saved
+                on the Roboflow Platform. `InferencePipeline` will be injecting video frames to workflow through that
+                parameter name.
             workflows_parameters (Optional[Dict[str, Any]]): Dictionary with additional parameters that can be
                 defined within `workflow_specification`.
             on_prediction (Callable[AnyPrediction, VideoFrame], None]): Function to be called
@@ -491,8 +494,14 @@ class InferencePipeline:
             workflow_init_parameters (Optional[Dict[str, Any]]): Additional init parameters to be used by
                 workflows Execution Engine to init steps of your workflow - may be required when running workflows
                 with custom plugins.
-
-
+            workflows_thread_pool_workers (int): Number of workers for workflows thread pool which is used
+                by workflows blocks to run background tasks.
+            cancel_thread_pool_tasks_on_exit (bool): Flag to decide if unstated background tasks should be
+                canceled at the end of InferencePipeline processing. By default, when video file ends or
+                pipeline is stopped, tasks that has not started will be cancelled.
+            video_metadata_input_name (str): Name of input for video metadata defined in `workflow_specification` or
+                Workflow definition saved  on the Roboflow Platform. `InferencePipeline` will be injecting video frames
+                metadata to workflows through that parameter name.
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
         * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
@@ -547,21 +556,20 @@ class InferencePipeline:
             )
             if api_key is None:
                 api_key = API_KEY
-            background_tasks = BackgroundTasks()
             if workflow_init_parameters is None:
                 workflow_init_parameters = {}
+            thread_pool_executor = ThreadPoolExecutor(
+                max_workers=workflows_thread_pool_workers
+            )
             workflow_init_parameters["workflows_core.model_manager"] = model_manager
             workflow_init_parameters["workflows_core.api_key"] = api_key
-            workflow_init_parameters["workflows_core.background_tasks"] = (
-                background_tasks
-            )
-            workflow_init_parameters["workflows_core.cache"] = cache
-            workflow_init_parameters["workflows_core.step_execution_mode"] = (
-                StepExecutionMode.LOCAL
+            workflow_init_parameters["workflows_core.thread_pool_executor"] = (
+                thread_pool_executor
             )
             execution_engine = ExecutionEngine.init(
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
+                workflow_id=workflow_id,
             )
             workflow_runner = WorkflowRunner()
             on_video_frame = partial(
@@ -569,6 +577,7 @@ class InferencePipeline:
                 workflows_parameters=workflows_parameters,
                 execution_engine=execution_engine,
                 image_input_name=image_input_name,
+                video_metadata_input_name=video_metadata_input_name,
             )
         except ImportError as error:
             raise CannotInitialiseModelError(
@@ -580,7 +589,9 @@ class InferencePipeline:
             on_video_frame=on_video_frame,
             on_prediction=on_prediction,
             on_pipeline_start=None,
-            on_pipeline_end=None,
+            on_pipeline_end=lambda: thread_pool_executor.shutdown(
+                cancel_futures=cancel_thread_pool_tasks_on_exit
+            ),
             max_fps=max_fps,
             watchdog=watchdog,
             status_update_handlers=status_update_handlers,

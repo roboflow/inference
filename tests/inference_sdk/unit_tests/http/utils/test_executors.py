@@ -219,7 +219,9 @@ def test_make_request_when_successful_response_is_expected(
 
 
 @mock.patch.object(executors, "make_request")
-def test_make_parallel_requests(make_request_mock: MagicMock) -> None:
+def test_make_parallel_requests(
+    make_request_mock: MagicMock,
+) -> None:
     # given
     request_data = RequestData(
         url="https://some.com",
