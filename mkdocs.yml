@@ -49,6 +49,7 @@ nav:
           - CLIP (Classification, Embeddings): foundation/clip.md
           - CogVLM (Multimodal Language Model): foundation/cogvlm.md
           - DocTR (OCR): foundation/doctr.md
+          - Florence-2: foundation/florence2.md
           - Grounding DINO (Object Detection): foundation/grounding_dino.md
           - L2CS-Net (Gaze Detection): foundation/gaze.md
           - PaliGemma: foundation/paligemma.md
