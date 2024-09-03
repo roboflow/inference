@@ -72,6 +72,9 @@ from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRMode
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
+    OpenAIBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
 )
@@ -295,6 +298,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ClipComparisonBlockV2,
         CameraFocusBlockV1,
         RoboflowDatasetUploadBlockV2,
+        OpenAIBlockV2,
     ]
 
 

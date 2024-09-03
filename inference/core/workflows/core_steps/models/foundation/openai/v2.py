@@ -1,33 +1,24 @@
 import base64
 import json
-import re
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from openai import OpenAI
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
-from inference.core.workflows.execution_engine.constants import (
-    PARENT_ID_KEY,
-    ROOT_PARENT_ID_KEY,
-)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_DICTIONARY_KIND,
-    BATCH_OF_IMAGE_METADATA_KIND,
-    BATCH_OF_PARENT_ID_KIND,
     BATCH_OF_STRING_KIND,
-    DICTIONARY_KIND,
+    LIST_OF_VALUES_KIND,
     STRING_KIND,
-    WILDCARD_KIND,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -38,17 +29,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk.http.utils.iterables import make_batches
-
-NOT_DETECTED_VALUE = "not_detected"
-JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json\n([\s\S]*?)\n```")
-
-
-class LMMConfig(BaseModel):
-    max_tokens: int = Field(default=450)
-    gpt_image_detail: Literal["low", "high", "auto"] = Field(default="auto")
-    gpt_model_version: str = Field(default="gpt-4o")
-
 
 LONG_DESCRIPTION = """
 Ask a question to OpenAI's GPT-4 with Vision model.
@@ -57,6 +37,33 @@ You can specify arbitrary text prompts to the OpenAIBlock.
 
 You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
 """
+
+TaskType = Literal[
+    "unconstrained",
+    "ocr",
+    "visual-question-answering",
+    "caption",
+    "detailed-caption",
+    "classification",
+    "multi-label-classification",
+    "object-detection",
+    "structured-answering",
+]
+
+TASKS_REQUIRING_PROMPT = {
+    "unconstrained",
+    "visual-question-answering",
+}
+
+TASKS_REQUIRING_CLASSES = {
+    "classification",
+    "multi-label-classification",
+    "object-detection",
+}
+
+TASKS_REQUIRING_OUTPUT_STRUCTURE = {
+    "structured-answering",
+}
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -73,13 +80,51 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/open_ai@v2"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    prompt: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    task_type: TaskType = Field(
+        description="Task type to be performed by model. Value of parameter determine set of fields "
+        "that are required. For `unconstrained`, `visual-question-answering`, "
+        " - `prompt` parameter must be provided."
+        "For `structured-answering` - `output-structure` must be provided. For "
+        "`classification`, `multi-label-classification`, `object-detection` - "
+        "`classes` must be filled. `ocr`, `caption`, `detailed-caption` do not"
+        "require any additional parameter.",
+    )
+    prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
+        default=None,
         description="Text prompt to the OpenAI model",
         examples=["my prompt", "$inputs.prompt"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {"values": TASKS_REQUIRING_PROMPT, "required": True},
+            },
+        },
     )
-    openai_api_key: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]
+    output_structure: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Dictionary with structure of expected JSON response",
+        examples=[{"my_key": "description"}, "$inputs.output_structure"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {"values": TASKS_REQUIRING_CLASSES, "required": True},
+            },
+        },
+    )
+    classes: Optional[
+        Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]
     ] = Field(
+        default=None,
+        description="List of classes to be used",
+        examples=["my prompt", "$inputs.prompt"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": TASKS_REQUIRING_OUTPUT_STRUCTURE,
+                    "required": True,
+                },
+            },
+        },
+    )
+    openai_api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
         description="Your OpenAI API key",
         examples=["xxx-xxx", "$inputs.openai_api_key"],
         private=True,
@@ -105,9 +150,28 @@ class BlockManifest(WorkflowBlockManifest):
     max_concurrent_requests: Optional[int] = Field(
         default=None,
         description="Number of concurrent requests that can be executed by block when batch of input images provided. "
-                    "If not given - block defaults to value configured globally in Workflows Execution Engine. "
-                    "Please restrict if you hit OpenAI limits."
+        "If not given - block defaults to value configured globally in Workflows Execution Engine. "
+        "Please restrict if you hit OpenAI limits.",
     )
+
+    @model_validator(mode="after")
+    def validate(self) -> "BlockManifest":
+        if self.task_type in TASKS_REQUIRING_PROMPT and self.prompt is None:
+            raise ValueError(
+                f"`prompt` parameter required to be set for task `{self.task_type}`"
+            )
+        if self.task_type in TASKS_REQUIRING_CLASSES and self.classes is None:
+            raise ValueError(
+                f"`classes` parameter required to be set for task `{self.task_type}`"
+            )
+        if (
+            self.task_type in TASKS_REQUIRING_OUTPUT_STRUCTURE
+            and self.output_structure is None
+        ):
+            raise ValueError(
+                f"`output_structure` parameter required to be set for task `{self.task_type}`"
+            )
+        return self
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
@@ -116,10 +180,8 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
             OutputDefinition(name="output", kind=[BATCH_OF_STRING_KIND]),
+            OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
         ]
 
     @classmethod
@@ -127,7 +189,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.0.0,<2.0.0"
 
 
-class OpenAIBlockV1(WorkflowBlock):
+class OpenAIBlockV2(WorkflowBlock):
 
     def __init__(
         self,
@@ -152,85 +214,97 @@ class OpenAIBlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        prompt: str,
+        task_type: TaskType,
+        prompt: Optional[str],
+        output_structure: Optional[Dict[str, str]],
+        classes: Optional[List[str]],
         openai_api_key: str,
         openai_model: Optional[str],
         image_detail: Literal["low", "high", "auto"],
         max_tokens: int,
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
+        if openai_api_key is None:
+            raise ValueError(
+                "Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
+            )
         inference_images = [i.to_inference_format() for i in images]
-        raw_output = run_gpt_4v_llm_prompting(
-            image=inference_images,
+        raw_outputs = run_gpt_4v_llm_prompting(
+            images=inference_images,
+            task_type=task_type,
             prompt=prompt,
+            output_structure=output_structure,
+            classes=classes,
             openai_api_key=openai_api_key,
             gpt_model_version=openai_model,
             gpt_image_detail=image_detail,
             max_tokens=max_tokens,
             max_concurrent_requests=max_concurrent_requests,
         )
-        predictions = [
-            {
-                "raw_output": single_output["content"],
-                "image": single_output["image"],
-            }
-            for single_output in raw_output
+        return [
+            {"output": raw_output, "classes": classes} for raw_output in raw_outputs
         ]
-        for prediction, image in zip(predictions, images):
-            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
-            prediction[ROOT_PARENT_ID_KEY] = (
-                image.workflow_root_ancestor_metadata.parent_id
-            )
-        return predictions
 
 
 def run_gpt_4v_llm_prompting(
-    image: List[Dict[str, Any]],
-    prompt: str,
+    images: List[Dict[str, Any]],
+    task_type: TaskType,
+    prompt: Optional[str],
+    output_structure: Optional[Dict[str, str]],
+    classes: Optional[List[str]],
     openai_api_key: Optional[str],
     gpt_model_version: str,
     gpt_image_detail: Literal["auto", "high", "low"],
     max_tokens: int,
     max_concurrent_requests: Optional[int],
-) -> List[Dict[str, str]]:
-    if openai_api_key is None:
-        raise ValueError(
-            "Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
+) -> List[str]:
+    if task_type not in PROMPT_BUILDERS:
+        raise ValueError(f"Task type: {task_type} not supported.")
+    gpt4_prompts = []
+    for image in images:
+        loaded_image, _ = load_image(image)
+        base64_image = base64.b64encode(
+            encode_image_to_jpeg_bytes(loaded_image)
+        ).decode("ascii")
+        prompt = PROMPT_BUILDERS[task_type](
+            base64_image=base64_image,
+            prompt=prompt,
+            output_structure=output_structure,
+            classes=classes,
+            gpt_image_detail=gpt_image_detail,
         )
+        gpt4_prompts.append(prompt)
     return execute_gpt_4v_requests(
-        image=image,
         openai_api_key=openai_api_key,
-        prompt=prompt,
+        gpt4_prompts=gpt4_prompts,
         gpt_model_version=gpt_model_version,
-        gpt_image_detail=gpt_image_detail,
         max_tokens=max_tokens,
         max_concurrent_requests=max_concurrent_requests,
     )
 
 
 def execute_gpt_4v_requests(
-    image: List[dict],
     openai_api_key: str,
-    prompt: str,
+    gpt4_prompts: List[List[dict]],
     gpt_model_version: str,
-    gpt_image_detail: Literal["auto", "high", "low"],
     max_tokens: int,
     max_concurrent_requests: Optional[int],
-) -> List[Dict[str, str]]:
+) -> List[str]:
     client = OpenAI(api_key=openai_api_key)
     tasks = [
         partial(
             execute_gpt_4v_request,
             client=client,
-            image=single_image,
             prompt=prompt,
             gpt_model_version=gpt_model_version,
-            gpt_image_detail=gpt_image_detail,
             max_tokens=max_tokens,
         )
-        for single_image in image
+        for prompt in gpt4_prompts
     ]
-    max_workers = max_concurrent_requests or WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
+    max_workers = (
+        max_concurrent_requests
+        or WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
+    )
     return run_in_parallel(
         tasks=tasks,
         max_workers=max_workers,
@@ -239,34 +313,261 @@ def execute_gpt_4v_requests(
 
 def execute_gpt_4v_request(
     client: OpenAI,
-    image: Dict[str, Any],
-    prompt: str,
+    prompt: List[dict],
     gpt_model_version: str,
-    gpt_image_detail: Literal["auto", "high", "low"],
     max_tokens: int,
-) -> Dict[str, str]:
-    loaded_image, _ = load_image(image)
-    image_metadata = {"width": loaded_image.shape[1], "height": loaded_image.shape[0]}
-    base64_image = base64.b64encode(encode_image_to_jpeg_bytes(loaded_image)).decode(
-        "ascii"
-    )
+) -> str:
     response = client.chat.completions.create(
         model=gpt_model_version,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}",
-                            "detail": gpt_image_detail,
-                        },
-                    },
-                ],
-            }
-        ],
+        messages=prompt,
         max_tokens=max_tokens,
     )
-    return {"content": response.choices[0].message.content, "image": image_metadata}
+    return response.choices[0].message.content
+
+
+def prepare_unconstrained_prompt(
+    base64_image: str,
+    prompt: str,
+    gpt_image_detail: str,
+    **kwargs,
+) -> List[dict]:
+    return [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": gpt_image_detail,
+                    },
+                },
+            ],
+        }
+    ]
+
+
+def prepare_classification_prompt(
+    base64_image: str, classes: List[str], gpt_image_detail: str, **kwargs
+) -> List[dict]:
+    serialised_classes = ", ".join(classes)
+    return [
+        {
+            "role": "system",
+            "content": "You act as single-class classification model. Your must provide reasonable predictions. "
+            "You are only allowed to produce JSON document in Markdown ```json [...]``` markers. "
+            'Expected structure of json: {"class_name": "class-name", "confidence": 0.4}. '
+            "`class-name` must be one of the class name defined by user",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"List of all classes to be recognised by model: {serialised_classes}",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": gpt_image_detail,
+                    },
+                },
+            ],
+        },
+    ]
+
+
+def prepare_multi_label_classification_prompt(
+    base64_image: str, classes: List[str], gpt_image_detail: str, **kwargs
+) -> List[dict]:
+    serialised_classes = ", ".join(classes)
+    return [
+        {
+            "role": "system",
+            "content": "You act as multi-label classification model. Your must provide reasonable predictions. "
+            "You are only allowed to produce JSON document in Markdown ```json [...]``` markers. "
+            'Expected structure of json: {"classes": ["class-name-1", "class-name-2"]}. '
+            "`class-name-X` must be one of the class name defined by user.",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"List of all classes to be recognised by model: {serialised_classes}",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": gpt_image_detail,
+                    },
+                },
+            ],
+        },
+    ]
+
+
+def prepare_vqa_prompt(
+    base64_image: str, prompt: str, gpt_image_detail: str, **kwargs
+) -> List[dict]:
+    return [
+        {
+            "role": "system",
+            "content": "You act as Visual Question Answering model. Your task is to provide answer on question"
+            "submitted by user. If this is open-question - answer with few sentences, for ABCD question, "
+            "return only the indicator of the answer.",
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": f"Question: {prompt}"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": gpt_image_detail,
+                    },
+                },
+            ],
+        },
+    ]
+
+
+def prepare_ocr_prompt(
+    base64_image: str, gpt_image_detail: str, **kwargs
+) -> List[dict]:
+    return [
+        {
+            "role": "system",
+            "content": "You act as OCR model. Your task is to read text from the image and return it in "
+            "paragraphs representing the structure of texts in the image. You should only return "
+            "recognised text, nothing else.",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": gpt_image_detail,
+                    },
+                },
+            ],
+        },
+    ]
+
+
+def prepare_caption_prompt(
+    base64_image: str, gpt_image_detail: str, short_description: bool, **kwargs
+) -> List[dict]:
+    caption_detail_level = "Caption should be short."
+    if not short_description:
+        caption_detail_level = "Caption should be extensive."
+    return [
+        {
+            "role": "system",
+            "content": f"You act as image caption model. Your task is to provide description of the image. "
+            f"{caption_detail_level}",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": gpt_image_detail,
+                    },
+                },
+            ],
+        },
+    ]
+
+
+def prepare_object_detection_prompt(
+    base64_image: str, classes: List[str], gpt_image_detail: str, **kwargs
+) -> List[dict]:
+    example_class = "cat"
+    if classes:
+        example_class = classes[0]
+    serialised_classes = ", ".join(classes)
+    return [
+        {
+            "role": "system",
+            "content": f"You act as object detection model. Your must provide reasonable predictions. "
+            "You are only allowed to produce document in Markdown ```[...]``` markers. "
+            "Each line of output Markdown should have the structure: \n"
+            "{class_name} <loc_{x_min}><loc_{y_min}><loc_{x_max}><loc_{y_max}>\n"
+            "where: \nclass_name must be one of the class name defined by user representing class "
+            "of the object in detected bounding box"
+            "\nx_min, y_min, x_max, y_max represent image patch - enumerated from 0 to 999, "
+            f"describing location of bounding box. For example - {example_class} instance "
+            f"detected in left-top corner, of 40% image width and 30% image height would be "
+            f"described as: ```\n{example_class} <loc_0><loc_0><loc_399><loc_299>\n```",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"List of all classes to be recognised by model: {serialised_classes}",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": gpt_image_detail,
+                    },
+                },
+            ],
+        },
+    ]
+
+
+def prepare_structured_answering_prompt(
+    base64_image: str, output_structure: Dict[str, str], gpt_image_detail: str, **kwargs
+) -> List[dict]:
+    output_structure_serialised = json.dumps(output_structure, indent=4)
+    return [
+        {
+            "role": "system",
+            "content": f"You are supposed to produce responses in JSON wrapped in Markdown markers: "
+            f"```json\nyour-response\n```. User is to provide you dictionary with key and values. "
+            f"Each key must be present in your response. Values in user dictionary represent "
+            f"descriptions for JSON fields to be generated. Provide only JSON Markdown in response.",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Specification of requirements regarding output fields: \n"
+                    f"{output_structure_serialised}",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": gpt_image_detail,
+                    },
+                },
+            ],
+        },
+    ]
+
+
+PROMPT_BUILDERS = {
+    "unconstrained": prepare_unconstrained_prompt,
+    "ocr": prepare_ocr_prompt,
+    "visual-question-answering": prepare_vqa_prompt,
+    "caption": partial(prepare_caption_prompt, short_description=True),
+    "detailed-caption": partial(prepare_caption_prompt, short_description=False),
+    "classification": prepare_classification_prompt,
+    "multi-label-classification": prepare_multi_label_classification_prompt,
+    "object-detection": prepare_object_detection_prompt,
+    "structured-answering": prepare_structured_answering_prompt,
+}
