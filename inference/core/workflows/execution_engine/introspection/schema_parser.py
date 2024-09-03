@@ -185,6 +185,8 @@ def retrieve_primitive_type_from_union_property(
     else:
         high_level_type = UNION_TYPE_NAME
     final_type_name = ", ".join(list(sorted(type_names)))
+    if len(type_names) == 0:
+        return None
     if len(type_names) > 1:
         final_type_name = f"{high_level_type}[{final_type_name}]"
     return PrimitiveTypeDefinition(

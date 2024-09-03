@@ -29,6 +29,21 @@ execution path
 
 SHORT_DESCRIPTION = "Conditionally stop execution of a branch."
 
+CONDITION_STATEMENT_EXAMPLE = {
+    "type": "StatementGroup",
+    "statements": [
+        {
+            "type": "BinaryStatement",
+            "left_operand": {
+                "type": "DynamicOperand",
+                "operand_name": "left",
+            },
+            "comparator": {"type": "(Number) =="},
+            "right_operand": {"type": "StaticOperand", "value": 1},
+        }
+    ],
+}
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -44,13 +59,14 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/continue_if@v1", "ContinueIf"]
     condition_statement: StatementGroup = Field(
         description="Workflows UQL definition of conditional logic.",
+        examples=[CONDITION_STATEMENT_EXAMPLE],
     )
     evaluation_parameters: Dict[
         str,
         Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parametrise operations",
-        examples=["$inputs.confidence", "$inputs.image", "$steps.my_step.top"],
+        examples=[{"left": "$inputs.some"}],
         default_factory=lambda: {},
     )
     next_steps: List[StepSelector] = Field(

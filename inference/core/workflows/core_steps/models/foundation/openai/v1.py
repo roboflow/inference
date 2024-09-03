@@ -111,6 +111,7 @@ class BlockManifest(WorkflowBlockManifest):
     max_tokens: int = Field(
         default=450,
         description="Maximum number of tokens the model can generate in it's response.",
+        examples=[450],
     )
 
     @classmethod
