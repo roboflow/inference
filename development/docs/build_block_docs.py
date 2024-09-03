@@ -378,7 +378,7 @@ def generate_example_step_definition(block: BlockDescription) -> dict:
             continue
         examples = property_definition.get("examples", [])
         if len(examples) == 0:
-            example = "<block_do_not_provide_example>"
+            example = "<block_does_not_provide_example>"
         else:
             example = examples[0]
         result[property_name] = example

@@ -30,6 +30,34 @@ from inference.core.workflows.prototypes.block import (
 
 SHORT_DESCRIPTION = "Conditionally filter out model predictions."
 
+OPERATIONS_EXAMPLE = [
+    {
+        "type": "DetectionsFilter",
+        "filter_operation": {
+            "type": "StatementGroup",
+            "statements": [
+                {
+                    "type": "BinaryStatement",
+                    "left_operand": {
+                        "type": "DynamicOperand",
+                        "operations": [
+                            {
+                                "type": "ExtractDetectionProperty",
+                                "property_name": "class_name",
+                            }
+                        ],
+                    },
+                    "comparator": {"type": "in (Sequence)"},
+                    "right_operand": {
+                        "type": "DynamicOperand",
+                        "operand_name": "classes",
+                    },
+                },
+            ],
+        },
+    }
+]
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -53,13 +81,19 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference to detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    operations: List[AllOperationsType]
+    operations: List[AllOperationsType] = Field(
+        description="Definition of filtering operations", examples=[OPERATIONS_EXAMPLE]
+    )
     operations_parameters: Dict[
         str,
         Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parametrise operations",
-        examples=["$inputs.confidence", "$inputs.image"],
+        examples=[
+            {
+                "classes": "$inputs.classes",
+            }
+        ],
         default_factory=lambda: {},
     )
 
