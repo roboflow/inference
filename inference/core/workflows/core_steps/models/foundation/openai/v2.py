@@ -46,7 +46,6 @@ TaskType = Literal[
     "detailed-caption",
     "classification",
     "multi-label-classification",
-    "object-detection",
     "structured-answering",
 ]
 
@@ -58,7 +57,6 @@ TASKS_REQUIRING_PROMPT = {
 TASKS_REQUIRING_CLASSES = {
     "classification",
     "multi-label-classification",
-    "object-detection",
 }
 
 TASKS_REQUIRING_OUTPUT_STRUCTURE = {
@@ -85,7 +83,7 @@ class BlockManifest(WorkflowBlockManifest):
         "that are required. For `unconstrained`, `visual-question-answering`, "
         " - `prompt` parameter must be provided."
         "For `structured-answering` - `output-structure` must be provided. For "
-        "`classification`, `multi-label-classification`, `object-detection` - "
+        "`classification`, `multi-label-classification` - "
         "`classes` must be filled. `ocr`, `caption`, `detailed-caption` do not"
         "require any additional parameter.",
     )
@@ -488,46 +486,6 @@ def prepare_caption_prompt(
     ]
 
 
-def prepare_object_detection_prompt(
-    base64_image: str, classes: List[str], gpt_image_detail: str, **kwargs
-) -> List[dict]:
-    example_class = "cat"
-    if classes:
-        example_class = classes[0]
-    serialised_classes = ", ".join(classes)
-    return [
-        {
-            "role": "system",
-            "content": f"You act as object detection model. Your must provide reasonable predictions. "
-            "You are only allowed to produce document in Markdown ```[...]``` markers. "
-            "Each line of output Markdown should have the structure: \n"
-            "{class_name} <loc_{x_min}><loc_{y_min}><loc_{x_max}><loc_{y_max}>\n"
-            "where: \nclass_name must be one of the class name defined by user representing class "
-            "of the object in detected bounding box"
-            "\nx_min, y_min, x_max, y_max represent image patch - enumerated from 0 to 999, "
-            f"describing location of bounding box. For example - {example_class} instance "
-            f"detected in left-top corner, of 40% image width and 30% image height would be "
-            f"described as: ```\n{example_class} <loc_0><loc_0><loc_399><loc_299>\n```",
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": f"List of all classes to be recognised by model: {serialised_classes}",
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{base64_image}",
-                        "detail": gpt_image_detail,
-                    },
-                },
-            ],
-        },
-    ]
-
-
 def prepare_structured_answering_prompt(
     base64_image: str, output_structure: Dict[str, str], gpt_image_detail: str, **kwargs
 ) -> List[dict]:
@@ -568,6 +526,5 @@ PROMPT_BUILDERS = {
     "detailed-caption": partial(prepare_caption_prompt, short_description=False),
     "classification": prepare_classification_prompt,
     "multi-label-classification": prepare_multi_label_classification_prompt,
-    "object-detection": prepare_object_detection_prompt,
     "structured-answering": prepare_structured_answering_prompt,
 }
