@@ -40,8 +40,14 @@ from inference.core.workflows.core_steps.formatters.expression.v1 import (
 from inference.core.workflows.core_steps.formatters.first_non_empty_or_default.v1 import (
     FirstNonEmptyOrDefaultBlockV1,
 )
+from inference.core.workflows.core_steps.formatters.json_parser.v1 import (
+    JSONParserBlockV1,
+)
 from inference.core.workflows.core_steps.formatters.property_definition.v1 import (
     PropertyDefinitionBlockV1,
+)
+from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1 import (
+    VLMAsClassifierBlockV1,
 )
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
     DetectionsClassesReplacementBlockV1,
@@ -299,6 +305,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CameraFocusBlockV1,
         RoboflowDatasetUploadBlockV2,
         OpenAIBlockV2,
+        JSONParserBlockV1,
+        VLMAsClassifierBlockV1,
     ]
 
 

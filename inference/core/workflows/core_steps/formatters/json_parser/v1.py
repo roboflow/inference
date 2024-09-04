@@ -1,22 +1,29 @@
-from typing import Any, List, Literal, Optional, Type
+import json
+import re
+from typing import List, Literal, Optional, Tuple, Type
 
-from pydantic import ConfigDict, Field
+from pydantic import AfterValidator, ConfigDict, Field
+from typing_extensions import Annotated
 
-from inference.core.workflows.execution_engine.entities.base import (
-    Batch,
-    OutputDefinition,
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
+    BATCH_OF_BOOLEAN_KIND,
+    BATCH_OF_STRING_KIND,
+    StepOutputSelector,
 )
-from inference.core.workflows.execution_engine.entities.types import StepOutputSelector, BATCH_OF_STRING_KIND, \
-    BATCH_OF_BOOLEAN_KIND
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
 
+JSON_MARKDOWN_BLOCK_PATTERN = re.compile(
+    r"```json\n([\s\S]*?)\n```", flags=re.IGNORECASE
+)
+
 LONG_DESCRIPTION = """
 The block expects string input that would be produced by blocks exposing Large Language Models (LLMs) and 
-Visual Language Models (VLMs) into JSON.
+Visual Language Models (VLMs). Input is parsed to JSON, and its keys are exposed as block outputs.
 
 Accepted formats:
 - valid JSON strings
@@ -26,9 +33,25 @@ Accepted formats:
 {"my": "json"}
 ```
 ```
+
+**Details regarding block behaviour:**
+
+- `error_status` is set `True` whenever at least one of `expected_fields` cannot be retrieved from input
+
+- in case of multiple markdown blocks with raw JSON content - only first will be parsed and returned, while
+`error_status` will remain `False`
 """
 
 SHORT_DESCRIPTION = "Parses raw string into JSON."
+
+
+def validate_reserved_fields(expected_fields: List[str]) -> List[str]:
+    if "error_status" in expected_fields:
+        raise ValueError(
+            "`error_status` is reserved field name and cannot be "
+            "used in `expected_fields` of `roboflow_core/json_parser@v1` block."
+        )
+    return expected_fields
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -42,34 +65,39 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "formatter",
         }
     )
-    type: Literal[
-        "roboflow_core/json_parser@v1",
-    ]
-    raw_json: StepOutputSelector(kind=[BATCH_OF_STRING_KIND])
-    expected_fields: List[str] = Field(
-        description="List of expected JSON fields",
-        examples=[["field_a", "field_b"]],
+    type: Literal["roboflow_core/json_parser@v1"]
+    raw_json: StepOutputSelector(kind=[BATCH_OF_STRING_KIND]) = Field(
+        description="The string with raw JSON to parse.",
+        examples=[["$steps.lmm.output"]],
+    )
+    expected_fields: Annotated[List[str], AfterValidator(validate_reserved_fields)] = (
+        Field(
+            description="List of expected JSON fields. `error_status` field name is reserved and cannot be used.",
+            examples=[["field_a", "field_b"]],
+        )
     )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="error_status", kind=[BATCH_OF_BOOLEAN_KIND]),
-            OutputDefinition(name="*")
+            OutputDefinition(name="*"),
         ]
 
     def get_actual_outputs(self) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(name=field_name)
-            for field_name in self.expected_fields
+        result = [
+            OutputDefinition(name="error_status", kind=[BATCH_OF_BOOLEAN_KIND]),
         ]
+        for field_name in self.expected_fields:
+            result.append(OutputDefinition(name=field_name))
+        return result
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
 
 
-class FirstNonEmptyOrDefaultBlockV1(WorkflowBlock):
+class JSONParserBlockV1(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -80,4 +108,34 @@ class FirstNonEmptyOrDefaultBlockV1(WorkflowBlock):
         raw_json: str,
         expected_fields: List[str],
     ) -> BlockResult:
-        pass
+        error_status, parsed_data = string2json(
+            raw_json=raw_json,
+            expected_fields=expected_fields,
+        )
+        parsed_data["error_status"] = error_status
+        return parsed_data
+
+
+def string2json(
+    raw_json: str,
+    expected_fields: List[str],
+) -> Tuple[bool, dict]:
+    json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(raw_json)
+    if len(json_blocks_found) == 0:
+        return try_parse_json(raw_json, expected_fields=expected_fields)
+    first_block = json_blocks_found[0]
+    return try_parse_json(first_block, expected_fields=expected_fields)
+
+
+def try_parse_json(content: str, expected_fields: List[str]) -> Tuple[bool, dict]:
+    try:
+        parsed_data = json.loads(content)
+        result = {}
+        all_fields_find = True
+        for field in expected_fields:
+            if field not in parsed_data:
+                all_fields_find = False
+            result[field] = parsed_data.get(field)
+        return not all_fields_find, result
+    except Exception:
+        return True, {field: None for field in expected_fields}
