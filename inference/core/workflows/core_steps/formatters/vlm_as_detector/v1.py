@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import numpy as np
 import supervision as sv
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.workflows.core_steps.common.utils import (
@@ -106,6 +106,14 @@ class BlockManifest(WorkflowBlockManifest):
     )
     task_type: Literal["object-detection"]
 
+    @model_validator(mode="after")
+    def validate(self) -> "BlockManifest":
+        if (self.model_type, self.task_type) not in REGISTERED_PARSERS:
+            raise ValueError(
+                f"Could not parse result of task {self.task_type} for model {self.model_type}"
+            )
+        return self
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -135,10 +143,6 @@ class VLMAsDetectorBlockV1(WorkflowBlock):
         model_type: str,
         task_type: str,
     ) -> BlockResult:
-        if (model_type, task_type) in REGISTERED_PARSERS:
-            raise ValueError(
-                f"Could not parse result of task {task_type} for model {model_type}"
-            )
         inference_id = f"{uuid4()}"
         error_status, parsed_data = string2json(
             raw_json=vlm_output,
@@ -215,10 +219,10 @@ def parse_gemini_object_detection_response(
                 detection["y_max"] * image_height,
             ]
         )
-        class_id.append(class_name2id.get(class_name, -1))
-        class_name.append(class_name)
+        class_id.append(class_name2id.get(detection["class_name"], -1))
+        class_name.append(detection["class_name"])
         confidence.append(1.0)
-    xyxy = np.array(xyxy) if len(xyxy) > 0 else np.empty((0, 4))
+    xyxy = np.array(xyxy).round(0) if len(xyxy) > 0 else np.empty((0, 4))
     confidence = np.array(confidence) if len(confidence) > 0 else np.empty(0)
     class_id = np.array(class_id).astype(int) if len(class_id) > 0 else np.empty(0)
     class_name = np.array(class_name) if len(class_name) > 0 else np.empty(0)
