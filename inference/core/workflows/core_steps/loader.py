@@ -70,6 +70,9 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 im
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
+    GoogleGeminiBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
@@ -307,6 +310,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OpenAIBlockV2,
         JSONParserBlockV1,
         VLMAsClassifierBlockV1,
+        GoogleGeminiBlockV1,
     ]
 
 

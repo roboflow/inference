@@ -16,7 +16,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_STRING_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    ImageInputField,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
@@ -73,6 +72,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
     vlm_output: StepOutputSelector(kind=[BATCH_OF_STRING_KIND]) = Field(
+        title="VLM Output",
         description="The string with raw classification prediction to parse.",
         examples=[["$steps.lmm.output"]],
     )
@@ -174,7 +174,7 @@ def parse_multi_class_classification_results(
     try:
         class2id_mapping = create_classes_index(classes=classes)
         height, width = image.numpy_image.shape[:2]
-        top_class = results["class_name1"]
+        top_class = results["class_name"]
         confidences = {top_class: float(results["confidence"])}
         predictions = [
             {
@@ -214,7 +214,7 @@ def parse_multi_label_classification_results(
     try:
         class2id_mapping = create_classes_index(classes=classes)
         height, width = image.numpy_image.shape[:2]
-        predicted_classes = results["classes"]
+        predicted_classes = list(set(results["classes"]))
         confidences = {predicted_class: 1.0 for predicted_class in predicted_classes}
         predictions = {
             class_name: {

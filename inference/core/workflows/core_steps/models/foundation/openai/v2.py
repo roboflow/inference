@@ -4,6 +4,7 @@ from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from openai import OpenAI
+from openai._types import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
@@ -17,6 +18,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_STRING_KIND,
+    FLOAT_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     ImageInputField,
@@ -33,7 +35,27 @@ from inference.core.workflows.prototypes.block import (
 LONG_DESCRIPTION = """
 Ask a question to OpenAI's GPT-4 with Vision model.
 
-You can specify arbitrary text prompts to the OpenAIBlock.
+You can specify arbitrary text prompts or predefined ones, the block support the following types of prompt:
+
+- `unconstrained` - any arbitrary prompt you like 
+
+- `ocr`- predefined prompt to recognise text from image
+
+- `visual-question-answering` - your prompt is supposed to provide question and will be 
+wrapped into structure that is suited for VQA task
+
+- `caption` - predefined prompt to generate short caption of the image
+
+- `detailed-caption` - predefined prompt to generate elaborated caption of the image
+
+- `classification` - predefined prompt to generate multi-class classification output (that can be parsed
+with `VLM to Classification` block)
+
+- `multi-label-classification` - predefined prompt to generate multi-label classification output (that 
+can be parsed with `VLM to Classification` block)
+
+- `structured-answering` - your input defines expected JSON output fields that can be parsed with `JSON Parser`
+block. 
 
 You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
 """
@@ -73,7 +95,7 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
-            "search_keywords": ["LMM", "ChatGPT"],
+            "search_keywords": ["LMM", "VLM", "ChatGPT", "GPT", "OpenAI"],
         }
     )
     type: Literal["roboflow_core/open_ai@v2"]
@@ -122,12 +144,12 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    openai_api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
         description="Your OpenAI API key",
         examples=["xxx-xxx", "$inputs.openai_api_key"],
         private=True,
     )
-    openai_model: Union[
+    model_version: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt-4o", "gpt-4o-mini"]
     ] = Field(
         default="gpt-4o",
@@ -144,6 +166,15 @@ class BlockManifest(WorkflowBlockManifest):
     max_tokens: int = Field(
         default=450,
         description="Maximum number of tokens the model can generate in it's response.",
+    )
+    temperature: Optional[
+        Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])]
+    ] = Field(
+        default=None,
+        description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
+        'random / "creative" the generations are.',
+        ge=0.0,
+        le=2.0,
     )
     max_concurrent_requests: Optional[int] = Field(
         default=None,
@@ -216,13 +247,14 @@ class OpenAIBlockV2(WorkflowBlock):
         prompt: Optional[str],
         output_structure: Optional[Dict[str, str]],
         classes: Optional[List[str]],
-        openai_api_key: str,
-        openai_model: Optional[str],
+        api_key: str,
+        model_version: str,
         image_detail: Literal["low", "high", "auto"],
         max_tokens: int,
+        temperature: Optional[float],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
-        if openai_api_key is None:
+        if api_key is None:
             raise ValueError(
                 "Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
             )
@@ -233,10 +265,11 @@ class OpenAIBlockV2(WorkflowBlock):
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
-            openai_api_key=openai_api_key,
-            gpt_model_version=openai_model,
+            openai_api_key=api_key,
+            gpt_model_version=model_version,
             gpt_image_detail=image_detail,
             max_tokens=max_tokens,
+            temperature=temperature,
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
@@ -254,6 +287,7 @@ def run_gpt_4v_llm_prompting(
     gpt_model_version: str,
     gpt_image_detail: Literal["auto", "high", "low"],
     max_tokens: int,
+    temperature: Optional[int],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
@@ -277,6 +311,7 @@ def run_gpt_4v_llm_prompting(
         gpt4_prompts=gpt4_prompts,
         gpt_model_version=gpt_model_version,
         max_tokens=max_tokens,
+        temperature=temperature,
         max_concurrent_requests=max_concurrent_requests,
     )
 
@@ -286,6 +321,7 @@ def execute_gpt_4v_requests(
     gpt4_prompts: List[List[dict]],
     gpt_model_version: str,
     max_tokens: int,
+    temperature: Optional[float],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     client = OpenAI(api_key=openai_api_key)
@@ -296,6 +332,7 @@ def execute_gpt_4v_requests(
             prompt=prompt,
             gpt_model_version=gpt_model_version,
             max_tokens=max_tokens,
+            temperature=temperature,
         )
         for prompt in gpt4_prompts
     ]
@@ -314,11 +351,15 @@ def execute_gpt_4v_request(
     prompt: List[dict],
     gpt_model_version: str,
     max_tokens: int,
+    temperature: Optional[float],
 ) -> str:
+    if temperature is None:
+        temperature = NOT_GIVEN
     response = client.chat.completions.create(
         model=gpt_model_version,
         messages=prompt,
         max_tokens=max_tokens,
+        temperature=temperature,
     )
     return response.choices[0].message.content
 
@@ -356,7 +397,8 @@ def prepare_classification_prompt(
             "content": "You act as single-class classification model. Your must provide reasonable predictions. "
             "You are only allowed to produce JSON document in Markdown ```json [...]``` markers. "
             'Expected structure of json: {"class_name": "class-name", "confidence": 0.4}. '
-            "`class-name` must be one of the class name defined by user",
+            "`class-name` must be one of the class name defined by user. You are only allowed to return "
+            "single JSON document, even if there is potentially multiple classes. You are not allowed to return list.",
         },
         {
             "role": "user",
