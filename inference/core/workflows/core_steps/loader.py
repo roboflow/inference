@@ -49,6 +49,9 @@ from inference.core.workflows.core_steps.formatters.property_definition.v1 impor
 from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1 import (
     VLMAsClassifierBlockV1,
 )
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1 import (
+    VLMAsDetectorBlockV1,
+)
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
     DetectionsClassesReplacementBlockV1,
 )
@@ -311,6 +314,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         JSONParserBlockV1,
         VLMAsClassifierBlockV1,
         GoogleGeminiBlockV1,
+        VLMAsDetectorBlockV1,
     ]
 
 

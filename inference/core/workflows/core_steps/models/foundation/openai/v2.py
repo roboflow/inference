@@ -49,10 +49,10 @@ wrapped into structure that is suited for VQA task
 - `detailed-caption` - predefined prompt to generate elaborated caption of the image
 
 - `classification` - predefined prompt to generate multi-class classification output (that can be parsed
-with `VLM to Classification` block)
+with `VLM as Classifier` block)
 
 - `multi-label-classification` - predefined prompt to generate multi-label classification output (that 
-can be parsed with `VLM to Classification` block)
+can be parsed with `VLM as Classifier` block)
 
 - `structured-answering` - your input defines expected JSON output fields that can be parsed with `JSON Parser`
 block. 

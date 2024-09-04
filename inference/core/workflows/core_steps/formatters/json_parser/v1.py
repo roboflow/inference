@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from typing import List, Literal, Optional, Tuple, Type
 
@@ -137,5 +138,9 @@ def try_parse_json(content: str, expected_fields: List[str]) -> Tuple[bool, dict
                 all_fields_find = False
             result[field] = parsed_data.get(field)
         return not all_fields_find, result
-    except Exception:
+    except Exception as error:
+        logging.warning(
+            f"Could not parse JSON in `roboflow_core/json_parser@v1` block. "
+            f"Error type: {error.__class__.__name__}. Details: {error}"
+        )
         return True, {field: None for field in expected_fields}

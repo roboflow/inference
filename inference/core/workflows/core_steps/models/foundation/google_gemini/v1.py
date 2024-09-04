@@ -54,10 +54,13 @@ wrapped into structure that is suited for VQA task
 - `detailed-caption` - predefined prompt to generate elaborated caption of the image
 
 - `classification` - predefined prompt to generate multi-class classification output (that can be parsed
-with `VLM to Classification` block)
+with `VLM as Classifier` block)
 
 - `multi-label-classification` - predefined prompt to generate multi-label classification output (that 
-can be parsed with `VLM to Classification` block)
+can be parsed with `VLM as Classifier` block)
+
+- `object-detection` - predefined prompt to generate object detection output (that can be parsed
+with `VLM as Detector` block)
 
 - `structured-answering` - your input defines expected JSON output fields that can be parsed with `JSON Parser`
 block. 
@@ -112,7 +115,7 @@ class BlockManifest(WorkflowBlockManifest):
         "that are required. For `unconstrained`, `visual-question-answering`, "
         " - `prompt` parameter must be provided."
         "For `structured-answering` - `output-structure` must be provided. For "
-        "`classification`, `multi-label-classification` - "
+        "`classification`, `multi-label-classification` and `object-detection` - "
         "`classes` must be filled. `ocr`, `caption`, `detailed-caption` do not"
         "require any additional parameter.",
     )
@@ -642,7 +645,7 @@ def prepare_object_detection_prompt(
                 {
                     "text": "You act as object-detection model. Your must provide reasonable predictions. "
                     "You are only allowed to produce JSON document. "
-                    'Expected structure of json: {"predictions": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X"}]}. '
+                    'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X"}]}. '
                     "`my-class-X` must be one of the class name defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
                     "You should detect all instances of classes provided by user.",
                 }
