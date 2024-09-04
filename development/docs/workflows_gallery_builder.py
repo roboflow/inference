@@ -156,7 +156,7 @@ def generate_preview_iframe(workflow_name_in_app: str, workflow_definition: dict
         workflow_id=workflow_id,
         api_key=api_key
     )
-    human_readable_name = workspace_name.replace("-", " ")
+    human_readable_name = workflow_name_in_app.replace("-", " ")
     return (
         f'<div style="height: 768px;">'
         f'<iframe src="https://app.roboflow.com/workflows/embed/{iframe_token}" '
