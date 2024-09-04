@@ -64,6 +64,9 @@ from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.antropic_claude.v1 import (
+    AntropicClaudeBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
     ClipComparisonBlockV1,
 )
@@ -315,6 +318,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         VLMAsClassifierBlockV1,
         GoogleGeminiBlockV1,
         VLMAsDetectorBlockV1,
+        AntropicClaudeBlockV1,
     ]
 
 

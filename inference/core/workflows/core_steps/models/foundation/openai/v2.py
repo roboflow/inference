@@ -254,10 +254,6 @@ class OpenAIBlockV2(WorkflowBlock):
         temperature: Optional[float],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
-        if api_key is None:
-            raise ValueError(
-                "Step that involves GPT-4V prompting requires OpenAI API key which was not provided."
-            )
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_gpt_4v_llm_prompting(
             images=inference_images,

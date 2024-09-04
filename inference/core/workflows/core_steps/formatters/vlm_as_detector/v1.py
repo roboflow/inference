@@ -100,9 +100,9 @@ class BlockManifest(WorkflowBlockManifest):
         "generate mapping between class name and class id.",
         examples=[["$steps.lmm.classes", "$inputs.classes", ["class_a", "class_b"]]],
     )
-    model_type: Literal["google-gemini"] = Field(
+    model_type: Literal["google-gemini", "antropic-claude"] = Field(
         description="Type of the model that generated prediction",
-        examples=[["google-gemini"]],
+        examples=[["google-gemini", "antropic-claude"]],
     )
     task_type: Literal["object-detection"]
 
@@ -257,4 +257,5 @@ def create_classes_index(classes: List[str]) -> Dict[str, int]:
 
 REGISTERED_PARSERS = {
     ("google-gemini", "object-detection"): parse_gemini_object_detection_response,
+    ("antropic-claude", "object-detection"): parse_gemini_object_detection_response,
 }

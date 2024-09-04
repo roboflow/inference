@@ -2,15 +2,16 @@ import base64
 import json
 import re
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-import requests
+import anthropic
+from anthropic import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
-from requests import Response
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
+from inference.core.utils.preprocess import downscale_image_keeping_aspect_ratio
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -20,6 +21,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_STRING_KIND,
     FLOAT_KIND,
+    INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     ImageInputField,
@@ -33,12 +35,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-GOOGLE_API_KEY_PATTERN = re.compile(r"key=(.[^&]*)")
-GOOGLE_API_KEY_VALUE_GROUP = 1
-MIN_KEY_LENGTH_TO_REVEAL_PREFIX = 8
-
 LONG_DESCRIPTION = """
-Ask a question to Google's Gemini model with vision capabilities.
+Ask a question to Antropics's Claude model with vision capabilities.
 
 You can specify arbitrary text prompts or predefined ones, the block support the following types of prompt:
 
@@ -65,7 +63,7 @@ with `VLM as Detector` block)
 - `structured-answering` - your input defines expected JSON output fields that can be parsed with `JSON Parser`
 block. 
 
-You need to provide your Google AI API key to use the Gemini model. 
+You need to provide your Antropic API key to use the Claude model. 
 """
 
 TaskType = Literal[
@@ -99,16 +97,16 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Google Gemini",
+            "name": "Antropic Claude",
             "version": "v1",
-            "short_description": "Run Google's Gemini model with vision capabilities",
+            "short_description": "Run Antropic's Claude model with vision capabilities",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM", "VLM", "Gemini", "Google"],
         }
     )
-    type: Literal["roboflow_core/google_gemini@v1"]
+    type: Literal["roboflow_core/antropic_claude@v1"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     task_type: TaskType = Field(
         description="Task type to be performed by model. Value of parameter determine set of fields "
@@ -121,7 +119,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
         default=None,
-        description="Text prompt to the Gemini model",
+        description="Text prompt to the Claude model",
         examples=["my prompt", "$inputs.prompt"],
         json_schema_extra={
             "relevant_for": {
@@ -155,17 +153,19 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
-        description="Your Google AI API key",
-        examples=["xxx-xxx", "$inputs.google_api_key"],
+        description="Your Antropic API key",
+        examples=["xxx-xxx", "$inputs.antropics_api_key"],
         private=True,
     )
     model_version: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]),
-        Literal["gemini-1.5-flash", "gemini-1.5-pro"],
+        Literal[
+            "claude-3-5-sonnet", "claude-3-opus", "claude-3-sonnet", "claude-3-haiku"
+        ],
     ] = Field(
-        default="gemini-1.5-flash",
+        default="claude-3-5-sonnet",
         description="Model to be used",
-        examples=["gemini-1.5-flash", "$inputs.gemini_model"],
+        examples=["claude-3-5-sonnet", "$inputs.claude"],
     )
     max_tokens: int = Field(
         default=450,
@@ -180,11 +180,15 @@ class BlockManifest(WorkflowBlockManifest):
         ge=0.0,
         le=2.0,
     )
+    max_image_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+        description="Maximum size of the image - if input has larger side, it will be downscaled, keeping aspect ratio",
+        default=1024,
+    )
     max_concurrent_requests: Optional[int] = Field(
         default=None,
         description="Number of concurrent requests that can be executed by block when batch of input images provided. "
         "If not given - block defaults to value configured globally in Workflows Execution Engine. "
-        "Please restrict if you hit Google Gemini API limits.",
+        "Please restrict if you hit ANtropic API limits.",
     )
 
     @model_validator(mode="after")
@@ -222,7 +226,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.0.0,<2.0.0"
 
 
-class GoogleGeminiBlockV1(WorkflowBlock):
+class AntropicClaudeBlockV1(WorkflowBlock):
 
     def __init__(
         self,
@@ -255,19 +259,21 @@ class GoogleGeminiBlockV1(WorkflowBlock):
         model_version: str,
         max_tokens: int,
         temperature: Optional[float],
+        max_image_size: int,
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
-        raw_outputs = run_gemini_prompting(
+        raw_outputs = run_claude_prompting(
             images=inference_images,
             task_type=task_type,
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
-            google_api_key=api_key,
+            api_key=api_key,
             model_version=model_version,
             max_tokens=max_tokens,
             temperature=temperature,
+            max_image_size=max_image_size,
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
@@ -275,23 +281,27 @@ class GoogleGeminiBlockV1(WorkflowBlock):
         ]
 
 
-def run_gemini_prompting(
+def run_claude_prompting(
     images: List[Dict[str, Any]],
     task_type: TaskType,
     prompt: Optional[str],
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
-    google_api_key: Optional[str],
+    api_key: str,
     model_version: str,
     max_tokens: int,
     temperature: Optional[float],
+    max_image_size: int,
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
-    gemini_prompts = []
+    prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
+        loaded_image = downscale_image_keeping_aspect_ratio(
+            image=loaded_image, desired_size=(max_image_size, max_image_size)
+        )
         base64_image = base64.b64encode(
             encode_image_to_jpeg_bytes(loaded_image)
         ).decode("ascii")
@@ -300,32 +310,37 @@ def run_gemini_prompting(
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
-            temperature=temperature,
-            max_tokens=max_tokens,
         )
-        gemini_prompts.append(prompt)
-    return execute_gemini_requests(
-        google_api_key=google_api_key,
-        gemini_prompts=gemini_prompts,
+        prompts.append(prompt)
+    return execute_claude_requests(
+        api_key=api_key,
+        prompts=prompts,
         model_version=model_version,
+        max_tokens=max_tokens,
+        temperature=temperature,
         max_concurrent_requests=max_concurrent_requests,
     )
 
 
-def execute_gemini_requests(
-    google_api_key: str,
-    gemini_prompts: List[dict],
+def execute_claude_requests(
+    api_key: str,
+    prompts: List[Tuple[Optional[str], List[dict]]],
     model_version: str,
+    max_tokens: int,
+    temperature: Optional[float],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     tasks = [
         partial(
-            execute_gemini_request,
-            prompt=prompt,
+            execute_claude_request,
+            system_prompt=prompt[0],
+            messages=prompt[1],
             model_version=model_version,
-            google_api_key=google_api_key,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            api_key=api_key,
         )
-        for prompt in gemini_prompts
+        for prompt in prompts
     ]
     max_workers = (
         max_concurrent_requests
@@ -337,368 +352,290 @@ def execute_gemini_requests(
     )
 
 
-def execute_gemini_request(
-    prompt: dict,
+EXACT_MODELS_VERSIONS_MAPPING = {
+    "claude-3-5-sonnet": "claude-3-5-sonnet-20240620",
+    "claude-3-opus": "claude-3-opus-20240229",
+    "claude-3-sonnet": "claude-3-sonnet-20240229",
+    "claude-3-haiku": "claude-3-haiku-20240307",
+}
+
+
+def execute_claude_request(
+    system_prompt: Optional[str],
+    messages: List[dict],
     model_version: str,
-    google_api_key: str,
+    max_tokens: int,
+    temperature: Optional[float],
+    api_key: str,
 ) -> str:
-    response = requests.post(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model_version}:generateContent",
-        headers={
-            "Content-Type": "application/json",
-        },
-        params={
-            "key": google_api_key,
-        },
-        json=prompt,
+    client = anthropic.Anthropic(api_key=api_key)
+    if system_prompt is None:
+        system_prompt = NOT_GIVEN
+    if temperature is None:
+        temperature = NOT_GIVEN
+    result = client.messages.create(
+        system=system_prompt,
+        messages=messages,
+        max_tokens=max_tokens,
+        model=EXACT_MODELS_VERSIONS_MAPPING[model_version],
+        temperature=temperature,
     )
-    response_data = response.json()
-    google_api_key_safe_raise_for_status(response=response)
-    return response_data["candidates"][0]["content"]["parts"][0]["text"]
+    return result.content[0].text
 
 
 def prepare_unconstrained_prompt(
     base64_image: str,
     prompt: str,
-    temperature: Optional[float],
-    max_tokens: int,
     **kwargs,
-) -> dict:
-    return {
-        "contents": {
-            "parts": [
+) -> Tuple[Optional[str], List[dict]]:
+    messages = [
+        {
+            "role": "user",
+            "content": [
                 {
-                    "inline_data": {
-                        "mime_type": "image/jpeg",
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
                         "data": base64_image,
-                    }
+                    },
                 },
                 {
+                    "type": "text",
                     "text": prompt,
                 },
             ],
-            "role": "user",
-        },
-        "generationConfig": prepare_generation_config(
-            max_tokens=max_tokens,
-            temperature=temperature,
-        ),
-    }
+        }
+    ]
+    return None, messages
 
 
 def prepare_classification_prompt(
     base64_image: str,
     classes: List[str],
-    temperature: Optional[float],
-    max_tokens: int,
     **kwargs,
-) -> dict:
+) -> Tuple[Optional[str], List[dict]]:
     serialised_classes = ", ".join(classes)
-    return {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [
+    system_prompt = (
+        "You act as single-class classification model. Your must provide reasonable predictions. "
+        "You are only allowed to produce JSON document. "
+        'Expected structure of json: {"class_name": "class-name", "confidence": 0.4}. '
+        "`class-name` must be one of the class name defined by user. You are only allowed to return "
+        "single JSON document, even if there is potentially multiple classes. You are not allowed to "
+        "return list."
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
                 {
-                    "text": "You act as single-class classification model. Your must provide reasonable predictions. "
-                    "You are only allowed to produce JSON document. "
-                    'Expected structure of json: {"class_name": "class-name", "confidence": 0.4}. '
-                    "`class-name` must be one of the class name defined by user. You are only allowed to return "
-                    "single JSON document, even if there is potentially multiple classes. You are not allowed to "
-                    "return list.",
-                }
-            ],
-        },
-        "contents": {
-            "parts": [
-                {
-                    "inline_data": {
-                        "mime_type": "image/jpeg",
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
                         "data": base64_image,
-                    }
+                    },
                 },
                 {
+                    "type": "text",
                     "text": f"List of all classes to be recognised by model: {serialised_classes}",
                 },
             ],
-            "role": "user",
-        },
-        "generationConfig": prepare_generation_config(
-            max_tokens=max_tokens,
-            temperature=temperature,
-            response_mime_type="application/json",
-        ),
-    }
+        }
+    ]
+    return system_prompt, messages
 
 
 def prepare_multi_label_classification_prompt(
     base64_image: str,
     classes: List[str],
-    temperature: Optional[float],
-    max_tokens: int,
     **kwargs,
-) -> dict:
+) -> Tuple[Optional[str], List[dict]]:
     serialised_classes = ", ".join(classes)
-    return {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [
+    system_prompt = (
+        "You act as multi-label classification model. Your must provide reasonable predictions. "
+        "You are only allowed to produce JSON document. "
+        'Expected structure of json: {"classes": ["class-name-1", "class-name-2"]}. '
+        "`class-name-X` must be one of the class name defined by user."
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
                 {
-                    "text": "You act as multi-label classification model. Your must provide reasonable predictions. "
-                    "You are only allowed to produce JSON document. "
-                    'Expected structure of json: {"classes": ["class-name-1", "class-name-2"]}. '
-                    "`class-name-X` must be one of the class name defined by user.",
-                }
-            ],
-        },
-        "contents": {
-            "parts": [
-                {
-                    "inline_data": {
-                        "mime_type": "image/jpeg",
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
                         "data": base64_image,
-                    }
+                    },
                 },
                 {
+                    "type": "text",
                     "text": f"List of all classes to be recognised by model: {serialised_classes}",
                 },
             ],
-            "role": "user",
-        },
-        "generationConfig": prepare_generation_config(
-            max_tokens=max_tokens,
-            temperature=temperature,
-            response_mime_type="application/json",
-        ),
-    }
+        }
+    ]
+    return system_prompt, messages
 
 
 def prepare_vqa_prompt(
     base64_image: str,
     prompt: str,
-    temperature: Optional[float],
-    max_tokens: int,
     **kwargs,
-) -> dict:
-    return {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [
+) -> Tuple[Optional[str], List[dict]]:
+    system_prompt = (
+        "You act as Visual Question Answering model. Your task is to provide answer on question"
+        "submitted by user. If this is open-question - answer with few sentences, for ABCD question, "
+        "return only the indicator of the answer."
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
                 {
-                    "text": "You act as Visual Question Answering model. Your task is to provide answer on question"
-                    "submitted by user. If this is open-question - answer with few sentences, for ABCD question, "
-                    "return only the indicator of the answer.",
-                }
-            ],
-        },
-        "contents": {
-            "parts": [
-                {
-                    "inline_data": {
-                        "mime_type": "image/jpeg",
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
                         "data": base64_image,
-                    }
+                    },
                 },
                 {
+                    "type": "text",
                     "text": f"Question: {prompt}",
                 },
             ],
-            "role": "user",
-        },
-        "generationConfig": prepare_generation_config(
-            max_tokens=max_tokens,
-            temperature=temperature,
-        ),
-    }
+        }
+    ]
+    return system_prompt, messages
 
 
 def prepare_ocr_prompt(
     base64_image: str,
-    temperature: Optional[float],
-    max_tokens: int,
     **kwargs,
-) -> dict:
-    return {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [
-                {
-                    "text": "You act as OCR model. Your task is to read text from the image and return it in "
-                    "paragraphs representing the structure of texts in the image. You should only return "
-                    "recognised text, nothing else.",
-                }
-            ],
-        },
-        "contents": {
-            "parts": [
-                {
-                    "inline_data": {
-                        "mime_type": "image/jpeg",
-                        "data": base64_image,
-                    }
-                }
-            ],
+) -> Tuple[Optional[str], List[dict]]:
+    system_prompt = (
+        "You act as OCR model. Your task is to read text from the image and return it in "
+        "paragraphs representing the structure of texts in the image. You should only return "
+        "recognised text, nothing else."
+    )
+    messages = [
+        {
             "role": "user",
-        },
-        "generationConfig": prepare_generation_config(
-            max_tokens=max_tokens,
-            temperature=temperature,
-        ),
-    }
+            "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": base64_image,
+                    },
+                },
+            ],
+        }
+    ]
+    return system_prompt, messages
 
 
 def prepare_caption_prompt(
     base64_image: str,
     short_description: bool,
-    temperature: Optional[float],
-    max_tokens: int,
     **kwargs,
-) -> dict:
+) -> Tuple[Optional[str], List[dict]]:
     caption_detail_level = "Caption should be short."
     if not short_description:
         caption_detail_level = "Caption should be extensive."
-    return {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [
-                {
-                    "text": f"You act as image caption model. Your task is to provide description of the image. "
-                    f"{caption_detail_level}",
-                }
-            ],
-        },
-        "contents": {
-            "parts": [
-                {
-                    "inline_data": {
-                        "mime_type": "image/jpeg",
-                        "data": base64_image,
-                    }
-                }
-            ],
+    system_prompt = (
+        f"You act as image caption model. Your task is to provide description of the image. "
+        f"{caption_detail_level}"
+    )
+    messages = [
+        {
             "role": "user",
-        },
-        "generationConfig": prepare_generation_config(
-            max_tokens=max_tokens,
-            temperature=temperature,
-        ),
-    }
+            "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": base64_image,
+                    },
+                },
+            ],
+        }
+    ]
+    return system_prompt, messages
 
 
 def prepare_structured_answering_prompt(
     base64_image: str,
     output_structure: Dict[str, str],
-    temperature: Optional[float],
-    max_tokens: int,
     **kwargs,
-) -> dict:
+) -> Tuple[Optional[str], List[dict]]:
     output_structure_serialised = json.dumps(output_structure, indent=4)
-    return {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [
+    system_prompt = (
+        f"You are supposed to produce responses in JSON. User is to provide you dictionary with "
+        f"key and values. Each key must be present in your response. Values in user dictionary "
+        f"represent descriptions for JSON fields to be generated. Provide only JSON in response."
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
                 {
-                    "text": f"You are supposed to produce responses in JSON. User is to provide you dictionary with "
-                    f"key and values. Each key must be present in your response. Values in user dictionary "
-                    f"represent descriptions for JSON fields to be generated. Provide only JSON in response.",
-                }
-            ],
-        },
-        "contents": {
-            "parts": [
-                {
-                    "inline_data": {
-                        "mime_type": "image/jpeg",
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
                         "data": base64_image,
-                    }
+                    },
                 },
                 {
+                    "type": "text",
                     "text": f"Specification of requirements regarding output fields: \n"
                     f"{output_structure_serialised}",
                 },
             ],
-            "role": "user",
-        },
-        "generationConfig": prepare_generation_config(
-            max_tokens=max_tokens,
-            temperature=temperature,
-            response_mime_type="application/json",
-        ),
-    }
+        }
+    ]
+    return system_prompt, messages
 
 
 def prepare_object_detection_prompt(
     base64_image: str,
     classes: List[str],
-    temperature: Optional[float],
-    max_tokens: int,
     **kwargs,
-) -> dict:
+) -> Tuple[Optional[str], List[dict]]:
     serialised_classes = ", ".join(classes)
-    return {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [
+    system_prompt = (
+        "You act as object-detection model. Your must provide reasonable predictions. "
+        "You are only allowed to produce JSON document. "
+        'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X"}]}. '
+        "`my-class-X` must be one of the class name defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
+        "You should detect all instances of classes provided by user."
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
                 {
-                    "text": "You act as object-detection model. Your must provide reasonable predictions. "
-                    "You are only allowed to produce JSON document. "
-                    'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X"}]}. '
-                    "`my-class-X` must be one of the class name defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
-                    "You should detect all instances of classes provided by user.",
-                }
-            ],
-        },
-        "contents": {
-            "parts": [
-                {
-                    "inline_data": {
-                        "mime_type": "image/jpeg",
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
                         "data": base64_image,
-                    }
+                    },
                 },
                 {
+                    "type": "text",
                     "text": f"List of all classes to be recognised by model: {serialised_classes}",
                 },
             ],
-            "role": "user",
-        },
-        "generationConfig": prepare_generation_config(
-            max_tokens=max_tokens,
-            temperature=temperature,
-            response_mime_type="application/json",
-        ),
-    }
-
-
-def prepare_generation_config(
-    max_tokens: int,
-    temperature: Optional[float],
-    response_mime_type: str = "text/plain",
-) -> dict:
-    result = {
-        "max_output_tokens": max_tokens,
-        "response_mime_type": response_mime_type,
-        "candidate_count": 1,
-    }
-    if temperature is not None:
-        result["temperature"] = temperature
-    return result
-
-
-def google_api_key_safe_raise_for_status(response: Response) -> None:
-    request_is_successful = response.status_code < 400
-    if request_is_successful:
-        return None
-    response.url = GOOGLE_API_KEY_PATTERN.sub(deduct_api_key, response.url)
-    response.raise_for_status()
-
-
-def deduct_api_key(match: re.Match) -> str:
-    key_value = match.group(GOOGLE_API_KEY_VALUE_GROUP)
-    if len(key_value) < MIN_KEY_LENGTH_TO_REVEAL_PREFIX:
-        return f"key=***"
-    key_prefix = key_value[:2]
-    key_postfix = key_value[-2:]
-    return f"key={key_prefix}***{key_postfix}"
+        }
+    ]
+    return system_prompt, messages
 
 
 PROMPT_BUILDERS = {
