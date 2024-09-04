@@ -21,20 +21,19 @@ from inference.core.models.base import PreprocessReturnMetadata
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
 
+from inference.core.logger import logger
+
 logging.set_verbosity_error()
 
 
 class TrOCR(RoboflowCoreModel):
-    def __init__(self, *args, model_id=f"microsoft/trocr-base-printed", **kwargs):
-        # super().__init__(*args, model_id=model_id, **kwargs) TODO: Add model cache
-        self.model_id = model_id
-        self.endpoint = model_id
-        self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
-        self.cache_dir = model_id  # TODO: Remove (temp)
+    def __init__(self, *args, model_id, **kwargs):
+        self.model_id = "microsoft/trocr-base-printed"
+        logger.debug(f"TrOCR Model ID: {self.model_id}")
 
-        self.model = VisionEncoderDecoderModel.from_pretrained(self.cache_dir).eval()
+        self.model = VisionEncoderDecoderModel.from_pretrained(self.model_id).eval()
 
-        self.processor = TrOCRProcessor.from_pretrained(self.cache_dir)
+        self.processor = TrOCRProcessor.from_pretrained(self.model_id)
         self.task_type = "ocr"
 
     def preprocess(
@@ -70,8 +69,8 @@ class TrOCR(RoboflowCoreModel):
     ) -> OCRInferenceResponse:
         t1 = perf_counter()
         text = self.infer(**request.dict())
-        response = OCRInferenceResponse(response=text)
-        response.time = perf_counter() - t1
+        t2 = perf_counter()
+        response = OCRInferenceResponse(result=text[0], time=t2 - t1)
         return response
 
 

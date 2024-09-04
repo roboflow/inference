@@ -32,6 +32,7 @@ GENERIC_MODELS = {
     "sam2": ("embed", "sam2"),
     "gaze": ("gaze", "l2cs"),
     "doctr": ("ocr", "doctr"),
+    "trocr": ("ocr", "trocr"),
     "grounding_dino": ("object-detection", "grounding-dino"),
     "cogvlm": ("llm", "cogvlm"),
     "paligemma": ("llm", "paligemma"),
@@ -61,6 +62,7 @@ class RoboflowModelRegistry(ModelRegistry):
             ModelNotRecognisedError: If the model type is not supported or found.
         """
         model_type = get_model_type(model_id, api_key)
+        logger.debug(f"Model type: {model_type}")
         if model_type not in self.registry_dict:
             raise ModelNotRecognisedError(f"Model type not supported: {model_type}")
         return self.registry_dict[model_type]
