@@ -92,6 +92,7 @@ car instance
 - Visualizing final predictions
     """,
     workflow_definition=WORKFLOW_WITH_DYNAMIC_CROP_AND_STITCH,
+    workflow_name_in_app="visualisation-blocks",
 )
 def test_workflow_with_stitch_and_dynamic_crop(
     model_manager: ModelManager,

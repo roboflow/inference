@@ -67,6 +67,7 @@ physical location, where RoI for static crop is location-dependent) you may
 provide different RoI coordinates. 
     """,
     workflow_definition=ABSOLUTE_STATIC_CROP_WORKFLOW,
+    workflow_name_in_app="static-crop",
 )
 def test_static_crop_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,

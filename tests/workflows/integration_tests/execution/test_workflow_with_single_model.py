@@ -77,6 +77,7 @@ detection step via input selector (`$inputs.image`) and how non-batch parameters
 are dynamically specified - via `$inputs.model_id` and `$inputs.confidence` selectors.
     """,
     workflow_definition=OBJECT_DETECTION_WORKFLOW,
+    workflow_name_in_app="basic-object-detection",
 )
 def test_object_detection_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
