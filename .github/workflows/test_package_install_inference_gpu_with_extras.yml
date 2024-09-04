@@ -25,6 +25,8 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: "3.9"
+      - name: 🚧 Install GDAL OS library
+        run: sudo apt-get install gdal-bin
       - name: 🛞 Create Wheels
         run: |
           make create_wheels
