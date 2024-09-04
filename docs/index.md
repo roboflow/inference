@@ -54,15 +54,15 @@ pip install inference
 <details>
 <summary>👉 advanced models</summary>
 
-  Inference supports multiple model types for specialized tasks. From Grounding DINO for identifying objects with a text prompt, to DocTR for OCR, to CogVLM for asking questions about images - you can find out more in the [Foundation Models](/foundation/about) page.
+  Inference supports multiple model types for specialized tasks. From Grounding DINO for identifying objects with a text prompt, to DocTR for OCR, to CogVLM for asking questions about images - you can find out more in the <a href="/foundation/about">Foundation Models</a> page.
 
   <br/><br/>
 
-  Note that `inference` and `inference-gpu` packages install only the minimal shared dependencies. **Instead**, install model-specific dependencies to ensure code compatibility and license compliance.
+  Note that <code>inference</code> and <code>inference-gpu</code> packages install only the minimal shared dependencies. <b>Instead</b>, install model-specific dependencies to ensure code compatibility and license compliance.
 
   <br/><br/>
 
-  The `inference` and `inference-gpu` packages install only the minimal shared dependencies. Install model-specific dependencies to ensure code compatibility and license compliance. Learn more about the [models](#extras) supported by Inference.
+  The <code>inference</code> and <code>inference-gpu</code> packages install only the minimal shared dependencies. Install model-specific dependencies to ensure code compatibility and license compliance. Learn more about the <a href="#extras">models</a> supported by Inference.
 
   ```bash
   pip install inference[yolo-world]
@@ -87,7 +87,7 @@ results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
 
 <br>
 
-Set up your `ROBOFLOW_API_KEY` to access thousands of fine-tuned models shared by the [Roboflow Universe](https://universe.roboflow.com/) community and your custom model. Navigate to 🔑 keys section to learn more.
+Set up your <code>ROBOFLOW_API_KEY</code> to access thousands of fine-tuned models shared by the <a href="https://universe.roboflow.com/">Roboflow Universe</a> community and your custom model. Navigate to 🔑 keys section to learn more.
 
 ```python
 from inference import get_model
@@ -106,7 +106,7 @@ results = model.infer(
 <details>
 <summary>👉 foundational models</summary>
 
-- [CLIP Embeddings](/foundation/clip) - generate text and image embeddings that you can use for zero-shot classification or assessing image similarity.
+- <a href="/foundation/clip">CLIP Embeddings</a> - generate text and image embeddings that you can use for zero-shot classification or assessing image similarity.
 
   ```python
   from inference.models import Clip
@@ -117,7 +117,7 @@ results = model.infer(
   embeddings_image = model.embed_image("https://media.roboflow.com/inference/soccer.jpg")
   ```
 
-- [Segment Anything](/foundation/sam) - segment all objects visible in the image or only those associated with selected points or boxes.
+- <a href="/foundation/sam">Segment Anything</a> - segment all objects visible in the image or only those associated with selected points or boxes.
 
   ```python
   from inference.models import SegmentAnything
@@ -127,7 +127,7 @@ results = model.infer(
   result = model.segment_image("https://media.roboflow.com/inference/soccer.jpg")
   ```
 
-- [YOLO-World](/foundation/yolo_world) - an almost real-time zero-shot detector that enables the detection of any objects without any training.
+- <a href="/foundation/yolo_world">YOLO-World</a> - an almost real-time zero-shot detector that enables the detection of any objects without any training.
 
   ```python
   from inference.models import YOLOWorld
@@ -205,3 +205,54 @@ Visit our [documentation](/) to explore comprehensive guides, detailed API refer
 ## © license
 
 The Roboflow Inference code is distributed under the [Apache 2.0](https://github.com/roboflow/inference/blob/master/LICENSE.md) license. However, each supported model is subject to its licensing. Detailed information on each model's license can be found [here](https://inference.roboflow.com/quickstart/licensing/#model-code-licenses).
+
+
+## ⚡️ extras
+
+Below you can find list of extras available for `inference` and `inference-gpu`
+
+<table>
+<tr>
+  <th>Name</th>
+  <th style="width:30%">Description</th>
+  <th style="width:50%">Notes</th>
+</tr>
+<tr>
+  <td><code>clip</code></td>
+  <td><a href="/foundation/clip">CLIP model</a></td>
+  <td><code>N/A</code></td>
+</tr>
+<tr>
+  <td><code>gaze</code></td>
+  <td><a href="/foundation/gaze">L2CS-Net model</a></td>
+  <td><code>N/A</code></td>
+</tr>
+<tr>
+  <td><code>grounding-dino</code></td>
+  <td><a href="/foundation/grounding_dino/">Grounding Dino model</a></td>
+  <td><code>N/A</code></td>
+</tr>
+<tr>
+  <td><code>sam</code></td>
+  <td><a href="/foundation/sam">SAM</a> and <a href="/foundation/sam2">SAM2</a> models</td>
+  <td>The extras depend on <code>rasterio</code> which require <code>GDAL</code> library to work. If the installation fails with <code>gdal-config</code> command error - run <code>sudo apt-get install libgdal-dev</code> for Linux or follow <a href="https://gdal.org/en/latest/download.html#binaries">official installation guide</a></td>
+</tr>
+<tr>
+  <td><code>yolo-world</code></td>
+  <td><a href="/foundation/yolo-world">Yolo-World model</a></td>
+  <td><code>N/A</code></td>
+</tr>
+</table>
+
+??? note "Installing extras"
+
+    To install specific extras you need to run
+
+    ```bash
+    pip install inferenence[extras-name]
+    ```
+    or 
+
+    ```bash
+    pip install inferenence-gpu[extras-name]
+    ```
