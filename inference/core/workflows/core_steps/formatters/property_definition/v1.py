@@ -71,7 +71,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference data to extract property from",
         examples=["$steps.my_step.predictions"],
     )
-    operations: List[AllOperationsType]
+    operations: List[AllOperationsType] = Field(
+        description="List of operations to perform on data to generate output",
+        examples=[
+            [{"type": "DetectionsPropertyExtract", "property_name": "class_name"}]
+        ],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

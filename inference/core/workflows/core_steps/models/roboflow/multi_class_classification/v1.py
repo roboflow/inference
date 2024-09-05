@@ -14,6 +14,7 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import attach_prediction_type_info
 from inference.core.workflows.execution_engine.constants import (
+    INFERENCE_ID_KEY,
     PARENT_ID_KEY,
     ROOT_PARENT_ID_KEY,
 )
@@ -28,6 +29,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
+    STRING_KIND,
     FloatZeroToOne,
     ImageInputField,
     RoboflowModelField,
@@ -107,6 +109,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
+            OutputDefinition(name=INFERENCE_ID_KEY, kind=[STRING_KIND]),
         ]
 
     @classmethod
@@ -244,6 +247,7 @@ class RoboflowClassificationModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         predictions: List[dict],
     ) -> BlockResult:
+        inference_id = predictions[0].get(INFERENCE_ID_KEY, None)
         predictions = attach_prediction_type_info(
             predictions=predictions,
             prediction_type="classification",
@@ -253,4 +257,7 @@ class RoboflowClassificationModelBlockV1(WorkflowBlock):
             prediction[ROOT_PARENT_ID_KEY] = (
                 image.workflow_root_ancestor_metadata.parent_id
             )
-        return [{"predictions": prediction} for prediction in predictions]
+        return [
+            {"inference_id": inference_id, "predictions": prediction}
+            for prediction in predictions
+        ]

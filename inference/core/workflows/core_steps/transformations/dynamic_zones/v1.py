@@ -59,6 +59,7 @@ class DynamicZonesManifest(WorkflowBlockManifest):
     )
     required_number_of_vertices: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Keep simplifying polygon until number of vertices matches this number",
+        examples=[4, "$inputs.vertices"],
     )
 
     @classmethod

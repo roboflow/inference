@@ -2,6 +2,9 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
+    CameraFocusBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
     ImageContoursDetectionBlockV1,
 )
@@ -55,6 +58,9 @@ from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
 from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
     ClipComparisonBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 import (
+    ClipComparisonBlockV2,
+)
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
@@ -98,6 +104,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 impor
 )
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import (
     RoboflowDatasetUploadBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
+    RoboflowDatasetUploadBlockV2,
 )
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
@@ -278,6 +287,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ConvertGrayscaleBlockV1,
         ImageThresholdBlockV1,
         ImageContoursDetectionBlockV1,
+        ClipComparisonBlockV2,
+        CameraFocusBlockV1,
+        RoboflowDatasetUploadBlockV2,
     ]
 
 

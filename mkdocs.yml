@@ -68,15 +68,25 @@ nav:
           - Retrieve Your API Key: quickstart/configure_api_key.md
           - Model Licenses: https://roboflow.com/licensing
   - Workflows:
-      - What is a Workflow?: workflows/about.md
-      - Understanding Workflows: workflows/understanding.md
-      - Workflows definitions: workflows/definitions.md
-      - How to Create and Run a Workflow: workflows/create_and_run.md
-      - Blocks: workflows/blocks.md
-      - Kinds: workflows/kinds.md
-      - Advanced Topics:
-          - Create a New Workflow Block: workflows/workflows_contribution.md
-          - Modes of Running Workflows: workflows/modes_of_running.md
+      - About Workflows: workflows/about.md
+      - Create And Run: workflows/create_and_run.md
+      - Ecosystem: workflows/understanding.md
+      - Blocks Overview: workflows/blocks_connections.md
+      - Blocks Gallery: workflows/blocks.md
+      - Examples: workflows/gallery_index.md
+      - User Guide:
+        - Running Workflows: workflows/modes_of_running.md
+        - Workflows Definitions: workflows/definitions.md
+        - Workflow Execution: workflows/workflow_execution.md
+      - Developer Guide:
+        - Compiler: workflows/workflows_compiler.md
+        - Execution Engine: workflows/workflows_execution_engine.md
+        - Kinds: workflows/kinds.md
+        - Blocks Creation: workflows/create_workflow_block.md
+        - Blocks Bundling: workflows/blocks_bundling.md
+        - Dynamic Python Blocks: workflows/custom_python_code_blocks.md
+        - Versioning: workflows/versioning.md
+        - Testing: workflows/testing.md
   - Reference:
       - Inference Pipeline: using_inference/inference_pipeline.md
       - Active Learning:

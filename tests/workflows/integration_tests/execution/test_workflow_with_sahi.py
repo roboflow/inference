@@ -7,6 +7,9 @@ from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 SAHI_WORKFLOW = {
     "version": "1.0.0",
@@ -56,6 +59,24 @@ SAHI_WORKFLOW = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Advanced inference techniques",
+    use_case_title="SAHI in workflows - object detection",
+    use_case_description="""
+This example illustrates usage of [SAHI](https://blog.roboflow.com/how-to-use-sahi-to-detect-small-objects/) 
+technique in workflows.
+
+Workflows implementation requires three blocks:
+
+- Image Slicer - which runs a sliding window over image and for each image prepares batch of crops 
+
+- detection model block (in our scenario Roboflow Object Detection model) - which is responsible 
+for making predictions on each crop
+
+- Detections stitch - which combines partial predictions for each slice of the image into a single prediction
+    """,
+    workflow_definition=SAHI_WORKFLOW,
+)
 def test_sahi_workflow_with_none_as_filtering_strategy(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
@@ -408,6 +429,24 @@ SAHI_WORKFLOW_FOR_SEGMENTATION = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Advanced inference techniques",
+    use_case_title="SAHI in workflows - instance segmentation",
+    use_case_description="""
+This example illustrates usage of [SAHI](https://blog.roboflow.com/how-to-use-sahi-to-detect-small-objects/) 
+technique in workflows.
+
+Workflows implementation requires three blocks:
+
+- Image Slicer - which runs a sliding window over image and for each image prepares batch of crops 
+
+- detection model block (in our scenario Roboflow Instance Segmentation model) - which is responsible 
+for making predictions on each crop
+
+- Detections stitch - which combines partial predictions for each slice of the image into a single prediction
+    """,
+    workflow_definition=SAHI_WORKFLOW,
+)
 def test_sahi_workflow_for_segmentation_with_nms_as_filtering_strategy(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,

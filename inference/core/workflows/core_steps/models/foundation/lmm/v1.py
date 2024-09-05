@@ -105,7 +105,15 @@ class BlockManifest(WorkflowBlockManifest):
         description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
     )
     lmm_config: LMMConfig = Field(
-        default_factory=lambda: LMMConfig(), description="Configuration of LMM"
+        default_factory=lambda: LMMConfig(),
+        description="Configuration of LMM",
+        examples=[
+            {
+                "max_tokens": 200,
+                "gpt_image_detail": "low",
+                "gpt_model_version": "gpt-4o",
+            }
+        ],
     )
     remote_api_key: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]

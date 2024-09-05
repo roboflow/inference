@@ -21,6 +21,7 @@ from inference.core.workflows.core_steps.common.utils import (
     convert_inference_detections_batch_to_sv_detections,
     filter_out_unwanted_classes_from_sv_detections_batch,
 )
+from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -34,6 +35,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
+    STRING_KIND,
     FloatZeroToOne,
     ImageInputField,
     RoboflowModelField,
@@ -156,6 +158,7 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
+            OutputDefinition(name=INFERENCE_ID_KEY, kind=[STRING_KIND]),
             OutputDefinition(
                 name="predictions", kind=[KEYPOINT_DETECTION_PREDICTION_KIND]
             ),
@@ -340,6 +343,7 @@ class RoboflowKeypointDetectionModelBlockV1(WorkflowBlock):
         predictions: List[dict],
         class_filter: Optional[List[str]],
     ) -> BlockResult:
+        inference_id = predictions[0].get(INFERENCE_ID_KEY, None)
         detections = convert_inference_detections_batch_to_sv_detections(predictions)
         for prediction, image_detections in zip(predictions, detections):
             add_inference_keypoints_to_sv_detections(
@@ -358,4 +362,7 @@ class RoboflowKeypointDetectionModelBlockV1(WorkflowBlock):
             images=images,
             predictions=detections,
         )
-        return [{"predictions": image_detections} for image_detections in detections]
+        return [
+            {"inference_id": inference_id, "predictions": image_detections}
+            for image_detections in detections
+        ]

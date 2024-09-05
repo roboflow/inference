@@ -1,3 +1,20 @@
+"""
+*****************************************************************
+*                           WARNING!                            *
+*****************************************************************
+This module contains the utility functions used by
+RoboflowDatasetUploadBlockV2.
+
+We do not recommend making multiple blocks dependent on the same code,
+but the change between v1 and v2 was basically the default value of
+some parameter - hence we decided not to replicate the code.
+
+If you need to modify this module beware that you may introduce
+change to RoboflowDatasetUploadBlockV2! If that happens,
+probably that's the time to disentangle those blocks and copy the
+code.
+"""
+
 import hashlib
 import json
 import logging
@@ -168,6 +185,7 @@ class BlockManifest(WorkflowBlockManifest):
             description="Boolean flag dictating if sink is supposed to be executed in the background, "
             "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
             "registration is needed, use `False` while debugging and if error handling is needed",
+            examples=[True],
         )
     )
     labeling_batch_prefix: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = (
@@ -403,7 +421,7 @@ def execute_registration(
         return False, status
     except Exception as error:
         credit_to_be_returned = True
-        logging.exception("Failed to register datapoint at Roboflow platform")
+        logging.exception("Failed to register datapoint on the Roboflow platform")
         return (
             True,
             f"Error while registration. Error type: {type(error)}. Details: {error}",

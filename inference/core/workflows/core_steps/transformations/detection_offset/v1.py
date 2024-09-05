@@ -134,15 +134,16 @@ def offset_detections(
     if len(detections) == 0:
         return detections
     _detections = deepcopy(detections)
+    image_dimensions = detections.data["image_dimensions"]
     _detections.xyxy = np.array(
         [
             (
-                x1 - offset_width // 2,
-                y1 - offset_height // 2,
-                x2 + offset_width // 2,
-                y2 + offset_height // 2,
+                max(0, x1 - offset_width // 2),
+                max(0, y1 - offset_height // 2),
+                min(image_dimensions[i][1], x2 + offset_width // 2),
+                min(image_dimensions[i][0], y2 + offset_height // 2),
             )
-            for (x1, y1, x2, y2) in _detections.xyxy
+            for i, (x1, y1, x2, y2) in enumerate(_detections.xyxy)
         ]
     )
     _detections[parent_id_key] = detections[detection_id_key].copy()

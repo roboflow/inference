@@ -55,6 +55,7 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
     copy_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
         description="Duplicate the image contents (vs overwriting the image in place). Deselect for chained visualizations that should stack on previous ones where the intermediate state is not needed.",
         default=True,
+        examples=[True, False],
     )
 
     @classmethod

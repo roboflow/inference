@@ -12,6 +12,9 @@ from inference.core.workflows.errors import (
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.v1.dynamic_blocks import block_assembler
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 FUNCTION_TO_GET_OVERLAP_OF_BBOXES = """
 def run(self, predictions: sv.Detections, class_x: str, class_y: str) -> BlockResult:
@@ -163,6 +166,27 @@ WORKFLOW_WITH_OVERLAP_MEASUREMENT = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with dynamic Python Blocks",
+    use_case_title="Workflow measuring bounding boxes overlap",
+    use_case_description="""
+In real world use-cases you may not be able to find all pieces of functionalities required to complete 
+your workflow within existing blocks. 
+
+In such cases you may create piece of python code and put it in workflow as a dynamic block. Specifically 
+here, we define two dynamic blocks:
+
+- `OverlapMeasurement` which will accept object detection predictions and provide for boxes 
+of specific class matrix of overlap with all boxes of another class.
+
+- `MaximumOverlap` that will take overlap matrix produced by `OverlapMeasurement` and calculate maximum overlap.
+
+Dynamic block may be used to create steps, exactly as if those blocks were standard Workflow blocks 
+existing in ecosystem. The workflow presented in the example predicts from object detection model and 
+calculates overlap matrix. Later, only if more than one object is detected, maximum overlap is calculated.
+    """,
+    workflow_definition=WORKFLOW_WITH_OVERLAP_MEASUREMENT,
+)
 def test_workflow_with_custom_python_blocks_measuring_overlap(
     model_manager: ModelManager,
     dogs_image: np.ndarray,

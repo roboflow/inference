@@ -66,6 +66,35 @@ class CasesDefinition(BaseModel):
     ]
 
 
+SWITCH_STATEMENT_EXAMPLE = {
+    "type": "CasesDefinition",
+    "cases": [
+        {
+            "type": "CaseDefinition",
+            "condition": {
+                "type": "StatementGroup",
+                "statements": [
+                    {
+                        "type": "BinaryStatement",
+                        "left_operand": {
+                            "type": "DynamicOperand",
+                            "operand_name": "class_name",
+                        },
+                        "comparator": {"type": "=="},
+                        "right_operand": {
+                            "type": "DynamicOperand",
+                            "operand_name": "reference",
+                        },
+                    }
+                ],
+            },
+            "result": {"type": "StaticCaseResult", "value": "PASS"},
+        }
+    ],
+    "default": {"type": "StaticCaseResult", "value": "FAIL"},
+}
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
@@ -83,7 +112,12 @@ class BlockManifest(WorkflowBlockManifest):
         Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
     ] = Field(
         description="References data to be used to construct results",
-        examples=["$inputs.confidence", "$inputs.image", "$steps.my_step.top"],
+        examples=[
+            {
+                "predictions": "$steps.model.predictions",
+                "reference": "$inputs.reference_class_names",
+            }
+        ],
     )
     data_operations: Dict[str, List[AllOperationsType]] = Field(
         description="UQL definitions of operations to be performed on defined data "
@@ -97,7 +131,10 @@ class BlockManifest(WorkflowBlockManifest):
         ],
         default_factory=lambda: {},
     )
-    switch: CasesDefinition
+    switch: CasesDefinition = Field(
+        description="Definition of switch-case statement",
+        examples=[SWITCH_STATEMENT_EXAMPLE],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

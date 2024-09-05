@@ -4,6 +4,9 @@ from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 WORKFLOW_WITH_DYNAMIC_CROP_AND_STITCH = {
     "version": "1.0.0",
@@ -68,6 +71,28 @@ WORKFLOW_WITH_DYNAMIC_CROP_AND_STITCH = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with visualization blocks",
+    use_case_title="Predictions from different models visualised together",
+    use_case_description="""
+This workflow showcases how predictions from different models (even from nested 
+batches created from input images) may be visualised together.
+
+Our scenario covers:
+
+- Detecting cars using YOLOv8 model
+
+- Dynamically cropping input images to run secondary model (license plates detector) for each 
+car instance
+
+- Stitching together all predictions for licence plates into single prediction
+
+- Fusing cars detections and license plates detections into single prediction
+
+- Visualizing final predictions
+    """,
+    workflow_definition=WORKFLOW_WITH_DYNAMIC_CROP_AND_STITCH,
+)
 def test_workflow_with_stitch_and_dynamic_crop(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
