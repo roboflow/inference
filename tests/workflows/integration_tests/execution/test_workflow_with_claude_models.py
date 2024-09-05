@@ -312,7 +312,7 @@ CLASSIFICATION_WORKFLOW = {
         {
             "type": "roboflow_core/vlm_as_classifier@v1",
             "name": "parser",
-            "image": "$inputs.image",  # requires image input to construct valid output compatible with "inference"
+            "image": "$inputs.image",
             "vlm_output": "$steps.claude.output",
             "classes": "$steps.claude.classes",
         },
