@@ -51,7 +51,10 @@ class RedisQueue:
                 results = redis_pipeline.execute()
                 if not all(results):
                     # TODO: partial insert, retry
-                    logger.error("Failed to store payload and sorted set (partial insert): %s", results)
+                    logger.error(
+                        "Failed to store payload and sorted set (partial insert): %s",
+                        results,
+                    )
             except Exception as exc:
                 logger.error("Failed to store usage records '%s', %s", payload, exc)
 
