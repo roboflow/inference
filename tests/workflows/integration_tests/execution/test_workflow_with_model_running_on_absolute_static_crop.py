@@ -15,7 +15,7 @@ ABSOLUTE_STATIC_CROP_WORKFLOW = {
     "version": "1.0",
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
-        {"type": "WorkflowParameter", "name": "model_id"},
+        {"type": "WorkflowParameter", "name": "model_id", "default_value": "yolov8n-640"},
         {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.7},
         {"type": "WorkflowParameter", "name": "x_center"},
         {"type": "WorkflowParameter", "name": "y_center"},

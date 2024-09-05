@@ -15,7 +15,7 @@ OBJECT_DETECTION_WORKFLOW = {
     "version": "1.0",
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
-        {"type": "WorkflowParameter", "name": "model_id"},
+        {"type": "WorkflowParameter", "name": "model_id", "default_value": "yolov8n-640"},
         {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.3},
     ],
     "steps": [
@@ -206,31 +206,6 @@ def test_object_detection_workflow_when_confidence_is_restricted_by_input_parame
         EXPECTED_OBJECT_DETECTION_CONFIDENCES[:4],
         atol=0.01,
     ), "Expected confidences to match what was validated manually as workflow outcome"
-
-
-def test_object_detection_workflow_when_model_id_not_provided_in_input(
-    model_manager: ModelManager,
-    crowd_image: np.ndarray,
-) -> None:
-    # given
-    workflow_init_parameters = {
-        "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": None,
-        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-    }
-    execution_engine = ExecutionEngine.init(
-        workflow_definition=OBJECT_DETECTION_WORKFLOW,
-        init_parameters=workflow_init_parameters,
-        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-    )
-
-    # when
-    with pytest.raises(RuntimeInputError):
-        _ = execution_engine.run(
-            runtime_parameters={
-                "image": crowd_image,
-            }
-        )
 
 
 def test_object_detection_workflow_when_image_not_provided_in_input(
