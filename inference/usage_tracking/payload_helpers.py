@@ -49,10 +49,15 @@ def get_api_key_usage_containing_resource(
 
 
 def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
-    merged_api_key_usage_payloads: APIKeyUsage = {}
     system_info_payload = None
+    usage_by_exec_session_id: Dict[
+        APIKeyHash, Dict[ResourceID, Dict[str, List[ResourceUsage]]]
+    ] = {}
     for usage_payload in usage_payloads:
         for api_key_hash, resource_payloads in usage_payload.items():
+            api_key_usage_by_exec_session_id = usage_by_exec_session_id.setdefault(
+                api_key_hash, {}
+            )
             if api_key_hash == "":
                 if (
                     resource_payloads
@@ -94,18 +99,51 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                     resource_usage_payload["api_key_hash"] = api_key_hash
                     resource_usage_payload["resource_id"] = resource_id
                     resource_usage_payload["category"] = category
+
+                resource_usage_exec_session_id = (
+                    api_key_usage_by_exec_session_id.setdefault(resource_usage_key, {})
+                )
+                if not resource_usage_payload.get("fps"):
+                    resource_usage_exec_session_id.setdefault("", []).append(
+                        resource_usage_payload
+                    )
+                    continue
+                exec_session_id = resource_usage_payload.get("exec_session_id", "")
+                resource_usage_exec_session_id.setdefault(exec_session_id, []).append(
+                    resource_usage_payload
+                )
+
+    merged_exec_session_id_usage_payloads: Dict[str, APIKeyUsage] = {}
+    for (
+        api_key_hash,
+        api_key_usage_by_exec_session_id,
+    ) in usage_by_exec_session_id.items():
+        for (
+            resource_usage_key,
+            resource_usage_exec_session_id,
+        ) in api_key_usage_by_exec_session_id.items():
+            for (
+                exec_session_id,
+                usage_payloads,
+            ) in resource_usage_exec_session_id.items():
+                merged_api_key_usage_payloads = (
+                    merged_exec_session_id_usage_payloads.setdefault(
+                        exec_session_id, {}
+                    )
+                )
                 merged_api_key_payload = merged_api_key_usage_payloads.setdefault(
                     api_key_hash, {}
                 )
-                merged_resource_payload = merged_api_key_payload.setdefault(
-                    resource_usage_key, {}
-                )
-                merged_api_key_payload[resource_usage_key] = merge_usage_dicts(
-                    merged_resource_payload,
-                    resource_usage_payload,
-                )
+                for resource_usage_payload in usage_payloads:
+                    merged_resource_payload = merged_api_key_payload.setdefault(
+                        resource_usage_key, {}
+                    )
+                    merged_api_key_payload[resource_usage_key] = merge_usage_dicts(
+                        merged_resource_payload,
+                        resource_usage_payload,
+                    )
 
-    zipped_payloads = [merged_api_key_usage_payloads]
+    zipped_payloads = list(merged_exec_session_id_usage_payloads.values())
     if system_info_payload:
         system_info_api_key_hash = next(iter(system_info_payload.values()))[
             "api_key_hash"
