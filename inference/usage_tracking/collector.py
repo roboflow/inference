@@ -1,6 +1,5 @@
 import asyncio
 import atexit
-import hashlib
 import json
 import mimetypes
 import socket
@@ -10,19 +9,19 @@ from collections import defaultdict
 from functools import wraps
 from queue import Queue
 from threading import Event, Lock, Thread
-from typing import Tuple
-from uuid import uuid4
-
-from typing_extensions import (
+from typing import (
     Any,
     Callable,
     DefaultDict,
     Dict,
     List,
     Optional,
-    ParamSpec,
+    Tuple,
     TypeVar,
 )
+from uuid import uuid4
+
+from typing_extensions import ParamSpec
 
 from inference.core.env import API_KEY, LAMBDA, REDIS_HOST
 from inference.core.logger import logger
@@ -43,10 +42,12 @@ from .payload_helpers import (
     SystemDetails,
     UsagePayload,
     send_usage_payload,
+    sha256_hash,
     zip_usage_payloads,
 )
 from .redis_queue import RedisQueue
 from .sqlite_queue import SQLiteQueue
+
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -167,11 +168,6 @@ class UsageCollector:
             usage_payloads = self._dump_usage_queue_no_lock()
         return usage_payloads
 
-    @staticmethod
-    def _hash(payload: str, length=5):
-        payload_hash = hashlib.sha256(payload.encode())
-        return payload_hash.hexdigest()[:length]
-
     def _calculate_api_key_hash(self, api_key: APIKey) -> APIKeyHash:
         api_key_hash = ""
         if not api_key:
@@ -180,7 +176,7 @@ class UsageCollector:
             api_key_hash = self._hashed_api_keys.get(api_key)
             if not api_key_hash:
                 if self._api_keys_hashing_enabled:
-                    api_key_hash = UsageCollector._hash(api_key)
+                    api_key_hash = sha256_hash(api_key)
                 else:
                     api_key_hash = api_key
             self._hashed_api_keys[api_key] = api_key_hash
@@ -188,7 +184,7 @@ class UsageCollector:
 
     @staticmethod
     def _calculate_resource_hash(resource_details: Dict[str, Any]) -> str:
-        return UsageCollector._hash(json.dumps(resource_details, sort_keys=True))
+        return sha256_hash(json.dumps(resource_details, sort_keys=True))
 
     def _enqueue_payload(self, payload: UsagePayload):
         logger.debug("Enqueuing usage payload %s", payload)
@@ -235,7 +231,7 @@ class UsageCollector:
         ip_address: Optional[str] = None,
     ) -> SystemDetails:
         if ip_address:
-            ip_address_hash_hex = UsageCollector._hash(ip_address)
+            ip_address_hash_hex = sha256_hash(ip_address)
         else:
             try:
                 ip_address: str = socket.gethostbyname(socket.gethostname())
@@ -251,7 +247,7 @@ class UsageCollector:
                 if s:
                     s.close()
 
-            ip_address_hash_hex = UsageCollector._hash(ip_address)
+            ip_address_hash_hex = sha256_hash(ip_address)
 
         return {
             "ip_address_hash": ip_address_hash_hex,

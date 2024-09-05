@@ -1,3 +1,4 @@
+import hashlib
 from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
 
 import requests
@@ -151,3 +152,8 @@ def send_usage_payload(
             api_keys_hashes_failed.add(api_key_hash)
             continue
     return api_keys_hashes_failed
+
+
+def sha256_hash(payload: str, length=5):
+    payload_hash = hashlib.sha256(payload.encode())
+    return payload_hash.hexdigest()[:length]
