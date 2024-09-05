@@ -191,6 +191,10 @@ export ROBOFLOW_API_KEY=<YOUR_API_KEY>
 
 Visit our [documentation](https://inference.roboflow.com) to explore comprehensive guides, detailed API references, and a wide array of tutorials designed to help you harness the full potential of the Inference package.
 
+## ⚡️ Model-specific extras
+
+Explore the list of [`inference` extras](https://inference.roboflow.com/#extras) to install model-specific dependencies. 
+
 ## © license
 
 See the "Self Hosting and Edge Deployment" section of the [Roboflow Licensing](https://roboflow.com/licensing) documentation for information on how Roboflow Inference is licensed.

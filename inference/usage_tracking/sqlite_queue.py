@@ -1,8 +1,7 @@
 import json
 import os
 import sqlite3
-
-from typing_extensions import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.logger import logger
@@ -14,7 +13,7 @@ class SQLiteQueue(SQLiteWrapper):
         self,
         db_file_path: str = os.path.join(MODEL_CACHE_DIR, "usage.db"),
         table_name: str = "usage",
-        connection: Optional[sqlite3.Connection] = None,
+        sqlite_connection: Optional[sqlite3.Connection] = None,
     ):
         self._col_name = "payload"
 
@@ -22,13 +21,15 @@ class SQLiteQueue(SQLiteWrapper):
             db_file_path=db_file_path,
             table_name=table_name,
             columns={self._col_name: "TEXT NOT NULL"},
-            connection=connection,
+            connection=sqlite_connection,
         )
 
-    def put(self, payload: Any, connection: Optional[sqlite3.Connection] = None):
+    def put(self, payload: Any, sqlite_connection: Optional[sqlite3.Connection] = None):
         payload_str = json.dumps(payload)
         try:
-            self.insert(values={self._col_name: payload_str}, connection=connection)
+            self.insert(
+                values={self._col_name: payload_str}, connection=sqlite_connection
+            )
         except Exception:
             pass
 
@@ -36,17 +37,17 @@ class SQLiteQueue(SQLiteWrapper):
     def full() -> bool:
         return False
 
-    def empty(self, connection: Optional[sqlite3.Connection] = None) -> bool:
+    def empty(self, sqlite_connection: Optional[sqlite3.Connection] = None) -> bool:
         try:
-            return self.count(connection=connection) == 0
+            return self.count(connection=sqlite_connection) == 0
         except Exception:
             return True
 
     def get_nowait(
-        self, connection: Optional[sqlite3.Connection] = None
+        self, sqlite_connection: Optional[sqlite3.Connection] = None
     ) -> List[Dict[str, Any]]:
         try:
-            sqlite_payloads = self.flush(connection=connection, limit=100)
+            sqlite_payloads = self.flush(connection=sqlite_connection, limit=100)
         except Exception:
             return []
 
