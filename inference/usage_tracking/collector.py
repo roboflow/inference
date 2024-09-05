@@ -9,16 +9,7 @@ from collections import defaultdict
 from functools import wraps
 from queue import Queue
 from threading import Event, Lock, Thread
-from typing import (
-    Any,
-    Callable,
-    DefaultDict,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    TypeVar,
-)
+from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, TypeVar
 from uuid import uuid4
 
 from typing_extensions import ParamSpec
@@ -47,7 +38,6 @@ from .payload_helpers import (
 )
 from .redis_queue import RedisQueue
 from .sqlite_queue import SQLiteQueue
-
 
 T = TypeVar("T")
 P = ParamSpec("P")
