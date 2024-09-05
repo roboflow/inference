@@ -23,7 +23,7 @@ class RedisQueue:
         # prefix must contain hash-tag to avoid CROSSLOT errors when using mget
         # hash-tag is common part of the key wrapped within '{}'
         # removing hash-tag will cause clients utilizing mget to fail
-        self._prefix: str = f"{{{hash_tag}}}:{uuid4().hex[:5]}:{time.time()}"
+        self._prefix: str = f"{{{hash_tag}}}:{time.time()}:{uuid4().hex[:5]}"
         self._redis_cache: RedisCache = redis_cache or cache
         self._increment: int = 0
         self._lock: Lock = Lock()
@@ -39,14 +39,20 @@ class RedisQueue:
             try:
                 self._increment += 1
                 redis_key = f"{self._prefix}:{self._increment}"
-                self._redis_cache.client.set(
+                # https://redis.io/docs/latest/develop/interact/transactions/
+                redis_pipeline = self._redis_cache.client.pipeline()
+                redis_pipeline.set(
                     name=redis_key,
                     value=payload,
                 )
-                self._redis_cache.client.zadd(
+                redis_pipeline.zadd(
                     name="UsageCollector",
                     mapping={redis_key: time.time()},
                 )
+                results = redis_pipeline.execute()
+                if not all(results):
+                    # TODO: partial insert, retry
+                    logger.error("Failed to store payload and sorted set (partial insert): %s", results)
             except Exception as exc:
                 logger.error("Failed to store usage records '%s', %s", payload, exc)
 
