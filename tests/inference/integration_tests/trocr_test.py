@@ -17,12 +17,12 @@ TESTS = [
         "payload": {
             "image": {
                 "type": "url",
-                "value": "https://media.roboflow.com/tire.jpg",
+                "value": "https://media.roboflow.com/serial_number.png",
             }
         },
         "expected_response": {
-            "result": "I was thinking earlier today that I have gone through, to use the lingo, eras of listening to each of Swift's Eras. Meta indeed. I started listening to Ms. Swift's music after hearing the Midnights album. A few weeks after hearing the album for the first time, I found myself playing various songs on repeat. I listened to the album in order multiple times.",
-            "time": 2.61976716702338,
+            "result": "3702692432",
+            "time": 3,
         },
     }
 ]
@@ -57,6 +57,11 @@ def test_trocr(test):
             assert isinstance(data["result"], str) and len(data["result"]) > 0
         except:
             print(f"Invalid response: {data['result']}, expected a non-empty string")
+
+        try:
+            assert isinstance(data["time"], float) and data["time"] > 0
+        except:
+            print(f"Invalid response: Expected a valid positive time")
 
         try:
             assert data["result"] == test["expected_response"]["result"]
