@@ -1,9 +1,8 @@
 import json
 import time
 from threading import Lock
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
-
-from typing_extensions import Any, Dict, List, Optional
 
 from inference.core.cache import cache
 from inference.core.cache.redis import RedisCache
