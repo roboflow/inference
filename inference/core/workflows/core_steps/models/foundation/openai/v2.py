@@ -424,8 +424,11 @@ def prepare_multi_label_classification_prompt(
             "role": "system",
             "content": "You act as multi-label classification model. Your must provide reasonable predictions. "
             "You are only allowed to produce JSON document in Markdown ```json [...]``` markers. "
-            'Expected structure of json: {"classes": ["class-name-1", "class-name-2"]}. '
-            "`class-name-X` must be one of the class name defined by user.",
+            'Expected structure of json: {"predicted_classes": [{"class": "class-name-1", "confidence": 0.9}, '
+            '{"class": "class-name-2", "confidence": 0.7}]}. '
+            "`class-name-X` must be one of the class name defined by user and `confidence` is a float value in range "
+            "0.0-1.0 that represent how sure you are that the class is present in the image. Only return class names "
+            "that are visible.",
         },
         {
             "role": "user",

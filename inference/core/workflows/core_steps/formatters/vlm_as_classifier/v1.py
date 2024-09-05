@@ -27,9 +27,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-JSON_MARKDOWN_BLOCK_PATTERN = re.compile(
-    r"```json\n([\s\S]*?)\n```", flags=re.IGNORECASE
-)
+JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json([\s\S]*?)```", flags=re.IGNORECASE)
 
 LONG_DESCRIPTION = """
 The block expects string input that would be produced by blocks exposing Large Language Models (LLMs) and 
@@ -133,7 +131,7 @@ class VLMAsClassifierBlockV1(WorkflowBlock):
                 classes=classes,
                 inference_id=inference_id,
             )
-        if "classes" in parsed_data:
+        if "predicted_classes" in parsed_data:
             return parse_multi_label_classification_results(
                 image=image,
                 results=parsed_data,
@@ -178,20 +176,29 @@ def parse_multi_class_classification_results(
         class2id_mapping = create_classes_index(classes=classes)
         height, width = image.numpy_image.shape[:2]
         top_class = results["class_name"]
-        confidences = {top_class: float(results["confidence"])}
-        predictions = [
-            {
-                "class_name": class_name,
-                "class_id": class_id,
-                "confidence": confidences.get(class_name, 0.0),
-            }
-            for class_name, class_id in class2id_mapping.items()
-        ]
+        confidences = {top_class: scale_confidence(results["confidence"])}
+        predictions = []
+        if top_class not in class2id_mapping:
+            predictions.append(
+                {
+                    "class_name": top_class,
+                    "class_id": -1,
+                    "confidence": confidences.get(top_class, 0.0),
+                }
+            )
+        for class_name, class_id in class2id_mapping.items():
+            predictions.append(
+                {
+                    "class_name": class_name,
+                    "class_id": class_id,
+                    "confidence": confidences.get(class_name, 0.0),
+                }
+            )
         parsed_prediction = {
             "image": {"width": width, "height": height},
             "predictions": predictions,
             "top": top_class,
-            "confidence": float(results["confidence"]),
+            "confidence": confidences[top_class],
             "inference_id": inference_id,
             "parent_id": image.parent_metadata.parent_id,
         }
@@ -217,11 +224,23 @@ def parse_multi_label_classification_results(
     try:
         class2id_mapping = create_classes_index(classes=classes)
         height, width = image.numpy_image.shape[:2]
-        predicted_classes = list(set(results["classes"]))
-        confidences = {predicted_class: 1.0 for predicted_class in predicted_classes}
+        predicted_classes_confidences = {}
+        for prediction in results["predicted_classes"]:
+            if prediction["class"] not in class2id_mapping:
+                class2id_mapping[prediction["class"]] = -1
+            if prediction["class"] in predicted_classes_confidences:
+                old_confidence = predicted_classes_confidences[prediction["class"]]
+                new_confidence = scale_confidence(value=prediction["confidence"])
+                predicted_classes_confidences[prediction["class"]] = max(
+                    old_confidence, new_confidence
+                )
+            else:
+                predicted_classes_confidences[prediction["class"]] = scale_confidence(
+                    value=prediction["confidence"]
+                )
         predictions = {
             class_name: {
-                "confidence": confidences.get(class_name, 0.0),
+                "confidence": predicted_classes_confidences.get(class_name, 0.0),
                 "class_id": class_id,
             }
             for class_name, class_id in class2id_mapping.items()
@@ -229,7 +248,7 @@ def parse_multi_label_classification_results(
         parsed_prediction = {
             "image": {"width": width, "height": height},
             "predictions": predictions,
-            "predicted_classes": predicted_classes,
+            "predicted_classes": list(predicted_classes_confidences.keys()),
             "inference_id": inference_id,
             "parent_id": image.parent_metadata.parent_id,
         }
@@ -248,3 +267,7 @@ def parse_multi_label_classification_results(
 
 def create_classes_index(classes: List[str]) -> Dict[str, int]:
     return {class_name: idx for idx, class_name in enumerate(classes)}
+
+
+def scale_confidence(value: float) -> float:
+    return min(max(float(value), 0.0), 1.0)

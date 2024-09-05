@@ -66,6 +66,11 @@ with `VLM as Detector` block)
 block. 
 
 You need to provide your Google AI API key to use the Gemini model. 
+
+**WARNING!**
+
+This block makes use of `/v1beta` API of Google Gemini model - the implementation may change 
+in the future, without guarantee of backward compatibility.
 """
 
 TaskType = Literal[
@@ -106,6 +111,7 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM", "VLM", "Gemini", "Google"],
+            "beta": True,
         }
     )
     type: Literal["roboflow_core/google_gemini@v1"]
@@ -445,8 +451,11 @@ def prepare_multi_label_classification_prompt(
                 {
                     "text": "You act as multi-label classification model. Your must provide reasonable predictions. "
                     "You are only allowed to produce JSON document. "
-                    'Expected structure of json: {"classes": ["class-name-1", "class-name-2"]}. '
-                    "`class-name-X` must be one of the class name defined by user.",
+                    'Expected structure of json: {"predicted_classes": [{"class": "class-name-1", "confidence": 0.9}, '
+                    '{"class": "class-name-2", "confidence": 0.7}]}. '
+                    "`class-name-X` must be one of the class name defined by user and `confidence` is a float value "
+                    "in range 0.0-1.0 that represent how sure you are that the class is present in the image. "
+                    "Only return class names that are visible.",
                 }
             ],
         },
@@ -641,9 +650,9 @@ def prepare_object_detection_prompt(
                 {
                     "text": "You act as object-detection model. Your must provide reasonable predictions. "
                     "You are only allowed to produce JSON document. "
-                    'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X"}]}. '
+                    'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X", "confidence": 0.7}]}. '
                     "`my-class-X` must be one of the class name defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
-                    "You should detect all instances of classes provided by user.",
+                    "`confidence` is a value in range 0.0-1.0 representing your confidence in prediction. You should detect all instances of classes provided by user.",
                 }
             ],
         },

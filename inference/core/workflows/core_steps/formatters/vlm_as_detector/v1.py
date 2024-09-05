@@ -39,9 +39,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-JSON_MARKDOWN_BLOCK_PATTERN = re.compile(
-    r"```json\n([\s\S]*?)\n```", flags=re.IGNORECASE
-)
+JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json([\s\S]*?)```", flags=re.IGNORECASE)
 
 LONG_DESCRIPTION = """
 The block expects string input that would be produced by blocks exposing Large Language Models (LLMs) and 
@@ -221,7 +219,7 @@ def parse_gemini_object_detection_response(
         )
         class_id.append(class_name2id.get(detection["class_name"], -1))
         class_name.append(detection["class_name"])
-        confidence.append(1.0)
+        confidence.append(scale_confidence(detection.get("confidence", 1.0)))
     xyxy = np.array(xyxy).round(0) if len(xyxy) > 0 else np.empty((0, 4))
     confidence = np.array(confidence) if len(confidence) > 0 else np.empty(0)
     class_id = np.array(class_id).astype(int) if len(class_id) > 0 else np.empty(0)
@@ -253,6 +251,10 @@ def parse_gemini_object_detection_response(
 
 def create_classes_index(classes: List[str]) -> Dict[str, int]:
     return {class_name: idx for idx, class_name in enumerate(classes)}
+
+
+def scale_confidence(value: float) -> float:
+    return min(max(float(value), 0.0), 1.0)
 
 
 REGISTERED_PARSERS = {

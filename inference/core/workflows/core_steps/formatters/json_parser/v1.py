@@ -18,9 +18,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-JSON_MARKDOWN_BLOCK_PATTERN = re.compile(
-    r"```json\n([\s\S]*?)\n```", flags=re.IGNORECASE
-)
+JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json([\s\S]*?)```", flags=re.IGNORECASE)
 
 LONG_DESCRIPTION = """
 The block expects string input that would be produced by blocks exposing Large Language Models (LLMs) and 
