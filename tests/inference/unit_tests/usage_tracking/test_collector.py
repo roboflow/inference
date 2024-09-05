@@ -10,6 +10,7 @@ from inference.usage_tracking.collector import UsageCollector
 from inference.usage_tracking.payload_helpers import (
     get_api_key_usage_containing_resource,
     merge_usage_dicts,
+    sha256_hash,
     zip_usage_payloads,
 )
 
@@ -21,7 +22,7 @@ def test_create_empty_usage_dict():
     )
 
     # when
-    fake_api_key_hash = UsageCollector._hash("fake_api_key")
+    fake_api_key_hash = sha256_hash("fake_api_key")
     usage_default_dict[fake_api_key_hash]["category:fake_id"]
 
     # then
