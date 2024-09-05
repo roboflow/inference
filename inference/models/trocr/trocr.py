@@ -17,11 +17,10 @@ from PIL import Image
 from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import API_KEY, MODEL_CACHE_DIR  # TODO: Add version ID to env
+from inference.core.logger import logger
 from inference.core.models.base import PreprocessReturnMetadata
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image_rgb
-
-from inference.core.logger import logger
 
 logging.set_verbosity_error()
 
