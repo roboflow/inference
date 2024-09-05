@@ -336,13 +336,12 @@ class SQLiteWrapper:
         for _id, *_ in payloads:
             _ids.add(_id)
 
-        return [
-            r for r in rows if "id" in r and r["id"] not in _ids
-        ]
-
+        return [r for r in rows if "id" in r and r["id"] not in _ids]
 
     def refresh(
-        self, values: List[Dict[ColName, ColValue]], connection: Optional[sqlite3.Connection] = None
+        self,
+        values: List[Dict[ColName, ColValue]],
+        connection: Optional[sqlite3.Connection] = None,
     ) -> List[Dict[str, Any]]:
         if not connection:
             try:

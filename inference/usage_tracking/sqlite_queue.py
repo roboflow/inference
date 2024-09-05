@@ -27,7 +27,9 @@ class SQLiteQueue(SQLiteWrapper):
     def put(self, payload: Any, sqlite_connection: Optional[sqlite3.Connection] = None):
         payload_str = json.dumps(payload)
         try:
-            self.insert(values={self._col_name: payload_str}, connection=sqlite_connection)
+            self.insert(
+                values={self._col_name: payload_str}, connection=sqlite_connection
+            )
         except Exception:
             pass
 
