@@ -98,9 +98,9 @@ class BlockManifest(WorkflowBlockManifest):
         "generate mapping between class name and class id.",
         examples=[["$steps.lmm.classes", "$inputs.classes", ["class_a", "class_b"]]],
     )
-    model_type: Literal["google-gemini", "antropic-claude"] = Field(
+    model_type: Literal["google-gemini", "anthropic-claude"] = Field(
         description="Type of the model that generated prediction",
-        examples=[["google-gemini", "antropic-claude"]],
+        examples=[["google-gemini", "anthropic-claude"]],
     )
     task_type: Literal["object-detection"]
 
@@ -259,5 +259,5 @@ def scale_confidence(value: float) -> float:
 
 REGISTERED_PARSERS = {
     ("google-gemini", "object-detection"): parse_gemini_object_detection_response,
-    ("antropic-claude", "object-detection"): parse_gemini_object_detection_response,
+    ("anthropic-claude", "object-detection"): parse_gemini_object_detection_response,
 }

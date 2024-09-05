@@ -36,7 +36,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Ask a question to Antropics's Claude model with vision capabilities.
+Ask a question to Anthropic Claude model with vision capabilities.
 
 You can specify arbitrary text prompts or predefined ones, the block support the following types of prompt:
 
@@ -63,7 +63,7 @@ with `VLM as Detector` block)
 - `structured-answering` - your input defines expected JSON output fields that can be parsed with `JSON Parser`
 block. 
 
-You need to provide your Antropic API key to use the Claude model. 
+You need to provide your Anthropic API key to use the Claude model. 
 """
 
 TaskType = Literal[
@@ -97,16 +97,16 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Antropic Claude",
+            "name": "Anthropic Claude",
             "version": "v1",
-            "short_description": "Run Antropic's Claude model with vision capabilities",
+            "short_description": "Run Anthropic Claude model with vision capabilities",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM", "VLM", "Gemini", "Google"],
         }
     )
-    type: Literal["roboflow_core/antropic_claude@v1"]
+    type: Literal["roboflow_core/anthropic_claude@v1"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     task_type: TaskType = Field(
         description="Task type to be performed by model. Value of parameter determine set of fields "
