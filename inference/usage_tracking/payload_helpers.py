@@ -55,9 +55,6 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
     ] = {}
     for usage_payload in usage_payloads:
         for api_key_hash, resource_payloads in usage_payload.items():
-            api_key_usage_by_exec_session_id = usage_by_exec_session_id.setdefault(
-                api_key_hash, {}
-            )
             if api_key_hash == "":
                 if (
                     resource_payloads
@@ -81,6 +78,9 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                         v["resource_id"] = resource_id
                     if "category" not in v or not v["category"]:
                         v["category"] = category
+            api_key_usage_by_exec_session_id = usage_by_exec_session_id.setdefault(
+                api_key_hash, {}
+            )
             for (
                 resource_usage_key,
                 resource_usage_payload,
