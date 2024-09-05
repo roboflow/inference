@@ -76,6 +76,7 @@ for making predictions on each crop
 - Detections stitch - which combines partial predictions for each slice of the image into a single prediction
     """,
     workflow_definition=SAHI_WORKFLOW,
+    workflow_name_in_app="sahi-detection",
 )
 def test_sahi_workflow_with_none_as_filtering_strategy(
     model_manager: ModelManager,
@@ -446,6 +447,7 @@ for making predictions on each crop
 - Detections stitch - which combines partial predictions for each slice of the image into a single prediction
     """,
     workflow_definition=SAHI_WORKFLOW,
+    workflow_name_in_app="sahi-segmentation",
 )
 def test_sahi_workflow_for_segmentation_with_nms_as_filtering_strategy(
     model_manager: ModelManager,

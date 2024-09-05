@@ -95,6 +95,7 @@ in the output of prediction. Additionally, we register cropped images in Roboflo
 Thanks to this setup, we are able to collect production data and continuously train better models over time.
 """,
     workflow_definition=ACTIVE_LEARNING_WORKFLOW,
+    workflow_name_in_app="data-collection-active-learning",
 )
 def test_detection_plus_classification_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,

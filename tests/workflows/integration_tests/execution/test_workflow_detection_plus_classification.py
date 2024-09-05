@@ -61,6 +61,7 @@ Secondary model is supposed to make prediction from dogs breed classifier model
 to assign detailed class for each dog instance.
     """,
     workflow_definition=DETECTION_PLUS_CLASSIFICATION_WORKFLOW,
+    workflow_name_in_app="detection-plus-classification",
 )
 def test_detection_plus_classification_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
