@@ -13,9 +13,9 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
+    IMAGE_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    IMAGE_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,

@@ -27,14 +27,15 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    PARENT_ID_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     LIST_OF_VALUES_KIND,
+    PARENT_ID_KIND,
     STRING_KIND,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector, CLASSIFICATION_PREDICTION_KIND,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,

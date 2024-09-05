@@ -65,7 +65,9 @@ def test_select_no_limit():
 def test_select_with_exclusive():
     # given
     conn = sqlite3.connect(":memory:")
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     # when
     q.insert(values={"col1": "lorem"}, connection=conn)
@@ -73,10 +75,7 @@ def test_select_with_exclusive():
     rows = q.select(connection=conn, with_exclusive=True)
 
     # then
-    assert rows == [
-        {"id": 1, "col1": "lorem"},
-        {"id": 2, "col1": "ipsum"}
-    ]
+    assert rows == [{"id": 1, "col1": "lorem"}, {"id": 2, "col1": "ipsum"}]
     conn.close()
 
 
@@ -84,7 +83,9 @@ def test_select_from_cursor():
     # given
     conn = sqlite3.connect(":memory:")
     curr = conn.cursor()
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     # when
     q.insert(values={"col1": "lorem"}, connection=conn)
@@ -92,10 +93,7 @@ def test_select_from_cursor():
     rows = q.select(cursor=curr)
 
     # then
-    assert rows == [
-        {"id": 1, "col1": "lorem"},
-        {"id": 2, "col1": "ipsum"}
-    ]
+    assert rows == [{"id": 1, "col1": "lorem"}, {"id": 2, "col1": "ipsum"}]
     conn.close()
 
 
@@ -159,7 +157,9 @@ def test_flush_limit():
 def test_delete():
     # given
     conn = sqlite3.connect(":memory:")
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     # when
     q.insert(values={"col1": "lorem"}, connection=conn)
@@ -179,7 +179,9 @@ def test_delete():
 def test_delete_non_existent():
     # given
     conn = sqlite3.connect(":memory:")
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     # when
     q.insert(values={"col1": "lorem"}, connection=conn)
@@ -198,7 +200,9 @@ def test_delete_non_existent():
 def test_delete_with_exclusive():
     # given
     conn = sqlite3.connect(":memory:")
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     # when
     q.insert(values={"col1": "lorem"}, connection=conn)
@@ -207,7 +211,9 @@ def test_delete_with_exclusive():
     rows = q.select(connection=conn)
     rows_to_be_deleted = rows[:-1]
     rows_to_be_kept = rows[-1:]
-    deleted_rows = q.delete(connection=conn, rows=rows_to_be_deleted, with_exclusive=True)
+    deleted_rows = q.delete(
+        connection=conn, rows=rows_to_be_deleted, with_exclusive=True
+    )
 
     # then
     assert deleted_rows == rows_to_be_deleted
@@ -219,7 +225,9 @@ def test_delete_from_cursor():
     # given
     conn = sqlite3.connect(":memory:")
     curr = conn.cursor()
-    q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
+    q = SQLiteWrapper(
+        db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn
+    )
 
     # when
     q.insert(values={"col1": "lorem"}, connection=conn)

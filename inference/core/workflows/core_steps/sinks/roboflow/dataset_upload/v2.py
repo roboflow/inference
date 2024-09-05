@@ -18,15 +18,18 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
     ImageInputField,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector, OBJECT_DETECTION_PREDICTION_KIND, INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    KEYPOINT_DETECTION_PREDICTION_KIND, CLASSIFICATION_PREDICTION_KIND,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
