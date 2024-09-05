@@ -3,6 +3,8 @@
 In this example, we are going to build a Workflow from scratch that detects dogs, classifies their breeds and
 visualizes results.
 
+<div style="height: 768px;"><iframe src="https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoieWRacWhRRkhqbTRaZUpkYlVCeW4iLCJ3b3Jrc3BhY2VJZCI6IkppUUdZcmR1WXFMOGM5alRNZ29RIiwidXNlcklkIjoiUjd3NWh0RFNDeU5teW4zOXIzbWJrS0ltYndyMSIsImlhdCI6MTcyNTQ4NDg5Mn0.fWL3rYMl8Bj9Oy1e9xpvy0FqLgPBEALldHBRVJsSkUU" loading="lazy" title="Roboflow Workflow for Create And Run Example" style="width: 100%; height: 100%; min-height: 400px; border: none;"></iframe></div>
+
 ## Step 1: Create a Workflow
 
 Open [https://app.roboflow.com/](https://app.roboflow.com/) in your browser, and navigate to the Workflows tab to click 

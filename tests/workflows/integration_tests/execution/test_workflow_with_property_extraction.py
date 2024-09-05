@@ -126,6 +126,7 @@ that goal - building custom case statements (checking if class names being list 
 extracted from object detection prediction matches reference passed in the input). 
     """,
     workflow_definition=WORKFLOW_WITH_EXTRACTION_OF_CLASSES_FOR_DETECTIONS,
+    workflow_name_in_app="business-logic-1",
 )
 def test_workflow_with_extraction_of_classes_for_detections(
     model_manager: ModelManager,
@@ -335,6 +336,7 @@ performing switch-case like logic to deduce if breeds of detected dogs match wit
 passed to workflow execution. 
     """,
     workflow_definition=WORKFLOW_WITH_EXTRACTION_OF_CLASS_NAME_FROM_CROPS_AND_CONCATENATION_OF_RESULTS,
+    workflow_name_in_app="business-logic-2",
 )
 def test_workflow_with_extraction_of_classes_for_classification_on_crops(
     model_manager: ModelManager,

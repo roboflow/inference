@@ -41,6 +41,7 @@ WORKFLOW_WITH_CAMERA_FOCUS = {
 In this example, we demonstrate how to evaluate camera focus using a specific block.
     """,
     workflow_definition=WORKFLOW_WITH_CAMERA_FOCUS,
+    workflow_name_in_app="camera-focus",
 )
 def test_workflow_with_camera_focus(
     model_manager: ModelManager,

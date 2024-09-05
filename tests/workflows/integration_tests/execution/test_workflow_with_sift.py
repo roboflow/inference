@@ -101,6 +101,7 @@ are passed as images to look for template. This workflow does also validate
 Execution Engine capabilities to broadcast batch-oriented inputs properly.
     """,
     workflow_definition=WORKFLOW_WITH_SIFT,
+    workflow_name_in_app="sift",
 )
 def test_workflow_with_classical_pattern_matching(
     model_manager: ModelManager,
