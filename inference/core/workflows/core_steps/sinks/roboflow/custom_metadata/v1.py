@@ -14,12 +14,11 @@ from inference.core.roboflow_api import add_custom_metadata, get_roboflow_worksp
 from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_STRING_KIND,
     BOOLEAN_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     StepOutputSelector,
     WorkflowParameterSelector,
@@ -58,10 +57,10 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/roboflow_custom_metadata@v1", "RoboflowCustomMetadata"]
     predictions: StepOutputSelector(
         kind=[
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+            CLASSIFICATION_PREDICTION_KIND,
         ]
     ) = Field(
         description="Reference data to extract property from",
@@ -70,7 +69,7 @@ class BlockManifest(WorkflowBlockManifest):
     field_value: Union[
         str,
         WorkflowParameterSelector(kind=[STRING_KIND]),
-        StepOutputSelector(kind=[BATCH_OF_STRING_KIND]),
+        StepOutputSelector(kind=[STRING_KIND]),
     ] = Field(
         description="This is the name of the metadata field you are creating",
         examples=["toronto", "pass", "fail"],

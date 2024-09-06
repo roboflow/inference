@@ -29,3 +29,4 @@ pydot>=2.0.0
 shapely>=2.0.0,<2.1.0
 tldextract~=5.1.2
 packaging~=24.0
+anthropic~=0.34.2

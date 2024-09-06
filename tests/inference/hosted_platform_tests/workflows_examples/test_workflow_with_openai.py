@@ -95,3 +95,161 @@ def test_image_description_workflow(
         detection_confidences, [0.857235848903656, 0.5132315158843994], atol=1e-4
     ), "Expected predictions to match what was observed while test creation"
     assert len(result[0]["description"]) > 0, "Expected some description"
+
+
+CLASSIFICATION_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "classes"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/open_ai@v2",
+            "name": "gpt",
+            "images": "$inputs.image",
+            "task_type": "classification",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/vlm_as_classifier@v1",
+            "name": "parser",
+            "image": "$inputs.image",
+            "vlm_output": "$steps.gpt.output",
+            "classes": "$steps.gpt.classes",
+        },
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "top_class",
+            "operations": [
+                {"type": "ClassificationPropertyExtract", "property_name": "top_class"}
+            ],
+            "data": "$steps.parser.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "gpt_result",
+            "selector": "$steps.gpt.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "top_class",
+            "selector": "$steps.top_class.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "parsed_prediction",
+            "selector": "$steps.parser.*",
+        },
+    ],
+}
+
+
+@pytest.mark.skipif(OPENAI_KEY is None, reason="No OpenAI API key provided")
+@pytest.mark.flaky(retries=4, delay=1)
+def test_classification_workflow(
+    object_detection_service_url: str,
+    dogs_image: np.ndarray,
+) -> None:
+    client = InferenceHTTPClient(
+        api_url=object_detection_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    )
+
+    # when
+    result = client.run_workflow(
+        specification=CLASSIFICATION_WORKFLOW,
+        images={
+            "image": dogs_image,
+        },
+        parameters={
+            "api_key": OPENAI_KEY,
+            "classes": ["cat", "dog"],
+        },
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "gpt_result",
+        "top_class",
+        "parsed_prediction",
+    }, "Expected all outputs to be delivered"
+    assert (
+        isinstance(result[0]["gpt_result"], str) and len(result[0]["gpt_result"]) > 0
+    ), "Expected non-empty string generated"
+    assert result[0]["top_class"] == "dog"
+    assert result[0]["parsed_prediction"]["error_status"] is False
+
+
+STRUCTURED_PROMPTING_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/open_ai@v2",
+            "name": "gpt",
+            "images": "$inputs.image",
+            "task_type": "structured-answering",
+            "output_structure": {
+                "dogs_count": "count of dogs instances in the image",
+                "cats_count": "count of cats instances in the image",
+            },
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/json_parser@v1",
+            "name": "parser",
+            "raw_json": "$steps.gpt.output",
+            "expected_fields": ["dogs_count", "cats_count"],
+        },
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "property_definition",
+            "operations": [{"type": "ToString"}],
+            "data": "$steps.parser.dogs_count",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.property_definition.output",
+        }
+    ],
+}
+
+
+@pytest.mark.skipif(OPENAI_KEY is None, reason="No OpenAI API key provided")
+@pytest.mark.flaky(retries=4, delay=1)
+def test_structured_prompting_workflow(
+    object_detection_service_url: str,
+    dogs_image: np.ndarray,
+) -> None:
+    client = InferenceHTTPClient(
+        api_url=object_detection_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    )
+
+    # when
+    result = client.run_workflow(
+        specification=STRUCTURED_PROMPTING_WORKFLOW,
+        images={
+            "image": dogs_image,
+        },
+        parameters={
+            "api_key": OPENAI_KEY,
+        },
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {"result"}, "Expected all outputs to be delivered"
+    assert result[0]["result"] == "2"

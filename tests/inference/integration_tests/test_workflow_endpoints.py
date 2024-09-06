@@ -150,9 +150,9 @@ def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]
                         "selector_types": ["step_output"],
                         "selector_data_kind": {
                             "step_output": [
-                                "Batch[object_detection_prediction]",
-                                "Batch[instance_segmentation_prediction]",
-                                "Batch[keypoint_detection_prediction]",
+                                "object_detection_prediction",
+                                "instance_segmentation_prediction",
+                                "keypoint_detection_prediction",
                             ]
                         },
                     },
@@ -167,9 +167,9 @@ def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]
                     "associated_detections": {
                         "type": "DynamicOutputDefinition",
                         "kind": [
-                            "Batch[object_detection_prediction]",
-                            "Batch[instance_segmentation_prediction]",
-                            "Batch[keypoint_detection_prediction]",
+                            "object_detection_prediction",
+                            "instance_segmentation_prediction",
+                            "keypoint_detection_prediction",
                         ],
                     }
                 },
@@ -218,7 +218,7 @@ def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]
     types_compatible_with_object_detection_predictions = {
         e["manifest_type_identifier"]
         for e in response_data["kinds_connections"][
-            "Batch[object_detection_prediction]"
+            "object_detection_prediction"
         ]
     }
     assert (
@@ -248,9 +248,9 @@ def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]
                         "is_dimensionality_reference": True,
                         "selector_data_kind": {
                             "step_output": [
-                                "Batch[object_detection_prediction]",
-                                "Batch[instance_segmentation_prediction]",
-                                "Batch[keypoint_detection_prediction]",
+                                "object_detection_prediction",
+                                "instance_segmentation_prediction",
+                                "keypoint_detection_prediction",
                             ]
                         },
                     },
@@ -265,9 +265,9 @@ def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]
                     "associated_detections": {
                         "type": "DynamicOutputDefinition",
                         "kind": [
-                            "Batch[object_detection_prediction]",
-                            "Batch[instance_segmentation_prediction]",
-                            "Batch[keypoint_detection_prediction]",
+                            "object_detection_prediction",
+                            "instance_segmentation_prediction",
+                            "keypoint_detection_prediction",
                         ],
                     }
                 },
@@ -432,7 +432,7 @@ def infer(self, image: WorkflowImageData) -> BlockResult:
                         "predictions": {
                             "type": "DynamicOutputDefinition",
                             "kind": [
-                                "Batch[object_detection_prediction]",
+                                "object_detection_prediction",
                             ],
                         }
                     },
