@@ -27,6 +27,7 @@ logging.set_verbosity_error()
 
 class TrOCR(RoboflowCoreModel):
     def __init__(self, *args, model_id, **kwargs):
+        self.endpoint = model_id
         self.model_id = "microsoft/trocr-base-printed"
         logger.debug(f"TrOCR Model ID: {self.model_id}")
 
