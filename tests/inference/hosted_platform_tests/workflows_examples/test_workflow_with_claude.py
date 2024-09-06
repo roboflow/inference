@@ -236,7 +236,7 @@ def test_object_detection_workflow(
         "claude_result",
         "parsed_prediction",
     }, "Expected all outputs to be delivered"
-    assert result[0]["parsed_prediction"].data["class_name"].tolist() == [
+    assert [e["class"] for e in result[0]["parsed_prediction"]["predictions"]] == [
         "dog",
         "dog",
     ], "Expected 2 dogs to be detected"
