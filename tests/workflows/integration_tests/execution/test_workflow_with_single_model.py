@@ -15,7 +15,11 @@ OBJECT_DETECTION_WORKFLOW = {
     "version": "1.0",
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
-        {"type": "WorkflowParameter", "name": "model_id", "default_value": "yolov8n-640"},
+        {
+            "type": "WorkflowParameter",
+            "name": "model_id",
+            "default_value": "yolov8n-640",
+        },
         {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.3},
     ],
     "steps": [

@@ -2,100 +2,10 @@ import numpy as np
 import pytest
 
 from inference_sdk import InferenceHTTPClient
-from tests.inference.hosted_platform_tests.conftest import OPENAI_KEY, ROBOFLOW_API_KEY
-
-DESCRIPTION_WORKFLOW = {
-    "version": "1.0",
-    "inputs": [
-        {"type": "WorkflowImage", "name": "image"},
-        {"type": "WorkflowParameter", "name": "detection_model_id"},
-        {"type": "InferenceParameter", "name": "prompt"},
-        {"type": "WorkflowParameter", "name": "open_ai_key"},
-    ],
-    "steps": [
-        {
-            "type": "ObjectDetectionModel",
-            "name": "general_detection",
-            "image": "$inputs.image",
-            "model_id": "$inputs.detection_model_id",
-            "class_filter": ["dog"],
-        },
-        {
-            "type": "Crop",
-            "name": "cropping",
-            "image": "$inputs.image",
-            "predictions": "$steps.general_detection.predictions",
-        },
-        {
-            "type": "roboflow_core/open_ai@v1",
-            "name": "open_ai",
-            "image": "$inputs.image",
-            "prompt": "$inputs.prompt",
-            "json_output_format": {
-                "description": "This is the field to inject produced description",
-            },
-            "openai_model": "gpt-4o",
-            "openai_api_key": "$inputs.open_ai_key",
-            "max_tokens": 100,
-        },
-    ],
-    "outputs": [
-        {
-            "type": "JsonField",
-            "name": "detection_predictions",
-            "selector": "$steps.general_detection.predictions",
-        },
-        {
-            "type": "JsonField",
-            "name": "description",
-            "selector": "$steps.open_ai.description",
-        },
-    ],
-}
-
-
-@pytest.mark.skipif(OPENAI_KEY is None, reason="No OpenAI API key provided")
-@pytest.mark.flaky(retries=4, delay=1)
-def test_image_description_workflow(
-    object_detection_service_url: str,
-    yolov8n_640_model_id: str,
-    dogs_image: np.ndarray,
-) -> None:
-    client = InferenceHTTPClient(
-        api_url=object_detection_service_url,
-        api_key=ROBOFLOW_API_KEY,
-    )
-
-    # when
-    result = client.run_workflow(
-        specification=DESCRIPTION_WORKFLOW,
-        images={
-            "image": dogs_image,
-        },
-        parameters={
-            "detection_model_id": yolov8n_640_model_id,
-            "open_ai_key": OPENAI_KEY,
-            "prompt": "Provide a very short description for the image given.",
-        },
-    )
-
-    # then
-    assert len(result) == 1, "1 image submitted, expected one output"
-    assert set(result[0].keys()) == {
-        "detection_predictions",
-        "description",
-    }, "Expected all outputs to be registered"
-    assert (
-        len(result[0]["detection_predictions"]["predictions"]) == 2
-    ), "Expected 2 dogs detected"
-    detection_confidences = [
-        p["confidence"] for p in result[0]["detection_predictions"]["predictions"]
-    ]
-    assert np.allclose(
-        detection_confidences, [0.857235848903656, 0.5132315158843994], atol=1e-4
-    ), "Expected predictions to match what was observed while test creation"
-    assert len(result[0]["description"]) > 0, "Expected some description"
-
+from tests.inference.hosted_platform_tests.conftest import (
+    GOOGLE_API_KEY,
+    ROBOFLOW_API_KEY,
+)
 
 CLASSIFICATION_WORKFLOW = {
     "version": "1.0",
@@ -106,8 +16,8 @@ CLASSIFICATION_WORKFLOW = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/open_ai@v2",
-            "name": "gpt",
+            "type": "roboflow_core/google_gemini@v1",
+            "name": "gemini",
             "images": "$inputs.image",
             "task_type": "classification",
             "classes": "$inputs.classes",
@@ -117,8 +27,8 @@ CLASSIFICATION_WORKFLOW = {
             "type": "roboflow_core/vlm_as_classifier@v1",
             "name": "parser",
             "image": "$inputs.image",
-            "vlm_output": "$steps.gpt.output",
-            "classes": "$steps.gpt.classes",
+            "vlm_output": "$steps.gemini.output",
+            "classes": "$steps.gemini.classes",
         },
         {
             "type": "roboflow_core/property_definition@v1",
@@ -132,8 +42,8 @@ CLASSIFICATION_WORKFLOW = {
     "outputs": [
         {
             "type": "JsonField",
-            "name": "gpt_result",
-            "selector": "$steps.gpt.output",
+            "name": "gemini_result",
+            "selector": "$steps.gemini.output",
         },
         {
             "type": "JsonField",
@@ -149,7 +59,7 @@ CLASSIFICATION_WORKFLOW = {
 }
 
 
-@pytest.mark.skipif(OPENAI_KEY is None, reason="No OpenAI API key provided")
+@pytest.mark.skipif(GOOGLE_API_KEY is None, reason="No Google API key provided")
 @pytest.mark.flaky(retries=4, delay=1)
 def test_classification_workflow(
     object_detection_service_url: str,
@@ -167,7 +77,7 @@ def test_classification_workflow(
             "image": dogs_image,
         },
         parameters={
-            "api_key": OPENAI_KEY,
+            "api_key": GOOGLE_API_KEY,
             "classes": ["cat", "dog"],
         },
     )
@@ -175,12 +85,13 @@ def test_classification_workflow(
     # then
     assert len(result) == 1, "Single image given, expected single output"
     assert set(result[0].keys()) == {
-        "gpt_result",
+        "gemini_result",
         "top_class",
         "parsed_prediction",
     }, "Expected all outputs to be delivered"
     assert (
-        isinstance(result[0]["gpt_result"], str) and len(result[0]["gpt_result"]) > 0
+        isinstance(result[0]["gemini_result"], str)
+        and len(result[0]["gemini_result"]) > 0
     ), "Expected non-empty string generated"
     assert result[0]["top_class"] == "dog"
     assert result[0]["parsed_prediction"]["error_status"] is False
@@ -194,8 +105,8 @@ STRUCTURED_PROMPTING_WORKFLOW = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/open_ai@v2",
-            "name": "gpt",
+            "type": "roboflow_core/google_gemini@v1",
+            "name": "gemini",
             "images": "$inputs.image",
             "task_type": "structured-answering",
             "output_structure": {
@@ -207,7 +118,7 @@ STRUCTURED_PROMPTING_WORKFLOW = {
         {
             "type": "roboflow_core/json_parser@v1",
             "name": "parser",
-            "raw_json": "$steps.gpt.output",
+            "raw_json": "$steps.gemini.output",
             "expected_fields": ["dogs_count", "cats_count"],
         },
         {
@@ -227,9 +138,9 @@ STRUCTURED_PROMPTING_WORKFLOW = {
 }
 
 
-@pytest.mark.skipif(OPENAI_KEY is None, reason="No OpenAI API key provided")
+@pytest.mark.skipif(GOOGLE_API_KEY is None, reason="No Google API key provided")
 @pytest.mark.flaky(retries=4, delay=1)
-def test_structured_prompting_workflow(
+def test_structured_parsing_workflow(
     object_detection_service_url: str,
     dogs_image: np.ndarray,
 ) -> None:
@@ -245,7 +156,7 @@ def test_structured_prompting_workflow(
             "image": dogs_image,
         },
         parameters={
-            "api_key": OPENAI_KEY,
+            "api_key": GOOGLE_API_KEY,
         },
     )
 
@@ -253,3 +164,79 @@ def test_structured_prompting_workflow(
     assert len(result) == 1, "Single image given, expected single output"
     assert set(result[0].keys()) == {"result"}, "Expected all outputs to be delivered"
     assert result[0]["result"] == "2"
+
+
+OBJECT_DETECTION_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "classes"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/google_gemini@v1",
+            "name": "gemini",
+            "images": "$inputs.image",
+            "task_type": "object-detection",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/vlm_as_detector@v1",
+            "name": "parser",
+            "vlm_output": "$steps.gemini.output",
+            "image": "$inputs.image",
+            "classes": "$steps.gemini.classes",
+            "model_type": "google-gemini",
+            "task_type": "object-detection",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "gemini_result",
+            "selector": "$steps.gemini.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "parsed_prediction",
+            "selector": "$steps.parser.predictions",
+        },
+    ],
+}
+
+
+@pytest.mark.skipif(GOOGLE_API_KEY is None, reason="No Google API key provided")
+@pytest.mark.flaky(retries=4, delay=1)
+def test_object_detection_workflow(
+    object_detection_service_url: str,
+    dogs_image: np.ndarray,
+) -> None:
+    client = InferenceHTTPClient(
+        api_url=object_detection_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    )
+
+    # when
+    result = client.run_workflow(
+        specification=OBJECT_DETECTION_WORKFLOW,
+        images={
+            "image": dogs_image,
+        },
+        parameters={
+            "api_key": GOOGLE_API_KEY,
+            "classes": ["cat", "dog"],
+        },
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "gemini_result",
+        "parsed_prediction",
+    }, "Expected all outputs to be delivered"
+    assert [e["class"] for e in result[0]["parsed_prediction"]["predictions"]] == [
+        "dog",
+        "dog",
+    ], "Expected 2 dogs to be detected"

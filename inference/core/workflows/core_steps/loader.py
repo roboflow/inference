@@ -40,8 +40,17 @@ from inference.core.workflows.core_steps.formatters.expression.v1 import (
 from inference.core.workflows.core_steps.formatters.first_non_empty_or_default.v1 import (
     FirstNonEmptyOrDefaultBlockV1,
 )
+from inference.core.workflows.core_steps.formatters.json_parser.v1 import (
+    JSONParserBlockV1,
+)
 from inference.core.workflows.core_steps.formatters.property_definition.v1 import (
     PropertyDefinitionBlockV1,
+)
+from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1 import (
+    VLMAsClassifierBlockV1,
+)
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1 import (
+    VLMAsDetectorBlockV1,
 )
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
     DetectionsClassesReplacementBlockV1,
@@ -55,6 +64,9 @@ from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
+    AntropicClaudeBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
     ClipComparisonBlockV1,
 )
@@ -64,6 +76,9 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 im
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
+    GoogleGeminiBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
@@ -71,6 +86,9 @@ from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 imp
 from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
+    OpenAIBlockV2,
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
@@ -197,6 +215,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
     NUMPY_ARRAY_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
@@ -290,6 +309,12 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ClipComparisonBlockV2,
         CameraFocusBlockV1,
         RoboflowDatasetUploadBlockV2,
+        OpenAIBlockV2,
+        JSONParserBlockV1,
+        VLMAsClassifierBlockV1,
+        GoogleGeminiBlockV1,
+        VLMAsDetectorBlockV1,
+        AntropicClaudeBlockV1,
     ]
 
 
@@ -320,6 +345,7 @@ def load_kinds() -> List[Kind]:
         RGB_COLOR_KIND,
         IMAGE_KEYPOINTS_KIND,
         CONTOURS_KIND,
+        LANGUAGE_MODEL_OUTPUT_KIND,
         NUMPY_ARRAY_KIND,
         QR_CODE_DETECTION_KIND,
         BAR_CODE_DETECTION_KIND,
