@@ -36,9 +36,9 @@ from .payload_helpers import (
     sha256_hash,
     zip_usage_payloads,
 )
+from .plan_details import PlanDetails
 from .redis_queue import RedisQueue
 from .sqlite_queue import SQLiteQueue
-from .plan_details import PlanDetails
 from .utils import collect_func_params
 
 T = TypeVar("T")
