@@ -25,7 +25,7 @@ def test_insert():
     )
 
     # when
-    q.insert(values={"col1": "lorem"}, connection=conn)
+    q.insert(row={"col1": "lorem"}, connection=conn)
 
     # then
     assert q.count(connection=conn) == 1
@@ -40,7 +40,7 @@ def test_insert_incorrect_columns():
     )
 
     with pytest.raises(ValueError):
-        q.insert(values={"col2": "lorem"}, connection=conn)
+        q.insert(row={"col2": "lorem"}, connection=conn)
 
     conn.close()
 
@@ -53,8 +53,8 @@ def test_select_no_limit():
     )
 
     # when
-    q.insert(values={"col1": "lorem"}, connection=conn)
-    q.insert(values={"col1": "ipsum"}, connection=conn)
+    q.insert(row={"col1": "lorem"}, connection=conn)
+    q.insert(row={"col1": "ipsum"}, connection=conn)
     rows = q.select(connection=conn)
 
     # then
@@ -68,8 +68,9 @@ def test_select_with_exclusive():
     q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
 
     # when
-    q.insert(values={"col1": "lorem"}, connection=conn)
-    q.insert(values={"col1": "ipsum"}, connection=conn)
+    q.insert(row={"col1": "lorem"}, connection=conn)
+    q.insert(row={"col1": "ipsum"}, connection=conn)
+    conn.commit()
     rows = q.select(connection=conn, with_exclusive=True)
 
     # then
@@ -87,8 +88,8 @@ def test_select_from_cursor():
     q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
 
     # when
-    q.insert(values={"col1": "lorem"}, connection=conn)
-    q.insert(values={"col1": "ipsum"}, connection=conn)
+    q.insert(row={"col1": "lorem"}, connection=conn)
+    q.insert(row={"col1": "ipsum"}, connection=conn)
     rows = q.select(cursor=curr)
 
     # then
@@ -107,8 +108,8 @@ def test_select_limit():
     )
 
     # when
-    q.insert(values={"col1": "lorem"}, connection=conn)
-    q.insert(values={"col1": "ipsum"}, connection=conn)
+    q.insert(row={"col1": "lorem"}, connection=conn)
+    q.insert(row={"col1": "ipsum"}, connection=conn)
     rows = q.select(connection=conn, limit=1)
 
     # then
@@ -126,8 +127,9 @@ def test_flush_no_limit():
     )
 
     # when
-    q.insert(values={"col1": "lorem"}, connection=conn)
-    q.insert(values={"col1": "ipsum"}, connection=conn)
+    q.insert(row={"col1": "lorem"}, connection=conn)
+    q.insert(row={"col1": "ipsum"}, connection=conn)
+    conn.commit()
     rows = q.flush(connection=conn)
 
     # then
@@ -144,8 +146,9 @@ def test_flush_limit():
     )
 
     # when
-    q.insert(values={"col1": "lorem"}, connection=conn)
-    q.insert(values={"col1": "ipsum"}, connection=conn)
+    q.insert(row={"col1": "lorem"}, connection=conn)
+    q.insert(row={"col1": "ipsum"}, connection=conn)
+    conn.commit()
     rows = q.flush(connection=conn, limit=1)
 
     # then
@@ -162,9 +165,9 @@ def test_delete():
     q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
 
     # when
-    q.insert(values={"col1": "lorem"}, connection=conn)
-    q.insert(values={"col1": "ipsum"}, connection=conn)
-    q.insert(values={"col1": "dolor"}, connection=conn)
+    q.insert(row={"col1": "lorem"}, connection=conn)
+    q.insert(row={"col1": "ipsum"}, connection=conn)
+    q.insert(row={"col1": "dolor"}, connection=conn)
     rows = q.select(connection=conn)
     rows_to_be_deleted = rows[:-1]
     rows_to_be_kept = rows[-1:]
@@ -182,8 +185,8 @@ def test_delete_non_existent():
     q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
 
     # when
-    q.insert(values={"col1": "lorem"}, connection=conn)
-    q.insert(values={"col1": "ipsum"}, connection=conn)
+    q.insert(row={"col1": "lorem"}, connection=conn)
+    q.insert(row={"col1": "ipsum"}, connection=conn)
     rows = q.select(connection=conn)
     rows_to_be_deleted = [rows[0], {"col1": "dolor"}]
     rows_to_be_kept = rows[1]
@@ -201,9 +204,10 @@ def test_delete_with_exclusive():
     q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
 
     # when
-    q.insert(values={"col1": "lorem"}, connection=conn)
-    q.insert(values={"col1": "ipsum"}, connection=conn)
-    q.insert(values={"col1": "dolor"}, connection=conn)
+    q.insert(row={"col1": "lorem"}, connection=conn)
+    q.insert(row={"col1": "ipsum"}, connection=conn)
+    q.insert(row={"col1": "dolor"}, connection=conn)
+    conn.commit()
     rows = q.select(connection=conn)
     rows_to_be_deleted = rows[:-1]
     rows_to_be_kept = rows[-1:]
@@ -222,9 +226,9 @@ def test_delete_from_cursor():
     q = SQLiteWrapper(db_file_path="", table_name="test", columns={"col1": "TEXT"}, connection=conn)
 
     # when
-    q.insert(values={"col1": "lorem"}, connection=conn)
-    q.insert(values={"col1": "ipsum"}, connection=conn)
-    q.insert(values={"col1": "dolor"}, connection=conn)
+    q.insert(row={"col1": "lorem"}, connection=conn)
+    q.insert(row={"col1": "ipsum"}, connection=conn)
+    q.insert(row={"col1": "dolor"}, connection=conn)
     rows = q.select(connection=conn)
     rows_to_be_deleted = rows[:-1]
     rows_to_be_kept = rows[-1:]
