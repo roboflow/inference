@@ -113,7 +113,7 @@ class SQLiteWrapper:
                 cursor.execute("BEGIN EXCLUSIVE")
             except Exception as exc:
                 logger.debug(
-                    "Failed to store '%s' in %s - %s", values, self._tbl_name, exc
+                    "Failed to store '%s' in %s - %s", row, self._tbl_name, exc
                 )
                 raise exc
 
