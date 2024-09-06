@@ -51,6 +51,7 @@ UNCONSTRAINED_WORKFLOW = {
 In this example, Google's Gemini model is prompted with arbitrary text from user 
     """,
     workflow_definition=UNCONSTRAINED_WORKFLOW,
+    workflow_name_in_app="gemini-arbitrary-prompt",
 )
 @pytest.mark.skipif(
     condition=GOOGLE_API_KEY is None, reason="Google API key not provided"
@@ -120,6 +121,7 @@ In this example, Google's Gemini model is used as OCR system. User just points t
 any prompt.
     """,
     workflow_definition=OCR_WORKFLOW,
+    workflow_name_in_app="gemini-ocr",
 )
 @pytest.mark.skipif(
     condition=GOOGLE_API_KEY is None, reason="Google API key not provided"
@@ -189,6 +191,7 @@ VQA_WORKFLOW = {
 In this example, Google's Gemini model is used as VQA system. User provides question via prompt.
     """,
     workflow_definition=VQA_WORKFLOW,
+    workflow_name_in_app="gemini-vqa",
 )
 @pytest.mark.skipif(
     condition=GOOGLE_API_KEY is None, reason="Google API key not provided"
@@ -258,6 +261,7 @@ CAPTION_WORKFLOW = {
 In this example, Google's Gemini model is used as Image Captioning system.
     """,
     workflow_definition=CAPTION_WORKFLOW,
+    workflow_name_in_app="gemini-captioning",
 )
 @pytest.mark.skipif(
     condition=GOOGLE_API_KEY is None, reason="Google API key not provided"
@@ -355,6 +359,7 @@ full-blown prediction, which can later be used by other blocks compatible with
 classification predictions - in this case we extract top-class property.
     """,
     workflow_definition=CLASSIFICATION_WORKFLOW,
+    workflow_name_in_app="gemini-multi-class-classifier",
 )
 @pytest.mark.skipif(
     condition=GOOGLE_API_KEY is None, reason="Google API key not provided"
