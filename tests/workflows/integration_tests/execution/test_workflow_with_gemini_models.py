@@ -460,6 +460,7 @@ full-blown prediction, which can later be used by other blocks compatible with
 classification predictions - in this case we extract top-class property.
     """,
     workflow_definition=MULTI_LABEL_CLASSIFICATION_WORKFLOW,
+    workflow_name_in_app="gemini-multi-label-classifier",
 )
 @pytest.mark.skipif(
     condition=GOOGLE_API_KEY is None, reason="Google API key not provided"
@@ -549,6 +550,7 @@ and expose it's keys to other blocks for further processing. In this case, parse
 transformed using `roboflow_core/property_definition@v1` block.
     """,
     workflow_definition=STRUCTURED_PROMPTING_WORKFLOW,
+    workflow_name_in_app="gemini-structured-prompting",
 )
 @pytest.mark.skipif(
     condition=GOOGLE_API_KEY is None, reason="Google API key not provided"
@@ -632,6 +634,7 @@ parsed by dedicated `roboflow_core/vlm_as_detector@v1` block which transforms st
 which can later be used by other blocks processing object-detection predictions.
     """,
     workflow_definition=OBJECT_DETECTION_WORKFLOW,
+    workflow_name_in_app="gemini-object-detection",
 )
 @pytest.mark.skipif(
     condition=GOOGLE_API_KEY is None, reason="Google API key not provided"

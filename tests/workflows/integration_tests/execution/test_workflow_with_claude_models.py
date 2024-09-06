@@ -51,6 +51,7 @@ UNCONSTRAINED_WORKFLOW = {
 In this example, Anthropic Claude model is prompted with arbitrary text from user 
     """,
     workflow_definition=UNCONSTRAINED_WORKFLOW,
+    workflow_name_in_app="claude-arbitrary-prompt",
 )
 @pytest.mark.skipif(
     condition=ANTHROPIC_API_KEY is None, reason="Anthropic API key not provided"
@@ -120,6 +121,7 @@ In this example, Anthropic Claude model is used as OCR system. User just points 
 any prompt.
     """,
     workflow_definition=OCR_WORKFLOW,
+    workflow_name_in_app="claude-ocr",
 )
 @pytest.mark.skipif(
     condition=ANTHROPIC_API_KEY is None, reason="Anthropic API key not provided"
@@ -189,6 +191,7 @@ VQA_WORKFLOW = {
 In this example, Anthropic Claude model is used as VQA system. User provides question via prompt.
     """,
     workflow_definition=VQA_WORKFLOW,
+    workflow_name_in_app="claude-vqa",
 )
 @pytest.mark.skipif(
     condition=ANTHROPIC_API_KEY is None, reason="Anthropic API key not provided"
@@ -258,6 +261,7 @@ CAPTION_WORKFLOW = {
 In this example, Anthropic Claude model is used as Image Captioning system.
     """,
     workflow_definition=CAPTION_WORKFLOW,
+    workflow_name_in_app="claude-captioning",
 )
 @pytest.mark.skipif(
     condition=ANTHROPIC_API_KEY is None, reason="Anthropic API key not provided"
@@ -355,6 +359,7 @@ full-blown prediction, which can later be used by other blocks compatible with
 classification predictions - in this case we extract top-class property.
     """,
     workflow_definition=CLASSIFICATION_WORKFLOW,
+    workflow_name_in_app="claude-multi-class-classifier",
 )
 @pytest.mark.skipif(
     condition=ANTHROPIC_API_KEY is None, reason="Anthropic API key not provided"
@@ -455,6 +460,7 @@ full-blown prediction, which can later be used by other blocks compatible with
 classification predictions - in this case we extract top-class property.
     """,
     workflow_definition=MULTI_LABEL_CLASSIFICATION_WORKFLOW,
+    workflow_name_in_app="claude-multi-label-classifier",
 )
 @pytest.mark.skipif(
     condition=ANTHROPIC_API_KEY is None, reason="Anthropic API key not provided"
@@ -544,6 +550,7 @@ and expose it's keys to other blocks for further processing. In this case, parse
 transformed using `roboflow_core/property_definition@v1` block.
     """,
     workflow_definition=STRUCTURED_PROMPTING_WORKFLOW,
+    workflow_name_in_app="claude-structured-prompting",
 )
 @pytest.mark.skipif(
     condition=ANTHROPIC_API_KEY is None, reason="Anthropic API key not provided"
@@ -627,6 +634,7 @@ parsed by dedicated `roboflow_core/vlm_as_detector@v1` block which transforms st
 which can later be used by other blocks processing object-detection predictions.
     """,
     workflow_definition=OBJECT_DETECTION_WORKFLOW,
+    workflow_name_in_app="claude-object-detection",
 )
 @pytest.mark.skipif(
     condition=ANTHROPIC_API_KEY is None, reason="Anthropic API key not provided"

@@ -52,6 +52,7 @@ UNCONSTRAINED_WORKFLOW = {
 In this example, GPT model is prompted with arbitrary text from user 
     """,
     workflow_definition=UNCONSTRAINED_WORKFLOW,
+    workflow_name_in_app="gpt-arbitrary-prompt",
 )
 @pytest.mark.skipif(
     condition=OPEN_AI_API_KEY is None, reason="OpenAI API key not provided"
@@ -122,6 +123,7 @@ In this example, GPT model is used as OCR system. User just points task type and
 any prompt.
     """,
     workflow_definition=OCR_WORKFLOW,
+    workflow_name_in_app="gpt-ocr",
 )
 @pytest.mark.skipif(
     condition=OPEN_AI_API_KEY is None, reason="OpenAI API key not provided"
@@ -191,6 +193,7 @@ VQA_WORKFLOW = {
 In this example, GPT model is used as VQA system. User provides question via prompt.
     """,
     workflow_definition=VQA_WORKFLOW,
+    workflow_name_in_app="gpt-vqa",
 )
 @pytest.mark.skipif(
     condition=OPEN_AI_API_KEY is None, reason="OpenAI API key not provided"
@@ -259,6 +262,7 @@ CAPTION_WORKFLOW = {
 In this example, GPT model is used as Image Captioning system.
     """,
     workflow_definition=CAPTION_WORKFLOW,
+    workflow_name_in_app="gpt-captioning",
 )
 @pytest.mark.skipif(
     condition=OPEN_AI_API_KEY is None, reason="OpenAI API key not provided"
@@ -356,6 +360,7 @@ full-blown prediction, which can later be used by other blocks compatible with
 classification predictions - in this case we extract top-class property.
     """,
     workflow_definition=CLASSIFICATION_WORKFLOW,
+    workflow_name_in_app="gpt-multi-class-classifier",
 )
 @pytest.mark.skipif(
     condition=OPEN_AI_API_KEY is None, reason="OpenAI API key not provided"
@@ -455,6 +460,7 @@ full-blown prediction, which can later be used by other blocks compatible with
 classification predictions - in this case we extract top-class property.
     """,
     workflow_definition=MULTI_LABEL_CLASSIFICATION_WORKFLOW,
+    workflow_name_in_app="gpt-multi-label-classifier",
 )
 @pytest.mark.skipif(
     condition=OPEN_AI_API_KEY is None, reason="OpenAI API key not provided"
@@ -544,6 +550,7 @@ and expose it's keys to other blocks for further processing. In this case, parse
 transformed using `roboflow_core/property_definition@v1` block.
     """,
     workflow_definition=STRUCTURED_PROMPTING_WORKFLOW,
+    workflow_name_in_app="gpt-structured-prompting",
 )
 @pytest.mark.skipif(
     condition=OPEN_AI_API_KEY is None, reason="OpenAI API key not provided"
