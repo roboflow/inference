@@ -23,10 +23,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_BOOLEAN_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    BOOLEAN_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
@@ -115,9 +115,9 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="error_status", kind=[BATCH_OF_BOOLEAN_KIND]),
+            OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
             OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
             ),
             OutputDefinition(name="inference_id", kind=[STRING_KIND]),
         ]

@@ -18,7 +18,6 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_STRING_KIND,
     FLOAT_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
@@ -221,7 +220,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="output", kind=[BATCH_OF_STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
+                name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
             OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
         ]

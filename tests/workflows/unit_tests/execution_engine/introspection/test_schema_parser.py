@@ -4,10 +4,9 @@ from pydantic import BaseModel, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_BOOLEAN_KIND,
-    BATCH_OF_IMAGES_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
+    IMAGE_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
@@ -257,7 +256,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
         )
         step_output_image: StepOutputImageSelector
         step_output_property: StepOutputSelector(
-            kind=[BATCH_OF_BOOLEAN_KIND, BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+            kind=[BOOLEAN_KIND, OBJECT_DETECTION_PREDICTION_KIND]
         )
         step: StepSelector
 
@@ -283,7 +282,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="workflow_image", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="workflow_image", kind=[IMAGE_KIND]
                     )
                 ],
                 is_list_element=False,
@@ -310,7 +309,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="step_output", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="step_output", kind=[IMAGE_KIND]
                     )
                 ],
                 is_list_element=False,
@@ -325,8 +324,8 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                     ReferenceDefinition(
                         selected_element="step_output",
                         kind=[
-                            BATCH_OF_BOOLEAN_KIND,
-                            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+                            BOOLEAN_KIND,
+                            OBJECT_DETECTION_PREDICTION_KIND,
                         ],
                     )
                 ],
@@ -386,10 +385,10 @@ def test_parse_block_manifest_when_manifest_defines_compound_selector() -> None:
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="workflow_image", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="workflow_image", kind=[IMAGE_KIND]
                     ),
                     ReferenceDefinition(
-                        selected_element="step_output", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="step_output", kind=[IMAGE_KIND]
                     ),
                     # nested list is ignored
                 ],
@@ -441,10 +440,10 @@ def test_parse_block_manifest_when_manifest_defines_union_of_selector_and_primit
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="workflow_image", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="workflow_image", kind=[IMAGE_KIND]
                     ),
                     ReferenceDefinition(
-                        selected_element="step_output", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="step_output", kind=[IMAGE_KIND]
                     ),
                     # nested list is ignored
                 ],
@@ -496,10 +495,10 @@ def test_parse_block_manifest_when_manifest_defines_selector_inside_dictionary()
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="workflow_image", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="workflow_image", kind=[IMAGE_KIND]
                     ),
                     ReferenceDefinition(
-                        selected_element="step_output", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="step_output", kind=[IMAGE_KIND]
                     ),
                     # nested list is ignored
                 ],

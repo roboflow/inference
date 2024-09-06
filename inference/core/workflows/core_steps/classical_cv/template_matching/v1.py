@@ -21,11 +21,11 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_INTEGER_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
     FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    INTEGER_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     FloatZeroToOne,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -110,11 +110,11 @@ class TemplateMatchingManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="predictions",
-                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+                kind=[OBJECT_DETECTION_PREDICTION_KIND],
             ),
             OutputDefinition(
                 name="number_of_matches",
-                kind=[BATCH_OF_INTEGER_KIND],
+                kind=[INTEGER_KIND],
             ),
         ]
 

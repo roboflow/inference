@@ -28,10 +28,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
@@ -160,7 +160,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(name=INFERENCE_ID_KEY, kind=[STRING_KIND]),
             OutputDefinition(
-                name="predictions", kind=[BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[KEYPOINT_DETECTION_PREDICTION_KIND]
             ),
         ]
 

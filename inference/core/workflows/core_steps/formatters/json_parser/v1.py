@@ -8,7 +8,7 @@ from typing_extensions import Annotated
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_BOOLEAN_KIND,
+    BOOLEAN_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     StepOutputSelector,
 )
@@ -79,13 +79,13 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="error_status", kind=[BATCH_OF_BOOLEAN_KIND]),
+            OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
             OutputDefinition(name="*"),
         ]
 
     def get_actual_outputs(self) -> List[OutputDefinition]:
         result = [
-            OutputDefinition(name="error_status", kind=[BATCH_OF_BOOLEAN_KIND]),
+            OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
         ]
         for field_name in self.expected_fields:
             result.append(OutputDefinition(name=field_name))

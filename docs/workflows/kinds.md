@@ -23,11 +23,16 @@ for the presence of a mask in the input.
 
 !!! Warning
 
-    The list presented below contains elements with `Batch[X]` markers - those will 
-    get soon deprecated and we will use only `X` markers. For now, developers are asked 
-    to create their blocks using the `Batch[X]` markers, but raise the 
-    [issue here](https://github.com/roboflow/inference/issues/608). This GH issue will be used 
-    as a point of communication regarding deprecation process.
+    In `inference` release `0.18.0` we decided to make drastic move to heal the ecosystem 
+    from the problem with ambiguous kinds names (`Batch[X]` vs `X` - see more 
+    [here](https://github.com/roboflow/inference/issues/608). 
+
+    The change is breaking only if there is remote Workflow plugin depending on imports
+    from `inference.core.workflows.execution_engine.entities.types` module, which is
+    not the case to the best of our knowledge. We removed problematic kinds as if they
+    never existed in the ecosystem and fixed all blocks from `roboflow_core` plugin.
+    If there is anyone impacted by the change - here is the 
+    [migration guide](https://github.com/roboflow/inference/releases/tag/v0.18.0).
  
 
 ## Kinds declared in Roboflow plugins

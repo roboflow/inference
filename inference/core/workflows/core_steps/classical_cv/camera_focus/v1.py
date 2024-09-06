@@ -12,8 +12,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_IMAGES_KIND,
     FLOAT_KIND,
+    IMAGE_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
@@ -57,9 +57,7 @@ class CameraFocusManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name=OUTPUT_IMAGE_KEY,
-                kind=[
-                    BATCH_OF_IMAGES_KIND,
-                ],
+                kind=[IMAGE_KIND],
             ),
             OutputDefinition(
                 name="focus_measure",

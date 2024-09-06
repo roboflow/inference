@@ -8,9 +8,7 @@ from inference.core.workflows.core_steps.formatters.json_parser.v1 import (
     JSONParserBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
-from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_BOOLEAN_KIND,
-)
+from inference.core.workflows.execution_engine.entities.types import BOOLEAN_KIND
 
 
 def test_parsing_manifest_when_input_is_valid() -> None:
@@ -62,7 +60,7 @@ def test_manifest_get_actual_outputs() -> None:
 
     # then
     assert result == [
-        OutputDefinition(name="error_status", kind=[BATCH_OF_BOOLEAN_KIND]),
+        OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
         OutputDefinition(name="a"),
         OutputDefinition(name="b"),
         OutputDefinition(name="c"),

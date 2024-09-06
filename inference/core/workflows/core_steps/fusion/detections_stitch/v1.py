@@ -19,9 +19,9 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     FloatZeroToOne,
     StepOutputImageSelector,
@@ -65,8 +65,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
     predictions: StepOutputSelector(
         kind=[
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(
         description="The output of a detection model describing the bounding boxes to be merged.",
@@ -105,8 +105,8 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name="predictions",
                 kind=[
-                    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-                    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 ],
             ),
         ]
