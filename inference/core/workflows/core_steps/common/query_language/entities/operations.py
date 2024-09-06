@@ -15,8 +15,8 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
     StatementsGroupsOperator,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BOOLEAN_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     DETECTION_KIND,
     DICTIONARY_KIND,
     FLOAT_KIND,
@@ -214,7 +214,7 @@ class ClassificationPropertyExtract(OperationDefinition):
             "(as a list of elements - one element represents single detection)",
             "compound": False,
             "input_kind": [
-                BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
+                CLASSIFICATION_PREDICTION_KIND,
             ],
             "output_kind": [STRING_KIND, LIST_OF_VALUES_KIND, FLOAT_ZERO_TO_ONE_KIND],
         },

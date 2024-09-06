@@ -28,9 +28,9 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
     LIST_OF_VALUES_KIND,
+    PARENT_ID_KIND,
+    PREDICTION_TYPE_KIND,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -87,11 +87,9 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="similarity", kind=[LIST_OF_VALUES_KIND]),
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="root_parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
         ]
 
     @classmethod

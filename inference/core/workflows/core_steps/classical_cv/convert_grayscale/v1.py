@@ -11,7 +11,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_IMAGES_KIND,
+    IMAGE_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
 )
@@ -53,7 +53,7 @@ class ConvertGrayscaleManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name=OUTPUT_IMAGE_KEY,
                 kind=[
-                    BATCH_OF_IMAGES_KIND,
+                    IMAGE_KIND,
                 ],
             ),
         ]

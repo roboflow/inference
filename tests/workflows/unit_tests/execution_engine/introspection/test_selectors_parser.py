@@ -4,8 +4,8 @@ from pydantic import Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_IMAGES_KIND,
     BOOLEAN_KIND,
+    IMAGE_KIND,
     STRING_KIND,
     StepOutputSelector,
     WorkflowImageSelector,
@@ -79,7 +79,7 @@ def test_get_step_selectors_when_not_compound_selectors_defined() -> None:
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="workflow_image", kind=[BATCH_OF_IMAGES_KIND]
+                        selected_element="workflow_image", kind=[IMAGE_KIND]
                     )
                 ],
                 is_list_element=False,

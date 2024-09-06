@@ -12,7 +12,7 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     StepOutputSelector,
     WorkflowParameterSelector,
@@ -43,7 +43,7 @@ class PolygonManifest(ColorableVisualizationManifest):
 
     predictions: StepOutputSelector(
         kind=[
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
         description="Predictions",
