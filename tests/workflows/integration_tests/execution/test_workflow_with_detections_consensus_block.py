@@ -82,6 +82,7 @@ votes to accept bounding box to the output prediction - this way you may improve
 predictions
     """,
     workflow_definition=CONSENSUS_WORKFLOW,
+    workflow_name_in_app="detections-consensus",
 )
 def test_consensus_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,

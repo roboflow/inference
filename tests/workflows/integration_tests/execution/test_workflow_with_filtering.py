@@ -123,6 +123,7 @@ that is going to filter predictions based on:
 - size of predicted bounding box relative to size of input image 
     """,
     workflow_definition=FILTERING_WORKFLOW,
+    workflow_name_in_app="detections-filtering",
 )
 def test_filtering_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
