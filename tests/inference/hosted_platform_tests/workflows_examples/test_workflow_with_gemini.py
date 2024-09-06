@@ -247,6 +247,7 @@ VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
         {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "model_id"},
         {
             "type": "WorkflowParameter",
             "name": "classes",
@@ -262,7 +263,7 @@ VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
             "type": "ObjectDetectionModel",
             "name": "general_detection",
             "image": "$inputs.image",
-            "model_id": "yolov8n-640",
+            "model_id": "$inputs.model_id",
             "class_filter": ["dog"],
         },
         {
@@ -308,6 +309,7 @@ VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
 def test_workflow_with_secondary_classifier(
     object_detection_service_url: str,
     dogs_image: np.ndarray,
+    yolov8n_640_model_id: str,
 ) -> None:
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
@@ -323,6 +325,7 @@ def test_workflow_with_secondary_classifier(
         parameters={
             "api_key": GOOGLE_API_KEY,
             "classes": ["russell-terrier", "wirehaired-pointing-griffon", "beagle"],
+            "model_id": yolov8n_640_model_id,
         },
     )
 
