@@ -9,7 +9,7 @@ from typing_extensions import Annotated
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
-    BATCH_OF_STRING_KIND,
+    LANGUAGE_MODEL_OUTPUT_KIND,
     StepOutputSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -65,7 +65,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/json_parser@v1"]
-    raw_json: StepOutputSelector(kind=[BATCH_OF_STRING_KIND]) = Field(
+    raw_json: StepOutputSelector(kind=[LANGUAGE_MODEL_OUTPUT_KIND]) = Field(
         description="The string with raw JSON to parse.",
         examples=[["$steps.lmm.output"]],
     )

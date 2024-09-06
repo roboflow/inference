@@ -13,7 +13,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     BATCH_OF_BOOLEAN_KIND,
     BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
-    BATCH_OF_STRING_KIND,
+    LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     StepOutputImageSelector,
@@ -72,7 +72,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="The image which was the base to generate VLM prediction",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    vlm_output: StepOutputSelector(kind=[BATCH_OF_STRING_KIND]) = Field(
+    vlm_output: StepOutputSelector(kind=[LANGUAGE_MODEL_OUTPUT_KIND]) = Field(
         title="VLM Output",
         description="The string with raw classification prediction to parse.",
         examples=[["$steps.lmm.output"]],

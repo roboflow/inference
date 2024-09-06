@@ -227,6 +227,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     POINT_KIND,
@@ -360,4 +361,5 @@ def load_kinds() -> List[Kind]:
         RGB_COLOR_KIND,
         IMAGE_KEYPOINTS_KIND,
         CONTOURS_KIND,
+        LANGUAGE_MODEL_OUTPUT_KIND,
     ]
