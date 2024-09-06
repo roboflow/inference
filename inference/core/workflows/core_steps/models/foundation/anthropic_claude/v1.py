@@ -142,7 +142,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=None,
         description="List of classes to be used",
-        examples=["my prompt", "$inputs.prompt"],
+        examples=[["class-a", "class-b"], "$inputs.classes"],
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
