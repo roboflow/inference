@@ -240,3 +240,100 @@ def test_object_detection_workflow(
         "dog",
         "dog",
     ], "Expected 2 dogs to be detected"
+
+
+VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "model_id"},
+        {
+            "type": "WorkflowParameter",
+            "name": "classes",
+            "default_value": [
+                "russell-terrier",
+                "wirehaired-pointing-griffon",
+                "beagle",
+            ],
+        },
+    ],
+    "steps": [
+        {
+            "type": "ObjectDetectionModel",
+            "name": "general_detection",
+            "image": "$inputs.image",
+            "model_id": "$inputs.model_id",
+            "class_filter": ["dog"],
+        },
+        {
+            "type": "Crop",
+            "name": "cropping",
+            "image": "$inputs.image",
+            "predictions": "$steps.general_detection.predictions",
+        },
+        {
+            "type": "roboflow_core/google_gemini@v1",
+            "name": "gemini",
+            "images": "$steps.cropping.crops",
+            "task_type": "classification",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/vlm_as_classifier@v1",
+            "name": "parser",
+            "image": "$steps.cropping.crops",
+            "vlm_output": "$steps.gemini.output",
+            "classes": "$steps.gemini.classes",
+        },
+        {
+            "type": "roboflow_core/detections_classes_replacement@v1",
+            "name": "classes_replacement",
+            "object_detection_predictions": "$steps.general_detection.predictions",
+            "classification_predictions": "$steps.parser.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.classes_replacement.predictions",
+        },
+    ],
+}
+
+
+@pytest.mark.skipif(GOOGLE_API_KEY is None, reason="No Google API key provided")
+@pytest.mark.flaky(retries=4, delay=1)
+def test_workflow_with_secondary_classifier(
+    object_detection_service_url: str,
+    dogs_image: np.ndarray,
+    yolov8n_640_model_id: str,
+) -> None:
+    client = InferenceHTTPClient(
+        api_url=object_detection_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    )
+
+    # when
+    result = client.run_workflow(
+        specification=VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW,
+        images={
+            "image": dogs_image,
+        },
+        parameters={
+            "api_key": GOOGLE_API_KEY,
+            "classes": ["russell-terrier", "wirehaired-pointing-griffon", "beagle"],
+            "model_id": yolov8n_640_model_id,
+        },
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "predictions",
+    }, "Expected all outputs to be delivered"
+    assert "dog" not in set(
+        [e["class"] for e in result[0]["predictions"]["predictions"]]
+    ), "Expected classes to be substituted"

@@ -177,7 +177,7 @@ def parse_multi_class_classification_results(
         if top_class not in class2id_mapping:
             predictions.append(
                 {
-                    "class_name": top_class,
+                    "class": top_class,
                     "class_id": -1,
                     "confidence": confidences.get(top_class, 0.0),
                 }
@@ -185,7 +185,7 @@ def parse_multi_class_classification_results(
         for class_name, class_id in class2id_mapping.items():
             predictions.append(
                 {
-                    "class_name": class_name,
+                    "class": class_name,
                     "class_id": class_id,
                     "confidence": confidences.get(class_name, 0.0),
                 }
