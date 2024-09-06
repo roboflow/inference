@@ -253,3 +253,97 @@ def test_structured_prompting_workflow(
     assert len(result) == 1, "Single image given, expected single output"
     assert set(result[0].keys()) == {"result"}, "Expected all outputs to be delivered"
     assert result[0]["result"] == "2"
+
+
+VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {
+            "type": "WorkflowParameter",
+            "name": "classes",
+            "default_value": [
+                "russell-terrier",
+                "wirehaired-pointing-griffon",
+                "beagle",
+            ],
+        },
+    ],
+    "steps": [
+        {
+            "type": "ObjectDetectionModel",
+            "name": "general_detection",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+            "class_filter": ["dog"],
+        },
+        {
+            "type": "Crop",
+            "name": "cropping",
+            "image": "$inputs.image",
+            "predictions": "$steps.general_detection.predictions",
+        },
+        {
+            "type": "roboflow_core/open_ai@v2",
+            "name": "gpt",
+            "images": "$steps.cropping.crops",
+            "task_type": "classification",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/vlm_as_classifier@v1",
+            "name": "parser",
+            "image": "$steps.cropping.crops",
+            "vlm_output": "$steps.gpt.output",
+            "classes": "$steps.gpt.classes",
+        },
+        {
+            "type": "roboflow_core/detections_classes_replacement@v1",
+            "name": "classes_replacement",
+            "object_detection_predictions": "$steps.general_detection.predictions",
+            "classification_predictions": "$steps.parser.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.classes_replacement.predictions",
+        },
+    ],
+}
+
+
+@pytest.mark.skipif(OPENAI_KEY is None, reason="No OpenAI API key provided")
+@pytest.mark.flaky(retries=4, delay=1)
+def test_structured_prompting_workflow(
+    object_detection_service_url: str,
+    dogs_image: np.ndarray,
+) -> None:
+    client = InferenceHTTPClient(
+        api_url=object_detection_service_url,
+        api_key=ROBOFLOW_API_KEY,
+    )
+
+    # when
+    result = client.run_workflow(
+        specification=VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW,
+        images={
+            "image": dogs_image,
+        },
+        parameters={
+            "api_key": OPENAI_KEY,
+            "classes": ["russell-terrier", "wirehaired-pointing-griffon", "beagle"],
+        },
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "predictions",
+    }, "Expected all outputs to be delivered"
+    assert "dog" not in set(
+        [e["class"] for e in result[0]["predictions"]["predictions"]]
+    ), "Expected classes to be substituted"
