@@ -369,9 +369,9 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_CROSS_DIMENSIONS = {
                         "selector_types": ["step_output"],
                         "selector_data_kind": {
                             "step_output": [
-                                "Batch[object_detection_prediction]",
-                                "Batch[instance_segmentation_prediction]",
-                                "Batch[keypoint_detection_prediction]",
+                                "object_detection_prediction",
+                                "instance_segmentation_prediction",
+                                "keypoint_detection_prediction",
                             ]
                         },
                     },
@@ -386,9 +386,9 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_CROSS_DIMENSIONS = {
                     "associated_detections": {
                         "type": "DynamicOutputDefinition",
                         "kind": [
-                            "Batch[object_detection_prediction]",
-                            "Batch[instance_segmentation_prediction]",
-                            "Batch[keypoint_detection_prediction]",
+                            "object_detection_prediction",
+                            "instance_segmentation_prediction",
+                            "keypoint_detection_prediction",
                         ],
                     }
                 },
@@ -639,7 +639,7 @@ WORKFLOW_WITH_PYTHON_BLOCK_HOSTING_MODEL = {
                     "predictions": {
                         "type": "DynamicOutputDefinition",
                         "kind": [
-                            "Batch[object_detection_prediction]",
+                            "object_detection_prediction",
                         ],
                     }
                 },

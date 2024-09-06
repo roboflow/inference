@@ -23,13 +23,12 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_IMAGE_METADATA_KIND,
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
-    BATCH_OF_STRING_KIND,
-    BATCH_OF_TOP_CLASS_KIND,
+    IMAGE_METADATA_KIND,
     LIST_OF_VALUES_KIND,
+    PARENT_ID_KIND,
+    PREDICTION_TYPE_KIND,
     STRING_KIND,
+    TOP_CLASS_KIND,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -107,14 +106,12 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="raw_output", kind=[BATCH_OF_STRING_KIND]),
-            OutputDefinition(name="top", kind=[BATCH_OF_TOP_CLASS_KIND]),
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(name="image", kind=[BATCH_OF_IMAGE_METADATA_KIND]),
-            OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
+            OutputDefinition(name="raw_output", kind=[STRING_KIND]),
+            OutputDefinition(name="top", kind=[TOP_CLASS_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="root_parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_METADATA_KIND]),
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
         ]
 
     @classmethod

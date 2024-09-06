@@ -12,8 +12,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_IMAGES_KIND,
     IMAGE_KEYPOINTS_KIND,
+    IMAGE_KIND,
     NUMPY_ARRAY_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -66,7 +66,7 @@ class SIFTDetectionManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name=OUTPUT_IMAGE_KEY,
-                kind=[BATCH_OF_IMAGES_KIND],
+                kind=[IMAGE_KIND],
             ),
             OutputDefinition(
                 name="keypoints",

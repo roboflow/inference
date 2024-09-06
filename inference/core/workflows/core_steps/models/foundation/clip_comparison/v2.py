@@ -27,10 +27,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
-    BATCH_OF_PARENT_ID_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     LIST_OF_VALUES_KIND,
+    PARENT_ID_KIND,
     STRING_KIND,
     ImageInputField,
     StepOutputImageSelector,
@@ -110,10 +110,10 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="least_similar_class", kind=[STRING_KIND]),
             OutputDefinition(
                 name="classification_predictions",
-                kind=[BATCH_OF_CLASSIFICATION_PREDICTION_KIND],
+                kind=[CLASSIFICATION_PREDICTION_KIND],
             ),
-            OutputDefinition(name="parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
-            OutputDefinition(name="root_parent_id", kind=[BATCH_OF_PARENT_ID_KIND]),
+            OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
+            OutputDefinition(name="root_parent_id", kind=[PARENT_ID_KIND]),
         ]
 
     @classmethod
