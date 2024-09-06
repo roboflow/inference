@@ -41,9 +41,7 @@ Accepted formats:
 
 Example:
 ```
-```json
 {"my": "json"}
-```
 ```
 
 **Details regarding block behaviour:**

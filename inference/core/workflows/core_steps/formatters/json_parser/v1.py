@@ -28,9 +28,7 @@ Accepted formats:
 - valid JSON strings
 - JSON documents wrapped with Markdown tags (very common for GPT responses)
 ```
-```json
 {"my": "json"}
-```
 ```
 
 **Details regarding block behaviour:**

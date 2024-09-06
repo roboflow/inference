@@ -361,7 +361,7 @@ def format_block_connections(
     connections = [
         (
             f"[`{block_type2manifest_type_identifier[connection]}`]"
-            f"(/workflows/blocks/{camel_to_snake(block_type2manifest_type_identifier[connection])})"
+            f"(/workflows/blocks/{slugify_block_name(block_type2manifest_type_identifier[connection])})"
         )
         for connection in connections
     ]
