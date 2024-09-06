@@ -136,7 +136,7 @@ Examples:
 """
 LIST_OF_VALUES_KIND = Kind(
     name="list_of_values",
-    description="List of values of any types",
+    description="List of values of any type",
     docs=LIST_OF_VALUES_KIND_DOCS,
 )
 

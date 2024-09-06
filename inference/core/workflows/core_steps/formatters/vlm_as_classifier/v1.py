@@ -44,7 +44,7 @@ Example:
 {"my": "json"}
 ```
 
-**Details regarding block behaviour:**
+**Details regarding block behavior:**
 
 - `error_status` is set `True` whenever parsing cannot be completed
 

@@ -35,7 +35,7 @@ from inference.core.workflows.prototypes.block import (
 LONG_DESCRIPTION = """
 Ask a question to OpenAI's GPT-4 with Vision model.
 
-You can specify arbitrary text prompts or predefined ones, the block support the following types of prompt:
+You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
 - `unconstrained` - any arbitrary prompt you like 
 
@@ -392,11 +392,11 @@ def prepare_classification_prompt(
     return [
         {
             "role": "system",
-            "content": "You act as single-class classification model. Your must provide reasonable predictions. "
+            "content": "You act as single-class classification model. You must provide reasonable predictions. "
             "You are only allowed to produce JSON document in Markdown ```json [...]``` markers. "
             'Expected structure of json: {"class_name": "class-name", "confidence": 0.4}. '
-            "`class-name` must be one of the class name defined by user. You are only allowed to return "
-            "single JSON document, even if there is potentially multiple classes. You are not allowed to return list.",
+            "`class-name` must be one of the class names defined by user. You are only allowed to return "
+            "single JSON document, even if there are potentially multiple classes. You are not allowed to return list.",
         },
         {
             "role": "user",
@@ -424,11 +424,11 @@ def prepare_multi_label_classification_prompt(
     return [
         {
             "role": "system",
-            "content": "You act as multi-label classification model. Your must provide reasonable predictions. "
+            "content": "You act as multi-label classification model. You must provide reasonable predictions. "
             "You are only allowed to produce JSON document in Markdown ```json [...]``` markers. "
             'Expected structure of json: {"predicted_classes": [{"class": "class-name-1", "confidence": 0.9}, '
             '{"class": "class-name-2", "confidence": 0.7}]}. '
-            "`class-name-X` must be one of the class name defined by user and `confidence` is a float value in range "
+            "`class-name-X` must be one of the class names defined by user and `confidence` is a float value in range "
             "0.0-1.0 that represent how sure you are that the class is present in the image. Only return class names "
             "that are visible.",
         },
@@ -457,7 +457,7 @@ def prepare_vqa_prompt(
     return [
         {
             "role": "system",
-            "content": "You act as Visual Question Answering model. Your task is to provide answer on question"
+            "content": "You act as Visual Question Answering model. Your task is to provide answer to question"
             "submitted by user. If this is open-question - answer with few sentences, for ABCD question, "
             "return only the indicator of the answer.",
         },
@@ -536,10 +536,10 @@ def prepare_structured_answering_prompt(
     return [
         {
             "role": "system",
-            "content": f"You are supposed to produce responses in JSON wrapped in Markdown markers: "
-            f"```json\nyour-response\n```. User is to provide you dictionary with key and values. "
-            f"Each key must be present in your response. Values in user dictionary represent "
-            f"descriptions for JSON fields to be generated. Provide only JSON Markdown in response.",
+            "content": "You are supposed to produce responses in JSON wrapped in Markdown markers: "
+            "```json\nyour-response\n```. User is to provide you dictionary with keys and values. "
+            "Each key must be present in your response. Values in user dictionary represent "
+            "descriptions for JSON fields to be generated. Provide only JSON Markdown in response.",
         },
         {
             "role": "user",

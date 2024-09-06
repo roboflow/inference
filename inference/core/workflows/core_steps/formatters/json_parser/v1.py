@@ -31,7 +31,7 @@ Accepted formats:
 {"my": "json"}
 ```
 
-**Details regarding block behaviour:**
+**Details regarding block behavior:**
 
 - `error_status` is set `True` whenever at least one of `expected_fields` cannot be retrieved from input
 

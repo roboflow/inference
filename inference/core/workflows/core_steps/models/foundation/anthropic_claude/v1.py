@@ -38,7 +38,7 @@ from inference.core.workflows.prototypes.block import (
 LONG_DESCRIPTION = """
 Ask a question to Anthropic Claude model with vision capabilities.
 
-You can specify arbitrary text prompts or predefined ones, the block support the following types of prompt:
+You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
 - `unconstrained` - any arbitrary prompt you like 
 
@@ -103,7 +103,7 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
-            "search_keywords": ["LMM", "VLM", "Gemini", "Google"],
+            "search_keywords": ["LMM", "VLM", "Claude", "Anthropic"],
         }
     )
     type: Literal["roboflow_core/anthropic_claude@v1"]
@@ -419,11 +419,11 @@ def prepare_classification_prompt(
 ) -> Tuple[Optional[str], List[dict]]:
     serialised_classes = ", ".join(classes)
     system_prompt = (
-        "You act as single-class classification model. Your must provide reasonable predictions. "
+        "You act as single-class classification model. You must provide reasonable predictions. "
         "You are only allowed to produce JSON document. "
         'Expected structure of json: {"class_name": "class-name", "confidence": 0.4}. '
-        "`class-name` must be one of the class name defined by user. You are only allowed to return "
-        "single JSON document, even if there is potentially multiple classes. You are not allowed to "
+        "`class-name` must be one of the class names defined by user. You are only allowed to return "
+        "single JSON document, even if there are potentially multiple classes. You are not allowed to "
         "return list."
     )
     messages = [
@@ -455,12 +455,12 @@ def prepare_multi_label_classification_prompt(
 ) -> Tuple[Optional[str], List[dict]]:
     serialised_classes = ", ".join(classes)
     system_prompt = (
-        "You act as multi-label classification model. Your must provide reasonable predictions. "
+        "You act as multi-label classification model. You must provide reasonable predictions. "
         "You are only allowed to produce JSON document. "
         'Expected structure of json: {"predicted_classes": [{"class": "class-name-1", "confidence": 0.9}, '
         '{"class": "class-name-2", "confidence": 0.7}]}.'
-        "`class-name-X` must be one of the class name defined by user and `confidence` is a float value "
-        "in range 0.0-1.0 that represent how sure you are that the class is present in the image. "
+        "`class-name-X` must be one of the class names defined by user and `confidence` is a float value "
+        "in range 0.0-1.0 that represents how sure you are that the class is present in the image. "
         "Only return class names that are visible."
     )
     messages = [
@@ -491,7 +491,7 @@ def prepare_vqa_prompt(
     **kwargs,
 ) -> Tuple[Optional[str], List[dict]]:
     system_prompt = (
-        "You act as Visual Question Answering model. Your task is to provide answer on question"
+        "You act as Visual Question Answering model. Your task is to provide answer to question"
         "submitted by user. If this is open-question - answer with few sentences, for ABCD question, "
         "return only the indicator of the answer."
     )
@@ -581,9 +581,9 @@ def prepare_structured_answering_prompt(
 ) -> Tuple[Optional[str], List[dict]]:
     output_structure_serialised = json.dumps(output_structure, indent=4)
     system_prompt = (
-        f"You are supposed to produce responses in JSON. User is to provide you dictionary with "
-        f"key and values. Each key must be present in your response. Values in user dictionary "
-        f"represent descriptions for JSON fields to be generated. Provide only JSON in response."
+        "You are supposed to produce responses in JSON. User is to provide you dictionary with "
+        "keys and values. Each key must be present in your response. Values in user dictionary "
+        "represent descriptions for JSON fields to be generated. Provide only JSON in response."
     )
     messages = [
         {
@@ -615,11 +615,11 @@ def prepare_object_detection_prompt(
 ) -> Tuple[Optional[str], List[dict]]:
     serialised_classes = ", ".join(classes)
     system_prompt = (
-        "You act as object-detection model. Your must provide reasonable predictions. "
+        "You act as object-detection model. You must provide reasonable predictions. "
         "You are only allowed to produce JSON document. "
         'Expected structure of json: {"detections": [{"x_min": 0.1, "y_min": 0.2, "x_max": 0.3, "y_max": 0.4, "class_name": "my-class-X", "confidence": 0.7}]} '
         "- remember to close top-level dictionary at the end. "
-        "`my-class-X` must be one of the class name defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
+        "`my-class-X` must be one of the class names defined by user. All coordinates must be in range 0.0-1.0, representing percentage of image dimensions. "
         "`confidence` is a value in range 0.0-1.0 representing your confidence in prediction. You should detect all instances of classes provided by user."
     )
     messages = [
