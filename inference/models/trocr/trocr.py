@@ -72,12 +72,3 @@ class TrOCR(RoboflowCoreModel):
         t2 = perf_counter()
         response = OCRInferenceResponse(result=text[0], time=t2 - t1)
         return response
-
-
-if __name__ == "__main__":
-    import cv2
-
-    path = input("Image path:")
-    image = cv2.imread(path)
-    trocr = TrOCR()
-    print(trocr.infer(image))
