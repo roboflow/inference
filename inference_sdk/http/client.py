@@ -32,8 +32,8 @@ from inference_sdk.http.errors import (
     WrongClientModeError,
 )
 from inference_sdk.http.utils.aliases import (
-    resolve_roboflow_model_alias,
     resolve_ocr_path,
+    resolve_roboflow_model_alias,
 )
 from inference_sdk.http.utils.executors import (
     RequestMethod,
