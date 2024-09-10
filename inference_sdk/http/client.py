@@ -31,7 +31,10 @@ from inference_sdk.http.errors import (
     ModelTaskTypeNotSupportedError,
     WrongClientModeError,
 )
-from inference_sdk.http.utils.aliases import resolve_roboflow_model_alias
+from inference_sdk.http.utils.aliases import (
+    resolve_roboflow_model_alias,
+    resolve_ocr_path,
+)
 from inference_sdk.http.utils.executors import (
     RequestMethod,
     execute_requests_packages,
@@ -766,12 +769,14 @@ class InferenceHTTPClient:
     def ocr_image(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str = "doctr",
     ) -> Union[dict, List[dict]]:
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
         )
         payload = self.__initialise_payload()
-        url = self.__wrap_url_with_api_key(f"{self.__api_url}/doctr/ocr")
+        model_path = resolve_ocr_path(model_id=model_id)
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}{model_path}")
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,
@@ -793,12 +798,14 @@ class InferenceHTTPClient:
     async def ocr_image_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
+        model_id: str = "doctr",
     ) -> Union[dict, List[dict]]:
         encoded_inference_inputs = await load_static_inference_input_async(
             inference_input=inference_input,
         )
         payload = self.__initialise_payload()
-        url = self.__wrap_url_with_api_key(f"{self.__api_url}/doctr/ocr")
+        model_path = resolve_ocr_path(model_id=model_id)
+        url = self.__wrap_url_with_api_key(f"{self.__api_url}{model_path}")
         requests_data = prepare_requests_data(
             url=url,
             encoded_inference_inputs=encoded_inference_inputs,

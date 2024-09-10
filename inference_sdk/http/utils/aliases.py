@@ -54,6 +54,15 @@ REGISTERED_ALIASES = {
     "florence-2-large": "florence-pretrains/2",
 }
 
+OCR_PATH_ALIASES = {
+    "doctr": "/doctr/ocr",
+    "trocr": "/ocr/trocr",
+}
+
 
 def resolve_roboflow_model_alias(model_id: str) -> str:
     return REGISTERED_ALIASES.get(model_id, model_id)
+
+
+def resolve_ocr_path(model_id: str) -> str:
+    return OCR_PATH_ALIASES.get(model_id, model_id)
