@@ -27,6 +27,8 @@ jobs:
           python-version: "3.9"
       - name: 🚧 Install GDAL OS library
         run: sudo apt-get install libgdal-dev
+      - name: 🚧 Install Packaging, Ninja 
+        run: pip install packaging ninja
       - name: 🛞 Create Wheels
         run: |
           make create_wheels
