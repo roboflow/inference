@@ -6,4 +6,3 @@ accelerate>=0.25.0,<=0.32.1
 xformers>=0.0.22
 einops>=0.7.0,<=0.8.0
 peft~=0.11.1
-flash-attn==2.5.9.post1

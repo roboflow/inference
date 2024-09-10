@@ -27,8 +27,6 @@ jobs:
           python-version: "3.9"
       - name: 🚧 Install GDAL OS library
         run: sudo apt-get install libgdal-dev
-      - name: 🚧 Install Packaging, Ninja 
-        run: pip install packaging ninja
       - name: 🛞 Create Wheels
         run: |
           make create_wheels
@@ -49,4 +47,4 @@ jobs:
           python -c "from inference.models.sam import SegmentAnything"
           python -c "from inference.models.grounding_dino import GroundingDINO"
           python -c "from inference.models.yolo_world import YOLOWorld"
-          python -c "from inference.models.paligemmma import PaliGemma"
+          python -c "from inference.models.florence2 import Florence2, LoRAFlorence2"
