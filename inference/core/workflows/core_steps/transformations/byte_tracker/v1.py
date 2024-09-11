@@ -8,10 +8,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    OBJECT_DETECTION_PREDICTION_KIND,
-    INTEGER_KIND,
-    FLOAT_ZERO_TO_ONE_KIND,
     FLOAT_KIND,
+    FLOAT_ZERO_TO_ONE_KIND,
+    INTEGER_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     StepOutputSelector,
     WorkflowParameterSelector,
     WorkflowVideoMetadataSelector,
@@ -85,9 +85,7 @@ class ByteTrackerBlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(
-                name=OUTPUT_KEY, kind=[OBJECT_DETECTION_PREDICTION_KIND]
-            ),
+            OutputDefinition(name=OUTPUT_KEY, kind=[OBJECT_DETECTION_PREDICTION_KIND]),
         ]
 
 
@@ -113,13 +111,12 @@ class ByteTrackerBlockV1(WorkflowBlock):
         if metadata.video_identifier not in self._trackers:
             if frame_rate is None:
                 frame_rate = metadata.fps
-            self._trackers[metadata.video_identifier] = \
-                sv.ByteTrack(
-                    track_activation_threshold=track_activation_threshold,
-                    lost_track_buffer=lost_track_buffer,
-                    minimum_matching_threshold=minimum_matching_threshold,
-                    frame_rate=frame_rate,
-                )
+            self._trackers[metadata.video_identifier] = sv.ByteTrack(
+                track_activation_threshold=track_activation_threshold,
+                lost_track_buffer=lost_track_buffer,
+                minimum_matching_threshold=minimum_matching_threshold,
+                frame_rate=frame_rate,
+            )
         tracker = self._trackers[metadata.video_identifier]
         tracked_detections = tracker.update_with_detections(predictions)
         return {OUTPUT_KEY: tracked_detections}

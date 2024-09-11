@@ -129,11 +129,11 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
-    DetectionOffsetBlockV1,
-)
 from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
     ByteTrackerBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
+    DetectionOffsetBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.detections_filter.v1 import (
     DetectionsFilterBlockV1,
