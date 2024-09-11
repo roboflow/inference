@@ -24,7 +24,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.cogvlm.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
-    requirements/requirements.transformers.txt \
+    requirements/requirements.pali.server.txt \
     requirements/requirements.pali.flash_attn.txt \
     ./
 
@@ -41,7 +41,7 @@ RUN python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cu
     -r requirements.doctr.txt \
     -r requirements.cogvlm.txt \
     -r requirements.yolo_world.txt \
-    -r requirements.transformers.txt \
+    -r requirements.pali.server.txt \
     jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip

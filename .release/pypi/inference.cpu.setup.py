@@ -66,7 +66,6 @@ setuptools.setup(
         "sam": read_requirements("requirements/requirements.sam.txt"),
         "waf": read_requirements("requirements/requirements.waf.txt"),
         "yolo-world": read_requirements("requirements/requirements.yolo_world.txt"),
-        "transformers": read_requirements("requirements/requirements.transformers.txt"),
     },
     classifiers=[
         "Development Status :: 5 - Production/Stable",
