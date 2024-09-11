@@ -1633,7 +1633,7 @@ class HttpInterface(BaseInterface):
             if CORE_MODEL_TROCR_ENABLED:
 
                 @app.post(
-                    "/trocr/ocr",
+                    "/ocr/trocr",
                     response_model=OCRInferenceResponse,
                     summary="TrOCR OCR response",
                     description="Run the TrOCR model to retrieve text in an image.",
