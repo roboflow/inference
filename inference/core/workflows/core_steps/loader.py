@@ -132,6 +132,9 @@ from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
+    ByteTrackerBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.detections_filter.v1 import (
     DetectionsFilterBlockV1,
 )
@@ -268,6 +271,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
         DetectionOffsetBlockV1,
+        ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
