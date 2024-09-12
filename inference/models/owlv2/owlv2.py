@@ -13,7 +13,7 @@ from transformers.models.owlv2.modeling_owlv2 import box_iou
 import hashlib
 import numpy as np
 import torch
-from typing import Dict, NewType
+from typing import Dict, NewType, List
 from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
@@ -136,7 +136,7 @@ class OwlV2(RoboflowCoreModel):
 
         return image_hash
 
-    def get_query_embedding(self, query_spec: dict[Hash, list[list[int]]]):
+    def get_query_embedding(self, query_spec: dict[Hash, List[List[int]]]):
         # NOTE: for now we're handling each image seperately
         query_embeds = []
         for image_hash, query_boxes in query_spec.items():
