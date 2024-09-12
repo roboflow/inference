@@ -228,7 +228,10 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         elif text == "Area":
             labels = [str(int(area)) for area in predictions.area]
         else:
-            raise ValueError(f"Invalid text type: {text}")
+            try:
+                labels = [str(d) if d else "" for d in predictions[text]]
+            except Exception:
+                raise ValueError(f"Invalid text type: {text}")
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
