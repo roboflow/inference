@@ -2,6 +2,9 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
+    TimeInZoneBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
@@ -251,6 +254,7 @@ REGISTERED_INITIALIZERS = {
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
+        TimeInZoneBlockV1,
         SegmentAnything2BlockV1,
         DetectionsConsensusBlockV1,
         ClipComparisonBlockV1,

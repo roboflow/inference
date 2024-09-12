@@ -115,6 +115,8 @@ class ByteTrackerBlockV1(WorkflowBlock):
         if metadata.video_identifier not in self._trackers:
             if frame_rate is None:
                 frame_rate = metadata.fps
+            if not frame_rate:
+                frame_rate = 10
             self._trackers[metadata.video_identifier] = sv.ByteTrack(
                 track_activation_threshold=track_activation_threshold,
                 lost_track_buffer=lost_track_buffer,
