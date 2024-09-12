@@ -15,9 +15,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    STRING_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
-    STRING_KIND,
     WorkflowImageSelector,
     WorkflowParameterSelector,
     WorkflowVideoMetadataSelector,
@@ -30,9 +30,7 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_KEY: str = "time_in_zone"
 TYPE: str = "PerspectiveCorrection"
-SHORT_DESCRIPTION = (
-    "Track duration of time spent by objects in zone"
-)
+SHORT_DESCRIPTION = "Track duration of time spent by objects in zone"
 LONG_DESCRIPTION = """
 The `TimeInZoneBlock` is an analytics block designed to measure time spent by objects in a zone.
 The block requires detections to be tracked (i.e. each object must have unique tracker_id assigned,
@@ -119,11 +117,17 @@ class TimeInZoneBlockV1(WorkflowBlock):
             self._batch_of_masks[metadata.video_identifier] = mask
         mask = self._batch_of_masks[metadata.video_identifier]
 
-        tracked_ids_in_zone = self._batch_of_tracked_ids_in_zone.setdefault(metadata.video_identifier, {})
-        points = detections.get_anchors_coordinates(anchor=sv.Position(detections_anchor))
+        tracked_ids_in_zone = self._batch_of_tracked_ids_in_zone.setdefault(
+            metadata.video_identifier, {}
+        )
+        points = detections.get_anchors_coordinates(
+            anchor=sv.Position(detections_anchor)
+        )
         result_detections = []
         ts_end = metadata.frame_timestamp.timestamp()
-        for i, (x, y), tracker_id in zip(range(len(detections)), points, detections.tracker_id):
+        for i, (x, y), tracker_id in zip(
+            range(len(detections)), points, detections.tracker_id
+        ):
             # copy
             detection = detections[i]
 
