@@ -36,6 +36,7 @@ GENERIC_MODELS = {
     "cogvlm": ("llm", "cogvlm"),
     "paligemma": ("llm", "paligemma"),
     "yolo_world": ("object-detection", "yolo-world"),
+    "owlv2": ("object-detection", "owlv2")
 }
 
 STUB_VERSION_ID = "0"

@@ -25,6 +25,7 @@ from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
+from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
     InferenceRequest,
@@ -96,6 +97,7 @@ from inference.core.env import (
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
+    CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
@@ -691,6 +693,7 @@ class HttpInterface(BaseInterface):
         """
 
         load_yolo_world_model = partial(load_core_model, core_model="yolo_world")
+        load_owlv2_model = partial(load_core_model, core_model="owlv2")
         """Loads the YOLO World model into the model manager.
 
         Args:
@@ -1535,6 +1538,41 @@ class HttpInterface(BaseInterface):
                             content=model_response,
                             headers={"Content-Type": "application/octet-stream"},
                         )
+                    return model_response
+
+            if CORE_MODEL_OWLV2_ENABLED:
+
+                @app.post(
+                    "/owlv2/infer",
+                    response_model=ObjectDetectionInferenceResponse,
+                    summary="Owlv2 image prompting",
+                    description="Run the google owlv2 model to few-shot object detect",
+                )
+                @with_route_exceptions
+                async def owlv2_infer(
+                    inference_request: OwlV2InferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Embeds image data using the Meta AI Segmant Anything Model (SAM).
+
+                    Args:
+                        inference_request (SamEmbeddingRequest): The request containing the image to be embedded.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        M.Sam2EmbeddingResponse or Response: The response affirming the image has been embedded
+                    """
+                    logger.debug(f"Reached /owlv2/infer")
+                    owl2_model_id = load_owlv2_model(inference_request, api_key=api_key)
+                    model_response = await self.model_manager.infer_from_request(
+                        owl2_model_id, inference_request
+                    )
                     return model_response
 
             if CORE_MODEL_GAZE_ENABLED:
