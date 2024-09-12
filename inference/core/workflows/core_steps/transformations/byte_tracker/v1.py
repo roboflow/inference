@@ -88,6 +88,10 @@ class ByteTrackerBlockManifest(WorkflowBlockManifest):
             OutputDefinition(name=OUTPUT_KEY, kind=[OBJECT_DETECTION_PREDICTION_KIND]),
         ]
 
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.1.0,<2.0.0"
+
 
 class ByteTrackerBlockV1(WorkflowBlock):
     def __init__(
