@@ -1,5 +1,8 @@
+from multiprocessing import Process
+
 from inference.core.cache import cache
 from inference.core.interfaces.http.http_api import HttpInterface
+from inference.core.interfaces.stream_manager.manager_app.app import start
 from inference.core.managers.active_learning import ActiveLearningManager, BackgroundTaskActiveLearningManager
 from inference.core.managers.base import ModelManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
@@ -9,7 +12,7 @@ from inference.core.registries.roboflow import (
 import os
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from inference.core.env import MAX_ACTIVE_MODELS, ACTIVE_LEARNING_ENABLED, LAMBDA
+from inference.core.env import MAX_ACTIVE_MODELS, ACTIVE_LEARNING_ENABLED, LAMBDA, ENABLE_STREAM_API
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
@@ -38,3 +41,9 @@ if os.environ.get("ENABLE_PROMETHEUS", False):
     @app.on_event("startup")
     async def _startup():
         instrumentor.expose(app)
+
+if ENABLE_STREAM_API:
+    stream_manager_process = Process(
+        target=start,
+    )
+    stream_manager_process.start()

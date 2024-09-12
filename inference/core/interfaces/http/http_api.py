@@ -1,4 +1,5 @@
 import base64
+import os
 import traceback
 from functools import partial, wraps
 from time import sleep
@@ -113,7 +114,7 @@ from inference.core.env import (
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
-    WORKFLOWS_STEP_EXECUTION_MODE,
+    WORKFLOWS_STEP_EXECUTION_MODE, ENABLE_STREAM_API,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -146,6 +147,10 @@ from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
     serialise_workflow_result,
 )
+from inference.core.interfaces.stream_manager.api.entities import InitializePipelineResponse, CommandResponse, \
+    ListPipelinesResponse, InferencePipelineStatusResponse, ConsumePipelineResponse
+from inference.core.interfaces.stream_manager.api.stream_manager_client import StreamManagerClient
+from inference.core.interfaces.stream_manager.manager_app.entities import InitialisePipelinePayload
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import (
     get_roboflow_dataset_type,
@@ -552,6 +557,17 @@ class HttpInterface(BaseInterface):
 
         self.app = app
         self.model_manager = model_manager
+        self.stream_manager_client: Optional[StreamManagerClient] = None
+
+        if ENABLE_STREAM_API:
+            operations_timeout = os.getenv("STREAM_MANAGER_OPERATIONS_TIMEOUT")
+            if operations_timeout is not None:
+                operations_timeout = float(operations_timeout)
+            self.stream_manager_client = StreamManagerClient.init(
+                host=os.getenv("STREAM_MANAGER_HOST", "127.0.0.1"),
+                port=int(os.getenv("STREAM_MANAGER_PORT", "7070")),
+                operations_timeout=operations_timeout,
+            )
 
         async def process_inference_request(
             inference_request: InferenceRequest, **kwargs
@@ -1128,6 +1144,80 @@ class HttpInterface(BaseInterface):
                     prevent_local_images_loading=True,
                 )
                 return WorkflowValidationStatus(status="ok")
+
+        if ENABLE_STREAM_API:
+
+            @app.get(
+                "/inference_pipelines/list",
+                response_model=ListPipelinesResponse,
+                summary="List active pipelines",
+                description="Listing all active pipelines in the state of ProcessesManager being queried.",
+            )
+            @with_route_exceptions
+            async def list_pipelines(_: Request) -> ListPipelinesResponse:
+                return await self.stream_manager_client.list_pipelines()
+
+            @app.get(
+                "/inference_pipelines/{pipeline_id}/status",
+                response_model=InferencePipelineStatusResponse,
+                summary="Get status of pipeline",
+                description="Returns detailed statis of Inference Pipeline in the state of ProcessesManager being queried.",
+            )
+            @with_route_exceptions
+            async def get_status(pipeline_id: str) -> InferencePipelineStatusResponse:
+                return await self.stream_manager_client.get_status(pipeline_id=pipeline_id)
+
+            @app.post(
+                "/inference_pipelines/initialise",
+                response_model=InitializePipelineResponse,
+                summary="Initialize the pipeline",
+                description="Starts new Inference Pipeline within the state of ProcessesManager being queried.",
+            )
+            @with_route_exceptions
+            async def initialise(request: InitialisePipelinePayload) -> InitializePipelineResponse:
+                return await self.stream_manager_client.initialise_pipeline(
+                    initialisation_request=request
+                )
+
+            @app.post(
+                "/inference_pipelines/{pipeline_id}/pause",
+                response_model=CommandResponse,
+                summary="Pauses the pipeline processing",
+                description="Mutes the VideoSource of Inference Pipeline within the state of ProcessesManager being queried.",
+            )
+            @with_route_exceptions
+            async def pause(pipeline_id: str) -> CommandResponse:
+                return await self.stream_manager_client.pause_pipeline(pipeline_id=pipeline_id)
+
+            @app.post(
+                "/inference_pipelines/{pipeline_id}/resume",
+                response_model=CommandResponse,
+                summary="Resumes the pipeline processing",
+                description="Resumes the VideoSource of Inference Pipeline within the state of ProcessesManager being queried.",
+            )
+            @with_route_exceptions
+            async def resume(pipeline_id: str) -> CommandResponse:
+                return await self.stream_manager_client.resume_pipeline(pipeline_id=pipeline_id)
+
+            @app.post(
+                "/inference_pipelines/{pipeline_id}/terminate",
+                response_model=CommandResponse,
+                summary="Terminates the pipeline processing",
+                description="Terminates the VideoSource of Inference Pipeline within the state of ProcessesManager being queried.",
+            )
+            @with_route_exceptions
+            async def terminate(pipeline_id: str) -> CommandResponse:
+                return await self.stream_manager_client.terminate_pipeline(pipeline_id=pipeline_id)
+
+            @app.get(
+                "/inference_pipelines/{pipeline_id}/consume",
+                response_model=ConsumePipelineResponse,
+                summary="Terminates the pipeline processing",
+                description="Terminates the VideoSource of Inference Pipeline within the state of ProcessesManager being queried.",
+            )
+            @with_route_exceptions
+            async def consume(pipeline_id: str) -> ConsumePipelineResponse:
+                return await self.stream_manager_client.consume_pipeline_result(pipeline_id=pipeline_id)
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

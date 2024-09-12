@@ -915,7 +915,7 @@ class InferencePipeline:
                 payload=payload,
                 status_update_handlers=self._status_update_handlers,
             )
-            logger.warning(f"Error in results dispatching - {error}")
+            logger.exception(f"Error in results dispatching - {error}")
 
     def _generate_frames(
         self,

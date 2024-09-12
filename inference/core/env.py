@@ -418,3 +418,7 @@ DEVICE = os.getenv("DEVICE")
 DEDICATED_DEPLOYMENT_WORKSPACE_URL = os.environ.get(
     "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None
 )
+
+ENABLE_STREAM_API = str2bool(
+    os.getenv("ENABLE_STREAM_API", "False")
+)
