@@ -18,10 +18,7 @@ request = OwlV2InferenceRequest(
     visualize_predictions=True
 )
 
-import requests
-# response = OwlV2().infer_from_request(request)
-response = requests.post("http://localhost:9001/owlv2/infer", json=request.dict())
-response = ObjectDetectionInferenceResponse(**response.json()) 
+response = OwlV2().infer_from_request(request)
 from PIL import Image
 import io
 import base64
@@ -31,6 +28,4 @@ def load_image_from_base64(base64_str):
     image = Image.open(io.BytesIO(image_data))
     return image
 
-print(type(response.visualization))
 visualization = load_image_from_base64(response.visualization)
-visualization.save("owlvit.jpg")
