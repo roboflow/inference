@@ -205,7 +205,7 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         if text == "Class":
             labels = predictions["class_name"]
         elif text == "Tracker Id":
-            labels = predictions.tracker_id
+            labels = [str(t) if t else "" for t in predictions.tracker_id]
         elif text == "Confidence":
             labels = [f"{confidence:.2f}" for confidence in predictions.confidence]
         elif text == "Class and Confidence":
