@@ -45,7 +45,13 @@ class LabelManifest(ColorableVisualizationManifest):
 
     text: Union[
         Literal[
-            "Class", "Confidence", "Class and Confidence", "Index", "Dimensions", "Area"
+            "Class",
+            "Confidence",
+            "Class and Confidence",
+            "Index",
+            "Dimensions",
+            "Area",
+            "Tracker Id",
         ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
@@ -198,6 +204,8 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
 
         if text == "Class":
             labels = predictions["class_name"]
+        elif text == "Tracker Id":
+            labels = predictions.tracker_id
         elif text == "Confidence":
             labels = [f"{confidence:.2f}" for confidence in predictions.confidence]
         elif text == "Class and Confidence":
