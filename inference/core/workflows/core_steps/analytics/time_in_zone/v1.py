@@ -123,7 +123,10 @@ class TimeInZoneBlockV1(WorkflowBlock):
             anchor=sv.Position(detections_anchor)
         )
         result_detections = []
-        ts_end = metadata.frame_timestamp.timestamp()
+        if metadata.comes_from_video_file and metadata.fps != 0:
+            ts_end = metadata.frame_number / metadata.fps
+        else:
+            ts_end = metadata.frame_timestamp.timestamp()
         for i, (x, y), tracker_id in zip(
             range(len(detections)), points, detections.tracker_id
         ):
