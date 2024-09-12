@@ -158,11 +158,13 @@ class OwlV2(RoboflowCoreModel):
                 iou_mask, objectness.unsqueeze(-1), -1
             )  # 3000, k
             if torch.all(iou_mask == 0):
-                raise ValueError("No valid embedding found")
-            indices = torch.argmax(valid_objectness, dim=0)
-            embeds = image_class_embeds[indices]
-            query_embeds.append(embeds)
-
+                continue
+            else:
+                indices = torch.argmax(valid_objectness, dim=0)
+                embeds = image_class_embeds[indices]
+                query_embeds.append(embeds)
+        if not query_embeds:
+            return None
         query = torch.cat(query_embeds).mean(dim=0)
         query /= torch.linalg.norm(query, ord=2) + 1e-6
         return query
@@ -177,6 +179,8 @@ class OwlV2(RoboflowCoreModel):
         class_names = sorted(list(query_embeddings.keys()))
         class_map = {class_name: i for i, class_name in enumerate(class_names)}
         for class_name, embedding in query_embeddings.items():
+            if embedding is None:
+                continue
             pred_logits = torch.einsum("sd,d->s", image_class_embeds, embedding)
             pred_logits = (pred_logits + logit_shift) * logit_scale
             prediction_scores = pred_logits.sigmoid()
