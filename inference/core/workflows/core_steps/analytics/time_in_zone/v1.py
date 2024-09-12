@@ -1,9 +1,8 @@
-import time
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import supervision as sv
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
 from inference.core.workflows.execution_engine.entities.base import (
