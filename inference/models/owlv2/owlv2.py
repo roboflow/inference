@@ -21,8 +21,11 @@ from inference.core.models.roboflow import (
     draw_detection_predictions,
 )
 from inference.core.utils.image_utils import load_image_rgb
+from inference.core.env import DEVICE
 
 Hash = NewType("Hash", str)
+if DEVICE is None:
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 def to_corners(box):
@@ -61,7 +64,7 @@ class OwlV2(RoboflowCoreModel):
         super().__init__(*args, model_id=model_id, **kwargs)
         hf_id = os.path.join("google", self.version_id)
         self.processor = Owlv2Processor.from_pretrained(hf_id)
-        self.model = Owlv2ForObjectDetection.from_pretrained(hf_id).eval().cuda()
+        self.model = Owlv2ForObjectDetection.from_pretrained(hf_id).eval().to(DEVICE)
         self.image_embed_cache = LimitedSizeDict(
             size_limit=50
         )  # NOTE: this should have a max size
@@ -105,7 +108,7 @@ class OwlV2(RoboflowCoreModel):
 
         pixel_values = self.processor(
             images=image, return_tensors="pt"
-        ).pixel_values.cuda()
+        ).pixel_values.to(DEVICE)
         image_embeds, _ = self.model.image_embedder(pixel_values=pixel_values)
         batch_size, h, w, dim = image_embeds.shape
         image_features = image_embeds.reshape(batch_size, h * w, dim)
