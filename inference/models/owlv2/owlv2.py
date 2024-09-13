@@ -1,24 +1,26 @@
+import hashlib
+import os
+from collections import defaultdict
+from typing import Dict, List, NewType
+
+import numpy as np
+import torch
+import torchvision
+from PIL import Image
+from transformers import Owlv2ForObjectDetection, Owlv2Processor
+from transformers.models.owlv2.modeling_owlv2 import box_iou
+
+from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
+    ObjectDetectionInferenceResponse,
+    ObjectDetectionPrediction,
+)
 from inference.core.models.roboflow import (
-    RoboflowCoreModel,
     DEFAULT_COLOR_PALETTE,
+    RoboflowCoreModel,
     draw_detection_predictions,
 )
 from inference.core.utils.image_utils import load_image_rgb
-from PIL import Image
-import torchvision
-from collections import defaultdict
-import os
-from transformers import Owlv2Processor, Owlv2ForObjectDetection
-from transformers.models.owlv2.modeling_owlv2 import box_iou
-import hashlib
-import numpy as np
-import torch
-from typing import Dict, NewType, List
-from inference.core.entities.responses.inference import (
-    ObjectDetectionInferenceResponse,
-    ObjectDetectionPrediction,
-    InferenceResponseImage,
-)
 
 Hash = NewType("Hash", str)
 
@@ -55,15 +57,11 @@ class OwlV2(RoboflowCoreModel):
     task_type = "object-detection"
     box_format = "xywh"
 
-    def __init__(
-        self, *args, model_id="owlv2/owlv2-base-patch16-ensemble", **kwargs
-    ):
+    def __init__(self, *args, model_id="owlv2/owlv2-base-patch16-ensemble", **kwargs):
         super().__init__(*args, model_id=model_id, **kwargs)
-        hf_id = os.path.join("google", self.version_id) 
+        hf_id = os.path.join("google", self.version_id)
         self.processor = Owlv2Processor.from_pretrained(hf_id)
-        self.model = (
-            Owlv2ForObjectDetection.from_pretrained(hf_id).eval().cuda()
-        )
+        self.model = Owlv2ForObjectDetection.from_pretrained(hf_id).eval().cuda()
         self.image_embed_cache = LimitedSizeDict(
             size_limit=50
         )  # NOTE: this should have a max size

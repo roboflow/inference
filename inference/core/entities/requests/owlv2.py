@@ -1,6 +1,6 @@
 from typing import List, Optional, Union
 
-from pydantic import Field, validator, BaseModel
+from pydantic import BaseModel, Field, validator
 
 from inference.core.entities.common import ApiKey
 from inference.core.entities.requests.inference import (

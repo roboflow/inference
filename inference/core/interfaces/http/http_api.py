@@ -25,7 +25,6 @@ from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
-from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
     InferenceRequest,
@@ -35,6 +34,7 @@ from inference.core.entities.requests.inference import (
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
+from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
