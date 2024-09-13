@@ -136,7 +136,7 @@ class OwlV2(RoboflowCoreModel):
 
         return image_hash
 
-    def get_query_embedding(self, query_spec: dict[Hash, List[List[int]]]):
+    def get_query_embedding(self, query_spec: Dict[Hash, List[List[int]]]):
         # NOTE: for now we're handling each image seperately
         query_embeds = []
         for image_hash, query_boxes in query_spec.items():
@@ -169,7 +169,7 @@ class OwlV2(RoboflowCoreModel):
         query /= torch.linalg.norm(query, ord=2) + 1e-6
         return query
 
-    def infer_from_embed(self, image_hash: "Hash", query_embeddings, confidence):
+    def infer_from_embed(self, image_hash: Hash, query_embeddings, confidence):
         objectness, image_boxes, image_class_embeds, logit_shift, logit_scale = (
             self.image_embed_cache[image_hash]
         )
