@@ -15,13 +15,13 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
+from inference.core.env import DEVICE
 from inference.core.models.roboflow import (
     DEFAULT_COLOR_PALETTE,
     RoboflowCoreModel,
     draw_detection_predictions,
 )
 from inference.core.utils.image_utils import load_image_rgb
-from inference.core.env import DEVICE
 
 Hash = NewType("Hash", str)
 if DEVICE is None:
