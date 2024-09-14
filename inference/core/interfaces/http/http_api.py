@@ -48,6 +48,7 @@ from inference.core.entities.requests.server_state import (
 )
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
+    DescribeOutputRequest,
     WorkflowInferenceRequest,
     WorkflowSpecificationInferenceRequest,
 )
@@ -141,6 +142,7 @@ from inference.core.exceptions import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
+    handle_describe_workflows_output,
 )
 from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
@@ -955,6 +957,54 @@ class HttpInterface(BaseInterface):
                     return await process_inference_request(inference_request)
 
         if not DISABLE_WORKFLOW_ENDPOINTS:
+
+            @app.post(
+                "/{workspace_name}/workflows/{workflow_id}/describe_outputs",
+                response_model=WorkflowInferenceResponse,
+                summary="Endpoint to run predefined workflow",
+                description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body",
+            )
+            @with_route_exceptions
+            async def describe_workflow_outputs(
+                workspace_name: str,
+                workflow_id: str,
+                workflow_request: DescribeOutputRequest,
+                background_tasks: BackgroundTasks,
+            ) -> WorkflowInferenceResponse:
+                workflow_specification = get_workflow_specification(
+                    api_key=workflow_request.api_key,
+                    workspace_id=workspace_name,
+                    workflow_id=workflow_id,
+                )
+                return handle_describe_workflows_output(
+                    workflow_request=workflow_request,
+                    workflow_specification=workflow_specification,
+                    background_tasks=background_tasks if not LAMBDA else None,
+                )
+
+            # @app.post(
+            #     "/workflows/describe_outputs",
+            #     response_model=WorkflowInferenceResponse,
+            #     summary="Endpoint to run predefined workflow",
+            #     description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body",
+            # )
+            # @with_route_exceptions
+            # async def describe_workflow_outputs(
+            #     workspace_name: str,
+            #     workflow_id: str,
+            #     workflow_request: DescribeOutputRequest,
+            #     background_tasks: BackgroundTasks,
+            # ) -> WorkflowInferenceResponse:
+            #     workflow_specification = get_workflow_specification(
+            #         api_key=workflow_request.api_key,
+            #         workspace_id=workspace_name,
+            #         workflow_id=workflow_id,
+            #     )
+            #     return handle_describe_workflows_output(
+            #         workflow_request=workflow_request,
+            #         workflow_specification=workflow_specification,
+            #         background_tasks=background_tasks if not LAMBDA else None,
+            #     )
 
             @app.post(
                 "/{workspace_name}/workflows/{workflow_id}",

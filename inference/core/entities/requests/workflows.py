@@ -38,3 +38,18 @@ class DescribeBlocksRequest(BaseModel):
         "contain blocks suitable for requested EE version, otherwise - descriptions for "
         "all available blocks will be delivered.",
     )
+
+
+class DescribeOutputRequest(BaseModel):
+    api_key: str = Field(
+        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+    )
+    dynamic_blocks_definitions: List[DynamicBlockDefinition] = Field(
+        default_factory=list, description="Dynamic blocks to be used."
+    )
+    execution_engine_version: Optional[str] = Field(
+        default=None,
+        description="Requested Execution Engine compatibility. If given, result will only "
+        "contain blocks suitable for requested EE version, otherwise - descriptions for "
+        "all available blocks will be delivered.",
+    )

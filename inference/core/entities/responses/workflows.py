@@ -157,3 +157,9 @@ class ExecutionEngineVersions(BaseModel):
 
 class WorkflowsBlocksSchemaDescription(BaseModel):
     schema: dict = Field(description="Schema for validating block definitions")
+
+
+class DescribeOutputResponse(BaseModel):
+    outputs: List[Dict[str, Any]] = Field(
+        description="Dictionary with keys defined in workflow output and serialised values"
+    )
