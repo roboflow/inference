@@ -15,7 +15,11 @@ ABSOLUTE_STATIC_CROP_WORKFLOW = {
     "version": "1.0",
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
-        {"type": "WorkflowParameter", "name": "model_id"},
+        {
+            "type": "WorkflowParameter",
+            "name": "model_id",
+            "default_value": "yolov8n-640",
+        },
         {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.7},
         {"type": "WorkflowParameter", "name": "x_center"},
         {"type": "WorkflowParameter", "name": "y_center"},
@@ -67,6 +71,7 @@ physical location, where RoI for static crop is location-dependent) you may
 provide different RoI coordinates. 
     """,
     workflow_definition=ABSOLUTE_STATIC_CROP_WORKFLOW,
+    workflow_name_in_app="static-crop",
 )
 def test_static_crop_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,

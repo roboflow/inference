@@ -86,6 +86,7 @@ In this example we show how classical contour detection works in cooperation
 with blocks performing its pre-processing (conversion to gray and blur).
     """,
     workflow_definition=WORKFLOW_WITH_CONTOUR_DETECTION,
+    workflow_name_in_app="contours-detection",
 )
 def test_workflow_with_classical_contour_detection(
     model_manager: ModelManager,

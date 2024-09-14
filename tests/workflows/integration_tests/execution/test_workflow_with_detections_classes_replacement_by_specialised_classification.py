@@ -74,6 +74,7 @@ two inputs and produces result at dimensionality level 1 - exactly the same as p
 object detection model.
     """,
     workflow_definition=DETECTION_CLASSES_REPLACEMENT_WORKFLOW,
+    workflow_name_in_app="detections-classes-replacement",
 )
 def test_detection_plus_classification_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,

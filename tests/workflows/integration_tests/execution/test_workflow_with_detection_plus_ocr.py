@@ -101,6 +101,7 @@ runs and we have bounding boxes for license plates - we crop previously cropped 
 Once this is done, plates crops are passed to OCR step which turns images of plates into text. 
 """,
     workflow_definition=MULTI_STAGES_WORKFLOW,
+    workflow_name_in_app="detection-plus-ocr",
 )
 def test_detection_plus_ocr_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,

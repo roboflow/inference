@@ -15,7 +15,11 @@ CONSENSUS_WORKFLOW = {
     "version": "1.0",
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
-        {"type": "WorkflowParameter", "name": "model_id"},
+        {
+            "type": "WorkflowParameter",
+            "name": "model_id",
+            "default_value": "yolov8n-640",
+        },
     ],
     "steps": [
         {
@@ -82,6 +86,7 @@ votes to accept bounding box to the output prediction - this way you may improve
 predictions
     """,
     workflow_definition=CONSENSUS_WORKFLOW,
+    workflow_name_in_app="detections-consensus",
 )
 def test_consensus_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,
@@ -225,31 +230,6 @@ def test_consensus_workflow_when_confidence_is_restricted_by_input_parameter(
         EXPECTED_OBJECT_DETECTION_CONFIDENCES[:4],
         atol=0.01,
     ), "Expected confidences to match what was validated manually as workflow outcome"
-
-
-def test_consensus_workflow_when_model_id_not_provided_in_input(
-    model_manager: ModelManager,
-    crowd_image: np.ndarray,
-) -> None:
-    # given
-    workflow_init_parameters = {
-        "workflows_core.model_manager": model_manager,
-        "workflows_core.api_key": None,
-        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
-    }
-    execution_engine = ExecutionEngine.init(
-        workflow_definition=CONSENSUS_WORKFLOW,
-        init_parameters=workflow_init_parameters,
-        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-    )
-
-    # when
-    with pytest.raises(RuntimeInputError):
-        _ = execution_engine.run(
-            runtime_parameters={
-                "image": crowd_image,
-            }
-        )
 
 
 def test_consensus_workflow_when_image_not_provided_in_input(

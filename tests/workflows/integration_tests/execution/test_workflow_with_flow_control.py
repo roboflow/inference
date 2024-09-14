@@ -430,6 +430,7 @@ Only if that condition is true, we run classification model - to
 classify dog breed.
     """,
     workflow_definition=WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS,
+    workflow_name_in_app="flow-control-nested-batches",
 )
 def test_flow_control_step_affecting_data_with_increased_dimensionality(
     model_manager: ModelManager,
@@ -575,6 +576,7 @@ all data passed in `image` input. When the value matches expectation - all depen
 will be executed, otherwise only the independent ones.
     """,
     workflow_definition=WORKFLOW_WITH_CONDITION_DEPENDENT_ON_CROPS,
+    workflow_name_in_app="flow-control-on-parameter",
 )
 def test_flow_control_workflow_where_non_batch_nested_parameter_affects_further_execution_when_condition_is_met(
     model_manager: ModelManager,
