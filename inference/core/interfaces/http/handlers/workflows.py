@@ -1,18 +1,22 @@
 # TODO - for everyone: start migrating other handlers to bring relief to http_api.py
 from typing import List, Optional
 
-from packaging.version import Version
+from packaging.specifiers import SpecifierSet
 
 from inference.core.entities.responses.workflows import (
+    DescribeOutputResponse,
     ExternalBlockPropertyPrimitiveDefinition,
     ExternalWorkflowsBlockSelectorDefinition,
     UniversalQueryLanguageDescription,
     WorkflowsBlocksDescription,
-    DescribeOutputResponse,
 )
 from inference.core.workflows.core_steps.common.query_language.introspection.core import (
     prepare_operations_descriptions,
     prepare_operators_descriptions,
+)
+from inference.core.workflows.errors import WorkflowExecutionEngineVersionError
+from inference.core.workflows.execution_engine.core import (
+    retrieve_requested_execution_engine_version,
 )
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
@@ -26,7 +30,9 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     DynamicBlockDefinition,
 )
-from inference.core.entities.requests.workflows import DescribeOutputRequest
+from inference.core.workflows.execution_engine.v1.introspection.outputs_discovery import (
+    describe_workflows_output,
+)
 
 
 def handle_describe_workflows_blocks_request(
@@ -87,50 +93,15 @@ def handle_describe_workflows_blocks_request(
 
 
 def handle_describe_workflows_output(
-    workflow_request: DescribeOutputRequest,
-    workflow_specification: dict,
+    specification: dict,
 ) -> DescribeOutputResponse:
-    # Map each block to it's output properties
-    block_output_map = {}
-    blocks_description = describe_available_blocks(
-        dynamic_blocks=workflow_request.dynamic_blocks_definitions,
-        execution_engine_version=workflow_request.execution_engine_version,
+    requested_execution_engine_version = retrieve_requested_execution_engine_version(
+        workflow_definition=specification
     )
-    for block in blocks_description.blocks:
-        key = block.manifest_type_identifier
-        output_property_kinds = get_output_property_kinds(block.outputs_manifest)
-        block_output_map[key] = output_property_kinds
-        if block.manifest_type_identifier_aliases:
-            for alias in block.manifest_type_identifier_aliases:
-                block_output_map[alias] = output_property_kinds
-
-    workflow_steps = workflow_specification["steps"]
-    workflow_outputs = workflow_specification["outputs"]
-
-    # For each workflow output, return it's output properties
-    workflow_response_definition = {}
-    for output in workflow_outputs:
-        selector = output["selector"]
-        step_name = extract_step_name(selector)
-        step = next((s for s in workflow_steps if s.get("name") == step_name), None)
-        if step is None:
-            continue
-        output_properties = block_output_map[step["type"]]
-        workflow_response_definition[selector] = output_properties
-
-    return workflow_response_definition
-
-
-def extract_step_name(selector: str) -> str:
-    parts = selector.split(".")
-    if len(parts) >= 2 and parts[0] == "$steps":
-        return parts[1]
-    return ""
-
-
-def get_output_property_kinds(outputs_manifest):
-    ret = {}
-    if outputs_manifest:
-        for output in outputs_manifest:
-            ret[output.name] = [kind.name for kind in output.kind]
-    return ret
+    if not SpecifierSet(f">=1.0.0,<2.0.0").contains(requested_execution_engine_version):
+        raise WorkflowExecutionEngineVersionError(
+            public_message="Describing workflow outputs is only supported for Execution Engine v1.",
+            context="describing_workflow_outputs",
+        )
+    outputs = describe_workflows_output(definition=specification)
+    return DescribeOutputResponse(outputs=outputs)

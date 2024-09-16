@@ -767,3 +767,125 @@ def test_workflow_run_when_when_custom_serialisation_is_needed(
     assert set(response_data["outputs"][0].keys()) == {
         "results"
     }, "Expected only `results` output"
+
+
+def test_describe_workflows_output_when_incompatible_execution_engine_version_requested(
+    server_url: str,
+) -> None:
+    # given
+    invalid_definition = {
+        "version": "2.0.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection.predictions",
+            },
+        ],
+    }
+
+    # when
+    response = requests.post(
+        f"{server_url}/workflows/describe_outputs",
+        json={
+            "specification": invalid_definition,
+            "api_key": "some",
+        }
+    )
+
+    # then
+    assert response.status_code == 400, "Expected bad request to raise"
+
+
+def test_describe_workflows_output_when_definition_contains_internal_error(
+    server_url: str,
+) -> None:
+    # given
+    invalid_definition = {
+        "version": "1.0.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.invalid.predictions",
+            },
+        ],
+    }
+
+    # when
+    response = requests.post(
+        f"{server_url}/workflows/describe_outputs",
+        json={
+            "specification": invalid_definition,
+            "api_key": "some",
+        }
+    )
+
+    # then
+    assert response.status_code == 400, "Expected bad request to raise"
+
+
+def test_describe_workflows_output_when_valid_definition_provided(
+    server_url: str,
+) -> None:
+    # given
+    valid_definition = {
+        "version": "1.0.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection.predictions",
+            },
+        ],
+    }
+
+    # when
+    response = requests.post(
+        f"{server_url}/workflows/describe_outputs",
+        json={
+            "specification": valid_definition,
+            "api_key": "some",
+        }
+    )
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert response_data["outputs"] == {"detections": ["object_detection_prediction"]}

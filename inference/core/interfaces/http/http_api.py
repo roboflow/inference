@@ -50,6 +50,7 @@ from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
     DescribeOutputRequest,
     WorkflowInferenceRequest,
+    WorkflowSpecificationDescribeOutputRequest,
     WorkflowSpecificationInferenceRequest,
 )
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
@@ -84,6 +85,7 @@ from inference.core.entities.responses.server_state import (
     ServerVersionInfo,
 )
 from inference.core.entities.responses.workflows import (
+    DescribeOutputResponse,
     ExecutionEngineVersions,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
@@ -960,51 +962,38 @@ class HttpInterface(BaseInterface):
 
             @app.post(
                 "/{workspace_name}/workflows/{workflow_id}/describe_outputs",
-                response_model=WorkflowInferenceResponse,
-                summary="Endpoint to run predefined workflow",
-                description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body",
+                response_model=DescribeOutputResponse,
+                summary="Endpoint to describe outputs of predefined workflow",
+                description="Checks Roboflow API for workflow definition, once acquired - retrieves workflow outputs",
             )
             @with_route_exceptions
             async def describe_workflow_outputs(
                 workspace_name: str,
                 workflow_id: str,
                 workflow_request: DescribeOutputRequest,
-                background_tasks: BackgroundTasks,
-            ) -> WorkflowInferenceResponse:
+            ) -> DescribeOutputResponse:
                 workflow_specification = get_workflow_specification(
                     api_key=workflow_request.api_key,
                     workspace_id=workspace_name,
                     workflow_id=workflow_id,
                 )
                 return handle_describe_workflows_output(
-                    workflow_request=workflow_request,
-                    workflow_specification=workflow_specification,
-                    background_tasks=background_tasks if not LAMBDA else None,
+                    specification=workflow_specification,
                 )
 
-            # @app.post(
-            #     "/workflows/describe_outputs",
-            #     response_model=WorkflowInferenceResponse,
-            #     summary="Endpoint to run predefined workflow",
-            #     description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body",
-            # )
-            # @with_route_exceptions
-            # async def describe_workflow_outputs(
-            #     workspace_name: str,
-            #     workflow_id: str,
-            #     workflow_request: DescribeOutputRequest,
-            #     background_tasks: BackgroundTasks,
-            # ) -> WorkflowInferenceResponse:
-            #     workflow_specification = get_workflow_specification(
-            #         api_key=workflow_request.api_key,
-            #         workspace_id=workspace_name,
-            #         workflow_id=workflow_id,
-            #     )
-            #     return handle_describe_workflows_output(
-            #         workflow_request=workflow_request,
-            #         workflow_specification=workflow_specification,
-            #         background_tasks=background_tasks if not LAMBDA else None,
-            #     )
+            @app.post(
+                "/workflows/describe_outputs",
+                response_model=DescribeOutputResponse,
+                summary="Endpoint to describe outputs of workflow given in request",
+                description="Parses workflow definition and retrieves workflow outputs",
+            )
+            @with_route_exceptions
+            async def describe_workflow_outputs(
+                workflow_request: WorkflowSpecificationDescribeOutputRequest,
+            ) -> DescribeOutputResponse:
+                return handle_describe_workflows_output(
+                    specification=workflow_request.specification,
+                )
 
             @app.post(
                 "/{workspace_name}/workflows/{workflow_id}",
@@ -1520,7 +1509,7 @@ class HttpInterface(BaseInterface):
                     "/sam2/embed_image",
                     response_model=Sam2EmbeddingResponse,
                     summary="SAM2 Image Embeddings",
-                    description="Run the Meta AI Segmant Anything 2 Model to embed image data.",
+                    description="Run the Meta AI Segment Anything 2 Model to embed image data.",
                 )
                 @with_route_exceptions
                 async def sam2_embed_image(
@@ -1532,7 +1521,7 @@ class HttpInterface(BaseInterface):
                     ),
                 ):
                     """
-                    Embeds image data using the Meta AI Segmant Anything Model (SAM).
+                    Embeds image data using the Meta AI Segment Anything Model (SAM).
 
                     Args:
                         inference_request (SamEmbeddingRequest): The request containing the image to be embedded.
@@ -1553,7 +1542,7 @@ class HttpInterface(BaseInterface):
                     "/sam2/segment_image",
                     response_model=Sam2SegmentationResponse,
                     summary="SAM2 Image Segmentation",
-                    description="Run the Meta AI Segmant Anything 2 Model to generate segmenations for image data.",
+                    description="Run the Meta AI Segment Anything 2 Model to generate segmenations for image data.",
                 )
                 @with_route_exceptions
                 async def sam2_segment_image(
@@ -1565,7 +1554,7 @@ class HttpInterface(BaseInterface):
                     ),
                 ):
                     """
-                    Generates segmentations for image data using the Meta AI Segmant Anything Model (SAM).
+                    Generates segmentations for image data using the Meta AI Segment Anything Model (SAM).
 
                     Args:
                         inference_request (Sam2SegmentationRequest): The request containing the image to be segmented.

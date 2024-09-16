@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -160,6 +160,6 @@ class WorkflowsBlocksSchemaDescription(BaseModel):
 
 
 class DescribeOutputResponse(BaseModel):
-    outputs: List[Dict[str, Any]] = Field(
-        description="Dictionary with keys defined in workflow output and serialised values"
+    outputs: Dict[str, Union[List[str], Dict[str, List[str]]]] = Field(
+        description="Dictionary mapping Workflow outputs to their kinds"
     )

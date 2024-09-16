@@ -1,48 +1,158 @@
+from copy import deepcopy
+
+import pytest
+
+from inference.core.entities.requests.workflows import DescribeOutputRequest
 from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_output,
 )
-from inference.core.entities.requests.workflows import DescribeOutputRequest
+from inference.core.workflows.errors import WorkflowDefinitionError
+from inference.core.workflows.execution_engine.v1.introspection.outputs_discovery import (
+    describe_workflows_output,
+)
 
-workflow_definition = {
+VALID_WORKFLOW_DEFINITION = {
     "version": "1.0",
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
-        {"type": "WorkflowParameter", "name": "model_id"},
-        {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.3},
     ],
     "steps": [
         {
-            "type": "RoboflowObjectDetectionModel",
-            "name": "detection",
+            "type": "ObjectDetectionModel",
+            "name": "general_detection",
             "image": "$inputs.image",
-            "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
-        }
+            "model_id": "yolov8n-640",
+            "class_filter": ["dog"],
+        },
+        {
+            "type": "Crop",
+            "name": "cropping",
+            "image": "$inputs.image",
+            "predictions": "$steps.general_detection.predictions",
+        },
+        {
+            "type": "ClassificationModel",
+            "name": "breds_classification",
+            "image": "$steps.cropping.crops",
+            "model_id": "dog-breed-xpaq6/1",
+        },
     ],
     "outputs": [
         {
             "type": "JsonField",
-            "name": "result",
-            "selector": "$steps.detection.predictions",
-        }
+            "name": "detections",
+            "selector": "$steps.general_detection.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "crops",
+            "selector": "$steps.cropping.crops",
+        },
+        {
+            "type": "JsonField",
+            "name": "classification",
+            "selector": "$steps.breds_classification.*",
+        },
     ],
 }
 
 
-def test_handle_describe_workflows_output_when_valid_request_provided() -> None:
+def test_handle_describe_workflows_output_when_valid_specification_provided() -> None:
     # when
-    result = handle_describe_workflows_output(
-        workflow_request=DescribeOutputRequest(
-            api_key="test",
-            workspace_name="test",
-            workflow_id="test",
-        ),
-        workflow_specification=workflow_definition,
-    )
-    print("result", result)
+    result = describe_workflows_output(definition=VALID_WORKFLOW_DEFINITION)
+
+    # then
     assert result == {
-        "$steps.detection.predictions": {
+        "detections": ["object_detection_prediction"],
+        "crops": ["image"],
+        "classification": {
             "inference_id": ["string"],
-            "predictions": ["Batch[object_detection_prediction]"],
-        }
+            "predictions": ["classification_prediction"],
+        },
     }
+
+
+def test_handle_describe_workflows_output_when_specification_without_steps_provided() -> (
+    None
+):
+    # given
+    definition = deepcopy(VALID_WORKFLOW_DEFINITION)
+    del definition["steps"]
+
+    # when
+    with pytest.raises(WorkflowDefinitionError):
+        _ = describe_workflows_output(definition=definition)
+
+
+def test_handle_describe_workflows_output_when_specification_without_outputs_provided() -> (
+    None
+):
+    # given
+    definition = deepcopy(VALID_WORKFLOW_DEFINITION)
+    del definition["outputs"]
+
+    # when
+    with pytest.raises(WorkflowDefinitionError):
+        _ = describe_workflows_output(definition=definition)
+
+
+def test_handle_describe_workflows_output_when_output_refers_non_existing_step() -> (
+    None
+):
+    # given
+    definition = {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.non_existing.predictions",
+            },
+        ],
+    }
+
+    # when
+    with pytest.raises(WorkflowDefinitionError):
+        _ = describe_workflows_output(definition=definition)
+
+
+def test_handle_describe_workflows_output_when_invalid_step_oncountered() -> None:
+    # given
+    definition = {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+        ],
+        "steps": [
+            {
+                "type": "Invalid",
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection.predictions",
+            },
+        ],
+    }
+
+    # when
+    with pytest.raises(WorkflowDefinitionError):
+        _ = describe_workflows_output(definition=definition)
