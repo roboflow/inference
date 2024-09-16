@@ -7,7 +7,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 RUN apt update -y && apt install -y \
-    ffmpeg \
     libxext6 \
     libsm6 \
     && rm -rf /var/lib/apt/lists/*

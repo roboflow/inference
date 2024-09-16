@@ -6,7 +6,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETPLATFORM
 
 RUN apt update -y && apt install -y \
-    ffmpeg \
     libxext6 \
     libopencv-dev \
     uvicorn \
