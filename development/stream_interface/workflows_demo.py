@@ -65,7 +65,7 @@ def main() -> None:
         video_reference=["rtsp://localhost:8554/live.stream"],
         workflow_specification=workflow_specification,
         watchdog=watchdog,
-        on_prediction=sink,
+        on_prediction=workflows_sink,
         source_buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
         source_buffer_consumption_strategy=BufferConsumptionStrategy.EAGER,
     )

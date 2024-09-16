@@ -56,6 +56,8 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
             detection_dict[TRACKER_ID_KEY] = int(tracker_id)
         detection_dict[CLASS_NAME_KEY] = str(data["class_name"])
         detection_dict[DETECTION_ID_KEY] = str(data[DETECTION_ID_KEY])
+        if "time_in_zone" in data:
+            detection_dict["time_in_zone"] = data["time_in_zone"]
         if PARENT_ID_KEY in data:
             detection_dict[PARENT_ID_KEY] = str(data[PARENT_ID_KEY])
         if (

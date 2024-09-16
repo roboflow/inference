@@ -52,6 +52,7 @@ class LabelManifest(ColorableVisualizationManifest):
             "Dimensions",
             "Area",
             "Tracker Id",
+            "Time In Zone",
         ],
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
@@ -201,11 +202,12 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
             text_padding,
             border_radius,
         )
-
         if text == "Class":
             labels = predictions["class_name"]
         elif text == "Tracker Id":
             labels = [str(t) if t else "" for t in predictions.tracker_id]
+        elif text == "Time In Zone":
+            labels = [f"{round(t, 2)}s" if t else "" for t in predictions.data.get("time_in_zone", [])]
         elif text == "Confidence":
             labels = [f"{confidence:.2f}" for confidence in predictions.confidence]
         elif text == "Class and Confidence":
