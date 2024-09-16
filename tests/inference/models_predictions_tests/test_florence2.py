@@ -1,6 +1,7 @@
-import pytest
-from inference.models.florence2 import Florence2
 import numpy as np
+import pytest
+
+from inference.models.florence2 import Florence2
 
 
 @pytest.mark.slow
