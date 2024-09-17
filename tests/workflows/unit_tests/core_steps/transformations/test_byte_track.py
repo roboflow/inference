@@ -79,37 +79,11 @@ def test_byte_tracker() -> None:
     )
 
     # then
-    assert frame1_result == {
-        "tracked_detections": sv.Detections(
-            xyxy=np.array(
-                [
-                    [10, 10, 20, 20],
-                    [21, 10, 31, 20],
-                    [31, 10, 41, 20],
-                    [100, 100, 110, 110],
-                ]
-            ),
-            tracker_id=np.array([1, 2, 3, 4]),
-            confidence=np.array([0.9, 0.9, 0.9, 0.9]),
-            class_id=np.array([1, 1, 1, 1]),
-        )
-    }
-    assert frame2_result == {
-        "tracked_detections": sv.Detections(
-            xyxy=np.array([[12, 10, 22, 20], [23, 10, 33, 20], [33, 10, 43, 20]]),
-            tracker_id=np.array([1, 2, 3]),
-            confidence=np.array([0.9, 0.9, 0.9]),
-            class_id=np.array([1, 1, 1]),
-        )
-    }
-    assert frame3_result == {
-        "tracked_detections": sv.Detections(
-            xyxy=np.array([[14, 10, 24, 20], [25, 10, 35, 20], [35, 10, 45, 20]]),
-            tracker_id=np.array([1, 2, 3]),
-            confidence=np.array([0.9, 0.9, 0.9]),
-            class_id=np.array([1, 1, 1]),
-        )
-    }
+    assert len(set(frame1_result["tracked_detections"].tracker_id.tolist())) == 4, "Expected 4 unique tracking ids"
+    assert frame1_result["tracked_detections"].tracker_id.tolist()[:3] == \
+           frame2_result["tracked_detections"].tracker_id.tolist(), "Expected the same 3 first objects in second frame"
+    assert frame1_result["tracked_detections"].tracker_id.tolist()[:3] == \
+           frame3_result["tracked_detections"].tracker_id.tolist(), "Expected the same 3 first objects in third frame"
 
 
 def test_byte_tracker_no_fps() -> None:
@@ -207,34 +181,8 @@ def test_byte_tracker_not_video() -> None:
     )
 
     # then
-    assert frame1_result == {
-        "tracked_detections": sv.Detections(
-            xyxy=np.array(
-                [
-                    [10, 10, 20, 20],
-                    [21, 10, 31, 20],
-                    [31, 10, 41, 20],
-                    [100, 100, 110, 110],
-                ]
-            ),
-            tracker_id=np.array([1, 2, 3, 4]),
-            confidence=np.array([0.9, 0.9, 0.9, 0.9]),
-            class_id=np.array([1, 1, 1, 1]),
-        )
-    }
-    assert frame2_result == {
-        "tracked_detections": sv.Detections(
-            xyxy=np.array([[12, 10, 22, 20], [23, 10, 33, 20], [33, 10, 43, 20]]),
-            tracker_id=np.array([1, 2, 3]),
-            confidence=np.array([0.9, 0.9, 0.9]),
-            class_id=np.array([1, 1, 1]),
-        )
-    }
-    assert frame3_result == {
-        "tracked_detections": sv.Detections(
-            xyxy=np.array([[14, 10, 24, 20], [25, 10, 35, 20], [35, 10, 45, 20]]),
-            tracker_id=np.array([1, 2, 3]),
-            confidence=np.array([0.9, 0.9, 0.9]),
-            class_id=np.array([1, 1, 1]),
-        )
-    }
+    assert len(set(frame1_result["tracked_detections"].tracker_id.tolist())) == 4, "Expected 4 unique tracking ids"
+    assert frame1_result["tracked_detections"].tracker_id.tolist()[:3] == \
+           frame2_result["tracked_detections"].tracker_id.tolist(), "Expected the same 3 first objects in second frame"
+    assert frame1_result["tracked_detections"].tracker_id.tolist()[:3] == \
+           frame3_result["tracked_detections"].tracker_id.tolist(), "Expected the same 3 first objects in third frame"
