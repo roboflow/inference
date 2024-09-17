@@ -42,7 +42,7 @@ def test_trocr(test):
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
     response = requests.post(
-        f"{base_url}:{port}/trocr/ocr",
+        f"{base_url}:{port}/ocr/trocr",
         json=payload,
     )
     try:
