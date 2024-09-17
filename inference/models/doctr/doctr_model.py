@@ -11,8 +11,8 @@ from PIL import Image
 
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.inference import InferenceRequest
-from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.utils.image_utils import load_image
@@ -70,10 +70,10 @@ class DocTR(RoboflowCoreModel):
 
     def infer_from_request(
         self, request: DoctrOCRInferenceRequest
-    ) -> DoctrOCRInferenceResponse:
+    ) -> OCRInferenceResponse:
         t1 = perf_counter()
         result = self.infer(**request.dict())
-        return DoctrOCRInferenceResponse(
+        return OCRInferenceResponse(
             result=result,
             time=perf_counter() - t1,
         )
@@ -87,7 +87,7 @@ class DocTR(RoboflowCoreModel):
             request (DoctrOCRInferenceRequest): The inference request.
 
         Returns:
-            DoctrOCRInferenceResponse: The inference response.
+            OCRInferenceResponse: The inference response.
         """
 
         img = load_image(image)

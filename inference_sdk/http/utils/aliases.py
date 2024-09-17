@@ -54,6 +54,18 @@ REGISTERED_ALIASES = {
     "florence-2-large": "florence-pretrains/2",
 }
 
+OCR_ENDPOINTS = {
+    "doctr": "/doctr/ocr",
+    "trocr": "/ocr/trocr",
+}
+
 
 def resolve_roboflow_model_alias(model_id: str) -> str:
     return REGISTERED_ALIASES.get(model_id, model_id)
+
+
+def resolve_ocr_path(model_name: str) -> str:
+    model_name = model_name.lower()
+    if model_name not in OCR_ENDPOINTS:
+        raise ValueError(f"OCR not supported: {model_name}")
+    return OCR_ENDPOINTS[model_name]
