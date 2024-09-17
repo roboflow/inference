@@ -40,11 +40,11 @@ class DescribeBlocksRequest(BaseModel):
     )
 
 
-class DescribeOutputRequest(BaseModel):
+class DescribeInterfaceRequest(BaseModel):
     api_key: str = Field(
         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
     )
 
 
-class WorkflowSpecificationDescribeOutputRequest(DescribeOutputRequest):
+class WorkflowSpecificationDescribeInterfaceRequest(DescribeInterfaceRequest):
     specification: dict

@@ -4,7 +4,7 @@ from typing import List, Optional
 from packaging.specifiers import SpecifierSet
 
 from inference.core.entities.responses.workflows import (
-    DescribeOutputResponse,
+    DescribeInterfaceResponse,
     ExternalBlockPropertyPrimitiveDefinition,
     ExternalWorkflowsBlockSelectorDefinition,
     UniversalQueryLanguageDescription,
@@ -31,7 +31,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
     DynamicBlockDefinition,
 )
 from inference.core.workflows.execution_engine.v1.introspection.outputs_discovery import (
-    describe_workflows_output,
+    describe_workflow_outputs,
 )
 
 
@@ -92,16 +92,20 @@ def handle_describe_workflows_blocks_request(
     )
 
 
-def handle_describe_workflows_output(
-    specification: dict,
-) -> DescribeOutputResponse:
+def handle_describe_workflows_interface(
+    definition: dict,
+) -> DescribeInterfaceResponse:
     requested_execution_engine_version = retrieve_requested_execution_engine_version(
-        workflow_definition=specification
+        workflow_definition=definition
     )
     if not SpecifierSet(f">=1.0.0,<2.0.0").contains(requested_execution_engine_version):
         raise WorkflowExecutionEngineVersionError(
             public_message="Describing workflow outputs is only supported for Execution Engine v1.",
             context="describing_workflow_outputs",
         )
-    outputs = describe_workflows_output(definition=specification)
-    return DescribeOutputResponse(outputs=outputs)
+    inputs = describe_workflow_inputs(definition=definition)
+    outputs = describe_workflow_outputs(definition=definition)
+    return DescribeInterfaceResponse(
+        inputs=inputs,
+        outputs=outputs
+    )

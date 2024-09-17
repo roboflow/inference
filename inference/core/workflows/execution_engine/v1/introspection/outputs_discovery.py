@@ -21,7 +21,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
 )
 
 
-def describe_workflows_output(
+def describe_workflow_outputs(
     definition: dict,
 ) -> Dict[str, Union[List[str], Dict[str, List[str]]]]:
     dynamic_blocks = compile_dynamic_blocks(

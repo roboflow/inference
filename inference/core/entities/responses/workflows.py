@@ -159,7 +159,10 @@ class WorkflowsBlocksSchemaDescription(BaseModel):
     schema: dict = Field(description="Schema for validating block definitions")
 
 
-class DescribeOutputResponse(BaseModel):
+class DescribeInterfaceResponse(BaseModel):
+    inputs: Dict[str, List[str]] = Field(
+        description="Dictionary mapping Workflow inputs to their kinds"
+    )
     outputs: Dict[str, Union[List[str], Dict[str, List[str]]]] = Field(
         description="Dictionary mapping Workflow outputs to their kinds"
     )

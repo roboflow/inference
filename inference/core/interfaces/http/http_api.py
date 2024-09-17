@@ -49,9 +49,9 @@ from inference.core.entities.requests.server_state import (
 )
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
-    DescribeOutputRequest,
+    DescribeInterfaceRequest,
     WorkflowInferenceRequest,
-    WorkflowSpecificationDescribeOutputRequest,
+    WorkflowSpecificationDescribeInterfaceRequest,
     WorkflowSpecificationInferenceRequest,
 )
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
@@ -86,7 +86,7 @@ from inference.core.entities.responses.server_state import (
     ServerVersionInfo,
 )
 from inference.core.entities.responses.workflows import (
-    DescribeOutputResponse,
+    DescribeInterfaceResponse,
     ExecutionEngineVersions,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
@@ -146,7 +146,7 @@ from inference.core.exceptions import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
-    handle_describe_workflows_output,
+    handle_describe_workflows_interface,
 )
 from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
@@ -964,38 +964,38 @@ class HttpInterface(BaseInterface):
         if not DISABLE_WORKFLOW_ENDPOINTS:
 
             @app.post(
-                "/{workspace_name}/workflows/{workflow_id}/describe_outputs",
-                response_model=DescribeOutputResponse,
-                summary="Endpoint to describe outputs of predefined workflow",
-                description="Checks Roboflow API for workflow definition, once acquired - retrieves workflow outputs",
+                "/{workspace_name}/workflows/{workflow_id}/describe_interface",
+                response_model=DescribeInterfaceResponse,
+                summary="Endpoint to describe interface of predefined workflow",
+                description="Checks Roboflow API for workflow definition, once acquired - describes workflow inputs and outputs",
             )
             @with_route_exceptions
-            async def describe_workflow_outputs(
+            async def describe_predefined_workflow_interface(
                 workspace_name: str,
                 workflow_id: str,
-                workflow_request: DescribeOutputRequest,
-            ) -> DescribeOutputResponse:
+                workflow_request: DescribeInterfaceRequest,
+            ) -> DescribeInterfaceResponse:
                 workflow_specification = get_workflow_specification(
                     api_key=workflow_request.api_key,
                     workspace_id=workspace_name,
                     workflow_id=workflow_id,
                 )
-                return handle_describe_workflows_output(
-                    specification=workflow_specification,
+                return handle_describe_workflows_interface(
+                    definition=workflow_specification,
                 )
 
             @app.post(
-                "/workflows/describe_outputs",
-                response_model=DescribeOutputResponse,
-                summary="Endpoint to describe outputs of workflow given in request",
-                description="Parses workflow definition and retrieves workflow outputs",
+                "/workflows/describe_interface",
+                response_model=DescribeInterfaceResponse,
+                summary="Endpoint to describe interface of workflow given in request",
+                description="Parses workflow definition and retrieves describes inputs and outputs",
             )
             @with_route_exceptions
-            async def describe_workflow_outputs(
-                workflow_request: WorkflowSpecificationDescribeOutputRequest,
-            ) -> DescribeOutputResponse:
-                return handle_describe_workflows_output(
-                    specification=workflow_request.specification,
+            async def describe_workflow_interface(
+                workflow_request: WorkflowSpecificationDescribeInterfaceRequest,
+            ) -> DescribeInterfaceResponse:
+                return handle_describe_workflows_interface(
+                    definition=workflow_request.specification,
                 )
 
             @app.post(

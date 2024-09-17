@@ -2,13 +2,13 @@ from copy import deepcopy
 
 import pytest
 
-from inference.core.entities.requests.workflows import DescribeOutputRequest
+from inference.core.entities.requests.workflows import DescribeInterfaceRequest
 from inference.core.interfaces.http.handlers.workflows import (
-    handle_describe_workflows_output,
+    handle_describe_workflows_interface,
 )
 from inference.core.workflows.errors import WorkflowDefinitionError
 from inference.core.workflows.execution_engine.v1.introspection.outputs_discovery import (
-    describe_workflows_output,
+    describe_workflow_outputs,
 )
 
 VALID_WORKFLOW_DEFINITION = {
@@ -57,9 +57,9 @@ VALID_WORKFLOW_DEFINITION = {
 }
 
 
-def test_handle_describe_workflows_output_when_valid_specification_provided() -> None:
+def test_handle_describe_workflow_outputs_when_valid_specification_provided() -> None:
     # when
-    result = describe_workflows_output(definition=VALID_WORKFLOW_DEFINITION)
+    result = describe_workflow_outputs(definition=VALID_WORKFLOW_DEFINITION)
 
     # then
     assert result == {
@@ -72,7 +72,7 @@ def test_handle_describe_workflows_output_when_valid_specification_provided() ->
     }
 
 
-def test_handle_describe_workflows_output_when_specification_without_steps_provided() -> (
+def test_handle_describe_workflow_outputs_when_specification_without_steps_provided() -> (
     None
 ):
     # given
@@ -81,10 +81,10 @@ def test_handle_describe_workflows_output_when_specification_without_steps_provi
 
     # when
     with pytest.raises(WorkflowDefinitionError):
-        _ = describe_workflows_output(definition=definition)
+        _ = describe_workflow_outputs(definition=definition)
 
 
-def test_handle_describe_workflows_output_when_specification_without_outputs_provided() -> (
+def test_handle_describe_workflow_outputs_when_specification_without_outputs_provided() -> (
     None
 ):
     # given
@@ -93,10 +93,10 @@ def test_handle_describe_workflows_output_when_specification_without_outputs_pro
 
     # when
     with pytest.raises(WorkflowDefinitionError):
-        _ = describe_workflows_output(definition=definition)
+        _ = describe_workflow_outputs(definition=definition)
 
 
-def test_handle_describe_workflows_output_when_output_refers_non_existing_step() -> (
+def test_handle_describe_workflow_outputs_when_output_refers_non_existing_step() -> (
     None
 ):
     # given
@@ -125,10 +125,10 @@ def test_handle_describe_workflows_output_when_output_refers_non_existing_step()
 
     # when
     with pytest.raises(WorkflowDefinitionError):
-        _ = describe_workflows_output(definition=definition)
+        _ = describe_workflow_outputs(definition=definition)
 
 
-def test_handle_describe_workflows_output_when_invalid_step_oncountered() -> None:
+def test_handle_describe_workflow_outputs_when_invalid_step_oncountered() -> None:
     # given
     definition = {
         "version": "1.0",
@@ -155,4 +155,4 @@ def test_handle_describe_workflows_output_when_invalid_step_oncountered() -> Non
 
     # when
     with pytest.raises(WorkflowDefinitionError):
-        _ = describe_workflows_output(definition=definition)
+        _ = describe_workflow_outputs(definition=definition)
