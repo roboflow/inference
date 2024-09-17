@@ -26,7 +26,7 @@ jobs:
         with:
           python-version: "3.9"
       - name: 🚧 Install GDAL OS library
-        run: sudo apt-get install libgdal-dev
+        run: sudo apt-get update && sudo apt-get install libgdal-dev
       - name: 🛞 Create Wheels
         run: |
           make create_wheels

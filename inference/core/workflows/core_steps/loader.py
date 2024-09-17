@@ -2,6 +2,12 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
+    LineCounterBlockV1,
+)
+from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
+    TimeInZoneBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
@@ -129,6 +135,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
+    ByteTrackerBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
 )
@@ -248,6 +257,7 @@ REGISTERED_INITIALIZERS = {
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
+        TimeInZoneBlockV1,
         SegmentAnything2BlockV1,
         DetectionsConsensusBlockV1,
         ClipComparisonBlockV1,
@@ -268,6 +278,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
         DetectionOffsetBlockV1,
+        ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
@@ -315,6 +326,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGeminiBlockV1,
         VLMAsDetectorBlockV1,
         AntropicClaudeBlockV1,
+        LineCounterBlockV1,
     ]
 
 
