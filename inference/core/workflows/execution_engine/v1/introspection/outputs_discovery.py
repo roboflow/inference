@@ -35,12 +35,12 @@ def describe_workflow_outputs(
         blocks_description=blocks_description
     )
     try:
-        step_name2block_type = map_step_name2block_type(
+        step_name_to_block_type = map_step_name_to_block_type(
             workflow_steps=definition["steps"]
         )
         return determine_workflow_outputs_kinds(
             outputs_definitions=definition["outputs"],
-            step_name2block_type=step_name2block_type,
+            step_name_to_block_type=step_name_to_block_type,
             block_output_map=block_output_map,
         )
     except KeyError as error:
@@ -51,7 +51,7 @@ def describe_workflow_outputs(
         )
 
 
-def map_step_name2block_type(workflow_steps: List[dict]) -> Dict[str, str]:
+def map_step_name_to_block_type(workflow_steps: List[dict]) -> Dict[str, str]:
     result = {}
     for step in workflow_steps:
         if "name" not in step or "type" not in step:
@@ -99,7 +99,7 @@ def get_output_property_kinds(
 
 def determine_workflow_outputs_kinds(
     outputs_definitions: List[dict],
-    step_name2block_type: Dict[str, str],
+    step_name_to_block_type: Dict[str, str],
     block_output_map: Dict[str, Dict[str, List[str]]],
 ) -> Dict[str, Union[List[str], Dict[str, List[str]]]]:
     workflow_response_definition = {}
@@ -109,12 +109,12 @@ def determine_workflow_outputs_kinds(
         step_name, selected_property = extract_step_name_and_selected_property(
             selector=selector,
         )
-        if step_name not in step_name2block_type:
+        if step_name not in step_name_to_block_type:
             raise WorkflowDefinitionError(
                 public_message=f"Could not find step referred in outputs (`{step_name}`) within Workflow steps.",
                 context="describing_workflow_outputs",
             )
-        step_type = step_name2block_type[step_name]
+        step_type = step_name_to_block_type[step_name]
         output_properties = block_output_map[step_type]
         if selected_property == "*":
             property_kind = output_properties

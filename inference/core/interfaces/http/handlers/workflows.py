@@ -30,6 +30,9 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     DynamicBlockDefinition,
 )
+from inference.core.workflows.execution_engine.v1.introspection.inputs_discovery import (
+    describe_workflow_inputs,
+)
 from inference.core.workflows.execution_engine.v1.introspection.outputs_discovery import (
     describe_workflow_outputs,
 )
@@ -105,7 +108,4 @@ def handle_describe_workflows_interface(
         )
     inputs = describe_workflow_inputs(definition=definition)
     outputs = describe_workflow_outputs(definition=definition)
-    return DescribeInterfaceResponse(
-        inputs=inputs,
-        outputs=outputs
-    )
+    return DescribeInterfaceResponse(inputs=inputs, outputs=outputs)
