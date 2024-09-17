@@ -185,7 +185,6 @@ inference infer {image_path} \
 With a Roboflow Inference Enterprise License, you can access additional Inference features, including:
 
 - Server cluster deployment
-- Device management
 - Active learning
 - YOLOv5 and YOLOv8 model sub-license
 
