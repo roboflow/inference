@@ -39,6 +39,78 @@ def test_describe_workflow_inputs_when_simple_valid_workflow_provided() -> None:
     assert result == {"image": ["image"], "model_id": ["roboflow_model_id"]}
 
 
+def test_describe_workflow_inputs_when_declared_input_kind_does_not_match_actual() -> (
+    None
+):
+    # given
+    definition = {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowParameter", "name": "model_id", "kind": ["float"]},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection.predictions",
+            },
+        ],
+    }
+
+    # when
+    with pytest.raises(WorkflowDefinitionError):
+        _ = describe_workflow_inputs(definition=definition)
+
+
+def test_describe_workflow_inputs_when_declared_input_kind_does_matches_actual() -> (
+    None
+):
+    # given
+    definition = {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {
+                "type": "WorkflowParameter",
+                "name": "model_id",
+                "kind": ["roboflow_model_id"],
+            },
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection.predictions",
+            },
+        ],
+    }
+
+    # when
+    result = describe_workflow_inputs(definition=definition)
+
+    # then
+    assert result == {"image": ["image"], "model_id": ["roboflow_model_id"]}
+
+
 def test_describe_workflow_inputs_when_inputs_with_syntax_error_provided() -> None:
     # given
     definition = {

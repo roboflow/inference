@@ -1,11 +1,15 @@
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Set, Tuple, Type
+from typing import Dict, List, Optional, Set, Tuple, Type
 
 from pydantic import ValidationError
 
 from inference.core.workflows.errors import WorkflowDefinitionError
-from inference.core.workflows.execution_engine.entities.types import WILDCARD_KIND
+from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
+    VIDEO_METADATA_KIND,
+    WILDCARD_KIND,
+)
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
 )
@@ -45,6 +49,14 @@ INPUT_TYPE_TO_SELECTED_ELEMENT = {
 
 
 @dataclass(frozen=True)
+class InputMetadata:
+    name: str
+    selector: str
+    type: str
+    declared_kind: Optional[Set[str]]
+
+
+@dataclass(frozen=True)
 class SelectorSearchResult:
     selector: str
     step_type: str
@@ -58,7 +70,7 @@ def describe_workflow_inputs(definition: dict) -> Dict[str, List[str]]:
         block_type_to_metadata, block_type_to_manifest = parse_blocks(
             dynamic_blocks_definitions=definition.get("dynamic_blocks_definitions", []),
         )
-        input_selectors_details = map_input_selector_to_input_name_and_type(
+        input_selectors_details = retrieve_input_selectors_details(
             inputs=definition.get("inputs", [])
         )
         search_results = search_input_selectors_in_steps(
@@ -118,27 +130,33 @@ def map_block_class2all_aliases(
     return block_class2all_type_names
 
 
-def map_input_selector_to_input_name_and_type(
+def retrieve_input_selectors_details(
     inputs: List[dict],
-) -> Dict[str, Tuple[str, str]]:
+) -> Dict[str, InputMetadata]:
     unique_names = {input_element["name"] for input_element in inputs}
     if len(unique_names) != len(inputs):
         raise WorkflowDefinitionError(
             public_message=f"Workflow definition invalid - non unique inputs names provided",
             context="describing_workflow_inputs",
         )
-    return {
-        construct_input_selector(input_name=input_element["name"]): (
-            input_element["name"],
-            input_element["type"],
+    result = {}
+    for input_element in inputs:
+        input_selector = construct_input_selector(input_name=input_element["name"])
+        declared_kind = input_element.get("kind")
+        if declared_kind:
+            declared_kind = set(declared_kind)
+        result[input_selector] = InputMetadata(
+            name=input_element["name"],
+            selector=input_selector,
+            type=input_element["type"],
+            declared_kind=declared_kind,
         )
-        for input_element in inputs
-    }
+    return result
 
 
 def search_input_selectors_in_steps(
     steps: List[dict],
-    input_selectors_details: Dict[str, Tuple[str, str]],
+    input_selectors_details: Dict[str, InputMetadata],
     block_type_to_manifest: Dict[str, Type[WorkflowBlockManifest]],
     block_type_to_metadata: Dict[str, BlockManifestMetadata],
 ) -> List[SelectorSearchResult]:
@@ -164,7 +182,7 @@ def search_input_selectors_in_steps(
 
 def search_input_selectors_in_step(
     step_definition: dict,
-    input_selectors_details: Dict[str, Tuple[str, str]],
+    input_selectors_details: Dict[str, InputMetadata],
     block_type_to_manifest: Dict[str, Type[WorkflowBlockManifest]],
     block_type_to_metadata: Dict[str, BlockManifestMetadata],
 ) -> List[SelectorSearchResult]:
@@ -243,7 +261,7 @@ def prepare_search_results_for_detected_selectors(
     step_type: str,
     property_name: str,
     detected_input_selectors: List[str],
-    input_selectors_details: Dict[str, Tuple[str, str]],
+    input_selectors_details: Dict[str, InputMetadata],
     matching_references_kinds: Dict[str, Set[str]],
 ) -> List[SelectorSearchResult]:
     result = []
@@ -254,14 +272,14 @@ def prepare_search_results_for_detected_selectors(
                 f"{detected_input_selector} which is not specified in inputs.",
                 context="describing_workflow_inputs",
             )
-        input_name, input_entity_type = input_selectors_details[detected_input_selector]
-        if input_entity_type not in INPUT_TYPE_TO_SELECTED_ELEMENT:
+        selector_details = input_selectors_details[detected_input_selector]
+        if selector_details.type not in INPUT_TYPE_TO_SELECTED_ELEMENT:
             raise WorkflowDefinitionError(
-                public_message=f"Workflow definition invalid - declared input of type: {input_entity_type} "
+                public_message=f"Workflow definition invalid - declared input of type: {selector_details.type} "
                 f"which is not supported in this installation of Workflow Execution Engine.",
                 context="describing_workflow_inputs",
             )
-        selected_element = INPUT_TYPE_TO_SELECTED_ELEMENT[input_entity_type]
+        selected_element = INPUT_TYPE_TO_SELECTED_ELEMENT[selector_details.type]
         kinds_for_element = matching_references_kinds[selected_element]
         if not kinds_for_element:
             raise WorkflowDefinitionError(
@@ -282,7 +300,7 @@ def prepare_search_results_for_detected_selectors(
 
 
 def summarise_input_kinds(
-    input_selectors_details: Dict[str, Tuple[str, str]],
+    input_selectors_details: Dict[str, InputMetadata],
     search_results: List[SelectorSearchResult],
 ) -> Dict[str, List[str]]:
     search_results_for_selectors = defaultdict(list)
@@ -293,12 +311,24 @@ def summarise_input_kinds(
         input_selector,
         connected_search_results,
     ) in search_results_for_selectors.items():
-        kind_for_selector = generate_kinds_union(
+        actual_kind_for_selector = generate_kinds_union(
             search_results=connected_search_results
         )
-        input_name, _ = input_selectors_details[input_selector]
-        result[input_name] = kind_for_selector
-    unbounded_inputs = set(v[0] for v in input_selectors_details.values()).difference(
+        selector_details = input_selectors_details[input_selector]
+        declared_kind_for_selector = selector_details.declared_kind or {
+            WILDCARD_KIND.name
+        }
+        if not kinds_are_matching(
+            x=actual_kind_for_selector, y=declared_kind_for_selector
+        ):
+            raise WorkflowDefinitionError(
+                public_message=f"Workflow definition contains whe following declaration of kind "
+                f"for input `{selector_details.name}`: {declared_kind_for_selector}, whereas "
+                f"context of input selectors usage indicate conflicting `{actual_kind_for_selector}`.",
+                context="describing_workflow_inputs",
+            )
+        result[selector_details.name] = list(actual_kind_for_selector)
+    unbounded_inputs = set(v.name for v in input_selectors_details.values()).difference(
         result.keys()
     )
     for input_name in unbounded_inputs:
@@ -306,9 +336,9 @@ def summarise_input_kinds(
     return result
 
 
-def generate_kinds_union(search_results: List[SelectorSearchResult]) -> List[str]:
+def generate_kinds_union(search_results: List[SelectorSearchResult]) -> Set[str]:
     if not search_results:
-        return []
+        return set()
     reference_result = search_results[0]
     kinds_union = set()
     for result in search_results:
@@ -326,7 +356,7 @@ def generate_kinds_union(search_results: List[SelectorSearchResult]) -> List[str
                 context="describing_workflow_inputs",
             )
         kinds_union.update(result.compatible_kinds)
-    return list(kinds_union)
+    return kinds_union
 
 
 def kinds_are_matching(x: Set[str], y: Set[str]) -> bool:
