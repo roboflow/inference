@@ -125,7 +125,10 @@ class TimeInZoneBlockV1(WorkflowBlock):
                 raise ValueError(
                     f"{self.__class__.__name__} requires zone to be a list containing more than 2 points"
                 )
-            if any((not isinstance(e, list) and not isinstance(e, tuple)) or len(e) != 2 for e in zone):
+            if any(
+                (not isinstance(e, list) and not isinstance(e, tuple)) or len(e) != 2
+                for e in zone
+            ):
                 raise ValueError(
                     f"{self.__class__.__name__} requires each point of zone to be a list containing exactly 2 coordinates"
                 )
