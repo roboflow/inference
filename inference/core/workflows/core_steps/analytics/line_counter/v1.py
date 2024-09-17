@@ -10,10 +10,10 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    INTEGER_KIND,
     StepOutputSelector,
     WorkflowParameterSelector,
     WorkflowVideoMetadataSelector,
@@ -29,7 +29,6 @@ OUTPUT_KEY_COUNT_OUT: str = "count_out"
 IN: str = "in"
 OUT: str = "out"
 DETECTIONS_IN_OUT_PARAM: str = "in_out"
-TYPE: str = "roboflow_core/line_counter@v1"
 SHORT_DESCRIPTION = "Count detections passing line"
 LONG_DESCRIPTION = """
 The `LineCounter` is an analytics block designed to count objects passing the line.
@@ -49,7 +48,7 @@ class LineCounterManifest(WorkflowBlockManifest):
             "block_type": "analytics",
         }
     )
-    type: Literal["roboflow_core/time_in_zone@v1", "TimeInZone"]
+    type: Literal["roboflow_core/line_counter@v1"]
     metadata: WorkflowVideoMetadataSelector
     detections: StepOutputSelector(
         kind=[
@@ -63,8 +62,8 @@ class LineCounterManifest(WorkflowBlockManifest):
     )
 
     line_segment: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Lines (one for each batch) in a format [(x1, y1), (x2, y2)];" \
-            " direction of line zone is assumed to be that of direction of vector normal to [(x1, y1), (x2, y2)]",
+        description="Lines (one for each batch) in a format [(x1, y1), (x2, y2)];"
+        " direction of line zone is assumed to be that of direction of vector normal to [(x1, y1), (x2, y2)]",
         examples=["$inputs.zones"],
     )
     triggering_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
@@ -107,21 +106,35 @@ class LineCounterBlockV1(WorkflowBlock):
         triggering_anchor: str = "CENTER",
     ) -> BlockResult:
         if detections.tracker_id is None:
-            raise ValueError(f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked")
+            raise ValueError(
+                f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
+            )
         if metadata.video_identifier not in self._batch_of_line_zones:
             if not isinstance(line_segment, list) or len(line_segment) != 2:
-                raise ValueError(f"{self.__class__.__name__} requires line zone to be a list containing exactly 2 points")
+                raise ValueError(
+                    f"{self.__class__.__name__} requires line zone to be a list containing exactly 2 points"
+                )
             if any(not isinstance(e, list) or len(e) != 2 for e in line_segment):
-                raise ValueError(f"{self.__class__.__name__} requires each point of line zone to be a list containing exactly 2 coordinates")
-            if any(not isinstance(e[0], (int, float)) or not isinstance(e[1], (int, float)) for e in line_segment):
-                raise ValueError(f"{self.__class__.__name__} requires each coordinate of line zone to be a number")
+                raise ValueError(
+                    f"{self.__class__.__name__} requires each point of line zone to be a list containing exactly 2 coordinates"
+                )
+            if any(
+                not isinstance(e[0], (int, float)) or not isinstance(e[1], (int, float))
+                for e in line_segment
+            ):
+                raise ValueError(
+                    f"{self.__class__.__name__} requires each coordinate of line zone to be a number"
+                )
             self._batch_of_line_zones[metadata.video_identifier] = sv.LineZone(
                 start=sv.Point(*line_segment[0]),
                 end=sv.Point(*line_segment[1]),
-                triggering_anchors=[sv.Position(triggering_anchor)]
+                triggering_anchors=[sv.Position(triggering_anchor)],
             )
         line_zone = self._batch_of_line_zones[metadata.video_identifier]
 
         line_zone.trigger(detections=detections)
 
-        return {OUTPUT_KEY_COUNT_IN: line_zone.in_count, OUTPUT_KEY_COUNT_OUT: line_zone.out_count}
+        return {
+            OUTPUT_KEY_COUNT_IN: line_zone.in_count,
+            OUTPUT_KEY_COUNT_OUT: line_zone.out_count,
+        }

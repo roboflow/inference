@@ -2,6 +2,9 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
+    LineCounterBlockV1,
+)
 from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
     TimeInZoneBlockV1,
 )
@@ -323,6 +326,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGeminiBlockV1,
         VLMAsDetectorBlockV1,
         AntropicClaudeBlockV1,
+        LineCounterBlockV1,
     ]
 
 

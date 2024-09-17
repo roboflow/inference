@@ -19,8 +19,8 @@ def test_load_from_cache():
             "is_trial": "INTEGER NOT NULL DEFAULT 0",
             "is_billed": "INTEGER NOT NULL DEFAULT 1",
             "offline_enabled": "INTEGER NOT NULL DEFAULT 1",
-            "over_quota": "INTEGER NOT NULL DEFAULT 0"
-        }
+            "over_quota": "INTEGER NOT NULL DEFAULT 0",
+        },
     )
 
     row1 = {
@@ -31,7 +31,7 @@ def test_load_from_cache():
         "is_trial": False,
         "is_billed": False,
         "offline_enabled": False,
-        "over_quota": False
+        "over_quota": False,
     }
     row2 = {
         "ts": "1970-01-01 00:00:00 UTC",
@@ -41,17 +41,11 @@ def test_load_from_cache():
         "is_trial": True,
         "is_billed": True,
         "offline_enabled": True,
-        "over_quota": True
+        "over_quota": True,
     }
 
-    q.insert(
-        connection=conn,
-        row=row1
-    )
-    q.insert(
-        connection=conn,
-        row=row2
-    )
+    q.insert(connection=conn, row=row1)
+    q.insert(connection=conn, row=row2)
     conn.commit()
     row1["id"] = 1
     row2["id"] = 2
@@ -61,7 +55,4 @@ def test_load_from_cache():
     conn.close()
 
     # then
-    assert plan_details.api_keys_plans == {
-        "fake1": row1,
-        "fake2": row2
-    }
+    assert plan_details.api_keys_plans == {"fake1": row1, "fake2": row2}

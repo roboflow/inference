@@ -10,7 +10,7 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     VideoMetadata,
-    WorkflowImageData
+    WorkflowImageData,
 )
 
 
@@ -18,11 +18,15 @@ def test_time_in_zone() -> None:
     # given
     zone = [[10, 10], [10, 20], [20, 20], [20, 10]]
     frame1_detections = sv.Detections(
-        xyxy=np.array([[9, 15, 10, 16], [10, 15, 11, 16], [11, 15, 12, 16], [15, 15, 16, 16]]),
+        xyxy=np.array(
+            [[9, 15, 10, 16], [10, 15, 11, 16], [11, 15, 12, 16], [15, 15, 16, 16]]
+        ),
         tracker_id=np.array([1, 2, 3, 4]),
     )
     frame2_detections = sv.Detections(
-        xyxy=np.array([[10, 15, 11, 16], [11, 15, 12, 16], [12, 15, 13, 16], [16, 16, 17, 17]]),
+        xyxy=np.array(
+            [[10, 15, 11, 16], [11, 15, 12, 16], [12, 15, 13, 16], [16, 16, 17, 17]]
+        ),
         tracker_id=np.array([1, 2, 3, 5]),
     )
     frame3_detections = sv.Detections(
@@ -33,21 +37,27 @@ def test_time_in_zone() -> None:
         video_identifier="vid_1",
         frame_number=10,
         fps=1,
-        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(tz=datetime.timezone.utc),
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
         comes_from_video_file=True,
     )
     frame2_metadata = VideoMetadata(
         video_identifier="vid_1",
         frame_number=11,
         fps=1,
-        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(tz=datetime.timezone.utc),
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
         comes_from_video_file=True,
     )
     frame3_metadata = VideoMetadata(
         video_identifier="vid_1",
         frame_number=12,
         fps=1,
-        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(tz=datetime.timezone.utc),
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
         comes_from_video_file=True,
     )
     time_in_zone_block = TimeInZoneBlockV1()
@@ -65,43 +75,47 @@ def test_time_in_zone() -> None:
         detections=frame1_detections,
         metadata=frame1_metadata,
         zone=zone,
-        triggering_anchor="TOP_LEFT"
+        triggering_anchor="TOP_LEFT",
     )
     frame2_result = time_in_zone_block.run(
         image=image_data,
         detections=frame2_detections,
         metadata=frame2_metadata,
         zone=zone,
-        triggering_anchor="TOP_LEFT"
+        triggering_anchor="TOP_LEFT",
     )
     frame3_result = time_in_zone_block.run(
         image=image_data,
         detections=frame3_detections,
         metadata=frame3_metadata,
         zone=zone,
-        triggering_anchor="TOP_LEFT"
+        triggering_anchor="TOP_LEFT",
     )
 
     # then
     assert frame1_result == {
         "time_in_zone": sv.Detections(
-            xyxy=np.array([[9, 15, 10, 16], [10, 15, 11, 16], [11, 15, 12, 16], [15, 15, 16, 16]]),
+            xyxy=np.array(
+                [[9, 15, 10, 16], [10, 15, 11, 16], [11, 15, 12, 16], [15, 15, 16, 16]]
+            ),
             tracker_id=np.array([1, 2, 3, 4]),
-            data={"time_in_zone": np.array([0, 0, 0, 0])}
+            data={"time_in_zone": np.array([0, 0, 0, 0])},
         )
     }
     assert frame2_result == {
         "time_in_zone": sv.Detections(
-            xyxy=np.array([[10, 15, 11, 16], [11, 15, 12, 16], [12, 15, 13, 16], [16, 16, 17, 17]]),
+            xyxy=np.array(
+                [[10, 15, 11, 16], [11, 15, 12, 16], [12, 15, 13, 16], [16, 16, 17, 17]]
+            ),
             tracker_id=np.array([1, 2, 3, 5]),
-            data={"time_in_zone": np.array([0, 1, 1, 0])}
+            data={"time_in_zone": np.array([0, 1, 1, 0])},
         )
     }
     assert frame3_result == {
         "time_in_zone": sv.Detections(
             xyxy=np.array([[11, 15, 12, 16], [20, 15, 21, 16], [21, 15, 22, 16]]),
             tracker_id=np.array([1, 2, 3]),
-            data={"time_in_zone": np.array([1, 2, 0])}
+            data={"time_in_zone": np.array([1, 2, 0])},
         )
     }
 
@@ -115,7 +129,9 @@ def test_time_in_zone_no_trackers() -> None:
     metadata = VideoMetadata(
         video_identifier="vid_1",
         frame_number=10,
-        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(tz=datetime.timezone.utc),
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
     )
     time_in_zone_block = TimeInZoneBlockV1()
 
@@ -127,13 +143,16 @@ def test_time_in_zone_no_trackers() -> None:
     )
 
     # when
-    with pytest.raises(ValueError, match="tracker_id not initialized, TimeInZoneBlockV1 requires detections to be tracked"):
+    with pytest.raises(
+        ValueError,
+        match="tracker_id not initialized, TimeInZoneBlockV1 requires detections to be tracked",
+    ):
         _ = time_in_zone_block.run(
             image=image_data,
             detections=detections,
             metadata=metadata,
             zone=zone,
-            triggering_anchor="TOP_LEFT"
+            triggering_anchor="TOP_LEFT",
         )
 
 
@@ -147,7 +166,9 @@ def test_time_in_zone_list_of_points_too_short() -> None:
     metadata = VideoMetadata(
         video_identifier="vid_1",
         frame_number=10,
-        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(tz=datetime.timezone.utc),
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
     )
     time_in_zone_block = TimeInZoneBlockV1()
 
@@ -159,13 +180,16 @@ def test_time_in_zone_list_of_points_too_short() -> None:
     )
 
     # when
-    with pytest.raises(ValueError, match="TimeInZoneBlockV1 requires zone to be a list containing more than 2 points"):
+    with pytest.raises(
+        ValueError,
+        match="TimeInZoneBlockV1 requires zone to be a list containing more than 2 points",
+    ):
         _ = time_in_zone_block.run(
             image=image_data,
             detections=detections,
             metadata=metadata,
             zone=zone,
-            triggering_anchor="TOP_LEFT"
+            triggering_anchor="TOP_LEFT",
         )
 
 
@@ -179,7 +203,9 @@ def test_time_in_zone_elements_not_points() -> None:
     metadata = VideoMetadata(
         video_identifier="vid_1",
         frame_number=10,
-        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(tz=datetime.timezone.utc),
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
     )
     time_in_zone_block = TimeInZoneBlockV1()
 
@@ -191,13 +217,16 @@ def test_time_in_zone_elements_not_points() -> None:
     )
 
     # when
-    with pytest.raises(ValueError, match="TimeInZoneBlockV1 requires zone to be a list containing more than 2 points"):
+    with pytest.raises(
+        ValueError,
+        match="TimeInZoneBlockV1 requires zone to be a list containing more than 2 points",
+    ):
         _ = time_in_zone_block.run(
             image=image_data,
             detections=detections,
             metadata=metadata,
             zone=zone,
-            triggering_anchor="TOP_LEFT"
+            triggering_anchor="TOP_LEFT",
         )
 
 
@@ -211,7 +240,9 @@ def test_time_in_zone_coordianates_not_numeric() -> None:
     metadata = VideoMetadata(
         video_identifier="vid_1",
         frame_number=10,
-        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(tz=datetime.timezone.utc),
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
     )
     time_in_zone_block = TimeInZoneBlockV1()
 
@@ -223,11 +254,14 @@ def test_time_in_zone_coordianates_not_numeric() -> None:
     )
 
     # when
-    with pytest.raises(ValueError, match="TimeInZoneBlockV1 requires each coordinate of zone to be a number"):
+    with pytest.raises(
+        ValueError,
+        match="TimeInZoneBlockV1 requires each coordinate of zone to be a number",
+    ):
         _ = time_in_zone_block.run(
             image=image_data,
             detections=detections,
             metadata=metadata,
             zone=zone,
-            triggering_anchor="TOP_LEFT"
+            triggering_anchor="TOP_LEFT",
         )

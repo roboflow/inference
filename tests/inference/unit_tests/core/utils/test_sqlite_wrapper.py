@@ -283,6 +283,10 @@ def test_refresh_rows_exist():
     refreshed_rows = q.refresh(connection=conn, rows=rows)
 
     # then
-    assert refreshed_rows == [{"id": 1, "col1": "foo"}, {"id": 2, "col1": "bar"}, {"id": 3, "col1": "baz"}]
+    assert refreshed_rows == [
+        {"id": 1, "col1": "foo"},
+        {"id": 2, "col1": "bar"},
+        {"id": 3, "col1": "baz"},
+    ]
     assert q.count(connection=conn) == 3
     conn.close()

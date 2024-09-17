@@ -29,7 +29,6 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_KEY: str = "time_in_zone"
 DETECTIONS_TIME_IN_ZONE_PARAM: str = "time_in_zone"
-TYPE: str = "roboflow_core/time_in_zone@v1"
 SHORT_DESCRIPTION = "Track duration of time spent by objects in zone"
 LONG_DESCRIPTION = """
 The `TimeInZoneBlock` is an analytics block designed to measure time spent by objects in a zone.
@@ -49,7 +48,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
             "block_type": "analytics",
         }
     )
-    type: Literal["roboflow_core/time_in_zone@v1", "TimeInZone"]
+    type: Literal["roboflow_core/time_in_zone@v1"]
     image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         title="Image",
         description="The input image for this step.",
@@ -108,17 +107,28 @@ class TimeInZoneBlockV1(WorkflowBlock):
         detections: sv.Detections,
         metadata: VideoMetadata,
         zone: List[Tuple[int, int]],
-        triggering_anchor: str = "CENTER",
+        triggering_anchor: str,
     ) -> BlockResult:
         if detections.tracker_id is None:
-            raise ValueError(f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked")
+            raise ValueError(
+                f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
+            )
         if metadata.video_identifier not in self._batch_of_polygon_zones:
             if not isinstance(zone, list) or len(zone) < 3:
-                raise ValueError(f"{self.__class__.__name__} requires zone to be a list containing more than 2 points")
+                raise ValueError(
+                    f"{self.__class__.__name__} requires zone to be a list containing more than 2 points"
+                )
             if any(not isinstance(e, list) or len(e) != 2 for e in zone):
-                raise ValueError(f"{self.__class__.__name__} requires each point of zone to be a list containing exactly 2 coordinates")
-            if any(not isinstance(e[0], (int, float)) or not isinstance(e[1], (int, float)) for e in zone):
-                raise ValueError(f"{self.__class__.__name__} requires each coordinate of zone to be a number")
+                raise ValueError(
+                    f"{self.__class__.__name__} requires each point of zone to be a list containing exactly 2 coordinates"
+                )
+            if any(
+                not isinstance(e[0], (int, float)) or not isinstance(e[1], (int, float))
+                for e in zone
+            ):
+                raise ValueError(
+                    f"{self.__class__.__name__} requires each coordinate of zone to be a number"
+                )
             self._batch_of_polygon_zones[metadata.video_identifier] = sv.PolygonZone(
                 polygon=np.array(zone),
                 frame_resolution_wh=image.numpy_image.shape[:-1],
@@ -134,7 +144,9 @@ class TimeInZoneBlockV1(WorkflowBlock):
         else:
             ts_end = metadata.frame_timestamp.timestamp()
         for i, is_in_zone, tracker_id in zip(
-            range(len(detections)), polygon_zone.trigger(detections), detections.tracker_id
+            range(len(detections)),
+            polygon_zone.trigger(detections),
+            detections.tracker_id,
         ):
             # copy
             detection = detections[i]
@@ -142,7 +154,9 @@ class TimeInZoneBlockV1(WorkflowBlock):
             detection[DETECTIONS_TIME_IN_ZONE_PARAM] = np.array([0], dtype=np.float64)
             if is_in_zone:
                 ts_start = tracked_ids_in_zone.setdefault(tracker_id, ts_end)
-                detection[DETECTIONS_TIME_IN_ZONE_PARAM] = np.array([ts_end - ts_start], dtype=np.float64)
+                detection[DETECTIONS_TIME_IN_ZONE_PARAM] = np.array(
+                    [ts_end - ts_start], dtype=np.float64
+                )
             elif tracker_id in tracked_ids_in_zone:
                 del tracked_ids_in_zone[tracker_id]
             result_detections.append(detection)
