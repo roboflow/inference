@@ -39,38 +39,23 @@ def bool_env(val):
 )
 @pytest.mark.parametrize("test", TESTS)
 def test_trocr(test):
+    # given
     payload = deepcopy(test["payload"])
     payload["api_key"] = api_key
+
+    # when
     response = requests.post(
         f"{base_url}:{port}/ocr/trocr",
         json=payload,
     )
-    try:
-        response.raise_for_status()
-        data = response.json()
-        try:
-            assert "result" in data
-        except:
-            print(f"Invalid response: {data}, expected 'result' in data")
 
-        try:
-            assert isinstance(data["result"], str) and len(data["result"]) > 0
-        except:
-            print(f"Invalid response: {data['result']}, expected a non-empty string")
-
-        try:
-            assert isinstance(data["time"], float) and data["time"] > 0
-        except:
-            print(f"Invalid response: Expected a valid positive time")
-
-        try:
-            assert data["result"] == test["expected_response"]["result"]
-        except:
-            print(
-                f"Incorrect response: {data['result']}, expected {test['expected_response']['result']}"
-            )
-    except Exception as e:
-        raise e
+    # then
+    response.raise_for_status()
+    data = response.json()
+    assert "result" in data
+    assert isinstance(data["result"], str) and len(data["result"]) > 0
+    assert isinstance(data["time"], float) and data["time"] > 0
+    assert data["result"] == test["expected_response"]["result"]
 
 
 @pytest.fixture(scope="session", autouse=True)
