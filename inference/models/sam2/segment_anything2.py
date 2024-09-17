@@ -1,4 +1,3 @@
-import base64
 import copy
 import hashlib
 from io import BytesIO
@@ -6,7 +5,6 @@ from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 
 import numpy as np
-import rasterio.features
 import sam2.utils.misc
 import torch
 from torch.nn.attention import SDPBackend
@@ -17,7 +15,6 @@ sam2.utils.misc.get_sdp_backends = lambda z: [
 ]
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
-from shapely.geometry import Polygon as ShapelyPolygon
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.entities.requests.sam2 import (

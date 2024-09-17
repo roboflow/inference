@@ -62,15 +62,25 @@ MODELS_TO_BE_USED = {
         "object-detection": "coin-counting/137",
         "instance-segmentation": "asl-poly-instance-seg/53",
         "classification": "catdog-w9i9e/18",
+        "yolov8n-640": "yolov8n-640",
     },
     PlatformEnvironment.ROBOFLOW_STAGING: {
         "object-detection": "eye-detection/35",
         "instance-segmentation": "asl-instance-seg/116",
         "classification": "catdog/28",
+        "yolov8n-640": "microsoft-coco-obj-det/8",
     },
 }
 
+TARGET_PROJECTS_TO_BE_USED = {
+    PlatformEnvironment.ROBOFLOW_PLATFORM: "active-learning-demo",
+    PlatformEnvironment.ROBOFLOW_STAGING: "coin-counting",
+}
+
 ROBOFLOW_API_KEY = os.environ["HOSTED_PLATFORM_TESTS_API_KEY"]
+OPENAI_KEY = os.getenv("OPENAI_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 
 @pytest.fixture(scope="session")
@@ -109,8 +119,18 @@ def detection_model_id(platform_environment: PlatformEnvironment) -> str:
 
 
 @pytest.fixture(scope="session")
+def yolov8n_640_model_id(platform_environment: PlatformEnvironment) -> str:
+    return MODELS_TO_BE_USED[platform_environment]["yolov8n-640"]
+
+
+@pytest.fixture(scope="session")
 def segmentation_model_id(platform_environment: PlatformEnvironment) -> str:
     return MODELS_TO_BE_USED[platform_environment]["instance-segmentation"]
+
+
+@pytest.fixture(scope="session")
+def target_project(platform_environment: PlatformEnvironment) -> str:
+    return TARGET_PROJECTS_TO_BE_USED[platform_environment]
 
 
 @pytest.fixture(scope="session", autouse=True)

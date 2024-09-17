@@ -69,7 +69,7 @@ def test_getting_schemas_from_new_post_endpoint_when_matching_execution_engine_v
     # when
     response = requests.post(
         f"{object_detection_service_url}/workflows/blocks/describe",
-        json={"execution_engine_version": "1.0.0"}
+        json={"execution_engine_version": "1.0.0"},
     )
 
     # then
@@ -100,7 +100,7 @@ def test_getting_schemas_from_new_post_endpoint_when_not_matching_execution_engi
     # when
     response = requests.post(
         f"{object_detection_service_url}/workflows/blocks/describe",
-        json={"execution_engine_version": "0.1.0"}
+        json={"execution_engine_version": "0.1.0"},
     )
 
     # then
@@ -120,7 +120,9 @@ def test_getting_schemas_from_new_post_endpoint_when_not_matching_execution_engi
 @pytest.mark.flaky(retries=4, delay=1)
 def test_get_versions_of_execution_engine(object_detection_service_url: str) -> None:
     # when
-    response = requests.get(f"{object_detection_service_url}/workflows/execution_engine/versions")
+    response = requests.get(
+        f"{object_detection_service_url}/workflows/execution_engine/versions"
+    )
 
     # then
     response.raise_for_status()
@@ -207,7 +209,9 @@ def test_getting_block_schema_from_get_endpoint(
     object_detection_service_url: str,
 ) -> None:
     # when
-    response = requests.get(f"{object_detection_service_url}/workflows/definition/schema")
+    response = requests.get(
+        f"{object_detection_service_url}/workflows/definition/schema"
+    )
 
     # then
     response.raise_for_status()
@@ -326,7 +330,9 @@ def test_compilation_endpoint_when_compilation_fails_due_to_invalid_requested_ex
     )
 
     # then
-    assert response.status_code == 400, "Expected BadRequest response on wrong version selection"
+    assert (
+        response.status_code == 400
+    ), "Expected BadRequest response on wrong version selection"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -785,9 +791,13 @@ def test_workflow_validate_with_dynamic_blocks(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
-def test_getting_block_schema_using_get_endpoint(object_detection_service_url: str) -> None:
+def test_getting_block_schema_using_get_endpoint(
+    object_detection_service_url: str,
+) -> None:
     # when
-    response = requests.get(f"{object_detection_service_url}/workflows/definition/schema")
+    response = requests.get(
+        f"{object_detection_service_url}/workflows/definition/schema"
+    )
 
     # then
     response.raise_for_status()

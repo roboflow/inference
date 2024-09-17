@@ -27,7 +27,7 @@
 
 Roboflow Inference is an open-source platform designed to simplify the deployment of computer vision models. It enables developers to perform object detection, classification, and instance segmentation and utilize foundation models like [CLIP](https://inference.roboflow.com/foundation/clip), [Segment Anything](https://inference.roboflow.com/foundation/sam), and [YOLO-World](https://inference.roboflow.com/foundation/yolo_world) through a Python-native package, a self-hosted inference server, or a fully [managed API](https://docs.roboflow.com/).
 
-Explore our [enterprise options](https://roboflow.com/sales) for advanced features like server deployment, device management, active learning, and commercial licenses for YOLOv5 and YOLOv8.
+Explore our [enterprise options](https://roboflow.com/sales) for advanced features like server deployment, active learning, and commercial licenses for YOLOv5 and YOLOv8.
 
 ## 💻 install
 
@@ -190,6 +190,10 @@ export ROBOFLOW_API_KEY=<YOUR_API_KEY>
 ## 📚 documentation
 
 Visit our [documentation](https://inference.roboflow.com) to explore comprehensive guides, detailed API references, and a wide array of tutorials designed to help you harness the full potential of the Inference package.
+
+## ⚡️ Model-specific extras
+
+Explore the list of [`inference` extras](https://inference.roboflow.com/#extras) to install model-specific dependencies. 
 
 ## © license
 

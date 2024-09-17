@@ -33,10 +33,10 @@ nav:
       - Enterprise Features: enterprise/enterprise.md
       - Inference Basics:
           - Roboflow Ecosystem: quickstart/roboflow_ecosystem.md
-          - "Models: Popular": quickstart/aliases.md
-          - "Models: Fine-tuned": quickstart/explore_models.md
-          - "Models: Universe": quickstart/load_from_universe.md
-          - "Models: Local Weights": models/from_local_weights.md
+          - 'Models: Popular': quickstart/aliases.md
+          - 'Models: Fine-tuned': quickstart/explore_models.md
+          - 'Models: Universe': quickstart/load_from_universe.md
+          - 'Models: Local Weights': models/from_local_weights.md
       - Supported Fine-Tuned Models:
           - YOLOv10: fine-tuned/yolov10.md
           - YOLOv9: fine-tuned/yolov9.md
@@ -56,6 +56,7 @@ nav:
           - Segment Anything (Segmentation): foundation/sam.md
           - Segment Anything 2 (Segmentation): foundation/sam2.md
           - YOLO-World (Object Detection): foundation/yolo_world.md
+          - OwlV2 (Object Detection): foundation/owlv2.md
       - Run a Model:
           - Getting started: quickstart/run_a_model.md
           - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
@@ -70,24 +71,24 @@ nav:
           - Model Licenses: https://roboflow.com/licensing
   - Workflows:
       - About Workflows: workflows/about.md
-      - Create and Run: workflows/create_and_run.md
+      - Create And Run: workflows/create_and_run.md
       - Ecosystem: workflows/understanding.md
-      - Blocks overview: workflows/blocks_connections.md
-      - Blocks gallery: workflows/blocks.md
+      - Blocks Overview: workflows/blocks_connections.md
+      - Blocks Gallery: workflows/blocks.md
       - Examples: workflows/gallery_index.md
-      - User guide:
-          - Running Workflows: workflows/modes_of_running.md
-          - Workflows Definitions: workflows/definitions.md
-          - Workflow execution: workflows/workflow_execution.md
-      - Developer guide:
-          - Compiler: workflows/workflows_compiler.md
-          - Execution Engine: workflows/workflows_execution_engine.md
-          - Kinds: workflows/kinds.md
-          - Blocks development: workflows/create_workflow_block.md
-          - Plugins: workflows/blocks_bundling.md
-          - Dynamic Python blocks: workflows/custom_python_code_blocks.md
-          - Versioning: workflows/versioning.md
-          - Testing: workflows/testing.md
+      - User Guide:
+        - Running Workflows: workflows/modes_of_running.md
+        - Workflows Definitions: workflows/definitions.md
+        - Workflow Execution: workflows/workflow_execution.md
+      - Developer Guide:
+        - Compiler: workflows/workflows_compiler.md
+        - Execution Engine: workflows/workflows_execution_engine.md
+        - Kinds: workflows/kinds.md
+        - Blocks Creation: workflows/create_workflow_block.md
+        - Blocks Bundling: workflows/blocks_bundling.md
+        - Dynamic Python Blocks: workflows/custom_python_code_blocks.md
+        - Versioning: workflows/versioning.md
+        - Testing: workflows/testing.md
   - Reference:
       - Inference Pipeline: using_inference/inference_pipeline.md
       - Active Learning:
@@ -117,7 +118,7 @@ nav:
   - Cookbooks: cookbooks.md
 
 theme:
-  name: "material"
+  name: 'material'
   logo: inference-icon.png
   favicon: inference-icon.png
   custom_dir: docs/theme
@@ -137,13 +138,13 @@ theme:
 
   palette:
     - scheme: default
-      primary: "custom"
+      primary: 'custom'
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
 
     - scheme: slate
-      primary: "custom"
+      primary: 'custom'
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -179,6 +180,6 @@ markdown_extensions:
       permalink: true
 
 extra_javascript:
-  - "https://widget.kapa.ai/kapa-widget.bundle.js"
-  - "javascript/init_kapa_widget.js"
-  - "javascript/cookbooks.js"
+  - 'https://widget.kapa.ai/kapa-widget.bundle.js'
+  - 'javascript/init_kapa_widget.js'
+  - 'javascript/cookbooks.js'

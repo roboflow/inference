@@ -13,10 +13,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_IMAGES_KIND,
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    IMAGE_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
@@ -44,9 +44,9 @@ class BlockManifest(WorkflowBlockManifest):
     )
     crops_predictions: StepOutputSelector(
         kind=[
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(
         description="Reference to predictions of detection-like model, that can be based of cropping "
@@ -67,7 +67,7 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="visualisations", kind=[BATCH_OF_IMAGES_KIND]),
+            OutputDefinition(name="visualisations", kind=[IMAGE_KIND]),
         ]
 
 

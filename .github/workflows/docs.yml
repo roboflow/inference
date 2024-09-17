@@ -44,7 +44,7 @@ jobs:
         working-directory: ./roboflow_enterprise_blocks
       - run: |
           python -m development.docs.build_block_docs
-          python -m development.docs.workflows_gallery_builder
+          WORKFLOWS_GALLERY_API_KEY=${{ secrets.WORKFLOWS_GALLERY_API_KEY }} python -m development.docs.workflows_gallery_builder
         working-directory: ./inference_repo
       - run: mkdocs gh-deploy --force
         working-directory: ./inference_repo

@@ -31,11 +31,11 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
     FLOAT_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     ImageInputField,
     StepOutputImageSelector,
@@ -84,9 +84,9 @@ class BlockManifest(WorkflowBlockManifest):
     boxes: Optional[
         StepOutputSelector(
             kind=[
-                BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-                BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
             ]
         )
     ] = Field(  # type: ignore
@@ -126,7 +126,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="predictions",
-                kind=[BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND],
+                kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
             ),
         ]
 

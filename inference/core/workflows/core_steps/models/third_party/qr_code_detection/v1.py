@@ -22,7 +22,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_BAR_CODE_DETECTION_KIND,
+    QR_CODE_DETECTION_KIND,
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -65,9 +65,7 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(
-                name="predictions", kind=[BATCH_OF_BAR_CODE_DETECTION_KIND]
-            ),
+            OutputDefinition(name="predictions", kind=[QR_CODE_DETECTION_KIND]),
         ]
 
     @classmethod

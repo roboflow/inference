@@ -21,11 +21,11 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_INTEGER_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
     FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    INTEGER_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     FloatZeroToOne,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -83,12 +83,14 @@ class TemplateMatchingManifest(WorkflowBlockManifest):
             title="Matching Threshold",
             description="The threshold value for template matching.",
             default=0.8,
+            examples=[0.8, "$inputs.threshold"],
         )
     )
     apply_nms: Union[WorkflowParameterSelector(kind=[BOOLEAN_KIND]), bool] = Field(
         title="Apply NMS",
         description="Flag to decide if NMS should be applied at the output detections.",
         default=True,
+        examples=["$inputs.apply_nms", False],
     )
     nms_threshold: Union[
         WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]), FloatZeroToOne
@@ -96,6 +98,7 @@ class TemplateMatchingManifest(WorkflowBlockManifest):
         title="NMS threshold",
         description="The threshold value NMS procedure (if to be applied).",
         default=0.5,
+        examples=["$inputs.nms_threshold", 0.3],
     )
 
     @classmethod
@@ -107,11 +110,11 @@ class TemplateMatchingManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="predictions",
-                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+                kind=[OBJECT_DETECTION_PREDICTION_KIND],
             ),
             OutputDefinition(
                 name="number_of_matches",
-                kind=[BATCH_OF_INTEGER_KIND],
+                kind=[INTEGER_KIND],
             ),
         ]
 

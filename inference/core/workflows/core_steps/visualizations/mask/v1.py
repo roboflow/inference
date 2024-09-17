@@ -12,8 +12,8 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     FloatZeroToOne,
     StepOutputSelector,
     WorkflowParameterSelector,
@@ -44,7 +44,7 @@ class MaskManifest(ColorableVisualizationManifest):
 
     predictions: StepOutputSelector(
         kind=[
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
         description="Predictions",

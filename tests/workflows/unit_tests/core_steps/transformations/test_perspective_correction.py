@@ -275,7 +275,6 @@ def test_correct_detections_with_keypoints():
         src=src_polygon,
         dst=dst_polygon,
     )
-
     # when
     corrected_detections = correct_detections(
         detections=detections,

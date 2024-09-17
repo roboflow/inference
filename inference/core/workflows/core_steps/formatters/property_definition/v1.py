@@ -10,10 +10,10 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     StepOutputSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -62,16 +62,21 @@ class BlockManifest(WorkflowBlockManifest):
     ]
     data: StepOutputSelector(
         kind=[
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+            CLASSIFICATION_PREDICTION_KIND,
         ]
     ) = Field(
         description="Reference data to extract property from",
         examples=["$steps.my_step.predictions"],
     )
-    operations: List[AllOperationsType]
+    operations: List[AllOperationsType] = Field(
+        description="List of operations to perform on data to generate output",
+        examples=[
+            [{"type": "DetectionsPropertyExtract", "property_name": "class_name"}]
+        ],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

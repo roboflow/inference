@@ -10,7 +10,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     StepOutputSelector,
@@ -51,7 +51,7 @@ class DynamicZonesManifest(WorkflowBlockManifest):
     type: Literal[f"{TYPE}", "DynamicZone"]
     predictions: StepOutputSelector(
         kind=[
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
         description="",
@@ -59,6 +59,7 @@ class DynamicZonesManifest(WorkflowBlockManifest):
     )
     required_number_of_vertices: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Keep simplifying polygon until number of vertices matches this number",
+        examples=[4, "$inputs.vertices"],
     )
 
     @classmethod

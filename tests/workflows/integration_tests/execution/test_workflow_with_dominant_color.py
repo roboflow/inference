@@ -36,6 +36,7 @@ MINIMAL_DOMINANT_COLOR_WORKFLOW = {
 This example shows how Dominant Color block can be used against input image. 
     """,
     workflow_definition=MINIMAL_DOMINANT_COLOR_WORKFLOW,
+    workflow_name_in_app="dominant-color",
 )
 def test_dominant_color_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,

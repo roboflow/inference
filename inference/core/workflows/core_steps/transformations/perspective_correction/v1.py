@@ -16,12 +16,12 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_IMAGES_KIND,
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
     BOOLEAN_KIND,
+    IMAGE_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
@@ -64,8 +64,8 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
     predictions: Optional[
         StepOutputSelector(
             kind=[
-                BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-                BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
             ]
         )
     ] = Field(  # type: ignore
@@ -81,22 +81,23 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
     )
     perspective_polygons: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Perspective polygons (for each batch at least one must be consisting of 4 vertices)",
+        examples=["$steps.perspective_wrap.zones"],
     )
     transformed_rect_width: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Transformed rect width",
-        default=1000,
+        description="Transformed rect width", default=1000, examples=[1000]
     )
     transformed_rect_height: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Transformed rect height",
-        default=1000,
+        description="Transformed rect height", default=1000, examples=[1000]
     )
     extend_perspective_polygon_by_detections_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
         description=f"If set, perspective polygons will be extended to contain all bounding boxes. Allowed values: {', '.join(sv.Position.list())}",
         default="",
+        examples=["CENTER"],
     )
     warp_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
         description=f"If set to True, image will be warped into transformed rect",
         default=False,
+        examples=[False],
     )
 
     @classmethod
@@ -109,14 +110,14 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name=OUTPUT_DETECTIONS_KEY,
                 kind=[
-                    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-                    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
                 ],
             ),
             OutputDefinition(
                 name=OUTPUT_IMAGE_KEY,
                 kind=[
-                    BATCH_OF_IMAGES_KIND,
+                    IMAGE_KIND,
                 ],
             ),
         ]

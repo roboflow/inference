@@ -19,6 +19,66 @@ its inputs and outputs
 
 * understanding how [`pydantic`](https://docs.pydantic.dev/latest/) works
 
+## Environment setup
+
+As you will soon see, creating a Workflow block is simply a matter of defining a Python class that implements 
+a specific interface. This design allows you to run the block using the Python interpreter, just like any 
+other Python code. However, you may encounter difficulties when assembling all the required inputs, which would 
+normally be provided by other blocks during Workflow execution.
+
+While it is possible to run your block during development without executing it via the Execution Engine, 
+you will likely need to run end-to-end tests in the final stages. This is the most straightforward way to 
+validate the functionality.
+
+To get started, build the inference server from your branch
+```bash
+inference_repo$ docker build \
+  -t roboflow/roboflow-inference-server-cpu:test \ 
+  -f docker/dockerfiles/Dockerfile.onnx.cpu .
+```
+
+Run docker image mounting your code as volume
+```bash
+inference_repo$ docker run -p 9001:9001 \
+  -v ./inference:/app/inference \
+  roboflow/roboflow-inference-server-cpu:test
+```
+
+Connect your local server to Roboflow UI
+
+<div align="center"><img src="https://media.roboflow.com/inference/workflows_connect_your_local_server.png" width="80%"/></div>
+
+Create your Workflow definition and run preview
+
+<div align="center"><img src="https://media.roboflow.com/inference/workflow_preview.png"/></div>
+
+  
+??? Note "Development without Roboflow UI "
+
+    Alternatively, you may create script with your Workflow definition and make requests to your `inference_sdk`.
+    Here you may find example script:
+
+    ```python
+    from inference_sdk import InferenceHTTPClient
+
+    YOUR_WORKFLOW_DEFINITION = ...
+    
+    client = InferenceHTTPClient(
+        api_url=object_detection_service_url,
+        api_key="XXX",  # only required if Workflow uses Roboflow Platform
+    )
+    result = client.run_workflow(
+        specification=YOUR_WORKFLOW_DEFINITION,
+        images={
+            "image": your_image_np,   # this is example input, adjust it
+        },
+        parameters={
+            "my_parameter": 37,   # this is example input, adjust it
+        },
+    )
+    ```
+
+
 ## Prototypes
 
 To create a Workflow block you need some amount of imports from the core of Workflows library.
@@ -990,7 +1050,7 @@ def run(self, predictions: List[dict]) -> BlockResult:
     )
     from inference.core.workflows.execution_engine.entities.types import (
         StepOutputSelector,
-        BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+        OBJECT_DETECTION_PREDICTION_KIND,
     )
     from inference.core.workflows.prototypes.block import (
         BlockResult,
@@ -1003,7 +1063,7 @@ def run(self, predictions: List[dict]) -> BlockResult:
     class BlockManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/fusion_of_predictions@v1"]
         name: str
-        predictions: List[StepOutputSelector(kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND])] = Field(
+        predictions: List[StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = Field(
             description="Selectors to step outputs",
             examples=[["$steps.model_1.predictions", "$steps.model_2.predictions"]],
         )
@@ -1013,7 +1073,7 @@ def run(self, predictions: List[dict]) -> BlockResult:
             return [
               OutputDefinition(
                 name="predictions", 
-                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+                kind=[OBJECT_DETECTION_PREDICTION_KIND],
               )
             ]
     
@@ -1191,8 +1251,8 @@ the method signatures.
             ImageParentMetadata,
         )
         from inference.core.workflows.execution_engine.entities.types import (
-            BATCH_OF_IMAGES_KIND,
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            IMAGE_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
             StepOutputImageSelector,
             StepOutputSelector,
             WorkflowImageSelector,
@@ -1207,7 +1267,7 @@ the method signatures.
             type: Literal["my_block/dynamic_crop@v1"]
             image: Union[WorkflowImageSelector, StepOutputImageSelector]
             predictions: StepOutputSelector(
-                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+                kind=[OBJECT_DETECTION_PREDICTION_KIND],
             )
         
             @classmethod
@@ -1217,7 +1277,7 @@ the method signatures.
             @classmethod
             def describe_outputs(cls) -> List[OutputDefinition]:
                 return [
-                    OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
+                    OutputDefinition(name="crops", kind=[IMAGE_KIND]),
                 ]
         
             @classmethod
@@ -1280,8 +1340,8 @@ the method signatures.
             WorkflowImageData,
         )
         from inference.core.workflows.execution_engine.entities.types import (
-            BATCH_OF_IMAGES_KIND,
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            IMAGE_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
             StepOutputImageSelector,
             StepOutputSelector,
             WorkflowImageSelector,
@@ -1297,7 +1357,7 @@ the method signatures.
             type: Literal["my_plugin/tile_detections@v1"]
             crops: Union[WorkflowImageSelector, StepOutputImageSelector]
             crops_predictions: StepOutputSelector(
-                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+                kind=[OBJECT_DETECTION_PREDICTION_KIND]
             )
         
             @classmethod
@@ -1307,7 +1367,7 @@ the method signatures.
             @classmethod
             def describe_outputs(cls) -> List[OutputDefinition]:
                 return [
-                    OutputDefinition(name="visualisations", kind=[BATCH_OF_IMAGES_KIND]),
+                    OutputDefinition(name="visualisations", kind=[IMAGE_KIND]),
                 ]
         
         
@@ -1367,7 +1427,7 @@ the method signatures.
             WorkflowImageData,
         )
         from inference.core.workflows.execution_engine.entities.types import (
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
             StepOutputImageSelector,
             StepOutputSelector,
             WorkflowImageSelector,
@@ -1383,7 +1443,7 @@ the method signatures.
             type: Literal["my_plugin/stitch@v1"]
             image: Union[WorkflowImageSelector, StepOutputImageSelector]
             image_predictions: StepOutputSelector(
-                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+                kind=[OBJECT_DETECTION_PREDICTION_KIND],
             )
         
             @classmethod
@@ -1403,7 +1463,7 @@ the method signatures.
                     OutputDefinition(
                         name="predictions",
                         kind=[
-                            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+                            OBJECT_DETECTION_PREDICTION_KIND,
                         ],
                     ),
                 ]
@@ -1466,8 +1526,8 @@ the method signatures.
             Batch,
         )
         from inference.core.workflows.execution_engine.entities.types import (
-            BATCH_OF_IMAGES_KIND,
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            IMAGE_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
             StepOutputImageSelector,
             StepOutputSelector,
             WorkflowImageSelector,
@@ -1482,7 +1542,7 @@ the method signatures.
             type: Literal["my_block/dynamic_crop@v1"]
             image: Union[WorkflowImageSelector, StepOutputImageSelector]
             predictions: StepOutputSelector(
-                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+                kind=[OBJECT_DETECTION_PREDICTION_KIND],
             )
 
             @classmethod
@@ -1496,7 +1556,7 @@ the method signatures.
             @classmethod
             def describe_outputs(cls) -> List[OutputDefinition]:
                 return [
-                    OutputDefinition(name="crops", kind=[BATCH_OF_IMAGES_KIND]),
+                    OutputDefinition(name="crops", kind=[IMAGE_KIND]),
                 ]
         
             @classmethod
@@ -1569,8 +1629,8 @@ the method signatures.
             WorkflowImageData,
         )
         from inference.core.workflows.execution_engine.entities.types import (
-            BATCH_OF_IMAGES_KIND,
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            IMAGE_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
             StepOutputImageSelector,
             StepOutputSelector,
             WorkflowImageSelector,
@@ -1586,7 +1646,7 @@ the method signatures.
             type: Literal["my_plugin/tile_detections@v1"]
             images_crops: Union[WorkflowImageSelector, StepOutputImageSelector]
             crops_predictions: StepOutputSelector(
-                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+                kind=[OBJECT_DETECTION_PREDICTION_KIND]
             )
 
             @classmethod
@@ -1600,7 +1660,7 @@ the method signatures.
             @classmethod
             def describe_outputs(cls) -> List[OutputDefinition]:
                 return [
-                    OutputDefinition(name="visualisations", kind=[BATCH_OF_IMAGES_KIND]),
+                    OutputDefinition(name="visualisations", kind=[IMAGE_KIND]),
                 ]
         
         
@@ -1666,7 +1726,7 @@ the method signatures.
             WorkflowImageData,
         )
         from inference.core.workflows.execution_engine.entities.types import (
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
             StepOutputImageSelector,
             StepOutputSelector,
             WorkflowImageSelector,
@@ -1682,7 +1742,7 @@ the method signatures.
             type: Literal["my_plugin/stitch@v1"]
             images: Union[WorkflowImageSelector, StepOutputImageSelector]
             images_predictions: StepOutputSelector(
-                kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND],
+                kind=[OBJECT_DETECTION_PREDICTION_KIND],
             )
 
             @classmethod
@@ -1706,7 +1766,7 @@ the method signatures.
                     OutputDefinition(
                         name="predictions",
                         kind=[
-                            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+                            OBJECT_DETECTION_PREDICTION_KIND,
                         ],
                     ),
                 ]

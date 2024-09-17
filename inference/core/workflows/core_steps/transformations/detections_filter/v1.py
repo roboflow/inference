@@ -15,9 +15,9 @@ from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -29,6 +29,34 @@ from inference.core.workflows.prototypes.block import (
 )
 
 SHORT_DESCRIPTION = "Conditionally filter out model predictions."
+
+OPERATIONS_EXAMPLE = [
+    {
+        "type": "DetectionsFilter",
+        "filter_operation": {
+            "type": "StatementGroup",
+            "statements": [
+                {
+                    "type": "BinaryStatement",
+                    "left_operand": {
+                        "type": "DynamicOperand",
+                        "operations": [
+                            {
+                                "type": "ExtractDetectionProperty",
+                                "property_name": "class_name",
+                            }
+                        ],
+                    },
+                    "comparator": {"type": "in (Sequence)"},
+                    "right_operand": {
+                        "type": "DynamicOperand",
+                        "operand_name": "classes",
+                    },
+                },
+            ],
+        },
+    }
+]
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -45,21 +73,27 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/detections_filter@v1", "DetectionsFilter"]
     predictions: StepOutputSelector(
         kind=[
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(
         description="Reference to detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    operations: List[AllOperationsType]
+    operations: List[AllOperationsType] = Field(
+        description="Definition of filtering operations", examples=[OPERATIONS_EXAMPLE]
+    )
     operations_parameters: Dict[
         str,
         Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parametrise operations",
-        examples=["$inputs.confidence", "$inputs.image"],
+        examples=[
+            {
+                "classes": "$inputs.classes",
+            }
+        ],
         default_factory=lambda: {},
     )
 
@@ -73,9 +107,9 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name="predictions",
                 kind=[
-                    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-                    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    KEYPOINT_DETECTION_PREDICTION_KIND,
                 ],
             )
         ]

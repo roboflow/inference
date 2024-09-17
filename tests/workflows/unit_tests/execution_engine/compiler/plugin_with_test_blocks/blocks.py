@@ -4,10 +4,10 @@ from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_BOOLEAN_KIND,
-    BATCH_OF_IMAGES_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
+    BOOLEAN_KIND,
+    IMAGE_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
+    PREDICTION_TYPE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ImageInputField,
     RoboflowModelField,
@@ -38,11 +38,9 @@ class ExampleModelBlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
+            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
             OutputDefinition(
-                name="prediction_type", kind=[BATCH_OF_PREDICTION_TYPE_KIND]
-            ),
-            OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 
@@ -95,9 +93,7 @@ class ExampleFlowControlBlock(WorkflowBlock):
 class ExampleTransformationBlockManifest(WorkflowBlockManifest):
     type: Literal["ExampleTransformation"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    predictions: StepOutputSelector(
-        kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
-    ) = Field(
+    predictions: StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND]) = Field(
         description="Reference to predictions of detection-like model, that can be based of cropping "
         "(detection must define RoI - eg: bounding box)",
         examples=["$steps.my_object_detection_model.predictions"],
@@ -106,9 +102,9 @@ class ExampleTransformationBlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="image", kind=[BATCH_OF_IMAGES_KIND]),
+            OutputDefinition(name="image", kind=[IMAGE_KIND]),
             OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 
@@ -129,9 +125,7 @@ class ExampleTransformationBlock(WorkflowBlock):
 class ExampleSinkBlockManifest(WorkflowBlockManifest):
     type: Literal["ExampleSink"]
     image: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    predictions: StepOutputSelector(
-        kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
-    ) = Field(
+    predictions: StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND]) = Field(
         description="Reference to predictions of detection-like model, that can be based of cropping "
         "(detection must define RoI - eg: bounding box)",
         examples=["$steps.my_object_detection_model.predictions"],
@@ -140,7 +134,7 @@ class ExampleSinkBlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="status", kind=[BATCH_OF_BOOLEAN_KIND]),
+            OutputDefinition(name="status", kind=[BOOLEAN_KIND]),
         ]
 
 
@@ -159,19 +153,19 @@ class ExampleSinkBlock(WorkflowBlock):
 
 class ExampleFusionBlockManifest(WorkflowBlockManifest):
     type: Literal["ExampleFusion"]
-    predictions: List[
-        StepOutputSelector(kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND])
-    ] = Field(
-        description="Reference to predictions of detection-like model, that can be based of cropping "
-        "(detection must define RoI - eg: bounding box)",
-        examples=[["$steps.my_object_detection_model.predictions"]],
+    predictions: List[StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = (
+        Field(
+            description="Reference to predictions of detection-like model, that can be based of cropping "
+            "(detection must define RoI - eg: bounding box)",
+            examples=[["$steps.my_object_detection_model.predictions"]],
+        )
     )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 
@@ -191,19 +185,19 @@ class ExampleFusionBlock(WorkflowBlock):
 
 class ExampleBlockWithInitManifest(WorkflowBlockManifest):
     type: Literal["ExampleBlockWithInit"]
-    predictions: List[
-        StepOutputSelector(kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND])
-    ] = Field(
-        description="Reference to predictions of detection-like model, that can be based of cropping "
-        "(detection must define RoI - eg: bounding box)",
-        examples=[["$steps.my_object_detection_model.predictions"]],
+    predictions: List[StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = (
+        Field(
+            description="Reference to predictions of detection-like model, that can be based of cropping "
+            "(detection must define RoI - eg: bounding box)",
+            examples=[["$steps.my_object_detection_model.predictions"]],
+        )
     )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 
@@ -232,19 +226,19 @@ class ExampleBlockWithInit(WorkflowBlock):
 
 class ExampleBlockWithFaultyInitManifest(WorkflowBlockManifest):
     type: Literal["ExampleBlockWithFaultyInit"]
-    predictions: List[
-        StepOutputSelector(kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND])
-    ] = Field(
-        description="Reference to predictions of detection-like model, that can be based of cropping "
-        "(detection must define RoI - eg: bounding box)",
-        examples=[["$steps.my_object_detection_model.predictions"]],
+    predictions: List[StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = (
+        Field(
+            description="Reference to predictions of detection-like model, that can be based of cropping "
+            "(detection must define RoI - eg: bounding box)",
+            examples=[["$steps.my_object_detection_model.predictions"]],
+        )
     )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="predictions", kind=[BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND]
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 

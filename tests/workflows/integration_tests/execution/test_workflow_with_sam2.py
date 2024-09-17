@@ -95,9 +95,10 @@ SIMPLE_SAM_WORKFLOW = {
 Meta AI introduced very capable segmentation model called [SAM 2](https://ai.meta.com/sam2/) which
 has capabilities of producing segmentation masks for instances of objects. 
 
-It can be used within workflows in couple of ways -  
+**EXAMPLE REQUIRES DEDICATED DEPLOYMENT** and will not run in preview!
     """,
     workflow_definition=SIMPLE_SAM_WORKFLOW,
+    workflow_name_in_app="simple-sam2",
 )
 def test_sam2_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager, dogs_image: np.ndarray
