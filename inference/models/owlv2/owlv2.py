@@ -212,8 +212,6 @@ class OwlV2(RoboflowCoreModel):
         ]
 
     def infer(self, image, training_data, confidence=0.99, **kwargs):
-        print("UNUSED KWARGS")
-        print(kwargs)
         class_to_query_spec = defaultdict(lambda: defaultdict(list))
         for train_image_dict in training_data:
             boxes, train_image = train_image_dict["boxes"], train_image_dict["image"]
@@ -223,7 +221,6 @@ class OwlV2(RoboflowCoreModel):
                 class_name = box["cls"]
                 coords = box["x"], box["y"], box["w"], box["h"]
                 coords = tuple([c / max(train_image.shape[:2]) for c in coords])
-                print(coords)
                 class_to_query_spec[class_name][image_hash].append(coords)
 
         my_class_to_embeddings_dict = dict()

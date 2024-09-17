@@ -11,16 +11,20 @@ from inference.core.env import OWLV2_VERSION_ID
 
 
 class TrainBox(BaseModel):
-    x: int
-    y: int
-    w: int
-    h: int
-    cls: str
+    x: int = Field(description="Center x coordinate in pixels of train box")
+    y: int = Field(description="Center y coordinate in pixels of train box")
+    w: int = Field(description="Width in pixels of train box")
+    h: int = Field(description="Height in pixels of train box")
+    cls: str = Field(description="Class name of object this box encloses")
 
 
 class TrainingImage(BaseModel):
-    boxes: List[TrainBox]
-    image: InferenceRequestImage
+    boxes: List[TrainBox] = Field(
+        description="List of boxes and corresponding classes of examples for the model to learn from"
+    )
+    image: InferenceRequestImage = Field(
+        description="Image data that `boxes` describes"
+    )
 
 
 class OwlV2InferenceRequest(BaseRequest):
@@ -30,8 +34,8 @@ class OwlV2InferenceRequest(BaseRequest):
         api_key (Optional[str]): Roboflow API Key.
         owlv2_version_id (Optional[str]): The version ID of Gaze to be used for this request.
         image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) for inference.
-        training_data (List[TrainingImage])
-        confidence (float)
+        training_data (List[TrainingImage]): Training data to ground the model on
+        confidence (float): Confidence threshold to filter predictions by
     """
 
     owlv2_version_id: Optional[str] = Field(
@@ -39,12 +43,27 @@ class OwlV2InferenceRequest(BaseRequest):
         examples=["owlv2-base-patch16-ensemble"],
         description="The version ID of owlv2 to be used for this request.",
     )
+    model_id: Optional[str] = Field(
+        default=None, description="Model id to be used in the request."
+    )
 
-    image: Union[List[InferenceRequestImage], InferenceRequestImage]
-    training_data: List[TrainingImage]
-    model_id: Optional[str] = Field(None)
-    confidence: Optional[float] = 0.99
-    visualize_predictions: bool = False
+    image: Union[List[InferenceRequestImage], InferenceRequestImage] = Field(
+        description="Images to run the model on"
+    )
+    training_data: List[TrainingImage] = Field(
+        description="Training images for the owlvit model to learn form"
+    )
+    confidence: Optional[float] = Field(
+        default=0.99,
+        examples=[0.99],
+        description="Default confidence threshold for owlvit predictions. "
+        "Needs to be much higher than you're used to, probably 0.99 - 0.9999",
+    )
+    visualize_predictions: Optional[bool] = Field(
+        default=False,
+        examples=[False],
+        description="If true, return visualized predictions as a base64 string",
+    )
     visualization_labels: Optional[bool] = Field(
         default=False,
         examples=[False],
