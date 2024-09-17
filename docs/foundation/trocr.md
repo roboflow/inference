@@ -8,25 +8,29 @@ Let's try running TrOCR on this image:
 
 ![Serial number](https://media.roboflow.com/serial_number.png)
 
-To use TrOCR with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, <a href="https://app.roboflow.com" target="_blank">sign up for a free Roboflow account</a>.
+!!! note
+    
+    TROCR model is only supported in `inference` Python package and `inference` server deployed locally (excluding
+    Roboflow Hosted Platform).
+    
+    To run the example, start `inference` server locally:
 
-Then, retrieve your API key from the Roboflow dashboard. <a href="https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key" target="_blank">Learn how to retrieve your API key</a>.
+    ```bash
+    inference server start
+    ```
 
-Run the following command to set your API key in your coding environment:
+    Make sure you have `inference-cli` installed - if that's not the case run:
 
-```
-export ROBOFLOW_API_KEY=<your api key>
-```
+    ```bash
+    pip install inference-cli
+    ```
 
 ```python
 import os
 from inference_sdk import InferenceHTTPClient
 
-CLIENT = InferenceHTTPClient(
-    api_url="https://infer.roboflow.com",
-    api_key=os.environ["ROBOFLOW_API_KEY"]
-)
+CLIENT = InferenceHTTPClient(api_url="http://127.0.0.1:9001")
 
-result = CLIENT.ocr_image(inference_input="./serial_number.png", model_id="trocr")  # single image request
+result = CLIENT.ocr_image(inference_input="./serial_number.png", model="trocr")  # single image request
 print(result)
 ```

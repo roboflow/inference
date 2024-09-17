@@ -769,13 +769,24 @@ class InferenceHTTPClient:
     def ocr_image(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
-        model_id: str = "doctr",
+        model: str = "doctr",
+        version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        """
+        Function to run OCR on input image. Let user configure which OCR model to use
+        (`doctr` vs `trocr`) and select variant of the model (via `version` parameter).
+
+        Supported versions:
+        * trocr: (`trocr-small-printed`, `trocr-base-printed`, `trocr-large-printed`)
+        """
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
         )
         payload = self.__initialise_payload()
-        model_path = resolve_ocr_path(model_id=model_id)
+        if version:
+            key = f"{model.lower()}_version_id"
+            payload[key] = version
+        model_path = resolve_ocr_path(model_name=model)
         url = self.__wrap_url_with_api_key(f"{self.__api_url}{model_path}")
         requests_data = prepare_requests_data(
             url=url,
@@ -798,13 +809,24 @@ class InferenceHTTPClient:
     async def ocr_image_async(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
-        model_id: str = "doctr",
+        model: str = "doctr",
+        version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        """
+        Async function to run OCR on input image. Let user configure which OCR model to use
+        (`doctr` vs `trocr`) and select variant of the model (via `version` parameter).
+
+        Supported versions:
+        * trocr: (`trocr-small-printed`, `trocr-base-printed`, `trocr-large-printed`)
+        """
         encoded_inference_inputs = await load_static_inference_input_async(
             inference_input=inference_input,
         )
         payload = self.__initialise_payload()
-        model_path = resolve_ocr_path(model_id=model_id)
+        if version:
+            key = f"{model.lower()}_version_id"
+            payload[key] = version
+        model_path = resolve_ocr_path(model_name=model)
         url = self.__wrap_url_with_api_key(f"{self.__api_url}{model_path}")
         requests_data = prepare_requests_data(
             url=url,

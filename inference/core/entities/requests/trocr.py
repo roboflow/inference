@@ -17,7 +17,7 @@ class TrOCRInferenceRequest(BaseRequest):
     """
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
-    trocr_version_id: Optional[str] = "default"
+    trocr_version_id: Optional[str] = "trocr-base-printed"
     model_id: Optional[str] = Field(None)
 
     # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
@@ -28,4 +28,4 @@ class TrOCRInferenceRequest(BaseRequest):
             return value
         if values.get("trocr_version_id") is None:
             return None
-        return f"doctr/{values['trocr_version_id']}"
+        return f"trocr/{values['trocr_version_id']}"
