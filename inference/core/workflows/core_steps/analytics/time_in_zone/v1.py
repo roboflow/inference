@@ -28,7 +28,8 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "time_in_zone"
-TYPE: str = "PerspectiveCorrection"
+DETECTIONS_TIME_IN_ZONE_PARAM: str = "time_in_zone"
+TYPE: str = "roboflow_core/time_in_zone@v1"
 SHORT_DESCRIPTION = "Track duration of time spent by objects in zone"
 LONG_DESCRIPTION = """
 The `TimeInZoneBlock` is an analytics block designed to measure time spent by objects in a zone.
@@ -69,8 +70,8 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         description="Zones (one for each batch) in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
         examples=["$inputs.zones"],
     )
-    detections_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description=f"Detection anchor point. Allowed values: {', '.join(sv.Position.list())}",
+    triggering_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+        description=f"Triggering anchor. Allowed values: {', '.join(sv.Position.list())}",
         default="CENTER",
         examples=["CENTER"],
     )
@@ -95,7 +96,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
 class TimeInZoneBlockV1(WorkflowBlock):
     def __init__(self):
         self._batch_of_tracked_ids_in_zone: Dict[str, Dict[Union[int, str], float]] = {}
-        self._batch_of_masks: Dict[str, np.ndarray] = {}
+        self._batch_of_polygon_zones: Dict[str, sv.PolygonZone] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -107,36 +108,41 @@ class TimeInZoneBlockV1(WorkflowBlock):
         detections: sv.Detections,
         metadata: VideoMetadata,
         zone: List[Tuple[int, int]],
-        detections_anchor: str = "CENTER",
+        triggering_anchor: str = "CENTER",
     ) -> BlockResult:
-        if metadata.video_identifier not in self._batch_of_masks:
-            polygon = np.array(zone)
-            h, w, *_ = image.numpy_image.shape
-            mask = sv.polygon_to_mask(polygon=polygon, resolution_wh=(w, h))
-            self._batch_of_masks[metadata.video_identifier] = mask
-        mask = self._batch_of_masks[metadata.video_identifier]
-
+        if detections.tracker_id is None:
+            raise ValueError(f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked")
+        if metadata.video_identifier not in self._batch_of_polygon_zones:
+            if not isinstance(zone, list) or len(zone) < 3:
+                raise ValueError(f"{self.__class__.__name__} requires zone to be a list containing more than 2 points")
+            if any(not isinstance(e, list) or len(e) != 2 for e in zone):
+                raise ValueError(f"{self.__class__.__name__} requires each point of zone to be a list containing exactly 2 coordinates")
+            if any(not isinstance(e[0], (int, float)) or not isinstance(e[1], (int, float)) for e in zone):
+                raise ValueError(f"{self.__class__.__name__} requires each coordinate of zone to be a number")
+            self._batch_of_polygon_zones[metadata.video_identifier] = sv.PolygonZone(
+                polygon=np.array(zone),
+                frame_resolution_wh=image.numpy_image.shape[:-1],
+                triggering_anchors=(sv.Position(triggering_anchor),),
+            )
+        polygon_zone = self._batch_of_polygon_zones[metadata.video_identifier]
         tracked_ids_in_zone = self._batch_of_tracked_ids_in_zone.setdefault(
             metadata.video_identifier, {}
-        )
-        points = detections.get_anchors_coordinates(
-            anchor=sv.Position(detections_anchor)
         )
         result_detections = []
         if metadata.comes_from_video_file and metadata.fps != 0:
             ts_end = metadata.frame_number / metadata.fps
         else:
             ts_end = metadata.frame_timestamp.timestamp()
-        for i, (x, y), tracker_id in zip(
-            range(len(detections)), points, detections.tracker_id
+        for i, is_in_zone, tracker_id in zip(
+            range(len(detections)), polygon_zone.trigger(detections), detections.tracker_id
         ):
             # copy
             detection = detections[i]
 
-            detection[OUTPUT_KEY] = np.array([0], dtype=np.float64)
-            if mask[int(round(y)), int(round(x))] == 1:
+            detection[DETECTIONS_TIME_IN_ZONE_PARAM] = np.array([0], dtype=np.float64)
+            if is_in_zone:
                 ts_start = tracked_ids_in_zone.setdefault(tracker_id, ts_end)
-                detection[OUTPUT_KEY] = np.array([ts_end - ts_start], dtype=np.float64)
+                detection[DETECTIONS_TIME_IN_ZONE_PARAM] = np.array([ts_end - ts_start], dtype=np.float64)
             elif tracker_id in tracked_ids_in_zone:
                 del tracked_ids_in_zone[tracker_id]
             result_detections.append(detection)
