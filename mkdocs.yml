@@ -55,6 +55,7 @@ nav:
           - Segment Anything (Segmentation): foundation/sam.md
           - Segment Anything 2 (Segmentation): foundation/sam2.md
           - YOLO-World (Object Detection): foundation/yolo_world.md
+          - OwlV2 (Object Detection): foundation/owlv2.md
       - Run a Model:
           - Getting started: quickstart/run_a_model.md
           - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
