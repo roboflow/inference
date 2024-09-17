@@ -62,8 +62,8 @@ def test_run_when_valid_json_given_for_multi_class_classification() -> None:
     assert result["error_status"] is False
     assert result["predictions"]["image"] == {"width": 168, "height": 192}
     assert result["predictions"]["predictions"] == [
-        {"class_name": "car", "class_id": 0, "confidence": 0.7},
-        {"class_name": "cat", "class_id": 1, "confidence": 0.0},
+        {"class": "car", "class_id": 0, "confidence": 0.7},
+        {"class": "cat", "class_id": 1, "confidence": 0.0},
     ]
     assert result["predictions"]["top"] == "car"
     assert abs(result["predictions"]["confidence"] - 0.7) < 1e-5
@@ -94,9 +94,9 @@ def test_run_when_valid_json_given_for_multi_class_classification_when_unknown_c
     assert result["error_status"] is False
     assert result["predictions"]["image"] == {"width": 168, "height": 192}
     assert result["predictions"]["predictions"] == [
-        {"class_name": "my_class", "class_id": -1, "confidence": 0.7},
-        {"class_name": "car", "class_id": 0, "confidence": 0.0},
-        {"class_name": "cat", "class_id": 1, "confidence": 0.0},
+        {"class": "my_class", "class_id": -1, "confidence": 0.7},
+        {"class": "car", "class_id": 0, "confidence": 0.0},
+        {"class": "cat", "class_id": 1, "confidence": 0.0},
     ]
     assert result["predictions"]["top"] == "my_class"
     assert abs(result["predictions"]["confidence"] - 0.7) < 1e-5

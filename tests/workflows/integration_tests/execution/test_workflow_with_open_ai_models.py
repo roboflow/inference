@@ -582,3 +582,114 @@ def test_workflow_with_structured_prompt(
     assert len(result) == 1, "Single image given, expected single output"
     assert set(result[0].keys()) == {"result"}, "Expected all outputs to be delivered"
     assert result[0]["result"] == "2"
+
+
+VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {
+            "type": "WorkflowParameter",
+            "name": "classes",
+            "default_value": [
+                "russell-terrier",
+                "wirehaired-pointing-griffon",
+                "beagle",
+            ],
+        },
+    ],
+    "steps": [
+        {
+            "type": "ObjectDetectionModel",
+            "name": "general_detection",
+            "image": "$inputs.image",
+            "model_id": "yolov8n-640",
+            "class_filter": ["dog"],
+        },
+        {
+            "type": "Crop",
+            "name": "cropping",
+            "image": "$inputs.image",
+            "predictions": "$steps.general_detection.predictions",
+        },
+        {
+            "type": "roboflow_core/open_ai@v2",
+            "name": "gpt",
+            "images": "$steps.cropping.crops",
+            "task_type": "classification",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/vlm_as_classifier@v1",
+            "name": "parser",
+            "image": "$steps.cropping.crops",
+            "vlm_output": "$steps.gpt.output",
+            "classes": "$steps.gpt.classes",
+        },
+        {
+            "type": "roboflow_core/detections_classes_replacement@v1",
+            "name": "classes_replacement",
+            "object_detection_predictions": "$steps.general_detection.predictions",
+            "classification_predictions": "$steps.parser.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.classes_replacement.predictions",
+        },
+    ],
+}
+
+
+@add_to_workflows_gallery(
+    category="Workflows with Visual Language Models",
+    use_case_title="Using GPT as secondary classifier",
+    use_case_description="""
+In this example, GPT model is used as secondary classifier - first, YOLO model
+detects dogs, then for each dog we run classification with VLM and at the end we replace 
+detections classes to have bounding boxes with dogs breeds labels.
+
+Breeds that we classify: `russell-terrier`, `wirehaired-pointing-griffon`, `beagle`
+    """,
+    workflow_definition=VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW,
+    workflow_name_in_app="gpt-secondary-classifier",
+)
+@pytest.mark.skipif(
+    condition=OPEN_AI_API_KEY is None, reason="Open AI API key not provided"
+)
+def test_workflow_with_secondary_classifier(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image],
+            "api_key": OPEN_AI_API_KEY,
+            "classes": ["russell-terrier", "wirehaired-pointing-griffon", "beagle"],
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "predictions",
+    }, "Expected all outputs to be delivered"
+    assert "dog" not in set(
+        result[0]["predictions"].data["class_name"].tolist()
+    ), "Expected classes to be substituted"

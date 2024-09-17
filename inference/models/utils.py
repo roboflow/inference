@@ -236,6 +236,13 @@ except:
     pass
 
 try:
+    from inference.models.owlv2.owlv2 import OwlV2
+
+    ROBOFLOW_MODEL_TYPES[("object-detection", "owlv2")] = OwlV2
+except:
+    pass
+
+try:
     from inference.models import Gaze
 
     ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = Gaze
