@@ -8,9 +8,7 @@ from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import 
     ByteTrackerBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import (
-    ImageParentMetadata,
     VideoMetadata,
-    WorkflowImageData,
 )
 
 

@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 
 
-def test_time_in_zone() -> None:
+def test_time_in_zone_keep_out_of_zone_detections() -> None:
     # given
     zone = [[10, 10], [10, 20], [20, 20], [20, 10]]
     frame1_detections = sv.Detections(
@@ -76,6 +76,7 @@ def test_time_in_zone() -> None:
         metadata=frame1_metadata,
         zone=zone,
         triggering_anchor="TOP_LEFT",
+        remove_out_of_zone_detections=False,
     )
     frame2_result = time_in_zone_block.run(
         image=image_data,
@@ -83,6 +84,7 @@ def test_time_in_zone() -> None:
         metadata=frame2_metadata,
         zone=zone,
         triggering_anchor="TOP_LEFT",
+        remove_out_of_zone_detections=False,
     )
     frame3_result = time_in_zone_block.run(
         image=image_data,
@@ -90,34 +92,122 @@ def test_time_in_zone() -> None:
         metadata=frame3_metadata,
         zone=zone,
         triggering_anchor="TOP_LEFT",
+        remove_out_of_zone_detections=False,
     )
 
     # then
-    assert frame1_result == {
-        "time_in_zone": sv.Detections(
-            xyxy=np.array(
-                [[9, 15, 10, 16], [10, 15, 11, 16], [11, 15, 12, 16], [15, 15, 16, 16]]
-            ),
-            tracker_id=np.array([1, 2, 3, 4]),
-            data={"time_in_zone": np.array([0, 0, 0, 0])},
-        )
-    }
-    assert frame2_result == {
-        "time_in_zone": sv.Detections(
-            xyxy=np.array(
-                [[10, 15, 11, 16], [11, 15, 12, 16], [12, 15, 13, 16], [16, 16, 17, 17]]
-            ),
-            tracker_id=np.array([1, 2, 3, 5]),
-            data={"time_in_zone": np.array([0, 1, 1, 0])},
-        )
-    }
-    assert frame3_result == {
-        "time_in_zone": sv.Detections(
-            xyxy=np.array([[11, 15, 12, 16], [20, 15, 21, 16], [21, 15, 22, 16]]),
-            tracker_id=np.array([1, 2, 3]),
-            data={"time_in_zone": np.array([1, 2, 0])},
-        )
-    }
+    assert (frame1_result["timed_detections"].xyxy == np.array(
+        [[9, 15, 10, 16], [10, 15, 11, 16], [11, 15, 12, 16], [15, 15, 16, 16]]
+    )).all()
+    assert (frame1_result["timed_detections"]["time_in_zone"] == np.array([0, 0, 0, 0])).all()
+
+    assert (frame2_result["timed_detections"].xyxy == np.array(
+        [[10, 15, 11, 16], [11, 15, 12, 16], [12, 15, 13, 16], [16, 16, 17, 17]]
+    )).all()
+    assert (frame2_result["timed_detections"]["time_in_zone"] == np.array([0, 1, 1, 0])).all()
+
+    assert (frame3_result["timed_detections"].xyxy == np.array(
+        [[11, 15, 12, 16], [20, 15, 21, 16], [21, 15, 22, 16]]
+    )).all()
+    assert (frame3_result["timed_detections"]["time_in_zone"] == np.array([1, 2, 0])).all()
+
+
+def test_time_in_zone_remove_out_of_zone_detections() -> None:
+    # given
+    zone = [[10, 10], [10, 20], [20, 20], [20, 10]]
+    frame1_detections = sv.Detections(
+        xyxy=np.array(
+            [[9, 15, 10, 16], [10, 15, 11, 16], [11, 15, 12, 16], [15, 15, 16, 16]]
+        ),
+        tracker_id=np.array([1, 2, 3, 4]),
+    )
+    frame2_detections = sv.Detections(
+        xyxy=np.array(
+            [[10, 15, 11, 16], [11, 15, 12, 16], [12, 15, 13, 16], [16, 16, 17, 17]]
+        ),
+        tracker_id=np.array([1, 2, 3, 5]),
+    )
+    frame3_detections = sv.Detections(
+        xyxy=np.array([[11, 15, 12, 16], [20, 15, 21, 16], [21, 15, 22, 16]]),
+        tracker_id=np.array([1, 2, 3]),
+    )
+    frame1_metadata = VideoMetadata(
+        video_identifier="vid_1",
+        frame_number=10,
+        fps=1,
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
+        comes_from_video_file=True,
+    )
+    frame2_metadata = VideoMetadata(
+        video_identifier="vid_1",
+        frame_number=11,
+        fps=1,
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
+        comes_from_video_file=True,
+    )
+    frame3_metadata = VideoMetadata(
+        video_identifier="vid_1",
+        frame_number=12,
+        fps=1,
+        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
+            tz=datetime.timezone.utc
+        ),
+        comes_from_video_file=True,
+    )
+    time_in_zone_block = TimeInZoneBlockV1()
+
+    parent_metadata = ImageParentMetadata(parent_id="img1")
+    image = np.zeros((720, 1280, 3))
+    image_data = WorkflowImageData(
+        parent_metadata=parent_metadata,
+        numpy_image=image,
+    )
+
+    # when
+    frame1_result = time_in_zone_block.run(
+        image=image_data,
+        detections=frame1_detections,
+        metadata=frame1_metadata,
+        zone=zone,
+        triggering_anchor="TOP_LEFT",
+        remove_out_of_zone_detections=True,
+    )
+    frame2_result = time_in_zone_block.run(
+        image=image_data,
+        detections=frame2_detections,
+        metadata=frame2_metadata,
+        zone=zone,
+        triggering_anchor="TOP_LEFT",
+        remove_out_of_zone_detections=True,
+    )
+    frame3_result = time_in_zone_block.run(
+        image=image_data,
+        detections=frame3_detections,
+        metadata=frame3_metadata,
+        zone=zone,
+        triggering_anchor="TOP_LEFT",
+        remove_out_of_zone_detections=True,
+    )
+
+    # then
+    assert (frame1_result["timed_detections"].xyxy == np.array(
+        [[10, 15, 11, 16], [11, 15, 12, 16], [15, 15, 16, 16]]
+    )).all()
+    assert (frame1_result["timed_detections"]["time_in_zone"] == np.array([0, 0, 0])).all()
+
+    assert (frame2_result["timed_detections"].xyxy == np.array(
+        [[10, 15, 11, 16], [11, 15, 12, 16], [12, 15, 13, 16], [16, 16, 17, 17]]
+    )).all()
+    assert (frame2_result["timed_detections"]["time_in_zone"] == np.array([0, 1, 1, 0])).all()
+
+    assert (frame3_result["timed_detections"].xyxy == np.array(
+        [[11, 15, 12, 16], [20, 15, 21, 16]]
+    )).all()
+    assert (frame3_result["timed_detections"]["time_in_zone"] == np.array([1, 2])).all()
 
 
 def test_time_in_zone_no_trackers() -> None:
@@ -153,6 +243,7 @@ def test_time_in_zone_no_trackers() -> None:
             metadata=metadata,
             zone=zone,
             triggering_anchor="TOP_LEFT",
+            remove_out_of_zone_detections=True,
         )
 
 
@@ -190,6 +281,7 @@ def test_time_in_zone_list_of_points_too_short() -> None:
             metadata=metadata,
             zone=zone,
             triggering_anchor="TOP_LEFT",
+            remove_out_of_zone_detections=True,
         )
 
 
@@ -227,6 +319,7 @@ def test_time_in_zone_elements_not_points() -> None:
             metadata=metadata,
             zone=zone,
             triggering_anchor="TOP_LEFT",
+            remove_out_of_zone_detections=True,
         )
 
 
@@ -264,4 +357,5 @@ def test_time_in_zone_coordianates_not_numeric() -> None:
             metadata=metadata,
             zone=zone,
             triggering_anchor="TOP_LEFT",
+            remove_out_of_zone_detections=True,
         )

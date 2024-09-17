@@ -11,6 +11,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
@@ -74,6 +75,11 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         default="CENTER",
         examples=["CENTER"],
     )
+    remove_out_of_zone_detections: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+        description=f"If true, detections found outside of zone will be filtered out",
+        default=True,
+        examples=[True, False],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -108,6 +114,7 @@ class TimeInZoneBlockV1(WorkflowBlock):
         metadata: VideoMetadata,
         zone: List[Tuple[int, int]],
         triggering_anchor: str,
+        remove_out_of_zone_detections: bool,
     ) -> BlockResult:
         if detections.tracker_id is None:
             raise ValueError(
@@ -148,6 +155,9 @@ class TimeInZoneBlockV1(WorkflowBlock):
             polygon_zone.trigger(detections),
             detections.tracker_id,
         ):
+            if not is_in_zone and remove_out_of_zone_detections:
+                continue
+
             # copy
             detection = detections[i]
 
