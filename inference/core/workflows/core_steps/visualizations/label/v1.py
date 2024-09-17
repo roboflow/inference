@@ -210,7 +210,7 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         elif text == "Time In Zone":
             if "time_in_zone" in predictions.data:
                 labels = [
-                    f"In zone: {round(t, 2)}s" if t else ""
+                    f"In zone: {round(t, 2)}s" if t else "In zone: N/A"
                     for t in predictions.data["time_in_zone"]
                 ]
             else:
