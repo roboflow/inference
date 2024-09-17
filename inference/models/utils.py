@@ -257,6 +257,13 @@ except:
     pass
 
 try:
+    from inference.models import TrOCR
+
+    ROBOFLOW_MODEL_TYPES[("ocr", "trocr")] = TrOCR
+except:
+    pass
+
+try:
     from inference.models import GroundingDINO
 
     ROBOFLOW_MODEL_TYPES[("object-detection", "grounding-dino")] = GroundingDINO
