@@ -61,12 +61,12 @@ class LineCounterZoneVisualizationManifest(VisualizationManifest):
         default=2,
         examples=[2, "$inputs.thickness"],
     )
-    count_in: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    count_in: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND]), StepOutputSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the lines in pixels.",
         default=0,
         examples=[2, "$inputs.thickness"],
     )
-    count_out: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    count_out: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND]), StepOutputSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the lines in pixels.",
         default=0,
         examples=[2, "$inputs.thickness"],
