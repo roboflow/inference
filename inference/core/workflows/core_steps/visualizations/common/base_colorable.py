@@ -5,8 +5,8 @@ import supervision as sv
 from pydantic import Field
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
-    VisualizationBlock,
-    VisualizationManifest,
+    PredictionsVisualizationBlock,
+    PredictionsVisualizationManifest,
 )
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -19,7 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult
 
 
-class ColorableVisualizationManifest(VisualizationManifest, ABC):
+class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
     color_palette: Union[
         Literal[
             "DEFAULT",
@@ -112,7 +112,7 @@ class ColorableVisualizationManifest(VisualizationManifest, ABC):
         return ">=1.0.0,<2.0.0"
 
 
-class ColorableVisualizationBlock(VisualizationBlock, ABC):
+class ColorableVisualizationBlock(PredictionsVisualizationBlock, ABC):
     @classmethod
     def getPalette(self, color_palette, palette_size, custom_colors):
         if color_palette == "CUSTOM":
@@ -151,7 +151,6 @@ class ColorableVisualizationBlock(VisualizationBlock, ABC):
     def run(
         self,
         image: WorkflowImageData,
-        predictions: sv.Detections,
         copy_image: bool,
         color_palette: Optional[str],
         palette_size: Optional[int],

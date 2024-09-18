@@ -206,6 +206,9 @@ from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
 from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
     PolygonVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
+    PolygonZoneVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
@@ -327,6 +330,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         VLMAsDetectorBlockV1,
         AntropicClaudeBlockV1,
         LineCounterBlockV1,
+        PolygonZoneVisualizationBlockV1,
     ]
 
 

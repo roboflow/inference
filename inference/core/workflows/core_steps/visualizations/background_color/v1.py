@@ -8,8 +8,8 @@ from inference.core.workflows.core_steps.visualizations.common.annotators.backgr
 )
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
-    VisualizationBlock,
-    VisualizationManifest,
+    PredictionsVisualizationBlock,
+    PredictionsVisualizationManifest,
 )
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -32,7 +32,7 @@ color.
 """
 
 
-class BackgroundColorManifest(VisualizationManifest):
+class BackgroundColorManifest(PredictionsVisualizationManifest):
     type: Literal[f"{TYPE}", "BackgroundColorVisualization"]
     model_config = ConfigDict(
         json_schema_extra={
@@ -62,7 +62,7 @@ class BackgroundColorManifest(VisualizationManifest):
         return ">=1.0.0,<2.0.0"
 
 
-class BackgroundColorVisualizationBlockV1(VisualizationBlock):
+class BackgroundColorVisualizationBlockV1(PredictionsVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}
