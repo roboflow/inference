@@ -6,8 +6,6 @@ from pydantic import ValidationError
 
 from inference.core.workflows.errors import WorkflowDefinitionError
 from inference.core.workflows.execution_engine.entities.types import (
-    IMAGE_KIND,
-    VIDEO_METADATA_KIND,
     WILDCARD_KIND,
 )
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (

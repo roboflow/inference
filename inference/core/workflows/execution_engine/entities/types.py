@@ -8,9 +8,14 @@ class Kind(BaseModel):
     name: str
     description: Optional[str] = Field(default=None)
     docs: Optional[str] = Field(default=None)
+    serialised_data_type: Optional[str] = Field(
+        default=None,
+        description="Provides Python type hint for data format that should guide "
+                    "external clients on how to produce / consume serialised data of specific kind."
+    )
 
     def __hash__(self) -> int:
-        return self.name.__hash__() + self.description.__hash__() + self.docs.__hash__()
+        return self.name.__hash__() + self.description.__hash__() + self.docs.__hash__() + self.serialised_data_type.__hash__()
 
 
 REFERENCE_KEY = "reference"
@@ -29,7 +34,7 @@ workflow when we do not know or do not care about types.
 problems with workflow and make those problems to be visible while running the workflow.
 """
 WILDCARD_KIND = Kind(
-    name="*", description="Equivalent of any element", docs=WILDCARD_KIND_DOCS
+    name="*", description="Equivalent of any element", docs=WILDCARD_KIND_DOCS, serialised_data_type="Any",
 )
 IMAGE_KIND_DOCS = f"""
 This is the representation of image in `workflows`. The value behind this kind 
@@ -72,6 +77,7 @@ VIDEO_METADATA_KIND = Kind(
     name="video_metadata",
     description="Video image metadata",
     docs=VIDEO_METADATA_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
 ROBOFLOW_MODEL_ID_KIND_DOCS = """
@@ -85,6 +91,7 @@ ROBOFLOW_MODEL_ID_KIND = Kind(
     name="roboflow_model_id",
     description="Roboflow model id",
     docs=ROBOFLOW_MODEL_ID_KIND_DOCS,
+    serialised_data_type="str",
 )
 
 ROBOFLOW_PROJECT_KIND_DOCS = """
@@ -96,6 +103,7 @@ ROBOFLOW_PROJECT_KIND = Kind(
     name="roboflow_project",
     description="Roboflow project name",
     docs=ROBOFLOW_PROJECT_KIND_DOCS,
+    serialised_data_type="str",
 )
 
 ROBOFLOW_API_KEY_KIND_DOCS = """
@@ -107,6 +115,7 @@ ROBOFLOW_API_KEY_KIND = Kind(
     name="roboflow_api_key",
     description="Roboflow API key",
     docs=ROBOFLOW_API_KEY_KIND_DOCS,
+    serialised_data_type="str",
 )
 
 FLOAT_ZERO_TO_ONE_KIND_DOCS = """
@@ -123,6 +132,7 @@ FLOAT_ZERO_TO_ONE_KIND = Kind(
     name="float_zero_to_one",
     description="`float` value in range `[0.0, 1.0]`",
     docs=FLOAT_ZERO_TO_ONE_KIND_DOCS,
+    serialised_data_type="float",
 )
 
 LIST_OF_VALUES_KIND_DOCS = """
@@ -138,6 +148,7 @@ LIST_OF_VALUES_KIND = Kind(
     name="list_of_values",
     description="List of values of any type",
     docs=LIST_OF_VALUES_KIND_DOCS,
+    serialised_data_type="List[Any]",
 )
 
 RGB_COLOR_KIND_DOCS = """
@@ -154,6 +165,7 @@ RGB_COLOR_KIND = Kind(
     name="rgb_color",
     description="RGB color",
     docs=RGB_COLOR_KIND_DOCS,
+    serialised_data_type="Tuple[int, int, int]",
 )
 
 IMAGE_KEYPOINTS_KIND_DOCS = """
@@ -177,6 +189,7 @@ IMAGE_KEYPOINTS_KIND = Kind(
     name="image_keypoints",
     description="Image keypoints detected by classical Computer Vision method",
     docs=IMAGE_KEYPOINTS_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
 SERIALISED_PAYLOADS_KIND_DOCS = f"""
@@ -196,13 +209,14 @@ SERIALISED_PAYLOADS_KIND = Kind(
     name="serialised_payloads",
     description="Serialised element that is usually accepted by sink",
     docs=SERIALISED_PAYLOADS_KIND_DOCS,
+    serialised_data_type="List[Union[str, bytes, dict]]",
 )
 
 
 BOOLEAN_KIND_DOCS = """
 This kind represents boolean value - `True` or `False`
 """
-BOOLEAN_KIND = Kind(name="boolean", description="Boolean flag", docs=BOOLEAN_KIND_DOCS)
+BOOLEAN_KIND = Kind(name="boolean", description="Boolean flag", docs=BOOLEAN_KIND_DOCS, serialised_data_type="bool")
 
 INTEGER_KIND_DOCS = """
 Examples:
@@ -211,27 +225,28 @@ Examples:
 2
 ```
 """
-INTEGER_KIND = Kind(name="integer", description="Integer value", docs=INTEGER_KIND_DOCS)
+INTEGER_KIND = Kind(name="integer", description="Integer value", docs=INTEGER_KIND_DOCS, serialised_data_type="int")
 STRING_KIND_DOCS = """
 Examples:
 ```
 "my string value"
 ```
 """
-STRING_KIND = Kind(name="string", description="String value", docs=STRING_KIND_DOCS)
+STRING_KIND = Kind(name="string", description="String value", docs=STRING_KIND_DOCS, serialised_data_type="str")
 
 TOP_CLASS_KIND_DOCS = f"""
-The kind represent top classes predicted by classification model - representing its predictions on batch of images.
+The kind represent top classes predicted by classification model.
 
 Example:
 ```
-["car", "dog", "car", "cat"]
+"car"
 ```
 """
 TOP_CLASS_KIND = Kind(
     name="top_class",
     description="String value representing top class predicted by classification model",
     docs=TOP_CLASS_KIND_DOCS,
+    serialised_data_type="str"
 )
 
 FLOAT_KIND_DOCS = """
@@ -241,7 +256,7 @@ Example:
 2.7
 ```
 """
-FLOAT_KIND = Kind(name="float", description="Float value", docs=FLOAT_KIND_DOCS)
+FLOAT_KIND = Kind(name="float", description="Float value", docs=FLOAT_KIND_DOCS, serialised_data_type="float")
 DICTIONARY_KIND_DOCS = """
 This kind represent a value of any Python dict.
 
@@ -250,50 +265,45 @@ Examples:
 {"my_key", "my_value"}
 ``` 
 """
-DICTIONARY_KIND = Kind(name="dictionary", description="Dictionary")
+DICTIONARY_KIND = Kind(name="dictionary", description="Dictionary", serialised_data_type="dict")
 
-CLASSIFICATION_PREDICTION_KIND_DOCS = f"""
+CLASSIFICATION_PREDICTION_KIND_DOCS = """
 This kind represent predictions from Classification Models.
 
 Examples:
 ```
 # in case of multi-class classification
-[
-    {{"class": "A", "class_id": 0, "confidence": 0.3}}, {{"class": "B", "class_id": 1, "confidence": 0.7}},
-    {{"class": "A", "class_id": 0, "confidence": 0.7}}, {{"class": "B", "class_id": 1, "confidence": 0.3}},
-]
-[
-    {{"class": "A", "class_id": 0, "confidence": 0.1}}, {{"class": "B", "class_id": 1, "confidence": 0.9}},
-    {{"class": "A", "class_id": 0, "confidence": 0.9}}, {{"class": "B", "class_id": 1, "confidence": 0.1}},
-]
+{
+    "image": {"height": 128, "width": 256},
+    "predictions": [{"class_name": "A", "class_id": 0, "confidence": 0.3}],
+    "top": "A",
+    "confidence": 0.3,
+    "parent_id": "some",
+    "prediction_type": "classification",
+    "inference_id": "some",
+    "root_parent_id": "some",
+}
 
 # in case of multi-label classification
-[
-    {{
-        "class_a": 0.3,
-        "class_b": 0.4,
-    }},
-    {{
-        "class_c": 0.3,
-        "class_b": 0.4,
-    }}
-]
-[
-    {{
-        "car": 0.4,
-        "truck": 0.5,
-    }},
-    {{
-        "truck": 0.6,
-        "bike": 0.4,
-    }}
-]
+{
+    "image": {"height": 128, "width": 256},
+    "predictions": {
+        "a": {"confidence": 0.3, "class_id": 0},
+        "b": {"confidence": 0.3, "class_id": 1},
+    }
+    "predicted_classes": ["a", "b"],
+    "parent_id": "some",
+    "prediction_type": "classification",
+    "inference_id": "some",
+    "root_parent_id": "some",
+}
 ```
 """
 CLASSIFICATION_PREDICTION_KIND = Kind(
     name="classification_prediction",
     description="Predictions from classifier",
     docs=CLASSIFICATION_PREDICTION_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
 
@@ -314,6 +324,7 @@ DETECTION_KIND = Kind(
     name="detection",
     description="Single element of detections-based prediction (like `object_detection_prediction`)",
     docs=DETECTION_KIND_DOCS,
+    serialised_data_type="Tuple[np.ndarray, Optional[np.ndarray], Optional[float], Optional[float], Optional[int], dict]"
 )
 
 
@@ -343,18 +354,21 @@ CONTOURS_KIND = Kind(
     name="contours",
     description="List of numpy arrays where each array represents contour points",
     docs=CONTOURS_KIND_DOCS,
+    serialised_data_type="List[np.ndarray]"
 )
 
 ZONE_KIND = Kind(
     name="zone",
     description="Definition of polygon zone",
     docs=None,
+    serialised_data_type="List[Tuple[int, int]]",
 )
 
 NUMPY_ARRAY_KIND = Kind(
     name="numpy_array",
     description="Numpy array",
     docs=None,
+    serialised_data_type="np.ndarray",
 )
 
 OBJECT_DETECTION_PREDICTION_KIND_DOCS = """
@@ -448,6 +462,7 @@ OBJECT_DETECTION_PREDICTION_KIND = Kind(
     name="object_detection_prediction",
     description="Prediction with detected bounding boxes in form of sv.Detections(...) object",
     docs=OBJECT_DETECTION_PREDICTION_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
 
@@ -535,6 +550,7 @@ INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
     name="instance_segmentation_prediction",
     description="Prediction with detected bounding boxes and segmentation masks in form of sv.Detections(...) object",
     docs=INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
 
@@ -629,6 +645,7 @@ KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
     name="keypoint_detection_prediction",
     description="Prediction with detected bounding boxes and detected keypoints in form of sv.Detections(...) object",
     docs=KEYPOINT_DETECTION_PREDICTION_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
 QR_CODE_DETECTION_KIND_DOCS = """
@@ -722,6 +739,7 @@ QR_CODE_DETECTION_KIND = Kind(
     name="qr_code_detection",
     description="Prediction with QR code detection",
     docs=QR_CODE_DETECTION_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
 BAR_CODE_DETECTION_KIND_DOCS = """
@@ -815,20 +833,22 @@ BAR_CODE_DETECTION_KIND = Kind(
     name="bar_code_detection",
     description="Prediction with barcode detection",
     docs=BAR_CODE_DETECTION_KIND_DOCS,
+    serialised_data_type="dict",
 )
 PREDICTION_TYPE_KIND_DOCS = f"""
 This kind represent batch of prediction metadata providing information about the type of prediction.
 
 Examples:
 ```
-["object-detection", "object-detection"]
-["instance-segmentation", "instance-segmentation"]
+"object-detection"
+"instance-segmentation"
 ```
 """
 PREDICTION_TYPE_KIND = Kind(
     name="prediction_type",
     description="String value with type of prediction",
     docs=PREDICTION_TYPE_KIND_DOCS,
+    serialised_data_type="str",
 )
 
 PARENT_ID_KIND_DOCS = f"""
@@ -839,14 +859,15 @@ helps to figure out which detection of the first model is associated to which do
 
 Examples:
 ```
-["uuid-1", "uuid-1", "uuid-2", "uuid-2"]
-["uuid-1", "uuid-1", "uuid-1", "uuid-1"]
+"uuid-1"
+"uuid-2"
 ```
 """
 PARENT_ID_KIND = Kind(
     name="parent_id",
     description="Identifier of parent for step output",
     docs=PARENT_ID_KIND_DOCS,
+    serialised_data_type="str",
 )
 
 IMAGE_METADATA_KIND_DOCS = f"""
@@ -862,6 +883,7 @@ IMAGE_METADATA_KIND = Kind(
     name="image_metadata",
     description="Dictionary with image metadata required by supervision",
     docs=IMAGE_METADATA_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
 
@@ -880,6 +902,7 @@ LANGUAGE_MODEL_OUTPUT_KIND = Kind(
     name="language_model_output",
     description="LLM / VLM output",
     docs=LANGUAGE_MODEL_OUTPUT_KIND_DOCS,
+    serialised_data_type="str",
 )
 
 STEP_AS_SELECTED_ELEMENT = "step"

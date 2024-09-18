@@ -166,3 +166,11 @@ class DescribeInterfaceResponse(BaseModel):
     outputs: Dict[str, Union[List[str], Dict[str, List[str]]]] = Field(
         description="Dictionary mapping Workflow outputs to their kinds"
     )
+    typing_hints: Dict[str, str] = Field(
+        description="Dictionary mapping name of the kind with Python typing hint for underlying serialised object",
+    )
+    kinds_schemas: Dict[str, Union[dict, List[dict]]] = Field(
+        description="Dictionary mapping name of the kind with OpenAPI 3.0 definitions of underlying objects. "
+                    "If list is given, entity should be treated as union of types."
+    )
+
