@@ -99,7 +99,7 @@ def calculate_minimum_bounding_rectangle(mask: np.ndarray) -> Tuple[np.array, fl
 
 
 def calculate_simplified_polygon(
-    mask: np.ndarray, required_number_of_vertices: int, force_rectangle: bool, max_steps: int = 1000
+    mask: np.ndarray, required_number_of_vertices: int, force_rectangle: bool = False, max_steps: int = 1000
 ) -> Union[np.array, Tuple[np.array, float, float, float]]:
     contours = sv.mask_to_polygons(mask)
     largest_contour = max(contours, key=len)
