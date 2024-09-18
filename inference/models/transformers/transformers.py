@@ -120,7 +120,7 @@ class TransformerModel(RoboflowInferenceModel):
                 preprocessed_inputs=model_inputs
             )
             generation = self.model.generate(
-                **prepared_inputs, max_new_tokens=100, do_sample=False
+                **prepared_inputs, max_new_tokens=1000, do_sample=False
             )
             generation = generation[0]
             if self.generation_includes_input:
