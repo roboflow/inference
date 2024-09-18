@@ -24,7 +24,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-TYPE: str = "roboflow_core/line_counter_zone_visualization@v1"
+TYPE: str = "roboflow_core/line_counter_visualization@v1"
 SHORT_DESCRIPTION = "Paints a mask over line zone in an image."
 LONG_DESCRIPTION = """
 The `LineCounterZoneVisualization` block draws line
@@ -38,7 +38,7 @@ class LineCounterZoneVisualizationManifest(VisualizationManifest):
     type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Polygon Zone Visualization",
+            "name": "Line Counter Visualization",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
