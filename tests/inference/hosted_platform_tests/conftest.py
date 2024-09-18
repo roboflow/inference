@@ -2,7 +2,7 @@ import logging
 import os
 from enum import Enum
 from functools import partial
-from typing import Any
+from typing import Any, Tuple
 
 import numpy as np
 import pytest
@@ -77,6 +77,14 @@ TARGET_PROJECTS_TO_BE_USED = {
     PlatformEnvironment.ROBOFLOW_STAGING: "coin-counting",
 }
 
+INTERFACE_DISCOVERING_WORKFLOW = {
+    PlatformEnvironment.ROBOFLOW_STAGING: ("paul-guerrie", "staging-test-workflow"),
+    PlatformEnvironment.ROBOFLOW_PLATFORM: (
+        "paul-guerrie-tang1",
+        "production-test-workflow",
+    ),
+}
+
 ROBOFLOW_API_KEY = os.environ["HOSTED_PLATFORM_TESTS_API_KEY"]
 OPENAI_KEY = os.getenv("OPENAI_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -131,6 +139,13 @@ def segmentation_model_id(platform_environment: PlatformEnvironment) -> str:
 @pytest.fixture(scope="session")
 def target_project(platform_environment: PlatformEnvironment) -> str:
     return TARGET_PROJECTS_TO_BE_USED[platform_environment]
+
+
+@pytest.fixture(scope="session")
+def interface_discovering_workflow(
+    platform_environment: PlatformEnvironment,
+) -> Tuple[str, str]:
+    return INTERFACE_DISCOVERING_WORKFLOW[platform_environment]
 
 
 @pytest.fixture(scope="session", autouse=True)

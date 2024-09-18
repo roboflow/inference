@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import pytest
 import requests
 
@@ -811,3 +813,80 @@ def test_getting_block_schema_using_get_endpoint(
     ), "Response expected to define required schema properties"
     assert "title" in schema, "Response expected to define unique schema title"
     assert "type" in schema, "Response expected to define schema type"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_discovering_interface_of_saved_workflow(
+    object_detection_service_url: str,
+    interface_discovering_workflow: Tuple[str, str],
+) -> None:
+    # when
+    workspace_name, workflow_id = interface_discovering_workflow
+    result = requests.post(
+        f"{object_detection_service_url}/{workspace_name}/workflows/{workflow_id}/describe_interface",
+        json={"api_key": ROBOFLOW_API_KEY},
+    )
+
+    # then
+    result.raise_for_status()
+    response_data = result.json()
+    assert response_data["inputs"] == {
+        "image": ["image"],
+        "model_id": ["roboflow_model_id"],
+    }
+    assert response_data["outputs"] == {
+        "model_predictions": {
+            "predictions": ["object_detection_prediction"],
+            "inference_id": ["string"],
+        },
+        "bounding_box_visualization": ["image"],
+    }
+    assert response_data["typing_hints"] == {
+        "image": "dict",
+        "object_detection_prediction": "dict",
+        "string": "str",
+        "roboflow_model_id": "str",
+    }
+    assert set(response_data["kinds_schemas"].keys()) == {
+        "image",
+        "object_detection_prediction",
+    }
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_discovering_interface_of_valid_workflow_from_payload(
+    object_detection_service_url: str,
+) -> None:
+    # when
+    result = requests.post(
+        f"{object_detection_service_url}workflows/describe_interface",
+        json={
+            "api_key": ROBOFLOW_API_KEY,
+            "specification": "",
+        },
+    )
+
+    # then
+    result.raise_for_status()
+    response_data = result.json()
+    assert response_data["inputs"] == {
+        "image": ["image"],
+        "model_id": ["roboflow_model_id"],
+    }
+    assert response_data["outputs"] == {
+        "model_predictions": {
+            "predictions": ["object_detection_prediction"],
+            "inference_id": ["string"],
+        },
+        "bounding_box_visualization": ["image"],
+    }
+    assert response_data["typing_hints"] == {
+        "image": "dict",
+        "object_detection_prediction": "dict",
+        "string": "str",
+        "roboflow_model_id": "str",
+    }
+    assert set(response_data["kinds_schemas"].keys()) == {
+        "image",
+        "object_detection_prediction",
+    }
