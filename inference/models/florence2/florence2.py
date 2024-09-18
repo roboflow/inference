@@ -11,6 +11,7 @@ from inference.models.transformers import LoRATransformerModel, TransformerModel
 class Florence2(TransformerModel):
     transformers_class = AutoModelForCausalLM
     default_dtype = torch.float32
+    skip_special_tokens = False
 
     def initialize_model(self):
         self.transformers_class = import_class_from_file(
