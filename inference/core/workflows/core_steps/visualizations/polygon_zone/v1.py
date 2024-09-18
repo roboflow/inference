@@ -18,8 +18,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     FloatZeroToOne,
-    WorkflowParameterSelector,
     StepOutputSelector,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
