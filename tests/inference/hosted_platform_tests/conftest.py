@@ -81,7 +81,7 @@ INTERFACE_DISCOVERING_WORKFLOW = {
     PlatformEnvironment.ROBOFLOW_STAGING: ("paul-guerrie", "staging-test-workflow"),
     PlatformEnvironment.ROBOFLOW_PLATFORM: (
         "paul-guerrie-tang1",
-        "production-test-workflow",
+        "prod-test-workflow",
     ),
 }
 

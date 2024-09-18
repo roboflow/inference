@@ -857,36 +857,125 @@ def test_discovering_interface_of_saved_workflow(
 def test_discovering_interface_of_valid_workflow_from_payload(
     object_detection_service_url: str,
 ) -> None:
+    # given
+    valid_definition = {
+        "version": "1.0.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowParameter", "name": "model_id"},
+            {"type": "WorkflowParameter", "name": "confidence"},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection_1",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "class_filter": ["dog"],
+            },
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection_2",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "confidence": "$inputs.confidence",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection_1.predictions",
+            },
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection_2.predictions",
+            },
+        ],
+    }
+
     # when
-    result = requests.post(
-        f"{object_detection_service_url}workflows/describe_interface",
+    response = requests.post(
+        f"{object_detection_service_url}/workflows/describe_interface",
         json={
-            "api_key": ROBOFLOW_API_KEY,
-            "specification": "",
+            "specification": valid_definition,
+            "api_key": "some",
         },
     )
 
     # then
-    result.raise_for_status()
-    response_data = result.json()
+    response.raise_for_status()
+    response_data = response.json()
+    assert response_data["outputs"] == {"detections": ["object_detection_prediction"]}
     assert response_data["inputs"] == {
         "image": ["image"],
         "model_id": ["roboflow_model_id"],
-    }
-    assert response_data["outputs"] == {
-        "model_predictions": {
-            "predictions": ["object_detection_prediction"],
-            "inference_id": ["string"],
-        },
-        "bounding_box_visualization": ["image"],
+        "confidence": ["float_zero_to_one"],
     }
     assert response_data["typing_hints"] == {
+        "float_zero_to_one": "float",
         "image": "dict",
         "object_detection_prediction": "dict",
-        "string": "str",
         "roboflow_model_id": "str",
     }
     assert set(response_data["kinds_schemas"].keys()) == {
-        "image",
         "object_detection_prediction",
+        "image",
+    }, "Expected image and object_detection_prediction kinds to deliver schema"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_discovering_interface_of_invalid_workflow_from_payload(
+    object_detection_service_url: str,
+) -> None:
+    # given
+    valid_definition = {
+        "version": "1.0.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowParameter", "name": "model_id"},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection_1",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "class_filter": ["dog"],
+            },
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection_2",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "confidence": "$inputs.model_id",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection_1.predictions",
+            },
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection_2.predictions",
+            },
+        ],
     }
+
+    # when
+    response = requests.post(
+        f"{object_detection_service_url}/workflows/describe_interface",
+        json={
+            "specification": valid_definition,
+            "api_key": "some",
+        },
+    )
+
+    # then
+    assert response.status_code == 400
