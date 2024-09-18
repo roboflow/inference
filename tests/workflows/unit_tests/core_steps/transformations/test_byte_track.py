@@ -7,9 +7,7 @@ import supervision as sv
 from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
     ByteTrackerBlockV1,
 )
-from inference.core.workflows.execution_engine.entities.base import (
-    VideoMetadata,
-)
+from inference.core.workflows.execution_engine.entities.base import VideoMetadata
 
 
 def test_byte_tracker() -> None:
@@ -77,11 +75,17 @@ def test_byte_tracker() -> None:
     )
 
     # then
-    assert len(set(frame1_result["tracked_detections"].tracker_id.tolist())) == 4, "Expected 4 unique tracking ids"
-    assert frame1_result["tracked_detections"].tracker_id.tolist()[:3] == \
-           frame2_result["tracked_detections"].tracker_id.tolist(), "Expected the same 3 first objects in second frame"
-    assert frame1_result["tracked_detections"].tracker_id.tolist()[:3] == \
-           frame3_result["tracked_detections"].tracker_id.tolist(), "Expected the same 3 first objects in third frame"
+    assert (
+        len(set(frame1_result["tracked_detections"].tracker_id.tolist())) == 4
+    ), "Expected 4 unique tracking ids"
+    assert (
+        frame1_result["tracked_detections"].tracker_id.tolist()[:3]
+        == frame2_result["tracked_detections"].tracker_id.tolist()
+    ), "Expected the same 3 first objects in second frame"
+    assert (
+        frame1_result["tracked_detections"].tracker_id.tolist()[:3]
+        == frame3_result["tracked_detections"].tracker_id.tolist()
+    ), "Expected the same 3 first objects in third frame"
 
 
 def test_byte_tracker_no_fps() -> None:
@@ -179,8 +183,14 @@ def test_byte_tracker_not_video() -> None:
     )
 
     # then
-    assert len(set(frame1_result["tracked_detections"].tracker_id.tolist())) == 4, "Expected 4 unique tracking ids"
-    assert frame1_result["tracked_detections"].tracker_id.tolist()[:3] == \
-           frame2_result["tracked_detections"].tracker_id.tolist(), "Expected the same 3 first objects in second frame"
-    assert frame1_result["tracked_detections"].tracker_id.tolist()[:3] == \
-           frame3_result["tracked_detections"].tracker_id.tolist(), "Expected the same 3 first objects in third frame"
+    assert (
+        len(set(frame1_result["tracked_detections"].tracker_id.tolist())) == 4
+    ), "Expected 4 unique tracking ids"
+    assert (
+        frame1_result["tracked_detections"].tracker_id.tolist()[:3]
+        == frame2_result["tracked_detections"].tracker_id.tolist()
+    ), "Expected the same 3 first objects in second frame"
+    assert (
+        frame1_result["tracked_detections"].tracker_id.tolist()[:3]
+        == frame3_result["tracked_detections"].tracker_id.tolist()
+    ), "Expected the same 3 first objects in third frame"

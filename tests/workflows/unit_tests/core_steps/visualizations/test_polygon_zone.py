@@ -4,8 +4,8 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
-    PolygonZoneVisualizationManifest,
     PolygonZoneVisualizationBlockV1,
+    PolygonZoneVisualizationManifest,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -13,9 +13,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 
 
-@pytest.mark.parametrize(
-    "type_alias", ["roboflow_core/polygon_zone_visualization@v1"]
-)
+@pytest.mark.parametrize("type_alias", ["roboflow_core/polygon_zone_visualization@v1"])
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 def test_polygon_zone_validation_when_valid_manifest_is_given(
     type_alias: str,
@@ -39,7 +37,7 @@ def test_polygon_zone_validation_when_valid_manifest_is_given(
         type=type_alias,
         name="polygon_zone_1",
         images="$inputs.image",
-        zone= "$inputs.zone",
+        zone="$inputs.zone",
         color="#FFFFFF",
         opacity=0.5,
     )

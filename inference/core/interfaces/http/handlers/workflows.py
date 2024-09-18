@@ -1,9 +1,10 @@
 # TODO - for everyone: start migrating other handlers to bring relief to http_api.py
-from typing import List, Optional
+from typing import Dict, List, Optional, Set, Union
 
-from packaging.version import Version
+from packaging.specifiers import SpecifierSet
 
 from inference.core.entities.responses.workflows import (
+    DescribeInterfaceResponse,
     ExternalBlockPropertyPrimitiveDefinition,
     ExternalWorkflowsBlockSelectorDefinition,
     UniversalQueryLanguageDescription,
@@ -12,6 +13,10 @@ from inference.core.entities.responses.workflows import (
 from inference.core.workflows.core_steps.common.query_language.introspection.core import (
     prepare_operations_descriptions,
     prepare_operators_descriptions,
+)
+from inference.core.workflows.errors import WorkflowExecutionEngineVersionError
+from inference.core.workflows.execution_engine.core import (
+    retrieve_requested_execution_engine_version,
 )
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
@@ -24,6 +29,16 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
     DynamicBlockDefinition,
+)
+from inference.core.workflows.execution_engine.v1.introspection.inputs_discovery import (
+    describe_workflow_inputs,
+)
+from inference.core.workflows.execution_engine.v1.introspection.outputs_discovery import (
+    describe_workflow_outputs,
+)
+from inference.core.workflows.execution_engine.v1.introspection.types_discovery import (
+    discover_kinds_schemas,
+    discover_kinds_typing_hints,
 )
 
 
@@ -82,3 +97,43 @@ def handle_describe_workflows_blocks_request(
         universal_query_language_description=universal_query_language_description,
         dynamic_block_definition_schema=DynamicBlockDefinition.schema(),
     )
+
+
+def handle_describe_workflows_interface(
+    definition: dict,
+) -> DescribeInterfaceResponse:
+    requested_execution_engine_version = retrieve_requested_execution_engine_version(
+        workflow_definition=definition
+    )
+    if not SpecifierSet(f">=1.0.0,<2.0.0").contains(requested_execution_engine_version):
+        raise WorkflowExecutionEngineVersionError(
+            public_message="Describing workflow outputs is only supported for Execution Engine v1.",
+            context="describing_workflow_outputs",
+        )
+    inputs = describe_workflow_inputs(definition=definition)
+    outputs = describe_workflow_outputs(definition=definition)
+    unique_kinds = get_unique_kinds(inputs=inputs, outputs=outputs)
+    typing_hints = discover_kinds_typing_hints(kinds_names=unique_kinds)
+    kinds_schemas = discover_kinds_schemas(kinds_names=unique_kinds)
+    return DescribeInterfaceResponse(
+        inputs=inputs,
+        outputs=outputs,
+        typing_hints=typing_hints,
+        kinds_schemas=kinds_schemas,
+    )
+
+
+def get_unique_kinds(
+    inputs: Dict[str, List[str]],
+    outputs: Dict[str, Union[List[str], Dict[str, List[str]]]],
+) -> Set[str]:
+    all_kinds = set()
+    for input_element_kinds in inputs.values():
+        all_kinds.update(input_element_kinds)
+    for output_definition in outputs.values():
+        if isinstance(output_definition, list):
+            all_kinds.update(output_definition)
+        if isinstance(output_definition, dict):
+            for output_field_kinds in output_definition.values():
+                all_kinds.update(output_field_kinds)
+    return all_kinds

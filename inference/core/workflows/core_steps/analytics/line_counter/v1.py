@@ -40,7 +40,7 @@ which persists between frames)
 class LineCounterManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Time in zone",
+            "name": "Line Counter",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
