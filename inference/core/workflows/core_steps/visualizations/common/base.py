@@ -35,23 +35,12 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             "block_type": "visualization",
         }
     )
-    predictions: StepOutputSelector(
-        kind=[
-            OBJECT_DETECTION_PREDICTION_KIND,
-            INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            KEYPOINT_DETECTION_PREDICTION_KIND,
-        ]
-    ) = Field(  # type: ignore
-        description="Predictions",
-        examples=["$steps.object_detection_model.predictions"],
-    )
     image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
-
     copy_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
         description="Duplicate the image contents (vs overwriting the image in place). Deselect for chained visualizations that should stack on previous ones where the intermediate state is not needed.",
         default=True,
@@ -71,6 +60,43 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
 
 
 class VisualizationBlock(WorkflowBlock, ABC):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    @classmethod
+    @abstractmethod
+    def get_manifest(cls) -> Type[VisualizationManifest]:
+        pass
+
+    @abstractmethod
+    def getAnnotator(self, *args, **kwargs) -> sv.annotators.base.BaseAnnotator:
+        pass
+
+    @abstractmethod
+    def run(
+        self,
+        image: WorkflowImageData,
+        copy_image: bool,
+        *args,
+        **kwargs
+    ) -> BlockResult:
+        pass
+
+
+class PredictionsVisualizationManifest(VisualizationManifest, ABC):
+    predictions: StepOutputSelector(
+        kind=[
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+        ]
+    ) = Field(  # type: ignore
+        description="Predictions",
+        examples=["$steps.object_detection_model.predictions"],
+    )
+
+
+class PredictionsVisualizationBlock(VisualizationBlock, ABC):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
