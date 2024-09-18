@@ -61,7 +61,12 @@ Some blocks that output images may add additional fields - like "parent_id", whi
 not be modified but may be used is specific contexts - for instance when
 one needs to tag predictions with identifier of parent image.
 """
-IMAGE_KIND = Kind(name="image", description="Image in workflows", docs=IMAGE_KIND_DOCS)
+IMAGE_KIND = Kind(
+    name="image",
+    description="Image in workflows",
+    docs=IMAGE_KIND_DOCS,
+    serialised_data_type="dict",
+)
 
 
 VIDEO_METADATA_KIND_DOCS = """

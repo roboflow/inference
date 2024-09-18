@@ -909,6 +909,14 @@ def test_describe_workflow_interface_when_valid_definition_provided(
         "model_id": ["roboflow_model_id"],
         "confidence": ["float_zero_to_one"],
     }
+    assert response_data["typing_hints"] == {
+        "float_zero_to_one": "float",
+        "image": "dict",
+        "object_detection_prediction": "dict",
+        "roboflow_model_id": "str"
+    }
+    assert set(response_data["kinds_schemas"].keys()) == {"object_detection_prediction", "image"}, \
+        "Expected image and object_detection_prediction kinds to deliver schema"
 
 
 def test_describe_workflow_interface_when_invalid_usage_of_inputs_detected(

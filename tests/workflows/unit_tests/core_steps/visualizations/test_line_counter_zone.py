@@ -4,8 +4,8 @@ import pytest
 from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
-    LineCounterZoneVisualizationManifest,
     LineCounterZoneVisualizationBlockV1,
+    LineCounterZoneVisualizationManifest,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -42,7 +42,7 @@ def test_line_counter_zone_validation_when_valid_manifest_is_given(
         type=type_alias,
         name="line_counter_zone_1",
         images="$inputs.image",
-        zone= "$inputs.zone",
+        zone="$inputs.zone",
         color="#FFFFFF",
         opacity=0.5,
         thickness=3,
