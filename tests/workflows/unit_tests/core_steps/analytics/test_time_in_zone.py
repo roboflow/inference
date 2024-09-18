@@ -96,20 +96,33 @@ def test_time_in_zone_keep_out_of_zone_detections() -> None:
     )
 
     # then
-    assert (frame1_result["timed_detections"].xyxy == np.array(
-        [[9, 15, 10, 16], [10, 15, 11, 16], [11, 15, 12, 16], [15, 15, 16, 16]]
-    )).all()
-    assert (frame1_result["timed_detections"]["time_in_zone"] == np.array([0, 0, 0, 0])).all()
+    assert (
+        frame1_result["timed_detections"].xyxy
+        == np.array(
+            [[9, 15, 10, 16], [10, 15, 11, 16], [11, 15, 12, 16], [15, 15, 16, 16]]
+        )
+    ).all()
+    assert (
+        frame1_result["timed_detections"]["time_in_zone"] == np.array([0, 0, 0, 0])
+    ).all()
 
-    assert (frame2_result["timed_detections"].xyxy == np.array(
-        [[10, 15, 11, 16], [11, 15, 12, 16], [12, 15, 13, 16], [16, 16, 17, 17]]
-    )).all()
-    assert (frame2_result["timed_detections"]["time_in_zone"] == np.array([0, 1, 1, 0])).all()
+    assert (
+        frame2_result["timed_detections"].xyxy
+        == np.array(
+            [[10, 15, 11, 16], [11, 15, 12, 16], [12, 15, 13, 16], [16, 16, 17, 17]]
+        )
+    ).all()
+    assert (
+        frame2_result["timed_detections"]["time_in_zone"] == np.array([0, 1, 1, 0])
+    ).all()
 
-    assert (frame3_result["timed_detections"].xyxy == np.array(
-        [[11, 15, 12, 16], [20, 15, 21, 16], [21, 15, 22, 16]]
-    )).all()
-    assert (frame3_result["timed_detections"]["time_in_zone"] == np.array([1, 2, 0])).all()
+    assert (
+        frame3_result["timed_detections"].xyxy
+        == np.array([[11, 15, 12, 16], [20, 15, 21, 16], [21, 15, 22, 16]])
+    ).all()
+    assert (
+        frame3_result["timed_detections"]["time_in_zone"] == np.array([1, 2, 0])
+    ).all()
 
 
 def test_time_in_zone_remove_out_of_zone_detections() -> None:
@@ -194,19 +207,28 @@ def test_time_in_zone_remove_out_of_zone_detections() -> None:
     )
 
     # then
-    assert (frame1_result["timed_detections"].xyxy == np.array(
-        [[10, 15, 11, 16], [11, 15, 12, 16], [15, 15, 16, 16]]
-    )).all()
-    assert (frame1_result["timed_detections"]["time_in_zone"] == np.array([0, 0, 0])).all()
+    assert (
+        frame1_result["timed_detections"].xyxy
+        == np.array([[10, 15, 11, 16], [11, 15, 12, 16], [15, 15, 16, 16]])
+    ).all()
+    assert (
+        frame1_result["timed_detections"]["time_in_zone"] == np.array([0, 0, 0])
+    ).all()
 
-    assert (frame2_result["timed_detections"].xyxy == np.array(
-        [[10, 15, 11, 16], [11, 15, 12, 16], [12, 15, 13, 16], [16, 16, 17, 17]]
-    )).all()
-    assert (frame2_result["timed_detections"]["time_in_zone"] == np.array([0, 1, 1, 0])).all()
+    assert (
+        frame2_result["timed_detections"].xyxy
+        == np.array(
+            [[10, 15, 11, 16], [11, 15, 12, 16], [12, 15, 13, 16], [16, 16, 17, 17]]
+        )
+    ).all()
+    assert (
+        frame2_result["timed_detections"]["time_in_zone"] == np.array([0, 1, 1, 0])
+    ).all()
 
-    assert (frame3_result["timed_detections"].xyxy == np.array(
-        [[11, 15, 12, 16], [20, 15, 21, 16]]
-    )).all()
+    assert (
+        frame3_result["timed_detections"].xyxy
+        == np.array([[11, 15, 12, 16], [20, 15, 21, 16]])
+    ).all()
     assert (frame3_result["timed_detections"]["time_in_zone"] == np.array([1, 2])).all()
 
 
