@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type, Union, Tuple
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import cv2 as cv
 import numpy as np
@@ -85,21 +85,26 @@ class DynamicZonesManifest(WorkflowBlockManifest):
         return ">=1.0.0,<2.0.0"
 
 
-def calculate_minimum_bounding_rectangle(mask: np.ndarray) -> Tuple[np.array, float, float, float]:
+def calculate_minimum_bounding_rectangle(
+    mask: np.ndarray,
+) -> Tuple[np.array, float, float, float]:
     contours = sv.mask_to_polygons(mask)
     largest_contour = max(contours, key=len)
 
     rect = cv.minAreaRect(largest_contour)
     box = cv.boxPoints(rect)
     box = np.int0(box)
-    
+
     width, height = rect[1]
     angle = rect[2]
     return box, width, height, angle
 
 
 def calculate_simplified_polygon(
-    mask: np.ndarray, required_number_of_vertices: int, force_rectangle: bool = False, max_steps: int = 1000
+    mask: np.ndarray,
+    required_number_of_vertices: int,
+    force_rectangle: bool = False,
+    max_steps: int = 1000,
 ) -> Union[np.array, Tuple[np.array, float, float, float]]:
     contours = sv.mask_to_polygons(mask)
     largest_contour = max(contours, key=len)
@@ -165,12 +170,14 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 if force_rectangle and required_number_of_vertices == 4:
                     polygon, width, height, angle = simplified_polygon
                     if include_rectangle_details:
-                        simplified_polygons.append({
-                            "polygon": polygon,
-                            "width": width,
-                            "height": height,
-                            "angle": angle
-                        })
+                        simplified_polygons.append(
+                            {
+                                "polygon": polygon,
+                                "width": width,
+                                "height": height,
+                                "angle": angle,
+                            }
+                        )
                     else:
                         simplified_polygons.append(polygon)
                 else:
