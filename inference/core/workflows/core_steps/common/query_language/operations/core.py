@@ -28,6 +28,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
     extract_detections_property,
     filter_detections,
     offset_detections,
+    rename_detections,
     select_detections,
     shift_detections,
     sort_detections,
@@ -187,6 +188,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "DetectionsSelection": select_detections,
     "SortDetections": sort_detections,
     "ClassificationPropertyExtract": extract_classification_property,
+    "DetectionsRename": rename_detections,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

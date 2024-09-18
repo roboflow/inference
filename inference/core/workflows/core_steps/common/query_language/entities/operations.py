@@ -1,4 +1,4 @@
-from typing import Any, List, Literal, Union
+from typing import Any, Dict, List, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
@@ -450,6 +450,27 @@ class Divide(OperationDefinition):
     other: Union[int, float]
 
 
+class DetectionsRename(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Makes detected bounding boxes bigger by applying offset to its size",
+            "compound": False,
+            "input_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+            "output_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+        },
+    )
+    type: Literal["DetectionsRename"]
+    class_map: Dict[str, str]
+
+
 AllOperationsType = Annotated[
     Union[
         StringToLowerCase,
@@ -469,6 +490,7 @@ AllOperationsType = Annotated[
         DetectionsFilter,
         DetectionsOffset,
         DetectionsShift,
+        DetectionsRename,
         RandomNumber,
         StringMatches,
         ExtractImageProperty,

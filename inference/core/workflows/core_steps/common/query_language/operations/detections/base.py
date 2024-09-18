@@ -188,3 +188,30 @@ def sort_detections(
     if not ascending:
         sorted_indices = sorted_indices[::-1]
     return value[sorted_indices]
+
+
+def rename_detections(
+    detections: Any,
+    class_map: Dict[str, str],
+    **kwargs,
+) -> sv.Detections:
+    if not isinstance(detections, sv.Detections):
+        value_as_str = safe_stringify(value=detections)
+        raise InvalidInputTypeError(
+            public_message=f"Executing rename_detections(...), expected sv.Detections object as value, "
+            f"got {value_as_str} of type {type(detections)}",
+            context="step_execution | roboflow_query_language_evaluation",
+        )
+
+    detections_copy = deepcopy(detections)
+    class_names = detections_copy.data.get("class_name", []).tolist()
+
+    for i, class_name in enumerate(class_names):
+        try:
+            class_names[i] = class_map[class_name]
+        except KeyError:
+            # If the class is not in the class_map, keep the original class
+            pass
+
+    detections_copy.data["class_name"] = np.array(class_names, dtype=object)
+    return detections_copy
