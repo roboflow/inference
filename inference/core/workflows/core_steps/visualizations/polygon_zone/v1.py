@@ -46,7 +46,8 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
         }
     )
     zone: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Zones (one for each batch) in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
+        description="Polygon zones (one for each batch) in a format [[(x1, y1), (x2, y2), (x3, y3), ...], ...];" \
+            " each zone must consist of more than 2 points",
         examples=["$inputs.zones"],
     )
     color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
@@ -68,7 +69,7 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
 class PolygonZoneVisualizationBlockV1(VisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._cache: Dict[str, sv.PolygonZoneAnnotator] = {}
+        self._cache: Dict[str, np.ndarray] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
