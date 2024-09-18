@@ -11,11 +11,16 @@ class Kind(BaseModel):
     serialised_data_type: Optional[str] = Field(
         default=None,
         description="Provides Python type hint for data format that should guide "
-                    "external clients on how to produce / consume serialised data of specific kind."
+        "external clients on how to produce / consume serialised data of specific kind.",
     )
 
     def __hash__(self) -> int:
-        return self.name.__hash__() + self.description.__hash__() + self.docs.__hash__() + self.serialised_data_type.__hash__()
+        return (
+            self.name.__hash__()
+            + self.description.__hash__()
+            + self.docs.__hash__()
+            + self.serialised_data_type.__hash__()
+        )
 
 
 REFERENCE_KEY = "reference"
@@ -34,7 +39,10 @@ workflow when we do not know or do not care about types.
 problems with workflow and make those problems to be visible while running the workflow.
 """
 WILDCARD_KIND = Kind(
-    name="*", description="Equivalent of any element", docs=WILDCARD_KIND_DOCS, serialised_data_type="Any",
+    name="*",
+    description="Equivalent of any element",
+    docs=WILDCARD_KIND_DOCS,
+    serialised_data_type="Any",
 )
 IMAGE_KIND_DOCS = f"""
 This is the representation of image in `workflows`. The value behind this kind 
@@ -216,7 +224,12 @@ SERIALISED_PAYLOADS_KIND = Kind(
 BOOLEAN_KIND_DOCS = """
 This kind represents boolean value - `True` or `False`
 """
-BOOLEAN_KIND = Kind(name="boolean", description="Boolean flag", docs=BOOLEAN_KIND_DOCS, serialised_data_type="bool")
+BOOLEAN_KIND = Kind(
+    name="boolean",
+    description="Boolean flag",
+    docs=BOOLEAN_KIND_DOCS,
+    serialised_data_type="bool",
+)
 
 INTEGER_KIND_DOCS = """
 Examples:
@@ -225,14 +238,24 @@ Examples:
 2
 ```
 """
-INTEGER_KIND = Kind(name="integer", description="Integer value", docs=INTEGER_KIND_DOCS, serialised_data_type="int")
+INTEGER_KIND = Kind(
+    name="integer",
+    description="Integer value",
+    docs=INTEGER_KIND_DOCS,
+    serialised_data_type="int",
+)
 STRING_KIND_DOCS = """
 Examples:
 ```
 "my string value"
 ```
 """
-STRING_KIND = Kind(name="string", description="String value", docs=STRING_KIND_DOCS, serialised_data_type="str")
+STRING_KIND = Kind(
+    name="string",
+    description="String value",
+    docs=STRING_KIND_DOCS,
+    serialised_data_type="str",
+)
 
 TOP_CLASS_KIND_DOCS = f"""
 The kind represent top classes predicted by classification model.
@@ -246,7 +269,7 @@ TOP_CLASS_KIND = Kind(
     name="top_class",
     description="String value representing top class predicted by classification model",
     docs=TOP_CLASS_KIND_DOCS,
-    serialised_data_type="str"
+    serialised_data_type="str",
 )
 
 FLOAT_KIND_DOCS = """
@@ -256,7 +279,12 @@ Example:
 2.7
 ```
 """
-FLOAT_KIND = Kind(name="float", description="Float value", docs=FLOAT_KIND_DOCS, serialised_data_type="float")
+FLOAT_KIND = Kind(
+    name="float",
+    description="Float value",
+    docs=FLOAT_KIND_DOCS,
+    serialised_data_type="float",
+)
 DICTIONARY_KIND_DOCS = """
 This kind represent a value of any Python dict.
 
@@ -265,7 +293,9 @@ Examples:
 {"my_key", "my_value"}
 ``` 
 """
-DICTIONARY_KIND = Kind(name="dictionary", description="Dictionary", serialised_data_type="dict")
+DICTIONARY_KIND = Kind(
+    name="dictionary", description="Dictionary", serialised_data_type="dict"
+)
 
 CLASSIFICATION_PREDICTION_KIND_DOCS = """
 This kind represent predictions from Classification Models.
@@ -324,7 +354,7 @@ DETECTION_KIND = Kind(
     name="detection",
     description="Single element of detections-based prediction (like `object_detection_prediction`)",
     docs=DETECTION_KIND_DOCS,
-    serialised_data_type="Tuple[np.ndarray, Optional[np.ndarray], Optional[float], Optional[float], Optional[int], dict]"
+    serialised_data_type="Tuple[np.ndarray, Optional[np.ndarray], Optional[float], Optional[float], Optional[int], dict]",
 )
 
 
@@ -354,7 +384,7 @@ CONTOURS_KIND = Kind(
     name="contours",
     description="List of numpy arrays where each array represents contour points",
     docs=CONTOURS_KIND_DOCS,
-    serialised_data_type="List[np.ndarray]"
+    serialised_data_type="List[np.ndarray]",
 )
 
 ZONE_KIND = Kind(

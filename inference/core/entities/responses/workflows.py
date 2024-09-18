@@ -171,6 +171,5 @@ class DescribeInterfaceResponse(BaseModel):
     )
     kinds_schemas: Dict[str, Union[dict, List[dict]]] = Field(
         description="Dictionary mapping name of the kind with OpenAPI 3.0 definitions of underlying objects. "
-                    "If list is given, entity should be treated as union of types."
+        "If list is given, entity should be treated as union of types."
     )
-

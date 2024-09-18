@@ -1,11 +1,24 @@
 from inference.core.workflows.execution_engine.entities.base import VideoMetadata
-from inference.core.workflows.execution_engine.v1.introspection.kinds_schemas import (
-    ImageSchema, ImageKeyPoints, MultiClassClassificationSchema, MultiLabelClassificationSchema,
-    ObjectDetectionSchema, InstanceSegmentationSchema, KeyPointsDetectionSchema, CodeDetectionSchema
+from inference.core.workflows.execution_engine.entities.types import (
+    CLASSIFICATION_PREDICTION_KIND,
+    IMAGE_KEYPOINTS_KIND,
+    IMAGE_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
+    QR_CODE_DETECTION_KIND,
+    VIDEO_METADATA_KIND,
 )
-from inference.core.workflows.execution_engine.entities.types import IMAGE_KIND, VIDEO_METADATA_KIND, \
-    IMAGE_KEYPOINTS_KIND, CLASSIFICATION_PREDICTION_KIND, OBJECT_DETECTION_PREDICTION_KIND, \
-    INSTANCE_SEGMENTATION_PREDICTION_KIND, KEYPOINT_DETECTION_PREDICTION_KIND, QR_CODE_DETECTION_KIND
+from inference.core.workflows.execution_engine.v1.introspection.kinds_schemas import (
+    CodeDetectionSchema,
+    ImageKeyPoints,
+    ImageSchema,
+    InstanceSegmentationSchema,
+    KeyPointsDetectionSchema,
+    MultiClassClassificationSchema,
+    MultiLabelClassificationSchema,
+    ObjectDetectionSchema,
+)
 
 KIND_TO_SCHEMA_REGISTER = {
     IMAGE_KIND.name: ImageSchema.schema(),

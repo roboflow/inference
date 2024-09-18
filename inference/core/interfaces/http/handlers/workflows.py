@@ -1,5 +1,5 @@
 # TODO - for everyone: start migrating other handlers to bring relief to http_api.py
-from typing import List, Optional, Set, Dict, Union
+from typing import Dict, List, Optional, Set, Union
 
 from packaging.specifiers import SpecifierSet
 
@@ -36,8 +36,10 @@ from inference.core.workflows.execution_engine.v1.introspection.inputs_discovery
 from inference.core.workflows.execution_engine.v1.introspection.outputs_discovery import (
     describe_workflow_outputs,
 )
-from inference.core.workflows.execution_engine.v1.introspection.types_discovery import discover_kinds_typing_hints, \
-    discover_kinds_schemas
+from inference.core.workflows.execution_engine.v1.introspection.types_discovery import (
+    discover_kinds_schemas,
+    discover_kinds_typing_hints,
+)
 
 
 def handle_describe_workflows_blocks_request(
@@ -135,5 +137,3 @@ def get_unique_kinds(
             for output_field_kinds in output_definition.values():
                 all_kinds.update(output_field_kinds)
     return all_kinds
-
-

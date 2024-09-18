@@ -1,7 +1,11 @@
-from typing import Set, Dict, Union, List
+from typing import Dict, List, Set, Union
 
-from inference.core.workflows.execution_engine.introspection.blocks_loader import load_all_defined_kinds
-from inference.core.workflows.execution_engine.v1.introspection.kinds_schemas_register import KIND_TO_SCHEMA_REGISTER
+from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    load_all_defined_kinds,
+)
+from inference.core.workflows.execution_engine.v1.introspection.kinds_schemas_register import (
+    KIND_TO_SCHEMA_REGISTER,
+)
 
 
 def discover_kinds_typing_hints(kinds_names: Set[str]) -> Dict[str, str]:

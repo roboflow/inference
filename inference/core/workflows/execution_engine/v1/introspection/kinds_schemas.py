@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Literal, Any, List, Dict, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
 
@@ -7,7 +7,7 @@ class ImageSchema(BaseModel):
     type: Literal["url"]
     value: Any = Field(
         description="Value depends on `type` - for url, one should provide URL to the file, for "
-                    "`file` - local path, for `base64` - base64 string."
+        "`file` - local path, for `base64` - base64 string."
     )
 
 
@@ -29,7 +29,9 @@ class ClassificationPrediction(BaseModel):
 
 
 class ImageMetadataSchema(BaseModel):
-    width: Optional[int] = Field(description="The original width of the image used in inference")
+    width: Optional[int] = Field(
+        description="The original width of the image used in inference"
+    )
     height: Optional[int] = Field(
         description="The original height of the image used in inference"
     )

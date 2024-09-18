@@ -5,9 +5,7 @@ from typing import Dict, List, Optional, Set, Tuple, Type
 from pydantic import ValidationError
 
 from inference.core.workflows.errors import WorkflowDefinitionError
-from inference.core.workflows.execution_engine.entities.types import (
-    WILDCARD_KIND,
-)
+from inference.core.workflows.execution_engine.entities.types import WILDCARD_KIND
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
 )
