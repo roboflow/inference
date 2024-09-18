@@ -108,10 +108,10 @@ class PolygonZoneVisualizationBlockV1(VisualizationBlock):
         if copy_image:
             np_image = np_image.copy()
         annotated_image = cv.addWeighted(
-            src1=np_image,
-            alpha=1 - opacity,
-            src2=mask,
-            beta=opacity,
+            src1=mask,
+            alpha=opacity,
+            src2=np_image,
+            beta=1,
             gamma=0,
         )
 

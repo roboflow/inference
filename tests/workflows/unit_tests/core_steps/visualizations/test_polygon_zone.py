@@ -64,7 +64,7 @@ def test_polygon_zone_visualization_block() -> None:
     # given
     block = PolygonZoneVisualizationBlockV1()
 
-    start_image = np.ones((1000, 1000, 3), dtype=np.uint8)
+    start_image = np.random.randint(0, 255, (1000, 1000, 3), dtype=np.uint8)
     output = block.run(
         image=WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id="some"),
@@ -73,7 +73,7 @@ def test_polygon_zone_visualization_block() -> None:
         zone=[(10, 10), (100, 100), (100, 10), (50, 0)],
         copy_image=True,
         color="#FF0000",
-        opacity=0.1,
+        opacity=0.5,
     )
 
     assert isinstance(output, dict)
