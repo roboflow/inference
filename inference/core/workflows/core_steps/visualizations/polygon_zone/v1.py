@@ -46,8 +46,8 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
         }
     )
     zone: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Polygon zones (one for each batch) in a format [[(x1, y1), (x2, y2), (x3, y3), ...], ...];" \
-            " each zone must consist of more than 2 points",
+        description="Polygon zones (one for each batch) in a format [[(x1, y1), (x2, y2), (x3, y3), ...], ...];"
+        " each zone must consist of more than 2 points",
         examples=["$inputs.zones"],
     )
     color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
