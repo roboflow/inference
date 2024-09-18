@@ -24,9 +24,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/polygon_zone_visualization@v1"
-SHORT_DESCRIPTION = (
-    "Paints a mask over polygon zone in an image."
-)
+SHORT_DESCRIPTION = "Paints a mask over polygon zone in an image."
 LONG_DESCRIPTION = """
 The `PolygonZoneVisualization` block draws polygon zone
 in an image with a specified color and opacity.
@@ -111,7 +109,7 @@ class PolygonZoneVisualizationBlockV1(VisualizationBlock):
             np_image = np_image.copy()
         annotated_image = cv.addWeighted(
             src1=np_image,
-            alpha=1-opacity,
+            alpha=1 - opacity,
             src2=mask,
             beta=opacity,
             gamma=0,

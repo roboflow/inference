@@ -74,11 +74,7 @@ class VisualizationBlock(WorkflowBlock, ABC):
 
     @abstractmethod
     def run(
-        self,
-        image: WorkflowImageData,
-        copy_image: bool,
-        *args,
-        **kwargs
+        self, image: WorkflowImageData, copy_image: bool, *args, **kwargs
     ) -> BlockResult:
         pass
 
