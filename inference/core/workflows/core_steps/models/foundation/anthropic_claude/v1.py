@@ -109,13 +109,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/anthropic_claude@v1"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     task_type: TaskType = Field(
-        description="Task type to be performed by model. Value of parameter determine set of fields "
-        "that are required. For `unconstrained`, `visual-question-answering`, "
-        " - `prompt` parameter must be provided."
-        "For `structured-answering` - `output-structure` must be provided. For "
-        "`classification`, `multi-label-classification` and `object-detection` - "
-        "`classes` must be filled. `ocr`, `caption`, `detailed-caption` do not"
-        "require any additional parameter.",
+        description="Task type to be performed by model. Value determines required parameters and output response.",
     )
     prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
         default=None,
