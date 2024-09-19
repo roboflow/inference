@@ -17,7 +17,7 @@ TIME_IN_ZONE_WORKFLOW = {
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
         {"type": "WorkflowVideoMetadata", "name": "video_metadata"},
-        {"type": "WorkflowParameter", "name": "zone"},
+        {"type": "WorkflowParameter", "name": "line"},
     ],
     "steps": [
         {
@@ -34,31 +34,32 @@ TIME_IN_ZONE_WORKFLOW = {
             "metadata": "$inputs.video_metadata"
         },
         {
-            "type": "roboflow_core/time_in_zone@v1",
-            "name": "time_in_zone",
+            "type": "roboflow_core/line_counter@v1",
+            "name": "line_counter",
             "detections": f"$steps.byte_tracker.tracked_detections",
             "metadata": "$inputs.video_metadata",
-            "zone": "$inputs.zone",
+            "line_segment": "$inputs.line",
             "image": "$inputs.image",
         },
         {
             "type": "roboflow_core/label_visualization@v1",
             "name": "label_visualization",
             "image": "$inputs.image",
-            "predictions": "$steps.time_in_zone.timed_detections",
-            "text": "Time In Zone",
+            "predictions": "$steps.byte_tracker.tracked_detections",
         },
         {
             "type": "roboflow_core/bounding_box_visualization@v1",
             "name": "bbox_visualization",
             "image": "$steps.label_visualization.image",
-            "predictions": "$steps.time_in_zone.timed_detections",
+            "predictions": "$steps.byte_tracker.tracked_detections",
         },
         {
-            "type": "roboflow_core/polygon_zone_visualization@v1",
+            "type": "roboflow_core/line_counter_visualization@v1",
             "name": "zone_visualization",
             "image": "$steps.bbox_visualization.image",
-            "zone": "$inputs.zone",
+            "zone": "$inputs.line",
+            "count_in": "$steps.line_counter.count_in",
+            "count_out": "$steps.line_counter.count_out"
         }
     ],
     "outputs": [
@@ -76,7 +77,7 @@ def main() -> None:
         watchdog=watchdog,
         on_prediction=workflows_sink,
         workflows_parameters={
-            "zone": [(0, 0), (512, 0), (512, 2000), (0, 2000)],
+            "line": [[128, 512], [1900, 512]],
         }
     )
     control_thread = Thread(target=command_thread, args=(pipeline, watchdog))
