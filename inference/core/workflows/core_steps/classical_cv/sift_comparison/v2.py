@@ -6,7 +6,6 @@ import numpy as np
 from pydantic import ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.execution_engine.entities.base import (
-    ImageParentMetadata,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -276,7 +275,7 @@ def apply_sift(
     kp, des = sift.detectAndCompute(gray, None)
     img_with_kp = None
     if visualize:
-        img_with_kp = cv2.drawKeypoints(gray, kp, image)
+        img_with_kp = cv2.drawKeypoints(gray, kp, None)
     # Convert keypoints to the desired format
     keypoints_dicts = [
         {
