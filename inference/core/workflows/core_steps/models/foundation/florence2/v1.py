@@ -1,5 +1,5 @@
-from typing import List, Literal, Optional, Type, TypeVar, Union
 import json
+from typing import List, Literal, Optional, Type, TypeVar, Union
 
 from pydantic import ConfigDict, Field, model_validator
 

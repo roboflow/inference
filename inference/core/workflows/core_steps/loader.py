@@ -82,6 +82,9 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 im
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
+    Florence2BlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
 )
@@ -214,9 +217,6 @@ from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
-    Florence2BlockV1,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BAR_CODE_DETECTION_KIND,
