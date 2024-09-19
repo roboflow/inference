@@ -88,14 +88,15 @@ class BlockManifest(WorkflowBlockManifest):
         description="The string with raw classification prediction to parse.",
         examples=[["$steps.lmm.output"]],
     )
-    classes: Optional[Union[
+    classes: Union[
         WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
         StepOutputSelector(kind=[LIST_OF_VALUES_KIND]),
-        List[str]],
+        Optional[List[str]],
     ] = Field(
         description="List of all classes used by the model, required to "
         "generate mapping between class name and class id.",
         examples=[["$steps.lmm.classes", "$inputs.classes", ["class_a", "class_b"]]],
+        default=None,
     )
     model_type: Literal["google-gemini", "anthropic-claude", "florence-2"] = Field(
         description="Type of the model that generated prediction",
