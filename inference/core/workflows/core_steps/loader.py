@@ -215,6 +215,9 @@ from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
+    Florence2BlockV1,
+)
 from inference.core.workflows.execution_engine.entities.types import (
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
@@ -335,6 +338,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         AntropicClaudeBlockV1,
         LineCounterBlockV1,
         PolygonZoneVisualizationBlockV1,
+        Florence2BlockV1,
     ]
 
 
