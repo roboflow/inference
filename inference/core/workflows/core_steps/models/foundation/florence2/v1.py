@@ -1,4 +1,5 @@
 from typing import List, Literal, Optional, Type, TypeVar, Union
+import json
 
 from pydantic import ConfigDict, Field, model_validator
 import numpy as np
@@ -129,7 +130,6 @@ class BlockManifest(WorkflowBlockManifest):
     def accepts_batch_input(cls) -> bool:
         return True
 
-
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
         if self.task_type in TASKS_REQUIRING_PROMPT and self.prompt is None:
@@ -201,7 +201,9 @@ class Florence2BlockV1(WorkflowBlock):
         prompt: Optional[str],
         model_version: str,
     ) -> BlockResult:
-        inference_images = [i.to_inference_format(numpy_preferred=False) for i in images]
+        inference_images = [
+            i.to_inference_format(numpy_preferred=False) for i in images
+        ]
         self._model_manager.add_model(
             model_id=model_version,
             api_key=self._api_key,
@@ -218,5 +220,7 @@ class Florence2BlockV1(WorkflowBlock):
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
-            predictions.append(prediction)
-        return [{"output": prediction.response} for prediction in predictions]
+            jsonified = json.dumps(prediction.response)
+            predictions.append(jsonified)
+
+        return [{"output": prediction} for prediction in predictions]

@@ -96,9 +96,9 @@ class BlockManifest(WorkflowBlockManifest):
         "generate mapping between class name and class id.",
         examples=[["$steps.lmm.classes", "$inputs.classes", ["class_a", "class_b"]]],
     )
-    model_type: Literal["google-gemini", "anthropic-claude"] = Field(
+    model_type: Literal["google-gemini", "anthropic-claude", "florence-2"] = Field(
         description="Type of the model that generated prediction",
-        examples=[["google-gemini", "anthropic-claude"]],
+        examples=[["google-gemini", "anthropic-claude", "florence-2"]],
     )
     task_type: Literal["object-detection"]
 

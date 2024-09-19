@@ -14,7 +14,17 @@ BOS_TOKEN = "<s>"
 EOS_TOKEN = "</s>"
 
 
-class Florence2(TransformerModel):
+class Florence2Processing:
+    def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
+        (decoded,) = super().predict(image_in, prompt, history, **kwargs)
+        parsed_answer = self.processor.post_process_generation(
+            decoded, task=prompt.split(">")[0] + ">", image_size=image_in.size
+        )
+
+        return (parsed_answer,)
+
+
+class Florence2(Florence2Processing, TransformerModel):
     transformers_class = AutoModelForCausalLM
     default_dtype = torch.float32
     skip_special_tokens = False
@@ -39,13 +49,8 @@ class Florence2(TransformerModel):
             "pixel_values": preprocessed_inputs["pixel_values"],
         }
 
-    def predict(self, image_in: Image, prompt="", history=None, **kwargs):
-        (preds,) = super().predict(image_in, prompt, history, **kwargs)
-        preds = preds.replace(BOS_TOKEN, "").replace(EOS_TOKEN, "")
-        return (preds,)
 
-
-class LoRAFlorence2(LoRATransformerModel):
+class LoRAFlorence2(Florence2Processing, LoRATransformerModel):
     load_base_from_roboflow = True
     transformers_class = AutoModelForCausalLM
     default_dtype = torch.float32
@@ -71,8 +76,3 @@ class LoRAFlorence2(LoRATransformerModel):
             "input_ids": preprocessed_inputs["input_ids"],
             "pixel_values": preprocessed_inputs["pixel_values"],
         }
-
-    def predict(self, image_in: Image, prompt="", history=None, **kwargs):
-        (preds,) = super().predict(image_in, prompt, history, **kwargs)
-        preds = preds.replace(BOS_TOKEN, "").replace(EOS_TOKEN, "")
-        return (preds,)
