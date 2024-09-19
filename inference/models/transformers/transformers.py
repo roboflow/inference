@@ -125,7 +125,9 @@ class TransformerModel(RoboflowInferenceModel):
             generation = generation[0]
             if self.generation_includes_input:
                 generation = generation[input_len:]
-            decoded = self.processor.decode(generation, skip_special_tokens=self.skip_special_tokens)
+            decoded = self.processor.decode(
+                generation, skip_special_tokens=self.skip_special_tokens
+            )
 
         return (decoded,)
 
