@@ -469,6 +469,7 @@ class DetectionsRename(OperationDefinition):
     )
     type: Literal["DetectionsRename"]
     class_map: Dict[str, str]
+    strict: bool
 
 
 AllOperationsType = Annotated[
