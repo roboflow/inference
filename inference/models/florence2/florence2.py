@@ -10,12 +10,9 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
-BOS_TOKEN = "<s>"
-EOS_TOKEN = "</s>"
-
 
 class Florence2Processing:
-    def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
+    def predict(self, image_in: Image, prompt="", history=None, **kwargs):
         (decoded,) = super().predict(image_in, prompt, history, **kwargs)
         parsed_answer = self.processor.post_process_generation(
             decoded, task=prompt.split(">")[0] + ">", image_size=image_in.size
