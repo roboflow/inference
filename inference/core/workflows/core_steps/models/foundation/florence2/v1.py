@@ -98,12 +98,8 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/florence_2@v1"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     task_type: TaskType = Field(
-        description="Task type to be performed by model.\n"
-        "Each of:"
-        f" [{florence_2_tasks_to_task_type['<CAPTION_TO_PHRASE_GROUNDING>']},"
-        f" {florence_2_tasks_to_task_type['<REFERRING_EXPRESSION_SEGMENTATION>']},"
-        f" {florence_2_tasks_to_task_type['<OPEN_VOCABULARY_DETECTION>']}]"
-        " require `prompt` to be filled in."
+        description="Task type to be performed by model. "
+        "Value determines required parameters and output response."
     )
     prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
         default=None,
