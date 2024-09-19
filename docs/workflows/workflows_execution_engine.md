@@ -77,7 +77,7 @@ As the definition suggests, a SIMD (Single Instruction, Multiple Data) step proc
 same operation is applied to each data point, potentially using non-batch-oriented parameters for configuration. 
 The output from such a step is expected to be a batch of elements, preserving the order of the input batch elements. 
 This applies to both regular processing steps and flow-control steps (see 
-[blocks development guide](/workflows/create_workflow_block/ for more on their nature), where flow-control decisions 
+[blocks development guide](/workflows/create_workflow_block/)), where flow-control decisions 
 affect each batch element individually.
 
 In essence, the type of data fed into the step determines whether it's SIMD or non-SIMD. If a step requests any 
