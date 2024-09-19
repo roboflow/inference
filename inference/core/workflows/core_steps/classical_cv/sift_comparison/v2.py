@@ -17,6 +17,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     NUMPY_ARRAY_KIND,
     IMAGE_KEYPOINTS_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    STRING_KIND,
     StepOutputSelector,
     WorkflowParameterSelector,
     StepOutputImageSelector,
@@ -70,6 +71,17 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
         "the distance of the closest match to the distance of the second closest match. A lower "
         "ratio indicates stricter filtering.",
         examples=[0.7, "$inputs.ratio_threshold"],
+    )
+    matcher: Union[
+        Literal[
+            "FlannBasedMatcher",
+            "BFMatcher"
+        ],
+        WorkflowParameterSelector(kind=[STRING_KIND]),
+    ] = Field(  # type: ignore
+        default="FlannBasedMatcher",
+        description="Matcher to use for comparing the SIFT descriptors",
+        examples=["FlannBasedMatcher", "$inputs.matcher"],
     )
     visualize: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
@@ -129,6 +141,7 @@ class SIFTComparisonBlockV2(WorkflowBlock):
         input_2: Union[np.ndarray, WorkflowImageData],
         good_matches_threshold: int = 50,
         ratio_threshold: float = 0.7,
+        matcher: str = "FlannBasedMatcher",
         visualize: bool = False,
     ) -> BlockResult:
         if isinstance(input_1, WorkflowImageData):
@@ -165,8 +178,12 @@ class SIFTComparisonBlockV2(WorkflowBlock):
                 "visualization_matches": None,
             }
         
-        flann = cv2.FlannBasedMatcher(dict(algorithm=1, trees=5), dict(checks=50))
-        matches = flann.knnMatch(descriptors_1, descriptors_2, k=2)
+        if matcher == "BFMatcher":
+            bf = cv2.BFMatcher(cv2.NORM_L2)
+            matches = bf.knnMatch(descriptors_1, descriptors_2, k=2)
+        else:
+            flann = cv2.FlannBasedMatcher(dict(algorithm=1, trees=5), dict(checks=50))
+            matches = flann.knnMatch(descriptors_1, descriptors_2, k=2)
         good_matches = []
         for m, n in matches:
             if m.distance < ratio_threshold * n.distance:
@@ -190,11 +207,16 @@ class SIFTComparisonBlockV2(WorkflowBlock):
         
         visualization_matches = None
         if visualize and image_1 is not None and image_2 is not None:
-            draw_params = dict(
-                matchColor=(0, 255, 0),
-                singlePointColor=(0, 0, 255),
-                flags=cv2.DrawMatchesFlags_DEFAULT,
-            )
+            if matcher == "BFMatcher":
+                draw_params = dict(
+                    flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS,
+                )
+            else:
+                draw_params = dict(
+                    matchColor=(0, 255, 0),
+                    singlePointColor=(0, 0, 255),
+                    flags=cv2.DrawMatchesFlags_DEFAULT,
+                )
 
             visualization_matches = cv2.drawMatchesKnn(
                 image_1,
