@@ -1,4 +1,5 @@
 import json
+import hashlib
 import logging
 import re
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
@@ -87,10 +88,10 @@ class BlockManifest(WorkflowBlockManifest):
         description="The string with raw classification prediction to parse.",
         examples=[["$steps.lmm.output"]],
     )
-    classes: Union[
+    classes: Optional[Union[
         WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
         StepOutputSelector(kind=[LIST_OF_VALUES_KIND]),
-        List[str],
+        List[str]],
     ] = Field(
         description="List of all classes used by the model, required to "
         "generate mapping between class name and class id.",
@@ -108,6 +109,11 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"Could not parse result of task {self.task_type} for model {self.model_type}"
             )
+        if self.model_type != "florence-2" and self.classes is None:
+            raise ValueError(
+                "Must pass list of classes to this block when using gemini or claude"
+            )
+
         return self
 
     @classmethod
@@ -135,7 +141,7 @@ class VLMAsDetectorBlockV1(WorkflowBlock):
         self,
         image: WorkflowImageData,
         vlm_output: str,
-        classes: List[str],
+        classes: Optional[List[str]],
         model_type: str,
         task_type: str,
     ) -> BlockResult:
@@ -255,7 +261,58 @@ def scale_confidence(value: float) -> float:
     return min(max(float(value), 0.0), 1.0)
 
 
+def parse_florence2_object_detection_response(
+    image: WorkflowImageData,
+    parsed_data: dict,
+    classes: Optional[List[str]],
+    inference_id: str,
+):
+    image_height, image_width = image.numpy_image.shape[:2]
+    detections = sv.Detections.from_lmm(
+        "florence_2",
+        parsed_data,
+        resolution_wh=(image_width, image_height),
+    )
+    detection_ids = np.array([str(uuid4()) for _ in range(len(detections))])
+    inference_ids = np.array([inference_id] * len(detections))
+    prediction_type = np.array(["object-detection"] * len(detections))
+    detections.data.update(
+        {
+            INFERENCE_ID_KEY: inference_ids,
+            DETECTION_ID_KEY: detection_ids,
+            PREDICTION_TYPE_KEY: prediction_type,
+        }
+    )
+    detections.confidence = np.array([1.0 for _ in detections])
+    detected_class_names = detections.data[CLASS_NAME_DATA_FIELD]
+    if classes is not None:
+        bool_array = np.array([c in classes for c in detected_class_names])
+        filtered_detections = detections[bool_array]
+        filtered_classes = filtered_detections.data[CLASS_NAME_DATA_FIELD]
+        filtered_detections.class_id = np.array(
+            [classes.index(c) for c in filtered_classes]
+        )
+        return attach_parents_coordinates_to_sv_detections(
+            detections=filtered_detections,
+            image=image,
+        )
+    # classes is None
+    class_ids = [get_4digit_from_md5(c) for c in detected_class_names]
+    detections.class_id = np.array(class_ids)
+    return attach_parents_coordinates_to_sv_detections(
+        detections=detections, image=image
+    )
+
+
+def get_4digit_from_md5(input_string):
+    md5_hash = hashlib.md5(input_string.encode("utf-8"))
+    hex_digest = md5_hash.hexdigest()
+    integer_value = int(hex_digest[:9], 16)
+    return integer_value % 10000
+
+
 REGISTERED_PARSERS = {
     ("google-gemini", "object-detection"): parse_gemini_object_detection_response,
     ("anthropic-claude", "object-detection"): parse_gemini_object_detection_response,
+    ("florence-2", "object-detection"): parse_florence2_object_detection_response,
 }
