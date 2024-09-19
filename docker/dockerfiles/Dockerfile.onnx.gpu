@@ -26,8 +26,6 @@ COPY requirements/requirements.sam.txt \
     requirements/_requirements.txt \
     requirements/requirements.transformers.txt \
     requirements/requirements.pali.flash_attn.txt \
-    requirements/requirements.sdk.http.txt \
-    requirements/requirements.cli.txt \
     ./
 
 RUN python3 -m pip install -U pip
@@ -44,8 +42,6 @@ RUN python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cu
     -r requirements.cogvlm.txt \
     -r requirements.yolo_world.txt \
     -r requirements.transformers.txt \
-    -r requirements.sdk.http.txt \
-    -r requirements.cli.txt \
     jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip
@@ -59,14 +55,19 @@ RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-build-isolat
 FROM scratch
 COPY --from=base / /
 
+WORKDIR /build
+COPY . .
+RUN ln -s /usr/bin/python3 /usr/bin/python
+RUN /bin/make create_wheels_for_gpu_notebook
+RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl
+
+WORKDIR /notebooks
+COPY examples/notebooks .
+
 WORKDIR /app/
 COPY inference inference
-COPY inference_sdk inference_sdk
-COPY inference_cli inference_cli
-ENV PYTHONPATH=/app/
 COPY docker/config/gpu_http.py gpu_http.py
 
-ENV PYTHONPATH=/app/
 ENV VERSION_CHECK_MODE=continuous
 ENV PROJECT=roboflow-platform
 ENV NUM_WORKERS=1
