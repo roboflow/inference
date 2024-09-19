@@ -39,7 +39,7 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 - `unconstrained` - any arbitrary prompt you like 
 
-- `ocr`- predefined prompt to recognise text from image
+- `ocr`- predefined prompt to recognize text from image
 
 - `visual-question-answering` - your prompt is supposed to provide question and will be 
 wrapped into structure that is suited for VQA task
@@ -101,13 +101,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/open_ai@v2"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     task_type: TaskType = Field(
-        description="Task type to be performed by model. Value of parameter determine set of fields "
-        "that are required. For `unconstrained`, `visual-question-answering`, "
-        " - `prompt` parameter must be provided."
-        "For `structured-answering` - `output-structure` must be provided. For "
-        "`classification`, `multi-label-classification` - "
-        "`classes` must be filled. `ocr`, `caption`, `detailed-caption` do not"
-        "require any additional parameter.",
+        description="Task type to be performed by model. Value determines required parameters and output response."
     )
     prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
         default=None,
@@ -125,7 +119,10 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[{"my_key": "description"}, "$inputs.output_structure"],
         json_schema_extra={
             "relevant_for": {
-                "task_type": {"values": TASKS_REQUIRING_CLASSES, "required": True},
+                "task_type": {
+                    "values": TASKS_REQUIRING_OUTPUT_STRUCTURE,
+                    "required": True,
+                },
             },
         },
     )
@@ -138,7 +135,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
-                    "values": TASKS_REQUIRING_OUTPUT_STRUCTURE,
+                    "values": TASKS_REQUIRING_CLASSES,
                     "required": True,
                 },
             },

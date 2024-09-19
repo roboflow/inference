@@ -69,6 +69,18 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/roboflow_dataset_upload@v2"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    target_project: Union[
+        WorkflowParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), str
+    ] = Field(
+        description="name of Roboflow dataset / project to be used as target for collected data",
+        examples=["my_dataset", "$inputs.target_al_dataset"],
+    )
+    usage_quota_name: str = Field(
+        description="Unique name for Roboflow project pointed by `target_project` parameter, that identifies "
+        "usage quota applied for this block.",
+        examples=["quota-for-data-sampling-1"],
+        json_schema_extra={"hidden": True},
+    )
     predictions: Optional[
         StepOutputSelector(
             kind=[
@@ -80,23 +92,14 @@ class BlockManifest(WorkflowBlockManifest):
         )
     ] = Field(
         default=None,
-        description="Reference q detection-like predictions",
+        description="Model predictions to be saved",
         examples=["$steps.object_detection_model.predictions"],
-    )
-    target_project: Union[
-        WorkflowParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), str
-    ] = Field(
-        description="name of Roboflow dataset / project to be used as target for collected data",
-        examples=["my_dataset", "$inputs.target_al_dataset"],
-    )
-    usage_quota_name: str = Field(
-        description="Unique name for Roboflow project pointed by `target_project` parameter, that identifies "
-        "usage quota applied for this block.",
-        examples=["quota-for-data-sampling-1"],
+        json_schema_extra={"always_visible": True},
     )
     data_percentage: Union[
         FloatZeroToHundred, WorkflowParameterSelector(kind=[FLOAT_KIND])
     ] = Field(
+        default=100,
         description="Percent of data that will be saved (in range [0.0, 100.0])",
         examples=[True, False, "$inputs.persist_predictions"],
     )

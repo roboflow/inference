@@ -113,7 +113,6 @@ The Roboflow Inference code is distributed under an [Apache 2.0 license](https:/
 With a Roboflow Inference Enterprise License, you can access additional Inference features, including:
 
 - Server cluster deployment
-- Device management
 - Active learning
 - YOLOv5 and YOLOv8 model sub-license
 

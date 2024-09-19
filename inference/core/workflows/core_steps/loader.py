@@ -2,6 +2,12 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
+    LineCounterBlockV1,
+)
+from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
+    TimeInZoneBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
@@ -23,6 +29,9 @@ from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 impor
 from inference.core.workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import (
     SIFTComparisonBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.sift_comparison.v2 import (
+    SIFTComparisonBlockV2,
 )
 from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
     TemplateMatchingBlockV1,
@@ -129,6 +138,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
+    ByteTrackerBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
 )
@@ -188,6 +200,9 @@ from inference.core.workflows.core_steps.visualizations.halo.v1 import (
 from inference.core.workflows.core_steps.visualizations.label.v1 import (
     LabelVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
+    LineCounterZoneVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.mask.v1 import (
     MaskVisualizationBlockV1,
 )
@@ -196,6 +211,9 @@ from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
     PolygonVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
+    PolygonZoneVisualizationBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
@@ -248,6 +266,7 @@ REGISTERED_INITIALIZERS = {
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
+        TimeInZoneBlockV1,
         SegmentAnything2BlockV1,
         DetectionsConsensusBlockV1,
         ClipComparisonBlockV1,
@@ -268,6 +287,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
         DetectionOffsetBlockV1,
+        ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
@@ -293,6 +313,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         MaskVisualizationBlockV1,
         PixelateVisualizationBlockV1,
         PolygonVisualizationBlockV1,
+        LineCounterZoneVisualizationBlockV1,
         TriangleVisualizationBlockV1,
         RoboflowCustomMetadataBlockV1,
         DetectionsStitchBlockV1,
@@ -300,6 +321,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DominantColorBlockV1,
         PixelationCountBlockV1,
         SIFTComparisonBlockV1,
+        SIFTComparisonBlockV2,
         SIFTBlockV1,
         TemplateMatchingBlockV1,
         ImageBlurBlockV1,
@@ -315,6 +337,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         GoogleGeminiBlockV1,
         VLMAsDetectorBlockV1,
         AntropicClaudeBlockV1,
+        LineCounterBlockV1,
+        PolygonZoneVisualizationBlockV1,
     ]
 
 
