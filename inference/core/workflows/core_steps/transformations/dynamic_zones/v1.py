@@ -103,14 +103,10 @@ def calculate_minimum_bounding_rectangle(
 def calculate_simplified_polygon(
     mask: np.ndarray,
     required_number_of_vertices: int,
-    force_rectangle: bool = False,
     max_steps: int = 1000,
-) -> Union[np.array, Tuple[np.array, float, float, float]]:
+) -> np.array:
     contours = sv.mask_to_polygons(mask)
     largest_contour = max(contours, key=len)
-
-    if force_rectangle and required_number_of_vertices == 4:
-        return calculate_minimum_bounding_rectangle(mask)
 
     convex_contour = cv.convexHull(
         points=largest_contour,
@@ -152,6 +148,11 @@ class DynamicZonesBlockV1(WorkflowBlock):
         force_rectangle: bool = False,
         include_rectangle_details: bool = False,
     ) -> BlockResult:
+        if force_rectangle and required_number_of_vertices != 4:
+            raise ValueError(
+                "force_rectangle can only be used when required_number_of_vertices is set to 4"
+            )
+
         result = []
         for detections in predictions:
             if detections is None:
@@ -162,13 +163,10 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 result.append({OUTPUT_KEY: []})
                 continue
             for mask in detections.mask:
-                simplified_polygon = calculate_simplified_polygon(
-                    mask=mask,
-                    required_number_of_vertices=required_number_of_vertices,
-                    force_rectangle=force_rectangle,
-                )
                 if force_rectangle and required_number_of_vertices == 4:
-                    polygon, width, height, angle = simplified_polygon
+                    polygon, width, height, angle = (
+                        calculate_minimum_bounding_rectangle(mask)
+                    )
                     if include_rectangle_details:
                         simplified_polygons.append(
                             {
@@ -181,6 +179,10 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     else:
                         simplified_polygons.append(polygon)
                 else:
+                    simplified_polygon = calculate_simplified_polygon(
+                        mask=mask,
+                        required_number_of_vertices=required_number_of_vertices,
+                    )
                     if len(simplified_polygon) != required_number_of_vertices:
                         continue
                     simplified_polygons.append(simplified_polygon)
