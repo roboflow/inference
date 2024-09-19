@@ -453,7 +453,7 @@ class Divide(OperationDefinition):
 class DetectionsRename(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "Makes detected bounding boxes bigger by applying offset to its size",
+            "description": "Renames classes in detections based on provided mapping",
             "compound": False,
             "input_kind": [
                 OBJECT_DETECTION_PREDICTION_KIND,
