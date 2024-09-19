@@ -63,7 +63,6 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         ]
     ) = Field(  # type: ignore
         description="Predictions",
-        default=None,
         examples=["$steps.object_detection_model.predictions"],
     )
     zone: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
