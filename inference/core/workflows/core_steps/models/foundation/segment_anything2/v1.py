@@ -90,9 +90,10 @@ class BlockManifest(WorkflowBlockManifest):
             ]
         )
     ] = Field(  # type: ignore
-        description="Boxes (from other model predictions) to ground SAM2",
+        description="Bounding boxes (from another model) to convert to polygons",
         examples=["$steps.object_detection_model.predictions"],
         default=None,
+        json_schema_extra={"always_visible": True},
     )
     version: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]),
