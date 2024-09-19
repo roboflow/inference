@@ -50,7 +50,9 @@ from inference.core.entities.requests.server_state import (
 from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
+    DescribeInterfaceRequest,
     WorkflowInferenceRequest,
+    WorkflowSpecificationDescribeInterfaceRequest,
     WorkflowSpecificationInferenceRequest,
 )
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
@@ -85,6 +87,7 @@ from inference.core.entities.responses.server_state import (
     ServerVersionInfo,
 )
 from inference.core.entities.responses.workflows import (
+    DescribeInterfaceResponse,
     ExecutionEngineVersions,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
@@ -145,6 +148,7 @@ from inference.core.exceptions import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
+    handle_describe_workflows_interface,
 )
 from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
@@ -973,6 +977,41 @@ class HttpInterface(BaseInterface):
         if not DISABLE_WORKFLOW_ENDPOINTS:
 
             @app.post(
+                "/{workspace_name}/workflows/{workflow_id}/describe_interface",
+                response_model=DescribeInterfaceResponse,
+                summary="Endpoint to describe interface of predefined workflow",
+                description="Checks Roboflow API for workflow definition, once acquired - describes workflow inputs and outputs",
+            )
+            @with_route_exceptions
+            async def describe_predefined_workflow_interface(
+                workspace_name: str,
+                workflow_id: str,
+                workflow_request: DescribeInterfaceRequest,
+            ) -> DescribeInterfaceResponse:
+                workflow_specification = get_workflow_specification(
+                    api_key=workflow_request.api_key,
+                    workspace_id=workspace_name,
+                    workflow_id=workflow_id,
+                )
+                return handle_describe_workflows_interface(
+                    definition=workflow_specification,
+                )
+
+            @app.post(
+                "/workflows/describe_interface",
+                response_model=DescribeInterfaceResponse,
+                summary="Endpoint to describe interface of workflow given in request",
+                description="Parses workflow definition and retrieves describes inputs and outputs",
+            )
+            @with_route_exceptions
+            async def describe_workflow_interface(
+                workflow_request: WorkflowSpecificationDescribeInterfaceRequest,
+            ) -> DescribeInterfaceResponse:
+                return handle_describe_workflows_interface(
+                    definition=workflow_request.specification,
+                )
+
+            @app.post(
                 "/{workspace_name}/workflows/{workflow_id}",
                 response_model=WorkflowInferenceResponse,
                 summary="Endpoint to run predefined workflow",
@@ -1486,7 +1525,7 @@ class HttpInterface(BaseInterface):
                     "/sam2/embed_image",
                     response_model=Sam2EmbeddingResponse,
                     summary="SAM2 Image Embeddings",
-                    description="Run the Meta AI Segmant Anything 2 Model to embed image data.",
+                    description="Run the Meta AI Segment Anything 2 Model to embed image data.",
                 )
                 @with_route_exceptions
                 async def sam2_embed_image(
@@ -1498,7 +1537,7 @@ class HttpInterface(BaseInterface):
                     ),
                 ):
                     """
-                    Embeds image data using the Meta AI Segmant Anything Model (SAM).
+                    Embeds image data using the Meta AI Segment Anything Model (SAM).
 
                     Args:
                         inference_request (SamEmbeddingRequest): The request containing the image to be embedded.
@@ -1519,7 +1558,7 @@ class HttpInterface(BaseInterface):
                     "/sam2/segment_image",
                     response_model=Sam2SegmentationResponse,
                     summary="SAM2 Image Segmentation",
-                    description="Run the Meta AI Segmant Anything 2 Model to generate segmenations for image data.",
+                    description="Run the Meta AI Segment Anything 2 Model to generate segmenations for image data.",
                 )
                 @with_route_exceptions
                 async def sam2_segment_image(
@@ -1531,7 +1570,7 @@ class HttpInterface(BaseInterface):
                     ),
                 ):
                     """
-                    Generates segmentations for image data using the Meta AI Segmant Anything Model (SAM).
+                    Generates segmentations for image data using the Meta AI Segment Anything Model (SAM).
 
                     Args:
                         inference_request (Sam2SegmentationRequest): The request containing the image to be segmented.

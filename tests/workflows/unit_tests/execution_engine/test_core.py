@@ -9,8 +9,8 @@ from inference.core.workflows.errors import (
 )
 from inference.core.workflows.execution_engine import core
 from inference.core.workflows.execution_engine.core import (
-    _retrieve_requested_execution_engine_version,
     _select_execution_engine,
+    retrieve_requested_execution_engine_version,
 )
 from inference.core.workflows.execution_engine.v1.core import (
     EXECUTION_ENGINE_V1_VERSION,
@@ -21,7 +21,7 @@ def test_retrieve_requested_execution_engine_version_when_version_not_given_in_m
     None
 ):
     # when
-    result = _retrieve_requested_execution_engine_version(workflow_definition={})
+    result = retrieve_requested_execution_engine_version(workflow_definition={})
 
     # then
     assert (
@@ -35,14 +35,14 @@ def test_retrieve_requested_execution_engine_version_when_version_not_given_in_m
 ):
     # when
     with pytest.raises(WorkflowEnvironmentConfigurationError):
-        _ = _retrieve_requested_execution_engine_version(workflow_definition={})
+        _ = retrieve_requested_execution_engine_version(workflow_definition={})
 
 
 def test_retrieve_requested_execution_engine_version_when_matching_version_specified_in_manifest() -> (
     None
 ):
     # when
-    result = _retrieve_requested_execution_engine_version(
+    result = retrieve_requested_execution_engine_version(
         workflow_definition={
             "version": "1.0.0",
         }
