@@ -1,27 +1,27 @@
 from typing import List, Literal, Optional, Type, Union
+from uuid import uuid4
 
 import cv2
 import numpy as np
 from pydantic import ConfigDict, Field, PositiveInt
-from uuid import uuid4
 
 from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
     OutputDefinition,
     WorkflowImageData,
-    ImageParentMetadata
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
-    INTEGER_KIND,
-    IMAGE_KIND,
-    NUMPY_ARRAY_KIND,
-    IMAGE_KEYPOINTS_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KEYPOINTS_KIND,
+    IMAGE_KIND,
+    INTEGER_KIND,
+    NUMPY_ARRAY_KIND,
     STRING_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
     StepOutputImageSelector,
+    StepOutputSelector,
     WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -50,11 +50,19 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/sift_comparison@v2"]
-    input_1: Union[WorkflowImageSelector, StepOutputImageSelector, StepOutputSelector(kind=[NUMPY_ARRAY_KIND])] = Field(
+    input_1: Union[
+        WorkflowImageSelector,
+        StepOutputImageSelector,
+        StepOutputSelector(kind=[NUMPY_ARRAY_KIND]),
+    ] = Field(
         description="Reference to Image or SIFT descriptors from the first image to compare",
         examples=["$inputs.image1", "$steps.sift.descriptors"],
     )
-    input_2: Union[WorkflowImageSelector, StepOutputImageSelector, StepOutputSelector(kind=[NUMPY_ARRAY_KIND])] = Field(
+    input_2: Union[
+        WorkflowImageSelector,
+        StepOutputImageSelector,
+        StepOutputSelector(kind=[NUMPY_ARRAY_KIND]),
+    ] = Field(
         description="Reference to Image or SIFT descriptors from the second image to compare",
         examples=["$inputs.image2", "$steps.sift.descriptors"],
     )
@@ -65,7 +73,9 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
         description="Threshold for the number of good matches to consider the images as matching",
         examples=[50, "$inputs.good_matches_threshold"],
     )
-    ratio_threshold: Union[float, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
+    ratio_threshold: Union[
+        float, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+    ] = Field(
         default=0.7,
         description="Ratio threshold for the ratio test, which is used to filter out poor matches by comparing "
         "the distance of the closest match to the distance of the second closest match. A lower "
@@ -73,10 +83,7 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
         examples=[0.7, "$inputs.ratio_threshold"],
     )
     matcher: Union[
-        Literal[
-            "FlannBasedMatcher",
-            "BFMatcher"
-        ],
+        Literal["FlannBasedMatcher", "BFMatcher"],
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="FlannBasedMatcher",
@@ -114,7 +121,6 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
                 name="descriptors_2",
                 kind=[NUMPY_ARRAY_KIND],
             ),
-
             OutputDefinition(
                 name="visualization_1",
                 kind=[IMAGE_KIND],
@@ -126,7 +132,7 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name="visualization_matches",
                 kind=[IMAGE_KIND],
-            )
+            ),
         ]
 
 
@@ -146,7 +152,9 @@ class SIFTComparisonBlockV2(WorkflowBlock):
     ) -> BlockResult:
         if isinstance(input_1, WorkflowImageData):
             image_1 = input_1.numpy_image
-            visualization_1, kp_1, keypoints_1, descriptors_1 = apply_sift(image_1, visualize)
+            visualization_1, kp_1, keypoints_1, descriptors_1 = apply_sift(
+                image_1, visualize
+            )
         else:
             image_1 = None
             descriptors_1 = input_1
@@ -156,7 +164,9 @@ class SIFTComparisonBlockV2(WorkflowBlock):
 
         if isinstance(input_2, WorkflowImageData):
             image_2 = input_2.numpy_image
-            visualization_2, kp_2, keypoints_2, descriptors_2 = apply_sift(image_2, visualize)
+            visualization_2, kp_2, keypoints_2, descriptors_2 = apply_sift(
+                image_2, visualize
+            )
         else:
             image_2 = None
             descriptors_2 = input_2
@@ -177,7 +187,7 @@ class SIFTComparisonBlockV2(WorkflowBlock):
                 "visualization_2": visualization_2,
                 "visualization_matches": None,
             }
-        
+
         if matcher == "BFMatcher":
             bf = cv2.BFMatcher(cv2.NORM_L2)
             matches = bf.knnMatch(descriptors_1, descriptors_2, k=2)
@@ -204,7 +214,7 @@ class SIFTComparisonBlockV2(WorkflowBlock):
                 workflow_root_ancestor_metadata=input_2.workflow_root_ancestor_metadata,
                 numpy_image=visualization_2,
             )
-        
+
         visualization_matches = None
         if visualize and image_1 is not None and image_2 is not None:
             if matcher == "BFMatcher":
@@ -246,7 +256,10 @@ class SIFTComparisonBlockV2(WorkflowBlock):
             "visualization_matches": visualization_matches,
         }
 
-def apply_sift(image: np.ndarray, visualize=False) -> (Optional[np.ndarray], list, list, np.ndarray):
+
+def apply_sift(
+    image: np.ndarray, visualize=False
+) -> (Optional[np.ndarray], list, list, np.ndarray):
     """
     Applies SIFT to the image.
     Args:
