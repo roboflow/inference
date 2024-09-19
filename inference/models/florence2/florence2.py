@@ -2,10 +2,16 @@ import os
 from typing import Any, Dict
 
 import torch
+from PIL.Image import Image
 from transformers import AutoModelForCausalLM
 
+from inference.core.entities.responses.inference import LMMInferenceResponse
+from inference.core.models.types import PreprocessReturnMetadata
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
+
+BOS_TOKEN = "<s>"
+EOS_TOKEN = "</s>"
 
 
 class Florence2(TransformerModel):
@@ -32,6 +38,11 @@ class Florence2(TransformerModel):
             "input_ids": preprocessed_inputs["input_ids"],
             "pixel_values": preprocessed_inputs["pixel_values"],
         }
+
+    def predict(self, image_in: Image, prompt="", history=None, **kwargs):
+        (preds,) = super().predict(image_in, prompt, history, **kwargs)
+        preds = preds.replace(BOS_TOKEN, "").replace(EOS_TOKEN, "")
+        return (preds,)
 
 
 class LoRAFlorence2(LoRATransformerModel):
@@ -60,3 +71,8 @@ class LoRAFlorence2(LoRATransformerModel):
             "input_ids": preprocessed_inputs["input_ids"],
             "pixel_values": preprocessed_inputs["pixel_values"],
         }
+
+    def predict(self, image_in: Image, prompt="", history=None, **kwargs):
+        (preds,) = super().predict(image_in, prompt, history, **kwargs)
+        preds = preds.replace(BOS_TOKEN, "").replace(EOS_TOKEN, "")
+        return (preds,)
