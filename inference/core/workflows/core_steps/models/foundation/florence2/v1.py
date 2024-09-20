@@ -266,6 +266,8 @@ class Florence2BlockV1(WorkflowBlock):
                 model_version=model_version,
                 prompt=prompt,
                 classes=classes,
+                grounding_detection=grounding_detection,
+                grounding_selection_mode=grounding_selection_mode,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             raise NotImplementedError(
