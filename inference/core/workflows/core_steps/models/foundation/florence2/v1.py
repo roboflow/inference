@@ -37,7 +37,7 @@ Run Florence-2, a large multimodal model, on an image.
 ** Dedicated inference server required (GPU recomended) **
 """
 
-task_type_to_florence_2_tasks = {
+TASK_TYPE_TO_FLORENCE_TASK = {
     "OCR": "<OCR>",
     "OCR with Text Detection": "<OCR_WITH_REGION>",
     "Caption": "<CAPTION>",
@@ -54,22 +54,18 @@ task_type_to_florence_2_tasks = {
     "OCR of Bounding Boxes": "<REGION_TO_OCR>",
     "Identify Regions Of Interest": "<REGION_PROPOSAL>",
 }
-florence_2_tasks_to_task_type = {v: k for k, v in task_type_to_florence_2_tasks.items()}
+florence_2_tasks_to_task_type = {v: k for k, v in TASK_TYPE_TO_FLORENCE_TASK.items()}
 supported_tasks = [
     key
-    for (key, value) in task_type_to_florence_2_tasks.items()
+    for (key, value) in TASK_TYPE_TO_FLORENCE_TASK.items()
     if not value.startswith("<REGION_TO")
 ]  # TODO: Add support for bbox inputs!
 TaskType = Literal[tuple(supported_tasks)]
 
 TASKS_REQUIRING_PROMPT = [
-    "<CAPTION_TO_PHRASE_GROUNDING>",
-    "<REFERRING_EXPRESSION_SEGMENTATION>",
-    "<OPEN_VOCABULARY_DETECTION>",
-    "<REGION_TO_SEGMENTATION>",
-    "<REGION_TO_CATEGORY>",
-    "<REGION_TO_DESCRIPTION>",
-    "<REGION_TO_OCR>",
+    "Detecting Sub-Phrases from Descriptions",
+    "Segmentation of Described Objects",
+    "Open-Set Object Detection",
 ]
 
 
@@ -118,10 +114,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
-        if (
-            task_type_to_florence_2_tasks[self.task_type] in TASKS_REQUIRING_PROMPT
-            and self.prompt is None
-        ):
+        if self.task_type in TASKS_REQUIRING_PROMPT and self.prompt is None:
             raise ValueError(
                 f"`prompt` parameter required to be set for task `{self.task_type}`"
             )
@@ -190,7 +183,7 @@ class Florence2BlockV1(WorkflowBlock):
         prompt: Optional[str],
         model_version: str,
     ) -> BlockResult:
-        task_type = task_type_to_florence_2_tasks[task_type]
+        task_type = TASK_TYPE_TO_FLORENCE_TASK[task_type]
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
         ]
@@ -210,7 +203,8 @@ class Florence2BlockV1(WorkflowBlock):
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
-            jsonified = json.dumps(prediction.response)
-            predictions.append(jsonified)
+            predictions.append(
+                {"output": prediction.response[TASK_TYPE_TO_FLORENCE_TASK[task_type]]}
+            )
 
-        return [{"output": prediction} for prediction in predictions]
+        return predictions
