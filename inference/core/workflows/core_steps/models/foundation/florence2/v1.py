@@ -334,7 +334,9 @@ class Florence2BlockV1(WorkflowBlock):
             predictions.append(
                 {
                     "raw_output": json.dumps(prediction_data),
-                    "parsed_output": prediction_data if isinstance(prediction_data, dict) else None,
+                    "parsed_output": (
+                        prediction_data if isinstance(prediction_data, dict) else None
+                    ),
                     "classes": classes,
                 }
             )
