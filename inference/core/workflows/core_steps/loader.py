@@ -141,6 +141,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import (
+    BoundingRectBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
     ByteTrackerBlockV1,
 )
@@ -270,6 +273,7 @@ REGISTERED_INITIALIZERS = {
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
         TimeInZoneBlockV1,
+        BoundingRectBlockV1,
         SegmentAnything2BlockV1,
         DetectionsConsensusBlockV1,
         ClipComparisonBlockV1,

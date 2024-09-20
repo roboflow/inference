@@ -1,4 +1,4 @@
-You can upload [supported weights](/models/supported_models/) to Roboflow and deploy them to your device.
+You can upload [supported weights](#supported_models) to Roboflow and deploy them to your device.
 
 This is ideal if you have already trained a model outside of Roboflow that you want to deploy with Inference.
 
@@ -33,7 +33,7 @@ version = project.version(1)
 version.deploy("model-type", "path/to/training/results/")
 ```
 
-The following model types are supported:
+<a name="supported_models">The following model types are supported:</a>
 
 |Model Architecture|Task      |Model Type ID                 |
 |------------------|----------------|-------------------|
@@ -56,7 +56,7 @@ The following model types are supported:
 
 In the code above, replace:
 
-1. `your-project-id` with the ID of your project. [Learn how to retrieve your Roboflow project ID](/docs/projects/where_is_my_project_id/).
+1. `your-project-id` with the ID of your project. [Learn how to retrieve your Roboflow project ID](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
 2. `1` with the version number of your project.
 3. `model-type` with the model type you want to deploy.
 4. `path/to/training/results/` with the path to the weights you want to upload. This path will vary depending on what model architecture you are using.

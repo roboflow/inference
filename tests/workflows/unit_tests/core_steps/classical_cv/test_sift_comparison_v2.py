@@ -3,14 +3,13 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.execution_engine.entities.base import (
-    ImageParentMetadata,
-    WorkflowImageData,
-)
-
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v2 import (
     SIFTComparisonBlockManifest,
     SIFTComparisonBlockV2,
+)
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
+    WorkflowImageData,
 )
 
 
@@ -24,7 +23,7 @@ def test_sift_comparison_validation_when_valid_manifest_is_given() -> None:
         "good_matches_threshold": 50,
         "ratio_threshold": 0.7,
         "matcher": "FlannBasedMatcher",
-        "visualize": True
+        "visualize": True,
     }
 
     # when
@@ -39,7 +38,7 @@ def test_sift_comparison_validation_when_valid_manifest_is_given() -> None:
         good_matches_threshold=50,
         ratio_threshold=0.7,
         matcher="FlannBasedMatcher",
-        visualize=True
+        visualize=True,
     )
 
 
@@ -72,7 +71,7 @@ def test_sift_comparison_block_with_descriptors(dogs_image: np.ndarray) -> None:
         input_2=descriptor_2,
         good_matches_threshold=50,
         ratio_threshold=0.7,
-        visualize=False
+        visualize=False,
     )
 
     # then
@@ -81,11 +80,12 @@ def test_sift_comparison_block_with_descriptors(dogs_image: np.ndarray) -> None:
     assert output["visualization_1"] is None
     assert output["visualization_2"] is None
     assert output["visualization_matches"] is None
+
 
 def test_sift_comparison_block_with_images(dogs_image: np.ndarray) -> None:
     # given
     block = SIFTComparisonBlockV2()
-    
+
     # when
     output = block.run(
         input_1=WorkflowImageData(
@@ -98,7 +98,7 @@ def test_sift_comparison_block_with_images(dogs_image: np.ndarray) -> None:
         ),
         good_matches_threshold=50,
         ratio_threshold=0.7,
-        visualize=False
+        visualize=False,
     )
 
     # then
@@ -108,10 +108,11 @@ def test_sift_comparison_block_with_images(dogs_image: np.ndarray) -> None:
     assert output["visualization_2"] is None
     assert output["visualization_matches"] is None
 
+
 def test_sift_comparison_block_with_visualization(dogs_image: np.ndarray) -> None:
     # given
     block = SIFTComparisonBlockV2()
-    
+
     # when
     output = block.run(
         input_1=WorkflowImageData(
@@ -124,7 +125,7 @@ def test_sift_comparison_block_with_visualization(dogs_image: np.ndarray) -> Non
         ),
         good_matches_threshold=50,
         ratio_threshold=0.7,
-        visualize=True
+        visualize=True,
     )
 
     # then
@@ -133,4 +134,3 @@ def test_sift_comparison_block_with_visualization(dogs_image: np.ndarray) -> Non
     assert output["visualization_1"] is not None
     assert output["visualization_2"] is not None
     assert output["visualization_matches"] is not None
-

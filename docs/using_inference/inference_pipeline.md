@@ -319,7 +319,7 @@ of frames in tiles mosaic.
 
 !!! Info
 
-    See our [tutorial on creating a custom Inference Pipeline sink!](/quickstart/create_a_custom_inference_pipeline_sink/)
+    See our [tutorial on creating a custom Inference Pipeline sink!](#custom-sinks)
 
 **prediction**
 
