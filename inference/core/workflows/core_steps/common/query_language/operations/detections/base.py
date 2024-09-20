@@ -15,6 +15,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 )
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
+    OperationError,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.utils import (
     safe_stringify,
@@ -211,7 +212,7 @@ def rename_detections(
     if strict:
         for original_class in class_names:
             if original_class not in class_map:
-                raise InvalidInputTypeError(
+                raise OperationError(
                     public_message=f"Class '{original_class}' not found in class_map.",
                     context="step_execution | roboflow_query_language_evaluation",
                 )
@@ -219,6 +220,7 @@ def rename_detections(
     new_class_names = []
     new_class_ids = []
     used_class_ids = set(class_ids)
+    max_class_id = max(used_class_ids) if used_class_ids else -1
 
     for class_name in class_names:
         new_class_name = class_map.get(class_name, class_name)
@@ -228,9 +230,10 @@ def rename_detections(
             if new_class_name in class_names:
                 new_class_id = class_ids[class_names.index(new_class_name)]
             else:
-                new_class_id = min(set(range(len(class_map))) - used_class_ids)
+                new_class_id = max_class_id + 1
+                max_class_id += 1
                 used_class_ids.add(new_class_id)
-        
+
         new_class_names.append(new_class_name)
         new_class_ids.append(new_class_id)
 
