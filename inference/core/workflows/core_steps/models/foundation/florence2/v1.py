@@ -169,7 +169,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
-                    "values": TASKS_REQUIRING_CLASSES,
+                    "values": TASKS_REQUIRING_DETECTION_GROUNDING,
                     "required": True,
                 },
             },
@@ -182,7 +182,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "relevant_for": {
                 "task_type": {
-                    "values": TASKS_REQUIRING_CLASSES,
+                    "values": TASKS_REQUIRING_DETECTION_GROUNDING,
                     "required": True,
                 },
             },
@@ -297,7 +297,7 @@ class Florence2BlockV1(WorkflowBlock):
         ]
         prompts = [prompt] * len(images)
         if classes is not None:
-            prompts = [", ".join(classes)] * len(images)
+            prompts = [" ".join(classes)] * len(images)
         else:
             classes = []
         if grounding_detection is not None:
