@@ -239,7 +239,7 @@ Below you can find list of extras available for `inference` and `inference-gpu`
 </tr>
 <tr>
   <td><code>yolo-world</code></td>
-  <td><a href="/foundation/yolo-world">Yolo-World model</a></td>
+  <td><a href="/foundation/yolo_world/">Yolo-World model</a></td>
   <td><code>N/A</code></td>
 </tr>
 </table>
