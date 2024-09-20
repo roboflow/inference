@@ -312,7 +312,7 @@ class Florence2BlockV1(WorkflowBlock):
         )
         predictions = []
         for image, single_prompt in zip(inference_images, prompts):
-            if single_prompt is None and task_type in requires_detection_grounding:
+            if single_prompt is None and requires_detection_grounding:
                 # no grounding bbox found - empty result returned
                 predictions.append(
                     {"raw_output": None, "parsed_output": None, "classes": None}
