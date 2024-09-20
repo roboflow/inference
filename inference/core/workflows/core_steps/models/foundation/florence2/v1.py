@@ -297,7 +297,7 @@ class Florence2BlockV1(WorkflowBlock):
         ]
         prompts = [prompt] * len(images)
         if classes is not None:
-            prompts = [" ".join(classes)] * len(images)
+            prompts = ["<and>".join(classes)] * len(images)
         else:
             classes = []
         if grounding_detection is not None:
