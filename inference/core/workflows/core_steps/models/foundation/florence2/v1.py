@@ -203,6 +203,7 @@ class Florence2BlockV1(WorkflowBlock):
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
+            print("response", prediction.response, flush=True)
             predictions.append(
                 {"output": prediction.response[TASK_TYPE_TO_FLORENCE_TASK[task_type]]}
             )
