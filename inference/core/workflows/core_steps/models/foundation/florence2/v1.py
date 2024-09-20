@@ -17,7 +17,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ImageInputField,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
+    WorkflowParameterSelector, LIST_OF_VALUES_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -37,15 +37,24 @@ Run Florence-2, a large multimodal model, on an image.
 ** Dedicated inference server required (GPU recomended) **
 """
 
+# "unconstrained",
+#     "ocr",
+#     "visual-question-answering",
+#     "caption",
+#     "detailed-caption",
+#     "classification",
+#     "multi-label-classification",
+#     "structured-answering",
+#     "object-detection",
 TASK_TYPE_TO_FLORENCE_TASK = {
-    "OCR": "<OCR>",
-    "OCR with Text Detection": "<OCR_WITH_REGION>",
-    "Caption": "<CAPTION>",
-    "Detailed Caption": "<DETAILED_CAPTION>",
-    "More Detailed Caption": "<MORE_DETAILED_CAPTION>",
-    "Object Detection": "<OD>",
-    "Object Detection and Captioning": "<DENSE_REGION_CAPTION>",
-    "Detecting Sub-Phrases from Descriptions": "<CAPTION_TO_PHRASE_GROUNDING>",
+    "ocr": "<OCR>",
+    "ocr-with-text-detection": "<OCR_WITH_REGION>",
+    "caption": "<CAPTION>",
+    "detailed-caption": "<DETAILED_CAPTION>",
+    "more-detailed-caption": "<MORE_DETAILED_CAPTION>",
+    "object-detection-and-caption": "<DENSE_REGION_CAPTION>",
+    "object-detection": "<OD>",
+    "object-detection": "<CAPTION_TO_PHRASE_GROUNDING>",
     "Segmentation of Described Objects": "<REFERRING_EXPRESSION_SEGMENTATION>",
     "Segmentation from Bounding Boxes": "<REGION_TO_SEGMENTATION>",
     "Open-Set Object Detection": "<OPEN_VOCABULARY_DETECTION>",
@@ -62,11 +71,14 @@ supported_tasks = [
 ]  # TODO: Add support for bbox inputs!
 TaskType = Literal[tuple(supported_tasks)]
 
-TASKS_REQUIRING_PROMPT = [
-    "Detecting Sub-Phrases from Descriptions",
+TASKS_REQUIRING_PROMPT = {
     "Segmentation of Described Objects",
     "Open-Set Object Detection",
-]
+}
+TASKS_REQUIRING_CLASSES = {
+    "Detecting Sub-Phrases from Descriptions",
+}
+
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -107,6 +119,21 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
+    classes: Optional[
+        Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]
+    ] = Field(
+        default=None,
+        description="List of classes to be used",
+        examples=[["class-a", "class-b"], "$inputs.classes"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": TASKS_REQUIRING_CLASSES,
+                    "required": True,
+                },
+            },
+        },
+    )
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
@@ -118,6 +145,10 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`prompt` parameter required to be set for task `{self.task_type}`"
             )
+        if self.task_type in TASKS_REQUIRING_CLASSES and not self.classes:
+            raise ValueError(
+                f"`classes` parameter required to be set for task `{self.task_type}`"
+            )
         return self
 
     @classmethod
@@ -125,7 +156,8 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
-            )
+            ),
+            OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
         ]
 
     @classmethod
@@ -158,6 +190,7 @@ class Florence2BlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         task_type: TaskType,
         prompt: Optional[str],
+        classes: Optional[List[str]],
         model_version: str,
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
@@ -166,6 +199,7 @@ class Florence2BlockV1(WorkflowBlock):
                 task_type=task_type,
                 model_version=model_version,
                 prompt=prompt,
+                classes=classes,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
             raise NotImplementedError(
@@ -180,8 +214,9 @@ class Florence2BlockV1(WorkflowBlock):
         self,
         images: Batch[WorkflowImageData],
         task_type: TaskType,
-        prompt: Optional[str],
         model_version: str,
+        prompt: Optional[str],
+        classes: Optional[List[str]],
     ) -> BlockResult:
         task_type = TASK_TYPE_TO_FLORENCE_TASK[task_type]
         inference_images = [
@@ -204,7 +239,6 @@ class Florence2BlockV1(WorkflowBlock):
                 model_id=model_version, request=request
             )
             predictions.append(
-                {"output": prediction.response[task_type]}
+                {"output": prediction.response[task_type], "classes": classes}
             )
-
         return predictions
