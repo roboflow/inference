@@ -1,6 +1,8 @@
 import json
 from typing import List, Literal, Optional, Type, TypeVar, Union
 
+import numpy as np
+import supervision as sv
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.entities.requests.inference import LMMInferenceRequest
@@ -12,12 +14,18 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    DICTIONARY_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
+    LIST_OF_VALUES_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     ImageInputField,
     StepOutputImageSelector,
+    StepOutputSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector, LIST_OF_VALUES_KIND,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -37,15 +45,6 @@ Run Florence-2, a large multimodal model, on an image.
 ** Dedicated inference server required (GPU recomended) **
 """
 
-# "unconstrained",
-#     "ocr",
-#     "visual-question-answering",
-#     "caption",
-#     "detailed-caption",
-#     "classification",
-#     "multi-label-classification",
-#     "structured-answering",
-#     "object-detection",
 TASK_TYPE_TO_FLORENCE_TASK = {
     "ocr": "<OCR>",
     "ocr-with-text-detection": "<OCR_WITH_REGION>",
@@ -54,31 +53,46 @@ TASK_TYPE_TO_FLORENCE_TASK = {
     "more-detailed-caption": "<MORE_DETAILED_CAPTION>",
     "object-detection-and-caption": "<DENSE_REGION_CAPTION>",
     "object-detection": "<OD>",
-    "object-detection": "<CAPTION_TO_PHRASE_GROUNDING>",
-    "Segmentation of Described Objects": "<REFERRING_EXPRESSION_SEGMENTATION>",
-    "Segmentation from Bounding Boxes": "<REGION_TO_SEGMENTATION>",
-    "Open-Set Object Detection": "<OPEN_VOCABULARY_DETECTION>",
-    "Classification of Bounding Boxes": "<REGION_TO_CATEGORY>",
-    "Description of Bounding Boxes": "<REGION_TO_DESCRIPTION>",
-    "OCR of Bounding Boxes": "<REGION_TO_OCR>",
-    "Identify Regions Of Interest": "<REGION_PROPOSAL>",
+    "open-vocabulary-object-detection": "<OPEN_VOCABULARY_DETECTION>",
+    "phrase-grounded-object-detection": "<CAPTION_TO_PHRASE_GROUNDING>",
+    "phrase-grounded-instance-segmentation": "<REFERRING_EXPRESSION_SEGMENTATION>",
+    "detection-grounded-instance-segmentation": "<REGION_TO_SEGMENTATION>",
+    "detection-grounded-classification": "<REGION_TO_CATEGORY>",
+    "detection-grounded-caption": "<REGION_TO_DESCRIPTION>",
+    "detection-grounded-ocr": "<REGION_TO_OCR>",
+    "region-proposal": "<REGION_PROPOSAL>",
 }
-florence_2_tasks_to_task_type = {v: k for k, v in TASK_TYPE_TO_FLORENCE_TASK.items()}
-supported_tasks = [
-    key
-    for (key, value) in TASK_TYPE_TO_FLORENCE_TASK.items()
-    if not value.startswith("<REGION_TO")
-]  # TODO: Add support for bbox inputs!
-TaskType = Literal[tuple(supported_tasks)]
+TaskType = Literal[tuple(TASK_TYPE_TO_FLORENCE_TASK.keys())]
+GroundingSelectionMode = Literal[
+    "first",
+    "last",
+    "biggest",
+    "smallest",
+    "most-confident",
+    "least-confident",
+]
 
 TASKS_REQUIRING_PROMPT = {
-    "Segmentation of Described Objects",
-    "Open-Set Object Detection",
+    "phrase-grounded-object-detection",
+    "phrase-grounded-instance-segmentation",
 }
 TASKS_REQUIRING_CLASSES = {
-    "Detecting Sub-Phrases from Descriptions",
+    "open-vocabulary-object-detection",
 }
+TASKS_REQUIRING_DETECTION_GROUNDING = {
+    "detection-grounded-instance-segmentation",
+    "detection-grounded-classification",
+    "detection-grounded-caption",
+    "detection-grounded-ocr",
+}
+LOC_BINS = 1000
 
+TASKS_TO_EXTRACT_LABELS_AS_CLASSES = {
+    "<OD>",
+    "<DENSE_REGION_CAPTION>",
+    "<CAPTION_TO_PHRASE_GROUNDING>",
+    "<OCR_WITH_REGION>",
+}
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -94,7 +108,8 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-
+    type: Literal["roboflow_core/florence_2@v1"]
+    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     model_version: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]),
         Literal["florence-2-base", "florence-2-large"],
@@ -103,8 +118,6 @@ class BlockManifest(WorkflowBlockManifest):
         description="Model to be used",
         examples=["florence-2-base"],
     )
-    type: Literal["roboflow_core/florence_2@v1"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     task_type: TaskType = Field(
         description="Task type to be performed by model. "
         "Value determines required parameters and output response."
@@ -134,6 +147,47 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
+    grounding_detection: Optional[
+        Union[
+            StepOutputSelector(
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    KEYPOINT_DETECTION_PREDICTION_KIND,
+                ]
+            ),
+            WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
+            List[int],
+            List[float],
+        ]
+    ] = Field(
+        default=None,
+        description="Detection to ground Florence-2 model. May be statically provided bounding box "
+        "`[left_top_x, left_top_y, right_bottom_x, right_bottom_y]` or result of object-detection model. "
+        "If the latter is true, one box will be selected based on `grounding_selection_mode`.",
+        examples=["$steps.detection.predictions", [10, 20, 30, 40]],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": TASKS_REQUIRING_CLASSES,
+                    "required": True,
+                },
+            },
+        },
+    )
+    grounding_selection_mode: GroundingSelectionMode = Field(
+        default="first",
+        description="",
+        examples=["first", "most-confident"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": TASKS_REQUIRING_CLASSES,
+                    "required": True,
+                },
+            },
+        },
+    )
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
@@ -149,14 +203,22 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`classes` parameter required to be set for task `{self.task_type}`"
             )
+        if (
+            self.task_type in TASKS_REQUIRING_DETECTION_GROUNDING
+            and not self.grounding_detection
+        ):
+            raise ValueError(
+                f"`grounding_detection` parameter required to be set for task `{self.task_type}`"
+            )
         return self
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
+                name="raw_output", kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
             ),
+            OutputDefinition(name="parsed_output", kind=[DICTIONARY_KIND]),
             OutputDefinition(name="classes", kind=[LIST_OF_VALUES_KIND]),
         ]
 
@@ -188,10 +250,14 @@ class Florence2BlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
+        model_version: str,
         task_type: TaskType,
         prompt: Optional[str],
         classes: Optional[List[str]],
-        model_version: str,
+        grounding_detection: Optional[
+            Union[Batch[sv.Detections], List[int], List[float]]
+        ],
+        grounding_selection_mode: GroundingSelectionMode,
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
             return self.run_locally(
@@ -213,32 +279,175 @@ class Florence2BlockV1(WorkflowBlock):
     def run_locally(
         self,
         images: Batch[WorkflowImageData],
-        task_type: TaskType,
         model_version: str,
+        task_type: TaskType,
         prompt: Optional[str],
         classes: Optional[List[str]],
+        grounding_detection: Optional[
+            Union[Batch[sv.Detections], List[int], List[float]]
+        ],
+        grounding_selection_mode: GroundingSelectionMode,
     ) -> BlockResult:
+        requires_detection_grounding = task_type in TASKS_REQUIRING_DETECTION_GROUNDING
         task_type = TASK_TYPE_TO_FLORENCE_TASK[task_type]
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
         ]
+        prompts = [prompt] * len(images)
+        if classes is not None:
+            prompts = [", ".join(classes)] * len(images)
+        else:
+            classes = []
+        if grounding_detection is not None:
+            prompts = prepare_detection_grounding_prompts(
+                images=images,
+                grounding_detection=grounding_detection,
+                grounding_selection_mode=grounding_selection_mode,
+            )
         self._model_manager.add_model(
             model_id=model_version,
             api_key=self._api_key,
         )
         predictions = []
-        for image in inference_images:
+        for image, single_prompt in zip(inference_images, prompts):
+            if single_prompt is None and task_type in requires_detection_grounding:
+                # no grounding bbox found - empty result returned
+                predictions.append(
+                    {"raw_output": None, "parsed_output": None, "classes": None}
+                )
+                continue
             request = LMMInferenceRequest(
                 api_key=self._api_key,
                 model_id=model_version,
                 image=image,
                 source="workflow-execution",
-                prompt=task_type + (prompt or ""),
+                prompt=task_type + (single_prompt or ""),
             )
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
+            prediction_data = prediction.response[task_type]
+            if task_type in TASKS_TO_EXTRACT_LABELS_AS_CLASSES:
+                classes = prediction_data.get("labels", [])
             predictions.append(
-                {"output": prediction.response[task_type], "classes": classes}
+                {
+                    "raw_output": json.dumps(prediction_data),
+                    "parsed_output": prediction_data,
+                    "classes": classes,
+                }
             )
         return predictions
+
+
+def prepare_detection_grounding_prompts(
+    images: Batch[WorkflowImageData],
+    grounding_detection: Union[Batch[sv.Detections], List[float], List[int]],
+    grounding_selection_mode: GroundingSelectionMode,
+) -> List[Optional[str]]:
+    if isinstance(grounding_detection, list):
+        return _prepare_grounding_bounding_box_from_coordinates(
+            images=images,
+            bounding_box=grounding_detection,
+        )
+    return [
+        _prepare_grounding_bounding_box_from_detections(
+            image=image.numpy_image,
+            detections=detections,
+            grounding_selection_mode=grounding_selection_mode,
+        )
+        for image, detections in zip(images, grounding_detection)
+    ]
+
+
+def _prepare_grounding_bounding_box_from_coordinates(
+    images: Batch[WorkflowImageData], bounding_box: Union[List[float], List[int]]
+) -> List[str]:
+    return [
+        _extract_bbox_coordinates_as_location_prompt(
+            image=image.numpy_image, bounding_box=bounding_box
+        )
+        for image in images
+    ]
+
+
+def _prepare_grounding_bounding_box_from_detections(
+    image: np.ndarray,
+    detections: sv.Detections,
+    grounding_selection_mode: GroundingSelectionMode,
+) -> Optional[str]:
+    if len(detections) == 0:
+        return None
+    height, width = image.shape[:2]
+    if grounding_selection_mode not in COORDINATES_EXTRACTION:
+        raise ValueError(
+            f"Unknown grounding selection mode: {grounding_selection_mode}"
+        )
+    extraction_function = COORDINATES_EXTRACTION[grounding_selection_mode]
+    left_top_x, left_top_y, right_bottom_x, right_bottom_y = extraction_function(
+        detections
+    )
+    left_top_x = _coordinate_to_loc(value=left_top_x / width)
+    left_top_y = _coordinate_to_loc(value=left_top_y / height)
+    right_bottom_x = _coordinate_to_loc(value=right_bottom_x / width)
+    right_bottom_y = _coordinate_to_loc(value=right_bottom_y / height)
+    return f"<loc_{left_top_x}><loc_{left_top_y}><loc_{right_bottom_x}><loc_{right_bottom_y}>"
+
+
+COORDINATES_EXTRACTION = {
+    "first": lambda detections: detections.xyxy[0].tolist(),
+    "last": lambda detections: detections.xyxy[0].tolist(),
+    "biggest": lambda detections: detections.xyxy[np.argmax(detections.area)].tolist(),
+    "smallest": lambda detections: detections.xyxy[np.argmin(detections.area)].tolist(),
+    "most-confident": lambda detections: detections.xyxy[
+        np.argmax(detections.confidence)
+    ].tolist(),
+    "least-confident": lambda detections: detections.xyxy[
+        np.argmin(detections.confidence)
+    ].tolist(),
+}
+
+
+def _extract_bbox_coordinates_as_location_prompt(
+    image: np.ndarray,
+    bounding_box: Union[List[float], List[int]],
+) -> str:
+    height, width = image.shape[:2]
+    coordinates = bounding_box[:4]
+    if len(coordinates) != 4:
+        raise ValueError(
+            "Could not extract 4 coordinates of bounding box to perform detection "
+            "grounded Florence 2 prediction."
+        )
+    left_top_x, left_top_y, right_bottom_x, right_bottom_y = coordinates
+    if all(isinstance(c, float) for c in coordinates):
+        left_top_x = _coordinate_to_loc(value=left_top_x)
+        left_top_y = _coordinate_to_loc(value=left_top_y)
+        right_bottom_x = _coordinate_to_loc(value=right_bottom_x)
+        right_bottom_y = _coordinate_to_loc(value=right_bottom_y)
+        return f"<loc_{left_top_x}><loc_{left_top_y}><loc_{right_bottom_x}><loc_{right_bottom_y}>"
+    if all(isinstance(c, int) for c in coordinates):
+        left_top_x = _coordinate_to_loc(value=left_top_x / width)
+        left_top_y = _coordinate_to_loc(value=left_top_y / height)
+        right_bottom_x = _coordinate_to_loc(value=right_bottom_x / width)
+        right_bottom_y = _coordinate_to_loc(value=right_bottom_y / height)
+        return f"<loc_{left_top_x}><loc_{left_top_y}><loc_{right_bottom_x}><loc_{right_bottom_y}>"
+    raise ValueError(
+        "Provided coordinates in mixed format - coordinates must be all integers or all floats in range [0.0-1.0]"
+    )
+
+
+def _coordinate_to_loc(value: float) -> int:
+    loc_bin = round(_scale_value(value=value, min_value=0.0, max_value=1.0) * LOC_BINS)
+    return _scale_value(  # to make sure 0-999 cutting out 1000 on 1.0
+        value=loc_bin,
+        min_value=0,
+        max_value=LOC_BINS - 1,
+    )
+
+
+def _scale_value(
+    value: Union[int, float],
+    min_value: Union[int, float],
+    max_value: Union[int, float],
+) -> Union[int, float]:
+    return max(min(value, max_value), min_value)

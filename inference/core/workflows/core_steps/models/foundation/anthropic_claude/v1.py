@@ -127,7 +127,10 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[{"my_key": "description"}, "$inputs.output_structure"],
         json_schema_extra={
             "relevant_for": {
-                "task_type": {"values": TASKS_REQUIRING_OUTPUT_STRUCTURE, "required": True},
+                "task_type": {
+                    "values": TASKS_REQUIRING_OUTPUT_STRUCTURE,
+                    "required": True,
+                },
             },
         },
     )
