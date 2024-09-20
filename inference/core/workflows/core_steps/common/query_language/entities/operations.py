@@ -468,8 +468,20 @@ class DetectionsRename(OperationDefinition):
         },
     )
     type: Literal["DetectionsRename"]
-    class_map: Dict[str, str]
-    strict: bool
+    class_map: Dict[str, str] = Field(
+        description="Dictionary with classes replacement mapping"
+    )
+    strict: bool = Field(
+        description="Flag to decide if all class must be declared in `class_map`. When set `True` "
+        "all detections classes must be declared, otherwise error is raised.",
+        default=True,
+    )
+    new_classes_id_offset: int = Field(
+        description="When `strict` is `False`, this value determines the first "
+        "index given to re-mapped classes. This value let user create new class ids which"
+        "will not overlap with original identifiers.",
+        default=1024,
+    )
 
 
 AllOperationsType = Annotated[

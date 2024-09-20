@@ -1,129 +1,94 @@
+from typing import Dict
+
 import numpy as np
 import pytest
-import supervision as sv
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.query_language.errors import OperationError
+from inference.core.workflows.core_steps.common.query_language.errors import (
+    OperationError,
+)
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 
-CLASS_RENAME_WORKFLOW = {
-    "version": "1.0",
-    "inputs": [
-        {
-            "type": "WorkflowImage",
-            "name": "image"
-        },
-        {
-            "type": "WorkflowParameter",
-            "name": "model_id"
-        },
-        {
-            "type": "WorkflowParameter",
-            "name": "confidence",
-            "default_value": 0.4
-        },
-        {
-            "type": "WorkflowParameter",
-            "name": "classes"
-        },
-        {
-            "type": "WorkflowParameter",
-            "name": "class_map"
-        },
-        {
-            "type": "WorkflowParameter",
-            "name": "strict",
-            "default_value": True
-        },
-    ],
-    "steps": [
-        {
-            "type": "ObjectDetectionModel",
-            "name": "model",
-            "image": "$inputs.image",
-            "model_id": "$inputs.model_id",
-            "confidence": "$inputs.confidence",
-        },
-        {
-            "type": "DetectionsTransformation",
-            "name": "class_rename",
-            "predictions": "$steps.model.predictions",
-            "operations": [
-                {
-                    "type": "DetectionsRename",
-                    "strict": True,
-                    "class_map": {
-                        "apple": "fruit",
-                        "orange": "fruit",
-                        "banana": "fruit"
+def build_class_remapping_workflow_definition(
+    class_map: Dict[str, str],
+    strict: bool,
+) -> dict:
+    return {
+        "version": "1.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.4},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "model",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+                "confidence": "$inputs.confidence",
+            },
+            {
+                "type": "DetectionsTransformation",
+                "name": "class_rename",
+                "predictions": "$steps.model.predictions",
+                "operations": [
+                    {
+                        "type": "DetectionsRename",
+                        "strict": strict,
+                        "class_map": class_map,
                     }
-                }
-            ],
-        },
-    ],
-    "outputs": [
-        {
-            "type": "JsonField",
-            "name": "original_predictions",
-            "selector": "$steps.model.predictions",
-        },
-        {
-            "type": "JsonField",
-            "name": "renamed_predictions",
-            "selector": "$steps.class_rename.predictions",
-        },
-    ],
-}
+                ],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "original_predictions",
+                "selector": "$steps.model.predictions",
+            },
+            {
+                "type": "JsonField",
+                "name": "renamed_predictions",
+                "selector": "$steps.class_rename.predictions",
+            },
+        ],
+    }
 
-EXPECTED_ORIGINAL_CLASSES = np.array(
-    [
-        "apple",
-        "apple",
-        "apple",
-        "orange",
-        "banana"
-    ]
+
+@add_to_workflows_gallery(
+    category="Workflows with data transformations",
+    use_case_title="Workflow with detections class remapping",
+    use_case_description="""
+This workflow presents how to use Detections Transformation block that is going to 
+change the name of the following classes: `apple`, `banana` into `fruit`.
+
+In this example, we use non-strict mapping, causing new class `fruit` to be added to
+pool of classes - you can see that if `banana` or `apple` is detected, the
+class name changes to `fruit` and class id is 1024.
+
+You can test the execution submitting image like 
+[this](https://www.pexels.com/photo/four-trays-of-varieties-of-fruits-1300975/).
+    """,
+    workflow_definition=build_class_remapping_workflow_definition(
+        class_map={"apple": "fruit", "banana": "fruit"},
+        strict=False,
+    ),
+    workflow_name_in_app="detections-class-remapping",
 )
-
-
-@pytest.mark.parametrize(
-    "class_map, strict, expected_renamed_classes, expected_class_ids",
-    [
-        (
-            {"apple": "fruit", "orange": "fruit", "banana": "fruit"},
-            True,
-            np.array(["fruit", "fruit", "fruit", "fruit", "fruit"]),
-            np.array([50, 50, 50, 50, 50]),
-        ),
-        (
-            {"apple": "fruit", "orange": "citrus"},
-            False,
-            np.array(["fruit", "fruit", "fruit", "citrus", "banana"]),
-            np.array([50, 50, 50, 51, 46]),
-        ),
-        (
-            {"apple": "orange", "orange": "apple", "banana": "fruit"},
-            True,
-            np.array(["orange", "orange", "orange", "apple", "fruit"]),
-            np.array([49, 49, 49, 47, 50]),
-        ),
-    ],
-)
-def test_class_rename_workflow_to_have_correct_classes(
+def test_class_rename_workflow_with_non_strict_mapping(
     model_manager: ModelManager,
     fruit_image: np.ndarray,
-    class_map: dict,
-    strict: bool,
-    expected_renamed_classes: np.ndarray,
-    expected_class_ids: np.ndarray,
 ) -> None:
-    # given
-    workflow_definition = CLASS_RENAME_WORKFLOW.copy()
-    workflow_definition["steps"][1]["operations"][0]["class_map"] = class_map
-    workflow_definition["steps"][1]["operations"][0]["strict"] = strict
+    workflow_definition = build_class_remapping_workflow_definition(
+        class_map={"apple": "fruit", "banana": "fruit"},
+        strict=False,
+    )
 
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -144,44 +109,37 @@ def test_class_rename_workflow_to_have_correct_classes(
         },
     )
 
-
     # then
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 1, "Single image provided - single output expected"
 
-    original_predictions: sv.Detections = result[0]["original_predictions"]
-    renamed_predictions: sv.Detections = result[0]["renamed_predictions"]
+    assert result[0]["renamed_predictions"]["class_name"].tolist() == [
+        "fruit",
+        "fruit",
+        "fruit",
+        "orange",
+        "fruit",
+    ], "Expected renamed set of classes to be the same as when test was created"
+    assert result[0]["renamed_predictions"].class_id.tolist() == [
+        1024,
+        1024,
+        1024,
+        49,
+        1024,
+    ], "Expected renamed set of class ids to be the same as when test was created"
+    assert len(result[0]["renamed_predictions"]) == len(
+        result[0]["original_predictions"]
+    ), "Expected length of predictions no to change"
 
-    assert len(original_predictions) == len(EXPECTED_ORIGINAL_CLASSES), "length of original predictions match expected length"
-    assert len(renamed_predictions) == len(expected_renamed_classes), "length of renamed predictions match expected length "
 
-    assert np.array_equal(EXPECTED_ORIGINAL_CLASSES, original_predictions.data["class_name"]), "Expected original classes to match predicted classes"
-    assert np.array_equal(expected_renamed_classes, renamed_predictions.data["class_name"]), "Expected renamed classes to match block class renaming"
-
-    assert np.array_equal(expected_class_ids, renamed_predictions.class_id), "Expected renamed class ids to match block class renaming"
-
-
-@pytest.mark.parametrize(
-    "class_map, strict, expected_exception",
-    [
-        (
-            {"apple": "fruit", "orange": "fruit"},
-            True,
-            OperationError, 
-        ),
-    ],
-)
-def test_class_rename_workflow_raises_exception_when_strict_is_true(
+def test_class_rename_workflow_with_strict_mapping_when_all_classes_are_remapped(
     model_manager: ModelManager,
     fruit_image: np.ndarray,
-    class_map: dict,
-    strict: bool,
-    expected_exception: type,
 ) -> None:
-    # given
-    workflow_definition = CLASS_RENAME_WORKFLOW.copy()
-    workflow_definition["steps"][1]["operations"][0]["class_map"] = class_map
-    workflow_definition["steps"][1]["operations"][0]["strict"] = strict
+    workflow_definition = build_class_remapping_workflow_definition(
+        class_map={"apple": "fruit", "banana": "fruit", "orange": "my-orange"},
+        strict=True,
+    )
 
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
@@ -194,9 +152,60 @@ def test_class_rename_workflow_raises_exception_when_strict_is_true(
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
 
-    # when/then
-    with pytest.raises(expected_exception):
-        execution_engine.run(
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": fruit_image,
+            "model_id": "yolov8n-640",
+        },
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+
+    assert result[0]["renamed_predictions"]["class_name"].tolist() == [
+        "fruit",
+        "fruit",
+        "fruit",
+        "my-orange",
+        "fruit",
+    ], "Expected renamed set of classes to be the same as when test was created"
+    assert result[0]["renamed_predictions"].class_id.tolist() == [
+        0,
+        0,
+        0,
+        1,
+        0,
+    ], "Expected renamed set of class ids to be the same as when test was created"
+    assert len(result[0]["renamed_predictions"]) == len(
+        result[0]["original_predictions"]
+    ), "Expected length of predictions no to change"
+
+
+def test_class_rename_workflow_with_strict_mapping_when_not_all_classes_are_remapped(
+    model_manager: ModelManager,
+    fruit_image: np.ndarray,
+) -> None:
+    workflow_definition = build_class_remapping_workflow_definition(
+        class_map={"apple": "fruit", "banana": "fruit"},
+        strict=True,
+    )
+
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=workflow_definition,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    with pytest.raises(OperationError):
+        _ = execution_engine.run(
             runtime_parameters={
                 "image": fruit_image,
                 "model_id": "yolov8n-640",
