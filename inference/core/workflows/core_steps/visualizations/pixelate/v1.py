@@ -5,8 +5,8 @@ from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
-    VisualizationBlock,
-    VisualizationManifest,
+    PredictionsVisualizationBlock,
+    PredictionsVisualizationManifest,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
@@ -23,7 +23,7 @@ objects in an image using Supervision's `sv.PixelateAnnotator`.
 """
 
 
-class PixelateManifest(VisualizationManifest):
+class PixelateManifest(PredictionsVisualizationManifest):
     type: Literal[f"{TYPE}", "PixelateVisualization"]
     model_config = ConfigDict(
         json_schema_extra={
@@ -47,7 +47,7 @@ class PixelateManifest(VisualizationManifest):
         return ">=1.0.0,<2.0.0"
 
 
-class PixelateVisualizationBlockV1(VisualizationBlock):
+class PixelateVisualizationBlockV1(PredictionsVisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}
