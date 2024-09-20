@@ -29,6 +29,11 @@ def red_image() -> np.ndarray:
 
 
 @pytest.fixture(scope="function")
+def fruit_image() -> np.ndarray:
+    return cv2.imread(os.path.join(ASSETS_DIR, "multi-fruit.jpg"))
+
+
+@pytest.fixture(scope="function")
 def left_scissors_right_paper() -> np.ndarray:
     return cv2.imread(
         os.path.join(ROCK_PAPER_SCISSORS_ASSETS, "left_scissors_right_paper.jpg")

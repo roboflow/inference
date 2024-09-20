@@ -15,6 +15,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 )
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
+    OperationError,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.utils import (
     safe_stringify,
@@ -198,3 +199,82 @@ def sort_detections(
     if not ascending:
         sorted_indices = sorted_indices[::-1]
     return value[sorted_indices]
+
+
+def rename_detections(
+    detections: Any,
+    class_map: Dict[str, str],
+    strict: bool,
+    new_classes_id_offset: int,
+    **kwargs,
+) -> sv.Detections:
+    if not isinstance(detections, sv.Detections):
+        value_as_str = safe_stringify(value=detections)
+        raise InvalidInputTypeError(
+            public_message=f"Executing rename_detections(...), expected sv.Detections object as value, "
+            f"got {value_as_str} of type {type(detections)}",
+            context="step_execution | roboflow_query_language_evaluation",
+        )
+    detections_copy = deepcopy(detections)
+    original_class_names = detections_copy.data.get("class_name", []).tolist()
+    original_class_ids = detections_copy.class_id.tolist()
+    new_class_names = []
+    new_class_ids = []
+    if strict:
+        _ensure_all_classes_covered_in_new_mapping(
+            original_class_names=original_class_names,
+            class_map=class_map,
+        )
+        new_class_mapping = {
+            class_name: class_id
+            for class_id, class_name in enumerate(sorted(set(class_map.values())))
+        }
+    else:
+        new_class_mapping = _build_non_strict_class_to_id_mapping(
+            original_class_names=original_class_names,
+            original_class_ids=original_class_ids,
+            class_map=class_map,
+            new_classes_id_offset=new_classes_id_offset,
+        )
+    for class_name in original_class_names:
+        new_class_name = class_map.get(class_name, class_name)
+        new_class_id = new_class_mapping[new_class_name]
+        new_class_names.append(new_class_name)
+        new_class_ids.append(new_class_id)
+    detections_copy.data["class_name"] = np.array(new_class_names, dtype=object)
+    detections_copy.class_id = np.array(new_class_ids, dtype=int)
+    return detections_copy
+
+
+def _ensure_all_classes_covered_in_new_mapping(
+    original_class_names: List[str],
+    class_map: Dict[str, str],
+) -> None:
+    for original_class in original_class_names:
+        if original_class not in class_map:
+            raise OperationError(
+                public_message=f"Class '{original_class}' not found in class_map.",
+                context="step_execution | roboflow_query_language_evaluation",
+            )
+
+
+def _build_non_strict_class_to_id_mapping(
+    original_class_names: List[str],
+    original_class_ids: List[int],
+    class_map: Dict[str, str],
+    new_classes_id_offset: int,
+) -> Dict[str, int]:
+    original_mapping = {
+        class_name: class_id
+        for class_name, class_id in zip(original_class_names, original_class_ids)
+    }
+    new_target_classes = {
+        new_class_name
+        for new_class_name in class_map.values()
+        if new_class_name not in original_mapping
+    }
+    new_class_id = new_classes_id_offset
+    for new_target_class in sorted(new_target_classes):
+        original_mapping[new_target_class] = new_class_id
+        new_class_id += 1
+    return original_mapping
