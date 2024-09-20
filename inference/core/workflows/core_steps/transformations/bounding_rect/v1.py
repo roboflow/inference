@@ -43,7 +43,7 @@ class BoundingRectManifest(WorkflowBlockManifest):
             "block_type": "transformation",
         }
     )
-    type: Literal[f"roboflow_core/min_rect@v1"]
+    type: Literal[f"roboflow_core/bounding_rect@v1"]
     predictions: StepOutputSelector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
