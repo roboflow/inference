@@ -52,7 +52,7 @@ def test_line_counter_zone_validation_when_valid_manifest_is_given(
 def test_line_counter_zone_validation_when_invalid_image_is_given() -> None:
     # given
     data = {
-        "type": "roboflow_core/line_counter_zone_visualization@v1",
+        "type": "roboflow_core/line_counter_visualization@v1",
         "name": "line_counter_zone_1",
         "zone": "$inputs.zone",
         "images": "invalid",

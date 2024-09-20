@@ -199,7 +199,7 @@ we will be creating SIMD block.
     If you look deeper into codebase, you will discover those are type aliases - telling `pydantic`
     to expect string matching `$inputs.{name}` and `$steps.{name}.*` patterns respectively, additionally providing 
     extra schema field metadata that tells Workflows ecosystem components that the `kind` of data behind selector is 
-    [image](/workflows/kinds/batch_image/).
+    [image](/workflows/kinds/image/).
   
     * denoting `pydantic` `Field(...)` attribute in the last parts of line `17` is optional, yet appreciated, 
     especially for blocks intended to cooperate with Workflows UI 

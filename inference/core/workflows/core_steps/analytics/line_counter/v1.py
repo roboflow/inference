@@ -57,7 +57,6 @@ class LineCounterManifest(WorkflowBlockManifest):
         ]
     ) = Field(  # type: ignore
         description="Predictions",
-        default=None,
         examples=["$steps.object_detection_model.predictions"],
     )
 

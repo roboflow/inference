@@ -100,6 +100,15 @@ def shift_detections(value: Any, shift_x: int, shift_y: int, **kwargs) -> sv.Det
     return detections_copy
 
 
+def select_top_confidence_detection(detections: sv.Detections) -> sv.Detections:
+    if len(detections) == 0:
+        return deepcopy(detections)
+    confidence = detections.confidence
+    max_value = confidence.max()
+    index = np.argwhere(confidence == max_value)[0].item()
+    return detections[index]
+
+
 def select_leftmost_detection(detections: sv.Detections) -> sv.Detections:
     if len(detections) == 0:
         return deepcopy(detections)
@@ -121,6 +130,7 @@ def select_rightmost_detection(detections: sv.Detections) -> sv.Detections:
 DETECTIONS_SELECTORS = {
     DetectionsSelectionMode.LEFT_MOST: select_leftmost_detection,
     DetectionsSelectionMode.RIGHT_MOST: select_rightmost_detection,
+    DetectionsSelectionMode.TOP_CONFIDENCE: select_top_confidence_detection,
 }
 
 

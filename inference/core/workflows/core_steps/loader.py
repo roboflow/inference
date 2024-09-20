@@ -30,6 +30,9 @@ from inference.core.workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import (
     SIFTComparisonBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.sift_comparison.v2 import (
+    SIFTComparisonBlockV2,
+)
 from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
     TemplateMatchingBlockV1,
 )
@@ -318,6 +321,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DominantColorBlockV1,
         PixelationCountBlockV1,
         SIFTComparisonBlockV1,
+        SIFTComparisonBlockV2,
         SIFTBlockV1,
         TemplateMatchingBlockV1,
         ImageBlurBlockV1,
