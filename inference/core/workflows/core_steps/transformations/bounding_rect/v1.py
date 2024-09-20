@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Tuple, Type
 
 import cv2 as cv
 import numpy as np
@@ -7,9 +7,7 @@ from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    FLOAT_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    LIST_OF_VALUES_KIND,
     StepOutputSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -18,10 +16,12 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-OUTPUT_KEY_RECT: str = "rect"
-OUTPUT_KEY_WIDTH: float = "width"
-OUTPUT_KEY_HEIGHT: float = "height"
-OUTPUT_KEY_ANGLE: float = "angle"
+OUTPUT_KEY: str = "detections_with_rect"
+DETECTIONS_RECT_PARAM: str = "rect"
+DETECTIONS_WIDTH_PARAM: str = "width"
+DETECTIONS_HEIGHT_PARAM: str = "height"
+DETECTIONS_ANGLE_PARAM: str = "angle"
+
 SHORT_DESCRIPTION = "Find minimal bounding rectangle surrounding detection contour"
 LONG_DESCRIPTION = """
 The `BoundingRect` is a transformer block designed to simplify polygon
@@ -29,13 +29,14 @@ to the minimum boundig rectangle.
 This block is best suited when Zone needs to be created based on shape of detected object
 (i.e. basketball field, road segment, zebra crossing etc.)
 Input detections should be filtered beforehand and contain only desired classes of interest.
+Resulsts are stored in sv.Detections.data
 """
 
 
 class BoundingRectManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Bounding Rect",
+            "name": "Bounding Rectangle",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -60,10 +61,9 @@ class BoundingRectManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name=OUTPUT_KEY_RECT, kind=[LIST_OF_VALUES_KIND]),
-            OutputDefinition(name=OUTPUT_KEY_WIDTH, kind=[FLOAT_KIND]),
-            OutputDefinition(name=OUTPUT_KEY_HEIGHT, kind=[FLOAT_KIND]),
-            OutputDefinition(name=OUTPUT_KEY_ANGLE, kind=[FLOAT_KIND]),
+            OutputDefinition(
+                name=OUTPUT_KEY, kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
+            ),
         ]
 
     @classmethod
@@ -95,19 +95,24 @@ class BoundingRectBlockV1(WorkflowBlock):
         self,
         predictions: sv.Detections,
     ) -> BlockResult:
-        result = []
         if predictions.mask is None:
             raise ValueError(
                 "Mask missing. This block operates on output from segmentation model."
             )
-        for mask in predictions.mask:
-            polygon, width, height, angle = calculate_minimum_bounding_rectangle(mask)
-            result.append(
-                {
-                    OUTPUT_KEY_RECT: polygon,
-                    OUTPUT_KEY_WIDTH: width,
-                    OUTPUT_KEY_HEIGHT: height,
-                    OUTPUT_KEY_ANGLE: angle,
-                }
+        to_be_merged = []
+        for i in range(len(predictions)):
+            # copy
+            det = predictions[i]
+
+            rect, width, height, angle = calculate_minimum_bounding_rectangle(
+                det.mask[0]
             )
-        return result
+
+            det[DETECTIONS_RECT_PARAM] = np.array([rect], dtype=np.float16)
+            det[DETECTIONS_WIDTH_PARAM] = np.array([width], dtype=np.float16)
+            det[DETECTIONS_HEIGHT_PARAM] = np.array([height], dtype=np.float16)
+            det[DETECTIONS_ANGLE_PARAM] = np.array([angle], dtype=np.float16)
+
+            to_be_merged.append(det)
+
+        return {OUTPUT_KEY: sv.Detections.merge(to_be_merged)}
