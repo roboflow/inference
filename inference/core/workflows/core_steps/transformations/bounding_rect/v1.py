@@ -35,7 +35,7 @@ Input detections should be filtered beforehand and contain only desired classes 
 class BoundingRectManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Dynamic Zone",
+            "name": "Bounding Rect",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
