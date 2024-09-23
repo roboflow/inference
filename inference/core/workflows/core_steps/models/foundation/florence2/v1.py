@@ -149,6 +149,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
     grounding_detection: Optional[
         Union[
+            # List[int], # TODO: Frontend currently sends a string instead of a list of floats?
+            # List[float],
             StepOutputSelector(
                 kind=[
                     OBJECT_DETECTION_PREDICTION_KIND,
@@ -157,8 +159,6 @@ class BlockManifest(WorkflowBlockManifest):
                 ]
             ),
             WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
-            List[int],
-            List[float],
         ]
     ] = Field(
         default=None,

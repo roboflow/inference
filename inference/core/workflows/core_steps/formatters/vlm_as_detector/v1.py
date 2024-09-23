@@ -89,14 +89,24 @@ class BlockManifest(WorkflowBlockManifest):
         description="The string with raw classification prediction to parse.",
         examples=[["$steps.lmm.output"]],
     )
-    classes: Union[
-        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
-        StepOutputSelector(kind=[LIST_OF_VALUES_KIND]),
-        List[str],
+    classes: Optional[
+        Union[
+            WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
+            StepOutputSelector(kind=[LIST_OF_VALUES_KIND]),
+            List[str],
+        ]
     ] = Field(
         description="List of all classes used by the model, required to "
         "generate mapping between class name and class id.",
         examples=[["$steps.lmm.classes", "$inputs.classes", ["class_a", "class_b"]]],
+        json_schema_extra={
+            "relevant_for": {
+                "model_type": {
+                    "values": ["google-gemini", "anthropic-claude"],
+                    "required": True,
+                },
+            }
+        },
     )
     model_type: Literal["google-gemini", "anthropic-claude", "florence-2"] = Field(
         description="Type of the model that generated prediction",
@@ -149,7 +159,7 @@ class VLMAsDetectorBlockV1(WorkflowBlock):
         self,
         image: WorkflowImageData,
         vlm_output: str,
-        classes: List[str],
+        classes: Optional[List[str]],
         model_type: str,
         task_type: str,
     ) -> BlockResult:
@@ -272,7 +282,7 @@ def scale_confidence(value: float) -> float:
 def parse_florence2_object_detection_response(
     image: WorkflowImageData,
     parsed_data: dict,
-    classes: List[str],
+    classes: Optional[List[str]],
     inference_id: str,
     florence_task_type: str,
 ):
