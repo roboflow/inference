@@ -295,7 +295,7 @@ def parse_florence2_object_detection_response(
     detections.class_id = np.array([0] * len(detections))
     if florence_task_type == "<REGION_PROPOSAL>":
         detections.data["class_name"] = np.array(["roi"] * len(detections))
-    if florence_task_type == "<OD>":
+    if florence_task_type in {"<OD>", "<CAPTION_TO_PHRASE_GROUNDING>"}:
         unique_class_names = set(detections.data.get("class_name", []))
         class_name_to_id = {
             name: get_4digit_from_md5(name) for name in unique_class_names
@@ -305,16 +305,14 @@ def parse_florence2_object_detection_response(
             for name in detections.data.get("class_name", ["unknown"] * len(detections))
         ]
         detections.class_id = np.array(class_ids)
-    if florence_task_type in {
-        "<OPEN_VOCABULARY_DETECTION>",
-        "<CAPTION_TO_PHRASE_GROUNDING>",
-    }:
+    if florence_task_type in "<OPEN_VOCABULARY_DETECTION>":
         class_name_to_id = {name: idx for idx, name in enumerate(classes)}
         class_ids = [
             class_name_to_id.get(name, -1)
             for name in detections.data.get("class_name", ["unknown"] * len(detections))
         ]
         detections.class_id = np.array(class_ids)
+    dimensions = np.array([[image_height, image_width]] * len(detections))
     detection_ids = np.array([str(uuid4()) for _ in range(len(detections))])
     inference_ids = np.array([inference_id] * len(detections))
     prediction_type = np.array(["object-detection"] * len(detections))
@@ -323,6 +321,7 @@ def parse_florence2_object_detection_response(
             INFERENCE_ID_KEY: inference_ids,
             DETECTION_ID_KEY: detection_ids,
             PREDICTION_TYPE_KEY: prediction_type,
+            IMAGE_DIMENSIONS_KEY: dimensions,
         }
     )
     detections.confidence = np.array([1.0 for _ in detections])
