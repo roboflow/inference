@@ -3,6 +3,7 @@ import numpy as np
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 import json
 import copy
@@ -300,4 +301,4 @@ def test_florence_visualization_with_vlm_as_detector(
 
     assert isinstance(result, list), "Expected list to be delivered"
     assert len(result) == 1, "Expected 1 element in the output for one input image"
-    assert result[0]["bounding_box_visualization"] is not None
+    assert isinstance(result[0]["bounding_box_visualization"], WorkflowImageData)
