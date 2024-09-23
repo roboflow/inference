@@ -47,9 +47,8 @@ class LineCounterZoneVisualizationManifest(VisualizationManifest):
         }
     )
     zone: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Line zones (one for each batch) in a format [[(x1, y1), (x2, y2)], ...];"
-        " each zone must consist of exactly two points",
-        examples=["$inputs.zones"],
+        description="Line in the format [[x1, y1], [x2, y2]] consisting of exactly two points.",
+        examples=[[[0, 50], [500, 50]], "$inputs.zones"],
     )
     color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the zone.",
@@ -61,15 +60,22 @@ class LineCounterZoneVisualizationManifest(VisualizationManifest):
         default=2,
         examples=[2, "$inputs.thickness"],
     )
+    text_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        description="Thickness of the text in pixels.",
+        default=1,
+        examples=[1, "$inputs.text_thickness"],
+    )
     count_in: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND]), StepOutputSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Thickness of the lines in pixels.",
+        description="Reference to the number of objects that crossed into the line zone.",
         default=0,
-        examples=[2, "$inputs.thickness"],
+        examples=["$steps.line_counter.count_in"],
+        json_schema_extra={"always_visible": True},
     )
     count_out: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND]), StepOutputSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Thickness of the lines in pixels.",
+        description="Reference to the number of objects that crossed out of the line zone.",
         default=0,
-        examples=[2, "$inputs.thickness"],
+        examples=["$steps.line_counter.count_out"],
+        json_schema_extra={"always_visible": True},
     )
     opacity: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the Mask overlay.",
@@ -104,6 +110,7 @@ class LineCounterZoneVisualizationBlockV1(VisualizationBlock):
         copy_image: bool,
         color: str,
         thickness: int,
+        text_thickness: int,
         count_in: int,
         count_out: int,
         opacity: float,
@@ -142,7 +149,7 @@ class LineCounterZoneVisualizationBlockV1(VisualizationBlock):
             scene=annotated_image,
             text=f"in: {count_in}, out: {count_out}",
             text_anchor=sv.Point(x1, y1),
-            text_thickness=1,
+            text_thickness=text_thickness,
             background_color=sv.Color.WHITE,
             text_padding=0,
         )
