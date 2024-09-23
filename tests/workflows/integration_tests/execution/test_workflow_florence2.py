@@ -8,10 +8,20 @@ from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 import json
 import copy
 
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
+
 FLORENCE2_GROUNDED_CLASSIFICATION_WORKFLOW_DEFINITION = {
     "version": "1.0",
     "inputs": [{"type": "InferenceImage", "name": "image"}],
     "steps": [
+        {
+            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "name": "model_1",
+            "images": "$inputs.image",
+            "model_id": "yolov8n-640",
+        },
         {
             "type": "roboflow_core/florence_2@v1",
             "name": "model",
@@ -19,12 +29,6 @@ FLORENCE2_GROUNDED_CLASSIFICATION_WORKFLOW_DEFINITION = {
             "task_type": "detection-grounded-classification",
             "grounding_detection": "$steps.model_1.predictions",
             "grounding_selection_mode": "most-confident",
-        },
-        {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
-            "name": "model_1",
-            "images": "$inputs.image",
-            "model_id": "yolov8n-640",
         },
     ],
     "outputs": [
@@ -38,6 +42,25 @@ FLORENCE2_GROUNDED_CLASSIFICATION_WORKFLOW_DEFINITION = {
 }
 
 
+@add_to_workflows_gallery(
+    category="Workflows with Visual Language Models",
+    use_case_title="Grounding Florence 2 with detections",
+    use_case_description="""
+**THIS EXAMPLE CAN ONLY BE RUN LOCALLY OR USING DEDICATED DEPLOYMENT**
+
+In this example, we use object detection model to find regions of interest in the 
+input image, which are later classified by Florence 2 model. Using Florence 2
+model in workflows it is possible to pass `grounding_detection` as an input for 
+all of the tasks named `detection-grounded-*`.
+
+Grounding detection can either be input parameter or output of detection model. If the 
+latter is true, one should choose `grounding_selection_mode` - as Florence do only support 
+a single bounding box as grounding - when multiple detections can be provided, block
+will select one based on parameter.
+    """,
+    workflow_definition=FLORENCE2_GROUNDED_CLASSIFICATION_WORKFLOW_DEFINITION,
+    workflow_name_in_app="florence-2-detection-grounded-classification",
+)
 def test_florence2_grounded_classification(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
