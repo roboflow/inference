@@ -1,6 +1,8 @@
+import hashlib
 import json
 import logging
 import re
+from functools import partial
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 from uuid import uuid4
 
@@ -87,20 +89,37 @@ class BlockManifest(WorkflowBlockManifest):
         description="The string with raw classification prediction to parse.",
         examples=[["$steps.lmm.output"]],
     )
-    classes: Union[
-        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
-        StepOutputSelector(kind=[LIST_OF_VALUES_KIND]),
-        List[str],
+    classes: Optional[
+        Union[
+            WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
+            StepOutputSelector(kind=[LIST_OF_VALUES_KIND]),
+            List[str],
+        ]
     ] = Field(
         description="List of all classes used by the model, required to "
         "generate mapping between class name and class id.",
         examples=[["$steps.lmm.classes", "$inputs.classes", ["class_a", "class_b"]]],
+        json_schema_extra={
+            "relevant_for": {
+                "model_type": {
+                    "values": ["google-gemini", "anthropic-claude"],
+                    "required": True,
+                },
+            }
+        },
     )
-    model_type: Literal["google-gemini", "anthropic-claude"] = Field(
+    model_type: Literal["google-gemini", "anthropic-claude", "florence-2"] = Field(
         description="Type of the model that generated prediction",
-        examples=[["google-gemini", "anthropic-claude"]],
+        examples=[["google-gemini", "anthropic-claude", "florence-2"]],
     )
-    task_type: Literal["object-detection"]
+    task_type: Literal[
+        "object-detection",
+        "object-detection-and-caption",
+        "open-vocabulary-object-detection",
+        "phrase-grounded-object-detection",
+        "region-proposal",
+        "ocr-with-text-detection",
+    ]
 
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
@@ -108,6 +127,11 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"Could not parse result of task {self.task_type} for model {self.model_type}"
             )
+        if self.model_type != "florence-2" and self.classes is None:
+            raise ValueError(
+                "Must pass list of classes to this block when using gemini or claude"
+            )
+
         return self
 
     @classmethod
@@ -135,7 +159,7 @@ class VLMAsDetectorBlockV1(WorkflowBlock):
         self,
         image: WorkflowImageData,
         vlm_output: str,
-        classes: List[str],
+        classes: Optional[List[str]],
         model_type: str,
         task_type: str,
     ) -> BlockResult:
@@ -255,7 +279,88 @@ def scale_confidence(value: float) -> float:
     return min(max(float(value), 0.0), 1.0)
 
 
+def parse_florence2_object_detection_response(
+    image: WorkflowImageData,
+    parsed_data: dict,
+    classes: Optional[List[str]],
+    inference_id: str,
+    florence_task_type: str,
+):
+    image_height, image_width = image.numpy_image.shape[:2]
+    detections = sv.Detections.from_lmm(
+        "florence_2",
+        result={florence_task_type: parsed_data},
+        resolution_wh=(image_width, image_height),
+    )
+    detections.class_id = np.array([0] * len(detections))
+    if florence_task_type == "<REGION_PROPOSAL>":
+        detections.data["class_name"] = np.array(["roi"] * len(detections))
+    if florence_task_type in {"<OD>", "<CAPTION_TO_PHRASE_GROUNDING>"}:
+        unique_class_names = set(detections.data.get("class_name", []))
+        class_name_to_id = {
+            name: get_4digit_from_md5(name) for name in unique_class_names
+        }
+        class_ids = [
+            class_name_to_id.get(name, -1)
+            for name in detections.data.get("class_name", ["unknown"] * len(detections))
+        ]
+        detections.class_id = np.array(class_ids)
+    if florence_task_type in "<OPEN_VOCABULARY_DETECTION>":
+        class_name_to_id = {name: idx for idx, name in enumerate(classes)}
+        class_ids = [
+            class_name_to_id.get(name, -1)
+            for name in detections.data.get("class_name", ["unknown"] * len(detections))
+        ]
+        detections.class_id = np.array(class_ids)
+    dimensions = np.array([[image_height, image_width]] * len(detections))
+    detection_ids = np.array([str(uuid4()) for _ in range(len(detections))])
+    inference_ids = np.array([inference_id] * len(detections))
+    prediction_type = np.array(["object-detection"] * len(detections))
+    detections.data.update(
+        {
+            INFERENCE_ID_KEY: inference_ids,
+            DETECTION_ID_KEY: detection_ids,
+            PREDICTION_TYPE_KEY: prediction_type,
+            IMAGE_DIMENSIONS_KEY: dimensions,
+        }
+    )
+    detections.confidence = np.array([1.0 for _ in detections])
+    return attach_parents_coordinates_to_sv_detections(
+        detections=detections, image=image
+    )
+
+
+def get_4digit_from_md5(input_string):
+    md5_hash = hashlib.md5(input_string.encode("utf-8"))
+    hex_digest = md5_hash.hexdigest()
+    integer_value = int(hex_digest[:9], 16)
+    return integer_value % 10000
+
+
 REGISTERED_PARSERS = {
     ("google-gemini", "object-detection"): parse_gemini_object_detection_response,
     ("anthropic-claude", "object-detection"): parse_gemini_object_detection_response,
+    ("florence-2", "object-detection"): partial(
+        parse_florence2_object_detection_response, florence_task_type="<OD>"
+    ),
+    ("florence-2", "open-vocabulary-object-detection"): partial(
+        parse_florence2_object_detection_response,
+        florence_task_type="<OPEN_VOCABULARY_DETECTION>",
+    ),
+    ("florence-2", "object-detection-and-caption"): partial(
+        parse_florence2_object_detection_response,
+        florence_task_type="<DENSE_REGION_CAPTION>",
+    ),
+    ("florence-2", "phrase-grounded-object-detection"): partial(
+        parse_florence2_object_detection_response,
+        florence_task_type="<CAPTION_TO_PHRASE_GROUNDING>",
+    ),
+    ("florence-2", "region-proposal"): partial(
+        parse_florence2_object_detection_response,
+        florence_task_type="<REGION_PROPOSAL>",
+    ),
+    ("florence-2", "ocr-with-text-detection"): partial(
+        parse_florence2_object_detection_response,
+        florence_task_type="<OCR_WITH_REGION>",
+    ),
 }

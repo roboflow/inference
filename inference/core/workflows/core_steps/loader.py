@@ -85,6 +85,9 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 im
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
+    Florence2BlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
 )
@@ -343,6 +346,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         AntropicClaudeBlockV1,
         LineCounterBlockV1,
         PolygonZoneVisualizationBlockV1,
+        Florence2BlockV1,
     ]
 
 

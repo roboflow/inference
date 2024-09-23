@@ -52,6 +52,7 @@ class TransformerModel(RoboflowInferenceModel):
     default_dtype = torch.float16
     generation_includes_input = False
     needs_hf_token = False
+    skip_special_tokens = True
 
     def __init__(
         self, model_id, *args, dtype=None, huggingface_token=HUGGINGFACE_TOKEN, **kwargs
@@ -119,12 +120,17 @@ class TransformerModel(RoboflowInferenceModel):
                 preprocessed_inputs=model_inputs
             )
             generation = self.model.generate(
-                **prepared_inputs, max_new_tokens=100, do_sample=False
+                **prepared_inputs,
+                max_new_tokens=1000,
+                do_sample=False,
+                early_stopping=False,
             )
             generation = generation[0]
             if self.generation_includes_input:
                 generation = generation[input_len:]
-            decoded = self.processor.decode(generation, skip_special_tokens=True)
+            decoded = self.processor.decode(
+                generation, skip_special_tokens=self.skip_special_tokens
+            )
 
         return (decoded,)
 
