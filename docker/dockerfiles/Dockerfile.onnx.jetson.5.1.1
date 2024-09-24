@@ -19,6 +19,12 @@ RUN apt-get update -y && apt-get install -y \
     python3-shapely \
     gdal-bin \
     libgdal-dev \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-tools gstreamer1.0-x \
+    gstreamer1.0-rtsp \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.clip.txt \

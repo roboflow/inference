@@ -8,6 +8,12 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     uvicorn \
     python3-pip \
     git \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-tools gstreamer1.0-x \
+    gstreamer1.0-rtsp \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
