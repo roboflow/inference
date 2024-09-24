@@ -55,4 +55,3 @@ Here is an example of a configuration manifest for the close to threshold sampli
 }
 ```
 
-Learn how to [configure active learning](../active_learning.md#configuration) for your model.

@@ -42,5 +42,3 @@ This strategy is available for the following model types:
   ]
 }
 ```
-
-Learn how to [configure active learning](../active_learning.md#configuration) for your model.

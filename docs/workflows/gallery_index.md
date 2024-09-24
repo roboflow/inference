@@ -6,9 +6,9 @@ Browse through the various categories to find inspiration and ideas for building
 <ul id="workflows-gallery">
 	<li><a href="/workflows/gallery/workflows_with_multiple_models">Workflows with multiple models</a></li>
 	<li><a href="/workflows/gallery/workflows_enhanced_by_roboflow_platform">Workflows enhanced by Roboflow Platform</a></li>
+	<li><a href="/workflows/gallery/basic_workflows">Basic Workflows</a></li>
 	<li><a href="/workflows/gallery/workflows_with_classical_computer_vision_methods">Workflows with classical Computer Vision methods</a></li>
 	<li><a href="/workflows/gallery/workflows_with_visual_language_models">Workflows with Visual Language Models</a></li>
-	<li><a href="/workflows/gallery/basic_workflows">Basic Workflows</a></li>
 	<li><a href="/workflows/gallery/workflows_with_dynamic_python_blocks">Workflows with dynamic Python Blocks</a></li>
 	<li><a href="/workflows/gallery/workflows_with_data_transformations">Workflows with data transformations</a></li>
 	<li><a href="/workflows/gallery/workflows_with_flow_control">Workflows with flow control</a></li>
