@@ -79,6 +79,11 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         default=True,
         examples=[True, False],
     )
+    reset_out_of_zone_detections: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+        description=f"If true, detections found outside of zone will have time reset",
+        default=True,
+        examples=[True, False],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -114,6 +119,7 @@ class TimeInZoneBlockV1(WorkflowBlock):
         zone: List[Tuple[int, int]],
         triggering_anchor: str,
         remove_out_of_zone_detections: bool,
+        reset_out_of_zone_detections: bool,
     ) -> BlockResult:
         if detections.tracker_id is None:
             raise ValueError(
@@ -157,6 +163,12 @@ class TimeInZoneBlockV1(WorkflowBlock):
             polygon_zone.trigger(detections),
             detections.tracker_id,
         ):
+            if (
+                not is_in_zone
+                and tracker_id in tracked_ids_in_zone
+                and reset_out_of_zone_detections
+            ):
+                del tracked_ids_in_zone[tracker_id]
             if not is_in_zone and remove_out_of_zone_detections:
                 continue
 
