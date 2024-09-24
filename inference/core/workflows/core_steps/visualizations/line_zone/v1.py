@@ -16,6 +16,7 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
+    FLOAT_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     FloatZeroToOne,
@@ -65,6 +66,11 @@ class LineCounterZoneVisualizationManifest(VisualizationManifest):
         default=1,
         examples=[1, "$inputs.text_thickness"],
     )
+    text_scale: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+        description="Scale of the text.",
+        default=1.0,
+        examples=[1.0, "$inputs.text_scale"],
+    )
     count_in: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND]), StepOutputSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Reference to the number of objects that crossed into the line zone.",
         default=0,
@@ -111,6 +117,7 @@ class LineCounterZoneVisualizationBlockV1(VisualizationBlock):
         color: str,
         thickness: int,
         text_thickness: int,
+        text_scale: int,
         count_in: int,
         count_out: int,
         opacity: float,
@@ -150,6 +157,7 @@ class LineCounterZoneVisualizationBlockV1(VisualizationBlock):
             text=f"in: {count_in}, out: {count_out}",
             text_anchor=sv.Point(x1, y1),
             text_thickness=text_thickness,
+            text_scale=text_scale,
             background_color=sv.Color.WHITE,
             text_padding=0,
         )
