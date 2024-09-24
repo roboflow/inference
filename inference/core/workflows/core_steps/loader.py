@@ -165,6 +165,9 @@ from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import
 from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
     ImageSlicerBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.masked_crop.v1 import (
+    MaskedCropBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
 )
@@ -347,6 +350,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LineCounterBlockV1,
         PolygonZoneVisualizationBlockV1,
         Florence2BlockV1,
+        MaskedCropBlockV1,
     ]
 
 
