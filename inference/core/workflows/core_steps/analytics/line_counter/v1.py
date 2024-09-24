@@ -61,12 +61,11 @@ class LineCounterManifest(WorkflowBlockManifest):
     )
 
     line_segment: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Lines (one for each batch) in a format [(x1, y1), (x2, y2)];"
-        " direction of line zone is assumed to be that of direction of vector normal to [(x1, y1), (x2, y2)]",
-        examples=["$inputs.zones"],
+        description="Line in the format [[x1, y1], [x2, y2]] consisting of exactly two points. For line [[0, 100], [100, 100]] line will count objects entering from the bottom as IN",
+        examples=[[[0, 50], [500, 50]], "$inputs.zones"],
     )
-    triggering_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description=f"Triggering anchor. Allowed values: {', '.join(sv.Position.list())}",
+    triggering_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
+        description=f"Point from the detection for triggering line crossing.",
         default="CENTER",
         examples=["CENTER"],
     )
