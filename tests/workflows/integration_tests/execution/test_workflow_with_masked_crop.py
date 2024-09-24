@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
@@ -17,6 +18,11 @@ MASKED_CROP_WORKFLOW = {
             "name": "model_id",
             "default_value": "yolov8n-seg-640",
         },
+        {
+            "type": "WorkflowParameter",
+            "name": "confidence",
+            "default_value": 0.4,
+        },
     ],
     "steps": [
         {
@@ -24,6 +30,7 @@ MASKED_CROP_WORKFLOW = {
             "name": "segmentation",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
+            "confidence": "$inputs.confidence",
         },
         {
             "type": "roboflow_core/masked_crop@v1",
@@ -82,3 +89,33 @@ def test_workflow_with_masked_crop(
         "crops",
     }, "Expected all declared outputs to be delivered"
     assert len(result[0]["crops"]) == 2, "Expected 2 crops for two dogs detected"
+
+
+def test_workflow_with_masked_crop_when_nothing_gets_predicted(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=MASKED_CROP_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": dogs_image, "confidence": 0.99}
+    )
+
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "crops",
+    }, "Expected all declared outputs to be delivered"
+    assert len(result[0]["crops"]) == 0, "Expected 0 crops detected"
