@@ -14,9 +14,9 @@ from inference.core.workflows.core_steps.visualizations.common.base import (
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
-    FLOAT_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     FloatZeroToOne,
