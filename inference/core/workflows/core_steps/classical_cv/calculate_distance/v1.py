@@ -69,7 +69,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     
     object_2_class_name: str = Field(
-        title="Second Class Object 2",
+        title="Second Object Class Name",
         description="The class name of the second object.",
         examples=["person"],
     )
