@@ -28,6 +28,8 @@ def test_line_counter_zone_validation_when_valid_manifest_is_given(
         "color": "#FFFFFF",
         "opacity": 0.5,
         "thickness": 3,
+        "text_thickness": 1,
+        "text_scale": 2.0,
         "count_in": 7,
         "count_out": 1,
     }
@@ -44,6 +46,8 @@ def test_line_counter_zone_validation_when_valid_manifest_is_given(
         color="#FFFFFF",
         opacity=0.5,
         thickness=3,
+        text_thickness=1,
+        text_scale=2.0,
         count_in=7,
         count_out=1,
     )
@@ -59,6 +63,8 @@ def test_line_counter_zone_validation_when_invalid_image_is_given() -> None:
         "color": "#FFFFFF",
         "opacity": 0.5,
         "thickness": 3,
+        "text_thickness": 1,
+        "text_scale": 2.0,
         "count_in": 7,
         "count_out": 1,
     }
@@ -83,6 +89,8 @@ def test_line_counter_zone_visualization_block() -> None:
         color="#FF0000",
         opacity=1,
         thickness=3,
+        text_thickness=1,
+        text_scale=1.0,
         count_in=7,
         count_out=1,
     )
