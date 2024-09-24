@@ -17,8 +17,8 @@ from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
 )
-from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
-    DistanceMeasurementBlockV1,
+from inference.core.workflows.core_steps.classical_cv.calculate_distance.v1 import (
+    CalculateDistanceBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
     DominantColorBlockV1,
@@ -350,7 +350,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LineCounterBlockV1,
         PolygonZoneVisualizationBlockV1,
         Florence2BlockV1,
-        DistanceMeasurementBlockV1
+        CalculateDistanceBlockV1
     ]
 
 

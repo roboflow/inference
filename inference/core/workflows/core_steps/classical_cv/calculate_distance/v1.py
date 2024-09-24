@@ -24,15 +24,15 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Measure distance between objects"
+SHORT_DESCRIPTION = "Calculate the distance between two objects"
 
 LONG_DESCRIPTION = """
-Measure the distance between objects in an image using a pixel to mm ratio."""
+Calculate the distance between two objects in an image using a pixel-to-milimeter ratio."""
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Distance Measurement",
+            "name": "Calculate Distance",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -40,7 +40,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "classical_computer_vision",
         }
     )
-    type: Literal["roboflow_core/measurement_bounding_box@v1", "MeasurementBoundingBox", "Measure"]
+    type: Literal["roboflow_core/calculate_distance@v1", "CalculateDistance", "Distance"]
     # images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
     #     title="Image to Measure",
     #     description="The input image for this step.",
@@ -100,7 +100,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.0.0,<2.0.0"
 
 
-class DistanceMeasurementBlockV1(WorkflowBlock):
+class CalculateDistanceBlockV1(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -117,7 +117,7 @@ class DistanceMeasurementBlockV1(WorkflowBlock):
     ) -> BlockResult:
         results = []
         for detections in predictions:
-            measurements = measure_distance(
+            measurements = calculate_distance(
                 #image=image,
                 detections=detections,
                 reference_milimeters=reference_milimeters,
@@ -128,7 +128,7 @@ class DistanceMeasurementBlockV1(WorkflowBlock):
             results.append([{"measurements": measurements}])
         return results
 
-def measure_distance(
+def calculate_distance(
     #image: WorkflowImageData,
     detections: sv.Detections,
     reference_milimeters: float,
