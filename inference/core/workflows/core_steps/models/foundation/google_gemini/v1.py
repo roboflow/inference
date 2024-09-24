@@ -107,9 +107,11 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/google_gemini@v1"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     task_type: TaskType = Field(
+        default="unconstrained",
         description="Task type to be performed by model. Value determines required parameters and output response.",
         json_schema_extra={
             "values_metadata": RELEVANT_TASKS_METADATA,
+            "always_visible": True,
         },
     )
     prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(

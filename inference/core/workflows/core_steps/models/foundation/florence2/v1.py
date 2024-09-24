@@ -149,10 +149,12 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["florence-2-base"],
     )
     task_type: TaskType = Field(
+        default="open-vocabulary-object-detection",
         description="Task type to be performed by model. "
         "Value determines required parameters and output response.",
         json_schema_extra={
             "values_metadata": RELEVANT_TASKS_METADATA,
+            "always_visible": True,
         },
     )
     prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
