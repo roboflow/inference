@@ -10,8 +10,9 @@ import anthropic
 import numpy as np
 import supervision as sv
 from anthropic import NOT_GIVEN
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import AfterValidator, ConfigDict, Field, model_validator
 from supervision.config import CLASS_NAME_DATA_FIELD
+from typing_extensions import Annotated
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
@@ -115,6 +116,17 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
 }
 
 
+def validate_output_structure(output_structure: Optional[dict]) -> Optional[dict]:
+    if output_structure is None:
+        return output_structure
+    if "error_status" in output_structure or "output" in output_structure:
+        raise ValueError(
+            "`error_status` and `output` are reserved field names and cannot be "
+            "used in `output_structure` of `roboflow_core/anthropic_claude@v2` block."
+        )
+    return output_structure
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
@@ -186,7 +198,9 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    output_structure: Optional[Dict[str, str]] = Field(
+    output_structure: Annotated[
+        Optional[Dict[str, str]], AfterValidator(validate_output_structure)
+    ] = Field(
         default=None,
         description="Dictionary with structure of expected JSON response",
         examples=[{"my_key": "description"}, "$inputs.output_structure"],
@@ -311,6 +325,9 @@ class BlockManifest(WorkflowBlockManifest):
                     OutputDefinition(name="inference_id", kind=[STRING_KIND]),
                 ]
             )
+        if self.task_type == "structured-answering":
+            for field_name in self.output_structure.keys():
+                result.append(OutputDefinition(name=field_name))
         return result
 
     @classmethod
@@ -375,7 +392,15 @@ class AntropicClaudeBlockV2(WorkflowBlock):
                 classes=classes,
             )
         if task_type == "object-detection":
-            pass
+            return prepare_object_detection_results(
+                images=images,
+                raw_outputs=raw_outputs,
+                classes=classes,
+            )
+        if task_type == "structured-answering":
+            return prepare_structured_answering_results(
+                raw_outputs=raw_outputs, expected_fields=list(output_structure.keys())
+            )
         return [{"output": raw_output} for raw_output in raw_outputs]
 
 
@@ -973,6 +998,7 @@ def prepare_object_detection_results(
             )
             result.append(
                 {
+                    "output": vlm_output,
                     "error_status": False,
                     "predictions": predictions,
                     "inference_id": inference_id,
@@ -986,6 +1012,7 @@ def prepare_object_detection_results(
             )
             result.append(
                 {
+                    "output": vlm_output,
                     "error_status": True,
                     "predictions": None,
                     "inference_id": inference_id,
@@ -1044,3 +1071,54 @@ def parse_claude_object_detection_response(
         detections=detections,
         image=image,
     )
+
+
+def prepare_structured_answering_results(
+    raw_outputs: List[str],
+    expected_fields: List[str],
+) -> List[dict]:
+    result = []
+    for raw_json in raw_outputs:
+        error_status, parsed_data = string2json_with_expected_fields(
+            raw_json=raw_json,
+            expected_fields=expected_fields,
+        )
+        parsed_data["output"] = raw_json
+        parsed_data["error_status"] = error_status
+        result.append(parsed_data)
+    return result
+
+
+def string2json_with_expected_fields(
+    raw_json: str,
+    expected_fields: List[str],
+) -> Tuple[bool, dict]:
+    json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(raw_json)
+    if len(json_blocks_found) == 0:
+        return try_parse_json_with_expected_fields(
+            raw_json, expected_fields=expected_fields
+        )
+    first_block = json_blocks_found[0]
+    return try_parse_json_with_expected_fields(
+        first_block, expected_fields=expected_fields
+    )
+
+
+def try_parse_json_with_expected_fields(
+    content: str, expected_fields: List[str]
+) -> Tuple[bool, dict]:
+    try:
+        parsed_data = json.loads(content)
+        result = {}
+        all_fields_find = True
+        for field in expected_fields:
+            if field not in parsed_data:
+                all_fields_find = False
+            result[field] = parsed_data.get(field)
+        return not all_fields_find, result
+    except Exception as error:
+        logging.warning(
+            f"Could not parse JSON in `roboflow_core/json_parser@v1` block. "
+            f"Error type: {error.__class__.__name__}. Details: {error}"
+        )
+        return True, {field: None for field in expected_fields}
