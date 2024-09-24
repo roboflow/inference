@@ -58,7 +58,7 @@ Ask a question to OpenAI's GPT-4 with Vision model.
 
 You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
-{RELEVANT_TASKS_METADATA}
+{RELEVANT_TASKS_DOCS_DESCRIPTION}
 
 You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
 """
