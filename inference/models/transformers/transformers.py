@@ -227,7 +227,11 @@ class LoRATransformerModel(TransformerModel):
             cache_dir=cache_dir,
             token=token,
         ).to(self.dtype)
-        self.model = PeftModel.from_pretrained(self.base_model, self.cache_dir).eval().to(self.dtype)
+        self.model = (
+            PeftModel.from_pretrained(self.base_model, self.cache_dir)
+            .eval()
+            .to(self.dtype)
+        )
 
         self.processor = self.processor_class.from_pretrained(
             self.cache_dir, revision=revision
