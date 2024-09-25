@@ -40,7 +40,7 @@ WORKFLOW = {
             "metadata": "$inputs.video_metadata"
         },
         {
-            "type": "roboflow_core/path_deviation_analytics@v1",
+            "type": "roboflow_core/line_following_analytics@v1",
             "name": "path_deviation",
             "detections": f"$steps.byte_tracker.{BYTE_TRACKER_OUTPUT_KEY}",
             "metadata": "$inputs.video_metadata",
