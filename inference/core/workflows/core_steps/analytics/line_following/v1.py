@@ -29,13 +29,13 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-OUTPUT_KEY: str = "deviation_threshold"
-DETECTIONS_TIME_IN_ZONE_PARAM: str = "time_in_zone"
-SHORT_DESCRIPTION = "xxx"
+OUTPUT_KEY: str = "frechet_distance"
+SHORT_DESCRIPTION = "Calculate Frechet distance of object from reference path"
 LONG_DESCRIPTION = """
-xxx
+The `LineFollowingAnalyticsBlock` is an analytics block designed to measure the Frechet distance
+of tracked objects from a user-defined reference path. The block requires detections to be tracked
+(i.e. each object must have a unique tracker_id assigned, which persists between frames).
 """
-
 
 class LineFollowingManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -65,7 +65,7 @@ class LineFollowingManifest(WorkflowBlockManifest):
         examples=["CENTER"],
     )
     reference_path: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Line segments (one for each batch) in a format [[(x1, y1), (x2, y2), (x3, y3), ...], ...];",
+        description="Reference path in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
         examples=["$inputs.expected_path"],
     )
 
@@ -74,9 +74,7 @@ class LineFollowingManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name=OUTPUT_KEY,
-                kind=[
-                    FLOAT_KIND,
-                ],
+                kind=[FLOAT_KIND],
             ),
         ]
 
@@ -84,14 +82,38 @@ class LineFollowingManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
 
-
 class LineFollowingAnalyticsBlockV1(WorkflowBlock):
     def __init__(self):
-        self._paths = {}
+        self._object_paths: Dict[str, Dict[Union[int, str], List[Tuple[float, float]]]] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return PathAnalysisManifest
+        return LineFollowingManifest
+
+    def _calculate_frechet_distance(self, path1: np.ndarray, path2: np.ndarray) -> float:
+        def euclidean_distance(point1, point2):
+            return np.sqrt(np.sum((point1 - point2) ** 2))
+
+        def compute_distance(dist_matrix, i, j, path1, path2):
+            if dist_matrix[i, j] > -1:
+                return dist_matrix[i, j]
+            elif i == 0 and j == 0:
+                dist_matrix[i, j] = euclidean_distance(path1[0], path2[0])
+            elif i > 0 and j == 0:
+                dist_matrix[i, j] = max(compute_distance(dist_matrix, i-1, 0, path1, path2), euclidean_distance(path1[i], path2[0]))
+            elif i == 0 and j > 0:
+                dist_matrix[i, j] = max(compute_distance(dist_matrix, 0, j-1, path1, path2), euclidean_distance(path1[0], path2[j]))
+            elif i > 0 and j > 0:
+                dist_matrix[i, j] = max(min(compute_distance(dist_matrix, i-1, j, path1, path2), 
+                                            compute_distance(dist_matrix, i-1, j-1, path1, path2), 
+                                            compute_distance(dist_matrix, i, j-1, path1, path2)),
+                                        euclidean_distance(path1[i], path2[j]))
+            else:
+                dist_matrix[i, j] = float("inf")
+            return dist_matrix[i, j]
+
+        dist_matrix = np.ones((len(path1), len(path2))) * -1
+        return compute_distance(dist_matrix, len(path1)-1, len(path2)-1, path1, path2)
 
     def run(
         self,
@@ -100,5 +122,27 @@ class LineFollowingAnalyticsBlockV1(WorkflowBlock):
         triggering_anchor: str,
         reference_path: List[Tuple[int, int]],
     ) -> BlockResult:
-        return {OUTPUT_KEY: 0}
+        if detections.tracker_id is None:
+            raise ValueError(
+                f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
+            )
 
+        video_id = metadata.video_identifier
+        if video_id not in self._object_paths:
+            self._object_paths[video_id] = {}
+
+        max_frechet_distance = 0.0
+
+        for i, tracker_id in enumerate(detections.tracker_id):
+            anchor_point = getattr(detections, triggering_anchor.lower())[i]
+            if tracker_id not in self._object_paths[video_id]:
+                self._object_paths[video_id][tracker_id] = []
+            self._object_paths[video_id][tracker_id].append(tuple(anchor_point))
+
+            object_path = np.array(self._object_paths[video_id][tracker_id])
+            ref_path = np.array(reference_path)
+
+            frechet_distance = self._calculate_frechet_distance(object_path, ref_path)
+            max_frechet_distance = max(max_frechet_distance, frechet_distance)
+
+        return {OUTPUT_KEY: max_frechet_distance}
