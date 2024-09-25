@@ -259,12 +259,14 @@ def join_inference_pipeline(
 
 
 def start() -> None:
+    print("STARTING THE APP", flush=True)
     signal.signal(
         signal.SIGINT, partial(execute_termination, processes_table=PROCESSES_TABLE)
     )
     signal.signal(
         signal.SIGTERM, partial(execute_termination, processes_table=PROCESSES_TABLE)
     )
+    print("SIGNALS SET UP", flush=True)
     with RoboflowTCPServer(
         server_address=(HOST, PORT),
         handler_class=partial(
@@ -272,6 +274,7 @@ def start() -> None:
         ),
         socket_operations_timeout=SOCKET_TIMEOUT,
     ) as tcp_server:
+        print(f"ABOUT TO SERVE AT {(HOST, PORT)}", flush=True)
         logger.info(
             f"Inference Pipeline Processes Manager is ready to accept connections at {(HOST, PORT)}"
         )
