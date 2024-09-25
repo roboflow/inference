@@ -134,18 +134,7 @@ class LineFollowingAnalyticsBlockV1(WorkflowBlock):
         max_frechet_distance = 0.0
 
         for i, tracker_id in enumerate(detections.tracker_id):
-            if triggering_anchor.upper() == "CENTER":
-                anchor_point = detections.get_anchor_coordinates(sv.Position.CENTER)[i]
-            elif triggering_anchor.upper() == "TOP_LEFT":
-                anchor_point = detections.get_anchor_coordinates(sv.Position.TOP_LEFT)[i]
-            elif triggering_anchor.upper() == "TOP_RIGHT":
-                anchor_point = detections.get_anchor_coordinates(sv.Position.TOP_RIGHT)[i]
-            elif triggering_anchor.upper() == "BOTTOM_LEFT":
-                anchor_point = detections.get_anchor_coordinates(sv.Position.BOTTOM_LEFT)[i]
-            elif triggering_anchor.upper() == "BOTTOM_RIGHT":
-                anchor_point = detections.get_anchor_coordinates(sv.Position.BOTTOM_RIGHT)[i]
-            else:
-                raise ValueError(f"Invalid triggering_anchor: {triggering_anchor}")
+            anchor_point = getattr(detections, triggering_anchor.lower())[i]
 
             if tracker_id not in self._object_paths[video_id]:
                 self._object_paths[video_id][tracker_id] = []
