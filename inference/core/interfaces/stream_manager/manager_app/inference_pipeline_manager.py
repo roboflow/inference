@@ -246,7 +246,8 @@ class InferencePipelineManager(Process):
             if self._buffer_sink.empty():
                 response_payload = {
                     STATUS_KEY: OperationStatus.SUCCESS,
-                    "results": [],
+                    "outputs": [],
+                    "frames_metadata": [],
                 }
             else:
                 predictions, frames = [], []

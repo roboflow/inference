@@ -5,7 +5,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union, Set
 
 import cv2
 import numpy as np
