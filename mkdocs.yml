@@ -49,6 +49,7 @@ nav:
           - CLIP (Classification, Embeddings): foundation/clip.md
           - CogVLM (Multimodal Language Model): foundation/cogvlm.md
           - DocTR (OCR): foundation/doctr.md
+          - Florence-2: foundation/florence2.md
           - TrOCR (OCR): foundation/trocr.md
           - Grounding DINO (Object Detection): foundation/grounding_dino.md
           - L2CS-Net (Gaze Detection): foundation/gaze.md
@@ -89,6 +90,7 @@ nav:
         - Dynamic Python Blocks: workflows/custom_python_code_blocks.md
         - Versioning: workflows/versioning.md
         - Testing: workflows/testing.md
+        - Schema API: workflows/schema_api.md
   - Reference:
       - Inference Pipeline: using_inference/inference_pipeline.md
       - Active Learning:
