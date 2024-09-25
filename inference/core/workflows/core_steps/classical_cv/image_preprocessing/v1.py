@@ -1,7 +1,7 @@
 from typing import List, Literal, Optional, Type, Union
 
-import numpy as np
 import cv2
+import numpy as np
 from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import (
@@ -9,8 +9,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    INTEGER_KIND,
     IMAGE_KIND,
+    INTEGER_KIND,
     STRING_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
