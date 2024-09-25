@@ -7,9 +7,8 @@ from typing import List, Literal, Optional, Type, Union
 import cv2
 import numpy as np
 import requests
-from pydantic import ConfigDict, Field
-
 import supervision as sv
+from pydantic import ConfigDict, Field
 from supervision import Color
 
 from inference.core.workflows.execution_engine.entities.base import (
@@ -17,18 +16,19 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     STRING_KIND,
     StepOutputImageSelector,
-    WorkflowImageSelector,
     StepOutputSelector,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND, WorkflowParameterSelector, IMAGE_KIND,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
 
 LONG_DESCRIPTION = """
 The block wraps 
@@ -51,7 +51,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
-            "search_keywords": ["Stability AI", "stability.ai", "inpainting", "image generation"],
+            "search_keywords": [
+                "Stability AI",
+                "stability.ai",
+                "inpainting",
+                "image generation",
+            ],
         }
     )
     type: Literal["roboflow_core/stability_ai_inpainting@v1"]
@@ -59,7 +64,9 @@ class BlockManifest(WorkflowBlockManifest):
         description="The image which was the base to generate VLM prediction",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    segmentation_mask: StepOutputSelector(kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]) = Field(
+    segmentation_mask: StepOutputSelector(
+        kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
+    ) = Field(
         name="Segmentation Mask",
         description="Segmentation masks",
         examples=["$steps.model.predictions"],
@@ -72,11 +79,13 @@ class BlockManifest(WorkflowBlockManifest):
         description="Prompt to inpainting model (what you wish to see)",
         examples=["my prompt", "$inputs.prompt"],
     )
-    negative_prompt: Optional[Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
-        StepOutputSelector(kind=[STRING_KIND]),
-        str,
-    ]] = Field(
+    negative_prompt: Optional[
+        Union[
+            WorkflowParameterSelector(kind=[STRING_KIND]),
+            StepOutputSelector(kind=[STRING_KIND]),
+            str,
+        ]
+    ] = Field(
         default=None,
         description="Negative prompt to inpainting model (what you do not wish to see)",
         examples=["my prompt", "$inputs.prompt"],
@@ -124,10 +133,7 @@ class StabilityAIInpaintingBlockV1(WorkflowBlock):
         }
         response = requests.post(
             f"{API_HOST}{ENDPOINT}",
-            headers={
-                "authorization": f"Bearer {api_key}",
-                "accept": "image/*"
-            },
+            headers={"authorization": f"Bearer {api_key}", "accept": "image/*"},
             files={
                 "image": encoded_image,
                 "mask": encoded_mask,
@@ -135,7 +141,9 @@ class StabilityAIInpaintingBlockV1(WorkflowBlock):
             data=request_data,
         )
         if response.status_code != 200:
-            raise RuntimeError(f"Request to StabilityAI API failed: {str(response.json())}")
+            raise RuntimeError(
+                f"Request to StabilityAI API failed: {str(response.json())}"
+            )
         result_image = bytes_to_opencv_image(payload=response.content)
         return {
             "image": WorkflowImageData(
