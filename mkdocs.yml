@@ -89,6 +89,7 @@ nav:
         - Dynamic Python Blocks: workflows/custom_python_code_blocks.md
         - Versioning: workflows/versioning.md
         - Testing: workflows/testing.md
+        - Schema API: workflows/schema_api.md
   - Reference:
       - Inference Pipeline: using_inference/inference_pipeline.md
       - Active Learning:
