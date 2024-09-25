@@ -1,7 +1,6 @@
 import os
 import signal
 from dataclasses import asdict
-from functools import partial
 from multiprocessing import Process, Queue
 from types import FrameType
 from typing import Optional, Tuple
@@ -9,30 +8,30 @@ from typing import Optional, Tuple
 from pydantic import ValidationError
 
 from inference.core import logger
-from inference.core.entities.responses.workflows import WorkflowInferenceResponse
 from inference.core.exceptions import (
     MissingApiKeyError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
 )
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
-from inference.core.interfaces.http.orjson_utils import orjson_response, serialise_workflow_result
+from inference.core.interfaces.http.orjson_utils import serialise_workflow_result
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-from inference.core.interfaces.stream.sinks import InMemoryBufferSink, WorkflowsStreamerSink, multi_sink
+from inference.core.interfaces.stream.sinks import InMemoryBufferSink
 from inference.core.interfaces.stream.watchdog import (
     BasePipelineWatchDog,
     PipelineWatchDog,
 )
-from inference.core.interfaces.stream_manager.manager_app.entities import InitialisePipelinePayload, SinkConfiguration, \
-    ConsumeResultsPayload
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     STATUS_KEY,
     TYPE_KEY,
     CommandType,
     ErrorType,
+    InitialisePipelinePayload,
     OperationStatus,
 )
-from inference.core.interfaces.stream_manager.manager_app.serialisation import describe_error
+from inference.core.interfaces.stream_manager.manager_app.serialisation import (
+    describe_error,
+)
 
 
 def ignore_signal(signal_number: int, frame: FrameType) -> None:
@@ -47,7 +46,11 @@ class InferencePipelineManager(Process):
     def init(
         cls, pipeline_id: str, command_queue: Queue, responses_queue: Queue
     ) -> "InferencePipelineManager":
-        return cls(pipeline_id=pipeline_id, command_queue=command_queue, responses_queue=responses_queue)
+        return cls(
+            pipeline_id=pipeline_id,
+            command_queue=command_queue,
+            responses_queue=responses_queue,
+        )
 
     def __init__(self, pipeline_id: str, command_queue: Queue, responses_queue: Queue):
         super().__init__()
@@ -58,7 +61,6 @@ class InferencePipelineManager(Process):
         self._watchdog: Optional[PipelineWatchDog] = None
         self._stop = False
         self._buffer_sink: Optional[InMemoryBufferSink] = None
-        self._streamer_sink: Optional[WorkflowsStreamerSink] = None
 
     def run(self) -> None:
         signal.signal(signal.SIGINT, ignore_signal)
@@ -102,18 +104,10 @@ class InferencePipelineManager(Process):
         try:
             parsed_payload = InitialisePipelinePayload.model_validate(payload)
             watchdog = BasePipelineWatchDog()
-            number_of_streams = 1 if not isinstance(parsed_payload.video_reference, list) else len(parsed_payload.video_reference)
-            buffer_sink, streamer_sink = assembly_pipeline_sink(
-                pipeline_identifier=self._pipeline_id,
-                number_of_streams=number_of_streams,
-                sink_configuration=parsed_payload.sink_configuration,
+            buffer_sink = InMemoryBufferSink(
+                queue_size=parsed_payload.sink_configuration.results_buffer_size,
             )
             self._buffer_sink = buffer_sink
-            self._streamer_sink = streamer_sink
-            sinks = [self._buffer_sink.on_prediction]
-            if self._streamer_sink is not None:
-                sinks.append(self._streamer_sink.on_prediction)
-            sink = partial(multi_sink, sinks=sinks)
             self._inference_pipeline = InferencePipeline.init_with_workflow(
                 video_reference=parsed_payload.video_reference,
                 workflow_specification=parsed_payload.workflow_specification,
@@ -122,7 +116,7 @@ class InferencePipelineManager(Process):
                 api_key=parsed_payload.api_key,
                 image_input_name=parsed_payload.image_input_name,
                 workflows_parameters=parsed_payload.workflows_parameters,
-                on_prediction=sink,
+                on_prediction=self._buffer_sink.on_prediction,
                 max_fps=parsed_payload.max_fps,
                 watchdog=watchdog,
                 source_buffer_filling_strategy=parsed_payload.source_buffer_filling_strategy,
@@ -135,18 +129,16 @@ class InferencePipelineManager(Process):
             )
             self._watchdog = watchdog
             self._inference_pipeline.start(use_main_thread=False)
-            output_streams = []
-            if self._streamer_sink is not None:
-                output_streams = self._streamer_sink.stream_urls
-            self._responses_queue.put((
-                request_id,
-                {
-                    STATUS_KEY: OperationStatus.SUCCESS,
-                    "debug_previews": output_streams,
-                }
-            ))
+            self._responses_queue.put(
+                (request_id, {STATUS_KEY: OperationStatus.SUCCESS})
+            )
             logger.info(f"Pipeline initialised. request_id={request_id}...")
-        except (ValidationError, MissingApiKeyError, KeyError, NotImplementedError) as error:
+        except (
+            ValidationError,
+            MissingApiKeyError,
+            KeyError,
+            NotImplementedError,
+        ) as error:
             self._handle_error(
                 request_id=request_id, error=error, error_type=ErrorType.INVALID_PAYLOAD
             )
@@ -268,11 +260,13 @@ class InferencePipelineManager(Process):
                     if frame is None:
                         frames_metadata.append(None)
                     else:
-                        frames_metadata.append({
-                            "frame_timestamp": frame.frame_timestamp.isoformat(),
-                            "frame_id": frame.frame_id,
-                            "source_id": frame.source_id,
-                        })
+                        frames_metadata.append(
+                            {
+                                "frame_timestamp": frame.frame_timestamp.isoformat(),
+                                "frame_id": frame.frame_id,
+                                "source_id": frame.source_id,
+                            }
+                        )
                 response_payload = {
                     STATUS_KEY: OperationStatus.SUCCESS,
                     "outputs": predictions,
@@ -299,26 +293,3 @@ class InferencePipelineManager(Process):
         )
         response_payload = describe_error(error, error_type=error_type)
         self._responses_queue.put((request_id, response_payload))
-
-
-def assembly_pipeline_sink(
-    pipeline_identifier: str,
-    number_of_streams: int,
-    sink_configuration: SinkConfiguration,
-) -> Tuple[InMemoryBufferSink, Optional[WorkflowsStreamerSink]]:
-    buffer_sink = InMemoryBufferSink(
-        queue_size=sink_configuration.results_buffer_size,
-    )
-    streamer_sink = None
-    if sink_configuration.stream_server_url is not None and sink_configuration.re_streaming_fields:
-        streamer_sink = WorkflowsStreamerSink.init(
-            pipeline_identifier=pipeline_identifier,
-            number_of_streams=number_of_streams,
-            image_outputs=sink_configuration.re_streaming_fields,
-            stream_server_url=sink_configuration.stream_server_url,
-            rtsp_port=sink_configuration.server_rtsp_port,
-            webrtc_port=sink_configuration.server_webrtc_port,
-        )
-    return buffer_sink, streamer_sink
-
-

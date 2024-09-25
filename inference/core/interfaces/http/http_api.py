@@ -110,6 +110,7 @@ from inference.core.env import (
     CORE_MODELS_ENABLED,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
+    ENABLE_STREAM_API,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -121,7 +122,7 @@ from inference.core.env import (
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
-    WORKFLOWS_STEP_EXECUTION_MODE, ENABLE_STREAM_API,
+    WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -155,10 +156,18 @@ from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
     serialise_workflow_result,
 )
-from inference.core.interfaces.stream_manager.api.entities import InitializePipelineResponse, CommandResponse, \
-    ListPipelinesResponse, InferencePipelineStatusResponse, ConsumePipelineResponse
-from inference.core.interfaces.stream_manager.api.stream_manager_client import StreamManagerClient
-from inference.core.interfaces.stream_manager.manager_app.entities import InitialisePipelinePayload
+from inference.core.interfaces.stream_manager.api.entities import (
+    CommandResponse,
+    ConsumePipelineResponse,
+    InferencePipelineStatusResponse,
+    ListPipelinesResponse,
+)
+from inference.core.interfaces.stream_manager.api.stream_manager_client import (
+    StreamManagerClient,
+)
+from inference.core.interfaces.stream_manager.manager_app.entities import (
+    InitialisePipelinePayload,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import (
     get_roboflow_dataset_type,
@@ -1220,16 +1229,18 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def get_status(pipeline_id: str) -> InferencePipelineStatusResponse:
-                return await self.stream_manager_client.get_status(pipeline_id=pipeline_id)
+                return await self.stream_manager_client.get_status(
+                    pipeline_id=pipeline_id
+                )
 
             @app.post(
                 "/inference_pipelines/initialise",
-                response_model=InitializePipelineResponse,
+                response_model=CommandResponse,
                 summary="Initialize the pipeline",
                 description="Starts new Inference Pipeline within the state of ProcessesManager being queried.",
             )
             @with_route_exceptions
-            async def initialise(request: InitialisePipelinePayload) -> InitializePipelineResponse:
+            async def initialise(request: InitialisePipelinePayload) -> CommandResponse:
                 return await self.stream_manager_client.initialise_pipeline(
                     initialisation_request=request
                 )
@@ -1242,7 +1253,9 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def pause(pipeline_id: str) -> CommandResponse:
-                return await self.stream_manager_client.pause_pipeline(pipeline_id=pipeline_id)
+                return await self.stream_manager_client.pause_pipeline(
+                    pipeline_id=pipeline_id
+                )
 
             @app.post(
                 "/inference_pipelines/{pipeline_id}/resume",
@@ -1252,7 +1265,9 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def resume(pipeline_id: str) -> CommandResponse:
-                return await self.stream_manager_client.resume_pipeline(pipeline_id=pipeline_id)
+                return await self.stream_manager_client.resume_pipeline(
+                    pipeline_id=pipeline_id
+                )
 
             @app.post(
                 "/inference_pipelines/{pipeline_id}/terminate",
@@ -1262,7 +1277,9 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def terminate(pipeline_id: str) -> CommandResponse:
-                return await self.stream_manager_client.terminate_pipeline(pipeline_id=pipeline_id)
+                return await self.stream_manager_client.terminate_pipeline(
+                    pipeline_id=pipeline_id
+                )
 
             @app.get(
                 "/inference_pipelines/{pipeline_id}/consume",
@@ -1272,7 +1289,9 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def consume(pipeline_id: str) -> ConsumePipelineResponse:
-                return await self.stream_manager_client.consume_pipeline_result(pipeline_id=pipeline_id)
+                return await self.stream_manager_client.consume_pipeline_result(
+                    pipeline_id=pipeline_id
+                )
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

@@ -30,4 +30,3 @@ class CommandType(str, Enum):
     STATUS = "status"
     TERMINATE = "terminate"
     LIST_PIPELINES = "list_pipelines"
-

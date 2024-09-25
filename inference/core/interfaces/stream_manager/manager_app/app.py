@@ -10,14 +10,32 @@ from typing import Any, Dict, Optional, Tuple
 from uuid import uuid4
 
 from inference.core import logger
-from inference.core.interfaces.stream_manager.manager_app.communication import receive_socket_data, send_data_trough_socket
-from inference.core.interfaces.stream_manager.manager_app.entities import TYPE_KEY, CommandType, PIPELINE_ID_KEY, ErrorType, \
-    STATUS_KEY, OperationStatus
-from inference.core.interfaces.stream_manager.manager_app.errors import MalformedPayloadError
-from inference.core.interfaces.stream_manager.manager_app.inference_pipeline_manager import InferencePipelineManager
-from inference.core.interfaces.stream_manager.manager_app.serialisation import prepare_response, prepare_error_response, \
-    describe_error
-from inference.core.interfaces.stream_manager.manager_app.tcp_server import RoboflowTCPServer
+from inference.core.interfaces.stream_manager.manager_app.communication import (
+    receive_socket_data,
+    send_data_trough_socket,
+)
+from inference.core.interfaces.stream_manager.manager_app.entities import (
+    PIPELINE_ID_KEY,
+    STATUS_KEY,
+    TYPE_KEY,
+    CommandType,
+    ErrorType,
+    OperationStatus,
+)
+from inference.core.interfaces.stream_manager.manager_app.errors import (
+    MalformedPayloadError,
+)
+from inference.core.interfaces.stream_manager.manager_app.inference_pipeline_manager import (
+    InferencePipelineManager,
+)
+from inference.core.interfaces.stream_manager.manager_app.serialisation import (
+    describe_error,
+    prepare_error_response,
+    prepare_response,
+)
+from inference.core.interfaces.stream_manager.manager_app.tcp_server import (
+    RoboflowTCPServer,
+)
 
 PROCESSES_TABLE: Dict[str, Tuple[Process, Queue, Queue]] = {}
 HEADER_SIZE = 4
@@ -248,16 +266,17 @@ def start() -> None:
         signal.SIGTERM, partial(execute_termination, processes_table=PROCESSES_TABLE)
     )
     with RoboflowTCPServer(
-            server_address=(HOST, PORT),
-            handler_class=partial(
-                InferencePipelinesManagerHandler, processes_table=PROCESSES_TABLE
-            ),
-            socket_operations_timeout=SOCKET_TIMEOUT,
+        server_address=(HOST, PORT),
+        handler_class=partial(
+            InferencePipelinesManagerHandler, processes_table=PROCESSES_TABLE
+        ),
+        socket_operations_timeout=SOCKET_TIMEOUT,
     ) as tcp_server:
         logger.info(
             f"Inference Pipeline Processes Manager is ready to accept connections at {(HOST, PORT)}"
         )
         tcp_server.serve_forever()
+
 
 if __name__ == "__main__":
     start()

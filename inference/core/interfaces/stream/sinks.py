@@ -5,7 +5,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
-from typing import Callable, List, Optional, Tuple, Union, Dict
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -563,111 +563,7 @@ class InMemoryBufferSink:
     def empty(self) -> bool:
         return len(self._buffer) == 0
 
-    def consume_prediction(self) -> Tuple[List[Optional[dict]], List[Optional[VideoFrame]]]:
+    def consume_prediction(
+        self,
+    ) -> Tuple[List[Optional[dict]], List[Optional[VideoFrame]]]:
         return self._buffer.popleft()
-
-
-@dataclass(frozen=True)
-class StreamProcess:
-    rtsp_url: str
-    webrtc_url: str
-    streamer_process: subprocess.Popen
-
-
-class WorkflowsStreamerSink:
-
-    @classmethod
-    def init(
-        cls,
-        pipeline_identifier: str,
-        number_of_streams: int,
-        image_outputs: List[str],
-        stream_server_url: str,
-        rtsp_port: int,
-        webrtc_port: int,
-    ) -> "WorkflowsStreamerSink":
-        ffmpeg_processes = [
-            {
-                output_name: open_ffmpeg_stream_process(
-                    stream_server_host=stream_server_url,
-                    rtsp_port=rtsp_port,
-                    webrtc_port=webrtc_port,
-                    pipeline_identifier=pipeline_identifier,
-                    source_id=source_id,
-                    output_name=output_name,
-                )
-                for output_name in image_outputs
-            }
-            for source_id in range(number_of_streams)
-        ]
-        return cls(ffmpeg_processes=ffmpeg_processes)
-
-    def __init__(
-        self,
-        ffmpeg_processes: List[Dict[str, StreamProcess]]
-    ):
-        self._ffmpeg_processes = ffmpeg_processes
-
-    @property
-    def stream_urls(self) -> List[Dict[str, Dict[str, str]]]:
-        return [
-            {
-                key: {
-                    "rtsp": value.rtsp_url,
-                    "webrtc": value.webrtc_url,
-                }
-                for key, value in process.items()
-            }
-            for process in self._ffmpeg_processes
-        ]
-
-    def on_prediction(
-        self,
-        predictions: Union[dict, List[Optional[dict]]],
-        video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
-    ) -> None:
-        if not isinstance(predictions, list):
-            predictions = [predictions]
-        for source_id, prediction in enumerate(predictions):
-            for field_name, stream_process in self._ffmpeg_processes[source_id].items():
-                field_value = prediction.get(field_name)
-                if not isinstance(field_value, WorkflowImageData):
-                    continue
-                image: WorkflowImageData = field_value
-                stream_prediction(
-                    image=image.numpy_image,
-                    ffmpeg_process=stream_process.streamer_process,
-                )
-
-    def __del__(self):
-        for source_processes in self._ffmpeg_processes:
-            for (_, process) in source_processes.values():
-                process.terminate()
-
-
-def open_ffmpeg_stream_process(
-    stream_server_host: str,
-    rtsp_port: int,
-    webrtc_port: int,
-    pipeline_identifier: str,
-    source_id: int,
-    output_name: str,
-) -> StreamProcess:
-    rtsp_url = f"rtsp://{stream_server_host}:{rtsp_port}/debug_preview/{pipeline_identifier}/{source_id}/{output_name}"
-    webrtc_url = f"http://{stream_server_host}:{webrtc_port}/debug_preview/{pipeline_identifier}/{source_id}/{output_name}"
-    args = (
-        "ffmpeg -re -stream_loop -1 -f rawvideo -pix_fmt "
-        "rgb24 -s 1280x720 -i pipe:0 -pix_fmt yuv420p -c:v libx264 -bf 0 "
-        f"-f rtsp -rtsp_transport tcp {rtsp_url}"
-    ).split()
-    return StreamProcess(
-        rtsp_url=rtsp_url,
-        webrtc_url=webrtc_url,
-        streamer_process=subprocess.Popen(args, stdin=subprocess.PIPE),
-    )
-
-
-def stream_prediction(image: np.ndarray, ffmpeg_process: subprocess.Popen) -> None:
-    image = letterbox_image(image=image, desired_size=(1280, 720))
-    ffmpeg_process.stdin.write(image[:, :, ::-1].astype(np.uint8).tobytes())
-

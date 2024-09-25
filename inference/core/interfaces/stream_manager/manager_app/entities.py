@@ -1,9 +1,12 @@
 from enum import Enum
-from typing import Union, List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel
 
-from inference.core.interfaces.camera.video_source import BufferFillingStrategy, BufferConsumptionStrategy
+from inference.core.interfaces.camera.video_source import (
+    BufferConsumptionStrategy,
+    BufferFillingStrategy,
+)
 
 STATUS_KEY = "status"
 TYPE_KEY = "type"
@@ -40,10 +43,6 @@ class CommandType(str, Enum):
 
 class SinkConfiguration(BaseModel):
     results_buffer_size: int = 64
-    re_streaming_fields: Optional[List[str]] = None
-    stream_server_url: Optional[str] = None
-    server_rtsp_port: int = 8554
-    server_webrtc_port: int = 8889
 
 
 class InitialisePipelinePayload(BaseModel):
@@ -54,7 +53,7 @@ class InitialisePipelinePayload(BaseModel):
     api_key: Optional[str] = None
     image_input_name: str = "image"
     workflows_parameters: Optional[Dict[str, Any]] = None
-    sink_configuration: SinkConfiguration
+    sink_configuration: SinkConfiguration = SinkConfiguration()
     max_fps: Optional[Union[float, int]] = None
     source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None
@@ -67,4 +66,3 @@ class InitialisePipelinePayload(BaseModel):
 
 class ConsumeResultsPayload(BaseModel):
     purge: bool = False
-

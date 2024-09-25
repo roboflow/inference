@@ -26,10 +26,6 @@ class ListPipelinesResponse(CommandResponse):
     pipelines: List[str] = Field(description="List IDs of active pipelines")
 
 
-class InitializePipelineResponse(CommandResponse):
-    debug_previews: List[Dict[str, Dict[str, str]]]
-
-
 class FrameMetadata(BaseModel):
     frame_timestamp: datetime
     frame_id: int

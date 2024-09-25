@@ -6,12 +6,11 @@ from json import JSONDecodeError
 from typing import Optional, Tuple
 
 from inference.core import logger
-from inference.core.interfaces.stream_manager.api.entities import InitializePipelineResponse, ConsumePipelineResponse, \
-    FrameMetadata
-from inference.core.interfaces.stream_manager.manager_app.entities import InitialisePipelinePayload
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandContext,
     CommandResponse,
+    ConsumePipelineResponse,
+    FrameMetadata,
     InferencePipelineStatusResponse,
     ListPipelinesResponse,
 )
@@ -33,6 +32,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     TYPE_KEY,
     CommandType,
     ErrorType,
+    InitialisePipelinePayload,
     OperationStatus,
 )
 from inference.core.interfaces.stream_manager.manager_app.errors import (
@@ -106,20 +106,11 @@ class StreamManagerClient:
 
     async def initialise_pipeline(
         self, initialisation_request: InitialisePipelinePayload
-    ) -> InitializePipelineResponse:
+    ) -> CommandResponse:
         command = initialisation_request.dict(exclude_none=True)
         command[TYPE_KEY] = CommandType.INIT
         response = await self._handle_command(command=command)
-        status = response[RESPONSE_KEY][STATUS_KEY]
-        context = CommandContext(
-            request_id=response.get(REQUEST_ID_KEY),
-            pipeline_id=response.get(PIPELINE_ID_KEY),
-        )
-        return InitializePipelineResponse(
-            status=status,
-            context=context,
-            debug_previews=response[RESPONSE_KEY]["debug_previews"],
-        )
+        return build_response(response=response)
 
     async def terminate_pipeline(self, pipeline_id: str) -> CommandResponse:
         command = {
@@ -163,7 +154,9 @@ class StreamManagerClient:
             report=report,
         )
 
-    async def consume_pipeline_result(self, pipeline_id: str) -> ConsumePipelineResponse:
+    async def consume_pipeline_result(
+        self, pipeline_id: str
+    ) -> ConsumePipelineResponse:
         command = {
             TYPE_KEY: CommandType.CONSUME_RESULT,
             PIPELINE_ID_KEY: pipeline_id,
@@ -249,7 +242,7 @@ async def send_message(
         await asyncio.wait_for(writer.drain(), timeout=timeout)
     except TypeError as error:
         raise MalformedPayloadError(f"Could not serialise message. Details: {error}")
-    except OverflowError  as error:
+    except OverflowError as error:
         raise MessageToBigError(
             f"Could not send message due to size overflow. Details: {error}"
         )
