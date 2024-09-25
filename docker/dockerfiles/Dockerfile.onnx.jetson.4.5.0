@@ -13,7 +13,6 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     gfortran \
     build-essential \
     libatlas-base-dev \
-    ffmpeg \
     libsm6 \
     libxext6 \
     wget \
@@ -70,5 +69,6 @@ ENV OPENBLAS_CORETYPE=ARMV8
 ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV API_LOGGING_ENABLED=True
+ENV CORE_MODEL_TROCR_ENABLED=false
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

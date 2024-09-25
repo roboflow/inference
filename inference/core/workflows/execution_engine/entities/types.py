@@ -8,9 +8,19 @@ class Kind(BaseModel):
     name: str
     description: Optional[str] = Field(default=None)
     docs: Optional[str] = Field(default=None)
+    serialised_data_type: Optional[str] = Field(
+        default=None,
+        description="Provides Python type hint for data format that should guide "
+        "external clients on how to produce / consume serialised data of specific kind.",
+    )
 
     def __hash__(self) -> int:
-        return self.name.__hash__() + self.description.__hash__() + self.docs.__hash__()
+        return (
+            self.name.__hash__()
+            + self.description.__hash__()
+            + self.docs.__hash__()
+            + self.serialised_data_type.__hash__()
+        )
 
 
 REFERENCE_KEY = "reference"
@@ -18,13 +28,6 @@ SELECTED_ELEMENT_KEY = "selected_element"
 KIND_KEY = "kind"
 DIMENSIONALITY_OFFSET_KEY = "dimensionality_offset"
 DIMENSIONALITY_REFERENCE_PROPERTY_KEY = "dimensionality_reference_property"
-DOCS_NOTE_ABOUT_BATCH = """
-**Important note**:
-
-When you see `Batch[<A>]` in a name, it means that each group of data, called a batch, will contain elements 
-of type `<A>`. This also implies that if there are multiple inputs or outputs for a batch-wise operation, 
-they will maintain the same order of elements within each batch. 
-"""
 
 WILDCARD_KIND_DOCS = """
 This is a special kind that represents Any value - which is to be used by default if 
@@ -36,11 +39,13 @@ workflow when we do not know or do not care about types.
 problems with workflow and make those problems to be visible while running the workflow.
 """
 WILDCARD_KIND = Kind(
-    name="*", description="Equivalent of any element", docs=WILDCARD_KIND_DOCS
+    name="*",
+    description="Equivalent of any element",
+    docs=WILDCARD_KIND_DOCS,
+    serialised_data_type="Any",
 )
-IMAGE_KIND = Kind(name="image", description="Image in workflows", docs="TODO")
 IMAGE_KIND_DOCS = f"""
-This is the representation of image batch in `workflows`. The value behind this kind 
+This is the representation of image in `workflows`. The value behind this kind 
 is Python list of dictionaries. Each of this dictionary is native `inference` image with
 the following keys defined:
 ```python
@@ -55,12 +60,14 @@ to operate on the images.
 Some blocks that output images may add additional fields - like "parent_id", which should
 not be modified but may be used is specific contexts - for instance when
 one needs to tag predictions with identifier of parent image.
-
-{DOCS_NOTE_ABOUT_BATCH}
 """
-BATCH_OF_IMAGES_KIND = Kind(
-    name="Batch[image]", description="Image in workflows", docs=IMAGE_KIND_DOCS
+IMAGE_KIND = Kind(
+    name="image",
+    description="Image in workflows",
+    docs=IMAGE_KIND_DOCS,
+    serialised_data_type="dict",
 )
+
 
 VIDEO_METADATA_KIND_DOCS = """
 This is representation of metadata that describe images that come from videos.  
@@ -83,6 +90,7 @@ VIDEO_METADATA_KIND = Kind(
     name="video_metadata",
     description="Video image metadata",
     docs=VIDEO_METADATA_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
 ROBOFLOW_MODEL_ID_KIND_DOCS = """
@@ -96,6 +104,7 @@ ROBOFLOW_MODEL_ID_KIND = Kind(
     name="roboflow_model_id",
     description="Roboflow model id",
     docs=ROBOFLOW_MODEL_ID_KIND_DOCS,
+    serialised_data_type="str",
 )
 
 ROBOFLOW_PROJECT_KIND_DOCS = """
@@ -107,6 +116,7 @@ ROBOFLOW_PROJECT_KIND = Kind(
     name="roboflow_project",
     description="Roboflow project name",
     docs=ROBOFLOW_PROJECT_KIND_DOCS,
+    serialised_data_type="str",
 )
 
 ROBOFLOW_API_KEY_KIND_DOCS = """
@@ -118,6 +128,7 @@ ROBOFLOW_API_KEY_KIND = Kind(
     name="roboflow_api_key",
     description="Roboflow API key",
     docs=ROBOFLOW_API_KEY_KIND_DOCS,
+    serialised_data_type="str",
 )
 
 FLOAT_ZERO_TO_ONE_KIND_DOCS = """
@@ -134,6 +145,7 @@ FLOAT_ZERO_TO_ONE_KIND = Kind(
     name="float_zero_to_one",
     description="`float` value in range `[0.0, 1.0]`",
     docs=FLOAT_ZERO_TO_ONE_KIND_DOCS,
+    serialised_data_type="float",
 )
 
 LIST_OF_VALUES_KIND_DOCS = """
@@ -147,8 +159,9 @@ Examples:
 """
 LIST_OF_VALUES_KIND = Kind(
     name="list_of_values",
-    description="List of values of any types",
+    description="List of values of any type",
     docs=LIST_OF_VALUES_KIND_DOCS,
+    serialised_data_type="List[Any]",
 )
 
 RGB_COLOR_KIND_DOCS = """
@@ -165,6 +178,7 @@ RGB_COLOR_KIND = Kind(
     name="rgb_color",
     description="RGB color",
     docs=RGB_COLOR_KIND_DOCS,
+    serialised_data_type="Tuple[int, int, int]",
 )
 
 IMAGE_KEYPOINTS_KIND_DOCS = """
@@ -188,9 +202,10 @@ IMAGE_KEYPOINTS_KIND = Kind(
     name="image_keypoints",
     description="Image keypoints detected by classical Computer Vision method",
     docs=IMAGE_KEYPOINTS_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
-BATCH_OF_SERIALISED_PAYLOADS_KIND_DOCS = f"""
+SERIALISED_PAYLOADS_KIND_DOCS = f"""
 This value represents list of serialised values. Each serialised value is either
 string or bytes - if something else is provided - it will be attempted to be serialised 
 to JSON.
@@ -202,34 +217,23 @@ Examples:
 
 This kind is to be used in combination with sinks blocks and serializers blocks.
 Serializer should output value of this kind which shall then be accepted by sink.
-
-{DOCS_NOTE_ABOUT_BATCH}
 """
-BATCH_OF_SERIALISED_PAYLOADS_KIND = Kind(
-    name="Batch[serialised_payloads]",
-    description="List of serialised elements that can be registered in the sink",
-    docs=BATCH_OF_SERIALISED_PAYLOADS_KIND_DOCS,
+SERIALISED_PAYLOADS_KIND = Kind(
+    name="serialised_payloads",
+    description="Serialised element that is usually accepted by sink",
+    docs=SERIALISED_PAYLOADS_KIND_DOCS,
+    serialised_data_type="List[Union[str, bytes, dict]]",
 )
 
+
 BOOLEAN_KIND_DOCS = """
-This kind represents single boolean value - `True` or `False`
+This kind represents boolean value - `True` or `False`
 """
-BOOLEAN_KIND = Kind(name="boolean", description="Boolean flag", docs=BOOLEAN_KIND_DOCS)
-BATCH_OF_BOOLEAN_KIND_DOCS = f"""
-This kind represents batch of boolean values. 
-
-Examples:
-```
-[True, False, False, True]
-[True, True]
-``` 
-
-{DOCS_NOTE_ABOUT_BATCH}
-"""
-BATCH_OF_BOOLEAN_KIND = Kind(
-    name="Batch[boolean]",
-    description="Boolean values batch",
-    docs=BATCH_OF_BOOLEAN_KIND_DOCS,
+BOOLEAN_KIND = Kind(
+    name="boolean",
+    description="Boolean flag",
+    docs=BOOLEAN_KIND_DOCS,
+    serialised_data_type="bool",
 )
 
 INTEGER_KIND_DOCS = """
@@ -239,61 +243,40 @@ Examples:
 2
 ```
 """
-INTEGER_KIND = Kind(name="integer", description="Integer value", docs=INTEGER_KIND_DOCS)
+INTEGER_KIND = Kind(
+    name="integer",
+    description="Integer value",
+    docs=INTEGER_KIND_DOCS,
+    serialised_data_type="int",
+)
 STRING_KIND_DOCS = """
 Examples:
 ```
 "my string value"
 ```
 """
-STRING_KIND = Kind(name="string", description="String value", docs=STRING_KIND_DOCS)
-BATCH_OF_STRING_KIND_DOCS = f"""
-This kind represents batch of string values.
-
-Examples:
-```
-["a", "b", "c"]
-["d", "e"]
-```
-
-{DOCS_NOTE_ABOUT_BATCH}
-"""
-BATCH_OF_STRING_KIND = Kind(
-    name="Batch[string]",
-    description="Batch of string values",
-    docs=BATCH_OF_STRING_KIND_DOCS,
+STRING_KIND = Kind(
+    name="string",
+    description="String value",
+    docs=STRING_KIND_DOCS,
+    serialised_data_type="str",
 )
-BATCH_OF_INTEGER_KIND_DOCS = f"""
-This kind represents batch of integer values.
 
-Examples:
-```
-[1, 2, 6]
-[9, 4]
-```
-
-{DOCS_NOTE_ABOUT_BATCH}
-"""
-BATCH_OF_INTEGER_KIND = Kind(
-    name="Batch[integer]",
-    description="Batch of integer values",
-    docs=BATCH_OF_INTEGER_KIND_DOCS,
-)
-BATCH_OF_TOP_CLASS_KIND_DOCS = f"""
-The kind represent top classes predicted by classification model - representing its predictions on batch of images.
+TOP_CLASS_KIND_DOCS = f"""
+The kind represent top classes predicted by classification model.
 
 Example:
 ```
-["car", "dog", "car", "cat"]
+"car"
 ```
-
-{DOCS_NOTE_ABOUT_BATCH}
 """
-BATCH_OF_TOP_CLASS_KIND = Kind(
-    name="Batch[top_class]",
-    description="Batch of string values representing top class predicted by classification model",
-    docs=BATCH_OF_TOP_CLASS_KIND_DOCS,
+TOP_CLASS_KIND = Kind(
+    name="top_class",
+    description="String value representing top class predicted by classification model",
+    docs=TOP_CLASS_KIND_DOCS,
+    serialised_data_type="str",
 )
+
 FLOAT_KIND_DOCS = """
 Example:
 ```
@@ -301,7 +284,12 @@ Example:
 2.7
 ```
 """
-FLOAT_KIND = Kind(name="float", description="Float value", docs=FLOAT_KIND_DOCS)
+FLOAT_KIND = Kind(
+    name="float",
+    description="Float value",
+    docs=FLOAT_KIND_DOCS,
+    serialised_data_type="float",
+)
 DICTIONARY_KIND_DOCS = """
 This kind represent a value of any Python dict.
 
@@ -310,66 +298,49 @@ Examples:
 {"my_key", "my_value"}
 ``` 
 """
-DICTIONARY_KIND = Kind(name="dictionary", description="Dictionary")
-BATCH_OF_DICTIONARY_KIND_DOCS = f"""
-This kind represent a batch of any Python dicts.
-Examples:
-```
-[{{"my_key", "my_value_1"}}, {{"my_key", "my_value_2"}}]
-``` 
-
-{DOCS_NOTE_ABOUT_BATCH}
-"""
-BATCH_OF_DICTIONARY_KIND = Kind(
-    name="Batch[dictionary]",
-    description="Batch of dictionaries",
-    docs=BATCH_OF_DICTIONARY_KIND_DOCS,
+DICTIONARY_KIND = Kind(
+    name="dictionary", description="Dictionary", serialised_data_type="dict"
 )
-BATCH_OF_CLASSIFICATION_PREDICTION_KIND_DOCS = f"""
+
+CLASSIFICATION_PREDICTION_KIND_DOCS = """
 This kind represent predictions from Classification Models.
 
 Examples:
 ```
 # in case of multi-class classification
-[
-    {{"class": "A", "class_id": 0, "confidence": 0.3}}, {{"class": "B", "class_id": 1, "confidence": 0.7}},
-    {{"class": "A", "class_id": 0, "confidence": 0.7}}, {{"class": "B", "class_id": 1, "confidence": 0.3}},
-]
-[
-    {{"class": "A", "class_id": 0, "confidence": 0.1}}, {{"class": "B", "class_id": 1, "confidence": 0.9}},
-    {{"class": "A", "class_id": 0, "confidence": 0.9}}, {{"class": "B", "class_id": 1, "confidence": 0.1}},
-]
+{
+    "image": {"height": 128, "width": 256},
+    "predictions": [{"class_name": "A", "class_id": 0, "confidence": 0.3}],
+    "top": "A",
+    "confidence": 0.3,
+    "parent_id": "some",
+    "prediction_type": "classification",
+    "inference_id": "some",
+    "root_parent_id": "some",
+}
 
 # in case of multi-label classification
-[
-    {{
-        "class_a": 0.3,
-        "class_b": 0.4,
-    }},
-    {{
-        "class_c": 0.3,
-        "class_b": 0.4,
-    }}
-]
-[
-    {{
-        "car": 0.4,
-        "truck": 0.5,
-    }},
-    {{
-        "truck": 0.6,
-        "bike": 0.4,
-    }}
-]
+{
+    "image": {"height": 128, "width": 256},
+    "predictions": {
+        "a": {"confidence": 0.3, "class_id": 0},
+        "b": {"confidence": 0.3, "class_id": 1},
+    }
+    "predicted_classes": ["a", "b"],
+    "parent_id": "some",
+    "prediction_type": "classification",
+    "inference_id": "some",
+    "root_parent_id": "some",
+}
 ```
-
-{DOCS_NOTE_ABOUT_BATCH}
 """
-BATCH_OF_CLASSIFICATION_PREDICTION_KIND = Kind(
-    name="Batch[classification_prediction]",
-    description="`'predictions'` key from Classification Model outputs",
-    docs=BATCH_OF_CLASSIFICATION_PREDICTION_KIND_DOCS,
+CLASSIFICATION_PREDICTION_KIND = Kind(
+    name="classification_prediction",
+    description="Predictions from classifier",
+    docs=CLASSIFICATION_PREDICTION_KIND_DOCS,
+    serialised_data_type="dict",
 )
+
 
 DETECTION_KIND_DOCS = """
 This kind represents single detection in prediction from a model that detects multiple elements
@@ -388,6 +359,7 @@ DETECTION_KIND = Kind(
     name="detection",
     description="Single element of detections-based prediction (like `object_detection_prediction`)",
     docs=DETECTION_KIND_DOCS,
+    serialised_data_type="Tuple[np.ndarray, Optional[np.ndarray], Optional[float], Optional[float], Optional[int], dict]",
 )
 
 
@@ -417,18 +389,21 @@ CONTOURS_KIND = Kind(
     name="contours",
     description="List of numpy arrays where each array represents contour points",
     docs=CONTOURS_KIND_DOCS,
+    serialised_data_type="List[np.ndarray]",
 )
 
 ZONE_KIND = Kind(
     name="zone",
     description="Definition of polygon zone",
     docs=None,
+    serialised_data_type="List[Tuple[int, int]]",
 )
 
 NUMPY_ARRAY_KIND = Kind(
     name="numpy_array",
     description="Numpy array",
     docs=None,
+    serialised_data_type="np.ndarray",
 )
 
 OBJECT_DETECTION_PREDICTION_KIND_DOCS = """
@@ -448,41 +423,83 @@ sv.Detections(
     confidence=array([    0.84955,     0.74344,     0.45636,     0.86537]), 
     class_id=array([2, 7, 2, 0]), 
     tracker_id=None, 
-    data={'class_name': array(['car', 'truck', 'car', 'car'], dtype='<U13')}
+    data={
+        'class_name': array(['car', 'truck', 'car', 'car'], dtype='<U13')
+        'detection_id': array([
+            '51dfa8d5-261c-4dcb-ab30-9aafe9b52379', 'c0c684d1-1e30-4880-aedd-29e67e417264'
+            '8cfc543b-9cfe-493b-b5ad-77afed7bee83', 'c0c684d1-1e30-4880-aedd-38e67e441454'
+        ], dtype='<U36'),
+        'parent_id': array(['image.[0]', 'image.[0]', 'image.[0]', 'image.[0]'], dtype='<U9'),
+        'image_dimensions': array([[425, 640], [425, 640], [425, 640], [425, 640]]),
+        'inference_id': array([
+            '51dfa8d5-261c-4dcb-ab30-9aafe9b52379', 'c0c684d1-1e30-4880-aedd-29e67e417264'
+            '8cfc543b-9cfe-493b-b5ad-77afed7bee83', 'c0c684d1-1e30-4880-aedd-38e67e441454'
+        ], dtype='<U36'),
+        'prediction_type': array([
+            'object-detection', 'object-detection', 
+            'object-detection', 'object-detection'
+        ], dtype='<U16'),
+        'root_parent_id': array(['image.[0]', 'image.[0]', 'image.[0]', 'image.[0]'], dtype='<U9'),
+        'root_parent_coordinates': array([[0, 0], [0, 0], [0, 0], [0, 0]]),
+        'root_parent_dimensions': array([[425, 640], [425, 640], [425, 640], [425, 640]]),
+        'parent_coordinates': array([[0, 0], [0, 0], [0, 0], [0, 0]]),
+        'parent_dimensions': array([[425, 640], [425, 640], [425, 640], [425, 640]]),
+        'scaling_relative_to_parent': array([1, 1, 1, 1]),
+        'scaling_relative_to_root_parent': array([1, 1, 1, 1]),
+    }
 )
-```
+```   
+
+As you can see, we have extended the standard set of metadata for predictions maintained by `supervision`.
+Adding this metadata is needed to ensure compatibility with blocks from `roboflow_core` plugin.
+
+The design of metadata is suboptimal (as metadata regarding whole image is duplicated across all 
+bounding boxes and there is no way on how to save metadata for empty predictions). We
+have [GH issue](https://github.com/roboflow/inference/issues/567) to communicate around this
+problem.
+
+**Details of additional fields:**
+
+* `detection_id` - unique identifier for each detection, to be used for when dependent elements 
+are created based on specific detection (example: Dynamic Crop takes this value as parent id for new image)
+
+* `parent_id` - identifier of image that generated prediction (to be fetched from `WorkflowImageData` object)
+
+* `image_dimensions` - dimensions of image that was basis for prediction - format: `(height, width)`
+
+* `inference_id` - identifier of inference request (optional, relevant for Roboflow models)
+
+* `prediction_type` - type of prediction
+
+* `root_parent_id` - identifier of primary Workflow input that was responsible for downstream prediction 
+(to be fetched from `WorkflowImageData` object) - usually identifier of Workflow input placeholder 
+
+* `root_parent_coordinates` - offset regarding origin input - format (`offset_x`, `offset_y`)
+
+* `root_parent_dimensions` - dimensions of origin input image `(height, width)`
+
+* `parent_coordinates` - offset regarding parent - format (`offset_x`, `offset_y`)
+
+* `parent_dimensions` - dimensions of parent image `(height, width)`
+
+* `scaling_relative_to_parent` - scaling factor regarding parent image
+
+* `scaling_relative_to_root_parent` - scaling factor regarding origin input image
+
+
+**SERIALISATION:**
+
+Execution Engine behind API will serialise underlying data once selector of this kind is declared as
+Workflow output - serialisation will be executed such that `sv.Detections.from_inference(...)`
+can decode the output. Entity details: [ObjectDetectionInferenceResponse](https://detect.roboflow.com/docs)
 """
 OBJECT_DETECTION_PREDICTION_KIND = Kind(
     name="object_detection_prediction",
     description="Prediction with detected bounding boxes in form of sv.Detections(...) object",
     docs=OBJECT_DETECTION_PREDICTION_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
-BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND_DOCS = f"""
-This kind represents batch of predictions from an Object Detection Model.
-
-Example:
-```
-# Each prediction in batch is list of dictionaries that contains detected objects (detections)
-[
-    [
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 0.3, "class": "car", "class_id": 0.1, "detection_id": "random-uuid"}},
-        {{"x": 600, "y": 900, "width": 100, "height" 50, "confidence": 0.3, "class": "car", "class_id": 0.1, "detection_id": "random-uuid"}}
-    ],
-    [
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 0.3, "class": "car", "class_id": 0.1, "detection_id": "random-uuid"}},
-        {{"x": 600, "y": 900, "width": 100, "height" 50, "confidence": 0.3, "class": "car", "class_id": 0.1, "detection_id": "random-uuid"}}
-    ]
-]
-```
-
-{DOCS_NOTE_ABOUT_BATCH}
-"""
-BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND = Kind(
-    name="Batch[object_detection_prediction]",
-    description="`'predictions'` key from Object Detection Model output",
-    docs=BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND_DOCS,
-)
 
 INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS = """
 This kind represents single instance segmentation prediction in form of 
@@ -504,42 +521,73 @@ sv.Detections(
     confidence=array([    0.95898]), 
     class_id=array([6]), 
     tracker_id=None, 
-    data={'class_name': array(['G'], dtype='<U1')}
+    data={
+        'class_name': array(['G'], dtype='<U1'),
+        'detection_id': array(['51dfa8d5-261c-4dcb-ab30-9aafe9b52379'], dtype='<U36'),
+        'parent_id': array(['image.[0]'], dtype='<U9'),
+        'image_dimensions': array([[425, 640]]),
+        'inference_id': array(['51dfa8d5-261c-4dcb-ab30-9aafe9b52379'], dtype='<U36'),
+        'prediction_type': array(['instance-segmentation'], dtype='<U16'),
+        'root_parent_id': array(['image.[0]'], dtype='<U9'),
+        'root_parent_coordinates': array([[0, 0]]),
+        'root_parent_dimensions': array([[425, 640]]),
+        'parent_coordinates': array([[0, 0]]),
+        'parent_dimensions': array([[425, 640]]),
+        'scaling_relative_to_parent': array([1]),
+        'scaling_relative_to_root_parent': array([1]),
+    }
 )
 ```
+
+As you can see, we have extended the standard set of metadata for predictions maintained by `supervision`.
+Adding this metadata is needed to ensure compatibility with blocks from `roboflow_core` plugin.
+
+The design of metadata is suboptimal (as metadata regarding whole image is duplicated across all 
+bounding boxes and there is no way on how to save metadata for empty predictions). We
+have [GH issue](https://github.com/roboflow/inference/issues/567) to communicate around this
+problem.
+
+**Details of additional fields:**
+
+* `detection_id` - unique identifier for each detection, to be used for when dependent elements 
+are created based on specific detection (example: Dynamic Crop takes this value as parent id for new image)
+
+* `parent_id` - identifier of image that generated prediction (to be fetched from `WorkflowImageData` object)
+
+* `image_dimensions` - dimensions of image that was basis for prediction - format: `(height, width)`
+
+* `inference_id` - identifier of inference request (optional, relevant for Roboflow models)
+
+* `prediction_type` - type of prediction
+
+* `root_parent_id` - identifier of primary Workflow input that was responsible for downstream prediction 
+(to be fetched from `WorkflowImageData` object) - usually identifier of Workflow input placeholder 
+
+* `root_parent_coordinates` - offset regarding origin input - format (`offset_x`, `offset_y`)
+
+* `root_parent_dimensions` - dimensions of origin input image `(height, width)`
+
+* `parent_coordinates` - offset regarding parent - format (`offset_x`, `offset_y`)
+
+* `parent_dimensions` - dimensions of parent image `(height, width)`
+
+* `scaling_relative_to_parent` - scaling factor regarding parent image
+
+* `scaling_relative_to_root_parent` - scaling factor regarding origin input image
+
+**SERIALISATION:**
+
+Execution Engine behind API will serialise underlying data once selector of this kind is declared as
+Workflow output - serialisation will be executed such that `sv.Detections.from_inference(...)`
+can decode the output. Entity details: [InstanceSegmentationInferenceResponse](https://detect.roboflow.com/docs)
 """
 INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
     name="instance_segmentation_prediction",
     description="Prediction with detected bounding boxes and segmentation masks in form of sv.Detections(...) object",
     docs=INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
-BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS = f"""
-This kind represents batch of predictions from Instance Segmentation Models.
-
-Example:
-```
-# Each prediction in batch is list of dictionaries that contains detected objects (detections) and list of points 
-providing object contour,
-[
-    [
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 0.3, "class": "car", "class_id": 0.1, "detection_id": "random-uuid", "points": [{{"x": 300, "y": 200}}]}},
-        {{"x": 600, "y": 900, "width": 100, "height" 50, "confidence": 0.3, "class": "car", "class_id": 0.1, "detection_id": "random-uuid", "points": [{{"x": 300, "y": 200}}}}
-    ],
-    [
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 0.3, "class": "car", "class_id": 0.1, "detection_id": "random-uuid", "points": [{{"x": 300, "y": 200}}}},
-        {{"x": 600, "y": 900, "width": 100, "height" 50, "confidence": 0.3, "class": "car", "class_id": 0.1, "detection_id": "random-uuid", "points": [{{"x": 300, "y": 200}}}}
-    ]
-]
-```
-
-{DOCS_NOTE_ABOUT_BATCH}
-"""
-BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
-    name="Batch[instance_segmentation_prediction]",
-    description="`'predictions'` key from Instance Segmentation Model outputs",
-    docs=BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS,
-)
 
 KEYPOINT_DETECTION_PREDICTION_KIND_DOCS = """
 This kind represents single keypoints prediction in form of 
@@ -555,108 +603,290 @@ sv.Detections(
     tracker_id=None, 
     data={
         'class_name': array(['G'], dtype='<U1'),
-        # TODO: put details here
+        'detection_id': array(['51dfa8d5-261c-4dcb-ab30-9aafe9b52379'], dtype='<U36'),
+        'parent_id': array(['image.[0]'], dtype='<U9'),
+        'image_dimensions': array([[425, 640]]),
+        'inference_id': array(['51dfa8d5-261c-4dcb-ab30-9aafe9b52379'], dtype='<U36'),
+        'prediction_type': array(['instance-segmentation'], dtype='<U16'),
+        'root_parent_id': array(['image.[0]'], dtype='<U9'),
+        'root_parent_coordinates': array([[0, 0]]),
+        'root_parent_dimensions': array([[425, 640]]),
+        'parent_coordinates': array([[0, 0]]),
+        'parent_dimensions': array([[425, 640]]),
+        'scaling_relative_to_parent': array([1]),
+        'scaling_relative_to_root_parent': array([1]),
+        'keypoints_class_name': array(),  # variable length array of type object - one 1D array of str for each box
+        'keypoints_class_id': array(),  # variable length array of type object - one 1D array of int for each box
+        'keypoints_confidence': array(),  # variable length array of type object - one 1D array of float for each box
+        'keypoints_xy': array(),  # variable length array of type object - one 2D array for bbox with (x, y) coords
     }
 )
 ```
+
+Prior to [sv.Keypoints(...)](https://supervision.roboflow.com/0.21.0/keypoint/core/) we introduced 
+keypoints detection based on [`sv.Detections(...)`](https://supervision.roboflow.com/latest/detection/core/) object.
+The decision was suboptimal so we would need to revert in the future, but for now this is the format of
+data for keypoints detection. 
+
+The design of metadata is also suboptimal (as metadata regarding whole image is duplicated across all 
+bounding boxes and there is no way on how to save metadata for empty predictions). We
+have [GH issue](https://github.com/roboflow/inference/issues/567) to communicate around this
+problem.
+
+**Details of additional fields:**
+
+* `detection_id` - unique identifier for each detection, to be used for when dependent elements 
+are created based on specific detection (example: Dynamic Crop takes this value as parent id for new image)
+
+* `parent_id` - identifier of image that generated prediction (to be fetched from `WorkflowImageData` object)
+
+* `image_dimensions` - dimensions of image that was basis for prediction - format: `(height, width)`
+
+* `inference_id` - identifier of inference request (optional, relevant for Roboflow models)
+
+* `prediction_type` - type of prediction
+
+* `root_parent_id` - identifier of primary Workflow input that was responsible for downstream prediction 
+(to be fetched from `WorkflowImageData` object) - usually identifier of Workflow input placeholder 
+
+* `root_parent_coordinates` - offset regarding origin input - format (`offset_x`, `offset_y`)
+
+* `root_parent_dimensions` - dimensions of origin input image `(height, width)`
+
+* `parent_coordinates` - offset regarding parent - format (`offset_x`, `offset_y`)
+
+* `parent_dimensions` - dimensions of parent image `(height, width)`
+
+* `scaling_relative_to_parent` - scaling factor regarding parent image
+
+* `scaling_relative_to_root_parent` - scaling factor regarding origin input image
+
+* `keypoints_class_name` array of variable size 1D arrays of string with key points class names
+
+* `keypoints_class_id` array of variable size 1D arrays of int with key points class ids
+
+* `keypoints_confidence` array of variable size 1D arrays of float with key points confidence
+
+* `keypoints_xy` array of variable size 2D arrays of coordinates of keypoints in `(x, y)` format
+
+**SERIALISATION:**
+
+Execution Engine behind API will serialise underlying data once selector of this kind is declared as
+Workflow output - serialisation will be executed such that `sv.Detections.from_inference(...)`
+can decode the output, but **loosing keypoints details** - which can be recovered if output 
+JSON field is parsed. Entity details: [KeypointsDetectionInferenceResponse](https://detect.roboflow.com/docs)
 """
 KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
     name="keypoint_detection_prediction",
     description="Prediction with detected bounding boxes and detected keypoints in form of sv.Detections(...) object",
     docs=KEYPOINT_DETECTION_PREDICTION_KIND_DOCS,
+    serialised_data_type="dict",
 )
 
-BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND_DOCS = f"""
-This kind represents batch of predictions from Keypoint Detection Models.
-
-Example:
-```
-# Each prediction in batch is list of dictionaries that contains detected objects (detections) and list of points of 
-object skeleton. 
-[
-    [
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 0.3, "class": "car", "class_id": 0.1, "detection_id": "random-uuid", "keypoints": [{{"x": 300, "y": 200, "confidence": 0.3, "class_id": 0, "class_name": "tire_center"}}]}},
-        {{"x": 600, "y": 900, "width": 100, "height" 50, "confidence": 0.3, "class": "car", "class_id": 0.1, "detection_id": "random-uuid", "keypoints": [{{"x": 300, "y": 200, "confidence": 0.3, "class_id": 0, "class_name": "tire_center"}}}}
-    ],
-    [
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 0.3, "class": "car", "class_id": 0.1, "detection_id": "random-uuid", "keypoints": [{{"x": 300, "y": 200, "confidence": 0.3, "class_id": 0, "class_name": "tire_center"}}}},
-        {{"x": 600, "y": 900, "width": 100, "height" 50, "confidence": 0.3, "class": "car", "class_id": 0.1, "detection_id": "random-uuid", "keypoints": [{{"x": 300, "y": 200, "confidence": 0.3, "class_id": 0, "class_name": "tire_center"}}}}
-    ]
-]
-```
-
-{DOCS_NOTE_ABOUT_BATCH}
-"""
-BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
-    name="Batch[keypoint_detection_prediction]",
-    description="`'predictions'` key from Keypoint Detection Model output",
-    docs=BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND_DOCS,
-)
-BATCH_OF_QR_CODE_DETECTION_KIND_DOCS = f"""
+QR_CODE_DETECTION_KIND_DOCS = """
 This kind represents batch of predictions regarding QR codes location and data their provide.
 
 Example:
 ```
-# Each prediction in batch is list of dictionaries that contains detected QR codes (detections) and their metadata
-[
-    [
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 1.0, "class": "qr_code", "class_id": 0.1, "detection_id": "random-uuid", "data": "<qr-code-data>"}},
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 1.0, "class": "qr_code", "class_id": 0.1, "detection_id": "random-uuid", "data": "<qr-code-data>"}},    ],
-    [
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 1.0, "class": "qr_code", "class_id": 0.1, "detection_id": "random-uuid", "data": "<qr-code-data>"}},
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 1.0, "class": "qr_code", "class_id": 0.1, "detection_id": "random-uuid", "data": "<qr-code-data>"}},
-    ]
-]
+sv.Detections(
+    xyxy=array([
+       [        865,       153.5,        1189,       422.5],
+       [      192.5,        77.5,       995.5,       722.5],
+       [        194,          82,         996,         726],
+       [        460,         333,         704,         389]]
+    ), 
+    mask=None, 
+    confidence=array([    1.0, 1.0, 1.0, 1.0]), 
+    class_id=array([2, 7, 2, 0]), 
+    tracker_id=None, 
+    data={
+        'class_name': array(['qr_code', 'qr_code', 'qr_code', 'qr_code'], dtype='<U13')
+        'detection_id': array([
+            '51dfa8d5-261c-4dcb-ab30-9aafe9b52379', 'c0c684d1-1e30-4880-aedd-29e67e417264'
+            '8cfc543b-9cfe-493b-b5ad-77afed7bee83', 'c0c684d1-1e30-4880-aedd-38e67e441454'
+        ], dtype='<U36'),
+        'parent_id': array(['image.[0]', 'image.[0]', 'image.[0]', 'image.[0]'], dtype='<U9'),
+        'image_dimensions': array([[425, 640], [425, 640], [425, 640], [425, 640]]),
+        'inference_id': array([
+            '51dfa8d5-261c-4dcb-ab30-9aafe9b52379', 'c0c684d1-1e30-4880-aedd-29e67e417264'
+            '8cfc543b-9cfe-493b-b5ad-77afed7bee83', 'c0c684d1-1e30-4880-aedd-38e67e441454'
+        ], dtype='<U36'),
+        'prediction_type': array([
+            'qrcode-detection', 'qrcode-detection', 
+            'qrcode-detection', 'qrcode-detection'
+        ], dtype='<U16'),
+        'root_parent_id': array(['image.[0]', 'image.[0]', 'image.[0]', 'image.[0]'], dtype='<U9'),
+        'root_parent_coordinates': array([[0, 0], [0, 0], [0, 0], [0, 0]]),
+        'root_parent_dimensions': array([[425, 640], [425, 640], [425, 640], [425, 640]]),
+        'parent_coordinates': array([[0, 0], [0, 0], [0, 0], [0, 0]]),
+        'parent_dimensions': array([[425, 640], [425, 640], [425, 640], [425, 640]]),
+        'scaling_relative_to_parent': array([1, 1, 1, 1]),
+        'scaling_relative_to_root_parent': array([1, 1, 1, 1]),
+        'data': np.array(['qr-code-1-data', 'qr-code-2-data', 'qr-code-3-data', 'qr-code-4-data'])
+    }
+)
 ```
 
-{DOCS_NOTE_ABOUT_BATCH}
+As you can see, we have extended the standard set of metadata for predictions maintained by `supervision`.
+Adding this metadata is needed to ensure compatibility with blocks from `roboflow_core` plugin.
+
+The design of metadata is suboptimal (as metadata regarding whole image is duplicated across all 
+bounding boxes and there is no way on how to save metadata for empty predictions). We
+have [GH issue](https://github.com/roboflow/inference/issues/567) to communicate around this
+problem.
+
+**Details of additional fields:**
+
+* `detection_id` - unique identifier for each detection, to be used for when dependent elements 
+are created based on specific detection (example: Dynamic Crop takes this value as parent id for new image)
+
+* `parent_id` - identifier of image that generated prediction (to be fetched from `WorkflowImageData` object)
+
+* `image_dimensions` - dimensions of image that was basis for prediction - format: `(height, width)`
+
+* `inference_id` - identifier of inference request (optional, relevant for Roboflow models)
+
+* `prediction_type` - type of prediction
+
+* `root_parent_id` - identifier of primary Workflow input that was responsible for downstream prediction 
+(to be fetched from `WorkflowImageData` object) - usually identifier of Workflow input placeholder 
+
+* `root_parent_coordinates` - offset regarding origin input - format (`offset_x`, `offset_y`)
+
+* `root_parent_dimensions` - dimensions of origin input image `(height, width)`
+
+* `parent_coordinates` - offset regarding parent - format (`offset_x`, `offset_y`)
+
+* `parent_dimensions` - dimensions of parent image `(height, width)`
+
+* `scaling_relative_to_parent` - scaling factor regarding parent image
+
+* `scaling_relative_to_root_parent` - scaling factor regarding origin input image
+
+* `data` - extracted QR code
+
+**SERIALISATION:**
+Execution Engine behind API will serialise underlying data once selector of this kind is declared as
+Workflow output - serialisation will be executed such that `sv.Detections.from_inference(...)`
+can decode the output. Entity details: [ObjectDetectionInferenceResponse](https://detect.roboflow.com/docs)
 """
-BATCH_OF_QR_CODE_DETECTION_KIND = Kind(
-    name="Batch[qr_code_detection]",
+QR_CODE_DETECTION_KIND = Kind(
+    name="qr_code_detection",
     description="Prediction with QR code detection",
-    docs=BATCH_OF_QR_CODE_DETECTION_KIND_DOCS,
+    docs=QR_CODE_DETECTION_KIND_DOCS,
+    serialised_data_type="dict",
 )
-BATCH_OF_BAR_CODE_DETECTION_KIND_DOCS = f"""
+
+BAR_CODE_DETECTION_KIND_DOCS = """
 This kind represents batch of predictions regarding barcodes location and data their provide.
 
 Example:
 ```
-# Each prediction in batch is list of dictionaries that contains detected barcodes (detections) and their metadata
-[
-    [
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 1.0, "class": "barcode", "class_id": 0.1, "detection_id": "random-uuid", "data": "<qr-code-data>"}},
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 1.0, "class": "barcode", "class_id": 0.1, "detection_id": "random-uuid", "data": "<qr-code-data>"}},    ],
-    [
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 1.0, "class": "barcode", "class_id": 0.1, "detection_id": "random-uuid", "data": "<qr-code-data>"}},
-        {{"x": 300, "y": 400, "width": 100, "height" 50, "confidence": 1.0, "class": "barcode", "class_id": 0.1, "detection_id": "random-uuid", "data": "<qr-code-data>"}},
-    ]
-]
+sv.Detections(
+    xyxy=array([
+       [        865,       153.5,        1189,       422.5],
+       [      192.5,        77.5,       995.5,       722.5],
+       [        194,          82,         996,         726],
+       [        460,         333,         704,         389]]
+    ), 
+    mask=None, 
+    confidence=array([    1.0, 1.0, 1.0, 1.0]), 
+    class_id=array([2, 7, 2, 0]), 
+    tracker_id=None, 
+    data={
+        'class_name': array(['barcode', 'barcode', 'barcode', 'barcode'], dtype='<U13')
+        'detection_id': array([
+            '51dfa8d5-261c-4dcb-ab30-9aafe9b52379', 'c0c684d1-1e30-4880-aedd-29e67e417264'
+            '8cfc543b-9cfe-493b-b5ad-77afed7bee83', 'c0c684d1-1e30-4880-aedd-38e67e441454'
+        ], dtype='<U36'),
+        'parent_id': array(['image.[0]', 'image.[0]', 'image.[0]', 'image.[0]'], dtype='<U9'),
+        'image_dimensions': array([[425, 640], [425, 640], [425, 640], [425, 640]]),
+        'inference_id': array([
+            '51dfa8d5-261c-4dcb-ab30-9aafe9b52379', 'c0c684d1-1e30-4880-aedd-29e67e417264'
+            '8cfc543b-9cfe-493b-b5ad-77afed7bee83', 'c0c684d1-1e30-4880-aedd-38e67e441454'
+        ], dtype='<U36'),
+        'prediction_type': array([
+            'barcode-detection', 'barcode-detection', 
+            'barcode-detection', 'barcode-detection'
+        ], dtype='<U16'),
+        'root_parent_id': array(['image.[0]', 'image.[0]', 'image.[0]', 'image.[0]'], dtype='<U9'),
+        'root_parent_coordinates': array([[0, 0], [0, 0], [0, 0], [0, 0]]),
+        'root_parent_dimensions': array([[425, 640], [425, 640], [425, 640], [425, 640]]),
+        'parent_coordinates': array([[0, 0], [0, 0], [0, 0], [0, 0]]),
+        'parent_dimensions': array([[425, 640], [425, 640], [425, 640], [425, 640]]),
+        'scaling_relative_to_parent': array([1, 1, 1, 1]),
+        'scaling_relative_to_root_parent': array([1, 1, 1, 1]),
+        'data': np.array(['qr-code-1-data', 'qr-code-2-data', 'qr-code-3-data', 'qr-code-4-data'])
+    }
+)
 ```
 
-{DOCS_NOTE_ABOUT_BATCH}
+As you can see, we have extended the standard set of metadata for predictions maintained by `supervision`.
+Adding this metadata is needed to ensure compatibility with blocks from `roboflow_core` plugin.
+
+The design of metadata is suboptimal (as metadata regarding whole image is duplicated across all 
+bounding boxes and there is no way on how to save metadata for empty predictions). We
+have [GH issue](https://github.com/roboflow/inference/issues/567) to communicate around this
+problem.
+
+**Details of additional fields:**
+
+* `detection_id` - unique identifier for each detection, to be used for when dependent elements 
+are created based on specific detection (example: Dynamic Crop takes this value as parent id for new image)
+
+* `parent_id` - identifier of image that generated prediction (to be fetched from `WorkflowImageData` object)
+
+* `image_dimensions` - dimensions of image that was basis for prediction - format: `(height, width)`
+
+* `inference_id` - identifier of inference request (optional, relevant for Roboflow models)
+
+* `prediction_type` - type of prediction
+
+* `root_parent_id` - identifier of primary Workflow input that was responsible for downstream prediction 
+(to be fetched from `WorkflowImageData` object) - usually identifier of Workflow input placeholder 
+
+* `root_parent_coordinates` - offset regarding origin input - format (`offset_x`, `offset_y`)
+
+* `root_parent_dimensions` - dimensions of origin input image `(height, width)`
+
+* `parent_coordinates` - offset regarding parent - format (`offset_x`, `offset_y`)
+
+* `parent_dimensions` - dimensions of parent image `(height, width)`
+
+* `scaling_relative_to_parent` - scaling factor regarding parent image
+
+* `scaling_relative_to_root_parent` - scaling factor regarding origin input image
+
+* `data` - extracted barcode
+
+**SERIALISATION:**
+Execution Engine behind API will serialise underlying data once selector of this kind is declared as
+Workflow output - serialisation will be executed such that `sv.Detections.from_inference(...)`
+can decode the output. Entity details: [ObjectDetectionInferenceResponse](https://detect.roboflow.com/docs)
 """
-BATCH_OF_BAR_CODE_DETECTION_KIND = Kind(
-    name="Batch[bar_code_detection]",
+BAR_CODE_DETECTION_KIND = Kind(
+    name="bar_code_detection",
     description="Prediction with barcode detection",
-    docs=BATCH_OF_BAR_CODE_DETECTION_KIND_DOCS,
+    docs=BAR_CODE_DETECTION_KIND_DOCS,
+    serialised_data_type="dict",
 )
-BATCH_OF_PREDICTION_TYPE_KIND_DOCS = f"""
+PREDICTION_TYPE_KIND_DOCS = f"""
 This kind represent batch of prediction metadata providing information about the type of prediction.
 
 Examples:
 ```
-["object-detection", "object-detection"]
-["instance-segmentation", "instance-segmentation"]
+"object-detection"
+"instance-segmentation"
 ```
-
-{DOCS_NOTE_ABOUT_BATCH}
 """
-BATCH_OF_PREDICTION_TYPE_KIND = Kind(
-    name="Batch[prediction_type]",
+PREDICTION_TYPE_KIND = Kind(
+    name="prediction_type",
     description="String value with type of prediction",
-    docs=BATCH_OF_PREDICTION_TYPE_KIND_DOCS,
+    docs=PREDICTION_TYPE_KIND_DOCS,
+    serialised_data_type="str",
 )
-BATCH_OF_PARENT_ID_KIND_DOCS = f"""
+
+PARENT_ID_KIND_DOCS = f"""
 This kind represent batch of prediction metadata providing information about the context of prediction.
 For example - whenever there is a workflow with multiple models - such that first model detect objects 
 and then other models make their predictions based on crops from first model detections - `parent_id`
@@ -664,18 +894,18 @@ helps to figure out which detection of the first model is associated to which do
 
 Examples:
 ```
-["uuid-1", "uuid-1", "uuid-2", "uuid-2"]
-["uuid-1", "uuid-1", "uuid-1", "uuid-1"]
+"uuid-1"
+"uuid-2"
 ```
-
-{DOCS_NOTE_ABOUT_BATCH}
 """
-BATCH_OF_PARENT_ID_KIND = Kind(
-    name="Batch[parent_id]",
+PARENT_ID_KIND = Kind(
+    name="parent_id",
     description="Identifier of parent for step output",
-    docs=BATCH_OF_PARENT_ID_KIND_DOCS,
+    docs=PARENT_ID_KIND_DOCS,
+    serialised_data_type="str",
 )
-BATCH_OF_IMAGE_METADATA_KIND_DOCS = f"""
+
+IMAGE_METADATA_KIND_DOCS = f"""
 This kind represent batch of prediction metadata providing information about the image that prediction was made against.
 
 Examples:
@@ -683,13 +913,31 @@ Examples:
 [{{"width": 1280, "height": 720}}, {{"width": 1920, "height": 1080}}]
 [{{"width": 1280, "height": 720}}]
 ```
-
-{DOCS_NOTE_ABOUT_BATCH}
 """
-BATCH_OF_IMAGE_METADATA_KIND = Kind(
-    name="Batch[image_metadata]",
+IMAGE_METADATA_KIND = Kind(
+    name="image_metadata",
     description="Dictionary with image metadata required by supervision",
-    docs=BATCH_OF_IMAGE_METADATA_KIND_DOCS,
+    docs=IMAGE_METADATA_KIND_DOCS,
+    serialised_data_type="dict",
+)
+
+
+LANGUAGE_MODEL_OUTPUT_KIND_DOCS = """
+This kind represent output generated by language model. It is Python string, which can be processed 
+by blocks transforming LLMs / VLMs output into structured form.
+
+Examples:
+```
+{"predicted_class": "car", "confidence": 0.7}  # which is example JSON with classification prediction
+"The is A."  # which is example unstructured generation for VQA task 
+``` 
+"""
+
+LANGUAGE_MODEL_OUTPUT_KIND = Kind(
+    name="language_model_output",
+    description="LLM / VLM output",
+    docs=LANGUAGE_MODEL_OUTPUT_KIND_DOCS,
+    serialised_data_type="str",
 )
 
 STEP_AS_SELECTED_ELEMENT = "step"
@@ -757,7 +1005,7 @@ WorkflowImageSelector = Annotated[
         json_schema_extra={
             REFERENCE_KEY: True,
             SELECTED_ELEMENT_KEY: "workflow_image",
-            KIND_KEY: [BATCH_OF_IMAGES_KIND.dict()],
+            KIND_KEY: [IMAGE_KIND.dict()],
         }
     ),
 ]
@@ -769,7 +1017,7 @@ StepOutputImageSelector = Annotated[
         json_schema_extra={
             REFERENCE_KEY: True,
             SELECTED_ELEMENT_KEY: STEP_OUTPUT_AS_SELECTED_ELEMENT,
-            KIND_KEY: [BATCH_OF_IMAGES_KIND.dict()],
+            KIND_KEY: [IMAGE_KIND.dict()],
         }
     ),
 ]

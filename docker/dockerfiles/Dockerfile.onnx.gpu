@@ -3,7 +3,6 @@ FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 as base
 WORKDIR /app
 
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    ffmpeg \
     libxext6 \
     libopencv-dev \
     uvicorn \
@@ -24,7 +23,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.cogvlm.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
-    requirements/requirements.pali.server.txt \
+    requirements/requirements.transformers.txt \
     requirements/requirements.pali.flash_attn.txt \
     ./
 
@@ -41,7 +40,7 @@ RUN python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cu
     -r requirements.doctr.txt \
     -r requirements.cogvlm.txt \
     -r requirements.yolo_world.txt \
-    -r requirements.pali.server.txt \
+    -r requirements.transformers.txt \
     jupyterlab \
     --upgrade \
     && rm -rf ~/.cache/pip
@@ -78,5 +77,6 @@ ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV API_LOGGING_ENABLED=True
 ENV LMM_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
+ENV CORE_MODEL_OWLV2_ENABLED=True
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

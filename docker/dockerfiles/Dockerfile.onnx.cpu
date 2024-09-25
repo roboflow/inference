@@ -3,7 +3,6 @@ FROM python:3.9 as base
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt update -y && apt install -y \
-    ffmpeg \
     libxext6 \
     libopencv-dev \
     uvicorn \
@@ -23,6 +22,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
     requirements/requirements.yolo_world.txt \
+    requirements/requirements.transformers.txt \
     requirements/_requirements.txt \
     ./
 
@@ -37,6 +37,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.doctr.txt \
     -r requirements.groundingdino.txt \
     -r requirements.yolo_world.txt \
+    -r requirements.transformers.txt \
     jupyterlab \
     wheel>=0.38.0 \
     --upgrade \
@@ -71,5 +72,6 @@ ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV API_LOGGING_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
+ENV CORE_MODEL_OWLV2_ENABLED=True
 
 ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

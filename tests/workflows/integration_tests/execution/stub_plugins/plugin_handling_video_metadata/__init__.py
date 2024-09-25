@@ -9,11 +9,11 @@ from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     StepOutputSelector,
     WorkflowVideoMetadataSelector,
 )
@@ -57,9 +57,9 @@ class TrackerManifest(WorkflowBlockManifest):
     metadata: WorkflowVideoMetadataSelector
     predictions: StepOutputSelector(
         kind=[
-            BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-            BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     )
 

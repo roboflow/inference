@@ -154,8 +154,9 @@ def run_simd_step_in_batch_mode(
     step_input = execution_data_manager.get_simd_step_input(step_selector=step_selector)
     if not step_input.indices:
         # no inputs - discarded either by conditional exec or by not accepting empty
-        return None
-    outputs = step_instance.run(**step_input.parameters)
+        outputs = []
+    else:
+        outputs = step_instance.run(**step_input.parameters)
     execution_data_manager.register_simd_step_output(
         step_selector=step_selector,
         indices=step_input.indices,
@@ -175,8 +176,6 @@ def run_simd_step_in_non_batch_mode(
         result = step_instance.run(**input_definition.parameters)
         results.append(result)
         indices.append(input_definition.index)
-    if not indices:
-        return None
     execution_data_manager.register_simd_step_output(
         step_selector=step_selector,
         indices=indices,

@@ -46,6 +46,7 @@ detection step via input selector (`$inputs.image`) and how non-batch parameters
 is dynamically specified - via `$inputs.reference` selector.
     """,
     workflow_definition=CLIP_WORKFLOW,
+    workflow_name_in_app="clip",
 )
 def test_clip_workflow_when_minimal_valid_input_provided(
     model_manager: ModelManager,

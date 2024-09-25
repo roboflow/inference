@@ -2,6 +2,12 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
+    LineCounterBlockV1,
+)
+from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
+    TimeInZoneBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
@@ -24,6 +30,9 @@ from inference.core.workflows.core_steps.classical_cv.sift.v1 import SIFTBlockV1
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import (
     SIFTComparisonBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.sift_comparison.v2 import (
+    SIFTComparisonBlockV2,
+)
 from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
     TemplateMatchingBlockV1,
 )
@@ -40,8 +49,17 @@ from inference.core.workflows.core_steps.formatters.expression.v1 import (
 from inference.core.workflows.core_steps.formatters.first_non_empty_or_default.v1 import (
     FirstNonEmptyOrDefaultBlockV1,
 )
+from inference.core.workflows.core_steps.formatters.json_parser.v1 import (
+    JSONParserBlockV1,
+)
 from inference.core.workflows.core_steps.formatters.property_definition.v1 import (
     PropertyDefinitionBlockV1,
+)
+from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1 import (
+    VLMAsClassifierBlockV1,
+)
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1 import (
+    VLMAsDetectorBlockV1,
 )
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
     DetectionsClassesReplacementBlockV1,
@@ -55,6 +73,9 @@ from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
+    AntropicClaudeBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
     ClipComparisonBlockV1,
 )
@@ -64,6 +85,12 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 im
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
+    Florence2BlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
+    GoogleGeminiBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
@@ -71,6 +98,9 @@ from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 imp
 from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
+    OpenAIBlockV2,
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
@@ -110,6 +140,12 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import
 )
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import (
+    BoundingRectBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
+    ByteTrackerBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
@@ -170,6 +206,9 @@ from inference.core.workflows.core_steps.visualizations.halo.v1 import (
 from inference.core.workflows.core_steps.visualizations.label.v1 import (
     LabelVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
+    LineCounterZoneVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.mask.v1 import (
     MaskVisualizationBlockV1,
 )
@@ -179,26 +218,16 @@ from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
 from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
     PolygonVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
+    PolygonZoneVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_BAR_CODE_DETECTION_KIND,
-    BATCH_OF_BOOLEAN_KIND,
-    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
-    BATCH_OF_DICTIONARY_KIND,
-    BATCH_OF_IMAGE_METADATA_KIND,
-    BATCH_OF_IMAGES_KIND,
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_PARENT_ID_KIND,
-    BATCH_OF_PREDICTION_TYPE_KIND,
-    BATCH_OF_QR_CODE_DETECTION_KIND,
-    BATCH_OF_SERIALISED_PAYLOADS_KIND,
-    BATCH_OF_STRING_KIND,
-    BATCH_OF_TOP_CLASS_KIND,
+    BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     CONTOURS_KIND,
     DETECTION_KIND,
     DICTIONARY_KIND,
@@ -206,17 +235,26 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KEYPOINTS_KIND,
     IMAGE_KIND,
+    IMAGE_METADATA_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
+    NUMPY_ARRAY_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    PARENT_ID_KIND,
     POINT_KIND,
+    PREDICTION_TYPE_KIND,
+    QR_CODE_DETECTION_KIND,
     RGB_COLOR_KIND,
     ROBOFLOW_API_KEY_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
+    SERIALISED_PAYLOADS_KIND,
     STRING_KIND,
+    TOP_CLASS_KIND,
+    VIDEO_METADATA_KIND,
     WILDCARD_KIND,
     ZONE_KIND,
     Kind,
@@ -234,6 +272,8 @@ REGISTERED_INITIALIZERS = {
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
+        TimeInZoneBlockV1,
+        BoundingRectBlockV1,
         SegmentAnything2BlockV1,
         DetectionsConsensusBlockV1,
         ClipComparisonBlockV1,
@@ -254,6 +294,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
         DetectionOffsetBlockV1,
+        ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
@@ -279,6 +320,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         MaskVisualizationBlockV1,
         PixelateVisualizationBlockV1,
         PolygonVisualizationBlockV1,
+        LineCounterZoneVisualizationBlockV1,
         TriangleVisualizationBlockV1,
         RoboflowCustomMetadataBlockV1,
         DetectionsStitchBlockV1,
@@ -286,6 +328,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DominantColorBlockV1,
         PixelationCountBlockV1,
         SIFTComparisonBlockV1,
+        SIFTComparisonBlockV2,
         SIFTBlockV1,
         TemplateMatchingBlockV1,
         ImageBlurBlockV1,
@@ -295,6 +338,15 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ClipComparisonBlockV2,
         CameraFocusBlockV1,
         RoboflowDatasetUploadBlockV2,
+        OpenAIBlockV2,
+        JSONParserBlockV1,
+        VLMAsClassifierBlockV1,
+        GoogleGeminiBlockV1,
+        VLMAsDetectorBlockV1,
+        AntropicClaudeBlockV1,
+        LineCounterBlockV1,
+        PolygonZoneVisualizationBlockV1,
+        Florence2BlockV1,
     ]
 
 
@@ -302,38 +354,34 @@ def load_kinds() -> List[Kind]:
     return [
         WILDCARD_KIND,
         IMAGE_KIND,
-        BATCH_OF_IMAGES_KIND,
+        VIDEO_METADATA_KIND,
         ROBOFLOW_MODEL_ID_KIND,
         ROBOFLOW_PROJECT_KIND,
         ROBOFLOW_API_KEY_KIND,
         FLOAT_ZERO_TO_ONE_KIND,
         LIST_OF_VALUES_KIND,
-        BATCH_OF_SERIALISED_PAYLOADS_KIND,
+        SERIALISED_PAYLOADS_KIND,
         BOOLEAN_KIND,
-        BATCH_OF_BOOLEAN_KIND,
         INTEGER_KIND,
         STRING_KIND,
-        BATCH_OF_STRING_KIND,
-        BATCH_OF_TOP_CLASS_KIND,
+        TOP_CLASS_KIND,
         FLOAT_KIND,
         DICTIONARY_KIND,
-        BATCH_OF_DICTIONARY_KIND,
-        BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
         DETECTION_KIND,
+        CLASSIFICATION_PREDICTION_KIND,
         POINT_KIND,
         ZONE_KIND,
         OBJECT_DETECTION_PREDICTION_KIND,
-        BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
-        BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
         KEYPOINT_DETECTION_PREDICTION_KIND,
-        BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-        BATCH_OF_QR_CODE_DETECTION_KIND,
-        BATCH_OF_BAR_CODE_DETECTION_KIND,
-        BATCH_OF_PREDICTION_TYPE_KIND,
-        BATCH_OF_PARENT_ID_KIND,
-        BATCH_OF_IMAGE_METADATA_KIND,
         RGB_COLOR_KIND,
         IMAGE_KEYPOINTS_KIND,
         CONTOURS_KIND,
+        LANGUAGE_MODEL_OUTPUT_KIND,
+        NUMPY_ARRAY_KIND,
+        QR_CODE_DETECTION_KIND,
+        BAR_CODE_DETECTION_KIND,
+        PREDICTION_TYPE_KIND,
+        PARENT_ID_KIND,
+        IMAGE_METADATA_KIND,
     ]

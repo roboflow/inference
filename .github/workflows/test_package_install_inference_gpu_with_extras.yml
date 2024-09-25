@@ -14,7 +14,7 @@ jobs:
   build:
     runs-on:
       group: group8core
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       matrix:
         python-version: ["3.8", "3.9", "3.10", "3.11"]
@@ -25,6 +25,8 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: "3.9"
+      - name: 🚧 Install GDAL OS library
+        run: sudo apt-get update && sudo apt-get install libgdal-dev
       - name: 🛞 Create Wheels
         run: |
           make create_wheels
@@ -35,7 +37,7 @@ jobs:
       - name: 📦 Installing `inference` package...
         run: |
           wheel_name=`ls ./dist/inference_gpu-*-py3-none-any.whl | head -n 1`
-          pip install "${wheel_name}[clip,gaze,grounding-dino,sam,waf,yolo-world,http,hosted]"
+          pip install "${wheel_name}[clip,gaze,grounding-dino,sam,waf,yolo-world,http,hosted,transformers]"
       - name: 🧪 Testing package installation
         working-directory: "/"
         run: |
@@ -45,3 +47,4 @@ jobs:
           python -c "from inference.models.sam import SegmentAnything"
           python -c "from inference.models.grounding_dino import GroundingDINO"
           python -c "from inference.models.yolo_world import YOLOWorld"
+          python -c "from inference.models.florence2 import Florence2, LoRAFlorence2"

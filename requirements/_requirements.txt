@@ -10,7 +10,7 @@ prometheus-fastapi-instrumentator<=6.0.0
 redis<6.0.0
 requests>=2.26.0
 rich<=13.5.2
-supervision>=0.20.0,<=0.22.0
+supervision>=0.21.0,<=0.22.0
 pybase64<2.0.0
 scikit-image>=0.19.0
 requests-toolbelt>=1.0.0
@@ -29,3 +29,4 @@ pydot>=2.0.0
 shapely>=2.0.0,<2.1.0
 tldextract~=5.1.2
 packaging~=24.0
+anthropic~=0.34.2

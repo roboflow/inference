@@ -19,7 +19,11 @@ class SQLiteWrapper:
     ):
         self._db_file_path = db_file_path
         self._tbl_name = table_name
-        self._columns = {**columns, **{"id": "INTEGER PRIMARY KEY"}}
+
+        self._columns = columns
+
+        self._id_col_name = "id"
+        self._columns[self._id_col_name] = "INTEGER PRIMARY KEY"
 
         if not connection:
             os.makedirs(os.path.dirname(db_file_path), exist_ok=True)
@@ -56,88 +60,141 @@ class SQLiteWrapper:
 
     def insert(
         self,
-        values: Dict[ColName, ColValue],
+        row: Dict[ColName, ColValue],
         connection: Optional[sqlite3.Connection] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
+        with_exclusive: bool = False,
     ):
-        if not connection:
+        if not connection and not cursor:
             try:
                 connection: sqlite3.Connection = sqlite3.connect(
                     self._db_file_path, timeout=1
                 )
-                self._insert(values=values, connection=connection)
+                self._insert(
+                    row=row, connection=connection, with_exclusive=with_exclusive
+                )
                 connection.close()
             except Exception as exc:
                 logger.debug(
-                    "Failed to store '%s' in %s - %s", values, self._tbl_name, exc
+                    "Failed to store '%s' in %s - %s", row, self._tbl_name, exc
                 )
                 raise exc
+        elif connection and not cursor:
+            self._insert(row=row, connection=connection, with_exclusive=with_exclusive)
+        elif connection and not with_exclusive:
+            self._insert(row=row, connection=connection)
+        elif cursor and not with_exclusive:
+            self._insert(row=row, cursor=cursor)
         else:
-            self._insert(values=values, connection=connection)
+            raise RuntimeError("Unsupported mode")
 
-    def _insert(self, values: Dict[ColName, ColValue], connection: sqlite3.Connection):
-        if not set(values.keys()).issubset(self._columns.keys()):
+    def _insert(
+        self,
+        row: Dict[ColName, ColValue],
+        connection: Optional[sqlite3.Connection] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
+        with_exclusive: bool = False,
+    ):
+        if not set(row.keys()).issubset(self._columns.keys()):
             logger.debug(
                 "Cannot store '%s' in %s, requested column names do not match with table columns",
-                values,
+                row,
                 self._tbl_name,
             )
             raise ValueError("Columns mismatch")
-        cursor = connection.cursor()
-        values = {k: v for k, v in values.items() if k != "id"}
+
+        cursor_needs_closing = False
+        if not cursor:
+            cursor = connection.cursor()
+            cursor_needs_closing = True
+
+        if with_exclusive:
+            try:
+                cursor.execute("BEGIN EXCLUSIVE")
+            except Exception as exc:
+                logger.debug(
+                    "Failed to store '%s' in %s - %s", row, self._tbl_name, exc
+                )
+                raise exc
+
+        values = {k: v for k, v in row.items() if k != "id"}
         sql_insert = f"""INSERT INTO {self._tbl_name} ({', '.join(values.keys())})
                 VALUES ({', '.join(['?'] * len(values))});
             """
 
         try:
-            cursor.execute("BEGIN EXCLUSIVE")
-        except Exception as exc:
-            logger.debug("Failed to store '%s' in %s - %s", values, self._tbl_name, exc)
-            raise exc
-
-        try:
             cursor.execute(sql_insert, list(values.values()))
-            connection.commit()
+            if with_exclusive:
+                connection.commit()
         except Exception as exc:
             logger.debug("Failed to store '%s' in %s - %s", values, self._tbl_name, exc)
             connection.rollback()
             raise exc
-        cursor.close()
 
-    def count(self, connection: Optional[sqlite3.Connection] = None) -> int:
-        if not connection:
+        if cursor_needs_closing:
+            cursor.close()
+
+    def count(
+        self,
+        connection: Optional[sqlite3.Connection] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
+        with_exclusive: bool = False,
+    ) -> int:
+        if not connection and not cursor:
             try:
                 connection: sqlite3.Connection = sqlite3.connect(
                     self._db_file_path, timeout=1
                 )
-                count = self._count(connection=connection)
+                count = self._count(
+                    connection=connection, with_exclusive=with_exclusive
+                )
                 connection.close()
             except Exception as exc:
                 logger.debug("Failed to obtain records count - %s", exc)
                 raise exc
-        else:
+        elif connection and not cursor:
+            count = self._count(connection=connection, with_exclusive=with_exclusive)
+        elif connection and not with_exclusive:
             count = self._count(connection=connection)
+        elif cursor and not with_exclusive:
+            count = self._count(cursor=cursor)
+        else:
+            raise RuntimeError("Unsupported mode")
         return count
 
-    def _count(self, connection: sqlite3.Connection) -> int:
-        cursor = connection.cursor()
-        sql_select = f"SELECT COUNT(*) FROM {self._tbl_name}"
+    def _count(
+        self,
+        connection: Optional[sqlite3.Connection] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
+        with_exclusive: bool = False,
+    ) -> int:
+        cursor_needs_closing = False
+        if not cursor:
+            cursor = connection.cursor()
+            cursor_needs_closing = True
 
-        try:
-            cursor.execute("BEGIN EXCLUSIVE")
-        except Exception as exc:
-            logger.debug("Failed to obtain records count - %s", exc)
-            raise exc
+        if with_exclusive:
+            try:
+                cursor.execute("BEGIN EXCLUSIVE")
+            except Exception as exc:
+                logger.debug("Failed to obtain records count - %s", exc)
+                raise exc
+
+        sql_select = f"SELECT COUNT(*) FROM {self._tbl_name}"
 
         count = 0
         try:
             cursor.execute(sql_select)
             count = int(cursor.fetchone()[0])
-            connection.commit()
+            if with_exclusive:
+                connection.commit()
         except Exception as exc:
             logger.debug("Failed to obtain records count - %s", exc)
             connection.rollback()
             raise exc
-        cursor.close()
+
+        if cursor_needs_closing:
+            cursor.close()
 
         return count
 
@@ -153,7 +210,7 @@ class SQLiteWrapper:
                 connection: sqlite3.Connection = sqlite3.connect(
                     self._db_file_path, timeout=1
                 )
-                payloads = self._select(
+                rows = self._select(
                     connection=connection, with_exclusive=with_exclusive, limit=limit
                 )
                 connection.close()
@@ -161,16 +218,16 @@ class SQLiteWrapper:
                 logger.debug("Failed to obtain records - %s", exc)
                 raise exc
         elif connection and not cursor:
-            payloads = self._select(
+            rows = self._select(
                 connection=connection, with_exclusive=with_exclusive, limit=limit
             )
         elif connection and not with_exclusive:
-            payloads = self._select(connection=connection, limit=limit)
+            rows = self._select(connection=connection, limit=limit)
         elif cursor and not with_exclusive:
-            payloads = self._select(cursor=cursor, limit=limit)
+            rows = self._select(cursor=cursor, limit=limit)
         else:
             raise RuntimeError("Unsupported mode")
-        return payloads
+        return rows
 
     def _select(
         self,
@@ -179,24 +236,28 @@ class SQLiteWrapper:
         with_exclusive: bool = False,
         limit: int = 0,
     ) -> List[Dict[str, Any]]:
+        cursor_needs_closing = False
         if not cursor:
             cursor = connection.cursor()
+            cursor_needs_closing = True
+
         if with_exclusive:
             try:
                 cursor.execute("BEGIN EXCLUSIVE")
             except Exception as exc:
                 logger.debug("Failed to obtain records - %s", exc)
                 raise exc
+
         sql_select = f"""SELECT id, {', '.join(k for k in self._columns.keys() if k != 'id')}
                 FROM {self._tbl_name}
                 ORDER BY id ASC
             """
         if limit:
             sql_select = sql_select + f" LIMIT {limit}"
-        payloads = []
+
         try:
             cursor.execute(sql_select)
-            payloads = cursor.fetchall()
+            sqlite_rows = cursor.fetchall()
             if with_exclusive:
                 connection.commit()
         except Exception as exc:
@@ -205,13 +266,16 @@ class SQLiteWrapper:
             raise exc
 
         rows = []
-        for _id, *row in payloads:
+        for _id, *row in sqlite_rows:
             row = {
                 k: v
                 for k, v in zip([k for k in self._columns.keys() if k != "id"], row)
             }
             row["id"] = _id
             rows.append(row)
+
+        if cursor_needs_closing:
+            cursor.close()
 
         return rows
 
@@ -223,14 +287,14 @@ class SQLiteWrapper:
                 connection: sqlite3.Connection = sqlite3.connect(
                     self._db_file_path, timeout=1
                 )
-                payloads = self._flush(connection=connection, limit=limit)
+                rows = self._flush(connection=connection, limit=limit)
                 connection.close()
             except Exception as exc:
                 logger.debug("Failed to flush db - %s", exc)
                 raise exc
         else:
-            payloads = self._flush(connection=connection, limit=limit)
-        return payloads
+            rows = self._flush(connection=connection, limit=limit)
+        return rows
 
     def _flush(
         self, connection: sqlite3.Connection, limit: int = 0
@@ -242,21 +306,155 @@ class SQLiteWrapper:
             logger.debug("Failed to obtain records - %s", exc)
             raise exc
 
-        rows = self.select(connection=connection, cursor=cursor, limit=limit)
-
-        top_id = -1
-        bottom_id = -1
-        for row in rows:
-            _id = row["id"]
-            top_id = max(top_id, _id)
-            if bottom_id == -1:
-                bottom_id = _id
-            bottom_id = min(bottom_id, _id)
-
-        sql_delete = f"DELETE FROM {self._tbl_name} WHERE id >= ? and id <= ?"
         try:
-            cursor.execute(sql_delete, [bottom_id, top_id])
+            rows = self.select(cursor=cursor, limit=limit)
+            self.delete(rows=rows, cursor=cursor)
             connection.commit()
+            cursor.close()
+        except Exception as exc:
+            logger.debug("Failed to delete records - %s", exc)
+            connection.rollback()
+            raise exc
+
+        return rows
+
+    def delete(
+        self,
+        rows: List[Dict[ColName, ColValue]],
+        connection: Optional[sqlite3.Connection] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
+        with_exclusive: bool = False,
+    ) -> List[Dict[str, Any]]:
+        if not connection and not cursor:
+            try:
+                connection: sqlite3.Connection = sqlite3.connect(
+                    self._db_file_path, timeout=1
+                )
+                deleted = self._delete(
+                    rows=rows, connection=connection, with_exclusive=with_exclusive
+                )
+                connection.close()
+            except Exception as exc:
+                logger.debug("Failed to obtain records - %s", exc)
+                raise exc
+        elif connection and not cursor:
+            deleted = self._delete(
+                rows=rows, connection=connection, with_exclusive=with_exclusive
+            )
+        elif connection and not with_exclusive:
+            deleted = self._delete(rows=rows, connection=connection)
+        elif cursor and not with_exclusive:
+            deleted = self._delete(rows=rows, cursor=cursor)
+        else:
+            raise RuntimeError("Unsupported mode")
+        return deleted
+
+    def _delete(
+        self,
+        rows: List[Dict[ColName, ColValue]],
+        connection: Optional[sqlite3.Connection] = None,
+        cursor: Optional[sqlite3.Cursor] = None,
+        with_exclusive: bool = False,
+    ) -> List[Dict[str, Any]]:
+        keys = [r["id"] for r in rows if "id" in r]
+        if not keys:
+            logger.debug("No row with 'id' key found in %s", rows)
+            return []
+
+        cursor_needs_closing = False
+        if not cursor:
+            cursor = connection.cursor()
+            cursor_needs_closing = True
+
+        if with_exclusive:
+            try:
+                cursor.execute("BEGIN EXCLUSIVE")
+            except Exception as exc:
+                logger.debug("Failed to delete records - %s", exc)
+                raise exc
+
+        sql_delete = f"""DELETE
+                FROM {self._tbl_name}
+                WHERE "id" in ({', '.join(['?'] * len(keys))})
+            """
+        sql_select = f"""SELECT *
+                FROM {self._tbl_name}
+                WHERE "id" in ({', '.join(['?'] * len(keys))})
+            """
+
+        try:
+            cursor.execute(sql_delete, keys)
+        except Exception as exc:
+            logger.debug("Failed to delete records - %s", exc)
+            connection.rollback()
+            raise exc
+
+        try:
+            cursor.execute(sql_select, keys)
+            payloads = cursor.fetchall()
+            if with_exclusive:
+                connection.commit()
+        except Exception as exc:
+            logger.debug("Failed to delete records - %s", exc)
+            connection.rollback()
+            raise exc
+
+        if cursor_needs_closing:
+            cursor.close()
+
+        _ids = set()
+        for _id, *_ in payloads:
+            _ids.add(_id)
+
+        return [r for r in rows if "id" in r and r["id"] not in _ids]
+
+    def refresh(
+        self,
+        rows: List[Dict[ColName, ColValue]],
+        connection: Optional[sqlite3.Connection] = None,
+    ) -> List[Dict[str, Any]]:
+        if not connection:
+            try:
+                connection: sqlite3.Connection = sqlite3.connect(
+                    self._db_file_path, timeout=1
+                )
+                payloads = self._refresh(rows=rows, connection=connection)
+                connection.close()
+            except Exception as exc:
+                logger.debug("Failed to flush db - %s", exc)
+                raise exc
+        else:
+            payloads = self._refresh(rows=rows, connection=connection)
+        return payloads
+
+    def _refresh(
+        self, rows: List[Dict[ColName, ColValue]], connection: sqlite3.Connection
+    ) -> List[Dict[str, Any]]:
+        cursor = connection.cursor()
+        try:
+            cursor.execute("BEGIN EXCLUSIVE")
+        except Exception as exc:
+            logger.debug("Failed to obtain records - %s", exc)
+            raise exc
+
+        try:
+            self.delete(rows=rows, cursor=cursor)
+        except Exception as exc:
+            logger.debug("Failed to delete records - %s", exc)
+            connection.rollback()
+            raise exc
+
+        try:
+            for r in rows:
+                self.insert(row=r, cursor=cursor)
+            connection.commit()
+        except Exception as exc:
+            logger.debug("Failed to insert records - %s", exc)
+            connection.rollback()
+            raise exc
+
+        try:
+            rows = self.select(cursor=cursor)
             cursor.close()
         except Exception as exc:
             logger.debug("Failed to delete records - %s", exc)

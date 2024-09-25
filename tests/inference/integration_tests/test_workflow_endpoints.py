@@ -150,9 +150,9 @@ def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]
                         "selector_types": ["step_output"],
                         "selector_data_kind": {
                             "step_output": [
-                                "Batch[object_detection_prediction]",
-                                "Batch[instance_segmentation_prediction]",
-                                "Batch[keypoint_detection_prediction]",
+                                "object_detection_prediction",
+                                "instance_segmentation_prediction",
+                                "keypoint_detection_prediction",
                             ]
                         },
                     },
@@ -167,9 +167,9 @@ def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]
                     "associated_detections": {
                         "type": "DynamicOutputDefinition",
                         "kind": [
-                            "Batch[object_detection_prediction]",
-                            "Batch[instance_segmentation_prediction]",
-                            "Batch[keypoint_detection_prediction]",
+                            "object_detection_prediction",
+                            "instance_segmentation_prediction",
+                            "keypoint_detection_prediction",
                         ],
                     }
                 },
@@ -218,7 +218,7 @@ def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]
     types_compatible_with_object_detection_predictions = {
         e["manifest_type_identifier"]
         for e in response_data["kinds_connections"][
-            "Batch[object_detection_prediction]"
+            "object_detection_prediction"
         ]
     }
     assert (
@@ -248,9 +248,9 @@ def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]
                         "is_dimensionality_reference": True,
                         "selector_data_kind": {
                             "step_output": [
-                                "Batch[object_detection_prediction]",
-                                "Batch[instance_segmentation_prediction]",
-                                "Batch[keypoint_detection_prediction]",
+                                "object_detection_prediction",
+                                "instance_segmentation_prediction",
+                                "keypoint_detection_prediction",
                             ]
                         },
                     },
@@ -265,9 +265,9 @@ def my_function(self, prediction: sv.Detections, crops: Batch[WorkflowImageData]
                     "associated_detections": {
                         "type": "DynamicOutputDefinition",
                         "kind": [
-                            "Batch[object_detection_prediction]",
-                            "Batch[instance_segmentation_prediction]",
-                            "Batch[keypoint_detection_prediction]",
+                            "object_detection_prediction",
+                            "instance_segmentation_prediction",
+                            "keypoint_detection_prediction",
                         ],
                     }
                 },
@@ -432,7 +432,7 @@ def infer(self, image: WorkflowImageData) -> BlockResult:
                         "predictions": {
                             "type": "DynamicOutputDefinition",
                             "kind": [
-                                "Batch[object_detection_prediction]",
+                                "object_detection_prediction",
                             ],
                         }
                     },
@@ -691,7 +691,7 @@ def test_get_versions_of_execution_engine(server_url: str) -> None:
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert response_data["versions"] == ["1.1.0"]
+    assert response_data["versions"] == ["1.1.1"]
 
 
 def test_getting_block_schema_using_get_endpoint(server_url) -> None:
@@ -767,3 +767,207 @@ def test_workflow_run_when_when_custom_serialisation_is_needed(
     assert set(response_data["outputs"][0].keys()) == {
         "results"
     }, "Expected only `results` output"
+
+
+def test_describe_workflow_interface_when_incompatible_execution_engine_version_requested(
+    server_url: str,
+) -> None:
+    # given
+    invalid_definition = {
+        "version": "2.0.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection.predictions",
+            },
+        ],
+    }
+
+    # when
+    response = requests.post(
+        f"{server_url}/workflows/describe_interface",
+        json={
+            "specification": invalid_definition,
+            "api_key": "some",
+        }
+    )
+
+    # then
+    assert response.status_code == 400, "Expected bad request to raise"
+
+
+def test_describe_workflow_interface_when_definition_contains_internal_error(
+    server_url: str,
+) -> None:
+    # given
+    invalid_definition = {
+        "version": "1.0.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection",
+                "image": "$inputs.image",
+                "model_id": "yolov8n-640",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.invalid.predictions",
+            },
+        ],
+    }
+
+    # when
+    response = requests.post(
+        f"{server_url}/workflows/describe_interface",
+        json={
+            "specification": invalid_definition,
+            "api_key": "some",
+        }
+    )
+
+    # then
+    assert response.status_code == 400, "Expected bad request to raise"
+
+
+def test_describe_workflow_interface_when_valid_definition_provided(
+    server_url: str,
+) -> None:
+    # given
+    valid_definition = {
+        "version": "1.0.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowParameter", "name": "model_id"},
+            {"type": "WorkflowParameter", "name": "confidence"},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection_1",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "class_filter": ["dog"],
+            },
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection_2",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "confidence": "$inputs.confidence",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection_1.predictions",
+            },
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection_2.predictions",
+            },
+        ],
+    }
+
+    # when
+    response = requests.post(
+        f"{server_url}/workflows/describe_interface",
+        json={
+            "specification": valid_definition,
+            "api_key": "some",
+        }
+    )
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert response_data["outputs"] == {"detections": ["object_detection_prediction"]}
+    assert response_data["inputs"] == {
+        "image": ["image"],
+        "model_id": ["roboflow_model_id"],
+        "confidence": ["float_zero_to_one"],
+    }
+    assert response_data["typing_hints"] == {
+        "float_zero_to_one": "float",
+        "image": "dict",
+        "object_detection_prediction": "dict",
+        "roboflow_model_id": "str"
+    }
+    assert set(response_data["kinds_schemas"].keys()) == {"object_detection_prediction", "image"}, \
+        "Expected image and object_detection_prediction kinds to deliver schema"
+
+
+def test_describe_workflow_interface_when_invalid_usage_of_inputs_detected(
+    server_url: str,
+) -> None:
+    # given
+    valid_definition = {
+        "version": "1.0.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowParameter", "name": "model_id"},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection_1",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "class_filter": ["dog"],
+            },
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection_2",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "confidence": "$inputs.model_id",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection_1.predictions",
+            },
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection_2.predictions",
+            },
+        ],
+    }
+
+    # when
+    response = requests.post(
+        f"{server_url}/workflows/describe_interface",
+        json={
+            "specification": valid_definition,
+            "api_key": "some",
+        }
+    )
+
+    # then
+    assert response.status_code == 400

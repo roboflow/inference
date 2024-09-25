@@ -36,7 +36,7 @@ class ExecutionEngine(BaseExecutionEngine):
         prevent_local_images_loading: bool = False,
         workflow_id: Optional[str] = None,
     ) -> "ExecutionEngine":
-        requested_engine_version = _retrieve_requested_execution_engine_version(
+        requested_engine_version = retrieve_requested_execution_engine_version(
             workflow_definition=workflow_definition,
         )
         engine_type = _select_execution_engine(
@@ -70,7 +70,7 @@ class ExecutionEngine(BaseExecutionEngine):
         )
 
 
-def _retrieve_requested_execution_engine_version(workflow_definition: dict) -> Version:
+def retrieve_requested_execution_engine_version(workflow_definition: dict) -> Version:
     raw_version = workflow_definition.get("version")
     if raw_version:
         try:

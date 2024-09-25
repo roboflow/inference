@@ -1,4 +1,4 @@
-from typing import Any, List, Literal, Union
+from typing import Any, Dict, List, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
@@ -15,8 +15,8 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
     StatementsGroupsOperator,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
     BOOLEAN_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     DETECTION_KIND,
     DICTIONARY_KIND,
     FLOAT_KIND,
@@ -214,7 +214,7 @@ class ClassificationPropertyExtract(OperationDefinition):
             "(as a list of elements - one element represents single detection)",
             "compound": False,
             "input_kind": [
-                BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
+                CLASSIFICATION_PREDICTION_KIND,
             ],
             "output_kind": [STRING_KIND, LIST_OF_VALUES_KIND, FLOAT_ZERO_TO_ONE_KIND],
         },
@@ -450,6 +450,40 @@ class Divide(OperationDefinition):
     other: Union[int, float]
 
 
+class DetectionsRename(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Renames classes in detections based on provided mapping",
+            "compound": False,
+            "input_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+            "output_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+        },
+    )
+    type: Literal["DetectionsRename"]
+    class_map: Dict[str, str] = Field(
+        description="Dictionary with classes replacement mapping"
+    )
+    strict: bool = Field(
+        description="Flag to decide if all class must be declared in `class_map`. When set `True` "
+        "all detections classes must be declared, otherwise error is raised.",
+        default=True,
+    )
+    new_classes_id_offset: int = Field(
+        description="When `strict` is `False`, this value determines the first "
+        "index given to re-mapped classes. This value let user create new class ids which"
+        "will not overlap with original identifiers.",
+        default=1024,
+    )
+
+
 AllOperationsType = Annotated[
     Union[
         StringToLowerCase,
@@ -469,6 +503,7 @@ AllOperationsType = Annotated[
         DetectionsFilter,
         DetectionsOffset,
         DetectionsShift,
+        DetectionsRename,
         RandomNumber,
         StringMatches,
         ExtractImageProperty,

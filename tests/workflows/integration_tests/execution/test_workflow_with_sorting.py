@@ -110,6 +110,7 @@ ascending regarding confidence.
         sort_operation_mode=DetectionsSortProperties.CONFIDENCE,
         ascending=True,
     ),
+    workflow_name_in_app="detections-sorting",
 )
 def test_sorting_workflow_for_confidence_ascending(
     model_manager: ModelManager,

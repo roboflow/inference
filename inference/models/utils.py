@@ -27,6 +27,7 @@ from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDe
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "stub"): ClassificationModelStub,
     ("classification", "vit"): VitClassification,
+    ("classification", "yolov8"): YOLOv8Classification,
     ("classification", "yolov8n"): YOLOv8Classification,
     ("classification", "yolov8s"): YOLOv8Classification,
     ("classification", "yolov8m"): YOLOv8Classification,
@@ -97,6 +98,10 @@ ROBOFLOW_MODEL_TYPES = {
     ): YOLOv8InstanceSegmentation,
     (
         "instance-segmentation",
+        "yolov8",
+    ): YOLOv8InstanceSegmentation,
+    (
+        "instance-segmentation",
         "yolov8s",
     ): YOLOv8InstanceSegmentation,
     (
@@ -136,6 +141,7 @@ ROBOFLOW_MODEL_TYPES = {
         "yolov8-seg",
     ): YOLOv8InstanceSegmentation,
     ("keypoint-detection", "stub"): KeypointsDetectionModelStub,
+    ("keypoint-detection", "yolov8"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8n"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8s"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8m"): YOLOv8KeypointsDetection,
@@ -230,6 +236,13 @@ except:
     pass
 
 try:
+    from inference.models.owlv2.owlv2 import OwlV2
+
+    ROBOFLOW_MODEL_TYPES[("object-detection", "owlv2")] = OwlV2
+except:
+    pass
+
+try:
     from inference.models import Gaze
 
     ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = Gaze
@@ -240,6 +253,13 @@ try:
     from inference.models import DocTR
 
     ROBOFLOW_MODEL_TYPES[("ocr", "doctr")] = DocTR
+except:
+    pass
+
+try:
+    from inference.models import TrOCR
+
+    ROBOFLOW_MODEL_TYPES[("ocr", "trocr")] = TrOCR
 except:
     pass
 

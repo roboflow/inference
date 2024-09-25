@@ -17,14 +17,12 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_BOOLEAN_KIND,
-    BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
-    BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-    BATCH_OF_STRING_KIND,
     BOOLEAN_KIND,
+    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
     ImageInputField,
@@ -71,20 +69,6 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/roboflow_dataset_upload@v2"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    predictions: Optional[
-        StepOutputSelector(
-            kind=[
-                BATCH_OF_OBJECT_DETECTION_PREDICTION_KIND,
-                BATCH_OF_INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                BATCH_OF_KEYPOINT_DETECTION_PREDICTION_KIND,
-                BATCH_OF_CLASSIFICATION_PREDICTION_KIND,
-            ]
-        )
-    ] = Field(
-        default=None,
-        description="Reference q detection-like predictions",
-        examples=["$steps.object_detection_model.predictions"],
-    )
     target_project: Union[
         WorkflowParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), str
     ] = Field(
@@ -95,10 +79,27 @@ class BlockManifest(WorkflowBlockManifest):
         description="Unique name for Roboflow project pointed by `target_project` parameter, that identifies "
         "usage quota applied for this block.",
         examples=["quota-for-data-sampling-1"],
+        json_schema_extra={"hidden": True},
+    )
+    predictions: Optional[
+        StepOutputSelector(
+            kind=[
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+                CLASSIFICATION_PREDICTION_KIND,
+            ]
+        )
+    ] = Field(
+        default=None,
+        description="Model predictions to be saved",
+        examples=["$steps.object_detection_model.predictions"],
+        json_schema_extra={"always_visible": True},
     )
     data_percentage: Union[
         FloatZeroToHundred, WorkflowParameterSelector(kind=[FLOAT_KIND])
     ] = Field(
+        default=100,
         description="Percent of data that will be saved (in range [0.0, 100.0])",
         examples=[True, False, "$inputs.persist_predictions"],
     )
@@ -183,8 +184,8 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name="error_status", kind=[BATCH_OF_BOOLEAN_KIND]),
-            OutputDefinition(name="message", kind=[BATCH_OF_STRING_KIND]),
+            OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
+            OutputDefinition(name="message", kind=[STRING_KIND]),
         ]
 
     @classmethod

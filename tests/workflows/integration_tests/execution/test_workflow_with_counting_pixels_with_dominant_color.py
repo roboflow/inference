@@ -47,6 +47,7 @@ This example shows how Dominant Color block and Pixel Color Count block can be u
 First, dominant color gets detected and then number of pixels with that color is calculated.
     """,
     workflow_definition=WORKFLOW_WITH_PIXELS_COUNTING,
+    workflow_name_in_app="pixels-counting",
 )
 def test_workflow_with_color_of_pixels_counting(
     model_manager: ModelManager,

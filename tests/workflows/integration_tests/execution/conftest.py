@@ -29,6 +29,11 @@ def red_image() -> np.ndarray:
 
 
 @pytest.fixture(scope="function")
+def fruit_image() -> np.ndarray:
+    return cv2.imread(os.path.join(ASSETS_DIR, "multi-fruit.jpg"))
+
+
+@pytest.fixture(scope="function")
 def left_scissors_right_paper() -> np.ndarray:
     return cv2.imread(
         os.path.join(ROCK_PAPER_SCISSORS_ASSETS, "left_scissors_right_paper.jpg")
@@ -54,3 +59,9 @@ def left_scissors_right_scissors() -> np.ndarray:
     return cv2.imread(
         os.path.join(ROCK_PAPER_SCISSORS_ASSETS, "left_scissors_right_scissors.jpg")
     )
+
+
+def bool_env(val):
+    if isinstance(val, bool):
+        return val
+    return val.lower() in ["true", "1", "t", "y", "yes"]
