@@ -242,6 +242,11 @@ Below you can find list of extras available for `inference` and `inference-gpu`
   <td><a href="/foundation/yolo_world/">Yolo-World model</a></td>
   <td><code>N/A</code></td>
 </tr>
+<tr>
+  <td><code>transformers</code></td>
+  <td><code>transformers</code> based models, like <a href="/foundation/florence2/">Florence-2</a></td>
+  <td><code>N/A</code></td>
+</tr>
 </table>
 
 ??? note "Installing extras"
