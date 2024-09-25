@@ -1,5 +1,5 @@
 from copy import copy, deepcopy
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Union
 
 import numpy as np
 import supervision as sv
@@ -16,6 +16,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.operatio
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
     OperationError,
+    UndeclaredSymbolError,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.utils import (
     safe_stringify,
@@ -203,9 +204,10 @@ def sort_detections(
 
 def rename_detections(
     detections: Any,
-    class_map: Dict[str, str],
-    strict: bool,
+    class_map: Union[Dict[str, str], str],
+    strict: Union[bool, str],
     new_classes_id_offset: int,
+    global_parameters: Dict[str, Any],
     **kwargs,
 ) -> sv.Detections:
     if not isinstance(detections, sv.Detections):
@@ -213,6 +215,37 @@ def rename_detections(
         raise InvalidInputTypeError(
             public_message=f"Executing rename_detections(...), expected sv.Detections object as value, "
             f"got {value_as_str} of type {type(detections)}",
+            context="step_execution | roboflow_query_language_evaluation",
+        )
+    if isinstance(class_map, str):
+        if class_map not in global_parameters:
+            raise UndeclaredSymbolError(
+                public_message=f"Attempted to retrieve variable `{class_map}` that was expected to hold "
+                f"class mapping of rename_detections(...), but that turned out not to be registered.",
+                context="step_execution | roboflow_query_language_evaluation",
+            )
+        class_map = global_parameters[class_map]
+    if not isinstance(class_map, dict):
+        value_as_str = safe_stringify(value=class_map)
+        raise InvalidInputTypeError(
+            public_message=f"Executing rename_detections(...), expected dictionary to be given as class map, "
+            f"got {value_as_str} of type {type(class_map)}",
+            context="step_execution | roboflow_query_language_evaluation",
+        )
+    if isinstance(strict, str):
+        if strict not in global_parameters:
+            raise UndeclaredSymbolError(
+                public_message=f"Attempted to retrieve variable `{strict}` that was expected to hold "
+                f"parameter for `strict` flag of rename_detections(...), but that turned out not "
+                f"to be registered.",
+                context="step_execution | roboflow_query_language_evaluation",
+            )
+        strict = global_parameters[strict]
+    if not isinstance(strict, bool):
+        value_as_str = safe_stringify(value=strict)
+        raise InvalidInputTypeError(
+            public_message=f"Executing rename_detections(...), expected dictionary to be given as `strict` flag, "
+            f"got {value_as_str} of type {type(strict)}",
             context="step_execution | roboflow_query_language_evaluation",
         )
     detections_copy = deepcopy(detections)
