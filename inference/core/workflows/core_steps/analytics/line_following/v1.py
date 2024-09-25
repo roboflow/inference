@@ -37,6 +37,7 @@ of tracked objects from a user-defined reference path. The block requires detect
 (i.e. each object must have a unique tracker_id assigned, which persists between frames).
 """
 
+
 class LineFollowingManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
@@ -82,15 +83,20 @@ class LineFollowingManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
 
+
 class LineFollowingAnalyticsBlockV1(WorkflowBlock):
     def __init__(self):
-        self._object_paths: Dict[str, Dict[Union[int, str], List[Tuple[float, float]]]] = {}
+        self._object_paths: Dict[
+            str, Dict[Union[int, str], List[Tuple[float, float]]]
+        ] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return LineFollowingManifest
 
-    def _calculate_frechet_distance(self, path1: np.ndarray, path2: np.ndarray) -> float:
+    def _calculate_frechet_distance(
+        self, path1: np.ndarray, path2: np.ndarray
+    ) -> float:
         def euclidean_distance(point1, point2):
             return np.sqrt(np.sum((point1 - point2) ** 2))
 
@@ -100,20 +106,32 @@ class LineFollowingAnalyticsBlockV1(WorkflowBlock):
             elif i == 0 and j == 0:
                 dist_matrix[i, j] = euclidean_distance(path1[0], path2[0])
             elif i > 0 and j == 0:
-                dist_matrix[i, j] = max(compute_distance(dist_matrix, i-1, 0, path1, path2), euclidean_distance(path1[i], path2[0]))
+                dist_matrix[i, j] = max(
+                    compute_distance(dist_matrix, i - 1, 0, path1, path2),
+                    euclidean_distance(path1[i], path2[0]),
+                )
             elif i == 0 and j > 0:
-                dist_matrix[i, j] = max(compute_distance(dist_matrix, 0, j-1, path1, path2), euclidean_distance(path1[0], path2[j]))
+                dist_matrix[i, j] = max(
+                    compute_distance(dist_matrix, 0, j - 1, path1, path2),
+                    euclidean_distance(path1[0], path2[j]),
+                )
             elif i > 0 and j > 0:
-                dist_matrix[i, j] = max(min(compute_distance(dist_matrix, i-1, j, path1, path2), 
-                                            compute_distance(dist_matrix, i-1, j-1, path1, path2), 
-                                            compute_distance(dist_matrix, i, j-1, path1, path2)),
-                                        euclidean_distance(path1[i], path2[j]))
+                dist_matrix[i, j] = max(
+                    min(
+                        compute_distance(dist_matrix, i - 1, j, path1, path2),
+                        compute_distance(dist_matrix, i - 1, j - 1, path1, path2),
+                        compute_distance(dist_matrix, i, j - 1, path1, path2),
+                    ),
+                    euclidean_distance(path1[i], path2[j]),
+                )
             else:
                 dist_matrix[i, j] = float("inf")
             return dist_matrix[i, j]
 
         dist_matrix = np.ones((len(path1), len(path2))) * -1
-        return compute_distance(dist_matrix, len(path1)-1, len(path2)-1, path1, path2)
+        return compute_distance(
+            dist_matrix, len(path1) - 1, len(path2) - 1, path1, path2
+        )
 
     def run(
         self,
