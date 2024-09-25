@@ -35,6 +35,7 @@ from inference.core.entities.requests.inference import (
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
+from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
@@ -47,9 +48,12 @@ from inference.core.entities.requests.server_state import (
     AddModelRequest,
     ClearModelRequest,
 )
+from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
+    DescribeInterfaceRequest,
     WorkflowInferenceRequest,
+    WorkflowSpecificationDescribeInterfaceRequest,
     WorkflowSpecificationInferenceRequest,
 )
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
@@ -58,7 +62,6 @@ from inference.core.entities.responses.clip import (
     ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.cogvlm import CogVLMResponse
-from inference.core.entities.responses.doctr import DoctrOCRInferenceResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -71,6 +74,7 @@ from inference.core.entities.responses.inference import (
     StubResponse,
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
+from inference.core.entities.responses.ocr import OCRInferenceResponse
 from inference.core.entities.responses.sam import (
     SamEmbeddingResponse,
     SamSegmentationResponse,
@@ -84,6 +88,7 @@ from inference.core.entities.responses.server_state import (
     ServerVersionInfo,
 )
 from inference.core.entities.responses.workflows import (
+    DescribeInterfaceResponse,
     ExecutionEngineVersions,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
@@ -97,8 +102,10 @@ from inference.core.env import (
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
+    CORE_MODEL_OWLV2_ENABLED,
     CORE_MODEL_SAM2_ENABLED,
     CORE_MODEL_SAM_ENABLED,
+    CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
@@ -142,6 +149,7 @@ from inference.core.exceptions import (
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
+    handle_describe_workflows_interface,
 )
 from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
@@ -707,6 +715,7 @@ class HttpInterface(BaseInterface):
         """
 
         load_yolo_world_model = partial(load_core_model, core_model="yolo_world")
+        load_owlv2_model = partial(load_core_model, core_model="owlv2")
         """Loads the YOLO World model into the model manager.
 
         Args:
@@ -715,6 +724,17 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The YOLO World model ID.
+        """
+
+        load_trocr_model = partial(load_core_model, core_model="trocr")
+        """Loads the TrOCR model into the model manager.
+
+        Args:
+        inference_request: The request containing version and other details.
+        api_key: The API key for the request.
+
+        Returns:
+        The TrOCR model ID.
         """
 
         @app.get(
@@ -971,6 +991,41 @@ class HttpInterface(BaseInterface):
                     return await process_inference_request(inference_request)
 
         if not DISABLE_WORKFLOW_ENDPOINTS:
+
+            @app.post(
+                "/{workspace_name}/workflows/{workflow_id}/describe_interface",
+                response_model=DescribeInterfaceResponse,
+                summary="Endpoint to describe interface of predefined workflow",
+                description="Checks Roboflow API for workflow definition, once acquired - describes workflow inputs and outputs",
+            )
+            @with_route_exceptions
+            async def describe_predefined_workflow_interface(
+                workspace_name: str,
+                workflow_id: str,
+                workflow_request: DescribeInterfaceRequest,
+            ) -> DescribeInterfaceResponse:
+                workflow_specification = get_workflow_specification(
+                    api_key=workflow_request.api_key,
+                    workspace_id=workspace_name,
+                    workflow_id=workflow_id,
+                )
+                return handle_describe_workflows_interface(
+                    definition=workflow_specification,
+                )
+
+            @app.post(
+                "/workflows/describe_interface",
+                response_model=DescribeInterfaceResponse,
+                summary="Endpoint to describe interface of workflow given in request",
+                description="Parses workflow definition and retrieves describes inputs and outputs",
+            )
+            @with_route_exceptions
+            async def describe_workflow_interface(
+                workflow_request: WorkflowSpecificationDescribeInterfaceRequest,
+            ) -> DescribeInterfaceResponse:
+                return handle_describe_workflows_interface(
+                    definition=workflow_request.specification,
+                )
 
             @app.post(
                 "/{workspace_name}/workflows/{workflow_id}",
@@ -1428,7 +1483,7 @@ class HttpInterface(BaseInterface):
 
                 @app.post(
                     "/doctr/ocr",
-                    response_model=DoctrOCRInferenceResponse,
+                    response_model=OCRInferenceResponse,
                     summary="DocTR OCR response",
                     description="Run the DocTR OCR model to retrieve text in an image.",
                 )
@@ -1450,7 +1505,7 @@ class HttpInterface(BaseInterface):
                         request (Request, default Body()): The HTTP request.
 
                     Returns:
-                        M.DoctrOCRInferenceResponse: The response containing the embedded image.
+                        M.OCRInferenceResponse: The response containing the embedded image.
                     """
                     logger.debug(f"Reached /doctr/ocr")
                     doctr_model_id = load_doctr_model(
@@ -1560,7 +1615,7 @@ class HttpInterface(BaseInterface):
                     "/sam2/embed_image",
                     response_model=Sam2EmbeddingResponse,
                     summary="SAM2 Image Embeddings",
-                    description="Run the Meta AI Segmant Anything 2 Model to embed image data.",
+                    description="Run the Meta AI Segment Anything 2 Model to embed image data.",
                 )
                 @with_route_exceptions
                 async def sam2_embed_image(
@@ -1572,7 +1627,7 @@ class HttpInterface(BaseInterface):
                     ),
                 ):
                     """
-                    Embeds image data using the Meta AI Segmant Anything Model (SAM).
+                    Embeds image data using the Meta AI Segment Anything Model (SAM).
 
                     Args:
                         inference_request (SamEmbeddingRequest): The request containing the image to be embedded.
@@ -1593,7 +1648,7 @@ class HttpInterface(BaseInterface):
                     "/sam2/segment_image",
                     response_model=Sam2SegmentationResponse,
                     summary="SAM2 Image Segmentation",
-                    description="Run the Meta AI Segmant Anything 2 Model to generate segmenations for image data.",
+                    description="Run the Meta AI Segment Anything 2 Model to generate segmenations for image data.",
                 )
                 @with_route_exceptions
                 async def sam2_segment_image(
@@ -1605,7 +1660,7 @@ class HttpInterface(BaseInterface):
                     ),
                 ):
                     """
-                    Generates segmentations for image data using the Meta AI Segmant Anything Model (SAM).
+                    Generates segmentations for image data using the Meta AI Segment Anything Model (SAM).
 
                     Args:
                         inference_request (Sam2SegmentationRequest): The request containing the image to be segmented.
@@ -1625,6 +1680,41 @@ class HttpInterface(BaseInterface):
                             content=model_response,
                             headers={"Content-Type": "application/octet-stream"},
                         )
+                    return model_response
+
+            if CORE_MODEL_OWLV2_ENABLED:
+
+                @app.post(
+                    "/owlv2/infer",
+                    response_model=ObjectDetectionInferenceResponse,
+                    summary="Owlv2 image prompting",
+                    description="Run the google owlv2 model to few-shot object detect",
+                )
+                @with_route_exceptions
+                async def owlv2_infer(
+                    inference_request: OwlV2InferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Embeds image data using the Meta AI Segmant Anything Model (SAM).
+
+                    Args:
+                        inference_request (SamEmbeddingRequest): The request containing the image to be embedded.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        M.Sam2EmbeddingResponse or Response: The response affirming the image has been embedded
+                    """
+                    logger.debug(f"Reached /owlv2/infer")
+                    owl2_model_id = load_owlv2_model(inference_request, api_key=api_key)
+                    model_response = await self.model_manager.infer_from_request(
+                        owl2_model_id, inference_request
+                    )
                     return model_response
 
             if CORE_MODEL_GAZE_ENABLED:
@@ -1705,6 +1795,48 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(cog_model_id, actor)
+                    return response
+
+            if CORE_MODEL_TROCR_ENABLED:
+
+                @app.post(
+                    "/ocr/trocr",
+                    response_model=OCRInferenceResponse,
+                    summary="TrOCR OCR response",
+                    description="Run the TrOCR model to retrieve text in an image.",
+                )
+                @with_route_exceptions
+                async def trocr_retrieve_text(
+                    inference_request: TrOCRInferenceRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Retrieves text from image data using the TrOCR model.
+
+                    Args:
+                        inference_request (TrOCRInferenceRequest): The request containing the image from which to retrieve text.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        OCRInferenceResponse: The response containing the retrieved text.
+                    """
+                    logger.debug(f"Reached /trocr/ocr")
+                    trocr_model_id = load_trocr_model(
+                        inference_request, api_key=api_key
+                    )
+                    response = await self.model_manager.infer_from_request(
+                        trocr_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(trocr_model_id, actor)
                     return response
 
         if not LAMBDA:

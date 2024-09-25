@@ -202,12 +202,19 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
             text_padding,
             border_radius,
         )
+
         if text == "Class":
             labels = predictions["class_name"]
         elif text == "Tracker Id":
             labels = [str(t) if t else "" for t in predictions.tracker_id]
         elif text == "Time In Zone":
-            labels = [f"{round(t, 2)}s" if t else "" for t in predictions.data.get("time_in_zone", [])]
+            if "time_in_zone" in predictions.data:
+                labels = [
+                    f"In zone: {round(t, 2)}s" if t else "In zone: N/A"
+                    for t in predictions.data["time_in_zone"]
+                ]
+            else:
+                labels = [f"In zone: N/A"] * len(predictions)
         elif text == "Confidence":
             labels = [f"{confidence:.2f}" for confidence in predictions.confidence]
         elif text == "Class and Confidence":
@@ -230,7 +237,10 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         elif text == "Area":
             labels = [str(int(area)) for area in predictions.area]
         else:
-            raise ValueError(f"Invalid text type: {text}")
+            try:
+                labels = [str(d) if d else "" for d in predictions[text]]
+            except Exception:
+                raise ValueError(f"Invalid text type: {text}")
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,

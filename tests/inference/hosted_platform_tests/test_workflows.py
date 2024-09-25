@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import pytest
 import requests
 
@@ -127,7 +129,7 @@ def test_get_versions_of_execution_engine(object_detection_service_url: str) -> 
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert response_data["versions"] == ["1.1.0"]
+    assert response_data["versions"] == ["1.1.1"]
 
 
 FUNCTION = """
@@ -811,3 +813,169 @@ def test_getting_block_schema_using_get_endpoint(
     ), "Response expected to define required schema properties"
     assert "title" in schema, "Response expected to define unique schema title"
     assert "type" in schema, "Response expected to define schema type"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_discovering_interface_of_saved_workflow(
+    object_detection_service_url: str,
+    interface_discovering_workflow: Tuple[str, str],
+) -> None:
+    # when
+    workspace_name, workflow_id = interface_discovering_workflow
+    result = requests.post(
+        f"{object_detection_service_url}/{workspace_name}/workflows/{workflow_id}/describe_interface",
+        json={"api_key": ROBOFLOW_API_KEY},
+    )
+
+    # then
+    result.raise_for_status()
+    response_data = result.json()
+    assert response_data["inputs"] == {
+        "image": ["image"],
+        "model_id": ["roboflow_model_id"],
+    }
+    assert response_data["outputs"] == {
+        "model_predictions": {
+            "predictions": ["object_detection_prediction"],
+            "inference_id": ["string"],
+        },
+        "bounding_box_visualization": ["image"],
+    }
+    assert response_data["typing_hints"] == {
+        "image": "dict",
+        "object_detection_prediction": "dict",
+        "string": "str",
+        "roboflow_model_id": "str",
+    }
+    assert set(response_data["kinds_schemas"].keys()) == {
+        "image",
+        "object_detection_prediction",
+    }
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_discovering_interface_of_valid_workflow_from_payload(
+    object_detection_service_url: str,
+) -> None:
+    # given
+    valid_definition = {
+        "version": "1.0.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowParameter", "name": "model_id"},
+            {"type": "WorkflowParameter", "name": "confidence"},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection_1",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "class_filter": ["dog"],
+            },
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection_2",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "confidence": "$inputs.confidence",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection_1.predictions",
+            },
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection_2.predictions",
+            },
+        ],
+    }
+
+    # when
+    response = requests.post(
+        f"{object_detection_service_url}/workflows/describe_interface",
+        json={
+            "specification": valid_definition,
+            "api_key": "some",
+        },
+    )
+
+    # then
+    response.raise_for_status()
+    response_data = response.json()
+    assert response_data["outputs"] == {"detections": ["object_detection_prediction"]}
+    assert response_data["inputs"] == {
+        "image": ["image"],
+        "model_id": ["roboflow_model_id"],
+        "confidence": ["float_zero_to_one"],
+    }
+    assert response_data["typing_hints"] == {
+        "float_zero_to_one": "float",
+        "image": "dict",
+        "object_detection_prediction": "dict",
+        "roboflow_model_id": "str",
+    }
+    assert set(response_data["kinds_schemas"].keys()) == {
+        "object_detection_prediction",
+        "image",
+    }, "Expected image and object_detection_prediction kinds to deliver schema"
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_discovering_interface_of_invalid_workflow_from_payload(
+    object_detection_service_url: str,
+) -> None:
+    # given
+    valid_definition = {
+        "version": "1.0.0",
+        "inputs": [
+            {"type": "WorkflowImage", "name": "image"},
+            {"type": "WorkflowParameter", "name": "model_id"},
+        ],
+        "steps": [
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection_1",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "class_filter": ["dog"],
+            },
+            {
+                "type": "ObjectDetectionModel",
+                "name": "general_detection_2",
+                "image": "$inputs.image",
+                "model_id": "$inputs.model_id",
+                "confidence": "$inputs.model_id",
+                "class_filter": ["dog"],
+            },
+        ],
+        "outputs": [
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection_1.predictions",
+            },
+            {
+                "type": "JsonField",
+                "name": "detections",
+                "selector": "$steps.general_detection_2.predictions",
+            },
+        ],
+    }
+
+    # when
+    response = requests.post(
+        f"{object_detection_service_url}/workflows/describe_interface",
+        json={
+            "specification": valid_definition,
+            "api_key": "some",
+        },
+    )
+
+    # then
+    assert response.status_code == 400

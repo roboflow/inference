@@ -3,7 +3,6 @@ FROM python:3.9 as base
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt update -y && apt install -y \
-    ffmpeg \
     libxext6 \
     libopencv-dev \
     uvicorn \
@@ -73,5 +72,6 @@ ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV API_LOGGING_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
+ENV CORE_MODEL_OWLV2_ENABLED=True
 
 ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

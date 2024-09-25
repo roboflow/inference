@@ -4,7 +4,7 @@ When the syntax for Workflow definitions was [outlined](/workflows/definitions/)
 aspect was not covered: the ability to define blocks directly within the Workflow definition itself. This section can
 include the manifest and Python code for blocks defined in-place, which are dynamically interpreted by the 
 Execution Engine. These in-place blocks function similarly to those statically defined in 
-[plugins](/workflows/workflows_bundling/), yet provide much more flexibility.
+[plugins](/workflows/blocks_bundling/), yet provide much more flexibility.
 
 
 !!! Warning

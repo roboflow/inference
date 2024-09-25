@@ -38,5 +38,3 @@ Here is an example of a configuration manifest for random sampling strategy:
   ]
 }
 ```
-
-Learn how to [configure active learning](../active_learning.md#configuration) for your model.

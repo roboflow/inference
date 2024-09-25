@@ -2,7 +2,6 @@ FROM nvcr.io/nvidia/tensorrt:22.12-py3
 WORKDIR /app
 
 RUN apt-get update -y && apt-get install -y \
-    ffmpeg \
     libsm6 \
     libxext6 \
     libopencv-dev \
@@ -56,5 +55,6 @@ ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV API_LOGGING_ENABLED=True
 ENV PYTHONPATH=/app/:${PYTHONPATH}
 ENV PATH=/opt/miniconda/bin:$PATH
+ENV CORE_MODEL_TROCR_ENABLED=false
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

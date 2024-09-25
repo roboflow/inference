@@ -28,4 +28,4 @@ jobs:
           python -m pip install -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements.sdk.http.txt
       - name: 📝 E2E test of HOSTED INFERENCE at 😎 STAGING 😎 🔥🔥🔥🔥
         run:
-          SKIP_WARMUP=${{ github.event.inputs.skip_warmup }} HOSTED_PLATFORM_TESTS_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} HOSTED_PLATFORM_TESTS_PROJECT=roboflow-staging pytest tests/inference/hosted_platform_tests/
+          SKIP_WARMUP=${{ github.event.inputs.skip_warmup }} HOSTED_PLATFORM_TESTS_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} HOSTED_PLATFORM_TESTS_PROJECT=roboflow-staging OPENAI_KEY=${{ secrets.OPEN_AI_API_KEY }} GOOGLE_API_KEY=${{ secrets.GEMINI_API_KEY }} ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} pytest tests/inference/hosted_platform_tests/

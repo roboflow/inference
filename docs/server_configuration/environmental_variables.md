@@ -1,6 +1,6 @@
 # Environmental vaiables
 
-`Inference` behavior can be controlled by set of environmental variables. All environmental variables are listed in [inference/core/env.py](inference/core/env.py)
+`Inference` behavior can be controlled by set of environmental variables. All environmental variables are listed in [inference/core/env.py](https://github.com/roboflow/inference/blob/main/inference/core/env.py)
 
 Below is a list of some environmental values that require more in-depth explanation.
 

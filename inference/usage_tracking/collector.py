@@ -1,5 +1,6 @@
 import asyncio
 import atexit
+import datetime
 import json
 import mimetypes
 import socket
@@ -20,7 +21,6 @@ from inference.core.version import __version__ as inference_version
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
-from inference.usage_tracking.utils import collect_func_params
 
 from .config import TelemetrySettings, get_telemetry_settings
 from .payload_helpers import (
@@ -36,8 +36,10 @@ from .payload_helpers import (
     sha256_hash,
     zip_usage_payloads,
 )
+from .plan_details import PlanDetails
 from .redis_queue import RedisQueue
 from .sqlite_queue import SQLiteQueue
+from .utils import collect_func_params
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -75,6 +77,10 @@ class UsageCollector:
         self._hashed_api_keys: Dict[APIKey, APIKeyHash] = {}
         self._api_keys_hashing_enabled = True
 
+        self._plan_details = PlanDetails(
+            api_plan_endpoint_url=self._settings.api_plan_endpoint_url,
+            sqlite_cache_enabled=False,
+        )
         if LAMBDA and REDIS_HOST:
             logger.debug("Persistence through RedisQueue")
             self._queue: "Queue[UsagePayload]" = RedisQueue()
@@ -96,6 +102,13 @@ class UsageCollector:
                     maxsize=self._settings.queue_size
                 )
                 self._api_keys_hashing_enabled = False
+            try:
+                self._plan_details = PlanDetails(
+                    api_plan_endpoint_url=self._settings.api_plan_endpoint_url,
+                )
+                logger.debug("Cached plan details")
+            except Exception as exc:
+                logger.debug("Unable to create instance of SQLiteQueue, %s", exc)
         self._queue_lock = Lock()
 
         self._system_info_lock = Lock()
@@ -286,7 +299,6 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
-        enterprise: bool = False,
     ):
         source = str(source) if source else ""
         api_key_hash = self._calculate_api_key_hash(api_key=api_key)
@@ -313,7 +325,6 @@ class UsageCollector:
             source_usage["resource_id"] = resource_id
             source_usage["resource_details"] = json.dumps(resource_details)
             source_usage["api_key_hash"] = api_key_hash
-            source_usage["enterprise"] = enterprise
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
             logger.debug("Updated usage: %s", source_usage)
@@ -322,7 +333,6 @@ class UsageCollector:
         self,
         source: str,
         category: str,
-        enterprise: bool,
         frames: int = 1,
         api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
@@ -330,7 +340,7 @@ class UsageCollector:
         inference_test_run: bool = False,
         fps: float = 0,
     ) -> DefaultDict[str, Any]:
-        if self._settings.opt_out and not enterprise:
+        if self._settings.opt_out and not api_key:
             return
         self.record_system_info()
         self.record_resource_details(
@@ -348,14 +358,12 @@ class UsageCollector:
             resource_id=resource_id,
             inference_test_run=inference_test_run,
             fps=fps,
-            enterprise=enterprise,
         )
 
     async def async_record_usage(
         self,
         source: str,
         category: str,
-        enterprise: bool,
         frames: int = 1,
         api_key: APIKey = "",
         resource_details: Optional[Dict[str, Any]] = None,
@@ -369,7 +377,6 @@ class UsageCollector:
                     source=source,
                     category=category,
                     frames=frames,
-                    enterprise=enterprise,
                     api_key=api_key,
                     resource_details=resource_details,
                     resource_id=resource_id,
@@ -381,7 +388,6 @@ class UsageCollector:
                 source=source,
                 category=category,
                 frames=frames,
-                enterprise=enterprise,
                 api_key=api_key,
                 resource_details=resource_details,
                 resource_id=resource_id,
@@ -431,6 +437,22 @@ class UsageCollector:
         hashes_to_api_keys = dict(a[::-1] for a in self._hashed_api_keys.items())
 
         for payload in payloads:
+            for api_key_hash, resource_payloads in payload.items():
+                if api_key_hash not in hashes_to_api_keys:
+                    logger.debug(
+                        "Cannot obtain plan details, api key hash cannot be resolved"
+                    )
+                    continue
+                api_key = hashes_to_api_keys[api_key_hash]
+                api_key_plan_details = self._plan_details.get_api_key_plan(
+                    api_key=api_key
+                )
+
+                for resource_payload in resource_payloads.values():
+                    resource_payload["enterprise"] = api_key_plan_details[
+                        self._plan_details._is_enterprise_col_name
+                    ]
+
             logger.debug("Sending usage payload %s", payload)
             api_keys_hashes_failed = send_usage_payload(
                 payload=payload,
@@ -488,13 +510,9 @@ class UsageCollector:
         resource_details = {}
         resource_id = ""
         category = None
-        enterprise = False
         # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
         if "workflow" in func_kwargs:
             workflow: CompiledWorkflow = func_kwargs["workflow"]
-            if hasattr(workflow, "workflow_definition"):
-                # TODO: extend ParsedWorkflowDefinition to expose `enterprise`
-                workflow_definition = workflow.workflow_definition
             if hasattr(workflow, "init_parameters"):
                 init_parameters = workflow.init_parameters
                 if "workflows_core.api_key" in init_parameters:
@@ -577,7 +595,6 @@ class UsageCollector:
             "resource_id": resource_id,
             "inference_test_run": usage_inference_test_run,
             "fps": usage_fps,
-            "enterprise": enterprise,
         }
 
     def __call__(self, func: Callable[P, T]) -> Callable[P, T]:

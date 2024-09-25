@@ -38,3 +38,13 @@ class DescribeBlocksRequest(BaseModel):
         "contain blocks suitable for requested EE version, otherwise - descriptions for "
         "all available blocks will be delivered.",
     )
+
+
+class DescribeInterfaceRequest(BaseModel):
+    api_key: str = Field(
+        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+    )
+
+
+class WorkflowSpecificationDescribeInterfaceRequest(DescribeInterfaceRequest):
+    specification: dict

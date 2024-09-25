@@ -8,8 +8,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     StepOutputSelector,
@@ -23,7 +23,6 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "tracked_detections"
-TYPE: str = "roboflow_core/byte_tracker@v1"
 SHORT_DESCRIPTION = (
     "Track and update object positions across video frames using ByteTrack."
 )
@@ -51,11 +50,12 @@ class ByteTrackerBlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal[f"{TYPE}", "ByteTracker"]
+    type: Literal["roboflow_core/byte_tracker@v1"]
     metadata: WorkflowVideoMetadataSelector
-    predictions: StepOutputSelector(
+    detections: StepOutputSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
         description="Objects to be tracked",
@@ -63,23 +63,31 @@ class ByteTrackerBlockManifest(WorkflowBlockManifest):
     )
     track_activation_threshold: Union[Optional[float], WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         default=0.25,
-        description="Detection confidence threshold for track activation",
+        description="Detection confidence threshold for track activation."
+        " Increasing track_activation_threshold improves accuracy and stability but might miss true detections."
+        " Decreasing it increases completeness but risks introducing noise and instability.",
         examples=[0.25, "$inputs.confidence"],
     )
     lost_track_buffer: Union[Optional[int], WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=30,
-        description="Number of frames to buffer when a track is lost",
+        description="Number of frames to buffer when a track is lost."
+        " Increasing lost_track_buffer enhances occlusion handling, significantly reducing"
+        " the likelihood of track fragmentation or disappearance caused by brief detection gaps.",
         examples=[30, "$inputs.lost_track_buffer"],
     )
     minimum_matching_threshold: Union[Optional[float], WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         default=0.8,
-        description="Threshold for matching tracks with detections",
+        description="Threshold for matching tracks with detections."
+        " Increasing minimum_matching_threshold improves accuracy but risks fragmentation."
+        " Decreasing it improves completeness but risks false positives and drift.",
         examples=[0.8, "$inputs.min_matching_threshold"],
     )
-    frame_rate: Union[Optional[float], WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
-        default=None,
-        description="Frame rate of the video",
-        examples=[10, "$inputs.frame_rate"],
+    minimum_consecutive_frames: Union[Optional[int], WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        default=1,
+        description="Number of consecutive frames that an object must be tracked before it is considered a 'valid' track."
+        " Increasing minimum_consecutive_frames prevents the creation of accidental tracks from false detection"
+        " or double detection, but risks missing shorter tracks.",
+        examples=[1, "$inputs.min_consecutive_frames"],
     )
 
     @classmethod
@@ -106,23 +114,26 @@ class ByteTrackerBlockV1(WorkflowBlock):
     def run(
         self,
         metadata: VideoMetadata,
-        predictions: sv.Detections,
+        detections: sv.Detections,
         track_activation_threshold: float = 0.25,
         lost_track_buffer: int = 30,
         minimum_matching_threshold: float = 0.8,
-        frame_rate: Optional[float] = None,
+        minimum_consecutive_frames: int = 1,
     ) -> BlockResult:
+        if not metadata.fps:
+            raise ValueError(
+                f"Malformed fps in VideoMetadata, {self.__class__.__name__} requires fps in order to initialize ByteTrack"
+            )
         if metadata.video_identifier not in self._trackers:
-            if frame_rate is None:
-                frame_rate = metadata.fps
-            if not frame_rate:
-                frame_rate = 10
             self._trackers[metadata.video_identifier] = sv.ByteTrack(
                 track_activation_threshold=track_activation_threshold,
                 lost_track_buffer=lost_track_buffer,
                 minimum_matching_threshold=minimum_matching_threshold,
-                frame_rate=frame_rate,
+                minimum_consecutive_frames=minimum_consecutive_frames,
+                frame_rate=metadata.fps,
             )
         tracker = self._trackers[metadata.video_identifier]
-        tracked_detections = tracker.update_with_detections(predictions)
+        tracked_detections = tracker.update_with_detections(
+            sv.Detections.merge(detections[i] for i in range(len(detections)))
+        )
         return {OUTPUT_KEY: tracked_detections}
