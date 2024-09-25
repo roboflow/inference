@@ -3,13 +3,13 @@ import socket
 from typing import Optional
 
 from inference.core import logger
-from inference.enterprise.stream_management.manager.entities import ErrorType
-from inference.enterprise.stream_management.manager.errors import (
+from inference.core.interfaces.stream_manager.manager_app.entities import ErrorType
+from inference.core.interfaces.stream_manager.manager_app.errors import (
     MalformedHeaderError,
     MalformedPayloadError,
     TransmissionChannelClosed,
 )
-from inference.enterprise.stream_management.manager.serialisation import (
+from inference.core.interfaces.stream_manager.manager_app.serialisation import (
     prepare_error_response,
 )
 

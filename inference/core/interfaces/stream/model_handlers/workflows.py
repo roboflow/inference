@@ -1,5 +1,3 @@
-import asyncio
-import time
 from typing import List, Optional
 
 from inference.core.interfaces.camera.entities import VideoFrame
@@ -17,7 +15,6 @@ class WorkflowRunner:
         image_input_name: str,
         video_metadata_input_name: str,
     ) -> List[dict]:
-        start = time.time()
         if workflows_parameters is None:
             workflows_parameters = {}
         # TODO: pass fps reflecting each stream to workflows_parameters
@@ -42,10 +39,7 @@ class WorkflowRunner:
             )
             for video_frame in video_frames
         ]
-        result = execution_engine.run(
+        return execution_engine.run(
             runtime_parameters=workflows_parameters,
             fps=fps,
         )
-        duration = time.time() - start
-        print(f"PROCESSING DURATION: {round(duration * 1000, 2)}ms", flush=True)
-        return result

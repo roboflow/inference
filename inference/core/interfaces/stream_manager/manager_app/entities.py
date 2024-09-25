@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
@@ -65,4 +65,7 @@ class InitialisePipelinePayload(BaseModel):
 
 
 class ConsumeResultsPayload(BaseModel):
-    purge: bool = False
+    excluded_fields: List[str] = Field(
+        default_factory=list,
+        description="List of workflow output fields to be filtered out from response",
+    )

@@ -1,11 +1,9 @@
 import json
 import socket
-import subprocess
 from collections import deque
-from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
-from typing import Callable, Dict, List, Optional, Tuple, Union, Set
+from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
 import cv2
 import numpy as np
@@ -19,7 +17,6 @@ from inference.core.interfaces.stream.entities import SinkHandler
 from inference.core.interfaces.stream.utils import wrap_in_list
 from inference.core.utils.drawing import create_tiles
 from inference.core.utils.preprocess import letterbox_image
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 DEFAULT_BBOX_ANNOTATOR = sv.BoundingBoxAnnotator()
 DEFAULT_LABEL_ANNOTATOR = sv.LabelAnnotator()
@@ -565,5 +562,17 @@ class InMemoryBufferSink:
 
     def consume_prediction(
         self,
+        excluded_fields: Set[str],
     ) -> Tuple[List[Optional[dict]], List[Optional[VideoFrame]]]:
-        return self._buffer.popleft()
+        if not excluded_fields:
+            return self._buffer.popleft()
+        predictions, frames = self._buffer.popleft()
+        filtered_predictions = []
+        for prediction in predictions:
+            if prediction is None:
+                filtered_predictions.append(prediction)
+            else:
+                filtered_predictions.append(
+                    {k: v for k, v in prediction.items() if k not in excluded_fields}
+                )
+        return filtered_predictions, frames

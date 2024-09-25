@@ -3,7 +3,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any, Optional
 
-from inference.enterprise.stream_management.manager.entities import (
+from inference.core.interfaces.stream_manager.manager_app.entities import (
     ENCODING,
     ERROR_TYPE_KEY,
     PIPELINE_ID_KEY,

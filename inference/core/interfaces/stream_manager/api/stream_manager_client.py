@@ -3,7 +3,7 @@ import json
 from asyncio import StreamReader, StreamWriter
 from enum import Enum
 from json import JSONDecodeError
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from inference.core import logger
 from inference.core.interfaces.stream_manager.api.entities import (
@@ -155,11 +155,14 @@ class StreamManagerClient:
         )
 
     async def consume_pipeline_result(
-        self, pipeline_id: str
+        self,
+        pipeline_id: str,
+        excluded_fields: List[str],
     ) -> ConsumePipelineResponse:
         command = {
             TYPE_KEY: CommandType.CONSUME_RESULT,
             PIPELINE_ID_KEY: pipeline_id,
+            "excluded_fields": excluded_fields,
         }
         response = await self._handle_command(command=command)
         status = response[RESPONSE_KEY][STATUS_KEY]
@@ -240,7 +243,7 @@ async def send_message(
         payload = header + body
         writer.write(payload)
         await asyncio.wait_for(writer.drain(), timeout=timeout)
-    except TypeError as error:
+    except (TypeError, ValueError) as error:
         raise MalformedPayloadError(f"Could not serialise message. Details: {error}")
     except OverflowError as error:
         raise MessageToBigError(

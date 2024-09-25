@@ -87,7 +87,7 @@ class InferencePipelineManager(Process):
             if command_type is CommandType.STATUS:
                 return self._get_pipeline_status(request_id=request_id)
             if command_type is CommandType.CONSUME_RESULT:
-                return self._consume_results(request_id=request_id)
+                return self._consume_results(request_id=request_id, payload=payload)
             raise NotImplementedError(
                 f"Command type `{command_type}` cannot be handled"
             )
@@ -241,7 +241,7 @@ class InferencePipelineManager(Process):
                 request_id=request_id, error=error, error_type=ErrorType.OPERATION_ERROR
             )
 
-    def _consume_results(self, request_id: str) -> None:
+    def _consume_results(self, request_id: str, payload: dict) -> None:
         try:
             if self._buffer_sink.empty():
                 response_payload = {
@@ -249,38 +249,36 @@ class InferencePipelineManager(Process):
                     "outputs": [],
                     "frames_metadata": [],
                 }
-            else:
-                predictions, frames = [], []
-                while not self._buffer_sink.empty():
-                    predictions, frames = self._buffer_sink.consume_prediction()
-                predictions = serialise_workflow_result(
-                    result=predictions,
-                )
-                frames_metadata = []
-                for frame in frames:
-                    if frame is None:
-                        frames_metadata.append(None)
-                    else:
-                        frames_metadata.append(
-                            {
-                                "frame_timestamp": frame.frame_timestamp.isoformat(),
-                                "frame_id": frame.frame_id,
-                                "source_id": frame.source_id,
-                            }
-                        )
-                response_payload = {
-                    STATUS_KEY: OperationStatus.SUCCESS,
-                    "outputs": predictions,
-                    "frames_metadata": frames_metadata,
-                }
-            self._responses_queue.put((request_id, response_payload))
-        except ValidationError as error:
-            self._handle_error(
-                request_id=request_id, error=error, error_type=ErrorType.INVALID_PAYLOAD
+                self._responses_queue.put((request_id, response_payload))
+                return None
+            excluded_fields = set(payload.get("excluded_fields", []))
+            predictions, frames = self._buffer_sink.consume_prediction(
+                excluded_fields=excluded_fields
             )
+            predictions = serialise_workflow_result(
+                result=predictions,
+            )
+            frames_metadata = []
+            for frame in frames:
+                if frame is None:
+                    frames_metadata.append(None)
+                else:
+                    frames_metadata.append(
+                        {
+                            "frame_timestamp": frame.frame_timestamp.isoformat(),
+                            "frame_id": frame.frame_id,
+                            "source_id": frame.source_id,
+                        }
+                    )
+            response_payload = {
+                STATUS_KEY: OperationStatus.SUCCESS,
+                "outputs": predictions,
+                "frames_metadata": frames_metadata,
+            }
+            self._responses_queue.put((request_id, response_payload))
         except Exception as error:
             self._handle_error(
-                request_id=request_id, error=error, error_type=ErrorType.INTERNAL_ERROR
+                request_id=request_id, error=error, error_type=ErrorType.OPERATION_ERROR
             )
 
     def _handle_error(

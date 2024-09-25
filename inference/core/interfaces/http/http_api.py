@@ -162,10 +162,18 @@ from inference.core.interfaces.stream_manager.api.entities import (
     InferencePipelineStatusResponse,
     ListPipelinesResponse,
 )
+from inference.core.interfaces.stream_manager.api.errors import (
+    ProcessesManagerAuthorisationError,
+    ProcessesManagerInternalError,
+    ProcessesManagerInvalidPayload,
+    ProcessesManagerNotFoundError,
+    ProcessesManagerOperationError,
+)
 from inference.core.interfaces.stream_manager.api.stream_manager_client import (
     StreamManagerClient,
 )
 from inference.core.interfaces.stream_manager.manager_app.entities import (
+    ConsumeResultsPayload,
     InitialisePipelinePayload,
 )
 from inference.core.managers.base import ModelManager
@@ -297,7 +305,12 @@ def with_route_exceptions(route):
                     "inner_error_message": str(error.inner_error),
                 },
             )
-        except RoboflowAPINotAuthorizedError:
+        except ProcessesManagerInvalidPayload as error:
+            resp = JSONResponse(
+                status_code=400,
+                content={"message": str(error)},
+            )
+        except (RoboflowAPINotAuthorizedError, ProcessesManagerAuthorisationError):
             resp = JSONResponse(
                 status_code=401,
                 content={
@@ -314,6 +327,12 @@ def with_route_exceptions(route):
                     "message": "Requested Roboflow resource not found. Make sure that workspace, project or model "
                     "you referred in request exists."
                 },
+            )
+            traceback.print_exc()
+        except ProcessesManagerNotFoundError as error:
+            resp = JSONResponse(
+                status_code=404,
+                content={"message": str(error)},
             )
             traceback.print_exc()
         except (
@@ -380,6 +399,9 @@ def with_route_exceptions(route):
                     "inner_error_message": str(error.inner_error),
                 },
             )
+            traceback.print_exc()
+        except (ProcessesManagerInternalError, ProcessesManagerOperationError) as error:
+            resp = JSONResponse(status_code=500, content={"message": str(error)})
             traceback.print_exc()
         except Exception:
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
@@ -1288,9 +1310,15 @@ class HttpInterface(BaseInterface):
                 description="Terminates the VideoSource of Inference Pipeline within the state of ProcessesManager being queried.",
             )
             @with_route_exceptions
-            async def consume(pipeline_id: str) -> ConsumePipelineResponse:
+            async def consume(
+                pipeline_id: str,
+                request: Optional[ConsumeResultsPayload] = None,
+            ) -> ConsumePipelineResponse:
+                if request is None:
+                    request = ConsumeResultsPayload()
                 return await self.stream_manager_client.consume_pipeline_result(
-                    pipeline_id=pipeline_id
+                    pipeline_id=pipeline_id,
+                    excluded_fields=request.excluded_fields,
                 )
 
         if CORE_MODELS_ENABLED:
