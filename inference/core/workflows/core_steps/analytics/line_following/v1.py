@@ -30,7 +30,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "frechet_distance"
-SHORT_DESCRIPTION = "Calculate Frechet distance of object from reference path"
+SHORT_DESCRIPTION = "Calculate Fréchet distance of object from reference path"
 LONG_DESCRIPTION = """
 The `LineFollowingAnalyticsBlock` is an analytics block designed to measure the Frechet distance
 of tracked objects from a user-defined reference path. The block requires detections to be tracked
