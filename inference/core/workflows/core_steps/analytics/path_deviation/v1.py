@@ -45,7 +45,7 @@ class LineFollowingManifest(WorkflowBlockManifest):
             "block_type": "analytics",
         }
     )
-    type: Literal["roboflow_core/line_following_analytics@v1"]
+    type: Literal["roboflow_core/path_deviation_analytics@v1"]
     metadata: WorkflowVideoMetadataSelector
     detections: StepOutputSelector(
         kind=[
