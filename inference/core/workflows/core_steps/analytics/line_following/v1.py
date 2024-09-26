@@ -56,7 +56,7 @@ class LineFollowingManifest(WorkflowBlockManifest):
         description="Predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    triggering_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    triggering_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
         description=f"Triggering anchor. Allowed values: {', '.join(sv.Position.list())}",
         default="CENTER",
         examples=["CENTER"],
