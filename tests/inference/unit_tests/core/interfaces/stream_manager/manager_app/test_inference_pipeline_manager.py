@@ -25,7 +25,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     CommandType,
     ErrorType,
     InitialisePipelinePayload,
-    OperationStatus,
+    OperationStatus, VideoConfiguration, WorkflowConfiguration,
 )
 from inference.core.interfaces.stream_manager.manager_app.inference_pipeline_manager import (
     InferencePipelineManager,
@@ -83,7 +83,7 @@ def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested_bu
         responses_queue=responses_queue,
     )
     init_payload = assembly_valid_init_payload()
-    del init_payload["video_reference"]
+    del init_payload["video_configuration"]["video_reference"]
 
     # when
     command_queue.put(("1", init_payload))
@@ -463,11 +463,17 @@ def assembly_valid_init_payload() -> dict:
         ],
     }
     valid_init_payload = InitialisePipelinePayload(
-        video_reference="rtsp://128.0.0.1",
-        workflow_specification=specification,
+        video_configuration=VideoConfiguration(
+            type="VideoConfiguration",
+            video_reference="rtsp://128.0.0.1",
+            source_buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
+            source_buffer_consumption_strategy=BufferConsumptionStrategy.EAGER,
+        ),
+        processing_configuration=WorkflowConfiguration(
+            type="WorkflowConfiguration",
+            workflow_specification=specification,
+        ),
         api_key="<MY-API-KEY>",
-        source_buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
-        source_buffer_consumption_strategy=BufferConsumptionStrategy.EAGER,
     ).dict()
     valid_init_payload["type"] = CommandType.INIT
     return valid_init_payload

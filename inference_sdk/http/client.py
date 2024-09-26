@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+from typing import Any, Dict, Generator, List, Literal, Optional, Tuple, Union
 
 import aiohttp
 import numpy as np
@@ -65,7 +65,7 @@ from inference_sdk.http.utils.requests import (
     deduct_api_key_from_string,
     inject_images_into_payload,
 )
-from inference_sdk.utils.decorators import deprecated
+from inference_sdk.utils.decorators import deprecated, experimental
 
 SUCCESSFUL_STATUS_CODE = 200
 DEFAULT_HEADERS = {
@@ -78,6 +78,11 @@ NEW_INFERENCE_ENDPOINTS = {
     KEYPOINTS_DETECTION_TASK: "/infer/keypoints_detection",
 }
 CLIP_ARGUMENT_TYPES = {"image", "text"}
+
+BufferFillingStrategy = Literal[
+    "WAIT", "DROP_OLDEST", "ADAPTIVE_DROP_OLDEST", "DROP_LATEST", "ADAPTIVE_DROP_LATEST"
+]
+BufferConsumptionStrategy = Literal["LAZY", "EAGER"]
 
 
 def wrap_errors(function: callable) -> callable:
@@ -1238,6 +1243,156 @@ class InferenceHTTPClient:
             request_method=RequestMethod.POST,
             max_concurrent_requests=self.__inference_configuration.max_concurrent_requests,
         )
+
+    @experimental(
+        info="Video processing in inference server is under development. Breaking changes are possible."
+    )
+    @wrap_errors
+    def start_inference_pipeline_with_workflow(
+        self,
+        video_reference: Union[str, int, List[Union[str, int]]],
+        workflow_specification: Optional[dict] = None,
+        workspace_name: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        image_input_name: str = "image",
+        workflows_parameters: Optional[Dict[str, Any]] = None,
+        workflows_thread_pool_workers: int = 4,
+        cancel_thread_pool_tasks_on_exit: bool = True,
+        video_metadata_input_name: str = "video_metadata",
+        max_fps: Optional[Union[float, int]] = None,
+        source_buffer_filling_strategy: Optional[BufferFillingStrategy] = "DROP_OLDEST",
+        source_buffer_consumption_strategy: Optional[
+            BufferConsumptionStrategy
+        ] = "EAGER",
+        video_source_properties: Optional[Dict[str, float]] = None,
+        batch_collection_timeout: Optional[float] = None,
+        results_buffer_size: int = 64,
+    ) -> dict:
+        named_workflow_specified = (workspace_name is not None) and (
+            workflow_id is not None
+        )
+        if not (named_workflow_specified != (workflow_specification is not None)):
+            raise InvalidParameterError(
+                "Parameters (`workspace_name`, `workflow_id`) can be used mutually exclusive with "
+                "`specification`, but at least one must be set."
+            )
+        payload = {
+            "api_key": self.__api_key,
+            "video_configuration": {
+                "type": "VideoConfiguration",
+                "video_reference": video_reference,
+                "max_fps": max_fps,
+                "source_buffer_filling_strategy": source_buffer_filling_strategy,
+                "source_buffer_consumption_strategy": source_buffer_consumption_strategy,
+                "video_source_properties": video_source_properties,
+                "batch_collection_timeout": batch_collection_timeout,
+            },
+            "processing_configuration": {
+                "type": "WorkflowConfiguration",
+                "workflow_specification": workflow_specification,
+                "workspace_name": workspace_name,
+                "workflow_id": workflow_id,
+                "image_input_name": image_input_name,
+                "workflows_parameters": workflows_parameters,
+                "workflows_thread_pool_workers": workflows_thread_pool_workers,
+                "cancel_thread_pool_tasks_on_exit": cancel_thread_pool_tasks_on_exit,
+                "video_metadata_input_name": video_metadata_input_name,
+            },
+            "sink_configuration": {
+                "type": "MemorySinkConfiguration",
+                "results_buffer_size": results_buffer_size,
+            },
+        }
+        response = requests.post(
+            f"{self.__api_url}/inference_pipelines/initialise",
+            json=payload,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    @experimental(
+        info="Video processing in inference server is under development. Breaking changes are possible."
+    )
+    @wrap_errors
+    def list_inference_pipelines(self) -> List[dict]:
+        payload = {"api_key": self.__api_key}
+        response = requests.get(
+            f"{self.__api_url}/inference_pipelines/list",
+            json=payload,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+
+    @experimental(
+        info="Video processing in inference server is under development. Breaking changes are possible."
+    )
+    @wrap_errors
+    def get_inference_pipeline_status(self, pipeline_id: str) -> dict:
+        payload = {"api_key": self.__api_key}
+        response = requests.get(
+            f"{self.__api_url}/inference_pipelines/{pipeline_id}/status",
+            json=payload,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+
+    @experimental(
+        info="Video processing in inference server is under development. Breaking changes are possible."
+    )
+    @wrap_errors
+    def pause_inference_pipeline(self, pipeline_id: str) -> dict:
+        payload = {"api_key": self.__api_key}
+        response = requests.post(
+            f"{self.__api_url}/inference_pipelines/{pipeline_id}/pause",
+            json=payload,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+
+    @experimental(
+        info="Video processing in inference server is under development. Breaking changes are possible."
+    )
+    @wrap_errors
+    def resume_inference_pipeline(self, pipeline_id: str) -> dict:
+        payload = {"api_key": self.__api_key}
+        response = requests.post(
+            f"{self.__api_url}/inference_pipelines/{pipeline_id}/resume",
+            json=payload,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+
+    @experimental(
+        info="Video processing in inference server is under development. Breaking changes are possible."
+    )
+    @wrap_errors
+    def terminate_inference_pipeline(self, pipeline_id: str) -> dict:
+        payload = {"api_key": self.__api_key}
+        response = requests.post(
+            f"{self.__api_url}/inference_pipelines/{pipeline_id}/terminate",
+            json=payload,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
+
+    @experimental(
+        info="Video processing in inference server is under development. Breaking changes are possible."
+    )
+    @wrap_errors
+    def consume_inference_pipeline_result(
+        self,
+        pipeline_id: str,
+        excluded_fields: Optional[List[str]] = None,
+    ) -> dict:
+        if excluded_fields is None:
+            excluded_fields = []
+        payload = {"api_key": self.__api_key, "excluded_fields": excluded_fields}
+        response = requests.get(
+            f"{self.__api_url}/inference_pipelines/{pipeline_id}/consume",
+            json=payload,
+        )
+        api_key_safe_raise_for_status(response=response)
+        return response.json()
 
     def _post_images(
         self,

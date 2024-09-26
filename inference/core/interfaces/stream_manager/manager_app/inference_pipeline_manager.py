@@ -109,23 +109,23 @@ class InferencePipelineManager(Process):
             )
             self._buffer_sink = buffer_sink
             self._inference_pipeline = InferencePipeline.init_with_workflow(
-                video_reference=parsed_payload.video_reference,
-                workflow_specification=parsed_payload.workflow_specification,
-                workspace_name=parsed_payload.workspace_name,
-                workflow_id=parsed_payload.workflow_id,
+                video_reference=parsed_payload.video_configuration.video_reference,
+                workflow_specification=parsed_payload.processing_configuration.workflow_specification,
+                workspace_name=parsed_payload.processing_configuration.workspace_name,
+                workflow_id=parsed_payload.processing_configuration.workflow_id,
                 api_key=parsed_payload.api_key,
-                image_input_name=parsed_payload.image_input_name,
-                workflows_parameters=parsed_payload.workflows_parameters,
+                image_input_name=parsed_payload.processing_configuration.image_input_name,
+                workflows_parameters=parsed_payload.processing_configuration.workflows_parameters,
                 on_prediction=self._buffer_sink.on_prediction,
-                max_fps=parsed_payload.max_fps,
+                max_fps=parsed_payload.video_configuration.max_fps,
                 watchdog=watchdog,
-                source_buffer_filling_strategy=parsed_payload.source_buffer_filling_strategy,
-                source_buffer_consumption_strategy=parsed_payload.source_buffer_consumption_strategy,
-                video_source_properties=parsed_payload.video_source_properties,
-                workflow_init_parameters=parsed_payload.workflow_init_parameters,
-                workflows_thread_pool_workers=parsed_payload.workflows_thread_pool_workers,
-                cancel_thread_pool_tasks_on_exit=parsed_payload.cancel_thread_pool_tasks_on_exit,
-                video_metadata_input_name=parsed_payload.video_metadata_input_name,
+                source_buffer_filling_strategy=parsed_payload.video_configuration.source_buffer_filling_strategy,
+                source_buffer_consumption_strategy=parsed_payload.video_configuration.source_buffer_consumption_strategy,
+                video_source_properties=parsed_payload.video_configuration.video_source_properties,
+                workflows_thread_pool_workers=parsed_payload.processing_configuration.workflows_thread_pool_workers,
+                cancel_thread_pool_tasks_on_exit=parsed_payload.processing_configuration.cancel_thread_pool_tasks_on_exit,
+                video_metadata_input_name=parsed_payload.processing_configuration.video_metadata_input_name,
+                batch_collection_timeout=parsed_payload.video_configuration.batch_collection_timeout,
             )
             self._watchdog = watchdog
             self._inference_pipeline.start(use_main_thread=False)

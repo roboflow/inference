@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union, Literal
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -41,35 +41,42 @@ class CommandType(str, Enum):
     CONSUME_RESULT = "consume_result"
 
 
-class VideoProcessingConfiguration(BaseModel):
+class VideoConfiguration(BaseModel):
+    type: Literal["VideoConfiguration"]
     video_reference: Union[str, int, List[Union[str, int]]]
-
+    max_fps: Optional[Union[float, int]] = None
+    source_buffer_filling_strategy: Optional[BufferFillingStrategy] = (
+        BufferFillingStrategy.DROP_OLDEST
+    )
+    source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = (
+        BufferConsumptionStrategy.EAGER
+    )
+    video_source_properties: Optional[Dict[str, float]] = None
+    batch_collection_timeout: Optional[float] = None
 
 
 class MemorySinkConfiguration(BaseModel):
     type: Literal["MemorySinkConfiguration"]
     results_buffer_size: int = 64
-    video_source_properties: Optional[Dict[str, float]] = None
-    batch_collection_timeout: Optional[float] = None
 
 
-class InitialisePipelinePayload(BaseModel):
-    video_reference: Union[str, int, List[Union[str, int]]]
+class WorkflowConfiguration(BaseModel):
+    type: Literal["WorkflowConfiguration"]
     workflow_specification: Optional[dict] = None
     workspace_name: Optional[str] = None
     workflow_id: Optional[str] = None
-    api_key: Optional[str] = None
     image_input_name: str = "image"
     workflows_parameters: Optional[Dict[str, Any]] = None
-    sink_configuration: MemorySinkConfiguration = MemorySinkConfiguration()
-    max_fps: Optional[Union[float, int]] = None
-    source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None
-    source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None
-    video_source_properties: Optional[Dict[str, float]] = None
-    workflow_init_parameters: Optional[Dict[str, Any]] = None
     workflows_thread_pool_workers: int = 4
     cancel_thread_pool_tasks_on_exit: bool = True
     video_metadata_input_name: str = "video_metadata"
+
+
+class InitialisePipelinePayload(BaseModel):
+    video_configuration: VideoConfiguration
+    processing_configuration: WorkflowConfiguration
+    sink_configuration: MemorySinkConfiguration = MemorySinkConfiguration(type="MemorySinkConfiguration")
+    api_key: Optional[str] = None
 
 
 class ConsumeResultsPayload(BaseModel):
