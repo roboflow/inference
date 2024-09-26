@@ -24,7 +24,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-OUTPUT_KEY: str = "timed_detections"
+OUTPUT_KEY: str = "path_deviation_detections"
 DETECTIONS_PATH_DEVIATION_PARAM: str = "frechet_distance"
 SHORT_DESCRIPTION = "Calculate Fréchet distance of object from reference path"
 LONG_DESCRIPTION = """

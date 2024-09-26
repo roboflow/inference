@@ -60,7 +60,7 @@ def test_path_deviation_exact_path():
             triggering_anchor=sv.Position.CENTER,  # Default
             reference_path=reference_path,
         )
-        frechet_distance = result["timed_detections"].detections[0][
+        frechet_distance = result["path_deviation_detections"].detections[0][
             "frechet_distance"
         ][0]
         frechet_distances.append(frechet_distance)
@@ -128,7 +128,7 @@ def test_path_deviation_with_deviation():
             triggering_anchor=sv.Position.CENTER,  # Default
             reference_path=reference_path,
         )
-        frechet_distance = result["timed_detections"].detections[0][
+        frechet_distance = result["path_deviation_detections"].detections[0][
             "frechet_distance"
         ][0]
         frechet_distances.append(frechet_distance)
@@ -183,7 +183,7 @@ def test_path_deviation_multiple_objects():
             triggering_anchor=sv.Position.CENTER,  # Default
             reference_path=reference_path,
         )
-        frechet_distance = result["timed_detections"].detections[1][
+        frechet_distance = result["path_deviation_detections"].detections[1][
             "frechet_distance"
         ][0]
         frechet_distances.append(frechet_distance)
