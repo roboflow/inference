@@ -24,8 +24,8 @@ def test_path_deviation_exact_path():
             xyxy=np.array(
                 [
                     [
-                        reference_path[i][0],
-                        reference_path[i][1],
+                        reference_path[i][0] - 1,
+                        reference_path[i][1] - 1,
                         reference_path[i][0] + 1,
                         reference_path[i][1] + 1,
                     ]
@@ -92,8 +92,8 @@ def test_path_deviation_with_deviation():
             xyxy=np.array(
                 [
                     [
-                        object_path[i][0],
-                        object_path[i][1],
+                        object_path[i][0] - 1,
+                        object_path[i][1] - 1,
                         object_path[i][0] + 1,
                         object_path[i][1] + 1,
                     ]
