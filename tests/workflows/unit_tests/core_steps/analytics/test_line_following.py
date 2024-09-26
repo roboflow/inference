@@ -27,8 +27,8 @@ def test_line_following_exact_path():
             xyxy=np.array(
                 [
                     [
-                        reference_path[i][0],
-                        reference_path[i][1],
+                        reference_path[i][0] - 1,
+                        reference_path[i][1] - 1,
                         reference_path[i][0] + 1,
                         reference_path[i][1] + 1,
                     ]
@@ -67,6 +67,12 @@ def test_line_following_exact_path():
         frechet_distances.append(frechet_distance)
 
     # Then
+
+    # Additional assertions to check intermediate results
+    assert len(frechet_distances) == len(frames)
+    for distance in frechet_distances:
+        assert distance == pytest.approx(0.0, abs=1e-6)
+
     # Since the object follows exactly the reference path, the frechet distance should be zero.
     assert frechet_distances[-1] == pytest.approx(0.0, abs=1e-6)
 
