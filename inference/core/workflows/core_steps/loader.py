@@ -23,6 +23,9 @@ from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
 from inference.core.workflows.core_steps.classical_cv.image_blur.v1 import (
     ImageBlurBlockV1,
 )
+from inference.core.workflows.core_steps.classical_cv.image_preprocessing.v1 import (
+    ImagePreprocessingBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.pixel_color_count.v1 import (
     PixelationCountBlockV1,
 )
@@ -351,6 +354,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PolygonZoneVisualizationBlockV1,
         Florence2BlockV1,
         StabilityAIInpaintingBlockV1,
+        ImagePreprocessingBlockV1,
     ]
 
 
