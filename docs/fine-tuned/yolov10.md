@@ -15,7 +15,7 @@ Click a link below to see instructions on how to run a YOLOv10 model on differen
 
 ## License
 
-See our [Licensing Guide](/quickstart/licensing/) for more information about how your use of YOLOv10 is licensed when using Inference to deploy your model.
+See our [Licensing Guide](https://roboflow.com/licensing) for more information about how your use of YOLOv10 is licensed when using Inference to deploy your model.
 
 ## See Also
 
