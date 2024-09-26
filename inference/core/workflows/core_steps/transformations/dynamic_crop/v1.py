@@ -87,7 +87,14 @@ class BlockManifest(WorkflowBlockManifest):
         ge=0.0,
         description="For instance segmentation, mask_opacity can be used to control background removal. "
         "Opacity 1.0 removes the background, while 0.0 leaves the crop unchanged.",
-        json_schema_extra={"always_visible": True},
+        json_schema_extra={
+            "relevant_for": {
+                "predictions": {
+                    "kind": [INSTANCE_SEGMENTATION_PREDICTION_KIND.name],
+                    "required": True,
+                },
+            }
+        },
     )
     background_color: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]),
