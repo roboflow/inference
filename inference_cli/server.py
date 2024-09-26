@@ -67,6 +67,14 @@ def start(
             "https://<subdomain>.roboflow.run endpoint",
         ),
     ] = False,
+    image: Annotated[
+        Optional[str],
+        typer.Option(
+            "--image",
+            help="Point specific docker image you would like to run with command (useful for development of custom "
+            "builds of inference server)",
+        ),
+    ] = None,
 ) -> None:
 
     try:
@@ -77,6 +85,7 @@ def start(
 
     try:
         start_inference_container(
+            image=image,
             port=port,
             project=rf_env,
             env_file_path=env_file_path,
