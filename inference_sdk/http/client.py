@@ -1274,7 +1274,7 @@ class InferenceHTTPClient:
         if not (named_workflow_specified != (workflow_specification is not None)):
             raise InvalidParameterError(
                 "Parameters (`workspace_name`, `workflow_id`) can be used mutually exclusive with "
-                "`specification`, but at least one must be set."
+                "`workflow_specification`, but at least one must be set."
             )
         payload = {
             "api_key": self.__api_key,
