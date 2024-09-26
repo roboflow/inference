@@ -8,18 +8,14 @@ from typing_extensions import Literal, Type
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     VideoMetadata,
-    WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BOOLEAN_KIND,
     FLOAT_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
     StepOutputSelector,
-    WorkflowImageSelector,
     WorkflowParameterSelector,
     WorkflowVideoMetadataSelector,
 )
@@ -152,11 +148,10 @@ class LineFollowingAnalyticsBlockV1(WorkflowBlock):
         max_frechet_distance = 0.0
 
         for i, tracker_id in enumerate(detections.tracker_id):
-            anchor_point = getattr(detections, triggering_anchor.lower())[i]
-
+            anchor_point = detections.get_anchors_coordinates(anchor=triggering_anchor)
             if tracker_id not in self._object_paths[video_id]:
                 self._object_paths[video_id][tracker_id] = []
-            self._object_paths[video_id][tracker_id].append(tuple(anchor_point))
+            self._object_paths[video_id][tracker_id].append(anchor_point)
 
             object_path = np.array(self._object_paths[video_id][tracker_id])
             ref_path = np.array(reference_path)
