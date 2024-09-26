@@ -113,6 +113,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Task type to be performed by model. Value determines required parameters and output response.",
         json_schema_extra={
             "values_metadata": RELEVANT_TASKS_METADATA,
+            "recommended_parsers": {
+                "structured-answering": "roboflow_core/json_parser@v1",
+                "classification": "roboflow_core/vlm_as_classifier@v1",
+                "multi-label-classification": "roboflow_core/vlm_as_classifier@v1",
+                "object-detection": "roboflow_core/vlm_as_detector@v1",
+            },
             "always_visible": True,
         },
     )

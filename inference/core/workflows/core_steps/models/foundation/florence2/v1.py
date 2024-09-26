@@ -178,6 +178,14 @@ class BlockManifest(WorkflowBlockManifest):
         "Value determines required parameters and output response.",
         json_schema_extra={
             "values_metadata": RELEVANT_TASKS_METADATA,
+            "recommended_parsers": {
+                "open-vocabulary-object-detection": "roboflow_core/vlm_as_detector@v1",
+                "ocr-with-text-detection": "roboflow_core/vlm_as_detector@v1",
+                "object-detection-and-caption": "roboflow_core/vlm_as_detector@v1",
+                "object-detection": "roboflow_core/vlm_as_detector@v1",
+                "phrase-grounded-object-detection": "roboflow_core/vlm_as_detector@v1",
+                "region-proposal": "roboflow_core/vlm_as_detector@v1",
+            },
             "always_visible": True,
         },
     )
