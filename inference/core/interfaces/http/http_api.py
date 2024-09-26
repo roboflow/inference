@@ -1236,8 +1236,8 @@ class HttpInterface(BaseInterface):
             @app.get(
                 "/inference_pipelines/list",
                 response_model=ListPipelinesResponse,
-                summary="List active pipelines",
-                description="Listing all active pipelines in the state of ProcessesManager being queried.",
+                summary="[EXPERIMENTAL] List active InferencePipelines",
+                description="[EXPERIMENTAL] Listing all active InferencePipelines processing videos",
             )
             @with_route_exceptions
             async def list_pipelines(_: Request) -> ListPipelinesResponse:
@@ -1246,8 +1246,8 @@ class HttpInterface(BaseInterface):
             @app.get(
                 "/inference_pipelines/{pipeline_id}/status",
                 response_model=InferencePipelineStatusResponse,
-                summary="Get status of pipeline",
-                description="Returns detailed statis of Inference Pipeline in the state of ProcessesManager being queried.",
+                summary="[EXPERIMENTAL] Get status of InferencePipeline",
+                description="[EXPERIMENTAL] Get status of InferencePipeline",
             )
             @with_route_exceptions
             async def get_status(pipeline_id: str) -> InferencePipelineStatusResponse:
@@ -1258,8 +1258,8 @@ class HttpInterface(BaseInterface):
             @app.post(
                 "/inference_pipelines/initialise",
                 response_model=CommandResponse,
-                summary="Initialize the pipeline",
-                description="Starts new Inference Pipeline within the state of ProcessesManager being queried.",
+                summary="[EXPERIMENTAL] Starts new InferencePipeline",
+                description="[EXPERIMENTAL] Starts new InferencePipeline",
             )
             @with_route_exceptions
             async def initialise(request: InitialisePipelinePayload) -> CommandResponse:
@@ -1270,8 +1270,8 @@ class HttpInterface(BaseInterface):
             @app.post(
                 "/inference_pipelines/{pipeline_id}/pause",
                 response_model=CommandResponse,
-                summary="Pauses the pipeline processing",
-                description="Mutes the VideoSource of Inference Pipeline within the state of ProcessesManager being queried.",
+                summary="[EXPERIMENTAL] Pauses the InferencePipeline",
+                description="[EXPERIMENTAL] Pauses the InferencePipeline",
             )
             @with_route_exceptions
             async def pause(pipeline_id: str) -> CommandResponse:
@@ -1282,8 +1282,8 @@ class HttpInterface(BaseInterface):
             @app.post(
                 "/inference_pipelines/{pipeline_id}/resume",
                 response_model=CommandResponse,
-                summary="Resumes the pipeline processing",
-                description="Resumes the VideoSource of Inference Pipeline within the state of ProcessesManager being queried.",
+                summary="[EXPERIMENTAL] Resumes the InferencePipeline",
+                description="[EXPERIMENTAL] Resumes the InferencePipeline",
             )
             @with_route_exceptions
             async def resume(pipeline_id: str) -> CommandResponse:
@@ -1294,8 +1294,8 @@ class HttpInterface(BaseInterface):
             @app.post(
                 "/inference_pipelines/{pipeline_id}/terminate",
                 response_model=CommandResponse,
-                summary="Terminates the pipeline processing",
-                description="Terminates the VideoSource of Inference Pipeline within the state of ProcessesManager being queried.",
+                summary="[EXPERIMENTAL] Terminates the InferencePipeline",
+                description="[EXPERIMENTAL] Terminates the InferencePipeline",
             )
             @with_route_exceptions
             async def terminate(pipeline_id: str) -> CommandResponse:
@@ -1306,8 +1306,8 @@ class HttpInterface(BaseInterface):
             @app.get(
                 "/inference_pipelines/{pipeline_id}/consume",
                 response_model=ConsumePipelineResponse,
-                summary="Terminates the pipeline processing",
-                description="Terminates the VideoSource of Inference Pipeline within the state of ProcessesManager being queried.",
+                summary="[EXPERIMENTAL] Consumes InferencePipeline result",
+                description="[EXPERIMENTAL] Consumes InferencePipeline result",
             )
             @with_route_exceptions
             async def consume(

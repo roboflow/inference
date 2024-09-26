@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Literal
 
 from pydantic import BaseModel, Field
 
@@ -41,8 +41,16 @@ class CommandType(str, Enum):
     CONSUME_RESULT = "consume_result"
 
 
-class SinkConfiguration(BaseModel):
+class VideoProcessingConfiguration(BaseModel):
+    video_reference: Union[str, int, List[Union[str, int]]]
+
+
+
+class MemorySinkConfiguration(BaseModel):
+    type: Literal["MemorySinkConfiguration"]
     results_buffer_size: int = 64
+    video_source_properties: Optional[Dict[str, float]] = None
+    batch_collection_timeout: Optional[float] = None
 
 
 class InitialisePipelinePayload(BaseModel):
@@ -53,7 +61,7 @@ class InitialisePipelinePayload(BaseModel):
     api_key: Optional[str] = None
     image_input_name: str = "image"
     workflows_parameters: Optional[Dict[str, Any]] = None
-    sink_configuration: SinkConfiguration = SinkConfiguration()
+    sink_configuration: MemorySinkConfiguration = MemorySinkConfiguration()
     max_fps: Optional[Union[float, int]] = None
     source_buffer_filling_strategy: Optional[BufferFillingStrategy] = None
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy] = None
