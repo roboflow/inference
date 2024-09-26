@@ -1,9 +1,9 @@
 from typing import List, Literal, Optional, Type, Union
-from pydantic import ConfigDict, Field
 
 from opencv.fr import FR
 from opencv.fr.compare.schemas import CompareRequest
 from opencv.fr.search.schemas import SearchMode
+from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
