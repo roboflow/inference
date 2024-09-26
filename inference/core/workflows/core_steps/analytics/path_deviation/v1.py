@@ -109,7 +109,6 @@ class PathDeviationAnalyticsBlockV1(WorkflowBlock):
         if video_id not in self._object_paths:
             self._object_paths[video_id] = {}
 
-
         anchor_points = detections.get_anchors_coordinates(anchor=triggering_anchor)
         result_detections = []
         for i, tracker_id in enumerate(detections.tracker_id):
