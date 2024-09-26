@@ -8,9 +8,7 @@ from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
     PathDeviationAnalyticsBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import (
-    ImageParentMetadata,
     VideoMetadata,
-    WorkflowImageData,
 )
 
 
@@ -28,8 +26,8 @@ def test_path_deviation_exact_path():
                     [
                         reference_path[i][0],
                         reference_path[i][1],
-                        reference_path[i][0],
-                        reference_path[i][1],
+                        reference_path[i][0] + 1,
+                        reference_path[i][1] + 1,
                     ]
                 ]
             ),
@@ -62,7 +60,9 @@ def test_path_deviation_exact_path():
             triggering_anchor=sv.Position.CENTER,  # Default
             reference_path=reference_path,
         )
-        frechet_distance = result["frechet_distance"]
+        frechet_distance = result["timed_detections"].detections[0][
+            "frechet_distance"
+        ][0]
         frechet_distances.append(frechet_distance)
 
     # Then
@@ -76,7 +76,6 @@ def test_path_deviation_exact_path():
     # Since the object follows exactly the reference path,
     # the frechet distance should be zero at the final frame.
     assert frechet_distances[-1] == pytest.approx(0.0, abs=1e-6)
-
 
 
 def test_path_deviation_with_deviation():
@@ -129,7 +128,9 @@ def test_path_deviation_with_deviation():
             triggering_anchor=sv.Position.CENTER,  # Default
             reference_path=reference_path,
         )
-        frechet_distance = result["frechet_distance"]
+        frechet_distance = result["timed_detections"].detections[0][
+            "frechet_distance"
+        ][0]
         frechet_distances.append(frechet_distance)
 
     # Then
@@ -182,7 +183,9 @@ def test_path_deviation_multiple_objects():
             triggering_anchor=sv.Position.CENTER,  # Default
             reference_path=reference_path,
         )
-        frechet_distance = result["frechet_distance"]
+        frechet_distance = result["timed_detections"].detections[1][
+            "frechet_distance"
+        ][0]
         frechet_distances.append(frechet_distance)
 
     # Then
@@ -213,7 +216,7 @@ def test_path_deviation_no_tracker_id():
     # When / Then
     with pytest.raises(
         ValueError,
-        match="tracker_id not initialized, LineFollowingAnalyticsBlockV1 requires detections to be tracked",
+        match="tracker_id not initialized, PathDeviationAnalyticsBlockV1 requires detections to be tracked",
     ):
         _ = path_deviation_block.run(
             detections=detections,

@@ -10,7 +10,6 @@ from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    FLOAT_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
@@ -25,7 +24,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-OUTPUT_KEY: str = "frechet_distance"
+OUTPUT_KEY: str = "timed_detections"
+DETECTIONS_PATH_DEVIATION_PARAM: str = "frechet_distance"
 SHORT_DESCRIPTION = "Calculate Fréchet distance of object from reference path"
 LONG_DESCRIPTION = """
 The `PathDeviationAnalyticsBlock` is an analytics block designed to measure the Frechet distance
@@ -71,7 +71,10 @@ class PathDeviationManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name=OUTPUT_KEY,
-                kind=[FLOAT_KIND],
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
             ),
         ]
 
@@ -106,10 +109,11 @@ class PathDeviationAnalyticsBlockV1(WorkflowBlock):
         if video_id not in self._object_paths:
             self._object_paths[video_id] = {}
 
-        max_frechet_distance = 0.0
 
         anchor_points = detections.get_anchors_coordinates(anchor=triggering_anchor)
+        result_detections = []
         for i, tracker_id in enumerate(detections.tracker_id):
+            detection = detections[i]
             anchor_point = anchor_points[i]
             if tracker_id not in self._object_paths[video_id]:
                 self._object_paths[video_id][tracker_id] = []
@@ -119,9 +123,12 @@ class PathDeviationAnalyticsBlockV1(WorkflowBlock):
             ref_path = np.array(reference_path)
 
             frechet_distance = self._calculate_frechet_distance(object_path, ref_path)
-            max_frechet_distance = max(max_frechet_distance, frechet_distance)
+            detection[DETECTIONS_PATH_DEVIATION_PARAM] = np.array(
+                [frechet_distance], dtype=np.float64
+            )
+            result_detections.append(detection)
 
-        return {OUTPUT_KEY: max_frechet_distance}
+        return {OUTPUT_KEY: sv.Detections.merge(result_detections)}
 
     def _calculate_frechet_distance(
         self, path1: np.ndarray, path2: np.ndarray
