@@ -90,45 +90,6 @@ class LineFollowingAnalyticsBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return LineFollowingManifest
 
-    def _calculate_frechet_distance(
-        self, path1: np.ndarray, path2: np.ndarray
-    ) -> float:
-        def euclidean_distance(point1, point2):
-            return np.sqrt(np.sum((point1 - point2) ** 2))
-
-        def compute_distance(dist_matrix, i, j, path1, path2):
-            if dist_matrix[i, j] > -1:
-                return dist_matrix[i, j]
-            elif i == 0 and j == 0:
-                dist_matrix[i, j] = euclidean_distance(path1[0], path2[0])
-            elif i > 0 and j == 0:
-                dist_matrix[i, j] = max(
-                    compute_distance(dist_matrix, i - 1, 0, path1, path2),
-                    euclidean_distance(path1[i], path2[0]),
-                )
-            elif i == 0 and j > 0:
-                dist_matrix[i, j] = max(
-                    compute_distance(dist_matrix, 0, j - 1, path1, path2),
-                    euclidean_distance(path1[0], path2[j]),
-                )
-            elif i > 0 and j > 0:
-                dist_matrix[i, j] = max(
-                    min(
-                        compute_distance(dist_matrix, i - 1, j, path1, path2),
-                        compute_distance(dist_matrix, i - 1, j - 1, path1, path2),
-                        compute_distance(dist_matrix, i, j - 1, path1, path2),
-                    ),
-                    euclidean_distance(path1[i], path2[j]),
-                )
-            else:
-                dist_matrix[i, j] = float("inf")
-            return dist_matrix[i, j]
-
-        dist_matrix = np.ones((len(path1), len(path2))) * -1
-        return compute_distance(
-            dist_matrix, len(path1) - 1, len(path2) - 1, path1, path2
-        )
-
     def run(
         self,
         detections: sv.Detections,
@@ -147,8 +108,9 @@ class LineFollowingAnalyticsBlockV1(WorkflowBlock):
 
         max_frechet_distance = 0.0
 
+        anchor_points = detections.get_anchors_coordinates(anchor=triggering_anchor)
         for i, tracker_id in enumerate(detections.tracker_id):
-            anchor_point = detections.get_anchors_coordinates(anchor=triggering_anchor)
+            anchor_point = anchor_points[i]
             if tracker_id not in self._object_paths[video_id]:
                 self._object_paths[video_id][tracker_id] = []
             self._object_paths[video_id][tracker_id].append(anchor_point)
@@ -160,3 +122,49 @@ class LineFollowingAnalyticsBlockV1(WorkflowBlock):
             max_frechet_distance = max(max_frechet_distance, frechet_distance)
 
         return {OUTPUT_KEY: max_frechet_distance}
+
+    def _calculate_frechet_distance(
+        self, path1: np.ndarray, path2: np.ndarray
+    ) -> float:
+        dist_matrix = np.ones((len(path1), len(path2))) * -1
+        return self._compute_distance(
+            dist_matrix, len(path1) - 1, len(path2) - 1, path1, path2
+        )
+
+    def _compute_distance(
+        self,
+        dist_matrix: np.ndarray,
+        i: int,
+        j: int,
+        path1: np.ndarray,
+        path2: np.ndarray,
+    ) -> float:
+        if dist_matrix[i, j] > -1:
+            return dist_matrix[i, j]
+        elif i == 0 and j == 0:
+            dist_matrix[i, j] = self._euclidean_distance(path1[0], path2[0])
+        elif i > 0 and j == 0:
+            dist_matrix[i, j] = max(
+                self._compute_distance(dist_matrix, i - 1, 0, path1, path2),
+                self._euclidean_distance(path1[i], path2[0]),
+            )
+        elif i == 0 and j > 0:
+            dist_matrix[i, j] = max(
+                self._compute_distance(dist_matrix, 0, j - 1, path1, path2),
+                self._euclidean_distance(path1[0], path2[j]),
+            )
+        elif i > 0 and j > 0:
+            dist_matrix[i, j] = max(
+                min(
+                    self._compute_distance(dist_matrix, i - 1, j, path1, path2),
+                    self._compute_distance(dist_matrix, i - 1, j - 1, path1, path2),
+                    self._compute_distance(dist_matrix, i, j - 1, path1, path2),
+                ),
+                self._euclidean_distance(path1[i], path2[j]),
+            )
+        else:
+            dist_matrix[i, j] = float("inf")
+        return dist_matrix[i, j]
+
+    def _euclidean_distance(self, point1: np.ndarray, point2: np.ndarray) -> float:
+        return np.sqrt(np.sum((point1 - point2) ** 2))
