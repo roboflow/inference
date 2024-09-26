@@ -172,7 +172,7 @@ def apply_resize_image(
     np_image: np.ndarray, width: Optional[int], height: Optional[int]
 ) -> np.ndarray:
     if width is None and height is None:
-        return np_image
+        return np_image.copy()
 
     current_height, current_width = np_image.shape[:2]
 
@@ -189,24 +189,21 @@ def apply_resize_image(
 
 def apply_rotate_image(np_image: np.ndarray, rotation_degrees: Optional[int]):
     if rotation_degrees is None or rotation_degrees == 0:
-        return np_image
-    else:
-        existing_height, existing_width = np_image.shape[:2]
-        center = (existing_width // 2, existing_height // 2)  # Corrected order
-        rotation_matrix = cv2.getRotationMatrix2D(center, rotation_degrees, 1.0)
+        return np_image.copy()
+    existing_height, existing_width = np_image.shape[:2]
+    center = (existing_width // 2, existing_height // 2)  # Corrected order
+    rotation_matrix = cv2.getRotationMatrix2D(center, rotation_degrees, 1.0)
 
-        cos = np.abs(rotation_matrix[0, 0])
-        sin = np.abs(rotation_matrix[0, 1])
-        new_width = int((existing_height * sin) + (existing_width * cos))
-        new_height = int((existing_height * cos) + (existing_width * sin))
+    cos = np.abs(rotation_matrix[0, 0])
+    sin = np.abs(rotation_matrix[0, 1])
+    new_width = int((existing_height * sin) + (existing_width * cos))
+    new_height = int((existing_height * cos) + (existing_width * sin))
 
-        rotation_matrix[0, 2] += (new_width / 2) - center[0]
-        rotation_matrix[1, 2] += (new_height / 2) - center[1]
+    rotation_matrix[0, 2] += (new_width / 2) - center[0]
+    rotation_matrix[1, 2] += (new_height / 2) - center[1]
 
-        rotated_image = cv2.warpAffine(
-            np_image, rotation_matrix, (new_width, new_height)
-        )
-        return rotated_image
+    rotated_image = cv2.warpAffine(np_image, rotation_matrix, (new_width, new_height))
+    return rotated_image
 
 
 def apply_flip_image(np_image: np.ndarray, flip_type: Optional[str]):
