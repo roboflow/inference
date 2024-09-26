@@ -27,10 +27,10 @@ def test_line_following_exact_path():
             xyxy=np.array(
                 [
                     [
-                        reference_path[i][0] - 1,
-                        reference_path[i][1] - 1,
-                        reference_path[i][0] + 1,
-                        reference_path[i][1] + 1,
+                        reference_path[i][0],
+                        reference_path[i][1],
+                        reference_path[i][0],
+                        reference_path[i][1],
                     ]
                 ]
             ),
