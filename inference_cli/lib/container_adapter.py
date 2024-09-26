@@ -1,3 +1,4 @@
+import os
 import subprocess
 from typing import Dict, List, Optional, Union
 
@@ -84,6 +85,9 @@ def find_running_inference_containers() -> List[Container]:
 
 
 def get_image() -> str:
+    jetpack_version = os.getenv("JETSON_JETPACK")
+    if jetpack_version:
+        return _get_jetpack_image(jetpack_version=jetpack_version)
     try:
         subprocess.check_output("nvidia-smi")
         print("GPU detected. Using a GPU image.")
@@ -91,6 +95,16 @@ def get_image() -> str:
     except:
         print("No GPU detected. Using a CPU image.")
         return "roboflow/roboflow-inference-server-cpu:latest"
+
+
+def _get_jetpack_image(jetpack_version: str) -> str:
+    if jetpack_version.startswith("4.5"):
+        return "roboflow/roboflow-inference-server-jetson-4.5.0:latest"
+    if jetpack_version.startswith("4.6"):
+        return "roboflow/roboflow-inference-server-jetson-4.6.1:latest"
+    if jetpack_version.startswith("5.1"):
+        return "roboflow/roboflow-inference-server-jetson-5.1.1:latest"
+    raise RuntimeError(f"Jetpack version: {jetpack_version} not supported")
 
 
 def start_inference_container(
@@ -117,11 +131,15 @@ def start_inference_container(
 
     device_requests = None
     privileged = False
+    docker_run_kwargs = {}
     if "gpu" in image:
         privileged = True
         device_requests = [
             docker.types.DeviceRequest(device_ids=["all"], capabilities=[["gpu"]])
         ]
+    if "jetson" in image:
+        privileged = True
+        docker_run_kwargs = {"runtime": "nvidia"}
     environment = prepare_container_environment(
         port=port,
         project=project,
@@ -146,6 +164,7 @@ def start_inference_container(
         ports=ports,
         device_requests=device_requests,
         environment=environment,
+        **docker_run_kwargs,
     )
 
 
