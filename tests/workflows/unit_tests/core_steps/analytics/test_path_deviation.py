@@ -5,7 +5,7 @@ import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
-    LineFollowingAnalyticsBlockV1,
+    PathDeviationAnalyticsBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -50,7 +50,7 @@ def test_path_deviation_exact_path():
         metadata_list.append(metadata)
 
     # Initialize the block
-    path_deviation_block = LineFollowingAnalyticsBlockV1()
+    path_deviation_block = PathDeviationAnalyticsBlockV1()
 
     # Run the block for each frame and collect frechet_distance
     frechet_distances = []
@@ -117,7 +117,7 @@ def test_path_deviation_with_deviation():
         metadata_list.append(metadata)
 
     # Initialize the block
-    path_deviation_block = LineFollowingAnalyticsBlockV1()
+    path_deviation_block = PathDeviationAnalyticsBlockV1()
 
     # Run the block for each frame and collect frechet_distance
     frechet_distances = []
@@ -170,7 +170,7 @@ def test_path_deviation_multiple_objects():
         metadata_list.append(metadata)
 
     # Initialize the block
-    path_deviation_block = LineFollowingAnalyticsBlockV1()
+    path_deviation_block = PathDeviationAnalyticsBlockV1()
 
     # Run the block for each frame and collect frechet_distance
     frechet_distances = []
@@ -208,7 +208,7 @@ def test_path_deviation_no_tracker_id():
         ),
         comes_from_video_file=True,
     )
-    path_deviation_block = LineFollowingAnalyticsBlockV1()
+    path_deviation_block = PathDeviationAnalyticsBlockV1()
 
     # When / Then
     with pytest.raises(
@@ -239,7 +239,7 @@ def test_path_deviation_invalid_reference_path():
         ),
         comes_from_video_file=True,
     )
-    path_deviation_block = LineFollowingAnalyticsBlockV1()
+    path_deviation_block = PathDeviationAnalyticsBlockV1()
 
     # When / Then
     with pytest.raises(TypeError):

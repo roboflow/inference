@@ -28,16 +28,16 @@ from inference.core.workflows.prototypes.block import (
 OUTPUT_KEY: str = "frechet_distance"
 SHORT_DESCRIPTION = "Calculate Fréchet distance of object from reference path"
 LONG_DESCRIPTION = """
-The `LineFollowingAnalyticsBlock` is an analytics block designed to measure the Frechet distance
+The `PathDeviationAnalyticsBlock` is an analytics block designed to measure the Frechet distance
 of tracked objects from a user-defined reference path. The block requires detections to be tracked
 (i.e. each object must have a unique tracker_id assigned, which persists between frames).
 """
 
 
-class LineFollowingManifest(WorkflowBlockManifest):
+class PathDeviationManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Line following",
+            "name": "Path deviation",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -80,7 +80,7 @@ class LineFollowingManifest(WorkflowBlockManifest):
         return ">=1.0.0,<2.0.0"
 
 
-class LineFollowingAnalyticsBlockV1(WorkflowBlock):
+class PathDeviationAnalyticsBlockV1(WorkflowBlock):
     def __init__(self):
         self._object_paths: Dict[
             str, Dict[Union[int, str], List[Tuple[float, float]]]
@@ -88,7 +88,7 @@ class LineFollowingAnalyticsBlockV1(WorkflowBlock):
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return LineFollowingManifest
+        return PathDeviationManifest
 
     def run(
         self,

@@ -10,7 +10,7 @@ from inference.core.registries.roboflow import (
     RoboflowModelRegistry,
 )
 from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import OUTPUT_KEY as BYTE_TRACKER_OUTPUT_KEY
-from inference.core.workflows.core_steps.analytics.path_deviation.v1 import OUTPUT_KEY as LINE_FOLLOWING_OUTPUT
+from inference.core.workflows.core_steps.analytics.path_deviation.v1 import OUTPUT_KEY as PATH_DEVIATION_OUTPUT
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 import supervision as sv
 
@@ -51,7 +51,7 @@ WORKFLOW = {
         {
             "type": "JsonField",
             "name": "predictions",
-            "selector": f"$steps.path_deviation.{LINE_FOLLOWING_OUTPUT}",
+            "selector": f"$steps.path_deviation.{PATH_DEVIATION_OUTPUT}",
         }
     ],
 }
