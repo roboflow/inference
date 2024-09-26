@@ -28,6 +28,7 @@ based on the similarity of the faces in the images. A score above 0.7 signifies 
 that the photos are of the same person.
 """
 
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
@@ -44,12 +45,12 @@ class BlockManifest(WorkflowBlockManifest):
     image_1: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         title="Image 1",
         description="The first image to compare against the second image",
-        examples=["$inputs.image", "$steps.cropping.crops"]
+        examples=["$inputs.image", "$steps.cropping.crops"],
     )
     image_2: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
         title="Image 2",
         description="The second image to compare against the first image",
-        examples=["$inputs.image", "$steps.cropping.crops"]
+        examples=["$inputs.image", "$steps.cropping.crops"],
     )
     search_mode: Union[
         Literal[
@@ -80,12 +81,14 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["xxxxxx", "$inputs.seventh_sense_api_key"],
         private=True,
     )
-    
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="score", kind=[FLOAT_ZERO_TO_ONE_KIND], description="Similarity score between 0 and 1"
+                name="score",
+                kind=[FLOAT_ZERO_TO_ONE_KIND],
+                description="Similarity score between 0 and 1",
             ),
         ]
 
@@ -106,13 +109,13 @@ class FaceComparisonBlockV1(WorkflowBlock):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
-    
+
     def getSdk(self, backend_url, api_key):
         key = f"{backend_url}_{api_key}"
 
         if key not in self.sdkCache:
             self.sdkCache[key] = FR(backend_url, api_key)
-        
+
         return self.sdkCache[key]
 
     def run(
@@ -122,15 +125,16 @@ class FaceComparisonBlockV1(WorkflowBlock):
         search_mode: str,
         backend_url: str,
         api_key: str,
-
     ) -> BlockResult:
         sdk = self.getSdk(backend_url, api_key)
 
         compare_request = CompareRequest(
             [image_1.numpy_image],
             [image_2.numpy_image],
-            search_mode=SearchMode.FAST if search_mode == "FAST" else SearchMode.ACCURATE
+            search_mode=(
+                SearchMode.FAST if search_mode == "FAST" else SearchMode.ACCURATE
+            ),
         )
         score = sdk.compare.compare_image_sets(compare_request)
 
-        return { "score": score }
+        return {"score": score}
