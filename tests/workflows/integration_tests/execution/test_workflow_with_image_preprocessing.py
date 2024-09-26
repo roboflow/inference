@@ -305,7 +305,7 @@ def test_flip_image_workflow_vertical_flip(
         original_image.shape == flipped_image.shape
     ), "Image dimensions should remain the same after flipping"
 
-    # Check a few pixels to ensure they've moved to the opposite side vertically
+    # Check a few pixels to ensure they've moved to the opposite side (vertically)
     height, width = original_image.shape[:2]
     for x in [0, width // 4, width // 2]:
         for y in [0, height // 2, height - 1]:
@@ -353,7 +353,7 @@ def test_flip_image_workflow_horizontal_flip(
         original_image.shape == flipped_image.shape
     ), "Image dimensions should remain the same after flipping"
 
-    # Check a few pixels to ensure they've moved to the opposite side horizontally
+    # Check a few pixels to ensure they've moved to the opposite side (horizontally)
     height, width = original_image.shape[:2]
     for y in [0, height // 2, height - 1]:
         for x in [0, width // 4, width // 2]:
