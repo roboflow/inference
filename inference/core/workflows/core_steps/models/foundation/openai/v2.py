@@ -33,16 +33,17 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SUPPORTED_TASK_TYPES = {
+SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
     "ocr",
+    "structured-answering",
+    "classification",
+    "multi-label-classification",
     "visual-question-answering",
     "caption",
     "detailed-caption",
-    "classification",
-    "multi-label-classification",
-    "structured-answering",
-}
+]
+SUPPORTED_TASK_TYPES = set(SUPPORTED_TASK_TYPES_LIST)
 
 RELEVANT_TASKS_METADATA = {
     k: v for k, v in VLM_TASKS_METADATA.items() if k in SUPPORTED_TASK_TYPES
@@ -64,7 +65,7 @@ You need to provide your OpenAI API key to use the GPT-4 with Vision model.
 """
 
 
-TaskType = Literal[tuple(SUPPORTED_TASK_TYPES)]
+TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 
 TASKS_REQUIRING_PROMPT = {
     "unconstrained",

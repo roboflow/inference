@@ -40,23 +40,46 @@ K = TypeVar("K")
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
 
-
+SUPPORTED_TASK_TYPES_LIST = [
+    {
+        "task_type": "open-vocabulary-object-detection",
+        "florence_task": "<OPEN_VOCABULARY_DETECTION>",
+    },
+    {"task_type": "ocr", "florence_task": "<OCR>"},
+    {"task_type": "ocr-with-text-detection", "florence_task": "<OCR_WITH_REGION>"},
+    {"task_type": "caption", "florence_task": "<CAPTION>"},
+    {"task_type": "detailed-caption", "florence_task": "<DETAILED_CAPTION>"},
+    {"task_type": "more-detailed-caption", "florence_task": "<MORE_DETAILED_CAPTION>"},
+    {
+        "task_type": "object-detection-and-caption",
+        "florence_task": "<DENSE_REGION_CAPTION>",
+    },
+    {"task_type": "object-detection", "florence_task": "<OD>"},
+    {
+        "task_type": "phrase-grounded-object-detection",
+        "florence_task": "<CAPTION_TO_PHRASE_GROUNDING>",
+    },
+    {
+        "task_type": "phrase-grounded-instance-segmentation",
+        "florence_task": "<REFERRING_EXPRESSION_SEGMENTATION>",
+    },
+    {
+        "task_type": "detection-grounded-instance-segmentation",
+        "florence_task": "<REGION_TO_SEGMENTATION>",
+    },
+    {
+        "task_type": "detection-grounded-classification",
+        "florence_task": "<REGION_TO_CATEGORY>",
+    },
+    {
+        "task_type": "detection-grounded-caption",
+        "florence_task": "<REGION_TO_DESCRIPTION>",
+    },
+    {"task_type": "detection-grounded-ocr", "florence_task": "<REGION_TO_OCR>"},
+    {"task_type": "region-proposal", "florence_task": "<REGION_PROPOSAL>"},
+]
 TASK_TYPE_TO_FLORENCE_TASK = {
-    "ocr": "<OCR>",
-    "ocr-with-text-detection": "<OCR_WITH_REGION>",
-    "caption": "<CAPTION>",
-    "detailed-caption": "<DETAILED_CAPTION>",
-    "more-detailed-caption": "<MORE_DETAILED_CAPTION>",
-    "object-detection-and-caption": "<DENSE_REGION_CAPTION>",
-    "object-detection": "<OD>",
-    "open-vocabulary-object-detection": "<OPEN_VOCABULARY_DETECTION>",
-    "phrase-grounded-object-detection": "<CAPTION_TO_PHRASE_GROUNDING>",
-    "phrase-grounded-instance-segmentation": "<REFERRING_EXPRESSION_SEGMENTATION>",
-    "detection-grounded-instance-segmentation": "<REGION_TO_SEGMENTATION>",
-    "detection-grounded-classification": "<REGION_TO_CATEGORY>",
-    "detection-grounded-caption": "<REGION_TO_DESCRIPTION>",
-    "detection-grounded-ocr": "<REGION_TO_OCR>",
-    "region-proposal": "<REGION_PROPOSAL>",
+    task["task_type"]: task["florence_task"] for task in SUPPORTED_TASK_TYPES_LIST
 }
 RELEVANT_TASKS_METADATA = {
     k: v for k, v in VLM_TASKS_METADATA.items() if k in TASK_TYPE_TO_FLORENCE_TASK
@@ -90,7 +113,8 @@ how to utilize their outputs within the Workflows ecosystem:
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 """
 
-TaskType = Literal[tuple(TASK_TYPE_TO_FLORENCE_TASK.keys())]
+
+TaskType = Literal[tuple([task["task_type"] for task in SUPPORTED_TASK_TYPES_LIST])]
 GroundingSelectionMode = Literal[
     "first",
     "last",

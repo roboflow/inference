@@ -1,15 +1,15 @@
 VLM_TASKS_METADATA = {
     "unconstrained": {
         "name": "Open Prompt",
-        "description": "Let you use arbitrary prompt",
+        "description": "Use any prompt to generate a raw response",
     },
     "ocr": {
         "name": "Text Recognition (OCR)",
-        "description": "Model recognises text in the image",
+        "description": "Model recognizes text in the image",
     },
     "ocr-with-text-detection": {
         "name": "Text Detection & Recognition (OCR)",
-        "description": "Model recognises text in the image",
+        "description": "Model detects text regions in the image, and then performs OCR on each detected region",
     },
     "visual-question-answering": {
         "name": "Visual Question Answering",
@@ -17,60 +17,59 @@ VLM_TASKS_METADATA = {
     },
     "caption": {
         "name": "Captioning (short)",
-        "description": "Model describes the image",
+        "description": "Model provides a short description of the image",
     },
     "detailed-caption": {
         "name": "Captioning",
-        "description": "Model provides long description of the image",
+        "description": "Model provides a long description of the image",
     },
     "more-detailed-caption": {
         "name": "Captioning (long)",
-        "description": "Model provides very long description of the image",
+        "description": "Model provides a very long description of the image",
     },
     "classification": {
-        "name": "Multi-Class Classification",
-        "description": "Model classifies the image content selecting one of many classes",
+        "name": "Single-Label Classification",
+        "description": "Model classifies the image content as one of the provided classes",
     },
     "multi-label-classification": {
         "name": "Multi-Label Classification",
-        "description": "Model classifies the image content selecting potentially multiple classes",
+        "description": "Model classifies the image content as one or more of the provided classes",
     },
     "object-detection": {
-        "name": "Detection",
-        "description": "Model detect bounding boxes over for set of classes",
+        "name": "Unprompted Object Detection",
+        "description": "Model detects and returns the bounding boxes for prominent objects in the image",
     },
     "open-vocabulary-object-detection": {
-        "name": "Open Vocabulary Detection",
-        "description": "Model detect bounding boxes for arbitrary classes",
+        "name": "Object Detection",
+        "description": "Model detects and returns the bounding boxes for the provided classes",
     },
     "object-detection-and-caption": {
         "name": "Detection & Captioning",
-        "description": "Model detects Regions of Interest and caption them",
+        "description": "Model detects prominent objects and captions them",
     },
     "phrase-grounded-object-detection": {
-        "name": "Phase Grounded Detection",
-        "description": "Based on textual prompt model detect objects that are suggested",
+        "name": "Prompted Object Detection",
+        "description": "Based on the textual prompt, model detects objects matching the descriptions",
     },
     "phrase-grounded-instance-segmentation": {
-        "name": "Phase Grounded Segmentation",
-        "description": "Based on textual prompt model performs instance segmentation of objects that are suggested",
+        "name": "Prompted Instance Segmentation",
+        "description": "Based on the textual prompt, model segments objects matching the descriptions",
     },
     "detection-grounded-instance-segmentation": {
-        "name": "Segmentation of RoI",
-        "description": "Model performs instance segmentation within provided Region of Interest (Bounding Box)",
+        "name": "Segment Bounding Box",
+        "description": "Model segments the object in the provided bounding box into a polygon",
     },
     "detection-grounded-classification": {
-        "name": "Classification of RoI",
-        "description": "Model performs instance classification of provided Region of Interest (Bounding Box)",
+        "name": "Classification of Bounding Box",
+        "description": "Model classifies the object inside the provided bounding box",
     },
     "detection-grounded-caption": {
-        "name": "Captioning of RoI",
-        "description": "Model performs captioning of provided Region of Interest (Bounding Box)",
+        "name": "Captioning of Bounding Box",
+        "description": "Model captions the object in the provided bounding box",
     },
     "detection-grounded-ocr": {
-        "name": "Text Recognition (OCR) of RoI",
-        "description": "Model performs OCR of provided Region of Interest (Bounding Box) to "
-        "recognise text within region",
+        "name": "Text Recognition (OCR) for Bounding Box",
+        "description": "Model performs OCR on the text inside the provided bounding box",
     },
     "region-proposal": {
         "name": "Regions of Interest proposal",
@@ -78,6 +77,6 @@ VLM_TASKS_METADATA = {
     },
     "structured-answering": {
         "name": "Structured Output Generation",
-        "description": "Model produces JSON structure that you specify",
+        "description": "Model returns a JSON response with the specified fields",
     },
 }

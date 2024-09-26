@@ -38,17 +38,19 @@ GOOGLE_API_KEY_PATTERN = re.compile(r"key=(.[^&]*)")
 GOOGLE_API_KEY_VALUE_GROUP = 1
 MIN_KEY_LENGTH_TO_REVEAL_PREFIX = 8
 
-SUPPORTED_TASK_TYPES = {
+SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
     "ocr",
+    "structured-answering",
+    "classification",
+    "multi-label-classification",
     "visual-question-answering",
     "caption",
     "detailed-caption",
-    "classification",
-    "multi-label-classification",
-    "structured-answering",
     "object-detection",
-}
+]
+SUPPORTED_TASK_TYPES = set(SUPPORTED_TASK_TYPES_LIST)
+
 RELEVANT_TASKS_METADATA = {
     k: v for k, v in VLM_TASKS_METADATA.items() if k in SUPPORTED_TASK_TYPES
 }
@@ -71,7 +73,7 @@ This block makes use of `/v1beta` API of Google Gemini model - the implementatio
 in the future, without guarantee of backward compatibility.
 """
 
-TaskType = Literal[tuple(SUPPORTED_TASK_TYPES)]
+TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 
 TASKS_REQUIRING_PROMPT = {
     "unconstrained",
