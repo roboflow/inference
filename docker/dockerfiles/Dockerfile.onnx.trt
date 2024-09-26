@@ -2,7 +2,6 @@ FROM nvcr.io/nvidia/tensorrt:22.12-py3
 WORKDIR /app
 
 RUN apt-get update -y && apt-get install -y \
-    ffmpeg \
     libsm6 \
     libxext6 \
     libopencv-dev \

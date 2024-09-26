@@ -204,7 +204,7 @@ Visit our [documentation](/) to explore comprehensive guides, detailed API refer
 
 ## © license
 
-The Roboflow Inference code is distributed under the [Apache 2.0](https://github.com/roboflow/inference/blob/master/LICENSE.md) license. However, each supported model is subject to its licensing. Detailed information on each model's license can be found [here](https://inference.roboflow.com/quickstart/licensing/#model-code-licenses).
+The Roboflow Inference code is distributed under the [Apache 2.0](https://github.com/roboflow/inference/blob/master/LICENSE.md) license. However, each supported model is subject to its licensing. Detailed information on each model's license can be found [here](https://roboflow.com/licensing).
 
 
 ## ⚡️ extras
@@ -240,6 +240,11 @@ Below you can find list of extras available for `inference` and `inference-gpu`
 <tr>
   <td><code>yolo-world</code></td>
   <td><a href="/foundation/yolo_world/">Yolo-World model</a></td>
+  <td><code>N/A</code></td>
+</tr>
+<tr>
+  <td><code>transformers</code></td>
+  <td><code>transformers</code> based models, like <a href="/foundation/florence2/">Florence-2</a></td>
   <td><code>N/A</code></td>
 </tr>
 </table>
