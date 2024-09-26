@@ -103,7 +103,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             }
         },
     )
-    flip_type: Union[str, WorkflowParameterSelector(kind=[STRING_KIND]), Literal["vertical", "horizontal", "both"]] = Field(  # type: ignore
+    flip_type: Union[WorkflowParameterSelector(kind=[STRING_KIND]), Literal["vertical", "horizontal", "both"]] = Field(  # type: ignore
         title="Flip Type",
         description="Type of flip to be applied to the image.",
         default="vertical",
