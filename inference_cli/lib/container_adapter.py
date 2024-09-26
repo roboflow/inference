@@ -3,6 +3,7 @@ import subprocess
 from typing import Dict, List, Optional, Union
 
 import typer
+from docker.errors import ImageNotFound
 from docker.models.containers import Container
 from rich.progress import Progress, TaskID
 
@@ -118,6 +119,7 @@ def start_inference_container(
     api_key: Optional[str] = None,
     env_file_path: Optional[str] = None,
     development: bool = False,
+    use_local_images: bool = False,
 ) -> None:
     containers = find_running_inference_containers()
     if len(containers) > 0:
@@ -150,7 +152,7 @@ def start_inference_container(
         env_file_path=env_file_path,
         development=development,
     )
-    pull_image(image)
+    pull_image(image, use_local_images=use_local_images)
     print(f"Starting inference server container...")
     ports = {"9001": port}
     if development:
@@ -232,10 +234,16 @@ Image: {image}
     print("No inference server container running.")
 
 
-def pull_image(image: str) -> None:
+def pull_image(image: str, use_local_images: bool = False) -> None:
     docker_client = docker.from_env()
-    print(f"Pulling image: {image}")
     progress_tasks = {}
+    try:
+        _ = docker_client.images.get(image)
+        if use_local_images:
+            print(f"Using locally cached image: {use_local_images}")
+    except ImageNotFound:
+        pass
+    print(f"Pulling image: {image}")
     with Progress() as progress:
         logs_stream = docker_client.api.pull(image, stream=True, decode=True)
         for line in logs_stream:

@@ -75,6 +75,13 @@ def start(
             "builds of inference server)",
         ),
     ] = None,
+    use_local_images: Annotated[
+        bool,
+        typer.Option(
+            "--use-local-images/--not-use-local-images",
+            help="Flag to allow using local images (if set False image is always attempted to be pulled)",
+        ),
+    ] = False,
 ) -> None:
 
     try:
@@ -91,6 +98,7 @@ def start(
             env_file_path=env_file_path,
             development=development,
             api_key=api_key,
+            use_local_images=use_local_images,
         )
     except Exception as container_error:
         typer.echo(container_error)
