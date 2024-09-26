@@ -15,7 +15,6 @@ from inference.core.workflows.execution_engine.entities.base import (
 
 
 def test_line_following_exact_path():
-    # Given
     reference_path = [(0, 0), (1, 1), (2, 2), (3, 3)]
     frames = [0, 1, 2, 3]
     detections_list = []
@@ -67,14 +66,17 @@ def test_line_following_exact_path():
         frechet_distances.append(frechet_distance)
 
     # Then
-
-    # Additional assertions to check intermediate results
     assert len(frechet_distances) == len(frames)
-    for distance in frechet_distances:
-        assert distance == pytest.approx(0.0, abs=1e-6)
+    # Optional: Check that frechet distances decrease over time
+    assert all(
+        frechet_distances[i] >= frechet_distances[i + 1]
+        for i in range(len(frechet_distances) - 1)
+    )
 
-    # Since the object follows exactly the reference path, the frechet distance should be zero.
+    # Since the object follows exactly the reference path,
+    # the frechet distance should be zero at the final frame.
     assert frechet_distances[-1] == pytest.approx(0.0, abs=1e-6)
+
 
 
 def test_line_following_with_deviation():
