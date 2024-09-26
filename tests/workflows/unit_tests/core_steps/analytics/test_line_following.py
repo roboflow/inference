@@ -60,7 +60,7 @@ def test_line_following_exact_path():
         result = line_following_block.run(
             detections=detections_list[i],
             metadata=metadata_list[i],
-            triggering_anchor="CENTER",  # Default
+            triggering_anchor=sv.Position.CENTER,  # Default
             reference_path=reference_path,
         )
         frechet_distance = result["frechet_distance"]
@@ -118,7 +118,7 @@ def test_line_following_with_deviation():
         result = line_following_block.run(
             detections=detections_list[i],
             metadata=metadata_list[i],
-            triggering_anchor="CENTER",  # Default
+            triggering_anchor=sv.Position.CENTER,  # Default
             reference_path=reference_path,
         )
         frechet_distance = result["frechet_distance"]
@@ -171,7 +171,7 @@ def test_line_following_multiple_objects():
         result = line_following_block.run(
             detections=detections_list[i],
             metadata=metadata_list[i],
-            triggering_anchor="CENTER",  # Default
+            triggering_anchor=sv.Position.CENTER,  # Default
             reference_path=reference_path,
         )
         frechet_distance = result["frechet_distance"]
@@ -210,7 +210,7 @@ def test_line_following_no_tracker_id():
         _ = line_following_block.run(
             detections=detections,
             metadata=metadata,
-            triggering_anchor="CENTER",
+            triggering_anchor=sv.Position.CENTER,
             reference_path=reference_path,
         )
 
@@ -238,6 +238,6 @@ def test_line_following_invalid_reference_path():
         _ = line_following_block.run(
             detections=detections,
             metadata=metadata,
-            triggering_anchor="CENTER",
+            triggering_anchor=sv.Position.CENTER,
             reference_path=reference_path,
         )
