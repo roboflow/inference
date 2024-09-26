@@ -11,6 +11,7 @@ from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_RE
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
+from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -32,44 +33,39 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-LONG_DESCRIPTION = """
+SUPPORTED_TASK_TYPES_LIST = [
+    "unconstrained",
+    "ocr",
+    "structured-answering",
+    "classification",
+    "multi-label-classification",
+    "visual-question-answering",
+    "caption",
+    "detailed-caption",
+]
+SUPPORTED_TASK_TYPES = set(SUPPORTED_TASK_TYPES_LIST)
+
+RELEVANT_TASKS_METADATA = {
+    k: v for k, v in VLM_TASKS_METADATA.items() if k in SUPPORTED_TASK_TYPES
+}
+RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
+    f"* **{v['name']}** (`{k}`) - {v['description']}"
+    for k, v in RELEVANT_TASKS_METADATA.items()
+)
+
+
+LONG_DESCRIPTION = f"""
 Ask a question to OpenAI's GPT-4 with Vision model.
 
 You can specify arbitrary text prompts or predefined ones, the block supports the following types of prompt:
 
-- `unconstrained` - any arbitrary prompt you like 
-
-- `ocr`- predefined prompt to recognize text from image
-
-- `visual-question-answering` - your prompt is supposed to provide question and will be 
-wrapped into structure that is suited for VQA task
-
-- `caption` - predefined prompt to generate short caption of the image
-
-- `detailed-caption` - predefined prompt to generate elaborated caption of the image
-
-- `classification` - predefined prompt to generate multi-class classification output (that can be parsed
-with `VLM as Classifier` block)
-
-- `multi-label-classification` - predefined prompt to generate multi-label classification output (that 
-can be parsed with `VLM as Classifier` block)
-
-- `structured-answering` - your input defines expected JSON output fields that can be parsed with `JSON Parser`
-block. 
+{RELEVANT_TASKS_DOCS_DESCRIPTION}
 
 You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
 """
 
-TaskType = Literal[
-    "unconstrained",
-    "ocr",
-    "visual-question-answering",
-    "caption",
-    "detailed-caption",
-    "classification",
-    "multi-label-classification",
-    "structured-answering",
-]
+
+TaskType = Literal[tuple(SUPPORTED_TASK_TYPES_LIST)]
 
 TASKS_REQUIRING_PROMPT = {
     "unconstrained",
@@ -96,12 +92,24 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM", "VLM", "ChatGPT", "GPT", "OpenAI"],
+            "is_vlm_block": True,
+            "task_type_property": "task_type",
         }
     )
     type: Literal["roboflow_core/open_ai@v2"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     task_type: TaskType = Field(
-        description="Task type to be performed by model. Value determines required parameters and output response."
+        default="unconstrained",
+        description="Task type to be performed by model. Value determines required parameters and output response.",
+        json_schema_extra={
+            "values_metadata": RELEVANT_TASKS_METADATA,
+            "recommended_parsers": {
+                "structured-answering": "roboflow_core/json_parser@v1",
+                "classification": "roboflow_core/vlm_as_classifier@v1",
+                "multi-label-classification": "roboflow_core/vlm_as_classifier@v1",
+            },
+            "always_visible": True,
+        },
     )
     prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
         default=None,
