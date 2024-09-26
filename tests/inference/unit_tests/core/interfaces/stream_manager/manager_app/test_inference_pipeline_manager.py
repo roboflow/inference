@@ -25,7 +25,9 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     CommandType,
     ErrorType,
     InitialisePipelinePayload,
-    OperationStatus, VideoConfiguration, WorkflowConfiguration,
+    OperationStatus,
+    VideoConfiguration,
+    WorkflowConfiguration,
 )
 from inference.core.interfaces.stream_manager.manager_app.inference_pipeline_manager import (
     InferencePipelineManager,

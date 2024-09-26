@@ -34,6 +34,8 @@ from inference.core.interfaces.stream_manager.api.stream_manager_client import (
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     CommandType,
     InitialisePipelinePayload,
+    VideoConfiguration,
+    WorkflowConfiguration,
 )
 from inference.core.interfaces.stream_manager.manager_app.errors import (
     CommunicationProtocolError,
@@ -41,9 +43,6 @@ from inference.core.interfaces.stream_manager.manager_app.errors import (
     MalformedPayloadError,
     MessageToBigError,
     TransmissionChannelClosed,
-)
-from inference.enterprise.stream_management.api.entities import (
-    PipelineInitialisationRequest,
 )
 
 
@@ -479,10 +478,16 @@ async def test_stream_manager_client_can_successfully_initialise_pipeline(
     writer = DummyStreamWriter()
     establish_socket_connection_mock.return_value = (reader, writer)
     initialisation_request = InitialisePipelinePayload(
-        video_reference="rtsp://some:543",
-        workspace_name="some",
-        workflow_id="other",
-        api_key="my_api_key",
+        video_configuration=VideoConfiguration(
+            type="VideoConfiguration",
+            video_reference="rtsp://128.0.0.1",
+        ),
+        processing_configuration=WorkflowConfiguration(
+            type="WorkflowConfiguration",
+            workspace_name="some",
+            workflow_id="other",
+        ),
+        api_key="<MY-API-KEY>",
     )
     client = StreamManagerClient.init(
         host="127.0.0.1",
