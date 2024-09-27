@@ -5,6 +5,9 @@ from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
 from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
     LineCounterBlockV1,
 )
+from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
+    PathDeviationAnalyticsBlockV1,
+)
 from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
     TimeInZoneBlockV1,
 )
@@ -355,6 +358,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Florence2BlockV1,
         StabilityAIInpaintingBlockV1,
         ImagePreprocessingBlockV1,
+        PathDeviationAnalyticsBlockV1,
     ]
 
 
