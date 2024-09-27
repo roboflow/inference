@@ -17,8 +17,6 @@ from inference.core.workflows.execution_engine.constants import (
     CONFIDENCE_KEY,
     DETECTED_CODE_KEY,
     DETECTION_ID_KEY,
-    DETECTIONS_TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE,
-    DETECTIONS_TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
     HEIGHT_KEY,
     IMAGE_DIMENSIONS_KEY,
     KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
@@ -30,6 +28,8 @@ from inference.core.workflows.execution_engine.constants import (
     PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE,
     PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
     POLYGON_KEY,
+    TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE,
+    TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
     TRACKER_ID_KEY,
     WIDTH_KEY,
     X_KEY,
@@ -73,9 +73,9 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
             detection_dict[PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE] = data[
                 PATH_DEVIATION_KEY_IN_SV_DETECTIONS
             ]
-        if DETECTIONS_TIME_IN_ZONE_KEY_IN_SV_DETECTIONS in data:
-            detection_dict[DETECTIONS_TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE] = data[
-                DETECTIONS_TIME_IN_ZONE_KEY_IN_SV_DETECTIONS
+        if TIME_IN_ZONE_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE] = data[
+                TIME_IN_ZONE_KEY_IN_SV_DETECTIONS
             ]
         if (
             BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS in data
