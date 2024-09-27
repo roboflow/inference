@@ -61,7 +61,7 @@ def test_path_deviation_exact_path():
             reference_path=reference_path,
         )
         frechet_distance = result["path_deviation_detections"][
-            "frechet_distance"
+            "path_deviation"
         ][0]
         frechet_distances.append(frechet_distance)
 
@@ -129,7 +129,7 @@ def test_path_deviation_with_deviation():
             reference_path=reference_path,
         )
         frechet_distance = result["path_deviation_detections"][
-            "frechet_distance"
+            "path_deviation"
         ][0]
         frechet_distances.append(frechet_distance)
 
@@ -184,7 +184,7 @@ def test_path_deviation_multiple_objects():
             reference_path=reference_path,
         )
         frechet_distance = result["path_deviation_detections"][
-            "frechet_distance"
+            "path_deviation"
         ][0]
         frechet_distances.append(frechet_distance)
 
