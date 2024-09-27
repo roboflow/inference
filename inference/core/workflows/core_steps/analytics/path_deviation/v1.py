@@ -1,11 +1,13 @@
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from inference.core.workflows.execution_engine.constants import PATH_DEVIATION_KEY_IN_SV_DETECTIONS
 import supervision as sv
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
 
+from inference.core.workflows.execution_engine.constants import (
+    PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     VideoMetadata,

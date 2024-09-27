@@ -2,15 +2,15 @@ from typing import List, Literal, Optional, Tuple, Type
 
 import cv2 as cv
 import numpy as np
+import supervision as sv
+from pydantic import ConfigDict, Field
+
 from inference.core.workflows.execution_engine.constants import (
     BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
     BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
 )
-import supervision as sv
-from pydantic import ConfigDict, Field
-
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -110,10 +110,18 @@ class BoundingRectBlockV1(WorkflowBlock):
                 det.mask[0]
             )
 
-            det[BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS] = np.array([rect], dtype=np.float16)
-            det[BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS] = np.array([width], dtype=np.float16)
-            det[BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS] = np.array([height], dtype=np.float16)
-            det[BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS] = np.array([angle], dtype=np.float16)
+            det[BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS] = np.array(
+                [rect], dtype=np.float16
+            )
+            det[BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS] = np.array(
+                [width], dtype=np.float16
+            )
+            det[BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS] = np.array(
+                [height], dtype=np.float16
+            )
+            det[BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS] = np.array(
+                [angle], dtype=np.float16
+            )
 
             to_be_merged.append(det)
 
