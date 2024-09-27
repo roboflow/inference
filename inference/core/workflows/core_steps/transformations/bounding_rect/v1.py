@@ -2,6 +2,12 @@ from typing import List, Literal, Optional, Tuple, Type
 
 import cv2 as cv
 import numpy as np
+from inference.core.workflows.execution_engine.constants import (
+    BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
+)
 import supervision as sv
 from pydantic import ConfigDict, Field
 
@@ -17,10 +23,6 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "detections_with_rect"
-DETECTIONS_RECT_PARAM: str = "rect"
-DETECTIONS_WIDTH_PARAM: str = "width"
-DETECTIONS_HEIGHT_PARAM: str = "height"
-DETECTIONS_ANGLE_PARAM: str = "angle"
 
 SHORT_DESCRIPTION = "Find minimal bounding rectangle surrounding detection contour"
 LONG_DESCRIPTION = """
@@ -108,10 +110,10 @@ class BoundingRectBlockV1(WorkflowBlock):
                 det.mask[0]
             )
 
-            det[DETECTIONS_RECT_PARAM] = np.array([rect], dtype=np.float16)
-            det[DETECTIONS_WIDTH_PARAM] = np.array([width], dtype=np.float16)
-            det[DETECTIONS_HEIGHT_PARAM] = np.array([height], dtype=np.float16)
-            det[DETECTIONS_ANGLE_PARAM] = np.array([angle], dtype=np.float16)
+            det[BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS] = np.array([rect], dtype=np.float16)
+            det[BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS] = np.array([width], dtype=np.float16)
+            det[BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS] = np.array([height], dtype=np.float16)
+            det[BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS] = np.array([angle], dtype=np.float16)
 
             to_be_merged.append(det)
 

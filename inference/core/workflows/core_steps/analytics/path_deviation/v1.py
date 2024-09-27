@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from inference.core.workflows.execution_engine.constants import PATH_DEVIATION_KEY_IN_SV_DETECTIONS
 import supervision as sv
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
@@ -25,7 +26,6 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "path_deviation_detections"
-DETECTIONS_PATH_DEVIATION_PARAM: str = "frechet_distance"
 SHORT_DESCRIPTION = "Calculate Fréchet distance of object from reference path"
 LONG_DESCRIPTION = """
 The `PathDeviationAnalyticsBlock` is an analytics block designed to measure the Frechet distance
@@ -122,7 +122,7 @@ class PathDeviationAnalyticsBlockV1(WorkflowBlock):
             ref_path = np.array(reference_path)
 
             frechet_distance = self._calculate_frechet_distance(object_path, ref_path)
-            detection[DETECTIONS_PATH_DEVIATION_PARAM] = np.array(
+            detection[PATH_DEVIATION_KEY_IN_SV_DETECTIONS] = np.array(
                 [frechet_distance], dtype=np.float64
             )
             result_detections.append(detection)

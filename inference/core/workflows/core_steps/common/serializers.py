@@ -17,6 +17,18 @@ from inference.core.workflows.execution_engine.constants import (
     KEYPOINTS_KEY_IN_INFERENCE_RESPONSE,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     PARENT_ID_KEY,
+    PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
+    PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE,
+    BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_ANGLE_KEY_IN_INFERENCE_RESPONSE,
+    BOUNDING_RECT_HEIGHT_KEY_IN_INFERENCE_RESPONSE,
+    BOUNDING_RECT_RECT_KEY_IN_INFERENCE_RESPONSE,
+    BOUNDING_RECT_WIDTH_KEY_IN_INFERENCE_RESPONSE,
+    DETECTIONS_TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
+    DETECTIONS_TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE,
     POLYGON_KEY,
     TRACKER_ID_KEY,
     WIDTH_KEY,
@@ -31,6 +43,7 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
     image_dimensions = None
     for xyxy, mask, confidence, class_id, tracker_id, data in detections:
         detection_dict = {}
+        data: Dict[str, np.ndarray] = {}
         image_dimensions = data.get(IMAGE_DIMENSIONS_KEY)
         if isinstance(xyxy, np.ndarray):
             xyxy = xyxy.astype(float).tolist()
@@ -56,6 +69,20 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
             detection_dict[TRACKER_ID_KEY] = int(tracker_id)
         detection_dict[CLASS_NAME_KEY] = str(data["class_name"])
         detection_dict[DETECTION_ID_KEY] = str(data[DETECTION_ID_KEY])
+        if PATH_DEVIATION_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE] = data[PATH_DEVIATION_KEY_IN_SV_DETECTIONS]
+        if DETECTIONS_TIME_IN_ZONE_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[DETECTIONS_TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE] = data[DETECTIONS_TIME_IN_ZONE_KEY_IN_SV_DETECTIONS]
+        if (
+            BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS in data
+            and BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS in data
+            and BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS in data
+            and BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS in data
+        ):
+            detection_dict[BOUNDING_RECT_ANGLE_KEY_IN_INFERENCE_RESPONSE] = data[BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS]
+            detection_dict[BOUNDING_RECT_RECT_KEY_IN_INFERENCE_RESPONSE] = data[BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS]
+            detection_dict[BOUNDING_RECT_HEIGHT_KEY_IN_INFERENCE_RESPONSE] = data[BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS]
+            detection_dict[BOUNDING_RECT_WIDTH_KEY_IN_INFERENCE_RESPONSE] = data[BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS]
         if PARENT_ID_KEY in data:
             detection_dict[PARENT_ID_KEY] = str(data[PARENT_ID_KEY])
         if (

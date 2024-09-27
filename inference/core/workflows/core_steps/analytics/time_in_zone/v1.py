@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from inference.core.workflows.execution_engine.constants import DETECTIONS_TIME_IN_ZONE_KEY_IN_SV_DETECTIONS
 import supervision as sv
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal, Type
@@ -29,7 +30,6 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "timed_detections"
-DETECTIONS_TIME_IN_ZONE_PARAM: str = "time_in_zone"
 SHORT_DESCRIPTION = "Track duration of time spent by objects in zone"
 LONG_DESCRIPTION = """
 The `TimeInZoneBlock` is an analytics block designed to measure time spent by objects in a zone.
@@ -175,10 +175,10 @@ class TimeInZoneBlockV1(WorkflowBlock):
             # copy
             detection = detections[i]
 
-            detection[DETECTIONS_TIME_IN_ZONE_PARAM] = np.array([0], dtype=np.float64)
+            detection[DETECTIONS_TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] = np.array([0], dtype=np.float64)
             if is_in_zone:
                 ts_start = tracked_ids_in_zone.setdefault(tracker_id, ts_end)
-                detection[DETECTIONS_TIME_IN_ZONE_PARAM] = np.array(
+                detection[DETECTIONS_TIME_IN_ZONE_KEY_IN_SV_DETECTIONS] = np.array(
                     [ts_end - ts_start], dtype=np.float64
                 )
             elif tracker_id in tracked_ids_in_zone:
