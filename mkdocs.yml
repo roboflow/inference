@@ -77,6 +77,8 @@ nav:
       - Blocks Overview: workflows/blocks_connections.md
       - Blocks Gallery: workflows/blocks.md
       - Examples: workflows/gallery_index.md
+      - Video Processing: workflows/video_processing/overview.md
+
       - User Guide:
         - Running Workflows: workflows/modes_of_running.md
         - Workflows Definitions: workflows/definitions.md
