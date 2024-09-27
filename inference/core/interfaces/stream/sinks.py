@@ -562,17 +562,5 @@ class InMemoryBufferSink:
 
     def consume_prediction(
         self,
-        excluded_fields: Set[str],
     ) -> Tuple[List[Optional[dict]], List[Optional[VideoFrame]]]:
-        if not excluded_fields:
-            return self._buffer.popleft()
-        predictions, frames = self._buffer.popleft()
-        filtered_predictions = []
-        for prediction in predictions:
-            if prediction is None:
-                filtered_predictions.append(prediction)
-            else:
-                filtered_predictions.append(
-                    {k: v for k, v in prediction.items() if k not in excluded_fields}
-                )
-        return filtered_predictions, frames
+        return self._buffer.popleft()

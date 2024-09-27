@@ -14,7 +14,10 @@ from inference.core.exceptions import (
     RoboflowAPINotNotFoundError,
 )
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
-from inference.core.interfaces.http.orjson_utils import serialise_workflow_result
+from inference.core.interfaces.http.orjson_utils import (
+    serialise_single_workflow_result_element,
+    serialise_workflow_result,
+)
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream.sinks import InMemoryBufferSink
 from inference.core.interfaces.stream.watchdog import (
@@ -294,13 +297,19 @@ class InferencePipelineManager(Process):
                 }
                 self._responses_queue.put((request_id, response_payload))
                 return None
-            excluded_fields = set(payload.get("excluded_fields", []))
-            predictions, frames = self._buffer_sink.consume_prediction(
-                excluded_fields=excluded_fields
-            )
-            predictions = serialise_workflow_result(
-                result=predictions,
-            )
+            excluded_fields = payload.get("excluded_fields")
+            predictions, frames = self._buffer_sink.consume_prediction()
+            predictions = [
+                (
+                    serialise_single_workflow_result_element(
+                        result_element=result_element,
+                        excluded_fields=excluded_fields,
+                    )
+                    if result_element is not None
+                    else None
+                )
+                for result_element in predictions
+            ]
             frames_metadata = []
             for frame in frames:
                 if frame is None:
