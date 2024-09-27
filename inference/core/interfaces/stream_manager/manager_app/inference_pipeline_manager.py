@@ -121,7 +121,7 @@ class InferencePipelineManager(Process):
         try:
             parsed_payload = InitialisePipelinePayload.model_validate(payload)
             watchdog = BasePipelineWatchDog()
-            buffer_sink = InMemoryBufferSink(
+            buffer_sink = InMemoryBufferSink.init(
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
             )
             self._buffer_sink = buffer_sink

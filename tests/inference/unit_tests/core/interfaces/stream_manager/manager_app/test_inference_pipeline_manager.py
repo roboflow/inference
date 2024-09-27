@@ -3,21 +3,25 @@ Unit tests in this module are realised using `InferencePipeline` mock - and with
 command queues upfront, and then handling one-by-one in the same process.
 """
 
+from datetime import datetime
 from multiprocessing import Queue
 from unittest import mock
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 
 from inference.core.exceptions import (
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
 )
+from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
 )
+from inference.core.interfaces.stream.sinks import InMemoryBufferSink
 from inference.core.interfaces.stream_manager.manager_app import (
     inference_pipeline_manager,
 )
@@ -150,6 +154,90 @@ def test_inference_pipeline_manager_when_init_pipeline_operation_is_requested_bu
         "2",
         {"status": OperationStatus.SUCCESS},
     ), "Termination of pipeline must happen"
+
+
+@pytest.mark.timeout(30)
+@mock.patch.object(inference_pipeline_manager.InMemoryBufferSink, "init")
+@mock.patch.object(inference_pipeline_manager.InferencePipeline, "init_with_workflow")
+def test_inference_pipeline_manager_consumption(
+    pipeline_init_mock: MagicMock,
+    buffer_init: MagicMock,
+) -> None:
+    # given
+    pipeline_init_mock.return_value = MagicMock()
+    filled_buffer = InMemoryBufferSink(queue_size=10)
+    filled_buffer.on_prediction(
+        predictions=[None, {"some": "value"}],
+        video_frame=[
+            None,
+            VideoFrame(
+                image=np.zeros((3, 3)),
+                frame_id=0,
+                frame_timestamp=datetime.now(),
+                source_id=1,
+            ),
+        ],
+    )
+    filled_buffer.on_prediction(
+        predictions=[None, {"other": "value"}],
+        video_frame=[
+            None,
+            VideoFrame(
+                image=np.zeros((3, 3)),
+                frame_id=1,
+                frame_timestamp=datetime.now(),
+                source_id=1,
+            ),
+        ],
+    )
+    buffer_init.return_value = filled_buffer
+    command_queue, responses_queue = Queue(), Queue()
+    manager = InferencePipelineManager(
+        pipeline_id="my_pipeline",
+        command_queue=command_queue,
+        responses_queue=responses_queue,
+    )
+    init_payload = assembly_valid_init_payload()
+
+    # when
+    command_queue.put(("1", init_payload))
+    command_queue.put(("2", {"type": CommandType.CONSUME_RESULT}))
+    command_queue.put(("3", {"type": CommandType.CONSUME_RESULT}))
+    command_queue.put(("4", {"type": CommandType.CONSUME_RESULT}))
+    command_queue.put(("5", {"type": CommandType.TERMINATE}))
+
+    manager.run()
+
+    status_1 = responses_queue.get()
+    status_2 = responses_queue.get()
+    status_3 = responses_queue.get()
+    status_4 = responses_queue.get()
+    status_5 = responses_queue.get()
+
+    # then
+    assert (
+        status_1[0] == "1"
+    ), "First request should be reported in responses_queue at first"
+    assert (
+        status_1[1]["status"] == OperationStatus.SUCCESS
+    ), "Init operation should succeed"
+    assert status_2[0] == "2", "2nd request should be reported in responses_queue 2nd"
+    assert status_2[1]["status"] == OperationStatus.SUCCESS, "Operation should succeed"
+    assert status_2[1]["outputs"] == [
+        None,
+        {"some": "value"},
+    ], "Operation should yield first buffer result"
+    assert status_3[0] == "3", "3rd request should be reported in responses_queue 3rd"
+    assert status_3[1]["status"] == OperationStatus.SUCCESS, "Operation should succeed"
+    assert status_3[1]["outputs"] == [
+        None,
+        {"other": "value"},
+    ], "Operation should yield second buffer result"
+    assert status_4[0] == "4", "4th request should be reported in responses_queue 4th"
+    assert status_4[1]["status"] == OperationStatus.SUCCESS, "Operation should succeed"
+    assert status_4[1]["outputs"] == [], "Operation should yield empty result"
+    assert status_5[0] == "5", "5th request should be reported in responses_queue 5th"
+    assert status_5[1]["status"] == OperationStatus.SUCCESS, "Operation should succeed"
 
 
 @pytest.mark.timeout(30)

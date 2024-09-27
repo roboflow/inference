@@ -543,6 +543,10 @@ class VideoFileSink:
 
 class InMemoryBufferSink:
 
+    @classmethod
+    def init(cls, queue_size: int):
+        return cls(queue_size=queue_size)
+
     def __init__(self, queue_size: int):
         self._buffer = deque(maxlen=queue_size)
 
