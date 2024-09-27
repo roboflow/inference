@@ -94,8 +94,6 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
             detection_dict[BOUNDING_RECT_WIDTH_KEY_IN_INFERENCE_RESPONSE] = data[
                 BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS
             ]
-        if "time_in_zone" in data:
-            detection_dict["time_in_zone"] = data["time_in_zone"]
         if PARENT_ID_KEY in data:
             detection_dict[PARENT_ID_KEY] = str(data[PARENT_ID_KEY])
         if (

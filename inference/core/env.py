@@ -425,6 +425,6 @@ DEDICATED_DEPLOYMENT_WORKSPACE_URL = os.environ.get(
     "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None
 )
 
-ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "True"))
+ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
 
 RUNS_ON_JETSON = str2bool(os.getenv("RUNS_ON_JETSON", "False"))

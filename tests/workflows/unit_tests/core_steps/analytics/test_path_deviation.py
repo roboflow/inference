@@ -7,9 +7,7 @@ import supervision as sv
 from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
     PathDeviationAnalyticsBlockV1,
 )
-from inference.core.workflows.execution_engine.entities.base import (
-    VideoMetadata,
-)
+from inference.core.workflows.execution_engine.entities.base import VideoMetadata
 
 
 def test_path_deviation_exact_path():
@@ -60,9 +58,7 @@ def test_path_deviation_exact_path():
             triggering_anchor=sv.Position.CENTER,  # Default
             reference_path=reference_path,
         )
-        frechet_distance = result["path_deviation_detections"][
-            "path_deviation"
-        ][0]
+        frechet_distance = result["path_deviation_detections"]["path_deviation"][0]
         frechet_distances.append(frechet_distance)
 
     # Then
@@ -128,9 +124,7 @@ def test_path_deviation_with_deviation():
             triggering_anchor=sv.Position.CENTER,  # Default
             reference_path=reference_path,
         )
-        frechet_distance = result["path_deviation_detections"][
-            "path_deviation"
-        ][0]
+        frechet_distance = result["path_deviation_detections"]["path_deviation"][0]
         frechet_distances.append(frechet_distance)
 
     # Then
@@ -183,9 +177,7 @@ def test_path_deviation_multiple_objects():
             triggering_anchor=sv.Position.CENTER,  # Default
             reference_path=reference_path,
         )
-        frechet_distance = result["path_deviation_detections"][
-            "path_deviation"
-        ][0]
+        frechet_distance = result["path_deviation_detections"]["path_deviation"][0]
         frechet_distances.append(frechet_distance)
 
     # Then
