@@ -1328,6 +1328,7 @@ class InferenceHTTPClient:
     )
     @wrap_errors
     def get_inference_pipeline_status(self, pipeline_id: str) -> dict:
+        self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = {"api_key": self.__api_key}
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/status",
@@ -1341,6 +1342,7 @@ class InferenceHTTPClient:
     )
     @wrap_errors
     def pause_inference_pipeline(self, pipeline_id: str) -> dict:
+        self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = {"api_key": self.__api_key}
         response = requests.post(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/pause",
@@ -1354,6 +1356,7 @@ class InferenceHTTPClient:
     )
     @wrap_errors
     def resume_inference_pipeline(self, pipeline_id: str) -> dict:
+        self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = {"api_key": self.__api_key}
         response = requests.post(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/resume",
@@ -1367,6 +1370,7 @@ class InferenceHTTPClient:
     )
     @wrap_errors
     def terminate_inference_pipeline(self, pipeline_id: str) -> dict:
+        self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = {"api_key": self.__api_key}
         response = requests.post(
             f"{self.__api_url}/inference_pipelines/{pipeline_id}/terminate",
@@ -1384,6 +1388,7 @@ class InferenceHTTPClient:
         pipeline_id: str,
         excluded_fields: Optional[List[str]] = None,
     ) -> dict:
+        self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         if excluded_fields is None:
             excluded_fields = []
         payload = {"api_key": self.__api_key, "excluded_fields": excluded_fields}
@@ -1393,6 +1398,10 @@ class InferenceHTTPClient:
         )
         api_key_safe_raise_for_status(response=response)
         return response.json()
+
+    def _ensure_pipeline_id_not_empty(self, pipeline_id: str) -> None:
+        if not pipeline_id:
+            raise InvalidParameterError("Empty `pipeline_id` parameter detected")
 
     def _post_images(
         self,
