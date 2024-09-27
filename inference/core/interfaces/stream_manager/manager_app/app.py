@@ -214,7 +214,7 @@ def handle_command(
         return describe_error(
             exception=None,
             error_type=ErrorType.NOT_FOUND,
-            public_error_message=f"Could not found InferencePipeline with id={pipeline_id}."
+            public_error_message=f"Could not found InferencePipeline with id={pipeline_id}.",
         )
     _, command_queue, responses_queue = processes_table[pipeline_id]
     command_queue.put((request_id, command))
