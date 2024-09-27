@@ -468,12 +468,13 @@ class DetectionsRename(OperationDefinition):
         },
     )
     type: Literal["DetectionsRename"]
-    class_map: Dict[str, str] = Field(
-        description="Dictionary with classes replacement mapping"
+    class_map: Union[Dict[str, str], str] = Field(
+        description="Dictionary with classes replacement mapping or name of "
+        "parameter delivering the mapping"
     )
-    strict: bool = Field(
-        description="Flag to decide if all class must be declared in `class_map`. When set `True` "
-        "all detections classes must be declared, otherwise error is raised.",
+    strict: Union[bool, str] = Field(
+        description="Flag to decide if all class must be declared in `class_map` or name of parameter delivering "
+        "the mapping. When set `True` all detections classes must be declared, otherwise error is raised.",
         default=True,
     )
     new_classes_id_offset: int = Field(
