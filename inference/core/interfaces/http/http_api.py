@@ -344,7 +344,11 @@ def with_route_exceptions(route):
         except ProcessesManagerNotFoundError as error:
             resp = JSONResponse(
                 status_code=404,
-                content={"message": str(error)},
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "inner_error_type": error.inner_error_type,
+                },
             )
             traceback.print_exc()
         except (
