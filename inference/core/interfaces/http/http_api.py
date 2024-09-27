@@ -164,10 +164,9 @@ from inference.core.interfaces.stream_manager.api.entities import (
 )
 from inference.core.interfaces.stream_manager.api.errors import (
     ProcessesManagerAuthorisationError,
-    ProcessesManagerInternalError,
+    ProcessesManagerClientError,
     ProcessesManagerInvalidPayload,
     ProcessesManagerNotFoundError,
-    ProcessesManagerOperationError,
 )
 from inference.core.interfaces.stream_manager.api.stream_manager_client import (
     StreamManagerClient,
@@ -175,6 +174,11 @@ from inference.core.interfaces.stream_manager.api.stream_manager_client import (
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     ConsumeResultsPayload,
     InitialisePipelinePayload,
+)
+from inference.core.interfaces.stream_manager.manager_app.errors import (
+    CommunicationProtocolError,
+    MalformedPayloadError,
+    MessageToBigError,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import (
@@ -305,10 +309,18 @@ def with_route_exceptions(route):
                     "inner_error_message": str(error.inner_error),
                 },
             )
-        except ProcessesManagerInvalidPayload as error:
+        except (
+            ProcessesManagerInvalidPayload,
+            MalformedPayloadError,
+            MessageToBigError,
+        ) as error:
             resp = JSONResponse(
                 status_code=400,
-                content={"message": str(error)},
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "inner_error_type": error.inner_error_type,
+                },
             )
         except (RoboflowAPINotAuthorizedError, ProcessesManagerAuthorisationError):
             resp = JSONResponse(
@@ -400,8 +412,18 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
-        except (ProcessesManagerInternalError, ProcessesManagerOperationError) as error:
-            resp = JSONResponse(status_code=500, content={"message": str(error)})
+        except (
+            ProcessesManagerClientError,
+            CommunicationProtocolError,
+        ) as error:
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "inner_error_type": error.inner_error_type,
+                },
+            )
             traceback.print_exc()
         except Exception:
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})

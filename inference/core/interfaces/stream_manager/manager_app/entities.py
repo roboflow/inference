@@ -75,7 +75,9 @@ class WorkflowConfiguration(BaseModel):
 class InitialisePipelinePayload(BaseModel):
     video_configuration: VideoConfiguration
     processing_configuration: WorkflowConfiguration
-    sink_configuration: MemorySinkConfiguration = MemorySinkConfiguration(type="MemorySinkConfiguration")
+    sink_configuration: MemorySinkConfiguration = MemorySinkConfiguration(
+        type="MemorySinkConfiguration"
+    )
     api_key: Optional[str] = None
 
 

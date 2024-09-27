@@ -217,12 +217,16 @@ async def send_command(
         return json.loads(data)
     except JSONDecodeError as error:
         raise MalformedPayloadError(
-            f"Could not decode response. Cause: {error}"
+            private_message=f"Could not decode response. Cause: {error}",
+            public_message=f"Could not decode response from InferencePipeline Manager",
+            inner_error=error,
         ) from error
-    except (OSError, asyncio.TimeoutError) as errors:
+    except (OSError, asyncio.TimeoutError) as error:
         raise ConnectivityError(
-            f"Could not communicate with Process Manager"
-        ) from errors
+            private_message=f"Could not communicate with InferencePipeline Manager",
+            public_message="Could not establish communication with InferencePipeline Manager",
+            inner_error=error,
+        ) from error
 
 
 async def establish_socket_connection(
@@ -244,18 +248,28 @@ async def send_message(
         writer.write(payload)
         await asyncio.wait_for(writer.drain(), timeout=timeout)
     except (TypeError, ValueError) as error:
-        raise MalformedPayloadError(f"Could not serialise message. Details: {error}")
+        raise MalformedPayloadError(
+            private_message=f"Could not serialise message. Details: {error}",
+            public_message="Could not serialise payload of command that should be sent to InferencePipeline Manager",
+            inner_error=error,
+        ) from error
     except OverflowError as error:
         raise MessageToBigError(
-            f"Could not send message due to size overflow. Details: {error}"
-        )
+            private_message=f"Could not send message due to size overflow. Details: {error}",
+            public_message="InferencePipeline Manager command payload to big.",
+            inner_error=error,
+        ) from error
     except asyncio.TimeoutError as error:
         raise ConnectivityError(
-            f"Could not communicate with Process Manager"
+            private_message=f"Could not communicate with InferencePipeline Manager. Error: {error}",
+            public_message="Could not communicate with InferencePipeline Manager.",
+            inner_error=error,
         ) from error
     except Exception as error:
         raise CommunicationProtocolError(
-            f"Could not send message. Cause: {error}"
+            private_message=f"Could not send message to InferencePipeline Manager. Cause: {error}",
+            public_message="Unknown communication error while sending message to InferencePipeline Manager.",
+            inner_error=error,
         ) from error
 
 
@@ -273,14 +287,20 @@ async def receive_message(
 ) -> bytes:
     header = await asyncio.wait_for(reader.read(header_size), timeout=timeout)
     if len(header) != header_size:
-        raise MalformedHeaderError("Header size missmatch")
+        raise MalformedHeaderError(
+            private_message="Header size missmatch",
+            public_message="Internal error in communication with InferencePipeline Manager. Violation of "
+            "communication protocol - malformed header of message.",
+        )
     payload_size = int.from_bytes(bytes=header, byteorder="big")
     received = b""
     while len(received) < payload_size:
         chunk = await asyncio.wait_for(reader.read(buffer_size), timeout=timeout)
         if len(chunk) == 0:
             raise TransmissionChannelClosed(
-                "Socket was closed to read before payload was decoded."
+                private_message="Socket was closed to read before payload was decoded.",
+                public_message="Internal error in communication with InferencePipeline Manager. Could not receive full "
+                "message.",
             )
         received += chunk
     return received
@@ -298,16 +318,24 @@ def dispatch_error(error_response: dict) -> None:
     error_type = response_payload.get(ERROR_TYPE_KEY)
     error_class = response_payload.get("error_class", "N/A")
     error_message = response_payload.get("error_message", "N/A")
+    public_error_message = response_payload.get("public_error_message", "N/A")
     logger.error(
-        f"Error in ProcessesManagerClient. error_type={error_type} error_class={error_class} "
+        f"Error with command handling raised by InferencePipeline Manager. "
+        f"error_type={error_type} error_class={error_class} "
         f"error_message={error_message}"
     )
     if error_type in ERRORS_MAPPING:
         raise ERRORS_MAPPING[error_type](
-            f"Error in ProcessesManagerClient. Error type: {error_type}. Details: {error_message}"
+            private_message=f"Error with command handling raised by InferencePipeline Manager. "
+            f"Error type: {error_type}. Details: {error_message}",
+            public_message=f"Error with command handling raised by InferencePipeline Manager. "
+            f"Error type: {error_type}. Details: {public_error_message}",
         )
     raise ProcessesManagerClientError(
-        f"Error in ProcessesManagerClient. Error type: {error_type}. Details: {error_message}"
+        private_message=f"Unknown error with command handling raised by InferencePipeline Manager. "
+        f"Error type: {error_type}. Details: {error_message}",
+        public_message=f"Unknown error with command handling raised by InferencePipeline Manager. "
+        f"Raised error type: {error_type}. Details: {public_error_message}",
     )
 
 

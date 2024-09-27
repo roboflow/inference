@@ -26,6 +26,7 @@ def serialise_to_json(obj: Any) -> Any:
 def describe_error(
     exception: Optional[Exception] = None,
     error_type: ErrorType = ErrorType.INTERNAL_ERROR,
+    public_error_message: Optional[str] = None,
 ) -> dict:
     payload = {
         STATUS_KEY: OperationStatus.FAILURE,
@@ -34,6 +35,8 @@ def describe_error(
     if exception is not None:
         payload["error_class"] = exception.__class__.__name__
         payload["error_message"] = str(exception)
+    if public_error_message is not None:
+        payload["public_error_message"] = public_error_message
     return payload
 
 

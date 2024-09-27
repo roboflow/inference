@@ -91,13 +91,27 @@ class InferencePipelineManager(Process):
             raise NotImplementedError(
                 f"Command type `{command_type}` cannot be handled"
             )
-        except (KeyError, NotImplementedError) as error:
+        except KeyError as error:
             self._handle_error(
-                request_id=request_id, error=error, error_type=ErrorType.INVALID_PAYLOAD
+                request_id=request_id,
+                error=error,
+                public_error_message="Invalid command sent to InferencePipeline manager - malformed payload",
+                error_type=ErrorType.INVALID_PAYLOAD,
+            )
+        except NotImplementedError as error:
+            self._handle_error(
+                request_id=request_id,
+                error=error,
+                public_error_message=f"Invalid command sent to InferencePipeline manager - {error}",
+                error_type=ErrorType.INVALID_PAYLOAD,
             )
         except Exception as error:
             self._handle_error(
-                request_id=request_id, error=error, error_type=ErrorType.INTERNAL_ERROR
+                request_id=request_id,
+                error=error,
+                public_error_message="Unknown internal error. Raise this issue providing as "
+                "much of a context as possible: https://github.com/roboflow/inference/issues",
+                error_type=ErrorType.INTERNAL_ERROR,
             )
 
     def _initialise_pipeline(self, request_id: str, payload: dict) -> None:
@@ -140,17 +154,26 @@ class InferencePipelineManager(Process):
             NotImplementedError,
         ) as error:
             self._handle_error(
-                request_id=request_id, error=error, error_type=ErrorType.INVALID_PAYLOAD
+                request_id=request_id,
+                error=error,
+                public_error_message="Could not decode InferencePipeline initialisation command payload.",
+                error_type=ErrorType.INVALID_PAYLOAD,
             )
         except RoboflowAPINotAuthorizedError as error:
             self._handle_error(
                 request_id=request_id,
                 error=error,
+                public_error_message="Invalid API key used or API key is missing. "
+                "Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
                 error_type=ErrorType.AUTHORISATION_ERROR,
             )
         except RoboflowAPINotNotFoundError as error:
             self._handle_error(
-                request_id=request_id, error=error, error_type=ErrorType.NOT_FOUND
+                request_id=request_id,
+                error=error,
+                public_error_message="Requested Roboflow resources (models / workflows etc.) not available or "
+                "wrong API key used.",
+                error_type=ErrorType.NOT_FOUND,
             )
 
     def _terminate_pipeline(self, request_id: str) -> None:
@@ -168,7 +191,10 @@ class InferencePipelineManager(Process):
             )
         except StreamOperationNotAllowedError as error:
             self._handle_error(
-                request_id=request_id, error=error, error_type=ErrorType.OPERATION_ERROR
+                request_id=request_id,
+                error=error,
+                public_error_message="Cannot get pipeline status in the current state of InferencePipeline.",
+                error_type=ErrorType.OPERATION_ERROR,
             )
 
     def _handle_termination_signal(self, signal_number: int, frame: FrameType) -> None:
@@ -190,7 +216,9 @@ class InferencePipelineManager(Process):
     def _mute_pipeline(self, request_id: str) -> None:
         if self._inference_pipeline is None:
             return self._handle_error(
-                request_id=request_id, error_type=ErrorType.OPERATION_ERROR
+                request_id=request_id,
+                public_error_message="Cannot retrieve InferencePipeline status. Internal Error. Service misconfigured.",
+                error_type=ErrorType.OPERATION_ERROR,
             )
         try:
             self._inference_pipeline.mute_stream()
@@ -200,13 +228,18 @@ class InferencePipelineManager(Process):
             )
         except StreamOperationNotAllowedError as error:
             self._handle_error(
-                request_id=request_id, error=error, error_type=ErrorType.OPERATION_ERROR
+                request_id=request_id,
+                error=error,
+                public_error_message="Cannot get pipeline status in the current state of InferencePipeline.",
+                error_type=ErrorType.OPERATION_ERROR,
             )
 
     def _resume_pipeline(self, request_id: str) -> None:
         if self._inference_pipeline is None:
             return self._handle_error(
-                request_id=request_id, error_type=ErrorType.OPERATION_ERROR
+                request_id=request_id,
+                public_error_message="Cannot retrieve InferencePipeline status. Internal Error. Service misconfigured.",
+                error_type=ErrorType.OPERATION_ERROR,
             )
         try:
             self._inference_pipeline.resume_stream()
@@ -216,19 +249,26 @@ class InferencePipelineManager(Process):
             )
         except StreamOperationNotAllowedError as error:
             self._handle_error(
-                request_id=request_id, error=error, error_type=ErrorType.OPERATION_ERROR
+                request_id=request_id,
+                error=error,
+                public_error_message="Cannot get pipeline status in the current state of InferencePipeline.",
+                error_type=ErrorType.OPERATION_ERROR,
             )
 
     def _get_pipeline_status(self, request_id: str) -> None:
         if self._watchdog is None:
             return self._handle_error(
-                request_id=request_id, error_type=ErrorType.OPERATION_ERROR
+                request_id=request_id,
+                error_type=ErrorType.OPERATION_ERROR,
+                public_error_message="Cannot retrieve InferencePipeline status. Internal Error. Service misconfigured.",
             )
         try:
             report = self._watchdog.get_report()
             if report is None:
                 return self._handle_error(
-                    request_id=request_id, error_type=ErrorType.OPERATION_ERROR
+                    request_id=request_id,
+                    error_type=ErrorType.OPERATION_ERROR,
+                    public_error_message="Cannot retrieve InferencePipeline status. Try again later.",
                 )
             response_payload = {
                 STATUS_KEY: OperationStatus.SUCCESS,
@@ -238,7 +278,10 @@ class InferencePipelineManager(Process):
             logger.info(f"Pipeline status returned. request_id={request_id}...")
         except StreamOperationNotAllowedError as error:
             self._handle_error(
-                request_id=request_id, error=error, error_type=ErrorType.OPERATION_ERROR
+                request_id=request_id,
+                error=error,
+                public_error_message="Cannot get pipeline status in the current state of InferencePipeline.",
+                error_type=ErrorType.OPERATION_ERROR,
             )
 
     def _consume_results(self, request_id: str, payload: dict) -> None:
@@ -278,17 +321,23 @@ class InferencePipelineManager(Process):
             self._responses_queue.put((request_id, response_payload))
         except Exception as error:
             self._handle_error(
-                request_id=request_id, error=error, error_type=ErrorType.OPERATION_ERROR
+                request_id=request_id,
+                error=error,
+                public_error_message="Unexpected error with InferencePipeline results consumption.",
+                error_type=ErrorType.OPERATION_ERROR,
             )
 
     def _handle_error(
         self,
         request_id: str,
         error: Optional[Exception] = None,
+        public_error_message: Optional[str] = None,
         error_type: ErrorType = ErrorType.INTERNAL_ERROR,
     ):
         logger.exception(
             f"Could not handle Command. request_id={request_id}, error={error}, error_type={error_type}"
         )
-        response_payload = describe_error(error, error_type=error_type)
+        response_payload = describe_error(
+            error, error_type=error_type, public_error_message=public_error_message
+        )
         self._responses_queue.put((request_id, response_payload))
