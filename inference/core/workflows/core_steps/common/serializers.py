@@ -43,7 +43,6 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
     image_dimensions = None
     for xyxy, mask, confidence, class_id, tracker_id, data in detections:
         detection_dict = {}
-        data: Dict[str, np.ndarray] = {}
         image_dimensions = data.get(IMAGE_DIMENSIONS_KEY)
         if isinstance(xyxy, np.ndarray):
             xyxy = xyxy.astype(float).tolist()
