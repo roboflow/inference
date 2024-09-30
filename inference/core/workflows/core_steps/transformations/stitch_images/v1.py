@@ -107,9 +107,7 @@ class StitchImagesBlockV1(WorkflowBlock):
             )
         except Exception as exc:
             logger.info("Stitching failed, %s", exc)
-            return {
-                OUTPUT_KEY: None
-            }
+            return {OUTPUT_KEY: None}
         return {
             OUTPUT_KEY: WorkflowImageData(
                 parent_metadata=image1.parent_metadata,
