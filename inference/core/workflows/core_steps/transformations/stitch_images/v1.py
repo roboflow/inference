@@ -10,9 +10,9 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
-    FLOAT_ZERO_TO_ONE_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -107,7 +107,9 @@ class StitchImagesBlockV1(WorkflowBlock):
             )
         except Exception as exc:
             logger.info("Stitching failed, %s", exc)
-            merged_image = None
+            return {
+                OUTPUT_KEY: None
+            }
         return {
             OUTPUT_KEY: WorkflowImageData(
                 parent_metadata=image1.parent_metadata,
