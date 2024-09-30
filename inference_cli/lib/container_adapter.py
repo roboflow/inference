@@ -1,7 +1,9 @@
+import os
 import subprocess
 from typing import Dict, List, Optional, Union
 
 import typer
+from docker.errors import ImageNotFound
 from docker.models.containers import Container
 from rich.progress import Progress, TaskID
 
@@ -84,6 +86,9 @@ def find_running_inference_containers() -> List[Container]:
 
 
 def get_image() -> str:
+    jetpack_version = os.getenv("JETSON_JETPACK")
+    if jetpack_version:
+        return _get_jetpack_image(jetpack_version=jetpack_version)
     try:
         subprocess.check_output("nvidia-smi")
         print("GPU detected. Using a GPU image.")
@@ -91,6 +96,16 @@ def get_image() -> str:
     except:
         print("No GPU detected. Using a CPU image.")
         return "roboflow/roboflow-inference-server-cpu:latest"
+
+
+def _get_jetpack_image(jetpack_version: str) -> str:
+    if jetpack_version.startswith("4.5"):
+        return "roboflow/roboflow-inference-server-jetson-4.5.0:latest"
+    if jetpack_version.startswith("4.6"):
+        return "roboflow/roboflow-inference-server-jetson-4.6.1:latest"
+    if jetpack_version.startswith("5.1"):
+        return "roboflow/roboflow-inference-server-jetson-5.1.1:latest"
+    raise RuntimeError(f"Jetpack version: {jetpack_version} not supported")
 
 
 def start_inference_container(
@@ -104,6 +119,7 @@ def start_inference_container(
     api_key: Optional[str] = None,
     env_file_path: Optional[str] = None,
     development: bool = False,
+    use_local_images: bool = False,
 ) -> None:
     containers = find_running_inference_containers()
     if len(containers) > 0:
@@ -117,11 +133,15 @@ def start_inference_container(
 
     device_requests = None
     privileged = False
+    docker_run_kwargs = {}
     if "gpu" in image:
         privileged = True
         device_requests = [
             docker.types.DeviceRequest(device_ids=["all"], capabilities=[["gpu"]])
         ]
+    if "jetson" in image:
+        privileged = True
+        docker_run_kwargs = {"runtime": "nvidia"}
     environment = prepare_container_environment(
         port=port,
         project=project,
@@ -132,7 +152,7 @@ def start_inference_container(
         env_file_path=env_file_path,
         development=development,
     )
-    pull_image(image)
+    pull_image(image, use_local_images=use_local_images)
     print(f"Starting inference server container...")
     ports = {"9001": port}
     if development:
@@ -146,6 +166,7 @@ def start_inference_container(
         ports=ports,
         device_requests=device_requests,
         environment=environment,
+        **docker_run_kwargs,
     )
 
 
@@ -213,10 +234,17 @@ Image: {image}
     print("No inference server container running.")
 
 
-def pull_image(image: str) -> None:
+def pull_image(image: str, use_local_images: bool = False) -> None:
     docker_client = docker.from_env()
-    print(f"Pulling image: {image}")
     progress_tasks = {}
+    try:
+        _ = docker_client.images.get(image)
+        if use_local_images:
+            print(f"Using locally cached image: {use_local_images}")
+            return None
+    except ImageNotFound:
+        pass
+    print(f"Pulling image: {image}")
     with Progress() as progress:
         logs_stream = docker_client.api.pull(image, stream=True, decode=True)
         for line in logs_stream:

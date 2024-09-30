@@ -67,6 +67,21 @@ def start(
             "https://<subdomain>.roboflow.run endpoint",
         ),
     ] = False,
+    image: Annotated[
+        Optional[str],
+        typer.Option(
+            "--image",
+            help="Point specific docker image you would like to run with command (useful for development of custom "
+            "builds of inference server)",
+        ),
+    ] = None,
+    use_local_images: Annotated[
+        bool,
+        typer.Option(
+            "--use-local-images/--not-use-local-images",
+            help="Flag to allow using local images (if set False image is always attempted to be pulled)",
+        ),
+    ] = False,
 ) -> None:
 
     try:
@@ -77,11 +92,13 @@ def start(
 
     try:
         start_inference_container(
+            image=image,
             port=port,
             project=rf_env,
             env_file_path=env_file_path,
             development=development,
             api_key=api_key,
+            use_local_images=use_local_images,
         )
     except Exception as container_error:
         typer.echo(container_error)

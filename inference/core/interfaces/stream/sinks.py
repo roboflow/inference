@@ -1,8 +1,9 @@
 import json
 import socket
+from collections import deque
 from datetime import datetime
 from functools import partial
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
 import cv2
 import numpy as np
@@ -361,8 +362,7 @@ def multi_sink(
             sink(predictions, video_frame)
         except Exception as error:
             logger.error(
-                f"Could not sent prediction with frame_id={video_frame.frame_id} to sink "
-                f"due to error: {error}."
+                f"Could not sent prediction with to sink due to error: {error}."
             )
 
 
@@ -539,3 +539,32 @@ class VideoFileSink:
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.release()
+
+
+class InMemoryBufferSink:
+
+    @classmethod
+    def init(cls, queue_size: int):
+        return cls(queue_size=queue_size)
+
+    def __init__(self, queue_size: int):
+        self._buffer = deque(maxlen=queue_size)
+
+    def on_prediction(
+        self,
+        predictions: Union[dict, List[Optional[dict]]],
+        video_frame: Union[VideoFrame, List[Optional[VideoFrame]]],
+    ) -> None:
+        if not isinstance(predictions, list):
+            predictions = [predictions]
+        if not isinstance(video_frame, list):
+            video_frame = [video_frame]
+        self._buffer.append((predictions, video_frame))
+
+    def empty(self) -> bool:
+        return len(self._buffer) == 0
+
+    def consume_prediction(
+        self,
+    ) -> Tuple[List[Optional[dict]], List[Optional[VideoFrame]]]:
+        return self._buffer.popleft()

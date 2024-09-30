@@ -444,6 +444,7 @@ class InferencePipeline:
         workflows_thread_pool_workers: int = 4,
         cancel_thread_pool_tasks_on_exit: bool = True,
         video_metadata_input_name: str = "video_metadata",
+        batch_collection_timeout: Optional[float] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -502,6 +503,10 @@ class InferencePipeline:
             video_metadata_input_name (str): Name of input for video metadata defined in `workflow_specification` or
                 Workflow definition saved  on the Roboflow Platform. `InferencePipeline` will be injecting video frames
                 metadata to workflows through that parameter name.
+            batch_collection_timeout (Optional[float]): Parameter of multiplex_videos(...) dictating how long process
+                to grab frames from multiple sources can wait for batch to be filled before yielding already collected
+                frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
+                unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
         * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
@@ -598,6 +603,7 @@ class InferencePipeline:
             source_buffer_filling_strategy=source_buffer_filling_strategy,
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
+            batch_collection_timeout=batch_collection_timeout,
         )
 
     @classmethod
@@ -915,7 +921,7 @@ class InferencePipeline:
                 payload=payload,
                 status_update_handlers=self._status_update_handlers,
             )
-            logger.warning(f"Error in results dispatching - {error}")
+            logger.exception(f"Error in results dispatching - {error}")
 
     def _generate_frames(
         self,

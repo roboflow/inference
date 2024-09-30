@@ -1,4 +1,5 @@
 import base64
+import os
 import traceback
 from functools import partial, wraps
 from time import sleep
@@ -109,6 +110,7 @@ from inference.core.env import (
     CORE_MODELS_ENABLED,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
+    ENABLE_STREAM_API,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -153,6 +155,30 @@ from inference.core.interfaces.http.handlers.workflows import (
 from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
     serialise_workflow_result,
+)
+from inference.core.interfaces.stream_manager.api.entities import (
+    CommandResponse,
+    ConsumePipelineResponse,
+    InferencePipelineStatusResponse,
+    ListPipelinesResponse,
+)
+from inference.core.interfaces.stream_manager.api.errors import (
+    ProcessesManagerAuthorisationError,
+    ProcessesManagerClientError,
+    ProcessesManagerInvalidPayload,
+    ProcessesManagerNotFoundError,
+)
+from inference.core.interfaces.stream_manager.api.stream_manager_client import (
+    StreamManagerClient,
+)
+from inference.core.interfaces.stream_manager.manager_app.entities import (
+    ConsumeResultsPayload,
+    InitialisePipelinePayload,
+)
+from inference.core.interfaces.stream_manager.manager_app.errors import (
+    CommunicationProtocolError,
+    MalformedPayloadError,
+    MessageToBigError,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import (
@@ -283,7 +309,20 @@ def with_route_exceptions(route):
                     "inner_error_message": str(error.inner_error),
                 },
             )
-        except RoboflowAPINotAuthorizedError:
+        except (
+            ProcessesManagerInvalidPayload,
+            MalformedPayloadError,
+            MessageToBigError,
+        ) as error:
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "inner_error_type": error.inner_error_type,
+                },
+            )
+        except (RoboflowAPINotAuthorizedError, ProcessesManagerAuthorisationError):
             resp = JSONResponse(
                 status_code=401,
                 content={
@@ -299,6 +338,16 @@ def with_route_exceptions(route):
                 content={
                     "message": "Requested Roboflow resource not found. Make sure that workspace, project or model "
                     "you referred in request exists."
+                },
+            )
+            traceback.print_exc()
+        except ProcessesManagerNotFoundError as error:
+            resp = JSONResponse(
+                status_code=404,
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "inner_error_type": error.inner_error_type,
                 },
             )
             traceback.print_exc()
@@ -364,6 +413,19 @@ def with_route_exceptions(route):
                     "context": error.context,
                     "inner_error_type": error.inner_error_type,
                     "inner_error_message": str(error.inner_error),
+                },
+            )
+            traceback.print_exc()
+        except (
+            ProcessesManagerClientError,
+            CommunicationProtocolError,
+        ) as error:
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "inner_error_type": error.inner_error_type,
                 },
             )
             traceback.print_exc()
@@ -560,6 +622,17 @@ class HttpInterface(BaseInterface):
 
         self.app = app
         self.model_manager = model_manager
+        self.stream_manager_client: Optional[StreamManagerClient] = None
+
+        if ENABLE_STREAM_API:
+            operations_timeout = os.getenv("STREAM_MANAGER_OPERATIONS_TIMEOUT")
+            if operations_timeout is not None:
+                operations_timeout = float(operations_timeout)
+            self.stream_manager_client = StreamManagerClient.init(
+                host=os.getenv("STREAM_MANAGER_HOST", "127.0.0.1"),
+                port=int(os.getenv("STREAM_MANAGER_PORT", "7070")),
+                operations_timeout=operations_timeout,
+            )
 
         async def process_inference_request(
             inference_request: InferenceRequest, **kwargs
@@ -1183,6 +1256,96 @@ class HttpInterface(BaseInterface):
                     prevent_local_images_loading=True,
                 )
                 return WorkflowValidationStatus(status="ok")
+
+        if ENABLE_STREAM_API:
+
+            @app.get(
+                "/inference_pipelines/list",
+                response_model=ListPipelinesResponse,
+                summary="[EXPERIMENTAL] List active InferencePipelines",
+                description="[EXPERIMENTAL] Listing all active InferencePipelines processing videos",
+            )
+            @with_route_exceptions
+            async def list_pipelines(_: Request) -> ListPipelinesResponse:
+                return await self.stream_manager_client.list_pipelines()
+
+            @app.get(
+                "/inference_pipelines/{pipeline_id}/status",
+                response_model=InferencePipelineStatusResponse,
+                summary="[EXPERIMENTAL] Get status of InferencePipeline",
+                description="[EXPERIMENTAL] Get status of InferencePipeline",
+            )
+            @with_route_exceptions
+            async def get_status(pipeline_id: str) -> InferencePipelineStatusResponse:
+                return await self.stream_manager_client.get_status(
+                    pipeline_id=pipeline_id
+                )
+
+            @app.post(
+                "/inference_pipelines/initialise",
+                response_model=CommandResponse,
+                summary="[EXPERIMENTAL] Starts new InferencePipeline",
+                description="[EXPERIMENTAL] Starts new InferencePipeline",
+            )
+            @with_route_exceptions
+            async def initialise(request: InitialisePipelinePayload) -> CommandResponse:
+                return await self.stream_manager_client.initialise_pipeline(
+                    initialisation_request=request
+                )
+
+            @app.post(
+                "/inference_pipelines/{pipeline_id}/pause",
+                response_model=CommandResponse,
+                summary="[EXPERIMENTAL] Pauses the InferencePipeline",
+                description="[EXPERIMENTAL] Pauses the InferencePipeline",
+            )
+            @with_route_exceptions
+            async def pause(pipeline_id: str) -> CommandResponse:
+                return await self.stream_manager_client.pause_pipeline(
+                    pipeline_id=pipeline_id
+                )
+
+            @app.post(
+                "/inference_pipelines/{pipeline_id}/resume",
+                response_model=CommandResponse,
+                summary="[EXPERIMENTAL] Resumes the InferencePipeline",
+                description="[EXPERIMENTAL] Resumes the InferencePipeline",
+            )
+            @with_route_exceptions
+            async def resume(pipeline_id: str) -> CommandResponse:
+                return await self.stream_manager_client.resume_pipeline(
+                    pipeline_id=pipeline_id
+                )
+
+            @app.post(
+                "/inference_pipelines/{pipeline_id}/terminate",
+                response_model=CommandResponse,
+                summary="[EXPERIMENTAL] Terminates the InferencePipeline",
+                description="[EXPERIMENTAL] Terminates the InferencePipeline",
+            )
+            @with_route_exceptions
+            async def terminate(pipeline_id: str) -> CommandResponse:
+                return await self.stream_manager_client.terminate_pipeline(
+                    pipeline_id=pipeline_id
+                )
+
+            @app.get(
+                "/inference_pipelines/{pipeline_id}/consume",
+                response_model=ConsumePipelineResponse,
+                summary="[EXPERIMENTAL] Consumes InferencePipeline result",
+                description="[EXPERIMENTAL] Consumes InferencePipeline result",
+            )
+            @with_route_exceptions
+            async def consume(
+                pipeline_id: str,
+                request: Optional[ConsumeResultsPayload] = None,
+            ) -> ConsumePipelineResponse:
+                if request is None:
+                    request = ConsumeResultsPayload()
+                return await self.stream_manager_client.consume_pipeline_result(
+                    pipeline_id=pipeline_id,
+                    excluded_fields=request.excluded_fields,
+                )
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

@@ -24,39 +24,91 @@ its inputs and outputs
 As you will soon see, creating a Workflow block is simply a matter of defining a Python class that implements 
 a specific interface. This design allows you to run the block using the Python interpreter, just like any 
 other Python code. However, you may encounter difficulties when assembling all the required inputs, which would 
-normally be provided by other blocks during Workflow execution.
+normally be provided by other blocks during Workflow execution. Therefore, it's important to set up the development 
+environment properly for a smooth workflow. We recommend following these steps as part of the standard development 
+process (initial steps can be skipped for subsequent contributions):
 
-While it is possible to run your block during development without executing it via the Execution Engine, 
-you will likely need to run end-to-end tests in the final stages. This is the most straightforward way to 
-validate the functionality.
+1. **Set up the `conda` environment** and install main dependencies of `inference`, as described in
+[`inference` contributor guide](https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md).
 
-To get started, build the inference server from your branch
-```bash
-inference_repo$ docker build \
-  -t roboflow/roboflow-inference-server-cpu:test \ 
-  -f docker/dockerfiles/Dockerfile.onnx.cpu .
-```
+2. **Familiarize yourself with the organization of the Workflows codebase.**
 
-Run docker image mounting your code as volume
+    ??? "Workflows codebase structure - cheatsheet"
+    
+        Below are the key packages and directories in the Workflows codebase, along with their descriptions:
+    
+        * `inference/core/workflows` - the main package for Workflows.
+    
+        * `inference/core/workflows/core_steps` - contains Workflow blocks that are part of the Roboflow Core plugin. At the top levels, you'll find block categories, and as you go deeper, each block has its own package, with modules hosting different versions, starting from `v1.py`
+    
+        * `inference/core/workflows/execution_engine` - contains the Execution Engine. You generally won’t need to modify this package unless contributing to Execution Engine functionality.
+    
+        * `tests/workflows/` - the root directory for Workflow tests
+      
+        * `tests/workflows/unit_tests/` - suites of unit tests for the Workflows Execution Engine and core blocks. This is where you can test utility functions used in your blocks.
+    
+        * `tests/workflows/integration_tests/` - suites of integration tests for the Workflows Execution Engine and core blocks. You can run end-to-end (E2E) tests of your workflows in combination with other blocks here.
+
+
+3. **Create a minimalistic block** – You’ll learn how to do this in the following sections. Start by implementing a simple block manifest and basic logic to ensure the block runs as expected.
+
+4. **Add the block to the plugin** – Once your block is created, add it to the list of blocks exported from the plugin. If you're adding the block to the Roboflow Core plugin, make sure to add an entry for your block in the
+[loader.py](https://github.com/roboflow/inference/blob/main/inference/core/workflows/core_steps/loader.py). **If you forget this step, your block won’t be visible!**
+
+5. **Iterate and refine your block** – Continue developing and running your block until you’re satisfied with the results. The sections below explain how to iterate on your block in various scenarios.
+
+### Running your blocks using Workflows UI
+
+We recommend running the inference server with a mounted volume (which is much faster than re-building `inference` 
+server on each change):
+
 ```bash
 inference_repo$ docker run -p 9001:9001 \
-  -v ./inference:/app/inference \
-  roboflow/roboflow-inference-server-cpu:test
+   -v ./inference:/app/inference \
+   roboflow/roboflow-inference-server-cpu:latest
 ```
-
-Connect your local server to Roboflow UI
+and connecting your local server to Roboflow UI:
 
 <div align="center"><img src="https://media.roboflow.com/inference/workflows_connect_your_local_server.png" width="80%"/></div>
 
-Create your Workflow definition and run preview
+to quickly run previews:
 
 <div align="center"><img src="https://media.roboflow.com/inference/workflow_preview.png"/></div>
-
   
-??? Note "Development without Roboflow UI "
+??? Note "My block requires extra dependencies - I cannot use pre-built `inference` server"
 
-    Alternatively, you may create script with your Workflow definition and make requests to your `inference_sdk`.
-    Here you may find example script:
+    It's natural that your blocks may sometimes require additional dependencies. To add a dependency, simply include it in one of the 
+    [requirements files](https://github.com/roboflow/inference/tree/main/requirements)hat are installed in the relevant Docker image 
+    (usually the
+    [CPU build](https://github.com/roboflow/inference/blob/main/docker/dockerfiles/Dockerfile.onnx.cpu) 
+    of the `inference` server).
+
+    Afterward, run:
+      
+    ```{ .bash linenums="1" hl_lines="3"}
+    inference_repo$ docker build \
+       -t roboflow/roboflow-inference-server-cpu:test \ 
+       -f docker/dockerfiles/Dockerfile.onnx.cpu .
+    ```
+
+    You can then run your local build by specifying the test tag you just created:
+
+    ```{ .bash linenums="1" hl_lines="3"}
+    inference_repo$ inference_repo$ docker run -p 9001:9001 \
+       -v ./inference:/app/inference \
+       roboflow/roboflow-inference-server-cpu:test
+    ```
+
+### Running your blocks without Workflows UI
+
+For contributors without access to the Roboflow platform, we recommend running the server as mentioned in the 
+section above. However, instead of using the UI editor, you will need to create a simple Workflow definition and 
+send a request to the server.
+    
+??? Note "Running your Workflow without UI"
+
+    The following code snippet demonstrates how to send a request to the `inference` server to run a Workflow. 
+    The `inference_sdk` is included with the `inference` package as a lightweight client library for our server.
 
     ```python
     from inference_sdk import InferenceHTTPClient
@@ -65,7 +117,7 @@ Create your Workflow definition and run preview
     
     client = InferenceHTTPClient(
         api_url=object_detection_service_url,
-        api_key="XXX",  # only required if Workflow uses Roboflow Platform
+        api_key="XXX",  # optional, only required if Workflow uses Roboflow Platform
     )
     result = client.run_workflow(
         specification=YOUR_WORKFLOW_DEFINITION,
@@ -77,6 +129,93 @@ Create your Workflow definition and run preview
         },
     )
     ```
+
+### Recommended way for regular contributors
+
+
+Creating integration tests in the `tests/workflows/integration_tests/execution` directory is a natural part of the 
+development iteration process. This approach allows you to develop and test simultaneously, providing valuable 
+feedback as you refine your code. Although it requires some experience, it significantly enhances 
+long-term code maintenance.
+
+The process is straightforward:
+
+1. **Create a New Test Module:** For example, name it `test_workflows_with_my_custom_block.py`.
+
+2. **Develop Example Workflows**: Create one or more example Workflows. It would be best if your block cooperates 
+with other blocks from the ecosystem. 
+
+3. **Run Tests with Sample Data:** Execute these Workflows in your tests using sample data 
+(you can explore our 
+[fixtures](https://github.com/roboflow/inference/blob/main/tests/workflows/integration_tests/execution/conftest.py)
+to find example data we usually use).
+
+4. **Assert Expected Results:** Validate that the results match your expectations.
+
+By incorporating testing into your development flow, you ensure that your block remains stable over time and 
+effectively interacts with existing blocks, enhancing the expressiveness of your work!
+
+You can run your test using the following command:
+
+```bash
+pytest tests/workflows/integration_tests/execution/test_workflows_with_my_custom_block
+```
+Feel free to reference other tests for examples or use the following template:
+
+    
+??? Note "Integration test template"
+
+    ```{ .py linenums="1" hl_lines="2 3 4 7-11 19-23"}
+    def test_detection_plus_classification_workflow_when_XXX(
+        model_manager: ModelManager,
+        dogs_image: np.ndarray, 
+        roboflow_api_key: str,
+    ) -> None:
+        # given
+        workflow_init_parameters = {
+            "workflows_core.model_manager": model_manager,
+            "workflows_core.api_key": roboflow_api_key,
+            "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+        }
+        execution_engine = ExecutionEngine.init(
+            workflow_definition=<YOUR-EXAMPLE-WORKLFOW>,
+            init_parameters=workflow_init_parameters,
+            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        )
+    
+        # when
+        result = execution_engine.run(
+            runtime_parameters={
+                "image": dogs_image,
+            }
+        )
+      
+        # then
+        assert isinstance(result, list), "Expected list to be delivered"
+        assert len(result) == 1, "Expected 1 element in the output for one input image"
+        assert set(result[0].keys()) == {
+            "predictions",
+        }, "Expected all declared outputs to be delivered"
+        assert (
+            len(result[0]["predictions"]) == 2
+        ), "Expected 2 dogs crops on input image, hence 2 nested classification results"
+        assert [result[0]["predictions"][0]["top"], result[0]["predictions"][1]["top"]] == [
+            "116.Parson_russell_terrier",
+            "131.Wirehaired_pointing_griffon",
+        ], "Expected predictions to be as measured in reference run"
+    ```
+
+    * In line `2`, you’ll find the `model_manager` fixture, which is typically required by model blocks. This fixture provides the `ModelManager` abstraction from `inference`, used for loading and unloading models.
+
+    * Line `3` defines a fixture that includes an image of two dogs (explore other fixtures to find more example images).
+
+    * Line `4` is an optional fixture you may want to use if any of the blocks in your tested workflow require a Roboflow API key. If that’s the case, export the `ROBOFLOW_API_KEY` environment variable with a valid key before running the test.
+
+    * Lines `7-11` provide the setup for the initialization parameters of the blocks that the Execution Engine will create at runtime, based on your Workflow definition.
+
+    * Lines `19-23` demonstrate how to run a Workflow by injecting input parameters. Please ensure that the keys in runtime_parameters match the inputs declared in your Workflow definition.
+
+    * Starting from line `26`, you’ll find example assertions within the test.
 
 
 ## Prototypes
