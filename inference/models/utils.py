@@ -25,6 +25,7 @@ from inference.models import (
     YOLOv11InstanceSegmentation,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
+from inference.models.yolov11.yolov11_keypoints_detection import YOLOv11KeypointsDetection
 
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "stub"): ClassificationModelStub,
@@ -108,6 +109,16 @@ ROBOFLOW_MODEL_TYPES = {
         "instance-segmentation",
         "yolov11x-seg",
     ): YOLOv11InstanceSegmentation,
+    ("keypoint-detection", "yolov11n"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11s"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11m"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11l"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11x"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11n-pose"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11s-pose"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11m-pose"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11l-pose"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11x-pose"): YOLOv11KeypointsDetection,
     ("instance-segmentation", "stub"): InstanceSegmentationModelStub,
     (
         "instance-segmentation",
