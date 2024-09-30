@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -12,15 +12,14 @@ permissions:
 
 jobs:
   build:
-    runs-on:
-      group: group8core
+    runs-on: depot-ubuntu-22.04-8
     timeout-minutes: 30
     strategy:
       matrix:
         python-version: ["3.8", "3.9", "3.10", "3.11"]
     steps:
       - name: 🛎️ Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: 🐍 Set up Python 3.9 to create wheels
         uses: actions/setup-python@v2
         with:
