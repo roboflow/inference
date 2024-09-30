@@ -1,8 +1,8 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import Callable, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -13,7 +13,6 @@ from inference.core.env import (
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
-    load_core_model,
     remove_unexpected_keys_from_dictionary,
 )
 from inference.core.workflows.execution_engine.constants import (
@@ -39,7 +38,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+from .models.base import BaseOCRModel
+from .models.doctr import DoctrOCRModel
+from .models.trocr import TrOCRModel  # Added import for TrOCRModel
 
 LONG_DESCRIPTION = """
  Retrieve the characters in an image using Optical Character Recognition (OCR).
@@ -57,11 +59,27 @@ on particular regions of an image.
 
 EXPECTED_OUTPUT_KEYS = {"result", "parent_id", "root_parent_id", "prediction_type"}
 
+# Registry of available models
+MODEL_REGISTRY = {
+    "doctr": {
+        "class": DoctrOCRModel,
+        "description": "Doctr OCR Model",
+        "required_fields": [],
+    },
+    "trocr": {
+        "class": TrOCRModel,
+        "description": "TrOCR Model",
+        "required_fields": [],
+    },
+}
+
+ModelLiteral = Literal["doctr", "trocr"]  # Updated to include 'trocr'
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "OCR Model",
+            "name": "Text Recognition (OCR)",
             "version": "v1",
             "short_description": "Extract text from an image using optical character recognition.",
             "long_description": LONG_DESCRIPTION,
@@ -72,6 +90,14 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/ocr_model@v1", "OCRModel"]
     name: str = Field(description="Unique name of step in workflows")
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    model: ModelLiteral = Field(
+        default="doctr",
+        description="The OCR model to use.",
+    )
+    google_cloud_api_key: Optional[str] = Field(
+        default=None,
+        description="API key for Google Cloud Vision, required if model is 'google-cloud-vision'.",
+    )
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
@@ -92,7 +118,6 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class OCRModelBlockV1(WorkflowBlock):
-    # TODO: we need data model for OCR predictions
 
     def __init__(
         self,
@@ -115,69 +140,34 @@ class OCRModelBlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
+        model: str,
+        google_cloud_api_key: Optional[str] = None,
     ) -> BlockResult:
-        if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return self.run_locally(images=images)
-        elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return self.run_remotely(images=images)
-        else:
-            raise ValueError(
-                f"Unknown step execution mode: {self._step_execution_mode}"
-            )
-
-    def run_locally(
-        self,
-        images: Batch[WorkflowImageData],
-    ) -> BlockResult:
-        predictions = []
-        for single_image in images:
-            inference_request = DoctrOCRInferenceRequest(
-                image=single_image.to_inference_format(numpy_preferred=True),
-                api_key=self._api_key,
-            )
-            doctr_model_id = load_core_model(
-                model_manager=self._model_manager,
-                inference_request=inference_request,
-                core_model="doctr",
-            )
-            result = self._model_manager.infer_from_request_sync(
-                doctr_model_id, inference_request
-            )
-            predictions.append(result.model_dump())
-        return self._post_process_result(
-            predictions=predictions,
+        ocr_model = self._get_model_instance(
+            model=model,
+            google_cloud_api_key=google_cloud_api_key,
+        )
+        return ocr_model.run(
             images=images,
+            step_execution_mode=self._step_execution_mode,
+            post_process_result=self._post_process_result,
         )
 
-    def run_remotely(
+    def _get_model_instance(
         self,
-        images: Batch[WorkflowImageData],
-    ) -> BlockResult:
-        api_url = (
-            LOCAL_INFERENCE_API_URL
-            if WORKFLOWS_REMOTE_API_TARGET != "hosted"
-            else HOSTED_CORE_MODEL_URL
-        )
-        client = InferenceHTTPClient(
-            api_url=api_url,
-            api_key=self._api_key,
-        )
-        if WORKFLOWS_REMOTE_API_TARGET == "hosted":
-            client.select_api_v0()
-        configuration = InferenceConfiguration(
-            max_batch_size=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-            max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-        )
-        client.configure(configuration)
-        non_empty_inference_images = [i.numpy_image for i in images]
-        predictions = client.ocr_image(
-            inference_input=non_empty_inference_images,
-        )
-        if len(images) == 1:
-            predictions = [predictions]
-        return self._post_process_result(
-            predictions=predictions,
-            images=images,
+        model: str,
+        **kwargs,
+    ) -> BaseOCRModel:
+        model_info = MODEL_REGISTRY.get(model)
+        if not model_info:
+            raise ValueError(f"Unknown model: {model}")
+        model_class = model_info["class"]
+        # Collect required fields for the model
+        required_fields = {
+            field: kwargs.get(field) for field in model_info.get("required_fields", [])
+        }
+        return model_class(
+            model_manager=self._model_manager, api_key=self._api_key, **required_fields
         )
 
     def _post_process_result(
