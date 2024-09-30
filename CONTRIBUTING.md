@@ -160,7 +160,7 @@ We utilize secrets API keys and custom GitHub Actions runners in our CI pipeline
 CI actions failing when submitting a pull request (PR) from a forked repository. While we are working to improve this 
 experience, you should not worry too much, as long as you have tested the following locally:
 
-1. For changes in the core of `inference`:
+#### For changes in the core of `inference`:
 
 - Add new tests to `tests/inference/unit_tests`.
 
@@ -169,7 +169,7 @@ experience, you should not worry too much, as long as you have tested the follow
 - When adding a model, include tests with example model inference in `tests/inference/models_predictions_tests`, 
 and run `pytest tests/inference/models_predictions_tests/test_{{YOUR_MODEL}}.py` to confirm that the tests pass.
 
-2. For changes to the `inference` server:
+#### For changes to the `inference` server:
 
 - Add tests to `tests/inference/integration_tests/`.
 
@@ -178,21 +178,21 @@ and run `pytest tests/inference/models_predictions_tests/test_{{YOUR_MODEL}}.py`
 - Run your tests against the server using: `pytest tests/inference/integration_tests/test_{{YOUR-TEST-MODULE}}`.
 
 
-3. For changes in `inference-cli`:
+#### For changes in `inference-cli`:
 
 - Add tests for your changes in `tests/inference_cli`.
 
 - Run `pytest tests/inference_cli` without errors.
 
 
-4. For changes in `inference-sdk`:
+#### For changes in `inference-sdk`:
 
 - Add tests to `tests/inference_sdk`.
 
 - Run pytest `tests/inference_sdk without` errors.
 
 
-5. For changes related to Workflows:
+#### For changes related to Workflows:
 
 - Add tests to `tests/workflows/unit_tests` and `tests/workflows/integration_tests`.
 
@@ -200,7 +200,7 @@ and run `pytest tests/inference/models_predictions_tests/test_{{YOUR_MODEL}}.py`
 
 - Run `pytest tests/workflows/integration_tests/execution/test_workflow_with_{{YOUR-BLOCK}}` without errors
 
-Please refer to the details [here](https://inference.roboflow.com/workflows/create_workflow_block/#environment-setup)
+Please refer to the details [here](https://inference.roboflow.com/workflows/create_workflow_block/#environment-setup).
 
 ## 📚 Documentation
 
