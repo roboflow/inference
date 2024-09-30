@@ -18,9 +18,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: 🛎️ Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
+      - name: 📦 Cache Python packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - name: 🦾 Install dependencies
         run: |
           python3 -m pip install --upgrade pip
@@ -41,3 +48,4 @@ jobs:
       - name: 🧹 Cleanup Test Docker - Parallel GPU
         run: make stop_test_docker
         if: success() || failure()
+
