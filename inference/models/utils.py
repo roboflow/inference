@@ -22,6 +22,7 @@ from inference.models import (
     YOLOv9ObjectDetection,
     YOLOv10ObjectDetection,
     YOLOv11ObjectDetection,
+    YOLOv11InstanceSegmentation,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 
@@ -67,6 +68,46 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov11m"): YOLOv11ObjectDetection,
     ("object-detection", "yolov11l"): YOLOv11ObjectDetection,
     ("object-detection", "yolov11x"): YOLOv11ObjectDetection,
+    (
+        "instance-segmentation",
+        "yolov11n",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11s",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11m",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11l",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11x",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11n-seg",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11s-seg",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11m-seg",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11l-seg",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11x-seg",
+    ): YOLOv11InstanceSegmentation,
     ("instance-segmentation", "stub"): InstanceSegmentationModelStub,
     (
         "instance-segmentation",
