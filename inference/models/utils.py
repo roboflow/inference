@@ -21,11 +21,13 @@ from inference.models import (
     YOLOv8ObjectDetection,
     YOLOv9ObjectDetection,
     YOLOv10ObjectDetection,
-    YOLOv11ObjectDetection,
     YOLOv11InstanceSegmentation,
+    YOLOv11ObjectDetection,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
-from inference.models.yolov11.yolov11_keypoints_detection import YOLOv11KeypointsDetection
+from inference.models.yolov11.yolov11_keypoints_detection import (
+    YOLOv11KeypointsDetection,
+)
 
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "stub"): ClassificationModelStub,
