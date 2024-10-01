@@ -111,6 +111,7 @@ from inference.core.env import (
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
     ENABLE_STREAM_API,
+    IS_DOCKER,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -123,7 +124,6 @@ from inference.core.env import (
     ROBOFLOW_SERVICE_SECRET,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_STEP_EXECUTION_MODE,
-    IS_DOCKER,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
