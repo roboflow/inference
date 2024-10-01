@@ -1,17 +1,11 @@
-from typing import Callable, Dict, List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.inference import LMMInferenceRequest
-from inference.core.env import (
-    HOSTED_CORE_MODEL_URL,
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_BATCH_SIZE,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
 from inference.core.managers.base import ModelManager
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.entities import (
+    StepExecutionMode,
+)
 from inference.core.workflows.core_steps.common.utils import (
     remove_unexpected_keys_from_dictionary,
 )
@@ -43,22 +37,34 @@ from .models.base import BaseOCRModel
 from .models.doctr import DoctrOCRModel
 from .models.trocr import TrOCRModel
 from .models.google_cloud_vision import GoogleCloudVisionOCRModel
+from .models.mathpix import MathpixOCRModel
+from .models.easyocr import EasyOCRModel
+
+SHORT_DESCRIPTION = (
+    "Extract text from an image using optical character recognition (OCR)."
+)
 
 LONG_DESCRIPTION = """
- Retrieve the characters in an image using Optical Character Recognition (OCR).
+Retrieve the characters in an image using Optical Character Recognition (OCR).
 
 This block returns the text within an image.
 
-You may want to use this block in combination with a detections-based block (i.e. 
-ObjectDetectionBlock). An object detection model could isolate specific regions from an 
-image (i.e. a shipping container ID in a logistics use case) for further processing. 
-You can then use a DynamicCropBlock to crop the region of interest before running OCR.
+You may want to use this block in combination with a detections-based block
+(i.e. ObjectDetectionBlock). An object detection model could isolate specific
+regions from an image (i.e. a shipping container ID in a logistics use case)
+for further processing. You can then use a DynamicCropBlock to crop the region
+of interest before running OCR.
 
-Using a detections model then cropping detections allows you to isolate your analysis 
-on particular regions of an image.
+Using a detections model then cropping detections allows you to isolate your
+analysis on particular regions of an image.
 """
 
-EXPECTED_OUTPUT_KEYS = {"result", "parent_id", "root_parent_id", "prediction_type"}
+EXPECTED_OUTPUT_KEYS = {
+    "result",
+    "parent_id",
+    "root_parent_id",
+    "prediction_type",
+}
 
 # Registry of available models
 MODEL_REGISTRY = {
@@ -77,9 +83,25 @@ MODEL_REGISTRY = {
         "description": "Google Cloud Vision OCR",
         "required_fields": ["google_cloud_api_key"],
     },
+    "mathpix": {
+        "class": MathpixOCRModel,
+        "description": "Mathpix Convert API",
+        "required_fields": ["mathpix_app_id", "mathpix_app_key"],
+    },
+    "easyocr": {
+        "class": EasyOCRModel,
+        "description": "EasyOCR",
+        "required_fields": ["easyocr_languages"],
+    },
 }
 
-ModelLiteral = Literal["doctr", "trocr", "google-cloud-vision"]
+ModelLiteral = Literal[
+    "doctr",
+    "trocr",
+    "google-cloud-vision",
+    "mathpix",
+    "easyocr",
+]
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -87,7 +109,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Text Recognition (OCR)",
             "version": "v1",
-            "short_description": "Extract text from an image using optical character recognition.",
+            "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -95,14 +117,29 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/ocr_model@v1", "OCRModel"]
     name: str = Field(description="Unique name of step in workflows")
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: Union[
+        WorkflowImageSelector,
+        StepOutputImageSelector,
+    ] = ImageInputField
     model: ModelLiteral = Field(
         default="doctr",
         description="The OCR model to use.",
     )
     google_cloud_api_key: Optional[str] = Field(
         default=None,
-        description="API key for Google Cloud Vision, required if model is 'google-cloud-vision'.",
+        description="API key for Google Cloud Vision.",
+    )
+    mathpix_app_id: Optional[str] = Field(
+        default=None,
+        description="App ID for Mathpix API",
+    )
+    mathpix_app_key: Optional[str] = Field(
+        default=None,
+        description="App Key for Mathpix API",
+    )
+    easyocr_languages: Optional[List[str]] = Field(
+        default_factory=lambda: ["en"],
+        description="List of EasyOCR model languages.",
     )
 
     @classmethod
@@ -115,7 +152,10 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="result", kind=[STRING_KIND]),
             OutputDefinition(name="parent_id", kind=[PARENT_ID_KIND]),
             OutputDefinition(name="root_parent_id", kind=[PARENT_ID_KIND]),
-            OutputDefinition(name="prediction_type", kind=[PREDICTION_TYPE_KIND]),
+            OutputDefinition(
+                name="prediction_type",
+                kind=[PREDICTION_TYPE_KIND],
+            ),
         ]
 
     @classmethod
@@ -124,7 +164,6 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class OCRModelBlockV1(WorkflowBlock):
-
     def __init__(
         self,
         model_manager: ModelManager,
@@ -148,10 +187,16 @@ class OCRModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model: str,
         google_cloud_api_key: Optional[str] = None,
+        mathpix_app_id: Optional[str] = None,
+        mathpix_app_key: Optional[str] = None,
+        easyocr_languages: Optional[List[str]] = None,
     ) -> BlockResult:
         ocr_model = self._get_model_instance(
             model=model,
             google_cloud_api_key=google_cloud_api_key,
+            mathpix_app_id=mathpix_app_id,
+            mathpix_app_key=mathpix_app_key,
+            easyocr_languages=easyocr_languages,
         )
         return ocr_model.run(
             images=images,
@@ -169,10 +214,16 @@ class OCRModelBlockV1(WorkflowBlock):
             raise ValueError(f"Unknown model: {model}")
         model_class = model_info["class"]
         required_fields = {
-            field: kwargs.get(field) for field in model_info.get("required_fields", [])
+            field: kwargs.get(field)
+            for field in model_info.get(
+                "required_fields",
+                [],
+            )
         }
         return model_class(
-            model_manager=self._model_manager, api_key=self._api_key, **required_fields
+            model_manager=self._model_manager,
+            api_key=self._api_key,
+            **required_fields,
         )
 
     def _post_process_result(

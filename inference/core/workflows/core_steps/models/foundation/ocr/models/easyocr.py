@@ -1,20 +1,26 @@
-from typing import Callable, List
-
-from inference.core.entities.requests.trocr import TrOCRInferenceRequest
+from .base import BaseOCRModel
 from inference.core.workflows.core_steps.common.entities import (
     StepExecutionMode,
 )
-from inference.core.workflows.core_steps.common.utils import load_core_model
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     WorkflowImageData,
 )
 from inference.core.workflows.prototypes.block import BlockResult
+from typing import Callable, List, Optional
+import easyocr
+import cv2
 
-from .base import BaseOCRModel
 
-
-class TrOCRModel(BaseOCRModel):
+class EasyOCRModel(BaseOCRModel):
+    def __init__(
+        self,
+        model_manager,
+        api_key: Optional[str],
+        easyocr_languages: List[str] = ["en"],
+    ):
+        super().__init__(model_manager, api_key)
+        self.reader = easyocr.Reader(easyocr_languages)
 
     def run(
         self,
@@ -37,20 +43,25 @@ class TrOCRModel(BaseOCRModel):
         ],
     ) -> BlockResult:
         predictions = []
-        for single_image in images:
-            inference_request = TrOCRInferenceRequest(
-                image=single_image.to_inference_format(numpy_preferred=True),
-                api_key=self.api_key,
+        for image_data in images:
+            # Convert image_data to numpy array
+            inference_image = image_data.to_inference_format(
+                numpy_preferred=True,
             )
-            trocr_model_id = load_core_model(
-                model_manager=self.model_manager,
-                inference_request=inference_request,
-                core_model="trocr",
-            )
-            result = self.model_manager.infer_from_request_sync(
-                trocr_model_id, inference_request
-            )
-            predictions.append(result.model_dump())
+            img = inference_image["value"]
+            # Ensure image is in RGB format
+            if len(img.shape) == 3 and img.shape[2] == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            elif len(img.shape) == 2:
+                pass
+            else:
+                # Unsupported image format
+                raise ValueError("Unsupported image format")
+            # Run OCR
+            result = self.reader.readtext(img, detail=0)
+            text = " ".join(result)
+            prediction = {"result": text}
+            predictions.append(prediction)
         return post_process_result(images, predictions)
 
     def run_remotely(
@@ -61,5 +72,5 @@ class TrOCRModel(BaseOCRModel):
         ],
     ) -> BlockResult:
         raise NotImplementedError(
-            "Remote execution is not implemented for TrOCRModel.",
+            "Remote execution is not implemented for EasyOCRModel."
         )
