@@ -2,13 +2,15 @@ name: Static code analysis
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   build-dev-test:
-    runs-on: depot-ubuntu-22.04-small
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
     timeout-minutes: 5
     steps:
       - name: 🛎️ Checkout

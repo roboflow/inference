@@ -10,7 +10,9 @@ on:
 
 jobs:
   build:
-    runs-on: depot-ubuntu-22.04-small
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
     timeout-minutes: 30
     steps:
       - name: 🛎️ Checkout

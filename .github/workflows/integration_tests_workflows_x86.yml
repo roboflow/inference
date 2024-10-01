@@ -4,12 +4,14 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   build-dev-test:
-    runs-on: depot-ubuntu-22.04-16
+    runs-on:
+      labels: depot-ubuntu-22.04-16
+      group: public-depot
     strategy:
       matrix:
         python-version: ["3.8", "3.9", "3.10", "3.11"]

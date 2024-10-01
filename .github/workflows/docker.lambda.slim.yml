@@ -10,7 +10,9 @@ env:
 
 jobs:
   docker:
-    runs-on: depot-ubuntu-22.04-small
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
     timeout-minutes: 120
     permissions:
       id-token: write
