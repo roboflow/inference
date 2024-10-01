@@ -42,6 +42,7 @@ from inference.core.workflows.prototypes.block import (
 from .models.base import BaseOCRModel
 from .models.doctr import DoctrOCRModel
 from .models.trocr import TrOCRModel
+from .models.google_cloud_vision import GoogleCloudVisionOCRModel
 
 LONG_DESCRIPTION = """
  Retrieve the characters in an image using Optical Character Recognition (OCR).
@@ -63,17 +64,22 @@ EXPECTED_OUTPUT_KEYS = {"result", "parent_id", "root_parent_id", "prediction_typ
 MODEL_REGISTRY = {
     "doctr": {
         "class": DoctrOCRModel,
-        "description": "Doctr OCR Model",
+        "description": "DocTR",
         "required_fields": [],
     },
     "trocr": {
         "class": TrOCRModel,
-        "description": "TrOCR Model",
+        "description": "TrOCR",
         "required_fields": [],
+    },
+    "google-cloud-vision": {
+        "class": GoogleCloudVisionOCRModel,
+        "description": "Google Cloud Vision OCR",
+        "required_fields": ["google_cloud_api_key"],
     },
 }
 
-ModelLiteral = Literal["doctr", "trocr"]
+ModelLiteral = Literal["doctr", "trocr", "google-cloud-vision"]
 
 
 class BlockManifest(WorkflowBlockManifest):
