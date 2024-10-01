@@ -18,6 +18,11 @@ class WorkflowInferenceRequest(BaseModel):
         default=None,
         description="List of field that shall be excluded from the response (among those defined in workflow specification)",
     )
+    no_cache: bool = Field(
+        default=False,
+        description="Disables usage of cache for workflow definitions. Set this into true when you frequently modify "
+        "definition saved in Roboflow app and want to fetch the newest version for the request.",
+    )
 
 
 class WorkflowSpecificationInferenceRequest(WorkflowInferenceRequest):

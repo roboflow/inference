@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import urllib.parse
@@ -431,15 +432,27 @@ def get_workflow_specification(
     api_key: str,
     workspace_id: WorkspaceID,
     workflow_id: str,
+    no_cache: bool = False,
 ) -> dict:
+    if not no_cache:
+        cached_entry = _retrieve_workflow_specification_from_memory_or_redis(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+        )
+        if cached_entry:
+            return cached_entry
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_id}",
         params=[("api_key", api_key)],
     )
     try:
         response = _get_from_url(url=api_url)
-        cache_workflow_response(workspace_id, workflow_id, response)
+        if not no_cache:
+            cache_workflow_response(workspace_id, workflow_id, response)
     except (requests.exceptions.ConnectionError, ConnectionError) as error:
+        if no_cache:
+            raise error
         response = load_cached_workflow_response(workspace_id, workflow_id)
         if response is None:
             raise error
@@ -449,7 +462,15 @@ def get_workflow_specification(
         )
     try:
         workflow_config = json.loads(response["workflow"]["config"])
-        return workflow_config["specification"]
+        specification = workflow_config["specification"]
+        if not no_cache:
+            _cache_workflow_specification_in_memory_or_redis(
+                api_key=api_key,
+                workspace_id=workspace_id,
+                workflow_id=workflow_id,
+                specification=specification,
+            )
+        return specification
     except KeyError as error:
         raise MalformedWorkflowResponseError(
             "Workflow specification not found in Roboflow API response"
@@ -458,6 +479,46 @@ def get_workflow_specification(
         raise MalformedWorkflowResponseError(
             "Could not decode workflow specification in Roboflow API response"
         ) from error
+
+
+def _retrieve_workflow_specification_from_memory_or_redis(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+) -> Optional[dict]:
+    cache_key = _prepare_workflow_response_cache_key(
+        api_key=api_key,
+        workspace_id=workspace_id,
+        workflow_id=workflow_id,
+    )
+    return cache.get(key=cache_key)
+
+
+def _cache_workflow_specification_in_memory_or_redis(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    specification: dict,
+) -> None:
+    cache_key = _prepare_workflow_response_cache_key(
+        api_key=api_key,
+        workspace_id=workspace_id,
+        workflow_id=workflow_id,
+    )
+    cache.set(
+        key=cache_key,
+        value=specification,
+        expire=15 * 60,
+    )
+
+
+def _prepare_workflow_response_cache_key(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+) -> str:
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    return f"workflow_definition:{workspace_id}:{workflow_id}:{api_key_hash}"
 
 
 @wrap_roboflow_api_errors()

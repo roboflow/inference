@@ -1136,6 +1136,7 @@ class HttpInterface(BaseInterface):
                         api_key=workflow_request.api_key,
                         workspace_id=workspace_name,
                         workflow_id=workflow_id,
+                        no_cache=workflow_request.no_cache,
                     )
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,

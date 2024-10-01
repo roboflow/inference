@@ -68,7 +68,6 @@ def compile_workflow(
             raw_workflow_definition=workflow_definition,
             dynamic_blocks=dynamic_blocks,
             execution_engine_version=execution_engine_version,
-            profiler=profiler,
         )
     with profiler.profile_execution_phase(
         name="workflow_definition_validation",
