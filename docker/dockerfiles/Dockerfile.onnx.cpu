@@ -40,6 +40,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.transformers.txt \
     jupyterlab \
     wheel>=0.38.0 \
+    setuptools>=65.5.1 \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -74,4 +75,5 @@ ENV API_LOGGING_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
 ENV CORE_MODEL_OWLV2_ENABLED=True
 
-ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+RUN pip install watchdog[watchmedo]
+ENTRYPOINT watchmedo auto-restart --directory=/app/inference --pattern=*.py --recursive -- uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
