@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List
+from typing import Callable, List
 
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.entities import (
+    StepExecutionMode,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     WorkflowImageData,
