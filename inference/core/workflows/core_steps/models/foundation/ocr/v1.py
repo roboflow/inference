@@ -38,7 +38,6 @@ from .models.doctr import DoctrOCRModel
 from .models.trocr import TrOCRModel
 from .models.google_cloud_vision import GoogleCloudVisionOCRModel
 from .models.mathpix import MathpixOCRModel
-from .models.easyocr import EasyOCRModel
 
 SHORT_DESCRIPTION = (
     "Extract text from an image using optical character recognition (OCR)."
@@ -88,11 +87,6 @@ MODEL_REGISTRY = {
         "description": "Mathpix Convert API",
         "required_fields": ["mathpix_app_id", "mathpix_app_key"],
     },
-    "easyocr": {
-        "class": EasyOCRModel,
-        "description": "EasyOCR",
-        "required_fields": ["easyocr_languages"],
-    },
 }
 
 ModelLiteral = Literal[
@@ -100,7 +94,6 @@ ModelLiteral = Literal[
     "trocr",
     "google-cloud-vision",
     "mathpix",
-    "easyocr",
 ]
 
 
@@ -136,10 +129,6 @@ class BlockManifest(WorkflowBlockManifest):
     mathpix_app_key: Optional[str] = Field(
         default=None,
         description="App Key for Mathpix API",
-    )
-    easyocr_languages: Optional[List[str]] = Field(
-        default_factory=lambda: ["en"],
-        description="List of EasyOCR model languages.",
     )
 
     @classmethod
@@ -189,14 +178,12 @@ class OCRModelBlockV1(WorkflowBlock):
         google_cloud_api_key: Optional[str] = None,
         mathpix_app_id: Optional[str] = None,
         mathpix_app_key: Optional[str] = None,
-        easyocr_languages: Optional[List[str]] = None,
     ) -> BlockResult:
         ocr_model = self._get_model_instance(
             model=model,
             google_cloud_api_key=google_cloud_api_key,
             mathpix_app_id=mathpix_app_id,
             mathpix_app_key=mathpix_app_key,
-            easyocr_languages=easyocr_languages,
         )
         return ocr_model.run(
             images=images,
