@@ -41,7 +41,7 @@ from inference.core.workflows.prototypes.block import (
 
 from .models.base import BaseOCRModel
 from .models.doctr import DoctrOCRModel
-from .models.trocr import TrOCRModel  # Added import for TrOCRModel
+from .models.trocr import TrOCRModel
 
 LONG_DESCRIPTION = """
  Retrieve the characters in an image using Optical Character Recognition (OCR).
@@ -73,7 +73,7 @@ MODEL_REGISTRY = {
     },
 }
 
-ModelLiteral = Literal["doctr", "trocr"]  # Updated to include 'trocr'
+ModelLiteral = Literal["doctr", "trocr"]
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -162,7 +162,6 @@ class OCRModelBlockV1(WorkflowBlock):
         if not model_info:
             raise ValueError(f"Unknown model: {model}")
         model_class = model_info["class"]
-        # Collect required fields for the model
         required_fields = {
             field: kwargs.get(field) for field in model_info.get("required_fields", [])
         }
