@@ -81,6 +81,9 @@ class ManifestDescription(BaseModel):
         description="Field holds type of the bock to be dynamically created. Block can be initialised "
         "as step using the type declared in the field."
     )
+    description: str = Field(
+        default=None, description="Description of the block to be used in manifest"
+    )
     inputs: Dict[str, DynamicInputDefinition] = Field(
         description="Mapping name -> input definition for block inputs (parameters for run() function of"
         "dynamic block)"
