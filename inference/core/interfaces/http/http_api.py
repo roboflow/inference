@@ -123,6 +123,7 @@ from inference.core.env import (
     ROBOFLOW_SERVICE_SECRET,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_STEP_EXECUTION_MODE,
+    IS_DOCKER,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -186,6 +187,7 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace,
     get_workflow_specification,
 )
+from inference.core.utils.container import get_container_stats
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.errors import (
@@ -2265,6 +2267,19 @@ class HttpInterface(BaseInterface):
                     {
                         "status": 200,
                         "message": "inference session started from local memory.",
+                    }
+                )
+
+        if IS_DOCKER:
+
+            @app.get("/device/stats")
+            async def device_stats():
+                container_stats = get_container_stats()
+                return JSONResponse(
+                    {
+                        "status": 200,
+                        "message": "done",
+                        "container_stats": container_stats,
                     }
                 )
 

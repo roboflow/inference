@@ -31,5 +31,6 @@ ENV PROJECT=roboflow-platform
 ENV HOST=0.0.0.0
 ENV PORT=7070
 ENV SUPERVISON_DEPRECATION_WARNING=0
+ENV IS_DOCKER=True
 
 ENTRYPOINT ["python3", "-m", "inference.enterprise.stream_management.manager.app"]
