@@ -21,6 +21,27 @@ FLORENCE_ALIASES = {
     "florence-2-base": "florence-pretrains/1",
     "florence-2-large": "florence-pretrains/2",
 }
+YOLOV11_ALIASES = {
+    "yolov11n-seg-640": "coco-dataset-vdnr1/19",
+    "yolov11s-seg-640": "coco-dataset-vdnr1/20",
+    "yolov11m-seg-640": "coco-dataset-vdnr1/21",
+    "yolov11l-seg-640": "coco-dataset-vdnr1/22",
+    "yolov11x-seg-640": "coco-dataset-vdnr1/23",
+    "yolov11n-640": "coco/25",
+    "yolov11s-640": "coco/26",
+    "yolov11m-640": "coco/27",
+    "yolov11l-640": "coco/28",
+    "yolov11x-640": "coco/29",
+    "yolov11n-1280": "coco/30",
+    "yolov11s-1280": "coco/31",
+    "yolov11m-1280": "coco/32",
+    "yolov11l-1280": "coco/33",
+    "yolov11x-1280": "coco/34",
+}
+YOLOV11_ALIASES = {
+    **YOLOV11_ALIASES,
+    **{k.replace("yolov11", "yolo11"): v for k, v in YOLOV11_ALIASES.items()},
+}
 REGISTERED_ALIASES = {
     "yolov8n-640": "coco/3",
     "yolov8n-1280": "coco/9",
@@ -59,6 +80,7 @@ REGISTERED_ALIASES = {
     "yolov10x-640": "coco/24",
     **PALIGEMMA_ALIASES,
     **FLORENCE_ALIASES,
+    **YOLOV11_ALIASES
 }
 
 
