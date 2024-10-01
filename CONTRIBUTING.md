@@ -78,6 +78,17 @@ repo_root$ docker build -t roboflow/roboflow-inference-server-cpu:dev -f docker/
 repo_root$ docker build -t roboflow/roboflow-inference-server-gpu:dev -f docker/dockerfiles/Dockerfile.onnx.gpu .
 ```
 
+> [!TIP]
+> While the Dockerfiles mentioned above are used for production builds, it can be beneficial during development to use 
+> a version of the Dockerfile that incorporates a watchdog to automatically restart the service whenever code changes 
+> are detected. 
+> We have prepared a development-specific Dockerfile that supports this functionality. 
+> You can find it at `docker/dockerfiles/Dockerfile.onnx.cpu.dev`.
+> To build the image, use the following command:
+> ```bash
+> repo_root$ docker build -t roboflow/roboflow-inference-server-cpu:dev -f docker/dockerfiles/Dockerfile.onnx.cpu.dev .
+> ```
+
 Running the container is possible using the following command:
 
 ```bash
