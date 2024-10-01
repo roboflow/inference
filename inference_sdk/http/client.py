@@ -56,6 +56,7 @@ from inference_sdk.http.utils.post_processing import (
     transform_base64_visualisation,
     transform_visualisation_bytes,
 )
+from inference_sdk.http.utils.profilling import save_workflows_profiler_track
 from inference_sdk.http.utils.request_building import (
     ImagePlacement,
     prepare_requests_data,
@@ -1171,7 +1172,14 @@ class InferenceHTTPClient:
             headers=DEFAULT_HEADERS,
         )
         api_key_safe_raise_for_status(response=response)
-        workflow_outputs = response.json()["outputs"]
+        response_data = response.json()
+        workflow_outputs = response_data["outputs"]
+        track = response_data.get("profiler_track", [])
+        if self.__inference_configuration.profiling_directory:
+            save_workflows_profiler_track(
+                directory=self.__inference_configuration.profiling_directory,
+                track=track,
+            )
         return decode_workflow_outputs(
             workflow_outputs=workflow_outputs,
             expected_format=self.__inference_configuration.output_visualisation_format,

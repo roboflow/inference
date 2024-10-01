@@ -8,6 +8,7 @@ from inference.core.workflows.errors import (
     StepExecutionError,
     WorkflowError,
 )
+from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
@@ -28,7 +29,6 @@ from inference.core.workflows.execution_engine.v1.executor.utils import (
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 from inference.usage_tracking.collector import usage_collector
-from inference_sdk.http.utils.iterables import make_batches
 
 
 @usage_collector
@@ -36,28 +36,46 @@ def run_workflow(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],
     max_concurrent_steps: int,
+    profiler: WorkflowsProfiler,
 ) -> List[Dict[str, Any]]:
-    execution_data_manager = ExecutionDataManager.init(
-        execution_graph=workflow.execution_graph,
-        runtime_parameters=runtime_parameters,
-    )
-    execution_coordinator = ParallelStepExecutionCoordinator.init(
-        execution_graph=workflow.execution_graph,
-    )
-    next_steps = execution_coordinator.get_steps_to_execute_next()
+    with profiler.profile_execution_phase(
+        name="workflow_run_initialisation",
+        categories=["execution_engine_operation"],
+    ):
+        execution_data_manager = ExecutionDataManager.init(
+            execution_graph=workflow.execution_graph,
+            runtime_parameters=runtime_parameters,
+        )
+        execution_coordinator = ParallelStepExecutionCoordinator.init(
+            execution_graph=workflow.execution_graph,
+        )
+    with profiler.profile_execution_phase(
+        name="next_steps_selection",
+        categories=["execution_engine_operation"],
+    ):
+        next_steps = execution_coordinator.get_steps_to_execute_next()
     while next_steps is not None:
         execute_steps(
             next_steps=next_steps,
             workflow=workflow,
             execution_data_manager=execution_data_manager,
             max_concurrent_steps=max_concurrent_steps,
+            profiler=profiler,
         )
-        next_steps = execution_coordinator.get_steps_to_execute_next()
-    return construct_workflow_output(
-        workflow_outputs=workflow.workflow_definition.outputs,
-        execution_graph=workflow.execution_graph,
-        execution_data_manager=execution_data_manager,
-    )
+        with profiler.profile_execution_phase(
+            name="next_steps_selection",
+            categories=["execution_engine_operation"],
+        ):
+            next_steps = execution_coordinator.get_steps_to_execute_next()
+    with profiler.profile_execution_phase(
+        name="outputs_construction",
+        categories=["execution_engine_operation"],
+    ):
+        return construct_workflow_output(
+            workflow_outputs=workflow.workflow_definition.outputs,
+            execution_graph=workflow.execution_graph,
+            execution_data_manager=execution_data_manager,
+        )
 
 
 def execute_steps(
@@ -65,63 +83,82 @@ def execute_steps(
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     max_concurrent_steps: int,
+    profiler: WorkflowsProfiler,
 ) -> None:
-    logger.info(f"Executing steps: {next_steps}.")
-    steps_functions = [
-        partial(
-            safe_execute_step,
-            step_selector=step_selector,
-            workflow=workflow,
-            execution_data_manager=execution_data_manager,
+    with profiler.profile_execution_phase(
+        name="group_of_steps_execution",
+        categories=["execution_engine_operation"],
+        metadata={"steps": next_steps},
+    ):
+        logger.info(f"Executing steps: {next_steps}.")
+        steps_functions = [
+            partial(
+                safe_execute_step,
+                step_selector=step_selector,
+                workflow=workflow,
+                execution_data_manager=execution_data_manager,
+                profiler=profiler,
+            )
+            for step_selector in next_steps
+        ]
+        _ = run_steps_in_parallel(
+            steps=steps_functions, max_workers=max_concurrent_steps
         )
-        for step_selector in next_steps
-    ]
-    _ = run_steps_in_parallel(steps=steps_functions, max_workers=max_concurrent_steps)
 
 
 def safe_execute_step(
     step_selector: str,
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
+    profiler: WorkflowsProfiler,
 ) -> None:
-    try:
-        logger.info(
-            f"started execution of: {step_selector} - {datetime.now().isoformat()}"
-        )
-        run_step(
-            step_selector=step_selector,
-            workflow=workflow,
-            execution_data_manager=execution_data_manager,
-        )
-        logger.info(
-            f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
-        )
-    except WorkflowError as error:
-        raise error
-    except Exception as error:
-        logger.exception(f"Execution of step {step_selector} encountered error.")
-        raise StepExecutionError(
-            public_message=f"Error during execution of step: {step_selector}. Details: {error}",
-            context="workflow_execution | step_execution",
-            inner_error=error,
-        ) from error
+    with profiler.profile_execution_phase(
+        name="step_execution",
+        categories=["execution_engine_operation"],
+        metadata={"step": step_selector},
+    ):
+        try:
+            logger.info(
+                f"started execution of: {step_selector} - {datetime.now().isoformat()}"
+            )
+            run_step(
+                step_selector=step_selector,
+                workflow=workflow,
+                execution_data_manager=execution_data_manager,
+                profiler=profiler,
+            )
+            logger.info(
+                f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
+            )
+        except WorkflowError as error:
+            raise error
+        except Exception as error:
+            logger.exception(f"Execution of step {step_selector} encountered error.")
+            raise StepExecutionError(
+                public_message=f"Error during execution of step: {step_selector}. Details: {error}",
+                context="workflow_execution | step_execution",
+                inner_error=error,
+            ) from error
 
 
 def run_step(
     step_selector: str,
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
+    profiler: WorkflowsProfiler,
 ) -> None:
     if execution_data_manager.is_step_simd(step_selector=step_selector):
         return run_simd_step(
             step_selector=step_selector,
             workflow=workflow,
             execution_data_manager=execution_data_manager,
+            profiler=profiler,
         )
     return run_non_simd_step(
         step_selector=step_selector,
         workflow=workflow,
         execution_data_manager=execution_data_manager,
+        profiler=profiler,
     )
 
 
@@ -129,6 +166,7 @@ def run_simd_step(
     step_selector: str,
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
+    profiler: WorkflowsProfiler,
 ) -> None:
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step
@@ -138,11 +176,13 @@ def run_simd_step(
             step_selector=step_selector,
             step_instance=step_instance,
             execution_data_manager=execution_data_manager,
+            profiler=profiler,
         )
     return run_simd_step_in_non_batch_mode(
         step_selector=step_selector,
         step_instance=step_instance,
         execution_data_manager=execution_data_manager,
+        profiler=profiler,
     )
 
 
@@ -150,53 +190,107 @@ def run_simd_step_in_batch_mode(
     step_selector: str,
     step_instance: WorkflowBlock,
     execution_data_manager: ExecutionDataManager,
+    profiler: WorkflowsProfiler,
 ) -> None:
-    step_input = execution_data_manager.get_simd_step_input(step_selector=step_selector)
-    if not step_input.indices:
-        # no inputs - discarded either by conditional exec or by not accepting empty
-        outputs = []
-    else:
-        outputs = step_instance.run(**step_input.parameters)
-    execution_data_manager.register_simd_step_output(
-        step_selector=step_selector,
-        indices=step_input.indices,
-        outputs=outputs,
-    )
+    with profiler.profile_execution_phase(
+        name="step_input_assembly",
+        categories=["execution_engine_operation"],
+        metadata={"step": step_selector},
+    ):
+        step_input = execution_data_manager.get_simd_step_input(
+            step_selector=step_selector
+        )
+    with profiler.profile_execution_phase(
+        name="step_code_execution",
+        categories=["workflow_block_operation"],
+        metadata={
+            "step": step_selector,
+            "data_size": len(step_input.indices),
+        },
+    ):
+        if not step_input.indices:
+            # no inputs - discarded either by conditional exec or by not accepting empty
+            outputs = []
+        else:
+            outputs = step_instance.run(**step_input.parameters)
+    with profiler.profile_execution_phase(
+        name="step_output_registration",
+        categories=["execution_engine_operation"],
+        metadata={"step": step_selector},
+    ):
+        execution_data_manager.register_simd_step_output(
+            step_selector=step_selector,
+            indices=step_input.indices,
+            outputs=outputs,
+        )
 
 
 def run_simd_step_in_non_batch_mode(
     step_selector: str,
     step_instance: WorkflowBlock,
     execution_data_manager: ExecutionDataManager,
+    profiler: WorkflowsProfiler,
 ) -> None:
     indices, results = [], []
-    for input_definition in execution_data_manager.iterate_over_simd_step_input(
-        step_selector=step_selector
+    with profiler.profile_execution_phase(
+        name="iterative_step_code_execution",
+        categories=["execution_engine_operation", "workflow_block_operation"],
+        metadata={
+            "step": step_selector,
+        },
     ):
-        result = step_instance.run(**input_definition.parameters)
-        results.append(result)
-        indices.append(input_definition.index)
-    execution_data_manager.register_simd_step_output(
-        step_selector=step_selector,
-        indices=indices,
-        outputs=results,
-    )
+        for input_definition in execution_data_manager.iterate_over_simd_step_input(
+            step_selector=step_selector
+        ):
+            with profiler.profile_execution_phase(
+                name="step_code_execution",
+                categories=["workflow_block_operation"],
+                metadata={
+                    "step": step_selector,
+                },
+            ):
+                result = step_instance.run(**input_definition.parameters)
+            results.append(result)
+            indices.append(input_definition.index)
+    with profiler.profile_execution_phase(
+        name="step_output_registration",
+        categories=["execution_engine_operation"],
+        metadata={"step": step_selector},
+    ):
+        execution_data_manager.register_simd_step_output(
+            step_selector=step_selector,
+            indices=indices,
+            outputs=results,
+        )
 
 
 def run_non_simd_step(
     step_selector: str,
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
+    profiler: WorkflowsProfiler,
 ) -> None:
-    step_input = execution_data_manager.get_non_simd_step_input(
-        step_selector=step_selector
-    )
+    with profiler.profile_execution_phase(
+        name="step_input_assembly",
+        categories=["execution_engine_operation"],
+        metadata={"step": step_selector},
+    ):
+        step_input = execution_data_manager.get_non_simd_step_input(
+            step_selector=step_selector
+        )
     if not step_input:
         # discarded by conditional execution
         return None
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step
-    step_result = step_instance.run(**step_input)
+    with profiler.profile_execution_phase(
+        name="step_code_execution",
+        categories=["workflow_block_operation"],
+        metadata={
+            "step": step_selector,
+        },
+    ):
+        step_result = step_instance.run(**step_input)
     if isinstance(step_result, list):
         raise ExecutionEngineRuntimeError(
             public_message=f"Error in execution engine. Non-SIMD step {step_name} "
@@ -206,7 +300,12 @@ def run_non_simd_step(
             f"the problem - including workflow definition you use.",
             context="workflow_execution | step_output_registration",
         )
-    execution_data_manager.register_non_simd_step_output(
-        step_selector=step_selector,
-        output=step_result,
-    )
+    with profiler.profile_execution_phase(
+        name="step_output_registration",
+        categories=["execution_engine_operation"],
+        metadata={"step": step_selector},
+    ):
+        execution_data_manager.register_non_simd_step_output(
+            step_selector=step_selector,
+            output=step_result,
+        )

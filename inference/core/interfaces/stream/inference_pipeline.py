@@ -16,8 +16,10 @@ from inference.core.env import (
     ACTIVE_LEARNING_ENABLED,
     API_KEY,
     DISABLE_PREPROC_AUTO_ORIENT,
+    ENABLE_WORKFLOWS_PROFILING,
     MAX_ACTIVE_MODELS,
     PREDICTIONS_QUEUE_SIZE,
+    WORKFLOWS_PROFILER_BUFFER_SIZE,
 )
 from inference.core.exceptions import CannotInitialiseModelError, MissingApiKeyError
 from inference.core.interfaces.camera.entities import (
@@ -52,6 +54,10 @@ from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCac
 from inference.core.registries.roboflow import RoboflowModelRegistry
 from inference.core.utils.function import experimental
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.execution_engine.profiling.core import (
+    BaseWorkflowsProfiler,
+    NullWorkflowsProfiler,
+)
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.models.utils import ROBOFLOW_MODEL_TYPES, get_model
 
@@ -521,6 +527,12 @@ class InferencePipeline:
             * MissingApiKeyError - if API key is not provided in situation when retrieving workflow definition
                 from Roboflow API is needed
         """
+        if ENABLE_WORKFLOWS_PROFILING:
+            profiler = BaseWorkflowsProfiler.init(
+                max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE
+            )
+        else:
+            profiler = NullWorkflowsProfiler.init()
         if api_key is None:
             api_key = API_KEY
         named_workflow_specified = (workspace_name is not None) and (
@@ -546,11 +558,15 @@ class InferencePipeline:
                         "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
                         "retrieve one."
                     )
-                workflow_specification = get_workflow_specification(
-                    api_key=api_key,
-                    workspace_id=workspace_name,
-                    workflow_id=workflow_id,
-                )
+                with profiler.profile_execution_phase(
+                    name="workflow_definition_fetching",
+                    categories=["inference_package_operation"],
+                ):
+                    workflow_specification = get_workflow_specification(
+                        api_key=api_key,
+                        workspace_id=workspace_name,
+                        workflow_id=workflow_id,
+                    )
             model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
             model_manager = BackgroundTaskActiveLearningManager(
                 model_registry=model_registry, cache=cache
@@ -575,6 +591,7 @@ class InferencePipeline:
                 workflow_definition=workflow_specification,
                 init_parameters=workflow_init_parameters,
                 workflow_id=workflow_id,
+                profiler=profiler,
             )
             workflow_runner = WorkflowRunner()
             on_video_frame = partial(

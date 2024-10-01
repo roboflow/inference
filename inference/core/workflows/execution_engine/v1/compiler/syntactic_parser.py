@@ -11,6 +11,7 @@ from inference.core.workflows.execution_engine.entities.base import InputType, J
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_workflow_blocks,
 )
+from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
     ParsedWorkflowDefinition,
@@ -20,28 +21,37 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 def parse_workflow_definition(
     raw_workflow_definition: dict,
     dynamic_blocks: List[BlockSpecification],
+    profiler: WorkflowsProfiler,
     execution_engine_version: Optional[Version] = None,
 ) -> ParsedWorkflowDefinition:
-    workflow_definition_class = build_workflow_definition_entity(
-        dynamic_blocks=dynamic_blocks,
-        execution_engine_version=execution_engine_version,
-    )
-    try:
-        workflow_definition = workflow_definition_class.model_validate(
-            raw_workflow_definition
+    with profiler.profile_execution_phase(
+        name="workflow_definition_entity_building",
+        categories=["execution_engine_operation"],
+    ):
+        workflow_definition_class = build_workflow_definition_entity(
+            dynamic_blocks=dynamic_blocks,
+            execution_engine_version=execution_engine_version,
         )
-        return ParsedWorkflowDefinition(
-            version=workflow_definition.version,
-            inputs=workflow_definition.inputs,
-            steps=workflow_definition.steps,
-            outputs=workflow_definition.outputs,
-        )
-    except pydantic.ValidationError as e:
-        raise WorkflowSyntaxError(
-            public_message="Could not parse workflow definition. Details provided in inner error.",
-            context="workflow_compilation | workflow_definition_parsing",
-            inner_error=e,
-        ) from e
+    with profiler.profile_execution_phase(
+        name="workflow_definition_entity_validation",
+        categories=["execution_engine_operation"],
+    ):
+        try:
+            workflow_definition = workflow_definition_class.model_validate(
+                raw_workflow_definition
+            )
+            return ParsedWorkflowDefinition(
+                version=workflow_definition.version,
+                inputs=workflow_definition.inputs,
+                steps=workflow_definition.steps,
+                outputs=workflow_definition.outputs,
+            )
+        except pydantic.ValidationError as e:
+            raise WorkflowSyntaxError(
+                public_message="Could not parse workflow definition. Details provided in inner error.",
+                context="workflow_compilation | workflow_definition_parsing",
+                inner_error=e,
+            ) from e
 
 
 def build_workflow_definition_entity(

@@ -111,6 +111,7 @@ from inference.core.env import (
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
     ENABLE_STREAM_API,
+    ENABLE_WORKFLOWS_PROFILING,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -122,6 +123,7 @@ from inference.core.env import (
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
+    WORKFLOWS_PROFILER_BUFFER_SIZE,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
@@ -208,6 +210,11 @@ from inference.core.workflows.execution_engine.core import (
     get_available_versions,
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.profiling.core import (
+    BaseWorkflowsProfiler,
+    NullWorkflowsProfiler,
+    WorkflowsProfiler,
+)
 from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
     get_workflow_schema_description,
     parse_workflow_definition,
@@ -658,6 +665,7 @@ class HttpInterface(BaseInterface):
             workflow_request: WorkflowInferenceRequest,
             workflow_specification: dict,
             background_tasks: Optional[BackgroundTasks],
+            profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
@@ -669,13 +677,22 @@ class HttpInterface(BaseInterface):
                 init_parameters=workflow_init_parameters,
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 prevent_local_images_loading=True,
+                profiler=profiler,
             )
             result = execution_engine.run(runtime_parameters=workflow_request.inputs)
-            outputs = serialise_workflow_result(
-                result=result,
-                excluded_fields=workflow_request.excluded_fields,
+            with profiler.profile_execution_phase(
+                name="workflow_results_serialisation",
+                categories=["inference_package_operation"],
+            ):
+                outputs = serialise_workflow_result(
+                    result=result,
+                    excluded_fields=workflow_request.excluded_fields,
+                )
+            profiler_track = profiler.export_trace()
+            response = WorkflowInferenceResponse(
+                outputs=outputs,
+                profiler_track=profiler_track,
             )
-            response = WorkflowInferenceResponse(outputs=outputs)
             return orjson_response(response=response)
 
         def load_core_model(
@@ -1105,15 +1122,26 @@ class HttpInterface(BaseInterface):
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
-                workflow_specification = get_workflow_specification(
-                    api_key=workflow_request.api_key,
-                    workspace_id=workspace_name,
-                    workflow_id=workflow_id,
-                )
+                if ENABLE_WORKFLOWS_PROFILING:
+                    profiler = BaseWorkflowsProfiler.init(
+                        max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE
+                    )
+                else:
+                    profiler = NullWorkflowsProfiler.init()
+                with profiler.profile_execution_phase(
+                    name="workflow_definition_fetching",
+                    categories=["inference_package_operation"],
+                ):
+                    workflow_specification = get_workflow_specification(
+                        api_key=workflow_request.api_key,
+                        workspace_id=workspace_name,
+                        workflow_id=workflow_id,
+                    )
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
                     background_tasks=background_tasks if not LAMBDA else None,
+                    profiler=profiler,
                 )
 
             @app.post(
@@ -1135,10 +1163,17 @@ class HttpInterface(BaseInterface):
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
+                if ENABLE_WORKFLOWS_PROFILING:
+                    profiler = BaseWorkflowsProfiler.init(
+                        max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE
+                    )
+                else:
+                    profiler = NullWorkflowsProfiler.init()
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_request.specification,
                     background_tasks=background_tasks if not LAMBDA else None,
+                    profiler=profiler,
                 )
 
             @app.get(
