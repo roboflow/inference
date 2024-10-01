@@ -80,7 +80,7 @@ REGISTERED_ALIASES = {
     "yolov10x-640": "coco/24",
     **PALIGEMMA_ALIASES,
     **FLORENCE_ALIASES,
-    **YOLOV11_ALIASES
+    **YOLOV11_ALIASES,
 }
 
 
