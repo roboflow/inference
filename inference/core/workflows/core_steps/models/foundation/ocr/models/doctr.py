@@ -1,5 +1,7 @@
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.entities import (
+    StepExecutionMode,
+)
 from inference.core.workflows.core_steps.common.utils import load_core_model
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -25,8 +27,6 @@ class DoctrOCRModel(BaseOCRModel):
             return self.run_locally(images, post_process_result)
         elif step_execution_mode is StepExecutionMode.REMOTE:
             return self.run_remotely(images, post_process_result)
-        else:
-            raise ValueError(f"Unknown step execution mode: {step_execution_mode}")
 
     def run_locally(
         self,
