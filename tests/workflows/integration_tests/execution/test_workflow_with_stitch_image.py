@@ -53,7 +53,6 @@ def test_workflow_with_classical_pattern_matching(
     model_manager: ModelManager,
     stitch_left_image: np.ndarray,
     stitch_right_image: np.ndarray,
-    stitch_result_image: np.ndarray,
 ) -> None:
     # given
     execution_engine = ExecutionEngine.init(
