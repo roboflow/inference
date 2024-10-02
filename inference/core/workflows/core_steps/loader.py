@@ -183,11 +183,11 @@ from inference.core.workflows.core_steps.transformations.perspective_correction.
 from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
     RelativeStaticCropBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
-    StitchImagesBlockV1,
-)
 from inference.core.workflows.core_steps.transformations.size_measurement.v1 import (
     SizeMeasurementBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
+    StitchImagesBlockV1,
 )
 
 # Visualizers
