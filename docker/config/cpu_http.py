@@ -12,8 +12,6 @@ from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCac
 from inference.core.registries.roboflow import (
     RoboflowModelRegistry,
 )
-import os
-from prometheus_fastapi_instrumentator import Instrumentator
 
 from inference.core.env import (
     MAX_ACTIVE_MODELS,
