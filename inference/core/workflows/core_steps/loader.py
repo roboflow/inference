@@ -183,6 +183,9 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop.v1
 from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
     StitchImagesBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.size_measurement.v1 import (
+    SizeMeasurementBlockV1,
+)
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
@@ -313,6 +316,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ContinueIfBlockV1,
         PerspectiveCorrectionBlockV1,
         DynamicZonesBlockV1,
+        SizeMeasurementBlockV1,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
         PropertyDefinitionBlockV1,
