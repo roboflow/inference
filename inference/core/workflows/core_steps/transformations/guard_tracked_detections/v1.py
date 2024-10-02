@@ -27,6 +27,7 @@ This block stores last known position for each bounding box
 If box disappears then this block will bring it back so short gaps are filled with last known box position
 The block requires detections to be tracked (i.e. each object must have unique tracker_id assigned,
 which persists between frames)
+WARNING: this block will produce many short-lived bounding boxes for unstable trackers!
 """
 
 
@@ -52,7 +53,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Tracked detections",
         examples=["$steps.object_detection_model.predictions"],
     )
-    consider_detection_gone_timeout: Union[Optional[int], WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+    consider_detection_gone_timeout: Union[Optional[float], WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         default=2,
         description="Drop detections that had not been seen for longer than this timeout (in seconds)",
         examples=[2, "$inputs.disappeared_detections_timeout"],
