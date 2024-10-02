@@ -7,6 +7,9 @@ import supervision as sv
 from pydantic import ConfigDict, Field
 from supervision.config import CLASS_NAME_DATA_FIELD
 
+from inference.core.workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_sv_detections,
+)
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -54,8 +57,25 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["roboflow_core/google_vision_ocr@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector]
-    ocr_type: Literal["text_detection", "ocr_text_detection"]
+    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        description="Image to run OCR",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
+    ocr_type: Literal["text_detection", "ocr_text_detection"] = Field(
+        description="Type of OCR to use",
+        json_schema_extra={
+            "values_metadata": {
+                "text_detection": {
+                    "name": "Text Detection",
+                    "description": "Detects and extracts text from any image, including photographs that contain blocks of text.",
+                },
+                "ocr_text_detection": {
+                    "name": "OCR Text Detection",
+                    "description": "Optimized for dense text documents, such as scanned pages or photographs of printed text.",
+                },
+            },
+        },
+    )
     api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
         description="Your Google Vision API key",
         examples=["xxx-xxx", "$inputs.google_api_key"],
@@ -172,6 +192,11 @@ class GoogleVisionOCRBlockV1(WorkflowBlock):
         image_height, image_width = image.numpy_image.shape[:2]
         predictions[IMAGE_DIMENSIONS_KEY] = np.array(
             [[image_height, image_width]] * len(predictions)
+        )
+
+        predictions = attach_parents_coordinates_to_sv_detections(
+            detections=predictions,
+            image=image,
         )
 
         return {
