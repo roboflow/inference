@@ -183,6 +183,9 @@ from inference.core.workflows.core_steps.transformations.perspective_correction.
 from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
     RelativeStaticCropBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
+    StitchImagesBlockV1,
+)
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
@@ -350,6 +353,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ClipComparisonBlockV2,
         CameraFocusBlockV1,
         RoboflowDatasetUploadBlockV2,
+        StitchImagesBlockV1,
         OpenAIBlockV2,
         JSONParserBlockV1,
         VLMAsClassifierBlockV1,
