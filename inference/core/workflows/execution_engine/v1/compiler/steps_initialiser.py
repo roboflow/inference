@@ -1,9 +1,13 @@
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from inference.core.workflows.errors import (
     BlockInitParameterNotProvidedError,
     BlockInterfaceError,
     UnknownManifestType,
+)
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
 )
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
@@ -12,11 +16,16 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 
+@execution_phase(
+    name="steps_initialisation",
+    categories=["execution_engine_operation"],
+)
 def initialise_steps(
     steps_manifest: List[WorkflowBlockManifest],
     available_bocks: List[BlockSpecification],
     explicit_init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
     initializers: Dict[str, Union[Any, Callable[[None], Any]]],
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> List[InitialisedStep]:
     available_blocks_by_manifest_class = {
         block.manifest_class: block for block in available_bocks

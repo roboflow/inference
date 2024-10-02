@@ -1,3 +1,4 @@
+import functools
 import os
 import threading
 import time
@@ -235,3 +236,33 @@ class BaseWorkflowsProfiler(WorkflowsProfiler):
             for k, v in extra_event_fields.items():
                 event[k] = v
         self._current_run_events.append(event)
+
+
+def execution_phase(
+    name: str,
+    categories: Optional[List[str]] = None,
+    metadata: Optional[Dict[str, Union[str, int, float, bool, list, dict]]] = None,
+    profiler_parameter: str = "profiler",
+    runtime_metadata: Optional[List[str]] = None,
+):
+    def decorator(func):
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if not isinstance(kwargs.get(profiler_parameter), WorkflowsProfiler):
+                return func(*args, **kwargs)
+            profiler: WorkflowsProfiler = kwargs[profiler_parameter]
+            actual_metadata = metadata or {}
+            if runtime_metadata is not None:
+                runtime_metadata_dict = {k: kwargs.get(k) for k in runtime_metadata}
+                actual_metadata.update(runtime_metadata_dict)
+            with profiler.profile_execution_phase(
+                name=name,
+                categories=categories,
+                metadata=actual_metadata,
+            ):
+                return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator

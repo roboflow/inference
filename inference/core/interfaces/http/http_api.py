@@ -52,6 +52,8 @@ from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
     DescribeInterfaceRequest,
+    PredefinedWorkflowDescribeInterfaceRequest,
+    PredefinedWorkflowInferenceRequest,
     WorkflowInferenceRequest,
     WorkflowSpecificationDescribeInterfaceRequest,
     WorkflowSpecificationInferenceRequest,
@@ -688,10 +690,10 @@ class HttpInterface(BaseInterface):
                     result=result,
                     excluded_fields=workflow_request.excluded_fields,
                 )
-            profiler_track = profiler.export_trace()
+            profiler_trace = profiler.export_trace()
             response = WorkflowInferenceResponse(
                 outputs=outputs,
-                profiler_track=profiler_track,
+                profiler_trace=profiler_trace,
             )
             return orjson_response(response=response)
 
@@ -1076,12 +1078,13 @@ class HttpInterface(BaseInterface):
             async def describe_predefined_workflow_interface(
                 workspace_name: str,
                 workflow_id: str,
-                workflow_request: DescribeInterfaceRequest,
+                workflow_request: PredefinedWorkflowDescribeInterfaceRequest,
             ) -> DescribeInterfaceResponse:
                 workflow_specification = get_workflow_specification(
                     api_key=workflow_request.api_key,
                     workspace_id=workspace_name,
                     workflow_id=workflow_id,
+                    use_cache=workflow_request.use_cache,
                 )
                 return handle_describe_workflows_interface(
                     definition=workflow_specification,
@@ -1118,13 +1121,13 @@ class HttpInterface(BaseInterface):
             async def infer_from_predefined_workflow(
                 workspace_name: str,
                 workflow_id: str,
-                workflow_request: WorkflowInferenceRequest,
+                workflow_request: PredefinedWorkflowInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
-                if ENABLE_WORKFLOWS_PROFILING:
+                if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
                     profiler = BaseWorkflowsProfiler.init(
-                        max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE
+                        max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE,
                     )
                 else:
                     profiler = NullWorkflowsProfiler.init()
@@ -1136,7 +1139,7 @@ class HttpInterface(BaseInterface):
                         api_key=workflow_request.api_key,
                         workspace_id=workspace_name,
                         workflow_id=workflow_id,
-                        no_cache=workflow_request.no_cache,
+                        use_cache=workflow_request.use_cache,
                     )
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
@@ -1164,9 +1167,9 @@ class HttpInterface(BaseInterface):
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
-                if ENABLE_WORKFLOWS_PROFILING:
+                if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
                     profiler = BaseWorkflowsProfiler.init(
-                        max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE
+                        max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE,
                     )
                 else:
                     profiler = NullWorkflowsProfiler.init()

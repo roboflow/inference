@@ -11,6 +11,10 @@ from inference.core.workflows.execution_engine.entities.base import InputType, J
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_workflow_blocks,
 )
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
     ParsedWorkflowDefinition,
@@ -21,31 +25,44 @@ class WorkflowDefinitionEntitiesCache:
 
     def __init__(self, cache_size: int):
         self._cache_size = max(1, cache_size)
-        self._entries: Dict[Optional[Version], Type[BaseModel]] = {}
+        self._entries: Dict[str, Type[BaseModel]] = {}
 
-    def add_entry(self, version: Optional[Version], entry: Type[BaseModel]) -> None:
-        if version in self._entries:
-            self._entries[version] = entry
+    def add_entry(
+        self, blocks: List[BlockSpecification], entry: Type[BaseModel]
+    ) -> None:
+        hash_value = self._hash_blocks(blocks=blocks)
+        if hash_value in self._entries:
+            self._entries[hash_value] = entry
             return None
         if len(self._entries) == self._cache_size:
             key_to_drop = next(self._entries.__iter__())
             self._entries.pop(key_to_drop)
-        self._entries[version] = entry
+        self._entries[hash_value] = entry
 
-    def cache_hit(self, version: Optional[Version]) -> bool:
-        return version in self._entries
+    def cache_hit(self, blocks: List[BlockSpecification]) -> bool:
+        hash_value = self._hash_blocks(blocks=blocks)
+        return hash_value in self._entries
 
-    def get(self, version: Optional[Version]) -> Type[BaseModel]:
-        return self._entries[version]
+    def get(self, blocks: List[BlockSpecification]) -> Type[BaseModel]:
+        hash_value = self._hash_blocks(blocks=blocks)
+        return self._entries[hash_value]
+
+    def _hash_blocks(self, blocks: List[BlockSpecification]) -> str:
+        return "<|>".join(block.block_source + block.identifier for block in blocks)
 
 
 WORKFLOW_DEFINITION_ENTITIES_CACHE = WorkflowDefinitionEntitiesCache(cache_size=64)
 
 
+@execution_phase(
+    name="workflow_definition_parsing",
+    categories=["execution_engine_operation"],
+)
 def parse_workflow_definition(
     raw_workflow_definition: dict,
     dynamic_blocks: List[BlockSpecification],
     execution_engine_version: Optional[Version] = None,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> ParsedWorkflowDefinition:
     workflow_definition_class = build_workflow_definition_entity(
         dynamic_blocks=dynamic_blocks,
@@ -73,14 +90,12 @@ def build_workflow_definition_entity(
     dynamic_blocks: List[BlockSpecification],
     execution_engine_version: Optional[Version] = None,
 ) -> Type[BaseModel]:
-    if not dynamic_blocks and WORKFLOW_DEFINITION_ENTITIES_CACHE.cache_hit(
-        version=execution_engine_version
-    ):
-        return WORKFLOW_DEFINITION_ENTITIES_CACHE.get(version=execution_engine_version)
     blocks = (
         load_workflow_blocks(execution_engine_version=execution_engine_version)
         + dynamic_blocks
     )
+    if WORKFLOW_DEFINITION_ENTITIES_CACHE.cache_hit(blocks=blocks):
+        return WORKFLOW_DEFINITION_ENTITIES_CACHE.get(blocks=blocks)
     steps_manifests = tuple(block.manifest_class for block in blocks)
     block_manifest_types_union = Union[steps_manifests]
     block_type = Annotated[block_manifest_types_union, Field(discriminator="type")]
@@ -93,7 +108,7 @@ def build_workflow_definition_entity(
     )
     if not dynamic_blocks:
         WORKFLOW_DEFINITION_ENTITIES_CACHE.add_entry(
-            version=execution_engine_version,
+            blocks=blocks,
             entry=entity,
         )
     return entity

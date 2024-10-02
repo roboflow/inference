@@ -2,6 +2,7 @@ import importlib
 import logging
 import os
 from collections import Counter
+from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from packaging.specifiers import SpecifierSet
@@ -25,6 +26,10 @@ from inference.core.workflows.execution_engine.introspection.entities import (
 from inference.core.workflows.execution_engine.introspection.utils import (
     build_human_friendly_block_name,
     get_full_type_name,
+)
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
 )
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
@@ -102,8 +107,13 @@ def get_manifest_type_identifiers(
     )
 
 
+@execution_phase(
+    name="blocks_loading",
+    categories=["execution_engine_operation"],
+)
 def load_workflow_blocks(
     execution_engine_version: Optional[Union[str, Version]] = None,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> List[BlockSpecification]:
     if isinstance(execution_engine_version, str):
         try:
@@ -131,6 +141,7 @@ def load_workflow_blocks(
     return filtered_blocks
 
 
+@lru_cache()
 def load_core_workflow_blocks() -> List[BlockSpecification]:
     core_blocks = load_blocks()
     already_spotted_blocks = set()
@@ -235,7 +246,13 @@ def is_block_compatible_with_execution_engine(
         )
 
 
-def load_initializers() -> Dict[str, Union[Any, Callable[[None], Any]]]:
+@execution_phase(
+    name="blocks_initializers_loading",
+    categories=["execution_engine_operation"],
+)
+def load_initializers(
+    profiler: Optional[WorkflowsProfiler] = None,
+) -> Dict[str, Union[Any, Callable[[None], Any]]]:
     plugins_to_load = get_plugin_modules()
     result = load_core_blocks_initializers()
     for plugin_name in plugins_to_load:

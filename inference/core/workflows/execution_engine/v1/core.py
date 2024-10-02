@@ -40,16 +40,12 @@ class ExecutionEngineV1(BaseExecutionEngine):
             init_parameters = {}
         if profiler is None:
             profiler = NullWorkflowsProfiler.init()
-        with profiler.profile_execution_phase(
-            name="workflow_compilation",
-            categories=["execution_engine_operation"],
-        ):
-            compiled_workflow = compile_workflow(
-                workflow_definition=workflow_definition,
-                init_parameters=init_parameters,
-                execution_engine_version=EXECUTION_ENGINE_V1_VERSION,
-                profiler=profiler,
-            )
+        compiled_workflow = compile_workflow(
+            workflow_definition=workflow_definition,
+            init_parameters=init_parameters,
+            execution_engine_version=EXECUTION_ENGINE_V1_VERSION,
+            profiler=profiler,
+        )
         return cls(
             compiled_workflow=compiled_workflow,
             max_concurrent_steps=max_concurrent_steps,
@@ -79,31 +75,25 @@ class ExecutionEngineV1(BaseExecutionEngine):
         _is_preview: bool = False,
     ) -> List[Dict[str, Any]]:
         self._profiler.start_workflow_run()
-        with self._profiler.profile_execution_phase(
-            name="workflow_input_assembly",
-            categories=["execution_engine_operation"],
-        ):
-            runtime_parameters = assemble_runtime_parameters(
-                runtime_parameters=runtime_parameters,
-                defined_inputs=self._compiled_workflow.workflow_definition.inputs,
-                prevent_local_images_loading=self._prevent_local_images_loading,
-            )
-            validate_runtime_input(
-                runtime_parameters=runtime_parameters,
-                input_substitutions=self._compiled_workflow.input_substitutions,
-            )
-        with self._profiler.profile_execution_phase(
-            name="workflow_run_execution",
-            categories=["execution_engine_operation"],
-        ):
-            result = run_workflow(
-                workflow=self._compiled_workflow,
-                runtime_parameters=runtime_parameters,
-                max_concurrent_steps=self._max_concurrent_steps,
-                usage_fps=fps,
-                usage_workflow_id=self._workflow_id,
-                usage_workflow_preview=_is_preview,
-                profiler=self._profiler,
-            )
+        runtime_parameters = assemble_runtime_parameters(
+            runtime_parameters=runtime_parameters,
+            defined_inputs=self._compiled_workflow.workflow_definition.inputs,
+            prevent_local_images_loading=self._prevent_local_images_loading,
+            profiler=self._profiler,
+        )
+        validate_runtime_input(
+            runtime_parameters=runtime_parameters,
+            input_substitutions=self._compiled_workflow.input_substitutions,
+            profiler=self._profiler,
+        )
+        result = run_workflow(
+            workflow=self._compiled_workflow,
+            runtime_parameters=runtime_parameters,
+            max_concurrent_steps=self._max_concurrent_steps,
+            usage_fps=fps,
+            usage_workflow_id=self._workflow_id,
+            usage_workflow_preview=_is_preview,
+            profiler=self._profiler,
+        )
         self._profiler.end_workflow_run()
         return result

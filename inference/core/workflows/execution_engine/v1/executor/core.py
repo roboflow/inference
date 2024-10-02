@@ -1,6 +1,6 @@
 from datetime import datetime
 from functools import partial
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from inference.core import logger
 from inference.core.workflows.errors import (
@@ -8,7 +8,11 @@ from inference.core.workflows.errors import (
     StepExecutionError,
     WorkflowError,
 )
-from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
+from inference.core.workflows.execution_engine.profiling.core import (
+    NullWorkflowsProfiler,
+    WorkflowsProfiler,
+    execution_phase,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
 )
@@ -32,28 +36,24 @@ from inference.usage_tracking.collector import usage_collector
 
 
 @usage_collector
+@execution_phase(
+    name="workflow_execution",
+    categories=["execution_engine_operation"],
+)
 def run_workflow(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],
     max_concurrent_steps: int,
-    profiler: WorkflowsProfiler,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> List[Dict[str, Any]]:
-    with profiler.profile_execution_phase(
-        name="workflow_run_initialisation",
-        categories=["execution_engine_operation"],
-    ):
-        execution_data_manager = ExecutionDataManager.init(
-            execution_graph=workflow.execution_graph,
-            runtime_parameters=runtime_parameters,
-        )
-        execution_coordinator = ParallelStepExecutionCoordinator.init(
-            execution_graph=workflow.execution_graph,
-        )
-    with profiler.profile_execution_phase(
-        name="next_steps_selection",
-        categories=["execution_engine_operation"],
-    ):
-        next_steps = execution_coordinator.get_steps_to_execute_next()
+    execution_data_manager = ExecutionDataManager.init(
+        execution_graph=workflow.execution_graph,
+        runtime_parameters=runtime_parameters,
+    )
+    execution_coordinator = ParallelStepExecutionCoordinator.init(
+        execution_graph=workflow.execution_graph,
+    )
+    next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
     while next_steps is not None:
         execute_steps(
             next_steps=next_steps,
@@ -62,11 +62,7 @@ def run_workflow(
             max_concurrent_steps=max_concurrent_steps,
             profiler=profiler,
         )
-        with profiler.profile_execution_phase(
-            name="next_steps_selection",
-            categories=["execution_engine_operation"],
-        ):
-            next_steps = execution_coordinator.get_steps_to_execute_next()
+        next_steps = execution_coordinator.get_steps_to_execute_next(profiler=profiler)
     with profiler.profile_execution_phase(
         name="outputs_construction",
         categories=["execution_engine_operation"],
@@ -78,67 +74,67 @@ def run_workflow(
         )
 
 
+@execution_phase(
+    name="group_of_steps_execution",
+    categories=["execution_engine_operation"],
+    runtime_metadata=["next_steps", "max_concurrent_steps"],
+)
 def execute_steps(
     next_steps: List[str],
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
     max_concurrent_steps: int,
-    profiler: WorkflowsProfiler,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> None:
-    with profiler.profile_execution_phase(
-        name="group_of_steps_execution",
-        categories=["execution_engine_operation"],
-        metadata={"steps": next_steps},
-    ):
-        logger.info(f"Executing steps: {next_steps}.")
-        steps_functions = [
-            partial(
-                safe_execute_step,
-                step_selector=step_selector,
-                workflow=workflow,
-                execution_data_manager=execution_data_manager,
-                profiler=profiler,
-            )
-            for step_selector in next_steps
-        ]
-        _ = run_steps_in_parallel(
-            steps=steps_functions, max_workers=max_concurrent_steps
+    logger.info(f"Executing steps: {next_steps}.")
+    steps_functions = [
+        partial(
+            safe_execute_step,
+            step_selector=step_selector,
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+            profiler=profiler,
         )
+        for step_selector in next_steps
+    ]
+    _ = run_steps_in_parallel(steps=steps_functions, max_workers=max_concurrent_steps)
 
 
+@execution_phase(
+    name="step_execution",
+    categories=["execution_engine_operation"],
+    runtime_metadata=["step_selector"],
+)
 def safe_execute_step(
     step_selector: str,
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
-    profiler: WorkflowsProfiler,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> None:
-    with profiler.profile_execution_phase(
-        name="step_execution",
-        categories=["execution_engine_operation"],
-        metadata={"step": step_selector},
-    ):
-        try:
-            logger.info(
-                f"started execution of: {step_selector} - {datetime.now().isoformat()}"
-            )
-            run_step(
-                step_selector=step_selector,
-                workflow=workflow,
-                execution_data_manager=execution_data_manager,
-                profiler=profiler,
-            )
-            logger.info(
-                f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
-            )
-        except WorkflowError as error:
-            raise error
-        except Exception as error:
-            logger.exception(f"Execution of step {step_selector} encountered error.")
-            raise StepExecutionError(
-                public_message=f"Error during execution of step: {step_selector}. Details: {error}",
-                context="workflow_execution | step_execution",
-                inner_error=error,
-            ) from error
+    if profiler is None:
+        profiler = NullWorkflowsProfiler.init()
+    try:
+        logger.info(
+            f"started execution of: {step_selector} - {datetime.now().isoformat()}"
+        )
+        run_step(
+            step_selector=step_selector,
+            workflow=workflow,
+            execution_data_manager=execution_data_manager,
+            profiler=profiler,
+        )
+        logger.info(
+            f"finished execution of: {step_selector} - {datetime.now().isoformat()}"
+        )
+    except WorkflowError as error:
+        raise error
+    except Exception as error:
+        logger.exception(f"Execution of step {step_selector} encountered error.")
+        raise StepExecutionError(
+            public_message=f"Error during execution of step: {step_selector}. Details: {error}",
+            context="workflow_execution | step_execution",
+            inner_error=error,
+        ) from error
 
 
 def run_step(
@@ -166,7 +162,7 @@ def run_simd_step(
     step_selector: str,
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
-    profiler: WorkflowsProfiler,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> None:
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step
@@ -190,7 +186,7 @@ def run_simd_step_in_batch_mode(
     step_selector: str,
     step_instance: WorkflowBlock,
     execution_data_manager: ExecutionDataManager,
-    profiler: WorkflowsProfiler,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> None:
     with profiler.profile_execution_phase(
         name="step_input_assembly",
@@ -229,7 +225,7 @@ def run_simd_step_in_non_batch_mode(
     step_selector: str,
     step_instance: WorkflowBlock,
     execution_data_manager: ExecutionDataManager,
-    profiler: WorkflowsProfiler,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> None:
     indices, results = [], []
     with profiler.profile_execution_phase(
@@ -268,7 +264,7 @@ def run_non_simd_step(
     step_selector: str,
     workflow: CompiledWorkflow,
     execution_data_manager: ExecutionDataManager,
-    profiler: WorkflowsProfiler,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> None:
     with profiler.profile_execution_phase(
         name="step_input_assembly",

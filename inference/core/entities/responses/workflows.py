@@ -16,7 +16,7 @@ class WorkflowInferenceResponse(BaseModel):
     outputs: List[Dict[str, Any]] = Field(
         description="Dictionary with keys defined in workflow output and serialised values"
     )
-    profiler_track: Optional[List[dict]] = Field(
+    profiler_trace: Optional[List[dict]] = Field(
         description="Profiler events",
         default=None,
     )

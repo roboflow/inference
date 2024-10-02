@@ -11,6 +11,7 @@ from requests_toolbelt import MultipartEncoder
 
 from inference.core import logger
 from inference.core.cache import cache
+from inference.core.cache.base import BaseCache
 from inference.core.entities.types import (
     DatasetID,
     ModelType,
@@ -416,7 +417,9 @@ def delete_cached_workflow_response_if_exists(
         os.remove(workflow_cache_file)
 
 
-def load_cached_workflow_response(workspace_id: WorkspaceID, workflow_id: str) -> dict:
+def load_cached_workflow_response(
+    workspace_id: WorkspaceID, workflow_id: str
+) -> Optional[dict]:
     workflow_cache_file = get_workflow_cache_file(workspace_id, workflow_id)
     if not os.path.exists(workflow_cache_file):
         return None
@@ -432,13 +435,16 @@ def get_workflow_specification(
     api_key: str,
     workspace_id: WorkspaceID,
     workflow_id: str,
-    no_cache: bool = False,
+    use_cache: bool = True,
+    ephemeral_cache: Optional[BaseCache] = None,
 ) -> dict:
-    if not no_cache:
-        cached_entry = _retrieve_workflow_specification_from_memory_or_redis(
+    ephemeral_cache = ephemeral_cache or cache
+    if use_cache:
+        cached_entry = _retrieve_workflow_specification_from_ephemeral_cache(
             api_key=api_key,
             workspace_id=workspace_id,
             workflow_id=workflow_id,
+            ephemeral_cache=ephemeral_cache,
         )
         if cached_entry:
             return cached_entry
@@ -448,10 +454,10 @@ def get_workflow_specification(
     )
     try:
         response = _get_from_url(url=api_url)
-        if not no_cache:
+        if use_cache:
             cache_workflow_response(workspace_id, workflow_id, response)
     except (requests.exceptions.ConnectionError, ConnectionError) as error:
-        if no_cache:
+        if not use_cache:
             raise error
         response = load_cached_workflow_response(workspace_id, workflow_id)
         if response is None:
@@ -463,12 +469,13 @@ def get_workflow_specification(
     try:
         workflow_config = json.loads(response["workflow"]["config"])
         specification = workflow_config["specification"]
-        if not no_cache:
-            _cache_workflow_specification_in_memory_or_redis(
+        if use_cache:
+            _cache_workflow_specification_in_ephemeral_cache(
                 api_key=api_key,
                 workspace_id=workspace_id,
                 workflow_id=workflow_id,
                 specification=specification,
+                ephemeral_cache=ephemeral_cache,
             )
         return specification
     except KeyError as error:
@@ -481,31 +488,33 @@ def get_workflow_specification(
         ) from error
 
 
-def _retrieve_workflow_specification_from_memory_or_redis(
+def _retrieve_workflow_specification_from_ephemeral_cache(
     api_key: str,
     workspace_id: WorkspaceID,
     workflow_id: str,
+    ephemeral_cache: BaseCache,
 ) -> Optional[dict]:
     cache_key = _prepare_workflow_response_cache_key(
         api_key=api_key,
         workspace_id=workspace_id,
         workflow_id=workflow_id,
     )
-    return cache.get(key=cache_key)
+    return ephemeral_cache.get(key=cache_key)
 
 
-def _cache_workflow_specification_in_memory_or_redis(
+def _cache_workflow_specification_in_ephemeral_cache(
     api_key: str,
     workspace_id: WorkspaceID,
     workflow_id: str,
     specification: dict,
+    ephemeral_cache: BaseCache,
 ) -> None:
     cache_key = _prepare_workflow_response_cache_key(
         api_key=api_key,
         workspace_id=workspace_id,
         workflow_id=workflow_id,
     )
-    cache.set(
+    ephemeral_cache.set(
         key=cache_key,
         value=specification,
         expire=15 * 60,

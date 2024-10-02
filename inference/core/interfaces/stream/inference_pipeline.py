@@ -44,7 +44,10 @@ from inference.core.interfaces.stream.model_handlers.roboflow_models import (
     default_process_frame,
 )
 from inference.core.interfaces.stream.sinks import active_learning_sink, multi_sink
-from inference.core.interfaces.stream.utils import prepare_video_sources
+from inference.core.interfaces.stream.utils import (
+    on_pipeline_end,
+    prepare_video_sources,
+)
 from inference.core.interfaces.stream.watchdog import (
     NullPipelineWatchdog,
     PipelineWatchDog,
@@ -451,6 +454,8 @@ class InferencePipeline:
         cancel_thread_pool_tasks_on_exit: bool = True,
         video_metadata_input_name: str = "video_metadata",
         batch_collection_timeout: Optional[float] = None,
+        profiling_directory: str = "./inference_profiling",
+        use_workflow_definition_cache: bool = True,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -513,6 +518,13 @@ class InferencePipeline:
                 to grab frames from multiple sources can wait for batch to be filled before yielding already collected
                 frames. Please set this value in PRODUCTION to avoid performance drops when specific sources shows
                 unstable latency. Visit `multiplex_videos(...)` for more information about multiplexing process.
+            profiling_directory (str): Directory where workflows profiler traces will be dumped. To enable profiling
+                export `ENABLE_WORKFLOWS_PROFILING=True` environmental variable. You may specify number of workflow
+                runs in a buffer with environmental variable `WORKFLOWS_PROFILER_BUFFER_SIZE=n` - making last `n`
+                frames to be present in buffer on processing end.
+            use_workflow_definition_cache (bool): Controls usage of cache for workflow definitions. Set this into False
+                when you frequently modify definition saved in Roboflow app and want to fetch the
+                newest version for the request. Only applies for Workflows definitions saved on Roboflow platform.
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
         * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
@@ -566,6 +578,7 @@ class InferencePipeline:
                         api_key=api_key,
                         workspace_id=workspace_name,
                         workflow_id=workflow_id,
+                        use_cache=use_workflow_definition_cache,
                     )
             model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
             model_manager = BackgroundTaskActiveLearningManager(
@@ -606,14 +619,19 @@ class InferencePipeline:
                 f"Could not initialise workflow processing due to lack of dependencies required. "
                 f"Please provide an issue report under https://github.com/roboflow/inference/issues"
             ) from error
+        on_pipeline_end_closure = partial(
+            on_pipeline_end,
+            thread_pool_executor=thread_pool_executor,
+            cancel_thread_pool_tasks_on_exit=cancel_thread_pool_tasks_on_exit,
+            profiler=profiler,
+            profiling_directory=profiling_directory,
+        )
         return InferencePipeline.init_with_custom_logic(
             video_reference=video_reference,
             on_video_frame=on_video_frame,
             on_prediction=on_prediction,
             on_pipeline_start=None,
-            on_pipeline_end=lambda: thread_pool_executor.shutdown(
-                cancel_futures=cancel_thread_pool_tasks_on_exit
-            ),
+            on_pipeline_end=on_pipeline_end_closure,
             max_fps=max_fps,
             watchdog=watchdog,
             status_update_handlers=status_update_handlers,
