@@ -60,13 +60,11 @@ WORKFLOW_DEFINITION_ENTITIES_CACHE = WorkflowDefinitionEntitiesCache(cache_size=
 )
 def parse_workflow_definition(
     raw_workflow_definition: dict,
-    dynamic_blocks: List[BlockSpecification],
-    execution_engine_version: Optional[Version] = None,
+    available_blocks: List[BlockSpecification],
     profiler: Optional[WorkflowsProfiler] = None,
 ) -> ParsedWorkflowDefinition:
     workflow_definition_class = build_workflow_definition_entity(
-        dynamic_blocks=dynamic_blocks,
-        execution_engine_version=execution_engine_version,
+        available_blocks=available_blocks,
     )
     try:
         workflow_definition = workflow_definition_class.model_validate(
@@ -87,16 +85,11 @@ def parse_workflow_definition(
 
 
 def build_workflow_definition_entity(
-    dynamic_blocks: List[BlockSpecification],
-    execution_engine_version: Optional[Version] = None,
+    available_blocks: List[BlockSpecification],
 ) -> Type[BaseModel]:
-    blocks = (
-        load_workflow_blocks(execution_engine_version=execution_engine_version)
-        + dynamic_blocks
-    )
-    if WORKFLOW_DEFINITION_ENTITIES_CACHE.cache_hit(blocks=blocks):
-        return WORKFLOW_DEFINITION_ENTITIES_CACHE.get(blocks=blocks)
-    steps_manifests = tuple(block.manifest_class for block in blocks)
+    if WORKFLOW_DEFINITION_ENTITIES_CACHE.cache_hit(blocks=available_blocks):
+        return WORKFLOW_DEFINITION_ENTITIES_CACHE.get(blocks=available_blocks)
+    steps_manifests = tuple(block.manifest_class for block in available_blocks)
     block_manifest_types_union = Union[steps_manifests]
     block_type = Annotated[block_manifest_types_union, Field(discriminator="type")]
     entity = create_model(
@@ -106,15 +99,17 @@ def build_workflow_definition_entity(
         steps=(List[block_type], ...),
         outputs=(List[JsonField], ...),
     )
-    if not dynamic_blocks:
-        WORKFLOW_DEFINITION_ENTITIES_CACHE.add_entry(
-            blocks=blocks,
-            entry=entity,
-        )
+    WORKFLOW_DEFINITION_ENTITIES_CACHE.add_entry(
+        blocks=available_blocks,
+        entry=entity,
+    )
     return entity
 
 
 def get_workflow_schema_description() -> WorkflowsBlocksSchemaDescription:
-    workflow_definition_class = build_workflow_definition_entity([])
+    available_blocks = load_workflow_blocks()
+    workflow_definition_class = build_workflow_definition_entity(
+        available_blocks=available_blocks
+    )
     schema = workflow_definition_class.model_json_schema()
     return WorkflowsBlocksSchemaDescription(schema=schema)

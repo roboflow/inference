@@ -212,6 +212,9 @@ from inference.core.workflows.execution_engine.core import (
     get_available_versions,
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    load_workflow_blocks,
+)
 from inference.core.workflows.execution_engine.profiling.core import (
     BaseWorkflowsProfiler,
     NullWorkflowsProfiler,
@@ -1263,9 +1266,10 @@ class HttpInterface(BaseInterface):
                     "steps": [step_manifest],
                     "outputs": [],
                 }
+                available_blocks = load_workflow_blocks()
                 parsed_definition = parse_workflow_definition(
                     raw_workflow_definition=dummy_workflow_definition,
-                    dynamic_blocks=[],
+                    available_blocks=available_blocks,
                 )
                 parsed_manifest = parsed_definition.steps[0]
                 return parsed_manifest.get_actual_outputs()

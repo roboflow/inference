@@ -22,13 +22,13 @@ from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 )
 def initialise_steps(
     steps_manifest: List[WorkflowBlockManifest],
-    available_bocks: List[BlockSpecification],
+    available_blocks: List[BlockSpecification],
     explicit_init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
     initializers: Dict[str, Union[Any, Callable[[None], Any]]],
     profiler: Optional[WorkflowsProfiler] = None,
 ) -> List[InitialisedStep]:
     available_blocks_by_manifest_class = {
-        block.manifest_class: block for block in available_bocks
+        block.manifest_class: block for block in available_blocks
     }
     initialised_steps = []
     for step_manifest in steps_manifest:

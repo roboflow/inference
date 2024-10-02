@@ -61,10 +61,10 @@ def compile_workflow(
         ),
         profiler=profiler,
     )
+    available_blocks = statically_defined_blocks + dynamic_blocks
     parsed_workflow_definition = parse_workflow_definition(
         raw_workflow_definition=workflow_definition,
-        dynamic_blocks=dynamic_blocks,
-        execution_engine_version=execution_engine_version,
+        available_blocks=available_blocks,
         profiler=profiler,
     )
     validate_workflow_specification(
@@ -77,7 +77,7 @@ def compile_workflow(
     )
     steps = initialise_steps(
         steps_manifest=parsed_workflow_definition.steps,
-        available_bocks=statically_defined_blocks + dynamic_blocks,
+        available_blocks=available_blocks,
         explicit_init_parameters=init_parameters,
         initializers=initializers,
         profiler=profiler,
