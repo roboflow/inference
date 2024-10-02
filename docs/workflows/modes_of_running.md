@@ -81,11 +81,11 @@ leverage our Inference SDK in Python, or even use cURL. Explore the examples bel
             workspace_name="<your-workspace-name>",
             workflow_id="<your-workflow-id>",
             images={
-                "image": "https://your-image-url"
+                "image": ["https://your-image-url", "https://your-other-image-url"]
             },
             parameters={
                 "parameter": "some-value"
-            }     
+            },
         )
         ```
 
@@ -97,7 +97,9 @@ leverage our Inference SDK in Python, or even use cURL. Explore the examples bel
         - method parameter named `images` is supposed to be filled with dictionary that contains names and values
         for all Workflow inputs declared as `WorkflowImage`. Names must match your Workflow definition,
         as value you can pass either `np.array`, `PIL.Image`, URL to your image, local path to your image
-        or image in `base64` string. It is optional if Workflow does not define images as inputs.
+        or image in `base64` string. It is optional if Workflow does not define images as inputs. 
+        
+        - **Batch input for images is supported - simply pass list of images under given input name.**
     
         - method parameter named `parameters` is supposed to be filled with dictionary that contains names and values
         for all Workflow inputs of type `WorkflowParameter`. It's optional and must be filled according to Workflow
@@ -123,7 +125,7 @@ leverage our Inference SDK in Python, or even use cURL. Explore the examples bel
             workspace_name="<your-workspace-name>",
             workflow_id="<your-workflow-id>",
             images={
-                "image": "https://your-image-url"
+                "image": ["https://your-image-url", "https://your-other-image-url"]
             },
             parameters={
                 "parameter": "some-value"
@@ -140,6 +142,8 @@ leverage our Inference SDK in Python, or even use cURL. Explore the examples bel
         for all Workflow inputs declared as `WorkflowImage`. Names must match your Workflow definition,
         as value you can pass either `np.array`, `PIL.Image`, URL to your image, local path to your image
         or image in `base64` string. It is optional if Workflow does not define images as inputs.
+
+        - **Batch input for images is supported - simply pass list of images under given input name.**
     
         - method parameter named `parameters` is supposed to be filled with dictionary that contains names and values
         for all Workflow inputs of type `WorkflowParameter`. It's optional and must be filled according to Workflow

@@ -536,6 +536,24 @@ Please note that either `specification` is provided with specification of workfl
 both `workspace_name` and `workflow_id` are given to use workflow predefined in Roboflow app. `workspace_name`
 can be found in Roboflow APP URL once browser shows the main panel of workspace.
 
+!!! warning "Server-side caching of Workflow definitions"
+
+    In `inference v0.22.0` we've added server-side caching of Workflows reginsted on Roboflow platform which is
+    **enabled by default**. When you use `run_workflow(...)` method with `workspace_name` and `workflow_id`
+    server will cache the definition for 15 minutes. If you change the definition in Workflows UI and re-run the
+    method, you may not see the change. To force processing without cache, pass `use_cache=False` as a parameter of 
+    `run_workflow(...)` method. 
+
+
+!!! tip "Workflows profiling"
+
+    Since `inference v0.22.0`, you may request profiler trace of your Workflow execution from server passing 
+    `enable_profiling=True` parameter to `run_workflow(...)` method. If server configuration enables traces exposure,
+    you will be able to find a JSON file with trace in a directory specified by `profiling_directory` parameter of 
+    `InferenceConfiguration` - by default it is `.inference_profiling` directory in your current working directory.
+    The traces can be directly loaded and rendered in Google Chrome - navigate into `chrome://tracing` in your 
+    borwser and hit "load" button. 
+    
 
 ## Details about client configuration
 
@@ -699,6 +717,11 @@ to prevent errors)
     There may be some clients that would like to remain previous settings to potentially improve speed (
     when internet connection is a bottleneck and large images are submitted despite small 
     model input size). 
+
+### Configuration of Workflows execution
+
+- `profiling_directory`: parameter specify the location where Workflows profiler traces are saved. By default, it is
+`./.inference_profiling` directory.
 
 ## FAQs
 

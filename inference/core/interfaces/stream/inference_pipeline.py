@@ -454,7 +454,7 @@ class InferencePipeline:
         cancel_thread_pool_tasks_on_exit: bool = True,
         video_metadata_input_name: str = "video_metadata",
         batch_collection_timeout: Optional[float] = None,
-        profiling_directory: str = "./inference_profiling",
+        profiling_directory: str = "./.inference_profiling",
         use_workflow_definition_cache: bool = True,
     ) -> "InferencePipeline":
         """
