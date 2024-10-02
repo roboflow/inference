@@ -97,6 +97,9 @@ from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
+    GoogleVisionOCRBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
@@ -359,6 +362,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         JSONParserBlockV1,
         VLMAsClassifierBlockV1,
         GoogleGeminiBlockV1,
+        GoogleVisionOCRBlockV1,
         VLMAsDetectorBlockV1,
         AntropicClaudeBlockV1,
         LineCounterBlockV1,
