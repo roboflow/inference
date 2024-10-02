@@ -15,7 +15,6 @@ def get_container_id():
 
 def get_container_stats():
     container_id = get_container_id()
-    logger.warn(f"Container ID: {container_id}")
     if container_id:
         result = subprocess.run(
             [
