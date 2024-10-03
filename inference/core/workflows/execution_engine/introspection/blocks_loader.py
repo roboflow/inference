@@ -34,6 +34,9 @@ from inference.core.workflows.execution_engine.profiling.core import (
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
 )
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+    BLOCK_SOURCE,
+)
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
 WORKFLOWS_PLUGINS_ENV = "WORKFLOWS_PLUGINS"
@@ -304,16 +307,25 @@ def _validate_loaded_blocks_manifest_type_identifiers(
         for type_name in all_types:
             if type_name in types_already_defined:
                 clashing_block = types_already_defined[type_name]
+                block_identifier = _produce_readable_block_identifier(block=block)
+                clashing_block_identifier = _produce_readable_block_identifier(
+                    block=clashing_block
+                )
                 raise PluginLoadingError(
-                    public_message=f"Block defined in {block.block_source} plugin with fully qualified class "
-                    f"name {block.fully_qualified_block_class_name} clashes in terms of "
-                    f"the manifest type identifier (or its alias): {type_name} - defined in "
-                    f"{clashing_block.block_source} with fully qualified class name: "
-                    f"{clashing_block.fully_qualified_block_class_name}.",
+                    public_message=f"Block `{block_identifier}`, defined in `{block.block_source}` plugin,"
+                    f"clashes in terms of the manifest type identifier (or its alias): "
+                    f"`{type_name}` with `{clashing_block_identifier}` defined in "
+                    f"`{clashing_block.block_source}` plugin.",
                     context="blocks_loading",
                 )
             types_already_defined[type_name] = block
     return None
+
+
+def _produce_readable_block_identifier(block: BlockDescription) -> str:
+    if block.block_source == BLOCK_SOURCE:
+        return block.human_friendly_block_name
+    return block.fully_qualified_block_class_name
 
 
 def _validate_used_kinds_uniqueness(declared_kinds: List[Kind]) -> None:

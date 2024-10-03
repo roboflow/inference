@@ -705,6 +705,36 @@ class In(BinaryOperator):
     type: Literal["in (Sequence)"]
 
 
+class AllInSequence(BinaryOperator):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Checks if all elements of first value are elements of second value (usually list)",
+            "operands_number": 2,
+            "operands_kinds": [
+                [LIST_OF_VALUES_KIND],
+                [LIST_OF_VALUES_KIND],
+            ],
+            "output_kind": [BOOLEAN_KIND],
+        },
+    )
+    type: Literal["all in (Sequence)"]
+
+
+class AnyInSequence(BinaryOperator):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Checks if any element of first value is element of second value (usually list)",
+            "operands_number": 2,
+            "operands_kinds": [
+                [LIST_OF_VALUES_KIND],
+                [LIST_OF_VALUES_KIND],
+            ],
+            "output_kind": [BOOLEAN_KIND],
+        },
+    )
+    type: Literal["any in (Sequence)"]
+
+
 class UnaryOperator(BaseModel):
     type: str
 
@@ -839,6 +869,8 @@ class BinaryStatement(BaseModel):
     comparator: Annotated[
         Union[
             In,
+            AllInSequence,
+            AnyInSequence,
             StringContains,
             StringEndsWith,
             StringStartsWith,
