@@ -39,6 +39,9 @@ from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import 
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v2 import (
     SIFTComparisonBlockV2,
 )
+from inference.core.workflows.core_steps.classical_cv.size_measurement.v1 import (
+    SizeMeasurementBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
     TemplateMatchingBlockV1,
 )
@@ -316,6 +319,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ContinueIfBlockV1,
         PerspectiveCorrectionBlockV1,
         DynamicZonesBlockV1,
+        SizeMeasurementBlockV1,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
         PropertyDefinitionBlockV1,
