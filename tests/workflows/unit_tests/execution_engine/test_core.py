@@ -57,7 +57,7 @@ def test_select_execution_engine_when_requested_older_version_with_matching_majo
     None
 ):
     # when
-    result = _select_execution_engine(requested_engine_version=Version("1.1.1"))
+    result = _select_execution_engine(requested_engine_version=Version("1.1.2"))
 
     # then
     assert result == "a", "Expected version 1.3.0 to be selected"
@@ -69,7 +69,7 @@ def test_select_execution_engine_when_requested_older_version_with_matching_majo
 def test_select_execution_engine_when_multiple_versions_match() -> None:
     # when
     with pytest.raises(WorkflowEnvironmentConfigurationError):
-        _ = _select_execution_engine(requested_engine_version=Version("1.1.1"))
+        _ = _select_execution_engine(requested_engine_version=Version("1.1.2"))
 
 
 @mock.patch.dict(
