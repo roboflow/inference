@@ -550,7 +550,7 @@ can be found in Roboflow APP URL once browser shows the main panel of workspace.
     Since `inference v0.22.0`, you may request profiler trace of your Workflow execution from server passing 
     `enable_profiling=True` parameter to `run_workflow(...)` method. If server configuration enables traces exposure,
     you will be able to find a JSON file with trace in a directory specified by `profiling_directory` parameter of 
-    `InferenceConfiguration` - by default it is `.inference_profiling` directory in your current working directory.
+    `InferenceConfiguration` - by default it is `inference_profiling` directory in your current working directory.
     The traces can be directly loaded and rendered in Google Chrome - navigate into `chrome://tracing` in your 
     borwser and hit "load" button. 
     
@@ -721,7 +721,7 @@ to prevent errors)
 ### Configuration of Workflows execution
 
 - `profiling_directory`: parameter specify the location where Workflows profiler traces are saved. By default, it is
-`./.inference_profiling` directory.
+`./inference_profiling` directory.
 
 ## FAQs
 
