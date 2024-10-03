@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -112,6 +113,7 @@ from inference.core.env import (
     CORE_MODELS_ENABLED,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
+    ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
     LAMBDA,
@@ -500,6 +502,9 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
+
+        if ENABLE_PROMETHEUS:
+            Instrumentator().expose(app, endpoint="/metrics")
 
         if METLO_KEY:
             app.add_middleware(
