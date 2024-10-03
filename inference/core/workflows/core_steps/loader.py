@@ -97,6 +97,9 @@ from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
+    GoogleVisionOCRBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
@@ -179,6 +182,9 @@ from inference.core.workflows.core_steps.transformations.perspective_correction.
 )
 from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
     RelativeStaticCropBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
+    StitchImagesBlockV1,
 )
 
 # Visualizers
@@ -347,10 +353,12 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ClipComparisonBlockV2,
         CameraFocusBlockV1,
         RoboflowDatasetUploadBlockV2,
+        StitchImagesBlockV1,
         OpenAIBlockV2,
         JSONParserBlockV1,
         VLMAsClassifierBlockV1,
         GoogleGeminiBlockV1,
+        GoogleVisionOCRBlockV1,
         VLMAsDetectorBlockV1,
         AntropicClaudeBlockV1,
         LineCounterBlockV1,
