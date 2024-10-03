@@ -4,7 +4,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from multiprocessing.synchronize import Lock as LockType
+from threading import Lock
 from typing import Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
@@ -100,9 +100,9 @@ class VideoFrameProducer:
 
 
 class WebRTCVideoFrameProducer(VideoFrameProducer):
-    def __init__(self, to_inference_queue: deque, to_inference_lock: LockType):
+    def __init__(self, to_inference_queue: deque, to_inference_lock: Lock):
         self.to_inference_queue: deque = to_inference_queue
-        self.to_inference_lock: LockType = to_inference_lock
+        self.to_inference_lock: Lock = to_inference_lock
         self._w: Optional[int] = None
         self._h: Optional[int] = None
         self._fps_buff = []

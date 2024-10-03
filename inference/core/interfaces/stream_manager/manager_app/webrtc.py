@@ -1,7 +1,7 @@
 import asyncio
 import concurrent.futures
+from threading import Lock
 import time
-from multiprocessing.synchronize import Lock as LockType
 from typing import Deque, Optional
 
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
@@ -20,17 +20,17 @@ class VideoTransformTrack(MediaStreamTrack):
     def __init__(
         self,
         to_inference_queue: Deque,
-        to_inference_lock: LockType,
+        to_inference_lock: Lock,
         from_inference_queue: Deque,
-        from_inference_lock: LockType,
+        from_inference_lock: Lock,
     ):
         self.track: Optional[RemoteStreamTrack] = None
         self._processed = 0
         self._id = time.time_ns()
         self.to_inference_queue: Deque = to_inference_queue
         self.from_inference_queue: Deque = from_inference_queue
-        self.to_inference_lock: LockType = to_inference_lock
-        self.from_inference_lock: LockType = from_inference_lock
+        self.to_inference_lock: Lock = to_inference_lock
+        self.from_inference_lock: Lock = from_inference_lock
         self._loop = asyncio.get_event_loop()
         self._pool = concurrent.futures.ThreadPoolExecutor()
         self._img = None
@@ -69,9 +69,9 @@ class VideoTransformTrack(MediaStreamTrack):
 async def create_rtc_peer_connection(
     webrtc_offer: WebRTCOffer,
     to_inference_queue: Deque,
-    to_inference_lock: LockType,
+    to_inference_lock: Lock,
     from_inference_queue: Deque,
-    from_inference_lock: LockType,
+    from_inference_lock: Lock,
 ) -> RTCPeerConnection:
     pc = RTCPeerConnection()
     relay = MediaRelay()
