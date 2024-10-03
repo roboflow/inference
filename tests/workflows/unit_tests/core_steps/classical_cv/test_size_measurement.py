@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 import supervision as sv
-from inference.core.workflows.core_steps.transformations.size_measurement.v1 import (
+from inference.core.workflows.core_steps.classical_cv.size_measurement.v1 import (
     SizeMeasurementBlockV1,
     OUTPUT_KEY,
 )

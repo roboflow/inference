@@ -39,6 +39,9 @@ from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import 
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v2 import (
     SIFTComparisonBlockV2,
 )
+from inference.core.workflows.core_steps.classical_cv.size_measurement.v1 import (
+    SizeMeasurementBlockV1,
+)
 from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
     TemplateMatchingBlockV1,
 )
@@ -182,9 +185,6 @@ from inference.core.workflows.core_steps.transformations.perspective_correction.
 )
 from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
     RelativeStaticCropBlockV1,
-)
-from inference.core.workflows.core_steps.transformations.size_measurement.v1 import (
-    SizeMeasurementBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
     StitchImagesBlockV1,
