@@ -38,6 +38,8 @@ BINARY_OPERATORS = {
     "(String) endsWith": lambda a, b: a.endswith(b),
     "(String) contains": lambda a, b: b in a,
     "in (Sequence)": lambda a, b: a in b,
+    "any in (Sequence)": lambda a, b: any(item in b for item in a),
+    "all in (Sequence)": lambda a, b: all(item in b for item in a),
     "(Detection) in zone": is_point_in_zone,
 }
 
