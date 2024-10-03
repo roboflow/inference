@@ -112,7 +112,8 @@ def assembly_dynamic_block_manifest(
             json_schema_extra={
                 "name": build_human_friendly_block_name(
                     fully_qualified_name=manifest_description.block_type
-                )
+                ),
+                "short_description": manifest_description.description,
             },
         ),
         name=(str, ...),
