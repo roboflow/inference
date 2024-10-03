@@ -66,11 +66,11 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "values_metadata": {
                 "text_detection": {
-                    "name": "Text Detection",
+                    "name": "Any Scene Text Detection",
                     "description": "Detects and extracts text from any image, including photographs that contain blocks of text.",
                 },
                 "ocr_text_detection": {
-                    "name": "OCR Text Detection",
+                    "name": "Document Text Detection",
                     "description": "Optimized for dense text documents, such as scanned pages or photographs of printed text.",
                 },
             },
