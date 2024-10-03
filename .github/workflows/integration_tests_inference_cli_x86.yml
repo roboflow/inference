@@ -12,7 +12,7 @@ jobs:
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
-    timeout-minutes: 10
+    timeout-minutes: 30
     strategy:
       matrix:
         python-version: ["3.9", "3.10"]
@@ -39,5 +39,4 @@ jobs:
           pip install --upgrade setuptools
           pip install -r requirements/requirements.cli.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt
       - name: 🧪 Integration Tests of Inference CLI
-        timeout-minutes: 30
         run: python -m pytest tests/inference_cli/integration_tests

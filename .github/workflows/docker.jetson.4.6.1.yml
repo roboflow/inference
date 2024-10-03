@@ -44,4 +44,4 @@ jobs:
           cache-from: type=registry,ref=roboflow/roboflow-inference-server-jetson-4.6.1:cache
           cache-to: type=registry,ref=roboflow/roboflow-inference-server-jetson-4.6.1:cache,mode=max
           platforms: linux/arm64
-          file: ./docker/dockerfiles/Dockerfile.onnx.jetson.4.5.0
+          file: ./docker/dockerfiles/Dockerfile.onnx.jetson.4.6.1

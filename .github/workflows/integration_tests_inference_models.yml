@@ -10,9 +10,9 @@ on:
 jobs:
   build-dev-test:
     runs-on:
-      labels: depot-ubuntu-22.04-small
+      labels: depot-ubuntu-22.04-8
       group: public-depot
-    timeout-minutes: 15
+    timeout-minutes: 45
     strategy:
       matrix:
         python-version: ["3.8", "3.9", "3.10", "3.11"]
