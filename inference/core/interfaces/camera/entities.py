@@ -1,7 +1,10 @@
 import logging
+import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from multiprocessing.synchronize import Lock as LockType
 from typing import Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
@@ -91,6 +94,50 @@ class VideoFrameProducer:
 
     def discover_source_properties(self) -> SourceProperties:
         raise NotImplementedError
+
+    def initialize_source_properties(self, properties: Dict[str, float]):
+        pass
+
+
+class WebRTCVideoFrameProducer(VideoFrameProducer):
+    def __init__(self, to_inference_queue: deque, to_inference_lock: LockType):
+        self.to_inference_queue: deque = to_inference_queue
+        self.to_inference_lock: LockType = to_inference_lock
+        self._w: Optional[int] = None
+        self._h: Optional[int] = None
+        self._fps_buff = []
+        self._is_opened = True
+
+    def grab(self) -> bool:
+        return True
+
+    def retrieve(self) -> Tuple[bool, np.ndarray]:
+        while not self.to_inference_queue:
+            time.sleep(0.1)
+        self._is_opened = True
+        with self.to_inference_lock:
+            img = self.to_inference_queue.pop()
+        return True, img
+
+    def release(self):
+        pass
+
+    def isOpened(self) -> bool:
+        return self._is_opened
+
+    def discover_source_properties(self) -> SourceProperties:
+        max_ts = max(self._fps_buff, key=lambda x: x["ts"]) if self._fps_buff else 0
+        min_ts = min(self._fps_buff, key=lambda x: x["ts"]) if self._fps_buff else 0
+        if max_ts == min_ts:
+            max_ts += 0.1
+        fps = len(self._fps_buff) / (max_ts - min_ts)
+        return SourceProperties(
+            width=self._w,
+            height=self._h,
+            total_frames=-1,
+            is_file=False,
+            fps=fps,
+        )
 
     def initialize_source_properties(self, properties: Dict[str, float]):
         pass

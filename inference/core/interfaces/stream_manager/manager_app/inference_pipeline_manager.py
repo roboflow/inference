@@ -1,7 +1,11 @@
+import asyncio
 import os
 import signal
+from collections import deque
 from dataclasses import asdict
+from functools import partial
 from multiprocessing import Process, Queue
+from threading import Lock
 from types import FrameType
 from typing import Optional, Tuple
 
@@ -13,6 +17,7 @@ from inference.core.exceptions import (
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
 )
+from inference.core.interfaces.camera.entities import WebRTCVideoFrameProducer
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
 from inference.core.interfaces.http.orjson_utils import (
     serialise_single_workflow_result_element,
@@ -30,10 +35,15 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     CommandType,
     ErrorType,
     InitialisePipelinePayload,
+    InitialiseWebRTCPipelinePayload,
     OperationStatus,
+    WebRTCOffer,
 )
 from inference.core.interfaces.stream_manager.manager_app.serialisation import (
     describe_error,
+)
+from inference.core.interfaces.stream_manager.manager_app.webrtc import (
+    create_rtc_peer_connection,
 )
 
 
@@ -81,6 +91,8 @@ class InferencePipelineManager(Process):
             command_type = CommandType(payload[TYPE_KEY])
             if command_type is CommandType.INIT:
                 return self._initialise_pipeline(request_id=request_id, payload=payload)
+            if command_type is CommandType.WEBRTC:
+                return self._start_webrtc(request_id=request_id, payload=payload)
             if command_type is CommandType.TERMINATE:
                 return self._terminate_pipeline(request_id=request_id)
             if command_type is CommandType.MUTE:
@@ -150,6 +162,97 @@ class InferencePipelineManager(Process):
                 (request_id, {STATUS_KEY: OperationStatus.SUCCESS})
             )
             logger.info(f"Pipeline initialised. request_id={request_id}...")
+        except (
+            ValidationError,
+            MissingApiKeyError,
+            KeyError,
+            NotImplementedError,
+        ) as error:
+            self._handle_error(
+                request_id=request_id,
+                error=error,
+                public_error_message="Could not decode InferencePipeline initialisation command payload.",
+                error_type=ErrorType.INVALID_PAYLOAD,
+            )
+        except RoboflowAPINotAuthorizedError as error:
+            self._handle_error(
+                request_id=request_id,
+                error=error,
+                public_error_message="Invalid API key used or API key is missing. "
+                "Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key",
+                error_type=ErrorType.AUTHORISATION_ERROR,
+            )
+        except RoboflowAPINotNotFoundError as error:
+            self._handle_error(
+                request_id=request_id,
+                error=error,
+                public_error_message="Requested Roboflow resources (models / workflows etc.) not available or "
+                "wrong API key used.",
+                error_type=ErrorType.NOT_FOUND,
+            )
+
+    def _start_webrtc(self, request_id: str, payload: dict):
+        try:
+            parsed_payload = InitialiseWebRTCPipelinePayload.model_validate(payload)
+            watchdog = BasePipelineWatchDog()
+            buffer_sink = InMemoryBufferSink.init(
+                queue_size=parsed_payload.sink_configuration.results_buffer_size,
+            )
+            self._buffer_sink = buffer_sink
+            webrtc_offer = parsed_payload.webrtc_offer
+
+            to_inference_queue = deque()
+            to_inference_lock = Lock()
+            from_inference_queue = deque()
+            from_inference_lock = Lock()
+
+            peer_connection = asyncio.run(
+                create_rtc_peer_connection(
+                    webrtc_offer=webrtc_offer,
+                    to_inference_queue=to_inference_queue,
+                    to_inference_lock=to_inference_lock,
+                    from_inference_queue=from_inference_queue,
+                    from_inference_lock=from_inference_lock,
+                )
+            )
+
+            accepted_webrtc_offer = WebRTCOffer(
+                sdp=peer_connection.localDescription.sdp,
+                type=peer_connection.localDescription.type,
+            )
+
+            webrtc_producer = partial(
+                WebRTCVideoFrameProducer,
+                to_inference_lock=to_inference_lock,
+                to_inference_queue=to_inference_queue,
+            )
+
+            self._inference_pipeline = InferencePipeline.init_with_workflow(
+                video_reference=WebRTCVideoFrameProducer(),
+                workflow_specification=parsed_payload.processing_configuration.workflow_specification,
+                workspace_name=parsed_payload.processing_configuration.workspace_name,
+                workflow_id=parsed_payload.processing_configuration.workflow_id,
+                api_key=parsed_payload.api_key,
+                image_input_name=parsed_payload.processing_configuration.image_input_name,
+                workflows_parameters=parsed_payload.processing_configuration.workflows_parameters,
+                on_prediction=self._buffer_sink.on_prediction,
+                max_fps=parsed_payload.video_configuration.max_fps,
+                watchdog=watchdog,
+                source_buffer_filling_strategy=parsed_payload.video_configuration.source_buffer_filling_strategy,
+                source_buffer_consumption_strategy=parsed_payload.video_configuration.source_buffer_consumption_strategy,
+                video_source_properties=parsed_payload.video_configuration.video_source_properties,
+                workflows_thread_pool_workers=parsed_payload.processing_configuration.workflows_thread_pool_workers,
+                cancel_thread_pool_tasks_on_exit=parsed_payload.processing_configuration.cancel_thread_pool_tasks_on_exit,
+                video_metadata_input_name=parsed_payload.processing_configuration.video_metadata_input_name,
+                batch_collection_timeout=parsed_payload.video_configuration.batch_collection_timeout,
+            )
+            self._watchdog = watchdog
+            self._inference_pipeline.start(use_main_thread=False)
+            self._responses_queue.put(
+                (request_id, {STATUS_KEY: OperationStatus.SUCCESS})
+            )
+            logger.info(f"Pipeline initialised. request_id={request_id}...")
+            return webrtc_producer
         except (
             ValidationError,
             MissingApiKeyError,

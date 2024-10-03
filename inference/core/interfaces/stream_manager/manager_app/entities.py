@@ -33,6 +33,7 @@ class ErrorType(str, Enum):
 
 class CommandType(str, Enum):
     INIT = "init"
+    WEBRTC = "webrtc"
     MUTE = "mute"
     RESUME = "resume"
     STATUS = "status"
@@ -74,6 +75,21 @@ class WorkflowConfiguration(BaseModel):
 
 class InitialisePipelinePayload(BaseModel):
     video_configuration: VideoConfiguration
+    processing_configuration: WorkflowConfiguration
+    sink_configuration: MemorySinkConfiguration = MemorySinkConfiguration(
+        type="MemorySinkConfiguration"
+    )
+    api_key: Optional[str] = None
+
+
+class WebRTCOffer(BaseModel):
+    type: str
+    sdp: str
+
+
+class InitialiseWebRTCPipelinePayload(BaseModel):
+    video_configuration: VideoConfiguration
+    webrtc_offer: WebRTCOffer
     processing_configuration: WorkflowConfiguration
     sink_configuration: MemorySinkConfiguration = MemorySinkConfiguration(
         type="MemorySinkConfiguration"
