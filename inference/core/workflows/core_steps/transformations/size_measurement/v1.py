@@ -13,7 +13,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    STRING_KIND,
     StepOutputSelector,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -63,9 +65,16 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
         description="Predictions from the model that detects the object to measure",
         examples=["$segmentation.object_predictions"],
     )
-    reference_dimensions: Union[str, Tuple[float, float]] = Field(
+    reference_dimensions: Union[
+        str,
+        Tuple[float, float],
+        List[float],
+        WorkflowParameterSelector(
+            kind=[STRING_KIND, LIST_OF_VALUES_KIND],
+        ),
+    ] = Field(  # type: ignore
         description="Dimensions of the reference object (width, height) in desired units (e.g., inches) as a string in the format 'width,height' or as a tuple (width, height)",
-        examples=["5.0,5.0", (5.0, 5.0)],
+        examples=["5.0,5.0", (5.0, 5.0), "$inputs.reference_dimensions"],
     )
 
     @classmethod
@@ -104,21 +113,22 @@ class SizeMeasurementBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if isinstance(reference_dimensions, str):
             try:
-                reference_dimensions = map(float, reference_dimensions.split(","))
+                reference_dimensions = [
+                    float(d) for d in reference_dimensions.split(",")
+                ]
             except ValueError:
                 raise ValueError(
                     "reference_dimensions must be a string in the format 'width,height'"
                 )
-        elif isinstance(reference_dimensions, tuple) and len(reference_dimensions) == 2:
-            pass
-        else:
+        if (
+            not isinstance(reference_dimensions, (tuple, list))
+            or len(reference_dimensions) != 2
+        ):
             raise ValueError(
                 "reference_dimensions must be a string in the format 'width,height' or a tuple (width, height)"
             )
 
-        ref_width_actual, ref_height_actual = (
-            SizeMeasurementManifest.parse_reference_dimensions(reference_dimensions)
-        )
+        ref_width_actual, ref_height_actual = reference_dimensions
 
         ref_index = np.argmax(reference_predictions.confidence)
         ref_width_pixels, ref_height_pixels = get_detection_dimensions(
@@ -133,14 +143,10 @@ class SizeMeasurementBlockV1(WorkflowBlock):
             obj_width_pixels, obj_height_pixels = get_detection_dimensions(
                 object_predictions, i
             )
-            obj_width_actual = (
-                obj_width_pixels / ref_width_pixels
-            ) * ref_width_actual
+            obj_width_actual = (obj_width_pixels / ref_width_pixels) * ref_width_actual
             obj_height_actual = (
                 obj_height_pixels / ref_height_pixels
             ) * ref_height_actual
-            dimensions.append(
-                {"width": obj_width_actual, "height": obj_height_actual}
-            )
+            dimensions.append({"width": obj_width_actual, "height": obj_height_actual})
 
         return {OUTPUT_KEY: dimensions}
