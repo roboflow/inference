@@ -72,7 +72,7 @@ with visualisation blocks.
     workflow_name_in_app="google-vision-ocr",
 )
 @pytest.mark.skipif(
-    condition=GOOGLE_VISION_OCR_WORKFLOW is None, reason="Google API key not provided"
+    condition=GOOGLE_VISION_API_KEY is None, reason="Google API key not provided"
 )
 def test_workflow_with_google_ocr_when_text_should_be_detected(
     model_manager: ModelManager,
@@ -115,6 +115,9 @@ def test_workflow_with_google_ocr_when_text_should_be_detected(
     ), "Expected 4 text regions to be detected"
 
 
+@pytest.mark.skipif(
+    condition=GOOGLE_VISION_API_KEY is None, reason="Google API key not provided"
+)
 def test_workflow_with_google_ocr_when_no_text_should_be_detected(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
