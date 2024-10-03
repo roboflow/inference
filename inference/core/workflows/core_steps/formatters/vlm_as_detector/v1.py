@@ -14,6 +14,7 @@ from supervision.config import CLASS_NAME_DATA_FIELD
 from inference.core.workflows.core_steps.common.utils import (
     attach_parents_coordinates_to_sv_detections,
 )
+from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
@@ -67,6 +68,18 @@ Example
 
 SHORT_DESCRIPTION = "Parses raw string into object-detection prediction."
 
+SUPPORTED_TASKS = {
+    "object-detection",
+    "object-detection-and-caption",
+    "open-vocabulary-object-detection",
+    "phrase-grounded-object-detection",
+    "region-proposal",
+    "ocr-with-text-detection",
+}
+RELEVANT_TASKS_METADATA = {
+    k: v for k, v in VLM_TASKS_METADATA.items() if k in SUPPORTED_TASKS
+}
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -112,14 +125,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Type of the model that generated prediction",
         examples=[["google-gemini", "anthropic-claude", "florence-2"]],
     )
-    task_type: Literal[
-        "object-detection",
-        "object-detection-and-caption",
-        "open-vocabulary-object-detection",
-        "phrase-grounded-object-detection",
-        "region-proposal",
-        "ocr-with-text-detection",
-    ]
+    task_type: Literal[tuple(SUPPORTED_TASKS)] = Field(
+        description="Task type to performed by model.",
+        json_schema_extra={
+            "values_metadata": RELEVANT_TASKS_METADATA,
+        },
+    )
 
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
