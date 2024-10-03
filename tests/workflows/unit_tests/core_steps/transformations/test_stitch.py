@@ -60,11 +60,11 @@ def test_stitch_images():
             [230, 95],
             [10, 90],
             [240, 95],
-        ]
-        , dtype=int
+        ],
+        dtype=int,
     )
     img1 = np.zeros((640, 640, 3), dtype=np.uint8)
-    img1[:,:] = (255, 0, 0)
+    img1[:, :] = (255, 0, 0)
     img1 = cv.drawContours(
         img1,
         [contours],
@@ -72,16 +72,9 @@ def test_stitch_images():
         (0, 0, 255),
         -1,
     )
-    img1 = cv.line(
-        img1,
-        [5, 5],
-        [5, 600],
-        (0, 255, 0),
-        5,
-        cv.LINE_8
-    )
+    img1 = cv.line(img1, [5, 5], [5, 600], (0, 255, 0), 5, cv.LINE_8)
     img2 = np.zeros((640, 640, 3), dtype=np.uint8)
-    img2[:,:] = (255, 0, 0)
+    img2[:, :] = (255, 0, 0)
     img2 = cv.drawContours(
         img2,
         [contours + np.array([300, 0])],
@@ -89,14 +82,7 @@ def test_stitch_images():
         (0, 0, 255),
         -1,
     )
-    img2 = cv.line(
-        img2,
-        [600, 5],
-        [600, 600],
-        (0, 150, 150),
-        5,
-        cv.LINE_8
-    )
+    img2 = cv.line(img2, [600, 5], [600, 600], (0, 150, 150), 5, cv.LINE_8)
     # when
     res = stitch_images(
         image1=img1,
@@ -106,7 +92,7 @@ def test_stitch_images():
     )
 
     expected_res = np.zeros((640, 640, 3), dtype=np.uint8)
-    expected_res[:,:] = (255, 0, 0)
+    expected_res[:, :] = (255, 0, 0)
     expected_res = cv.drawContours(
         expected_res,
         [contours + np.array([300, 0])],
@@ -115,11 +101,6 @@ def test_stitch_images():
         -1,
     )
     expected_res = cv.line(
-        expected_res,
-        [600, 5],
-        [600, 600],
-        (0, 150, 150),
-        5,
-        cv.LINE_8
+        expected_res, [600, 5], [600, 600], (0, 150, 150), 5, cv.LINE_8
     )
     assert np.allclose(res, expected_res)
