@@ -32,6 +32,9 @@ The `SizeMeasurementBlock` is a transformer block designed to measure the dimens
 in relation to a reference object. The reference object is detected using one model,
 and the object to be measured is detected using another model. The block outputs the dimensions of the
 objects to be measured in terms of the reference object.
+Note: if reference_predictions provides multiple boxes, the most confident one will be selected.
+In order to achieve different behavior you can use Detection Transformation block with custom filter
+and also continue_if block if no reference detection meets expectations.
 """
 
 
