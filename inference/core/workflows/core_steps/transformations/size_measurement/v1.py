@@ -22,7 +22,6 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "dimensions"
-TYPE: str = "roboflow_core/size_measurement@v1"
 SHORT_DESCRIPTION = (
     "Measure the dimensions of objects in relation to a reference object."
 )
@@ -45,7 +44,7 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
             "block_type": "transformation",
         }
     )
-    type: Literal[f"{TYPE}", "SizeMeasurement"]
+    type: Literal[f"roboflow_core/size_measurement@v1"]
     reference_predictions: StepOutputSelector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -69,29 +68,6 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
         examples=["5.0,5.0", (5.0, 5.0)],
     )
 
-    @validator("reference_dimensions", pre=True)
-    def parse_reference_dimensions(
-        cls, value: Union[str, Tuple[float, float]]
-    ) -> Tuple[float, float]:
-        if isinstance(value, str):
-            try:
-                width, height = map(float, value.split(","))
-                return width, height
-            except ValueError:
-                raise ValueError(
-                    "reference_dimensions must be a string in the format 'width,height'"
-                )
-        elif isinstance(value, tuple) and len(value) == 2:
-            return value
-        else:
-            raise ValueError(
-                "reference_dimensions must be a string in the format 'width,height' or a tuple (width, height)"
-            )
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -108,10 +84,10 @@ def get_detection_dimensions(
 ) -> Tuple[float, float]:
     if detection.mask is not None:
         mask = detection.mask[index].astype(np.uint8)
-        x, y, w, h = cv.boundingRect(mask)
+        *_, w, h = cv.boundingRect(mask)
     else:
         bbox = detection.xyxy[index]
-        x, y, w, h = bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1]
+        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
     return w, h
 
 
@@ -122,50 +98,49 @@ class SizeMeasurementBlockV1(WorkflowBlock):
 
     def run(
         self,
-        reference_predictions: Batch[sv.Detections],
-        object_predictions: Batch[sv.Detections],
+        reference_predictions: sv.Detections,
+        object_predictions: sv.Detections,
         reference_dimensions: Union[str, Tuple[float, float]],
     ) -> BlockResult:
-        result = []
+        if isinstance(reference_dimensions, str):
+            try:
+                reference_dimensions = map(float, reference_dimensions.split(","))
+            except ValueError:
+                raise ValueError(
+                    "reference_dimensions must be a string in the format 'width,height'"
+                )
+        elif isinstance(reference_dimensions, tuple) and len(reference_dimensions) == 2:
+            pass
+        else:
+            raise ValueError(
+                "reference_dimensions must be a string in the format 'width,height' or a tuple (width, height)"
+            )
+
         ref_width_actual, ref_height_actual = (
             SizeMeasurementManifest.parse_reference_dimensions(reference_dimensions)
         )
 
-        for ref_detections, obj_detections in zip(
-            reference_predictions, object_predictions
-        ):
-            if ref_detections is None or obj_detections is None:
-                result.append({OUTPUT_KEY: None})
-                continue
+        ref_index = np.argmax(reference_predictions.confidence)
+        ref_width_pixels, ref_height_pixels = get_detection_dimensions(
+            reference_predictions, ref_index
+        )
 
-            if len(ref_detections) == 0:
-                result.append({OUTPUT_KEY: None})
-                continue
+        if ref_width_pixels == 0 or ref_height_pixels == 0:
+            return {OUTPUT_KEY: None}
 
-            ref_index = np.argmax(ref_detections.confidence)
-            ref_width_pixels, ref_height_pixels = get_detection_dimensions(
-                ref_detections, ref_index
+        dimensions = []
+        for i in range(len(object_predictions)):
+            obj_width_pixels, obj_height_pixels = get_detection_dimensions(
+                object_predictions, i
+            )
+            obj_width_actual = (
+                obj_width_pixels / ref_width_pixels
+            ) * ref_width_actual
+            obj_height_actual = (
+                obj_height_pixels / ref_height_pixels
+            ) * ref_height_actual
+            dimensions.append(
+                {"width": obj_width_actual, "height": obj_height_actual}
             )
 
-            if ref_width_pixels == 0 or ref_height_pixels == 0:
-                result.append({OUTPUT_KEY: None})
-                continue
-
-            dimensions = []
-            for i in range(len(obj_detections)):
-                obj_width_pixels, obj_height_pixels = get_detection_dimensions(
-                    obj_detections, i
-                )
-                obj_width_actual = (
-                    obj_width_pixels / ref_width_pixels
-                ) * ref_width_actual
-                obj_height_actual = (
-                    obj_height_pixels / ref_height_pixels
-                ) * ref_height_actual
-                dimensions.append(
-                    {"width": obj_width_actual, "height": obj_height_actual}
-                )
-
-            result.append({OUTPUT_KEY: dimensions})
-
-        return result
+        return {OUTPUT_KEY: dimensions}
