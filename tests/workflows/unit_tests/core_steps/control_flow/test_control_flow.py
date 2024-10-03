@@ -1,9 +1,10 @@
 import pytest
-from inference.core.workflows.core_steps.common.query_language.evaluation_engine.core import (
-    build_eval_function,
-)
+
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     StatementGroup,
+)
+from inference.core.workflows.core_steps.common.query_language.evaluation_engine.core import (
+    build_eval_function,
 )
 
 CONTINUE_IF_MULTI_LABEL_EXACT_MATCH_PASS = {
