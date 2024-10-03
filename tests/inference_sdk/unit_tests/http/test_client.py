@@ -1,5 +1,7 @@
 import base64
 import json
+import os.path
+from glob import glob
 from io import BytesIO
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
@@ -3726,14 +3728,18 @@ def test_infer_from_workflow_when_usage_of_profiler_enabled(
     legacy_endpoints: bool,
     endpoint_to_use: str,
     parameter_name: str,
+    empty_directory: str,
 ) -> None:
     # given
     api_url = "http://some.com"
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        inference_configuration=InferenceConfiguration(profiling_directory=empty_directory)
+    )
     requests_mock.post(
         f"{api_url}{endpoint_to_use}",
         json={
             "outputs": [{"some": 3}],
+            "profiler_trace": [{"my": "trace"}]
         },
     )
     load_static_inference_input_mock.side_effect = [
@@ -3777,6 +3783,12 @@ def test_infer_from_workflow_when_usage_of_profiler_enabled(
             ],
         },
     }, "Request payload must contain api key, inputs and no cache flag"
+    json_files_in_profiling_directory = glob(os.path.join(empty_directory, "*.json"))
+    assert len(json_files_in_profiling_directory) == 1, "Expected to find one JSON file with profiler trace"
+    with open(json_files_in_profiling_directory[0], "r") as f:
+        data = json.load(f)
+    assert data == [{"my": "trace"}], "Trace content must be fully saved"
+
 
 @pytest.mark.parametrize(
     "legacy_endpoints, endpoint_to_use, parameter_name",
