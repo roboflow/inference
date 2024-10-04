@@ -162,6 +162,7 @@ from inference.core.interfaces.stream_manager.api.entities import (
     CommandResponse,
     ConsumePipelineResponse,
     InferencePipelineStatusResponse,
+    InitializeWebRTCPipelineResponse,
     ListPipelinesResponse,
 )
 from inference.core.interfaces.stream_manager.api.errors import (
@@ -1301,7 +1302,7 @@ class HttpInterface(BaseInterface):
 
             @app.post(
                 "/inference_pipelines/initialise_webrtc",
-                response_model=CommandResponse,
+                response_model=InitializeWebRTCPipelineResponse,
                 summary="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
                 description="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
             )
@@ -1309,9 +1310,11 @@ class HttpInterface(BaseInterface):
             async def initialise_webrtc_inference_pipeline(
                 request: InitialiseWebRTCPipelinePayload,
             ) -> CommandResponse:
-                return await self.stream_manager_client.initialise_webrtc_pipeline(
+                resp = await self.stream_manager_client.initialise_webrtc_pipeline(
                     initialisation_request=request
                 )
+                print(f"RESP, {resp}")
+                return resp
 
             @app.post(
                 "/inference_pipelines/{pipeline_id}/pause",

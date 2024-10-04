@@ -40,7 +40,7 @@ class VideoTransformTrack(MediaStreamTrack):
         self.last_pts = 0
         self.last_time_base = 0
 
-    async def set_track(self, track: RemoteStreamTrack):
+    def set_track(self, track: RemoteStreamTrack):
         if not self.track:
             self.track = track
 

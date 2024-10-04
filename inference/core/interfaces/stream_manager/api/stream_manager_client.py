@@ -108,7 +108,7 @@ class StreamManagerClient:
 
     async def initialise_webrtc_pipeline(
         self, initialisation_request: InitialiseWebRTCPipelinePayload
-    ) -> CommandResponse:
+    ) -> InitializeWebRTCPipelineResponse:
         command = initialisation_request.dict(exclude_none=True)
         command[TYPE_KEY] = CommandType.WEBRTC
         response = await self._handle_command(command=command)
@@ -118,7 +118,10 @@ class StreamManagerClient:
             pipeline_id=response.get(PIPELINE_ID_KEY),
         )
         return InitializeWebRTCPipelineResponse(
-            status=status, context=context, sdp=response["sdp"], type=response["type"]
+            status=status,
+            context=context,
+            sdp=response["response"]["sdp"],
+            type=response["response"]["type"],
         )
 
     async def initialise_pipeline(

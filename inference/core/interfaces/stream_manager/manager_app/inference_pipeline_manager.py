@@ -283,7 +283,7 @@ class InferencePipelineManager(Process):
                     )
 
             self._inference_pipeline = InferencePipeline.init_with_workflow(
-                video_reference=WebRTCVideoFrameProducer(),
+                video_reference=webrtc_producer,
                 workflow_specification=parsed_payload.processing_configuration.workflow_specification,
                 workspace_name=parsed_payload.processing_configuration.workspace_name,
                 workflow_id=parsed_payload.processing_configuration.workflow_id,
