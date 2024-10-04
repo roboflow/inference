@@ -279,7 +279,7 @@ class InferencePipelineManager(Process):
             ) -> None:
                 with from_inference_lock:
                     from_inference_queue.appendleft(
-                        prediction["label_visualization"].numpy_image
+                        prediction[parsed_payload.stream_output[0]].numpy_image
                     )
 
             self._inference_pipeline = InferencePipeline.init_with_workflow(
