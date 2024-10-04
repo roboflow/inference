@@ -1694,7 +1694,11 @@ def test_get_workflow_specification_when_connection_error_occurs_and_no_cache_to
     get_mock: MagicMock,
 ) -> None:
     # given
-    delete_cached_workflow_response_if_exists("my_workspace", "some_workflow")
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        api_key="my_api_key",
+    )
     get_mock.side_effect = ConnectionError()
 
     # when
@@ -1712,7 +1716,11 @@ def test_get_workflow_specification_when_connection_error_occurs_but_file_is_cac
     get_mock: MagicMock,
 ) -> None:
     # given
-    delete_cached_workflow_response_if_exists("my_workspace", "some_workflow")
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        api_key="my_api_key",
+    )
     get_mock.return_value = MagicMock(
         status_code=200,
         json=MagicMock(
@@ -1744,7 +1752,11 @@ def test_get_workflow_specification_when_consecutive_request_hits_ephemeral_cach
     get_mock: MagicMock,
 ) -> None:
     # given
-    delete_cached_workflow_response_if_exists("my_workspace", "some_workflow")
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        api_key="my_api_key",
+    )
     get_mock.return_value = MagicMock(
         status_code=200,
         json=MagicMock(
