@@ -18,6 +18,20 @@ class WorkflowInferenceRequest(BaseModel):
         default=None,
         description="List of field that shall be excluded from the response (among those defined in workflow specification)",
     )
+    enable_profiling: bool = Field(
+        default=False,
+        description="Flag to request Workflow run profiling. Enables Workflow profiler only when server settings "
+        "allow profiling traces to be exported to clients. Only applies for Workflows definitions saved "
+        "on Roboflow platform.",
+    )
+
+
+class PredefinedWorkflowInferenceRequest(WorkflowInferenceRequest):
+    use_cache: bool = Field(
+        default=True,
+        description="Controls usage of cache for workflow definitions. Set this to False when you frequently modify "
+        "definition saved in Roboflow app and want to fetch the newest version for the request.",
+    )
 
 
 class WorkflowSpecificationInferenceRequest(WorkflowInferenceRequest):
@@ -43,6 +57,15 @@ class DescribeBlocksRequest(BaseModel):
 class DescribeInterfaceRequest(BaseModel):
     api_key: str = Field(
         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+    )
+
+
+class PredefinedWorkflowDescribeInterfaceRequest(DescribeInterfaceRequest):
+    use_cache: bool = Field(
+        default=True,
+        description="Controls usage of cache for workflow definitions. Set this to False when you frequently modify "
+        "definition saved in Roboflow app and want to fetch the newest version for the request. "
+        "Only applies for Workflows definitions saved on Roboflow platform.",
     )
 
 

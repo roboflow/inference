@@ -25,6 +25,10 @@ from inference.core.workflows.execution_engine.introspection.utils import (
     build_human_friendly_block_name,
     get_full_type_name,
 )
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
 )
@@ -43,8 +47,12 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 
+@execution_phase(
+    name="dynamic_blocks_compilation",
+    categories=["execution_engine_operation"],
+)
 def compile_dynamic_blocks(
-    dynamic_blocks_definitions: List[dict],
+    dynamic_blocks_definitions: List[dict], profiler: Optional[WorkflowsProfiler] = None
 ) -> List[BlockSpecification]:
     if not dynamic_blocks_definitions:
         return []

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import urllib.parse
@@ -10,6 +11,7 @@ from requests_toolbelt import MultipartEncoder
 
 from inference.core import logger
 from inference.core.cache import cache
+from inference.core.cache.base import BaseCache
 from inference.core.entities.types import (
     DatasetID,
     ModelType,
@@ -17,7 +19,11 @@ from inference.core.entities.types import (
     VersionID,
     WorkspaceID,
 )
-from inference.core.env import API_BASE_URL, MODEL_CACHE_DIR
+from inference.core.env import (
+    API_BASE_URL,
+    MODEL_CACHE_DIR,
+    WORKFLOWS_DEFINITION_CACHE_EXPIRY,
+)
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
@@ -415,7 +421,9 @@ def delete_cached_workflow_response_if_exists(
         os.remove(workflow_cache_file)
 
 
-def load_cached_workflow_response(workspace_id: WorkspaceID, workflow_id: str) -> dict:
+def load_cached_workflow_response(
+    workspace_id: WorkspaceID, workflow_id: str
+) -> Optional[dict]:
     workflow_cache_file = get_workflow_cache_file(workspace_id, workflow_id)
     if not os.path.exists(workflow_cache_file):
         return None
@@ -431,15 +439,30 @@ def get_workflow_specification(
     api_key: str,
     workspace_id: WorkspaceID,
     workflow_id: str,
+    use_cache: bool = True,
+    ephemeral_cache: Optional[BaseCache] = None,
 ) -> dict:
+    ephemeral_cache = ephemeral_cache or cache
+    if use_cache:
+        cached_entry = _retrieve_workflow_specification_from_ephemeral_cache(
+            api_key=api_key,
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            ephemeral_cache=ephemeral_cache,
+        )
+        if cached_entry:
+            return cached_entry
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_id}",
         params=[("api_key", api_key)],
     )
     try:
         response = _get_from_url(url=api_url)
-        cache_workflow_response(workspace_id, workflow_id, response)
+        if use_cache:
+            cache_workflow_response(workspace_id, workflow_id, response)
     except (requests.exceptions.ConnectionError, ConnectionError) as error:
+        if not use_cache:
+            raise error
         response = load_cached_workflow_response(workspace_id, workflow_id)
         if response is None:
             raise error
@@ -449,7 +472,16 @@ def get_workflow_specification(
         )
     try:
         workflow_config = json.loads(response["workflow"]["config"])
-        return workflow_config["specification"]
+        specification = workflow_config["specification"]
+        if use_cache:
+            _cache_workflow_specification_in_ephemeral_cache(
+                api_key=api_key,
+                workspace_id=workspace_id,
+                workflow_id=workflow_id,
+                specification=specification,
+                ephemeral_cache=ephemeral_cache,
+            )
+        return specification
     except KeyError as error:
         raise MalformedWorkflowResponseError(
             "Workflow specification not found in Roboflow API response"
@@ -458,6 +490,48 @@ def get_workflow_specification(
         raise MalformedWorkflowResponseError(
             "Could not decode workflow specification in Roboflow API response"
         ) from error
+
+
+def _retrieve_workflow_specification_from_ephemeral_cache(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    ephemeral_cache: BaseCache,
+) -> Optional[dict]:
+    cache_key = _prepare_workflow_response_cache_key(
+        api_key=api_key,
+        workspace_id=workspace_id,
+        workflow_id=workflow_id,
+    )
+    return ephemeral_cache.get(key=cache_key)
+
+
+def _cache_workflow_specification_in_ephemeral_cache(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    specification: dict,
+    ephemeral_cache: BaseCache,
+) -> None:
+    cache_key = _prepare_workflow_response_cache_key(
+        api_key=api_key,
+        workspace_id=workspace_id,
+        workflow_id=workflow_id,
+    )
+    ephemeral_cache.set(
+        key=cache_key,
+        value=specification,
+        expire=WORKFLOWS_DEFINITION_CACHE_EXPIRY,
+    )
+
+
+def _prepare_workflow_response_cache_key(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+) -> str:
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    return f"workflow_definition:{workspace_id}:{workflow_id}:{api_key_hash}"
 
 
 @wrap_roboflow_api_errors()

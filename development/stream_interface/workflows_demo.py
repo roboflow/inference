@@ -45,7 +45,7 @@ def main() -> None:
         ],
     }
     pipeline = InferencePipeline.init_with_workflow(
-        video_reference=["rtsp://localhost:8554/live.stream"],
+        video_reference=["rtsp://localhost:8554/live0.stream"],
         workflow_specification=workflow_specification,
         watchdog=watchdog,
         on_prediction=workflows_sink,

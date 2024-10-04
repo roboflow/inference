@@ -56,6 +56,7 @@ from inference_sdk.http.utils.post_processing import (
     transform_base64_visualisation,
     transform_visualisation_bytes,
 )
+from inference_sdk.http.utils.profilling import save_workflows_profiler_trace
 from inference_sdk.http.utils.request_building import (
     ImagePlacement,
     prepare_requests_data,
@@ -1057,6 +1058,8 @@ class InferenceHTTPClient:
         images: Optional[Dict[str, Any]] = None,
         parameters: Optional[Dict[str, Any]] = None,
         excluded_fields: Optional[List[str]] = None,
+        use_cache: bool = True,
+        enable_profiling: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Triggers inference from workflow specification at the inference HTTP
@@ -1078,6 +1081,8 @@ class InferenceHTTPClient:
             parameters=parameters,
             excluded_fields=excluded_fields,
             legacy_endpoints=True,
+            use_cache=use_cache,
+            enable_profiling=enable_profiling,
         )
 
     @wrap_errors
@@ -1089,6 +1094,8 @@ class InferenceHTTPClient:
         images: Optional[Dict[str, Any]] = None,
         parameters: Optional[Dict[str, Any]] = None,
         excluded_fields: Optional[List[str]] = None,
+        use_cache: bool = True,
+        enable_profiling: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Triggers inference from workflow specification at the inference HTTP
@@ -1114,6 +1121,8 @@ class InferenceHTTPClient:
             parameters=parameters,
             excluded_fields=excluded_fields,
             legacy_endpoints=False,
+            use_cache=use_cache,
+            enable_profiling=enable_profiling,
         )
 
     def _run_workflow(
@@ -1125,6 +1134,8 @@ class InferenceHTTPClient:
         parameters: Optional[Dict[str, Any]] = None,
         excluded_fields: Optional[List[str]] = None,
         legacy_endpoints: bool = False,
+        use_cache: bool = True,
+        enable_profiling: bool = False,
     ) -> List[Dict[str, Any]]:
         named_workflow_specified = (workspace_name is not None) and (
             workflow_id is not None
@@ -1138,7 +1149,11 @@ class InferenceHTTPClient:
             images = {}
         if parameters is None:
             parameters = {}
-        payload = {"api_key": self.__api_key}
+        payload = {
+            "api_key": self.__api_key,
+            "use_cache": use_cache,
+            "enable_profiling": enable_profiling,
+        }
         inputs = {}
         for image_name, image in images.items():
             loaded_image = load_static_inference_input(
@@ -1171,7 +1186,14 @@ class InferenceHTTPClient:
             headers=DEFAULT_HEADERS,
         )
         api_key_safe_raise_for_status(response=response)
-        workflow_outputs = response.json()["outputs"]
+        response_data = response.json()
+        workflow_outputs = response_data["outputs"]
+        profiler_trace = response_data.get("profiler_trace", [])
+        if enable_profiling:
+            save_workflows_profiler_trace(
+                directory=self.__inference_configuration.profiling_directory,
+                profiler_trace=profiler_trace,
+            )
         return decode_workflow_outputs(
             workflow_outputs=workflow_outputs,
             expected_format=self.__inference_configuration.output_visualisation_format,

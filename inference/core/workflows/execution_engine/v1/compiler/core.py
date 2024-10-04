@@ -7,6 +7,10 @@ from inference.core.workflows.execution_engine.introspection.blocks_loader impor
     load_initializers,
     load_workflow_blocks,
 )
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompiledWorkflow,
     InputSubstitution,
@@ -36,34 +40,47 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 
+@execution_phase(
+    name="workflow_compilation",
+    categories=["execution_engine_operation"],
+)
 def compile_workflow(
     workflow_definition: dict,
     init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
     execution_engine_version: Optional[Version] = None,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> CompiledWorkflow:
     statically_defined_blocks = load_workflow_blocks(
-        execution_engine_version=execution_engine_version
+        execution_engine_version=execution_engine_version,
+        profiler=profiler,
     )
-    initializers = load_initializers()
+    initializers = load_initializers(profiler=profiler)
     dynamic_blocks = compile_dynamic_blocks(
         dynamic_blocks_definitions=workflow_definition.get(
             "dynamic_blocks_definitions", []
-        )
+        ),
+        profiler=profiler,
     )
+    available_blocks = statically_defined_blocks + dynamic_blocks
     parsed_workflow_definition = parse_workflow_definition(
         raw_workflow_definition=workflow_definition,
-        dynamic_blocks=dynamic_blocks,
-        execution_engine_version=execution_engine_version,
+        available_blocks=available_blocks,
+        profiler=profiler,
     )
-    validate_workflow_specification(workflow_definition=parsed_workflow_definition)
+    validate_workflow_specification(
+        workflow_definition=parsed_workflow_definition,
+        profiler=profiler,
+    )
     execution_graph = prepare_execution_graph(
         workflow_definition=parsed_workflow_definition,
+        profiler=profiler,
     )
     steps = initialise_steps(
         steps_manifest=parsed_workflow_definition.steps,
-        available_bocks=statically_defined_blocks + dynamic_blocks,
+        available_blocks=available_blocks,
         explicit_init_parameters=init_parameters,
         initializers=initializers,
+        profiler=profiler,
     )
     input_substitutions = collect_input_substitutions(
         workflow_definition=parsed_workflow_definition,
