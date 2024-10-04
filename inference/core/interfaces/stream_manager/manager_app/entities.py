@@ -87,14 +87,10 @@ class WebRTCOffer(BaseModel):
     sdp: str
 
 
-class InitialiseWebRTCPipelinePayload(BaseModel):
-    video_configuration: VideoConfiguration
+class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
     webrtc_offer: WebRTCOffer
-    processing_configuration: WorkflowConfiguration
-    sink_configuration: MemorySinkConfiguration = MemorySinkConfiguration(
-        type="MemorySinkConfiguration"
-    )
-    api_key: Optional[str] = None
+    stream_output: Optional[List[str]] = Field(default_factory=list)
+    data_output: Optional[List[str]] = Field(default_factory=list)
 
 
 class ConsumeResultsPayload(BaseModel):

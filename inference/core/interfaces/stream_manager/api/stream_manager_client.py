@@ -3,7 +3,7 @@ import json
 from asyncio import StreamReader, StreamWriter
 from enum import Enum
 from json import JSONDecodeError
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from inference.core import logger
 from inference.core.interfaces.stream_manager.api.entities import (
@@ -12,6 +12,7 @@ from inference.core.interfaces.stream_manager.api.entities import (
     ConsumePipelineResponse,
     FrameMetadata,
     InferencePipelineStatusResponse,
+    InitializeWebRTCPipelineResponse,
     ListPipelinesResponse,
 )
 from inference.core.interfaces.stream_manager.api.errors import (
@@ -33,6 +34,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     CommandType,
     ErrorType,
     InitialisePipelinePayload,
+    InitialiseWebRTCPipelinePayload,
     OperationStatus,
 )
 from inference.core.interfaces.stream_manager.manager_app.errors import (
@@ -102,6 +104,21 @@ class StreamManagerClient:
             status=status,
             context=context,
             pipelines=pipelines,
+        )
+
+    async def initialise_webrtc_pipeline(
+        self, initialisation_request: InitialiseWebRTCPipelinePayload
+    ) -> CommandResponse:
+        command = initialisation_request.dict(exclude_none=True)
+        command[TYPE_KEY] = CommandType.WEBRTC
+        response = await self._handle_command(command=command)
+        status = response[RESPONSE_KEY][STATUS_KEY]
+        context = CommandContext(
+            request_id=response.get(REQUEST_ID_KEY),
+            pipeline_id=response.get(PIPELINE_ID_KEY),
+        )
+        return InitializeWebRTCPipelineResponse(
+            status=status, context=context, sdp=response["sdp"], type=response["type"]
         )
 
     async def initialise_pipeline(

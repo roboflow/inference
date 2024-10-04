@@ -1,14 +1,17 @@
 import asyncio
 import os
 import signal
+import threading
 from collections import deque
 from dataclasses import asdict
 from functools import partial
 from multiprocessing import Process, Queue
 from threading import Lock
 from types import FrameType
-from typing import Optional, Tuple
+from typing import Any, Deque, Dict, Optional, Tuple, Union
 
+import supervision as sv
+from aiortc import RTCPeerConnection
 from pydantic import ValidationError
 
 from inference.core import logger
@@ -17,11 +20,13 @@ from inference.core.exceptions import (
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
 )
-from inference.core.interfaces.camera.entities import WebRTCVideoFrameProducer
+from inference.core.interfaces.camera.entities import (
+    VideoFrame,
+    WebRTCVideoFrameProducer,
+)
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
 from inference.core.interfaces.http.orjson_utils import (
     serialise_single_workflow_result_element,
-    serialise_workflow_result,
 )
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream.sinks import InMemoryBufferSink
@@ -43,7 +48,11 @@ from inference.core.interfaces.stream_manager.manager_app.serialisation import (
     describe_error,
 )
 from inference.core.interfaces.stream_manager.manager_app.webrtc import (
-    create_rtc_peer_connection,
+    init_rtc_peer_connection,
+)
+from inference.core.workflows.execution_engine.entities.base import (
+    WorkflowImage,
+    WorkflowImageData,
 )
 
 
@@ -199,26 +208,64 @@ class InferencePipelineManager(Process):
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
             )
             self._buffer_sink = buffer_sink
-            webrtc_offer = parsed_payload.webrtc_offer
 
+            async def create_and_init_rtc_peer_connection(
+                webrtc_offer: WebRTCOffer,
+                to_inference_queue: Deque,
+                to_inference_lock: Lock,
+                from_inference_queue: Deque,
+                from_inference_lock: Lock,
+            ) -> RTCPeerConnection:
+                peer_connection_ready_event = asyncio.Event()
+                peer_connection = RTCPeerConnection()
+                asyncio.create_task(
+                    init_rtc_peer_connection(
+                        peer_connection=peer_connection,
+                        peer_connection_ready_event=peer_connection_ready_event,
+                        webrtc_offer=webrtc_offer,
+                        to_inference_queue=to_inference_queue,
+                        to_inference_lock=to_inference_lock,
+                        from_inference_queue=from_inference_queue,
+                        from_inference_lock=from_inference_lock,
+                    )
+                )
+                await peer_connection_ready_event.wait()
+                return peer_connection
+
+            def start_loop(loop: asyncio.AbstractEventLoop):
+                asyncio.set_event_loop(loop)
+                loop.run_forever()
+
+            loop = asyncio.new_event_loop()
+            t = threading.Thread(target=start_loop, args=(loop,))
+            t.start()
+
+            webrtc_offer = parsed_payload.webrtc_offer
             to_inference_queue = deque()
             to_inference_lock = Lock()
             from_inference_queue = deque()
             from_inference_lock = Lock()
-
-            peer_connection = asyncio.run(
-                create_rtc_peer_connection(
+            future = asyncio.run_coroutine_threadsafe(
+                create_and_init_rtc_peer_connection(
                     webrtc_offer=webrtc_offer,
                     to_inference_queue=to_inference_queue,
                     to_inference_lock=to_inference_lock,
                     from_inference_queue=from_inference_queue,
                     from_inference_lock=from_inference_lock,
-                )
+                ),
+                loop,
             )
+            peer_connection = future.result()
 
-            accepted_webrtc_offer = WebRTCOffer(
-                sdp=peer_connection.localDescription.sdp,
-                type=peer_connection.localDescription.type,
+            self._responses_queue.put(
+                (
+                    request_id,
+                    {
+                        STATUS_KEY: OperationStatus.SUCCESS,
+                        "sdp": peer_connection.localDescription.sdp,
+                        "type": peer_connection.localDescription.type,
+                    },
+                )
             )
 
             webrtc_producer = partial(
@@ -226,6 +273,14 @@ class InferencePipelineManager(Process):
                 to_inference_lock=to_inference_lock,
                 to_inference_queue=to_inference_queue,
             )
+
+            def custom_sink(
+                prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
+            ) -> None:
+                with from_inference_lock:
+                    from_inference_queue.appendleft(
+                        prediction["label_visualization"].numpy_image
+                    )
 
             self._inference_pipeline = InferencePipeline.init_with_workflow(
                 video_reference=WebRTCVideoFrameProducer(),
