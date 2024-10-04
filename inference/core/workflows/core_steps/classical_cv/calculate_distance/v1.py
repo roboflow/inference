@@ -13,10 +13,16 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    WorkflowParameterSelector,
+    FLOAT_KIND,
+    STRING_KIND
+
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -40,28 +46,22 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "classical_computer_vision",
         }
     )
+    
     type: Literal["roboflow_core/calculate_distance@v1", "CalculateDistance", "Distance"]
-    # images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-    #     title="Image to Measure",
-    #     description="The input image for this step.",
-    #     examples=["$inputs.image", "$steps.cropping.crops"],
-    #     validation_alias=AliasChoices("images", "image"),
-    # )
+
+    
     predictions: StepOutputSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(
         title="Object Detections",
         description="The output of a detection model describing the bounding boxes that will be used to measure the objects.",
-        examples=["$steps.my_object_detection_model.predictions"],
+        examples=["$steps.model.predictions"],
         validation_alias=AliasChoices("predictions", "detections"),
     )
-    reference_milimeters: float = Field(
-        title="Reference Pixel-to-Militimeter Ratio",
-        description="The pixel-to-milimeter ratio of the input image, i.e. 10 pixels = 1 milimeter.",
-        examples=[10.0],
-    )
+    
     object_1_class_name: str = Field(
         title="First Object Class Name",
         description="The class name of the first object.",
@@ -74,11 +74,95 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["person"],
     )
     
-    
     reference_axis: Literal["horizontal", "vertical"] = Field(
         title="Reference Axis",
         description="The axis along which the distance will be measured.",
         examples=["vertical", "horizontal"],
+    )
+    
+    calibration_type: Literal["reference object", "pixel-ratio"] = Field(
+        title="Calibration Method",
+        description="Select how to calibrate the measurement of distance between objects.",
+    )
+    
+    reference_predictions: StepOutputSelector(
+        kind=[
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
+        ]
+    ) = Field(
+        title="Reference Object",
+        description="Predictions from the reference object model",
+        examples=["$steps.model.reference_predictions"],
+        # json_schema_extra={
+        #     # "relevant_for": {
+        #     #     "calibration_type": {
+        #     #         "values": ["reference object"],
+        #     #         "required": True,
+        #     #     },
+        #     # },
+        # },
+    )
+    
+    # reference_object_class_name: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field( 
+    #     title="Reference Object Class Name",
+    #     description="The class name of the reference object.",
+    #     examples=["marker", "$inputs.reference_object_class_name"],
+    #     json_schema_extra={
+    #         "relevant_for": {
+    #             "calibration_type": {
+    #                 "values": ["reference object"],
+    #                 "required": True,
+    #             },
+    #         },
+    #     },
+    # )
+    
+    reference_width: Union[int, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field( 
+        title="Width",
+        default=2.5,
+        description="Width of the reference object in centimeters",
+        examples=[2.5, "$inputs.reference_width"],
+        gt=0,
+        json_schema_extra={
+            "relevant_for": {
+                "calibration_type": {
+                    "values": ["reference object"],
+                    "required": True,
+                },
+            },
+        },
+    )
+    
+    reference_height: Union[int, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+        title="Height",
+        default=2.5,
+        description="Height of the reference object in centimeters",
+        examples=[2.5, "$inputs.reference_height"],
+        gt=0,
+        json_schema_extra={
+            "relevant_for": {
+                "calibration_type": {
+                    "values": ["reference object"],
+                    "required": True,
+                },
+            },
+        },
+    )
+    
+    pixel_ratio: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])]  = Field(
+        title="Reference Pixel-to-Centimeter Ratio",
+        description="The pixel-to-centimeter ratio of the input image, i.e. 100 pixels = 1 centimeter.",
+        examples=[100, "$inputs.resize_height"],
+        gt=0,
+        json_schema_extra={
+            "relevant_for": {
+                "calibration_type": {
+                    "values": ["pixel-ratio"],
+                    "required": True,
+                },
+            },
+        },
     )
 
     @classmethod
@@ -110,17 +194,21 @@ class CalculateDistanceBlockV1(WorkflowBlock):
         self,
         #images: Batch[WorkflowImageData],
         predictions: Batch[sv.Detections],
-        reference_milimeters: float,
         object_1_class_name: str,
         object_2_class_name: str,
         reference_axis: Literal["horizontal", "vertical"],
+        #calibration_type: Literal["reference object", "pixel-ratio"],
+        #reference_predictions: Batch[sv.Detections],
+        #reference_width: float,
+        #reference_height: float,
+        pixel_ratio: float,
     ) -> BlockResult:
         results = []
         for detections in predictions:
-            measurements = calculate_distance(
+            measurements = calculate_distance_pixel_ratio(
                 #image=image,
                 detections=detections,
-                reference_milimeters=reference_milimeters,
+                pixel_ratio=pixel_ratio,
                 object_1_class_name=object_1_class_name,
                 object_2_class_name=object_2_class_name,
                 reference_axis=reference_axis,
@@ -128,13 +216,14 @@ class CalculateDistanceBlockV1(WorkflowBlock):
             results.append([{"measurements": measurements}])
         return results
 
-def calculate_distance(
+def calculate_distance_pixel_ratio(
     #image: WorkflowImageData,
     detections: sv.Detections,
-    reference_milimeters: float,
+    pixel_ratio: float,
     object_1_class_name: str,
     object_2_class_name: str,
     reference_axis: Literal["horizontal", "vertical"],
+    
 ) -> List[Dict[str, Union[str, float]]]:
     reference_bbox_1 = None
     reference_bbox_2 = None
@@ -160,6 +249,6 @@ def calculate_distance(
 
     print(f"Distance in pixels: {distance_pixels}")
     
-    distance_mm = distance_pixels / reference_milimeters
+    distance_cm = distance_pixels / pixel_ratio
     
-    return {"distance_mm": distance_mm, "distance_pixels": distance_pixels}
+    return {"distance_cm": distance_cm, "distance_pixels": distance_pixels}
