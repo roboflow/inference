@@ -19,7 +19,11 @@ from inference.core.entities.types import (
     VersionID,
     WorkspaceID,
 )
-from inference.core.env import API_BASE_URL, MODEL_CACHE_DIR
+from inference.core.env import (
+    API_BASE_URL,
+    MODEL_CACHE_DIR,
+    WORKFLOWS_DEFINITION_CACHE_EXPIRY,
+)
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
@@ -517,7 +521,7 @@ def _cache_workflow_specification_in_ephemeral_cache(
     ephemeral_cache.set(
         key=cache_key,
         value=specification,
-        expire=15 * 60,
+        expire=WORKFLOWS_DEFINITION_CACHE_EXPIRY,
     )
 
 

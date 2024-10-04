@@ -522,7 +522,7 @@ class InferencePipeline:
                 export `ENABLE_WORKFLOWS_PROFILING=True` environmental variable. You may specify number of workflow
                 runs in a buffer with environmental variable `WORKFLOWS_PROFILER_BUFFER_SIZE=n` - making last `n`
                 frames to be present in buffer on processing end.
-            use_workflow_definition_cache (bool): Controls usage of cache for workflow definitions. Set this into False
+            use_workflow_definition_cache (bool): Controls usage of cache for workflow definitions. Set this to False
                 when you frequently modify definition saved in Roboflow app and want to fetch the
                 newest version for the request. Only applies for Workflows definitions saved on Roboflow platform.
         Other ENV variables involved in low-level configuration:

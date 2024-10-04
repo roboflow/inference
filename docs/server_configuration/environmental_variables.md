@@ -14,3 +14,4 @@ Environmental variable                     | Description                        
 `WORKFLOWS_PROFILER_BUFFER_SIZE`             | Size of profiler buffer (number of consecutive Wrofklows Execution Engine `run(...)` invocations to trace in buffer. | 64
 `ENABLE_STREAM_API`                          | Flag to enable Stream Management API in `inference` server - see [more](/workflows/video_processing/overview/). | False
 `RUNS_ON_JETSON`                             | Boolean flag to tell if `inference` runs on Jetson device - set to `True` in all docker builds for Jetson architecture. | False
+`WORKFLOWS_DEFINITION_CACHE_EXPIRY`          | Number of seconds to cache Workflows definitions as a result of `get_workflow_specification(...)` function call  | `15 * 60` - 15 minutes

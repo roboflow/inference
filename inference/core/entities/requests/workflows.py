@@ -29,7 +29,7 @@ class WorkflowInferenceRequest(BaseModel):
 class PredefinedWorkflowInferenceRequest(WorkflowInferenceRequest):
     use_cache: bool = Field(
         default=True,
-        description="Controls usage of cache for workflow definitions. Set this into False when you frequently modify "
+        description="Controls usage of cache for workflow definitions. Set this to False when you frequently modify "
         "definition saved in Roboflow app and want to fetch the newest version for the request.",
     )
 
@@ -63,7 +63,7 @@ class DescribeInterfaceRequest(BaseModel):
 class PredefinedWorkflowDescribeInterfaceRequest(DescribeInterfaceRequest):
     use_cache: bool = Field(
         default=True,
-        description="Controls usage of cache for workflow definitions. Set this into False when you frequently modify "
+        description="Controls usage of cache for workflow definitions. Set this to False when you frequently modify "
         "definition saved in Roboflow app and want to fetch the newest version for the request. "
         "Only applies for Workflows definitions saved on Roboflow platform.",
     )
