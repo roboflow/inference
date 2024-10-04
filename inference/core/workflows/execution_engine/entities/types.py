@@ -13,6 +13,12 @@ class Kind(BaseModel):
         description="Provides Python type hint for data format that should guide "
         "external clients on how to produce / consume serialised data of specific kind.",
     )
+    internal_data_type: Optional[str] = Field(
+        default=None,
+        description="Provides type hint regarding internal data representation that specific "
+        "kind translates into when Workflow is run by Execution Engine. Relevant for "
+        "blocks developers.",
+    )
 
     def __hash__(self) -> int:
         return (
@@ -20,6 +26,7 @@ class Kind(BaseModel):
             + self.description.__hash__()
             + self.docs.__hash__()
             + self.serialised_data_type.__hash__()
+            + self.internal_data_type.__hash__()
         )
 
 
@@ -43,29 +50,35 @@ WILDCARD_KIND = Kind(
     description="Equivalent of any element",
     docs=WILDCARD_KIND_DOCS,
     serialised_data_type="Any",
+    internal_data_type="Any",
 )
 IMAGE_KIND_DOCS = f"""
-This is the representation of image in `workflows`. The value behind this kind 
-is Python list of dictionaries. Each of this dictionary is native `inference` image with
-the following keys defined:
+This is the representation of image in `workflows`. Underlying data type has different internal and
+external representation. As an input we support:
+
+* `np.ndarray` image when Workflows Execution Engine is used directly in `inference` python package
+
+* dictionary compatible with [inference image utils](https://inference.roboflow.com/docs/reference/inference/core/utils/image_utils/):
+
 ```python
 {{
     "type": "url",   # there are different types supported, including np arrays and PIL images
     "value": "..."   # value depends on `type`
 }}
 ```
-This format makes it possible to use [inference image utils](https://inference.roboflow.com/docs/reference/inference/core/utils/image_utils/)
-to operate on the images. 
 
-Some blocks that output images may add additional fields - like "parent_id", which should
-not be modified but may be used is specific contexts - for instance when
-one needs to tag predictions with identifier of parent image.
+Whe using Workflows Execution Engine exposed behind `inference` server, two most common `type` values are `base64` and 
+`url`.
+
+Internally, [`WorkflowImageData`](/workflows/internal_data_types/#workflowimagedata) is used. If you are a
+Workflow block developer, we advise checking out [usage guide](/workflows/internal_data_types/#workflowimagedata).
 """
 IMAGE_KIND = Kind(
     name="image",
     description="Image in workflows",
     docs=IMAGE_KIND_DOCS,
     serialised_data_type="dict",
+    internal_data_type="WorkflowImageData",
 )
 
 
@@ -74,7 +87,7 @@ This is representation of metadata that describe images that come from videos.
 It is helpful in cases of stateful video processing, as the metadata may bring 
 pieces of information that are required by specific blocks.
 
-Example of actual data:
+The kind has different internal end external representation. As input we support:
 ```
 {
     "video_identifier": "rtsp://some.com/stream1",
@@ -84,6 +97,8 @@ Example of actual data:
     "frame_timestamp": "2024-08-21T11:13:44.313999", 
 }   
 ```
+Internally, [`WorkflowImageData`](/workflows/internal_data_types/#videometadata) is used. If you are a
+Workflow block developer, we advise checking out [usage guide](/workflows/internal_data_types/#videometadata).
 """
 
 VIDEO_METADATA_KIND = Kind(
@@ -91,6 +106,7 @@ VIDEO_METADATA_KIND = Kind(
     description="Video image metadata",
     docs=VIDEO_METADATA_KIND_DOCS,
     serialised_data_type="dict",
+    internal_data_type="VideoMetadata",
 )
 
 ROBOFLOW_MODEL_ID_KIND_DOCS = """
@@ -105,6 +121,7 @@ ROBOFLOW_MODEL_ID_KIND = Kind(
     description="Roboflow model id",
     docs=ROBOFLOW_MODEL_ID_KIND_DOCS,
     serialised_data_type="str",
+    internal_data_type="str",
 )
 
 ROBOFLOW_PROJECT_KIND_DOCS = """
@@ -117,6 +134,7 @@ ROBOFLOW_PROJECT_KIND = Kind(
     description="Roboflow project name",
     docs=ROBOFLOW_PROJECT_KIND_DOCS,
     serialised_data_type="str",
+    internal_data_type="str",
 )
 
 ROBOFLOW_API_KEY_KIND_DOCS = """
@@ -129,6 +147,7 @@ ROBOFLOW_API_KEY_KIND = Kind(
     description="Roboflow API key",
     docs=ROBOFLOW_API_KEY_KIND_DOCS,
     serialised_data_type="str",
+    internal_data_type="str",
 )
 
 FLOAT_ZERO_TO_ONE_KIND_DOCS = """
@@ -146,6 +165,7 @@ FLOAT_ZERO_TO_ONE_KIND = Kind(
     description="`float` value in range `[0.0, 1.0]`",
     docs=FLOAT_ZERO_TO_ONE_KIND_DOCS,
     serialised_data_type="float",
+    internal_data_type="float",
 )
 
 LIST_OF_VALUES_KIND_DOCS = """
@@ -162,6 +182,7 @@ LIST_OF_VALUES_KIND = Kind(
     description="List of values of any type",
     docs=LIST_OF_VALUES_KIND_DOCS,
     serialised_data_type="List[Any]",
+    internal_data_type="List[Any]",
 )
 
 RGB_COLOR_KIND_DOCS = """
@@ -179,6 +200,7 @@ RGB_COLOR_KIND = Kind(
     description="RGB color",
     docs=RGB_COLOR_KIND_DOCS,
     serialised_data_type="Tuple[int, int, int]",
+    internal_data_type="Tuple[int, int, int]",
 )
 
 IMAGE_KEYPOINTS_KIND_DOCS = """
@@ -203,6 +225,7 @@ IMAGE_KEYPOINTS_KIND = Kind(
     description="Image keypoints detected by classical Computer Vision method",
     docs=IMAGE_KEYPOINTS_KIND_DOCS,
     serialised_data_type="dict",
+    internal_data_type="dict",
 )
 
 SERIALISED_PAYLOADS_KIND_DOCS = f"""
@@ -222,7 +245,8 @@ SERIALISED_PAYLOADS_KIND = Kind(
     name="serialised_payloads",
     description="Serialised element that is usually accepted by sink",
     docs=SERIALISED_PAYLOADS_KIND_DOCS,
-    serialised_data_type="List[Union[str, bytes, dict]]",
+    serialised_data_type="List[Union[str, dict]]",
+    internal_data_type="List[Union[str, bytes, dict]]",
 )
 
 
@@ -234,6 +258,7 @@ BOOLEAN_KIND = Kind(
     description="Boolean flag",
     docs=BOOLEAN_KIND_DOCS,
     serialised_data_type="bool",
+    internal_data_type="bool",
 )
 
 INTEGER_KIND_DOCS = """
@@ -248,6 +273,7 @@ INTEGER_KIND = Kind(
     description="Integer value",
     docs=INTEGER_KIND_DOCS,
     serialised_data_type="int",
+    internal_data_type="int",
 )
 STRING_KIND_DOCS = """
 Examples:
@@ -260,6 +286,7 @@ STRING_KIND = Kind(
     description="String value",
     docs=STRING_KIND_DOCS,
     serialised_data_type="str",
+    internal_data_type="str",
 )
 
 TOP_CLASS_KIND_DOCS = f"""
@@ -275,6 +302,7 @@ TOP_CLASS_KIND = Kind(
     description="String value representing top class predicted by classification model",
     docs=TOP_CLASS_KIND_DOCS,
     serialised_data_type="str",
+    internal_data_type="str",
 )
 
 FLOAT_KIND_DOCS = """
@@ -289,6 +317,7 @@ FLOAT_KIND = Kind(
     description="Float value",
     docs=FLOAT_KIND_DOCS,
     serialised_data_type="float",
+    internal_data_type="float",
 )
 DICTIONARY_KIND_DOCS = """
 This kind represent a value of any Python dict.
@@ -299,7 +328,10 @@ Examples:
 ``` 
 """
 DICTIONARY_KIND = Kind(
-    name="dictionary", description="Dictionary", serialised_data_type="dict"
+    name="dictionary",
+    description="Dictionary",
+    serialised_data_type="dict",
+    internal_data_type="dict",
 )
 
 CLASSIFICATION_PREDICTION_KIND_DOCS = """
@@ -339,6 +371,7 @@ CLASSIFICATION_PREDICTION_KIND = Kind(
     description="Predictions from classifier",
     docs=CLASSIFICATION_PREDICTION_KIND_DOCS,
     serialised_data_type="dict",
+    internal_data_type="dict",
 )
 
 
@@ -359,7 +392,8 @@ DETECTION_KIND = Kind(
     name="detection",
     description="Single element of detections-based prediction (like `object_detection_prediction`)",
     docs=DETECTION_KIND_DOCS,
-    serialised_data_type="Tuple[np.ndarray, Optional[np.ndarray], Optional[float], Optional[float], Optional[int], dict]",
+    serialised_data_type="Tuple[list, Optional[list], Optional[float], Optional[float], Optional[int], dict]",
+    internal_data_type="Tuple[np.ndarray, Optional[np.ndarray], Optional[float], Optional[float], Optional[int], dict]",
 )
 
 
@@ -367,6 +401,8 @@ POINT_KIND = Kind(
     name="point",
     description="Single point in 2D",
     docs=None,
+    serialised_data_type="Tuple[int, int]",
+    internal_data_type="Tuple[int, int]",
 )
 
 CONTOURS_KIND_DOCS = """
@@ -389,21 +425,24 @@ CONTOURS_KIND = Kind(
     name="contours",
     description="List of numpy arrays where each array represents contour points",
     docs=CONTOURS_KIND_DOCS,
-    serialised_data_type="List[np.ndarray]",
+    serialised_data_type="List[list]",
+    internal_data_type="List[np.ndarray]",
 )
 
 ZONE_KIND = Kind(
     name="zone",
     description="Definition of polygon zone",
-    docs=None,
+    docs="List of points defining polygon zone in format [(x, y)]",
     serialised_data_type="List[Tuple[int, int]]",
+    internal_data_type="List[Tuple[int, int]]",
 )
 
 NUMPY_ARRAY_KIND = Kind(
     name="numpy_array",
     description="Numpy array",
-    docs=None,
-    serialised_data_type="np.ndarray",
+    docs="Any np.ndarray object",
+    serialised_data_type="list",
+    internal_data_type="np.ndarray",
 )
 
 OBJECT_DETECTION_PREDICTION_KIND_DOCS = """
@@ -498,6 +537,7 @@ OBJECT_DETECTION_PREDICTION_KIND = Kind(
     description="Prediction with detected bounding boxes in form of sv.Detections(...) object",
     docs=OBJECT_DETECTION_PREDICTION_KIND_DOCS,
     serialised_data_type="dict",
+    internal_data_type="sv.Detections",
 )
 
 
@@ -586,6 +626,7 @@ INSTANCE_SEGMENTATION_PREDICTION_KIND = Kind(
     description="Prediction with detected bounding boxes and segmentation masks in form of sv.Detections(...) object",
     docs=INSTANCE_SEGMENTATION_PREDICTION_KIND_DOCS,
     serialised_data_type="dict",
+    internal_data_type="sv.Detections",
 )
 
 
@@ -681,6 +722,7 @@ KEYPOINT_DETECTION_PREDICTION_KIND = Kind(
     description="Prediction with detected bounding boxes and detected keypoints in form of sv.Detections(...) object",
     docs=KEYPOINT_DETECTION_PREDICTION_KIND_DOCS,
     serialised_data_type="dict",
+    internal_data_type="sv.Detections",
 )
 
 QR_CODE_DETECTION_KIND_DOCS = """
@@ -775,6 +817,7 @@ QR_CODE_DETECTION_KIND = Kind(
     description="Prediction with QR code detection",
     docs=QR_CODE_DETECTION_KIND_DOCS,
     serialised_data_type="dict",
+    internal_data_type="sv.Detections",
 )
 
 BAR_CODE_DETECTION_KIND_DOCS = """
@@ -869,6 +912,7 @@ BAR_CODE_DETECTION_KIND = Kind(
     description="Prediction with barcode detection",
     docs=BAR_CODE_DETECTION_KIND_DOCS,
     serialised_data_type="dict",
+    internal_data_type="sv.Detections",
 )
 PREDICTION_TYPE_KIND_DOCS = f"""
 This kind represent batch of prediction metadata providing information about the type of prediction.
@@ -884,6 +928,7 @@ PREDICTION_TYPE_KIND = Kind(
     description="String value with type of prediction",
     docs=PREDICTION_TYPE_KIND_DOCS,
     serialised_data_type="str",
+    internal_data_type="str",
 )
 
 PARENT_ID_KIND_DOCS = f"""
@@ -903,6 +948,7 @@ PARENT_ID_KIND = Kind(
     description="Identifier of parent for step output",
     docs=PARENT_ID_KIND_DOCS,
     serialised_data_type="str",
+    internal_data_type="str",
 )
 
 IMAGE_METADATA_KIND_DOCS = f"""
@@ -919,6 +965,7 @@ IMAGE_METADATA_KIND = Kind(
     description="Dictionary with image metadata required by supervision",
     docs=IMAGE_METADATA_KIND_DOCS,
     serialised_data_type="dict",
+    internal_data_type="dict",
 )
 
 
@@ -938,6 +985,7 @@ LANGUAGE_MODEL_OUTPUT_KIND = Kind(
     description="LLM / VLM output",
     docs=LANGUAGE_MODEL_OUTPUT_KIND_DOCS,
     serialised_data_type="str",
+    internal_data_type="str",
 )
 
 STEP_AS_SELECTED_ELEMENT = "step"
