@@ -133,27 +133,12 @@ from inference.core.env import (
 from inference.core.exceptions import (
     ContentTypeInvalid,
     ContentTypeMissing,
-    InferenceModelNotFound,
-    InputImageLoadError,
-    InvalidEnvironmentVariableError,
-    InvalidMaskDecodeArgument,
-    InvalidModelIDError,
-    MalformedRoboflowAPIResponseError,
-    MalformedWorkflowResponseError,
-    MissingApiKeyError,
     MissingServiceSecretError,
-    ModelArtefactError,
-    OnnxProviderNotAvailable,
-    PostProcessingError,
-    PreProcessingError,
-    RoboflowAPIConnectionError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
-    RoboflowAPIUnsuccessfulRequestError,
-    ServiceConfigurationError,
-    WorkspaceLoadError,
 )
 from inference.core.interfaces.base import BaseInterface
+from inference.core.interfaces.http.handlers.errors import setup_error_handling
 from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
@@ -168,23 +153,12 @@ from inference.core.interfaces.stream_manager.api.entities import (
     InferencePipelineStatusResponse,
     ListPipelinesResponse,
 )
-from inference.core.interfaces.stream_manager.api.errors import (
-    ProcessesManagerAuthorisationError,
-    ProcessesManagerClientError,
-    ProcessesManagerInvalidPayload,
-    ProcessesManagerNotFoundError,
-)
 from inference.core.interfaces.stream_manager.api.stream_manager_client import (
     StreamManagerClient,
 )
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     ConsumeResultsPayload,
     InitialisePipelinePayload,
-)
-from inference.core.interfaces.stream_manager.manager_app.errors import (
-    CommunicationProtocolError,
-    MalformedPayloadError,
-    MessageToBigError,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import (
@@ -194,21 +168,6 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.query_language.errors import (
-    InvalidInputTypeError,
-    OperationTypeNotRecognisedError,
-)
-from inference.core.workflows.errors import (
-    DynamicBlockError,
-    ExecutionGraphStructureError,
-    InvalidReferenceTargetError,
-    NotSupportedExecutionEngineError,
-    ReferenceTypeError,
-    RuntimeInputError,
-    WorkflowDefinitionError,
-    WorkflowError,
-    WorkflowExecutionEngineVersionError,
-)
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
     get_available_versions,
@@ -237,218 +196,6 @@ if METLO_KEY:
 import time
 
 from inference.core.version import __version__
-
-
-def with_route_exceptions(route):
-    """
-    A decorator that wraps a FastAPI route to handle specific exceptions. If an exception
-    is caught, it returns a JSON response with the error message.
-
-    Args:
-        route (Callable): The FastAPI route to be wrapped.
-
-    Returns:
-        Callable: The wrapped route.
-    """
-
-    @wraps(route)
-    async def wrapped_route(*args, **kwargs):
-        try:
-            return await route(*args, **kwargs)
-        except ContentTypeInvalid:
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": "Invalid Content-Type header provided with request."
-                },
-            )
-            traceback.print_exc()
-        except ContentTypeMissing:
-            resp = JSONResponse(
-                status_code=400,
-                content={"message": "Content-Type header not provided with request."},
-            )
-            traceback.print_exc()
-        except InputImageLoadError as e:
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": f"Could not load input image. Cause: {e.get_public_error_details()}"
-                },
-            )
-            traceback.print_exc()
-        except InvalidModelIDError:
-            resp = JSONResponse(
-                status_code=400,
-                content={"message": "Invalid Model ID sent in request."},
-            )
-            traceback.print_exc()
-        except InvalidMaskDecodeArgument:
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": "Invalid mask decode argument sent. tradeoff_factor must be in [0.0, 1.0], "
-                    "mask_decode_mode: must be one of ['accurate', 'fast', 'tradeoff']"
-                },
-            )
-            traceback.print_exc()
-        except MissingApiKeyError:
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": "Required Roboflow API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
-                    "to learn how to retrieve one."
-                },
-            )
-            traceback.print_exc()
-        except (
-            WorkflowDefinitionError,
-            ExecutionGraphStructureError,
-            ReferenceTypeError,
-            InvalidReferenceTargetError,
-            RuntimeInputError,
-            InvalidInputTypeError,
-            OperationTypeNotRecognisedError,
-            DynamicBlockError,
-            WorkflowExecutionEngineVersionError,
-            NotSupportedExecutionEngineError,
-        ) as error:
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "context": error.context,
-                    "inner_error_type": error.inner_error_type,
-                    "inner_error_message": str(error.inner_error),
-                },
-            )
-        except (
-            ProcessesManagerInvalidPayload,
-            MalformedPayloadError,
-            MessageToBigError,
-        ) as error:
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "inner_error_type": error.inner_error_type,
-                },
-            )
-        except (RoboflowAPINotAuthorizedError, ProcessesManagerAuthorisationError):
-            resp = JSONResponse(
-                status_code=401,
-                content={
-                    "message": "Unauthorized access to roboflow API - check API key and make sure the key is valid for "
-                    "workspace you use. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
-                    "to learn how to retrieve one."
-                },
-            )
-            traceback.print_exc()
-        except (RoboflowAPINotNotFoundError, InferenceModelNotFound):
-            resp = JSONResponse(
-                status_code=404,
-                content={
-                    "message": "Requested Roboflow resource not found. Make sure that workspace, project or model "
-                    "you referred in request exists."
-                },
-            )
-            traceback.print_exc()
-        except ProcessesManagerNotFoundError as error:
-            resp = JSONResponse(
-                status_code=404,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "inner_error_type": error.inner_error_type,
-                },
-            )
-            traceback.print_exc()
-        except (
-            InvalidEnvironmentVariableError,
-            MissingServiceSecretError,
-            ServiceConfigurationError,
-        ):
-            resp = JSONResponse(
-                status_code=500, content={"message": "Service misconfiguration."}
-            )
-            traceback.print_exc()
-        except (
-            PreProcessingError,
-            PostProcessingError,
-        ):
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": "Model configuration related to pre- or post-processing is invalid."
-                },
-            )
-            traceback.print_exc()
-        except ModelArtefactError:
-            resp = JSONResponse(
-                status_code=500, content={"message": "Model package is broken."}
-            )
-            traceback.print_exc()
-        except OnnxProviderNotAvailable:
-            resp = JSONResponse(
-                status_code=501,
-                content={
-                    "message": "Could not find requested ONNX Runtime Provider. Check that you are using "
-                    "the correct docker image on a supported device."
-                },
-            )
-            traceback.print_exc()
-        except (
-            MalformedRoboflowAPIResponseError,
-            RoboflowAPIUnsuccessfulRequestError,
-            WorkspaceLoadError,
-            MalformedWorkflowResponseError,
-        ):
-            resp = JSONResponse(
-                status_code=502,
-                content={"message": "Internal error. Request to Roboflow API failed."},
-            )
-            traceback.print_exc()
-        except RoboflowAPIConnectionError:
-            resp = JSONResponse(
-                status_code=503,
-                content={
-                    "message": "Internal error. Could not connect to Roboflow API."
-                },
-            )
-            traceback.print_exc()
-        except WorkflowError as error:
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "context": error.context,
-                    "inner_error_type": error.inner_error_type,
-                    "inner_error_message": str(error.inner_error),
-                },
-            )
-            traceback.print_exc()
-        except (
-            ProcessesManagerClientError,
-            CommunicationProtocolError,
-        ) as error:
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "inner_error_type": error.inner_error_type,
-                },
-            )
-            traceback.print_exc()
-        except Exception:
-            resp = JSONResponse(status_code=500, content={"message": "Internal error."})
-            traceback.print_exc()
-        return resp
-
-    return wrapped_route
 
 
 class LambdaMiddleware(BaseHTTPMiddleware):
@@ -502,6 +249,7 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
+        setup_error_handling(app=app)
 
         if ENABLE_PROMETHEUS:
             Instrumentator().expose(app, endpoint="/metrics")
@@ -866,7 +614,6 @@ class HttpInterface(BaseInterface):
                 summary="Load a model",
                 description="Load the model with the given model ID",
             )
-            @with_route_exceptions
             async def model_add(request: AddModelRequest):
                 """Load the model with the given model ID into the model manager.
 
@@ -892,7 +639,6 @@ class HttpInterface(BaseInterface):
                 summary="Remove a model",
                 description="Remove the model with the given model ID",
             )
-            @with_route_exceptions
             async def model_remove(request: ClearModelRequest):
                 """Remove the model with the given model ID from the model manager.
 
@@ -918,7 +664,6 @@ class HttpInterface(BaseInterface):
                 summary="Remove all models",
                 description="Remove all loaded models",
             )
-            @with_route_exceptions
             async def model_clear():
                 """Remove all loaded models from the model manager.
 
@@ -943,7 +688,6 @@ class HttpInterface(BaseInterface):
                 description="Run inference with the specified object detection model",
                 response_model_exclude_none=True,
             )
-            @with_route_exceptions
             async def infer_object_detection(
                 inference_request: ObjectDetectionInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -972,7 +716,6 @@ class HttpInterface(BaseInterface):
                 summary="Instance segmentation infer",
                 description="Run inference with the specified instance segmentation model",
             )
-            @with_route_exceptions
             async def infer_instance_segmentation(
                 inference_request: InstanceSegmentationInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1003,7 +746,6 @@ class HttpInterface(BaseInterface):
                 summary="Classification infer",
                 description="Run inference with the specified classification model",
             )
-            @with_route_exceptions
             async def infer_classification(
                 inference_request: ClassificationInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1030,7 +772,6 @@ class HttpInterface(BaseInterface):
                 summary="Keypoints detection infer",
                 description="Run inference with the specified keypoints detection model",
             )
-            @with_route_exceptions
             async def infer_keypoints(
                 inference_request: KeypointsDetectionInferenceRequest,
             ):
@@ -1058,7 +799,6 @@ class HttpInterface(BaseInterface):
                     description="Run inference with the specified large multi-modal model",
                     response_model_exclude_none=True,
                 )
-                @with_route_exceptions
                 async def infer_lmm(
                     inference_request: LMMInferenceRequest,
                 ):
@@ -1082,7 +822,6 @@ class HttpInterface(BaseInterface):
                 summary="Endpoint to describe interface of predefined workflow",
                 description="Checks Roboflow API for workflow definition, once acquired - describes workflow inputs and outputs",
             )
-            @with_route_exceptions
             async def describe_predefined_workflow_interface(
                 workspace_name: str,
                 workflow_id: str,
@@ -1104,7 +843,6 @@ class HttpInterface(BaseInterface):
                 summary="Endpoint to describe interface of workflow given in request",
                 description="Parses workflow definition and retrieves describes inputs and outputs",
             )
-            @with_route_exceptions
             async def describe_workflow_interface(
                 workflow_request: WorkflowSpecificationDescribeInterfaceRequest,
             ) -> DescribeInterfaceResponse:
@@ -1125,7 +863,6 @@ class HttpInterface(BaseInterface):
                 description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024",
                 deprecated=True,
             )
-            @with_route_exceptions
             async def infer_from_predefined_workflow(
                 workspace_name: str,
                 workflow_id: str,
@@ -1169,7 +906,6 @@ class HttpInterface(BaseInterface):
                 description="Parses and executes workflow specification, injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024.",
                 deprecated=True,
             )
-            @with_route_exceptions
             async def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1194,7 +930,6 @@ class HttpInterface(BaseInterface):
                 summary="Returns available Execution Engine versions sorted from oldest to newest",
                 description="Returns available Execution Engine versions sorted from oldest to newest",
             )
-            @with_route_exceptions
             async def get_execution_engine_versions() -> ExecutionEngineVersions:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 versions = get_available_versions()
@@ -1209,7 +944,6 @@ class HttpInterface(BaseInterface):
                 "build / display workflows.",
                 deprecated=True,
             )
-            @with_route_exceptions
             async def describe_workflows_blocks() -> WorkflowsBlocksDescription:
                 return handle_describe_workflows_blocks_request()
 
@@ -1223,7 +957,6 @@ class HttpInterface(BaseInterface):
                 "dynamic blocks definitions which will be transformed into blocks and used to generate "
                 "schemas and definitions of connections",
             )
-            @with_route_exceptions
             async def describe_workflows_blocks(
                 request: Optional[DescribeBlocksRequest] = None,
             ) -> WorkflowsBlocksDescription:
@@ -1247,7 +980,6 @@ class HttpInterface(BaseInterface):
                 description="Endpoint to fetch the schema of all available blocks. This information can be "
                 "used to validate workflow definitions and suggest syntax in the JSON editor.",
             )
-            @with_route_exceptions
             async def get_workflow_schema() -> WorkflowsBlocksSchemaDescription:
                 return get_workflow_schema_description()
 
@@ -1258,7 +990,6 @@ class HttpInterface(BaseInterface):
                 description="Endpoint to be used when step outputs can be discovered only after "
                 "filling manifest with data.",
             )
-            @with_route_exceptions
             async def get_dynamic_block_outputs(
                 step_manifest: Dict[str, Any]
             ) -> List[OutputDefinition]:
@@ -1285,7 +1016,6 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Endpoint to validate",
                 description="Endpoint provides a way to check validity of JSON workflow definition.",
             )
-            @with_route_exceptions
             async def validate_workflow(
                 specification: dict,
             ) -> WorkflowValidationStatus:
@@ -1313,7 +1043,6 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] List active InferencePipelines",
                 description="[EXPERIMENTAL] Listing all active InferencePipelines processing videos",
             )
-            @with_route_exceptions
             async def list_pipelines(_: Request) -> ListPipelinesResponse:
                 return await self.stream_manager_client.list_pipelines()
 
@@ -1323,7 +1052,6 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Get status of InferencePipeline",
                 description="[EXPERIMENTAL] Get status of InferencePipeline",
             )
-            @with_route_exceptions
             async def get_status(pipeline_id: str) -> InferencePipelineStatusResponse:
                 return await self.stream_manager_client.get_status(
                     pipeline_id=pipeline_id
@@ -1335,7 +1063,6 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Starts new InferencePipeline",
                 description="[EXPERIMENTAL] Starts new InferencePipeline",
             )
-            @with_route_exceptions
             async def initialise(request: InitialisePipelinePayload) -> CommandResponse:
                 return await self.stream_manager_client.initialise_pipeline(
                     initialisation_request=request
@@ -1347,7 +1074,6 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Pauses the InferencePipeline",
                 description="[EXPERIMENTAL] Pauses the InferencePipeline",
             )
-            @with_route_exceptions
             async def pause(pipeline_id: str) -> CommandResponse:
                 return await self.stream_manager_client.pause_pipeline(
                     pipeline_id=pipeline_id
@@ -1359,7 +1085,6 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Resumes the InferencePipeline",
                 description="[EXPERIMENTAL] Resumes the InferencePipeline",
             )
-            @with_route_exceptions
             async def resume(pipeline_id: str) -> CommandResponse:
                 return await self.stream_manager_client.resume_pipeline(
                     pipeline_id=pipeline_id
@@ -1371,7 +1096,6 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Terminates the InferencePipeline",
                 description="[EXPERIMENTAL] Terminates the InferencePipeline",
             )
-            @with_route_exceptions
             async def terminate(pipeline_id: str) -> CommandResponse:
                 return await self.stream_manager_client.terminate_pipeline(
                     pipeline_id=pipeline_id
@@ -1383,7 +1107,6 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Consumes InferencePipeline result",
                 description="[EXPERIMENTAL] Consumes InferencePipeline result",
             )
-            @with_route_exceptions
             async def consume(
                 pipeline_id: str,
                 request: Optional[ConsumeResultsPayload] = None,
@@ -1404,7 +1127,6 @@ class HttpInterface(BaseInterface):
                     summary="CLIP Image Embeddings",
                     description="Run the Open AI CLIP model to embed image data.",
                 )
-                @with_route_exceptions
                 async def clip_embed_image(
                     inference_request: ClipImageEmbeddingRequest,
                     request: Request,
@@ -1442,7 +1164,6 @@ class HttpInterface(BaseInterface):
                     summary="CLIP Text Embeddings",
                     description="Run the Open AI CLIP model to embed text data.",
                 )
-                @with_route_exceptions
                 async def clip_embed_text(
                     inference_request: ClipTextEmbeddingRequest,
                     request: Request,
@@ -1480,7 +1201,6 @@ class HttpInterface(BaseInterface):
                     summary="CLIP Compare",
                     description="Run the Open AI CLIP model to compute similarity scores.",
                 )
-                @with_route_exceptions
                 async def clip_compare(
                     inference_request: ClipCompareRequest,
                     request: Request,
@@ -1520,7 +1240,6 @@ class HttpInterface(BaseInterface):
                     summary="Grounding DINO inference.",
                     description="Run the Grounding DINO zero-shot object detection model.",
                 )
-                @with_route_exceptions
                 async def grounding_dino_infer(
                     inference_request: GroundingDINOInferenceRequest,
                     request: Request,
@@ -1563,7 +1282,6 @@ class HttpInterface(BaseInterface):
                     description="Run the YOLO-World zero-shot object detection model.",
                     response_model_exclude_none=True,
                 )
-                @with_route_exceptions
                 async def yolo_world_infer(
                     inference_request: YOLOWorldInferenceRequest,
                     request: Request,
@@ -1608,7 +1326,6 @@ class HttpInterface(BaseInterface):
                     summary="DocTR OCR response",
                     description="Run the DocTR OCR model to retrieve text in an image.",
                 )
-                @with_route_exceptions
                 async def doctr_retrieve_text(
                     inference_request: DoctrOCRInferenceRequest,
                     request: Request,
@@ -1650,7 +1367,6 @@ class HttpInterface(BaseInterface):
                     summary="SAM Image Embeddings",
                     description="Run the Meta AI Segmant Anything Model to embed image data.",
                 )
-                @with_route_exceptions
                 async def sam_embed_image(
                     inference_request: SamEmbeddingRequest,
                     request: Request,
@@ -1693,7 +1409,6 @@ class HttpInterface(BaseInterface):
                     summary="SAM Image Segmentation",
                     description="Run the Meta AI Segmant Anything Model to generate segmenations for image data.",
                 )
-                @with_route_exceptions
                 async def sam_segment_image(
                     inference_request: SamSegmentationRequest,
                     request: Request,
@@ -1738,7 +1453,6 @@ class HttpInterface(BaseInterface):
                     summary="SAM2 Image Embeddings",
                     description="Run the Meta AI Segment Anything 2 Model to embed image data.",
                 )
-                @with_route_exceptions
                 async def sam2_embed_image(
                     inference_request: Sam2EmbeddingRequest,
                     request: Request,
@@ -1771,7 +1485,6 @@ class HttpInterface(BaseInterface):
                     summary="SAM2 Image Segmentation",
                     description="Run the Meta AI Segment Anything 2 Model to generate segmenations for image data.",
                 )
-                @with_route_exceptions
                 async def sam2_segment_image(
                     inference_request: Sam2SegmentationRequest,
                     request: Request,
@@ -1811,7 +1524,6 @@ class HttpInterface(BaseInterface):
                     summary="Owlv2 image prompting",
                     description="Run the google owlv2 model to few-shot object detect",
                 )
-                @with_route_exceptions
                 async def owlv2_infer(
                     inference_request: OwlV2InferenceRequest,
                     request: Request,
@@ -1846,7 +1558,6 @@ class HttpInterface(BaseInterface):
                     summary="Gaze Detection",
                     description="Run the gaze detection model to detect gaze.",
                 )
-                @with_route_exceptions
                 async def gaze_detection(
                     inference_request: GazeDetectionInferenceRequest,
                     request: Request,
@@ -1886,7 +1597,6 @@ class HttpInterface(BaseInterface):
                     summary="CogVLM",
                     description="Run the CogVLM model to chat or describe an image.",
                 )
-                @with_route_exceptions
                 async def cog_vlm(
                     inference_request: CogVLMInferenceRequest,
                     request: Request,
@@ -1926,7 +1636,6 @@ class HttpInterface(BaseInterface):
                     summary="TrOCR OCR response",
                     description="Run the TrOCR model to retrieve text in an image.",
                 )
-                @with_route_exceptions
                 async def trocr_retrieve_text(
                     inference_request: TrOCRInferenceRequest,
                     request: Request,
@@ -1967,7 +1676,6 @@ class HttpInterface(BaseInterface):
                 summary="Jupyter Lab Server Start",
                 description="Starts a jupyter lab server for running development code",
             )
-            @with_route_exceptions
             async def notebook_start(browserless: bool = False):
                 """Starts a jupyter lab server for running development code.
 
@@ -2040,7 +1748,6 @@ class HttpInterface(BaseInterface):
                 ],
                 response_model_exclude_none=True,
             )
-            @with_route_exceptions
             async def legacy_infer_from_request(
                 background_tasks: BackgroundTasks,
                 request: Request,
