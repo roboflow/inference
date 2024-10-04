@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_fastapi_instrumentator import metrics as prom_metrics
 from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -183,6 +184,10 @@ from inference.core.interfaces.stream_manager.manager_app.errors import (
     MessageToBigError,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.managers.metrics import (
+    prom_cpu_utilization_total,
+    prom_gpu_utilization_total,
+)
 from inference.core.roboflow_api import (
     get_roboflow_dataset_type,
     get_roboflow_workspace,
@@ -492,7 +497,15 @@ class HttpInterface(BaseInterface):
         )
 
         if ENABLE_PROMETHEUS:
-            Instrumentator().expose(app, endpoint="/metrics")
+            instrumentator = Instrumentator().instrument(app)
+            instrumentator.add(prom_cpu_utilization_total())
+            instrumentator.add(prom_gpu_utilization_total())
+            instrumentator.add(
+                prom_metrics.latency(
+                    buckets=(1,),
+                )
+            )
+            instrumentator.expose(app, endpoint="/metrics")
 
         if METLO_KEY:
             app.add_middleware(
