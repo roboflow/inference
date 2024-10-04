@@ -1,12 +1,22 @@
+import os
 import platform
 import re
 import socket
 import time
 import uuid
+from typing import Callable
+
+import GPUtil
+from prometheus_client import REGISTRY, Gauge
+from prometheus_fastapi_instrumentator.metrics import Info
 
 from inference.core.cache import cache
 from inference.core.logger import logger
 from inference.core.version import __version__
+
+previous_cpu_total = None
+previous_time = None
+NUM_CPU_CORES = os.cpu_count()
 
 
 def get_model_metrics(
@@ -99,3 +109,48 @@ def get_inference_results_for_model(
         inference_results.append({"request_time": score, "inference": result})
 
     return inference_results
+
+
+def prom_cpu_utilization_total() -> Callable[[Info], None]:
+    cpu_utilization_gauge = Gauge(
+        "process_cpu_utilization_total", "Total CPU utilization"
+    )
+
+    def instrumentation(info: Info) -> None:
+        global previous_cpu_total, previous_time
+        cpu_metric = REGISTRY.get_sample_value("process_cpu_seconds_total")
+        if cpu_metric is None:
+            return
+        current_time = time.time()
+        if previous_cpu_total is None:
+            previous_time = current_time
+            previous_cpu_total = cpu_metric
+        else:
+            cpu_delta = cpu_metric - previous_cpu_total
+            time_delta = current_time - previous_time
+            if time_delta > 0:
+                cpu_utilization_percent = 100 * (cpu_delta / time_delta) / NUM_CPU_CORES
+                cpu_utilization_gauge.set(cpu_utilization_percent)
+            previous_cpu_total = cpu_metric
+            previous_time = current_time
+
+    return instrumentation
+
+
+def prom_gpu_utilization_total() -> Callable[[Info], None]:
+    gpu_load_gauge = Gauge("gpu_load_percentage", "GPU Load", ["gpu_id"])
+    gpu_memory_gauge = Gauge(
+        "gpu_memory_utilization", "GPU Memory Utilization", ["gpu_id"]
+    )
+    gpu_temp_gauge = Gauge("gpu_temperature_celsius", "GPU Temperature", ["gpu_id"])
+
+    def instrumentation(info: Info) -> None:
+        gpus = GPUtil.getGPUs()
+        if not gpus:
+            return
+        for gpu in gpus:
+            gpu_load_gauge.labels(gpu_id=gpu.id).set(gpu.load * 100)
+            gpu_memory_gauge.labels(gpu_id=gpu.id).set(gpu.memoryUtil * 100)
+            gpu_temp_gauge.labels(gpu_id=gpu.id).set(gpu.temperature)
+
+    return instrumentation
