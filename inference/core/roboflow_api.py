@@ -22,6 +22,7 @@ from inference.core.entities.types import (
 from inference.core.env import (
     API_BASE_URL,
     MODEL_CACHE_DIR,
+    USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS,
     WORKFLOWS_DEFINITION_CACHE_EXPIRY,
 )
 from inference.core.exceptions import (
@@ -391,21 +392,35 @@ def get_roboflow_labeling_jobs(
     return _get_from_url(url=api_url)
 
 
-def get_workflow_cache_file(workspace_id: WorkspaceID, workflow_id: str):
+def get_workflow_cache_file(
+    workspace_id: WorkspaceID, workflow_id: str, api_key: str
+) -> str:
     sanitized_workspace_id = sanitize_path_segment(workspace_id)
     sanitized_workflow_id = sanitize_path_segment(workflow_id)
-    return os.path.join(
-        MODEL_CACHE_DIR,
-        "workflow",
-        sanitized_workspace_id,
-        f"{sanitized_workflow_id}.json",
+    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    prefix = os.path.abspath(os.path.join(MODEL_CACHE_DIR, "workflow"))
+    result = os.path.abspath(
+        os.path.join(
+            prefix,
+            sanitized_workspace_id,
+            f"{sanitized_workflow_id}_{api_key_hash}.json",
+        )
     )
+    if not result.startswith(prefix):
+        raise ValueError(
+            "Detected attempt to save workflow definition in insecure location"
+        )
+    return result
 
 
 def cache_workflow_response(
-    workspace_id: WorkspaceID, workflow_id: str, response: dict
+    workspace_id: WorkspaceID, workflow_id: str, api_key: str, response: dict
 ):
-    workflow_cache_file = get_workflow_cache_file(workspace_id, workflow_id)
+    workflow_cache_file = get_workflow_cache_file(
+        workspace_id=workspace_id,
+        workflow_id=workflow_id,
+        api_key=api_key,
+    )
     workflow_cache_dir = os.path.dirname(workflow_cache_file)
     if not os.path.exists(workflow_cache_dir):
         os.makedirs(workflow_cache_dir, exist_ok=True)
@@ -414,24 +429,40 @@ def cache_workflow_response(
 
 
 def delete_cached_workflow_response_if_exists(
-    workspace_id: WorkspaceID, workflow_id: str
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    api_key: str,
 ) -> None:
-    workflow_cache_file = get_workflow_cache_file(workspace_id, workflow_id)
+    workflow_cache_file = get_workflow_cache_file(
+        workspace_id=workspace_id,
+        workflow_id=workflow_id,
+        api_key=api_key,
+    )
     if os.path.exists(workflow_cache_file):
         os.remove(workflow_cache_file)
 
 
 def load_cached_workflow_response(
-    workspace_id: WorkspaceID, workflow_id: str
+    workspace_id: WorkspaceID,
+    workflow_id: str,
+    api_key: str,
 ) -> Optional[dict]:
-    workflow_cache_file = get_workflow_cache_file(workspace_id, workflow_id)
+    workflow_cache_file = get_workflow_cache_file(
+        workspace_id=workspace_id,
+        workflow_id=workflow_id,
+        api_key=api_key,
+    )
     if not os.path.exists(workflow_cache_file):
         return None
     try:
         with open(workflow_cache_file, "r") as f:
             return json.load(f)
     except:
-        delete_cached_workflow_response_if_exists(workspace_id, workflow_id)
+        delete_cached_workflow_response_if_exists(
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            api_key=api_key,
+        )
 
 
 @wrap_roboflow_api_errors()
@@ -458,12 +489,21 @@ def get_workflow_specification(
     )
     try:
         response = _get_from_url(url=api_url)
-        if use_cache:
-            cache_workflow_response(workspace_id, workflow_id, response)
+        if USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
+            cache_workflow_response(
+                workspace_id=workspace_id,
+                workflow_id=workflow_id,
+                api_key=api_key,
+                response=response,
+            )
     except (requests.exceptions.ConnectionError, ConnectionError) as error:
-        if not use_cache:
+        if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
             raise error
-        response = load_cached_workflow_response(workspace_id, workflow_id)
+        response = load_cached_workflow_response(
+            workspace_id=workspace_id,
+            workflow_id=workflow_id,
+            api_key=api_key,
+        )
         if response is None:
             raise error
     if "workflow" not in response or "config" not in response["workflow"]:
