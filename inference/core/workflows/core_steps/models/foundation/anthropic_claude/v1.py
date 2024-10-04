@@ -306,13 +306,13 @@ def run_claude_prompting(
         base64_image = base64.b64encode(
             encode_image_to_jpeg_bytes(loaded_image)
         ).decode("ascii")
-        prompt = PROMPT_BUILDERS[task_type](
+        generated_prompt = PROMPT_BUILDERS[task_type](
             base64_image=base64_image,
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
         )
-        prompts.append(prompt)
+        prompts.append(generated_prompt)
     return execute_claude_requests(
         api_key=api_key,
         prompts=prompts,

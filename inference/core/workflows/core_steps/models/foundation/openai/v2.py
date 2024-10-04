@@ -301,14 +301,14 @@ def run_gpt_4v_llm_prompting(
         base64_image = base64.b64encode(
             encode_image_to_jpeg_bytes(loaded_image)
         ).decode("ascii")
-        prompt = PROMPT_BUILDERS[task_type](
+        generated_prompt = PROMPT_BUILDERS[task_type](
             base64_image=base64_image,
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
             gpt_image_detail=gpt_image_detail,
         )
-        gpt4_prompts.append(prompt)
+        gpt4_prompts.append(generated_prompt)
     return execute_gpt_4v_requests(
         openai_api_key=openai_api_key,
         gpt4_prompts=gpt4_prompts,

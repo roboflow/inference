@@ -303,7 +303,7 @@ def run_gemini_prompting(
         base64_image = base64.b64encode(
             encode_image_to_jpeg_bytes(loaded_image)
         ).decode("ascii")
-        prompt = PROMPT_BUILDERS[task_type](
+        generated_prompt = PROMPT_BUILDERS[task_type](
             base64_image=base64_image,
             prompt=prompt,
             output_structure=output_structure,
@@ -311,7 +311,7 @@ def run_gemini_prompting(
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        gemini_prompts.append(prompt)
+        gemini_prompts.append(generated_prompt)
     return execute_gemini_requests(
         google_api_key=google_api_key,
         gemini_prompts=gemini_prompts,
