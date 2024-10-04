@@ -53,8 +53,8 @@ WILDCARD_KIND = Kind(
     internal_data_type="Any",
 )
 IMAGE_KIND_DOCS = f"""
-This is the representation of image in `workflows`. The value behind this kind 
-is Python dictionary. As an input we support:
+This is the representation of image in `workflows`. Underlying data type has different internal and
+external representation. As an input we support:
 
 * `np.ndarray` image when Workflows Execution Engine is used directly in `inference` python package
 
@@ -69,6 +69,9 @@ is Python dictionary. As an input we support:
 
 Whe using Workflows Execution Engine exposed behind `inference` server, two most common `type` values are `base64` and 
 `url`.
+
+Internally, [`WorkflowImageData`](/workflows/internal_data_types/#workflowimagedata) is used. If you are a
+Workflow block developer, we advise checking out [usage guide](/workflows/internal_data_types/#workflowimagedata).
 """
 IMAGE_KIND = Kind(
     name="image",
@@ -84,7 +87,7 @@ This is representation of metadata that describe images that come from videos.
 It is helpful in cases of stateful video processing, as the metadata may bring 
 pieces of information that are required by specific blocks.
 
-Example of actual data:
+The kind has different internal end external representation. As input we support:
 ```
 {
     "video_identifier": "rtsp://some.com/stream1",
@@ -94,6 +97,8 @@ Example of actual data:
     "frame_timestamp": "2024-08-21T11:13:44.313999", 
 }   
 ```
+Internally, [`WorkflowImageData`](/workflows/internal_data_types/#videometadata) is used. If you are a
+Workflow block developer, we advise checking out [usage guide](/workflows/internal_data_types/#videometadata).
 """
 
 VIDEO_METADATA_KIND = Kind(
