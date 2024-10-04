@@ -1306,10 +1306,10 @@ class HttpInterface(BaseInterface):
                 description="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
             )
             @with_route_exceptions
-            async def initialise(
+            async def initialise_webrtc_inference_pipeline(
                 request: InitialiseWebRTCPipelinePayload,
             ) -> CommandResponse:
-                return await self.stream_manager_client.initialise_pipeline(
+                return await self.stream_manager_client.initialise_webrtc_pipeline(
                     initialisation_request=request
                 )
 
