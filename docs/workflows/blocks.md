@@ -42,6 +42,7 @@ hide:
 <p class="card block-card" data-url="continue_if" data-name="Continue If" data-desc="Conditionally stop execution of a branch." data-labels="FLOW_CONTROL, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="perspective_correction" data-name="Perspective Correction" data-desc="Correct coordinates of detections from plane defined by given polygon to straight rectangular plane of given width and height" data-labels="TRANSFORMATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="dynamic_zone" data-name="Dynamic Zone" data-desc="Simplify polygons so they are geometrically convex and simplify them to contain only requested amount of vertices" data-labels="TRANSFORMATION, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="size_measurement" data-name="Size Measurement" data-desc="Measure the dimensions of objects in relation to a reference object." data-labels="TRANSFORMATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="detections_classes_replacement" data-name="Detections Classes Replacement" data-desc="Replaces classes of detections with classes predicted by a chained classification model" data-labels="FUSION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="expression" data-name="Expression" data-desc="Creates specific output based on defined input variables and configured rules." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="property_definition" data-name="Property Definition" data-desc="Define a variable from model predictions, such as the class names, confidences, or number of detections." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
@@ -76,14 +77,19 @@ hide:
 <p class="card block-card" data-url="image_threshold" data-name="Image Threshold" data-desc="Apply a threshold to an image." data-labels="CLASSICAL_COMPUTER_VISION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="image_contours" data-name="Image Contours" data-desc="Find and count the contours on an image." data-labels="CLASSICAL_COMPUTER_VISION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="camera_focus" data-name="Camera Focus" data-desc="Helps focus a camera by providing a focus measure." data-labels="CLASSICAL_COMPUTER_VISION, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="stitch_images" data-name="Stitch Images" data-desc="Stitch two images by common parts." data-labels="TRANSFORMATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="json_parser" data-name="JSON Parser" data-desc="Parses raw string into JSON." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="vl_mas_classifier" data-name="VLM as Classifier" data-desc="Parses raw string into classification prediction." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="google_gemini" data-name="Google Gemini" data-desc="Run Google's Gemini model with vision capabilities" data-labels="MODEL, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="google_vision_ocr" data-name="Google Vision OCR" data-desc="Detect text in images using Google Vision API" data-labels="MODEL, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="vl_mas_detector" data-name="VLM as Detector" data-desc="Parses raw string into object-detection prediction." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="anthropic_claude" data-name="Anthropic Claude" data-desc="Run Anthropic Claude model with vision capabilities" data-labels="MODEL, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="line_counter" data-name="Line Counter" data-desc="Count detections passing line" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="polygon_zone_visualization" data-name="Polygon Zone Visualization" data-desc="Paints a mask over polygon zone in an image." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="florence2_model" data-name="Florence-2 Model" data-desc="Run Florence-2 on an image" data-labels="MODEL, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="stability_ai_inpainting" data-name="Stability AI Inpainting" data-desc="Uses segmentation masks to inpaint objects into image" data-labels="MODEL, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="image_preprocessing" data-name="Image Preprocessing" data-desc="Resize, flip, or rotate an image." data-labels="CLASSICAL_COMPUTER_VISION, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="pathdeviation" data-name="Path deviation" data-desc="Calculate Fréchet distance of object from reference path" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
 <!--- AUTOGENERATED_BLOCKS_LIST -->
     </div>
   </div>
