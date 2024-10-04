@@ -274,7 +274,7 @@ def run_non_simd_step(
         step_input = execution_data_manager.get_non_simd_step_input(
             step_selector=step_selector
         )
-    if not step_input:
+    if step_input is None:
         # discarded by conditional execution
         return None
     step_name = get_last_chunk_of_selector(selector=step_selector)

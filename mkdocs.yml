@@ -88,6 +88,7 @@ nav:
         - Execution Engine: workflows/workflows_execution_engine.md
         - Kinds: workflows/kinds.md
         - Blocks Creation: workflows/create_workflow_block.md
+        - Data Representations: workflows/internal_data_types.md
         - Blocks Bundling: workflows/blocks_bundling.md
         - Dynamic Python Blocks: workflows/custom_python_code_blocks.md
         - Versioning: workflows/versioning.md

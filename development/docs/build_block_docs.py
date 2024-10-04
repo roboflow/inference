@@ -96,11 +96,40 @@ The available connections depend on its binding kinds. Check what binding kinds
 
 BLOCK_CARD_TEMPLATE = '<p class="card block-card" data-url="{data_url}" data-name="{data_name}" data-desc="{data_desc}" data-labels="{data_labels}" data-author="{data_authors}"></p>\n'
 
+DATA_REPRESENTATION_WARNING = """
+!!! Warning "Data representation"
+
+    This kind has a different internal and external representation. **External** representation is relevant for 
+    integration with your workflow, whereas **internal** one is an implementation detail useful for Workflows
+    blocks development.
+
+"""
+
 KIND_PAGE_TEMPLATE = """
 # Kind `{kind_name}`
+
 {description}
 
+## Data representation
+
+{data_representation_warning}
+
+### External
+
+External data representation is relevant for Workflows clients - it dictates what is the input and output format of
+data.
+
+Type: `{serialised_data_type}`
+
+### Internal
+
+Internal data representation is relevant for Workflows blocks creators - this is the type that will be provided
+by Execution Engine in runtime to the block that consumes input of this kind.
+
+Type: `{internal_data_type}`
+
 ## Details
+
 {details}
 """
 
@@ -135,8 +164,16 @@ def main() -> None:
         details = (
             declared_kind.docs if declared_kind.docs is not None else "Not available."
         )
+        warning = ""
+        if declared_kind.internal_data_type != declared_kind.serialised_data_type:
+            warning = DATA_REPRESENTATION_WARNING
         kind_page = KIND_PAGE_TEMPLATE.format(
-            kind_name=declared_kind.name, description=description, details=details
+            kind_name=declared_kind.name,
+            description=description,
+            details=details,
+            data_representation_warning=warning,
+            serialised_data_type=declared_kind.serialised_data_type,
+            internal_data_type=declared_kind.internal_data_type,
         )
         relative_link = (
             f"/workflows/kinds/{slugify_kind_name(kind_name=declared_kind.name)}"

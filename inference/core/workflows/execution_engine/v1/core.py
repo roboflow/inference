@@ -21,7 +21,7 @@ from inference.core.workflows.execution_engine.v1.executor.runtime_input_validat
     validate_runtime_input,
 )
 
-EXECUTION_ENGINE_V1_VERSION = Version("1.1.1")
+EXECUTION_ENGINE_V1_VERSION = Version("1.1.2")
 
 
 class ExecutionEngineV1(BaseExecutionEngine):
