@@ -822,7 +822,7 @@ class HttpInterface(BaseInterface):
                 summary="Endpoint to describe interface of predefined workflow",
                 description="Checks Roboflow API for workflow definition, once acquired - describes workflow inputs and outputs",
             )
-            async def describe_predefined_workflow_interface(
+            def describe_predefined_workflow_interface(
                 workspace_name: str,
                 workflow_id: str,
                 workflow_request: PredefinedWorkflowDescribeInterfaceRequest,
@@ -843,7 +843,7 @@ class HttpInterface(BaseInterface):
                 summary="Endpoint to describe interface of workflow given in request",
                 description="Parses workflow definition and retrieves describes inputs and outputs",
             )
-            async def describe_workflow_interface(
+            def describe_workflow_interface(
                 workflow_request: WorkflowSpecificationDescribeInterfaceRequest,
             ) -> DescribeInterfaceResponse:
                 return handle_describe_workflows_interface(
@@ -863,13 +863,12 @@ class HttpInterface(BaseInterface):
                 description="Checks Roboflow API for workflow definition, once acquired - parses and executes injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024",
                 deprecated=True,
             )
-            async def infer_from_predefined_workflow(
+            def infer_from_predefined_workflow(
                 workspace_name: str,
                 workflow_id: str,
                 workflow_request: PredefinedWorkflowInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
-                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
                     profiler = BaseWorkflowsProfiler.init(
                         max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE,
@@ -906,11 +905,10 @@ class HttpInterface(BaseInterface):
                 description="Parses and executes workflow specification, injecting runtime parameters from request body. This endpoint is deprecated and will be removed end of Q2 2024.",
                 deprecated=True,
             )
-            async def infer_from_workflow(
+            def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
-                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
                     profiler = BaseWorkflowsProfiler.init(
                         max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE,
@@ -930,8 +928,7 @@ class HttpInterface(BaseInterface):
                 summary="Returns available Execution Engine versions sorted from oldest to newest",
                 description="Returns available Execution Engine versions sorted from oldest to newest",
             )
-            async def get_execution_engine_versions() -> ExecutionEngineVersions:
-                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
+            def get_execution_engine_versions() -> ExecutionEngineVersions:
                 versions = get_available_versions()
                 return ExecutionEngineVersions(versions=versions)
 
@@ -944,7 +941,7 @@ class HttpInterface(BaseInterface):
                 "build / display workflows.",
                 deprecated=True,
             )
-            async def describe_workflows_blocks() -> WorkflowsBlocksDescription:
+            def describe_workflows_blocks() -> WorkflowsBlocksDescription:
                 return handle_describe_workflows_blocks_request()
 
             @app.post(
@@ -957,7 +954,7 @@ class HttpInterface(BaseInterface):
                 "dynamic blocks definitions which will be transformed into blocks and used to generate "
                 "schemas and definitions of connections",
             )
-            async def describe_workflows_blocks(
+            def describe_workflows_blocks(
                 request: Optional[DescribeBlocksRequest] = None,
             ) -> WorkflowsBlocksDescription:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
@@ -980,7 +977,7 @@ class HttpInterface(BaseInterface):
                 description="Endpoint to fetch the schema of all available blocks. This information can be "
                 "used to validate workflow definitions and suggest syntax in the JSON editor.",
             )
-            async def get_workflow_schema() -> WorkflowsBlocksSchemaDescription:
+            def get_workflow_schema() -> WorkflowsBlocksSchemaDescription:
                 return get_workflow_schema_description()
 
             @app.post(
@@ -990,10 +987,9 @@ class HttpInterface(BaseInterface):
                 description="Endpoint to be used when step outputs can be discovered only after "
                 "filling manifest with data.",
             )
-            async def get_dynamic_block_outputs(
+            def get_dynamic_block_outputs(
                 step_manifest: Dict[str, Any]
             ) -> List[OutputDefinition]:
-                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 # Potentially TODO: dynamic blocks do not support dynamic outputs, but if it changes
                 # we need to provide dynamic blocks manifests here
                 dummy_workflow_definition = {
@@ -1016,10 +1012,9 @@ class HttpInterface(BaseInterface):
                 summary="[EXPERIMENTAL] Endpoint to validate",
                 description="Endpoint provides a way to check validity of JSON workflow definition.",
             )
-            async def validate_workflow(
+            def validate_workflow(
                 specification: dict,
             ) -> WorkflowValidationStatus:
-                # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 step_execution_mode = StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE)
                 workflow_init_parameters = {
                     "workflows_core.model_manager": model_manager,
