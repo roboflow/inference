@@ -1,5 +1,5 @@
-from dataclasses import replace
-from typing import Dict, List, Literal, Optional, Type, Union
+from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
@@ -197,55 +197,6 @@ class DistanceMeasurementBlockV1(WorkflowBlock):
             raise ValueError(f"Invalid calibration type: {calibration_type}")
         
         return {OUTPUT_KEY: distances}
-    
-from typing import Tuple
-
-def has_overlap(bbox1: Tuple[int, int, int, int], bbox2: Tuple[int, int, int, int]) -> bool:
-    """
-    Check if two bounding boxes overlap.
-    
-    Args:
-        bbox1: A tuple of (x_min, y_min, x_max, y_max) for the first bounding box.
-        bbox2: A tuple of (x_min, y_min, x_max, y_max) for the second bounding box.
-        
-    Returns:
-        True if the bounding boxes overlap, False otherwise.
-    """
-    x1_min, y1_min, x1_max, y1_max = bbox1
-    x2_min, y2_min, x2_max, y2_max = bbox2
-
-    if x1_max < x2_min or x2_max < x1_min:
-        return False
-    if y1_max < y2_min or y2_max < y1_min:
-        return False
-
-    return True
-
-def find_reference_bboxes(detections, object_1_class_name, object_2_class_name):
-    reference_bbox_1 = None
-    reference_bbox_2 = None
-
-    for (x_min, y_min, x_max, y_max), class_name in zip(
-        detections.xyxy.round().astype(dtype=int), detections.data['class_name']
-    ):
-        if class_name == object_1_class_name:
-            reference_bbox_1 = (x_min, y_min, x_max, y_max)
-        elif class_name == object_2_class_name:
-            reference_bbox_2 = (x_min, y_min, x_max, y_max)
-
-        if reference_bbox_1 and reference_bbox_2:
-            break
-        
-    return reference_bbox_1,reference_bbox_2
-
-
-
-def measure_distance_pixels(reference_axis, reference_bbox_1, reference_bbox_2):
-    if reference_axis == "vertical":
-        distance_pixels = abs(reference_bbox_2[1] - reference_bbox_1[3]) if reference_bbox_2[1] > reference_bbox_1[3] else abs(reference_bbox_1[1] - reference_bbox_2[3])
-    else:
-        distance_pixels = abs(reference_bbox_2[0] - reference_bbox_1[2]) if reference_bbox_2[0] > reference_bbox_1[2] else abs(reference_bbox_1[0] - reference_bbox_2[2])
-    return distance_pixels
 
 
 def measure_distance_with_reference_object(
@@ -266,7 +217,7 @@ def measure_distance_with_reference_object(
     if not reference_bbox_1 or not reference_bbox_2:
         raise ValueError(f"Reference class '{object_1_class_name}' or '{object_2_class_name}' not found in predictions.")
 
-    if has_overlap(reference_bbox_1, reference_bbox_2):
+    if has_overlap(reference_bbox_1, reference_bbox_2) or has_axis_overlap(reference_bbox_1, reference_bbox_2, reference_axis):
         return {"distance_cm": 0, "distance_pixel": 0}
     
     # get the reference object bounding box
@@ -302,13 +253,7 @@ def measure_distance_with_reference_object(
     
     return {"distance_cm": distance_cm, "distance_pixel": distance_pixels}
 
-def has_axis_overlap(reference_bbox_1, reference_bbox_2, reference_axis):
-    if reference_axis == "horizontal":
-        if reference_bbox_1[0] < reference_bbox_2[2] and reference_bbox_1[2] > reference_bbox_2[0]:
-            return True
-    else:
-        if reference_bbox_1[1] < reference_bbox_2[3] and reference_bbox_1[3] > reference_bbox_2[1]:
-            return True
+
         
 def measure_distance_with_pixel_ratio(
     detections: Batch[sv.Detections],
@@ -343,3 +288,58 @@ def measure_distance_with_pixel_ratio(
     
     return {"distance_cm": distance_cm, "distance_pixel": distance_pixels}
 
+    
+def has_overlap(bbox1: Tuple[int, int, int, int], bbox2: Tuple[int, int, int, int]) -> bool:
+    """
+    Check if two bounding boxes overlap.
+    
+    Args:
+        bbox1: A tuple of (x_min, y_min, x_max, y_max) for the first bounding box.
+        bbox2: A tuple of (x_min, y_min, x_max, y_max) for the second bounding box.
+        
+    Returns:
+        True if the bounding boxes overlap, False otherwise.
+    """
+    x1_min, y1_min, x1_max, y1_max = bbox1
+    x2_min, y2_min, x2_max, y2_max = bbox2
+
+    if x1_max < x2_min or x2_max < x1_min:
+        return False
+    if y1_max < y2_min or y2_max < y1_min:
+        return False
+
+    return True
+
+def has_axis_overlap(reference_bbox_1, reference_bbox_2, reference_axis):
+    if reference_axis == "horizontal":
+        if reference_bbox_1[0] < reference_bbox_2[2] and reference_bbox_1[2] > reference_bbox_2[0]:
+            return True
+    else:
+        if reference_bbox_1[1] < reference_bbox_2[3] and reference_bbox_1[3] > reference_bbox_2[1]:
+            return True
+
+def find_reference_bboxes(detections, object_1_class_name, object_2_class_name):
+    reference_bbox_1 = None
+    reference_bbox_2 = None
+
+    for (x_min, y_min, x_max, y_max), class_name in zip(
+        detections.xyxy.round().astype(dtype=int), detections.data['class_name']
+    ):
+        if class_name == object_1_class_name:
+            reference_bbox_1 = (x_min, y_min, x_max, y_max)
+        elif class_name == object_2_class_name:
+            reference_bbox_2 = (x_min, y_min, x_max, y_max)
+
+        if reference_bbox_1 and reference_bbox_2:
+            break
+        
+    return reference_bbox_1,reference_bbox_2
+
+
+
+def measure_distance_pixels(reference_axis, reference_bbox_1, reference_bbox_2):
+    if reference_axis == "vertical":
+        distance_pixels = abs(reference_bbox_2[1] - reference_bbox_1[3]) if reference_bbox_2[1] > reference_bbox_1[3] else abs(reference_bbox_1[1] - reference_bbox_2[3])
+    else:
+        distance_pixels = abs(reference_bbox_2[0] - reference_bbox_1[2]) if reference_bbox_2[0] > reference_bbox_1[2] else abs(reference_bbox_1[0] - reference_bbox_2[2])
+    return distance_pixels
