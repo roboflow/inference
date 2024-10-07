@@ -3,15 +3,25 @@ from collections import deque
 from threading import Lock
 from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
 
-from inference.core.workflows.errors import (
-    WorkflowEnvironmentConfigurationError,
-    WorkflowError,
-)
+from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
 
 V = TypeVar("V")
 
 
 class BasicWorkflowsCache(Generic[V]):
+    """
+    Base cache which is capable of hashing compound payloads based on
+    list of injected hash functions. Hash functions are to produce stable hashing strings.
+    Each function is invoked on `get_hash_key(...)` kwarg (use named args only!),
+    output string is concatenated and md5 value is calculated.
+
+    Cache is size bounded, each entry lives until `cache_size` new entries appear.
+
+    Raises `WorkflowEnvironmentConfigurationError` when `get_hash_key(...)` is not
+    provided with params corresponding to all hash functions.
+
+    Thread safe thanks to thread lock on `get(...)` and `cache(...)`.
+    """
 
     def __init__(
         self,
@@ -42,7 +52,7 @@ class BasicWorkflowsCache(Generic[V]):
     def cache(self, key: str, value: V) -> None:
         with self._cache_lock:
             if len(self._keys_buffer) == self._keys_buffer.maxlen:
-                to_pop = self._keys_buffer.pop()
+                to_pop = self._keys_buffer.popleft()
                 del self._cache[to_pop]
             self._keys_buffer.append(key)
             self._cache[key] = value
