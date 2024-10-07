@@ -1,0 +1,1 @@
+watchmedo auto-restart --directory=/app/inference --pattern=*.py --recursive -- uvicorn cpu_http:app --port 3000
