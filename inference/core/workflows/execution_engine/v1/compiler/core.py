@@ -1,14 +1,11 @@
-import hashlib
 import json
-from collections import deque
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from functools import partial
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import networkx as nx
 from packaging.version import Version
 
-from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
-from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
 from inference.core.workflows.execution_engine.entities.base import WorkflowParameter
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_initializers,
@@ -17,6 +14,9 @@ from inference.core.workflows.execution_engine.introspection.blocks_loader impor
 from inference.core.workflows.execution_engine.profiling.core import (
     WorkflowsProfiler,
     execution_phase,
+)
+from inference.core.workflows.execution_engine.v1.compiler.cache import (
+    BasicWorkflowsCache,
 )
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
@@ -57,37 +57,16 @@ class GraphCompilationResult:
     initializers: Dict[str, Union[Any, Callable[[None], Any]]]
 
 
-class SimpleCompilationCache:
-
-    def __init__(self, max_size: int):
-        self._keys_buffer = deque(maxlen=max(max_size, 1))
-        self._cache: Dict[Tuple[str, Optional[Version]], GraphCompilationResult] = {}
-
-    @staticmethod
-    def hash_hey(
-        workflow_definition: dict, execution_engine_version: Optional[Version]
-    ) -> Tuple[str, Optional[Version]]:
-        workflow_definition_dump = json.dumps(workflow_definition, sort_keys=True)
-        workflow_definition_dump_hash = hashlib.md5(
-            workflow_definition_dump.encode("utf-8")
-        ).hexdigest()
-        return workflow_definition_dump_hash, execution_engine_version
-
-    def contains_key(self, key: Tuple[str, Optional[Version]]) -> bool:
-        return key in self._cache
-
-    def get(self, key: Tuple[str, Optional[Version]]) -> GraphCompilationResult:
-        return self._cache[key]
-
-    def set(self, key: Tuple[str, Optional[Version]], value: GraphCompilationResult):
-        if len(self._keys_buffer) == self._keys_buffer.maxlen:
-            to_pop = self._keys_buffer.pop()
-            del self._cache[to_pop]
-        self._keys_buffer.append(key)
-        self._cache[key] = value
-
-
-COMPILATION_CACHE = SimpleCompilationCache(max_size=256)
+COMPILATION_CACHE = BasicWorkflowsCache[GraphCompilationResult](
+    cache_size=256,
+    hash_functions=[
+        (
+            "workflow_definition",
+            partial(json.dumps, sort_keys=True),
+        ),
+        ("execution_engine_version", lambda version: str(version)),
+    ],
+)
 
 
 @execution_phase(
@@ -132,18 +111,19 @@ def compile_workflow_graph(
     execution_engine_version: Optional[Version] = None,
     profiler: Optional[WorkflowsProfiler] = None,
 ) -> GraphCompilationResult:
-    key = COMPILATION_CACHE.hash_hey(
+    key = COMPILATION_CACHE.get_hash_key(
         workflow_definition=workflow_definition,
         execution_engine_version=execution_engine_version,
     )
-    if COMPILATION_CACHE.contains_key(key=key):
+    cached_value = COMPILATION_CACHE.get(key=key)
+    if cached_value is not None:
         dynamic_blocks_definitions = workflow_definition.get(
             "dynamic_blocks_definitions", []
         )
         ensure_dynamic_blocks_allowed(
             dynamic_blocks_definitions=dynamic_blocks_definitions
         )
-        return COMPILATION_CACHE.get(key=key)
+        return cached_value
     statically_defined_blocks = load_workflow_blocks(
         execution_engine_version=execution_engine_version,
         profiler=profiler,
@@ -175,7 +155,7 @@ def compile_workflow_graph(
         available_blocks=available_blocks,
         initializers=initializers,
     )
-    COMPILATION_CACHE.set(key=key, value=result)
+    COMPILATION_CACHE.cache(key=key, value=result)
     return result
 
 
