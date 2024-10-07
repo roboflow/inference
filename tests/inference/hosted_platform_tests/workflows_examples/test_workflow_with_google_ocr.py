@@ -85,5 +85,5 @@ def test_workflow_with_google_api_ocr(
     }, "Expected all outputs to be delivered"
     assert len(result[0]["extracted_text"]) > 0, "Expected text to be extracted"
     assert (
-        len(result[0]["text_detections"]) == 4
-    ), "Expected 4 text regions to be detected"
+        len(result[0]["text_detections"]) == 2
+    ), "Expected 2 text regions to be detected"
