@@ -1,7 +1,14 @@
-from typing import Any, Callable, Dict, List, Optional, Union
+import hashlib
+import json
+from collections import deque
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+import networkx as nx
 from packaging.version import Version
 
+from inference.core.env import ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS
+from inference.core.workflows.errors import WorkflowEnvironmentConfigurationError
 from inference.core.workflows.execution_engine.entities.base import WorkflowParameter
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_initializers,
@@ -12,6 +19,7 @@ from inference.core.workflows.execution_engine.profiling.core import (
     execution_phase,
 )
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    BlockSpecification,
     CompiledWorkflow,
     InputSubstitution,
     ParsedWorkflowDefinition,
@@ -36,8 +44,50 @@ from inference.core.workflows.execution_engine.v1.debugger.core import (
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
     compile_dynamic_blocks,
+    ensure_dynamic_blocks_allowed,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
+
+
+@dataclass(frozen=True)
+class GraphCompilationResult:
+    execution_graph: nx.DiGraph
+    parsed_workflow_definition: ParsedWorkflowDefinition
+    available_blocks: List[BlockSpecification]
+    initializers: Dict[str, Union[Any, Callable[[None], Any]]]
+
+
+class SimpleCompilationCache:
+
+    def __init__(self, max_size: int):
+        self._keys_buffer = deque(maxlen=max(max_size, 1))
+        self._cache: Dict[Tuple[str, Optional[Version]], GraphCompilationResult] = {}
+
+    @staticmethod
+    def hash_hey(
+        workflow_definition: dict, execution_engine_version: Optional[Version]
+    ) -> Tuple[str, Optional[Version]]:
+        workflow_definition_dump = json.dumps(workflow_definition, sort_keys=True)
+        workflow_definition_dump_hash = hashlib.md5(
+            workflow_definition_dump.encode("utf-8")
+        ).hexdigest()
+        return workflow_definition_dump_hash, execution_engine_version
+
+    def contains_key(self, key: Tuple[str, Optional[Version]]) -> bool:
+        return key in self._cache
+
+    def get(self, key: Tuple[str, Optional[Version]]) -> GraphCompilationResult:
+        return self._cache[key]
+
+    def set(self, key: Tuple[str, Optional[Version]], value: GraphCompilationResult):
+        if len(self._keys_buffer) == self._keys_buffer.maxlen:
+            to_pop = self._keys_buffer.pop()
+            del self._cache[to_pop]
+        self._keys_buffer.append(key)
+        self._cache[key] = value
+
+
+COMPILATION_CACHE = SimpleCompilationCache(max_size=256)
 
 
 @execution_phase(
@@ -50,6 +100,50 @@ def compile_workflow(
     execution_engine_version: Optional[Version] = None,
     profiler: Optional[WorkflowsProfiler] = None,
 ) -> CompiledWorkflow:
+    graph_compilation_results = compile_workflow_graph(
+        workflow_definition=workflow_definition,
+        execution_engine_version=execution_engine_version,
+        profiler=profiler,
+    )
+    steps = initialise_steps(
+        steps_manifest=graph_compilation_results.parsed_workflow_definition.steps,
+        available_blocks=graph_compilation_results.available_blocks,
+        explicit_init_parameters=init_parameters,
+        initializers=graph_compilation_results.initializers,
+        profiler=profiler,
+    )
+    input_substitutions = collect_input_substitutions(
+        workflow_definition=graph_compilation_results.parsed_workflow_definition,
+    )
+    steps_by_name = {step.manifest.name: step for step in steps}
+    dump_execution_graph(execution_graph=graph_compilation_results.execution_graph)
+    return CompiledWorkflow(
+        workflow_definition=graph_compilation_results.parsed_workflow_definition,
+        workflow_json=workflow_definition,
+        init_parameters=init_parameters,
+        execution_graph=graph_compilation_results.execution_graph,
+        steps=steps_by_name,
+        input_substitutions=input_substitutions,
+    )
+
+
+def compile_workflow_graph(
+    workflow_definition: dict,
+    execution_engine_version: Optional[Version] = None,
+    profiler: Optional[WorkflowsProfiler] = None,
+) -> GraphCompilationResult:
+    key = COMPILATION_CACHE.hash_hey(
+        workflow_definition=workflow_definition,
+        execution_engine_version=execution_engine_version,
+    )
+    if COMPILATION_CACHE.contains_key(key=key):
+        dynamic_blocks_definitions = workflow_definition.get(
+            "dynamic_blocks_definitions", []
+        )
+        ensure_dynamic_blocks_allowed(
+            dynamic_blocks_definitions=dynamic_blocks_definitions
+        )
+        return COMPILATION_CACHE.get(key=key)
     statically_defined_blocks = load_workflow_blocks(
         execution_engine_version=execution_engine_version,
         profiler=profiler,
@@ -75,26 +169,14 @@ def compile_workflow(
         workflow_definition=parsed_workflow_definition,
         profiler=profiler,
     )
-    steps = initialise_steps(
-        steps_manifest=parsed_workflow_definition.steps,
-        available_blocks=available_blocks,
-        explicit_init_parameters=init_parameters,
-        initializers=initializers,
-        profiler=profiler,
-    )
-    input_substitutions = collect_input_substitutions(
-        workflow_definition=parsed_workflow_definition,
-    )
-    steps_by_name = {step.manifest.name: step for step in steps}
-    dump_execution_graph(execution_graph=execution_graph)
-    return CompiledWorkflow(
-        workflow_definition=parsed_workflow_definition,
-        workflow_json=workflow_definition,
-        init_parameters=init_parameters,
+    result = GraphCompilationResult(
         execution_graph=execution_graph,
-        steps=steps_by_name,
-        input_substitutions=input_substitutions,
+        parsed_workflow_definition=parsed_workflow_definition,
+        available_blocks=available_blocks,
+        initializers=initializers,
     )
+    COMPILATION_CACHE.set(key=key, value=result)
+    return result
 
 
 def collect_input_substitutions(
