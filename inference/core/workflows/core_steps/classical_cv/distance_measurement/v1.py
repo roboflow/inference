@@ -338,8 +338,6 @@ def measure_distance_with_pixel_ratio(
         raise ValueError("Pixel-to-centimeter ratio must be greater than zero.")
 
     distance_pixels = measure_distance_pixels(reference_axis, reference_bbox_1, reference_bbox_2)
-
-    print(f"Distance in pixels: {distance_pixels}")
     
     distance_cm = distance_pixels / pixel_ratio
     
