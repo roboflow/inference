@@ -1,3 +1,4 @@
+import time
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 
@@ -22,13 +23,18 @@ class BaseInference:
         - image:
             can be a BGR numpy array, filepath, InferenceRequestImage, PIL Image, byte-string, etc.
         """
+        start = time.time()
         preproc_image, returned_metadata = self.preprocess(image, **kwargs)
+        print(f"Preprocessing took: {time.time() - start}")
         logger.debug(
             f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
         )
+        start = time.time()
         predicted_arrays = self.predict(preproc_image, **kwargs)
+        print(f"Prediction took: {time.time() - start}")
+        start = time.time()
         postprocessed = self.postprocess(predicted_arrays, returned_metadata, **kwargs)
-
+        print(f"Postprocessing took: {time.time() - start}")
         return postprocessed
 
     def preprocess(
