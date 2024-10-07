@@ -44,7 +44,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     
-    type: Literal["roboflow_core/calculate_distance@v1", "DistanceMeasurement", "Distance"]
+    type: Literal["roboflow_core/distance_measurement@v1", "DistanceMeasurement", "Distance"]
     
     predictions: StepOutputSelector(
         kind=[
