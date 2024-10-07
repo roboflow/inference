@@ -41,7 +41,5 @@ jobs:
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           tags: roboflow/roboflow-inference-server-cpu-parallel:latest,roboflow/roboflow-inference-server-cpu-parallel:${{env.VERSION}}
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-cpu-parallel:cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-cpu-parallel:cache,mode=max
           platforms: linux/amd64,linux/arm64
           file: ./docker/dockerfiles/Dockerfile.onnx.cpu.parallel

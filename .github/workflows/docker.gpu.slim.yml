@@ -41,7 +41,5 @@ jobs:
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           tags: roboflow/roboflow-inference-server-gpu-slim:latest,roboflow/roboflow-inference-server-gpu-slim:${{env.VERSION}}
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-gpu-slim:cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-gpu-slim:cache,mode=max
           platforms: linux/amd64
           file: ./docker/dockerfiles/Dockerfile.onnx.gpu.slim

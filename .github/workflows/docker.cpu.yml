@@ -17,7 +17,7 @@ env:
 
 jobs:
   docker:
-    runs-on: 
+    runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
     timeout-minutes: 120
@@ -41,7 +41,5 @@ jobs:
         with:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
           tags: roboflow/roboflow-inference-server-cpu:latest,roboflow/roboflow-inference-server-cpu:${{env.VERSION}}
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-cpu:cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-cpu:cache,mode=max
           platforms: linux/amd64,linux/arm64
           file: ./docker/dockerfiles/Dockerfile.onnx.cpu
