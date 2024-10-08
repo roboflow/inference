@@ -51,20 +51,27 @@ class ModelComparisonAnnotator(BaseAnnotator):
         b_predicted = np.zeros(scene.shape[:2], dtype=np.uint8)
         
         # Populate masks based on detections from Model A
-        for mask in detections_a.mask:
-            # Assuming mask is a binary mask with 1s where predicted
-            a_predicted = cv2.bitwise_or(a_predicted, mask.astype(np.uint8))
-            neither_predicted = cv2.bitwise_and(neither_predicted, cv2.bitwise_not(mask.astype(np.uint8)))
+        if detections_a.mask is None or self.force_box:
+            for detection_idx in range(len(detections_a)):
+                x1, y1, x2, y2 = detections_a.xyxy[detection_idx].astype(int)
+                a_predicted[y1:y2, x1:x2] = 1
+                neither_predicted[y1:y2, x1:x2] = 0
+        else:
+            for mask in detections_a.mask:
+                # Assuming mask is a binary mask with 1s where predicted
+                a_predicted[mask.astype(bool)] = 1
+                neither_predicted[mask.astype(bool)] = 0
         
         # Populate masks based on detections from Model B
-        for mask in detections_b.mask:
-            b_predicted = cv2.bitwise_or(b_predicted, mask.astype(np.uint8))
-            neither_predicted = cv2.bitwise_and(neither_predicted, cv2.bitwise_not(mask.astype(np.uint8)))
+        if detections_b.mask is None or self.force_box:
+            for detection_idx in range(len(detections_b)):
+                x1, y1, x2, y2 = detections_b.xyxy[detection_idx].astype(int)
+                b_predicted[y1:y2, x1:x2] = 1
+                neither_predicted[y1:y2, x1:x2] = 0
         
         # Define combined masks
-        both_predicted = cv2.bitwise_and(a_predicted, b_predicted)
-        only_a_predicted = cv2.bitwise_and(a_predicted, cv2.bitwise_not(b_predicted))
-        only_b_predicted = cv2.bitwise_and(b_predicted, cv2.bitwise_not(a_predicted))
+        only_a_predicted = a_predicted & (a_predicted ^ b_predicted)
+        only_b_predicted = b_predicted & (b_predicted ^ a_predicted)
         
         # Prepare overlay colors
         background_color_bgr = self.background_color.as_bgr()  # Tuple like (B, G, R)

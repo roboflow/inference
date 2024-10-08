@@ -1,6 +1,9 @@
 from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
+from inference.core.workflows.core_steps.visualizations.common.annotators.halo import (
+    HaloAnnotator,
+)
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
@@ -103,7 +106,7 @@ class HaloVisualizationBlockV1(ColorableVisualizationBlock):
         if key not in self.annotatorCache:
             palette = self.getPalette(color_palette, palette_size, custom_colors)
 
-            self.annotatorCache[key] = sv.HaloAnnotator(
+            self.annotatorCache[key] = HaloAnnotator(
                 color=palette,
                 color_lookup=getattr(sv.ColorLookup, color_axis),
                 opacity=opacity,
