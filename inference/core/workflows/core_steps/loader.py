@@ -138,11 +138,17 @@ from inference.core.workflows.core_steps.models.roboflow.multi_label_classificat
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 import (
     RoboflowObjectDetectionModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.third_party.seventh_sense.face_comparison.v1 import (
+    FaceComparisonBlockV1,
+)
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
 )
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
+)
+from inference.core.workflows.core_steps.models.third_party.seventh_sense.face_comparison.v1 import (
+    FaceComparisonBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
@@ -306,6 +312,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowClassificationModelBlockV1,
         RoboflowMultiLabelClassificationModelBlockV1,
         RoboflowObjectDetectionModelBlockV1,
+        FaceComparisonBlockV1,
         BarcodeDetectorBlockV1,
         QRCodeDetectorBlockV1,
         AbsoluteStaticCropBlockV1,
