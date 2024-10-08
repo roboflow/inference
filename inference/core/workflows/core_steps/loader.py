@@ -350,7 +350,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LineCounterBlockV1,
         PolygonZoneVisualizationBlockV1,
         Florence2BlockV1,
-        CalculateDistanceBlockV1
+        DistanceMeasurementBlockV1
     ]
 
 
