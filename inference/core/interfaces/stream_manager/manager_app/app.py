@@ -70,6 +70,8 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
                 return self._list_pipelines(request_id=request_id)
             if data[TYPE_KEY] is CommandType.INIT:
                 return self._initialise_pipeline(request_id=request_id, command=data)
+            if data[TYPE_KEY] is CommandType.WEBRTC:
+                return self._start_webrtc(request_id=request_id, command=data)
             pipeline_id = data[PIPELINE_ID_KEY]
             if data[TYPE_KEY] is CommandType.TERMINATE:
                 self._terminate_pipeline(
@@ -144,6 +146,36 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
         )
 
     def _initialise_pipeline(self, request_id: str, command: dict) -> None:
+        pipeline_id = str(uuid4())
+        command_queue = Queue()
+        responses_queue = Queue()
+        inference_pipeline_manager = InferencePipelineManager.init(
+            pipeline_id=pipeline_id,
+            command_queue=command_queue,
+            responses_queue=responses_queue,
+        )
+        inference_pipeline_manager.start()
+        self._processes_table[pipeline_id] = (
+            inference_pipeline_manager,
+            command_queue,
+            responses_queue,
+        )
+        command_queue.put((request_id, command))
+        response = get_response_ignoring_thrash(
+            responses_queue=responses_queue, matching_request_id=request_id
+        )
+        serialised_response = prepare_response(
+            request_id=request_id, response=response, pipeline_id=pipeline_id
+        )
+        send_data_trough_socket(
+            target=self.request,
+            header_size=HEADER_SIZE,
+            data=serialised_response,
+            request_id=request_id,
+            pipeline_id=pipeline_id,
+        )
+
+    def _start_webrtc(self, request_id: str, command: dict):
         pipeline_id = str(uuid4())
         command_queue = Queue()
         responses_queue = Queue()

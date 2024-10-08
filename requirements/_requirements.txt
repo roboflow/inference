@@ -1,3 +1,4 @@
+aiortc>=1.9.0
 APScheduler<=3.10.1
 cython<=3.0.0
 python-dotenv<=2.0.0
