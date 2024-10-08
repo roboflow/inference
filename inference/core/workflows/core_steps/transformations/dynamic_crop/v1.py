@@ -185,30 +185,11 @@ def crop_image(
                 mask_opacity=mask_opacity,
                 background_color=background_color,
             )
-        parent_metadata = ImageParentMetadata(
-            parent_id=detection_id,
-            origin_coordinates=OriginCoordinatesSystem(
-                left_top_x=x_min,
-                left_top_y=y_min,
-                origin_width=image.numpy_image.shape[1],
-                origin_height=image.numpy_image.shape[0],
-            ),
-        )
-        workflow_root_ancestor_coordinates = replace(
-            image.workflow_root_ancestor_metadata.origin_coordinates,
-            left_top_x=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_x
-            + x_min,
-            left_top_y=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_y
-            + y_min,
-        )
-        workflow_root_ancestor_metadata = ImageParentMetadata(
-            parent_id=image.workflow_root_ancestor_metadata.parent_id,
-            origin_coordinates=workflow_root_ancestor_coordinates,
-        )
-        result = WorkflowImageData(
-            parent_metadata=parent_metadata,
-            workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
-            numpy_image=cropped_image,
+        result = image.build_crop(
+            crop_identifier=detection_id,
+            cropped_image=cropped_image,
+            offset_x=x_min,
+            offset_y=y_min,
         )
         crops.append({"crops": result})
     return crops

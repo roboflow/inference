@@ -83,6 +83,12 @@ IMAGE_KIND = Kind(
 
 
 VIDEO_METADATA_KIND_DOCS = """
+
+!!! warning "Deprecated since Execution Engine `v1.2.0`
+
+    `inference` maintainers decided to sunset `video_metadata` kind in favour of
+    auxiliary metadata added to `image` kind. 
+
 This is representation of metadata that describe images that come from videos.  
 It is helpful in cases of stateful video processing, as the metadata may bring 
 pieces of information that are required by specific blocks.
@@ -97,7 +103,7 @@ The kind has different internal end external representation. As input we support
     "frame_timestamp": "2024-08-21T11:13:44.313999", 
 }   
 ```
-Internally, [`WorkflowImageData`](/workflows/internal_data_types/#videometadata) is used. If you are a
+Internally, [`VideoMetadata`](/workflows/internal_data_types/#videometadata) is used. If you are a
 Workflow block developer, we advise checking out [usage guide](/workflows/internal_data_types/#videometadata).
 """
 

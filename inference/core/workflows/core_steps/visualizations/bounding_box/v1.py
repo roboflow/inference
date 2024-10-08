@@ -117,16 +117,8 @@ class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):
             thickness,
             roundness,
         )
-
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
             detections=predictions,
         )
-
-        output = WorkflowImageData(
-            parent_metadata=image.parent_metadata,
-            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
-            numpy_image=annotated_image,
-        )
-
-        return {OUTPUT_IMAGE_KEY: output}
+        return {OUTPUT_IMAGE_KEY: image.update_image(image=annotated_image)}

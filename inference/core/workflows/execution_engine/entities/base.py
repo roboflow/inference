@@ -168,6 +168,27 @@ class Batch(Generic[B]):
         )
 
 
+class VideoMetadata(BaseModel):
+    video_identifier: str = Field(
+        description="Identifier string for video. To be treated as opaque."
+    )
+    frame_number: int
+    frame_timestamp: datetime = Field(
+        description="The timestamp of video frame. When processing video it is suggested that "
+        "blocks rely on `fps` and `frame_number`, as real-world time-elapse will not "
+        "match time-elapse in video file",
+    )
+    fps: Optional[float] = Field(
+        description="Field represents FPS value (if possible to be retrieved)",
+        default=None,
+    )
+    comes_from_video_file: Optional[bool] = Field(
+        description="Field is a flag telling if frame comes from video file or stream - "
+        "if not possible to be determined - pass None",
+        default=None,
+    )
+
+
 @dataclass(frozen=True)
 class OriginCoordinatesSystem:
     left_top_x: int
@@ -191,6 +212,7 @@ class WorkflowImageData:
         image_reference: Optional[str] = None,
         base64_image: Optional[str] = None,
         numpy_image: Optional[np.ndarray] = None,
+        video_metadata: Optional[VideoMetadata] = None,
     ):
         if not base64_image and numpy_image is None and not image_reference:
             raise ValueError("Could not initialise empty `WorkflowImageData`.")
@@ -203,6 +225,48 @@ class WorkflowImageData:
         self._image_reference = image_reference
         self._base64_image = base64_image
         self._numpy_image = numpy_image
+        self._video_metadata = video_metadata
+
+    def update_image(self, image: np.ndarray) -> "WorkflowImageData":
+        return WorkflowImageData(
+            parent_metadata=self.parent_metadata,
+            workflow_root_ancestor_metadata=self.workflow_root_ancestor_metadata,
+            numpy_image=image,
+            video_metadata=self._video_metadata,
+        )
+
+    def build_crop(
+        self,
+        crop_identifier: str,
+        cropped_image: np.ndarray,
+        offset_x: int,
+        offset_y: int,
+    ) -> "WorkflowImageData":
+        parent_metadata = ImageParentMetadata(
+            parent_id=crop_identifier,
+            origin_coordinates=OriginCoordinatesSystem(
+                left_top_x=offset_x,
+                left_top_y=offset_y,
+                origin_width=self.numpy_image.shape[1],
+                origin_height=self.numpy_image.shape[0],
+            ),
+        )
+        workflow_root_ancestor_coordinates = replace(
+            self.workflow_root_ancestor_metadata.origin_coordinates,
+            left_top_x=self.workflow_root_ancestor_metadata.origin_coordinates.left_top_x
+            + offset_x,
+            left_top_y=self.workflow_root_ancestor_metadata.origin_coordinates.left_top_y
+            + offset_y,
+        )
+        workflow_root_ancestor_metadata = ImageParentMetadata(
+            parent_id=self.workflow_root_ancestor_metadata.parent_id,
+            origin_coordinates=workflow_root_ancestor_coordinates,
+        )
+        return WorkflowImageData(
+            parent_metadata=parent_metadata,
+            workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+            numpy_image=cropped_image,
+        )
 
     @property
     def parent_metadata(self) -> ImageParentMetadata:
@@ -260,6 +324,18 @@ class WorkflowImageData:
         ).decode("ascii")
         return self._base64_image
 
+    @property
+    def video_metadata(self) -> VideoMetadata:
+        if self._video_metadata is not None:
+            return self._video_metadata
+        return VideoMetadata(
+            video_identifier=self.parent_metadata.parent_id,
+            frame_number=0,
+            frame_timestamp=datetime.now(),
+            fps=30,
+            comes_from_video_file=None,
+        )
+
     def to_inference_format(self, numpy_preferred: bool = False) -> Dict[str, Any]:
         if numpy_preferred:
             return {"type": "numpy_object", "value": self.numpy_image}
@@ -272,24 +348,3 @@ class WorkflowImageData:
         if self._base64_image:
             return {"type": "base64", "value": self.base64_image}
         return {"type": "numpy_object", "value": self.numpy_image}
-
-
-class VideoMetadata(BaseModel):
-    video_identifier: str = Field(
-        description="Identifier string for video. To be treated as opaque."
-    )
-    frame_number: int
-    frame_timestamp: datetime = Field(
-        description="The timestamp of video frame. When processing video it is suggested that "
-        "blocks rely on `fps` and `frame_number`, as real-world time-elapse will not "
-        "match time-elapse in video file",
-    )
-    fps: Optional[float] = Field(
-        description="Field represents FPS value (if possible to be retrieved)",
-        default=None,
-    )
-    comes_from_video_file: Optional[bool] = Field(
-        description="Field is a flag telling if frame comes from video file or stream - "
-        "if not possible to be determined - pass None",
-        default=None,
-    )
