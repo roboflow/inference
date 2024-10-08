@@ -47,6 +47,11 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "classical_cv",
+                "icon": "far fa-ruler",
+                "opencv": True,
+            },
         }
     )
     type: Literal[f"roboflow_core/size_measurement@v1"]

@@ -279,4 +279,109 @@ table {
     <td>yolov10x-640</td>
     <td><a href="https://universe.roboflow.com/microsoft/coco/model/24">Test in Browser</a></td>
 </tr>
+<tr>
+    <td>YOLOv11n</td>
+    <td>640</td>
+    <td>Object Detection</td>
+    <td>yolov11n-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/25">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11s</td>
+    <td>640</td>
+    <td>Object Detection</td>
+    <td>yolov11s-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/26">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11m</td>
+    <td>640</td>
+    <td>Object Detection</td>
+    <td>yolov11m-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/27">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11l</td>
+    <td>640</td>
+    <td>Object Detection</td>
+    <td>yolov11l-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/28">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11x</td>
+    <td>640</td>
+    <td>Object Detection</td>
+    <td>yolov11x-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/29">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11n</td>
+    <td>1280</td>
+    <td>Object Detection</td>
+    <td>yolov11n-1280</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/30">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11s</td>
+    <td>1280</td>
+    <td>Object Detection</td>
+    <td>yolov11s-1280</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/31">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11m</td>
+    <td>1280</td>
+    <td>Object Detection</td>
+    <td>yolov11m-1280</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/32">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11l</td>
+    <td>1280</td>
+    <td>Object Detection</td>
+    <td>yolov11l-1280</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/33">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11x</td>
+    <td>1280</td>
+    <td>Object Detection</td>
+    <td>yolov11x-1280</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco/model/34">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11n</td>
+    <td>640</td>
+    <td>Instance Segmentation</td>
+    <td>yolov11n-seg-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/19">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11s</td>
+    <td>640</td>
+    <td>Instance Segmentation</td>
+    <td>yolov11s-seg-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/20">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11m</td>
+    <td>640</td>
+    <td>Instance Segmentation</td>
+    <td>yolov11m-seg-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/21">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11l</td>
+    <td>640</td>
+    <td>Instance Segmentation</td>
+    <td>yolov11l-seg-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/22">Test in Browser</a></td>
+</tr>
+<tr>
+    <td>YOLOv11x</td>
+    <td>640</td>
+    <td>Instance Segmentation</td>
+    <td>yolov11x-seg-640</td>
+    <td><a href="https://universe.roboflow.com/microsoft/coco-dataset-vdnr1/model/23">Test in Browser</a></td>
+</tr>
 </table>

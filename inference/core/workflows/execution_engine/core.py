@@ -11,6 +11,7 @@ from inference.core.workflows.errors import (
 from inference.core.workflows.execution_engine.entities.engine import (
     BaseExecutionEngine,
 )
+from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
 from inference.core.workflows.execution_engine.v1.core import (
     EXECUTION_ENGINE_V1_VERSION,
     ExecutionEngineV1,
@@ -35,6 +36,7 @@ class ExecutionEngine(BaseExecutionEngine):
         max_concurrent_steps: int = 1,
         prevent_local_images_loading: bool = False,
         workflow_id: Optional[str] = None,
+        profiler: Optional[WorkflowsProfiler] = None,
     ) -> "ExecutionEngine":
         requested_engine_version = retrieve_requested_execution_engine_version(
             workflow_definition=workflow_definition,
@@ -48,6 +50,7 @@ class ExecutionEngine(BaseExecutionEngine):
             max_concurrent_steps=max_concurrent_steps,
             prevent_local_images_loading=prevent_local_images_loading,
             workflow_id=workflow_id,
+            profiler=profiler,
         )
         return cls(engine=engine)
 

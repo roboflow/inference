@@ -1,17 +1,26 @@
 from copy import copy
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import ValidationError
 
 from inference.core.workflows.errors import RuntimeInputError
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     InputSubstitution,
 )
 
 
+@execution_phase(
+    name="runtime_input_validation",
+    categories=["execution_engine_operation"],
+)
 def validate_runtime_input(
     runtime_parameters: Dict[str, Any],
     input_substitutions: List[InputSubstitution],
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> None:
     for input_substitution in input_substitutions:
         try:

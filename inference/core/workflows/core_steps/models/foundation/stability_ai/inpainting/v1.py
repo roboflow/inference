@@ -57,6 +57,10 @@ class BlockManifest(WorkflowBlockManifest):
                 "inpainting",
                 "image generation",
             ],
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-palette",
+            },
         }
     )
     type: Literal["roboflow_core/stability_ai_inpainting@v1"]

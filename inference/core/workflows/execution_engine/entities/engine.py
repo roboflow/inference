@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
+from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
+
 
 class BaseExecutionEngine(ABC):
 
@@ -13,6 +15,7 @@ class BaseExecutionEngine(ABC):
         max_concurrent_steps: int = 1,
         prevent_local_images_loading: bool = False,
         workflow_id: Optional[str] = None,
+        profiler: Optional[WorkflowsProfiler] = None,
     ) -> "BaseExecutionEngine":
         pass
 

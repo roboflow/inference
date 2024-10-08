@@ -8,6 +8,7 @@ import requests.exceptions
 from requests_mock import Mocker
 
 from inference.core import roboflow_api
+from inference.core.cache import MemoryCache
 from inference.core.env import API_BASE_URL
 from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
@@ -1689,11 +1690,15 @@ def test_get_roboflow_active_learning_configuration_when_malformed_response_retu
 
 
 @mock.patch.object(roboflow_api.requests, "get")
-def test_get_workflow_specification_when_connection_error_occurs(
+def test_get_workflow_specification_when_connection_error_occurs_and_no_cache_to_be_used(
     get_mock: MagicMock,
 ) -> None:
     # given
-    delete_cached_workflow_response_if_exists("my_workspace", "some_workflow")
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        api_key="my_api_key",
+    )
     get_mock.side_effect = ConnectionError()
 
     # when
@@ -1702,39 +1707,84 @@ def test_get_workflow_specification_when_connection_error_occurs(
             api_key="my_api_key",
             workspace_id="my_workspace",
             workflow_id="some_workflow",
+            use_cache=False,
         )
 
 
 @mock.patch.object(roboflow_api.requests, "get")
-def test_get_workflow_specification_when_connection_error_occurs_but_file_is_cached(
+def test_get_workflow_specification_when_connection_error_occurs_but_file_is_cached_in_file(
     get_mock: MagicMock,
 ) -> None:
     # given
-    delete_cached_workflow_response_if_exists("my_workspace", "some_workflow")
-
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        api_key="my_api_key",
+    )
     get_mock.return_value = MagicMock(
         status_code=200,
         json=MagicMock(
             return_value={"workflow": {"config": json.dumps({"specification": "some"})}}
         ),
     )
-
     _ = get_workflow_specification(
         api_key="my_api_key",
         workspace_id="my_workspace",
         workflow_id="some_workflow",
+        ephemeral_cache=MemoryCache(),
     )
-
     get_mock.side_effect = ConnectionError()
 
+    # when
+    result = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        ephemeral_cache=MemoryCache(),
+    )
+
+    # then
+    assert result == "some", "Expected workflow specification to be retrieved from file"
+
+
+@mock.patch.object(roboflow_api.requests, "get")
+def test_get_workflow_specification_when_consecutive_request_hits_ephemeral_cache(
+    get_mock: MagicMock,
+) -> None:
+    # given
+    delete_cached_workflow_response_if_exists(
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        api_key="my_api_key",
+    )
+    get_mock.return_value = MagicMock(
+        status_code=200,
+        json=MagicMock(
+            return_value={"workflow": {"config": json.dumps({"specification": "some"})}}
+        ),
+    )
+    ephemeral_cache = MemoryCache()
     _ = get_workflow_specification(
         api_key="my_api_key",
         workspace_id="my_workspace",
         workflow_id="some_workflow",
+        ephemeral_cache=ephemeral_cache,
     )
 
+    # when
+    result = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        ephemeral_cache=ephemeral_cache,
+    )
 
-def test_get_workflow_specification_when_wrong_api_key_used(
+    # then
+    assert result == "some", "Expected workflow specification to be retrieved from file"
+    assert get_mock.call_count == 1, "Expected remote API to be only called once"
+
+
+def test_get_workflow_specification_when_wrong_api_key_used_and_no_cache_allowed_to_be_used(
     requests_mock: Mocker,
 ) -> None:
     # given
@@ -1749,6 +1799,7 @@ def test_get_workflow_specification_when_wrong_api_key_used(
             api_key="my_api_key",
             workspace_id="my_workspace",
             workflow_id="some_workflow",
+            use_cache=False,
         )
 
     # then
@@ -1757,7 +1808,31 @@ def test_get_workflow_specification_when_wrong_api_key_used(
     ), "API key must be given in query"
 
 
-def test_get_workflow_specification_when_not_found_returned(
+def test_get_workflow_specification_when_wrong_api_key_used_and_ephemeral_cache_miss_detected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        status_code=401,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPINotAuthorizedError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            ephemeral_cache=MemoryCache(),
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+
+
+def test_get_workflow_specification_when_not_found_returned_and_cache_disabled(
     requests_mock: Mocker,
 ) -> None:
     # given
@@ -1772,6 +1847,7 @@ def test_get_workflow_specification_when_not_found_returned(
             api_key="my_api_key",
             workspace_id="my_workspace",
             workflow_id="some_workflow",
+            use_cache=False,
         )
 
     # then
@@ -1780,7 +1856,31 @@ def test_get_workflow_specification_when_not_found_returned(
     ), "API key must be given in query"
 
 
-def test_get_workflow_specification_when_internal_error_returned(
+def test_get_workflow_specification_when_not_found_returned_and_ephemeral_cache_miss_detected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        status_code=404,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPINotNotFoundError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            ephemeral_cache=MemoryCache(),
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+
+
+def test_get_workflow_specification_when_internal_error_returned_and_cache_disabled(
     requests_mock: Mocker,
 ) -> None:
     # given
@@ -1795,6 +1895,7 @@ def test_get_workflow_specification_when_internal_error_returned(
             api_key="my_api_key",
             workspace_id="my_workspace",
             workflow_id="some_workflow",
+            use_cache=False,
         )
 
     # then
@@ -1803,7 +1904,33 @@ def test_get_workflow_specification_when_internal_error_returned(
     ), "API key must be given in query"
 
 
-def test_get_workflow_specification_when_malformed_response_returned(
+def test_get_workflow_specification_when_internal_error_returned_and_ephemeral_cache_miss_detected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        status_code=500,
+    )
+    ephemeral_cache = MemoryCache()
+
+    # when
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            ephemeral_cache=ephemeral_cache,
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+    assert len(ephemeral_cache.cache) == 0, "Expected nothing saved to cache"
+
+
+def test_get_workflow_specification_when_malformed_response_returned_and_cache_disabled(
     requests_mock: Mocker,
 ) -> None:
     # given
@@ -1818,6 +1945,7 @@ def test_get_workflow_specification_when_malformed_response_returned(
             api_key="my_api_key",
             workspace_id="my_workspace",
             workflow_id="some_workflow",
+            use_cache=False,
         )
 
     # then
@@ -1826,7 +1954,33 @@ def test_get_workflow_specification_when_malformed_response_returned(
     ), "API key must be given in query"
 
 
-def test_get_workflow_specification_when_config_not_provided(
+def test_get_workflow_specification_when_malformed_response_returned_and_ephemeral_cache_miss_detected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        content=b"Not a JSON :)",
+    )
+    ephemeral_cache = MemoryCache()
+
+    # when
+    with pytest.raises(MalformedRoboflowAPIResponseError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            ephemeral_cache=ephemeral_cache,
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+    assert len(ephemeral_cache.cache) == 0, "Expected nothing saved to cache"
+
+
+def test_get_workflow_specification_when_config_not_provided_and_cache_disabled(
     requests_mock: Mocker,
 ) -> None:
     # given
@@ -1841,6 +1995,7 @@ def test_get_workflow_specification_when_config_not_provided(
             api_key="my_api_key",
             workspace_id="my_workspace",
             workflow_id="some_workflow",
+            use_cache=False,
         )
 
     # then
@@ -1849,7 +2004,33 @@ def test_get_workflow_specification_when_config_not_provided(
     ), "API key must be given in query"
 
 
-def test_get_workflow_specification_when_config_not_parsable(
+def test_get_workflow_specification_when_config_not_provided_and_ephemeral_cache_miss_detected(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        json={},
+    )
+    ephemeral_cache = MemoryCache()
+
+    # when
+    with pytest.raises(MalformedWorkflowResponseError):
+        _ = get_workflow_specification(
+            api_key="my_api_key",
+            workspace_id="my_workspace",
+            workflow_id="some_workflow",
+            ephemeral_cache=ephemeral_cache,
+        )
+
+    # then
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+    assert len(ephemeral_cache.cache) == 0, "Expected nothing saved to cache"
+
+
+def test_get_workflow_specification_when_config_not_parsable_and_cache_disabled(
     requests_mock: Mocker,
 ) -> None:
     # given
@@ -1864,6 +2045,7 @@ def test_get_workflow_specification_when_config_not_parsable(
             api_key="my_api_key",
             workspace_id="my_workspace",
             workflow_id="some_workflow",
+            use_cache=False,
         )
 
     # then
@@ -1872,7 +2054,7 @@ def test_get_workflow_specification_when_config_not_parsable(
     ), "API key must be given in query"
 
 
-def test_get_workflow_specification_when_valid_response_given(
+def test_get_workflow_specification_when_valid_response_given_and_cache_disabled(
     requests_mock: Mocker,
 ) -> None:
     # given
@@ -1895,6 +2077,7 @@ def test_get_workflow_specification_when_valid_response_given(
         api_key="my_api_key",
         workspace_id="my_workspace",
         workflow_id="some_workflow",
+        use_cache=False,
     )
 
     # then
@@ -1920,3 +2103,67 @@ def test_get_workflow_specification_when_valid_response_given(
             }
         ],
     }
+
+
+def test_get_workflow_specification_when_valid_response_given_on_consecutive_requests(
+    requests_mock: Mocker,
+) -> None:
+    # given
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/my_workspace/workflows/some_workflow"),
+        json={
+            "workflow": {
+                "owner": "50hbxrck9m8nKykOhCEq",
+                "name": "Thermal",
+                "url": "thermal",
+                "config": '{"specification":{"version":"1.0","inputs":[{"type":"InferenceImage","name":"image"}],"steps":[{"type":"CVModel","name":"step_1","image":"$inputs.image","model_id":"thermal dogs and people/18"}],"outputs":[{"type":"JsonField","name":"a","selector":"$steps.step_1.predictions"}]},"preset":"single-model"}',
+                "id": "Har3FW34j1Rjc4p8IX4B",
+            },
+            "status": "ok",
+        },
+    )
+    ephemeral_cache = MemoryCache()
+
+    # when
+    result_1 = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        ephemeral_cache=ephemeral_cache,
+    )
+    result_2 = get_workflow_specification(
+        api_key="my_api_key",
+        workspace_id="my_workspace",
+        workflow_id="some_workflow",
+        ephemeral_cache=ephemeral_cache,
+    )
+
+    # then
+    assert requests_mock.call_count == 1, "Expected remote API to be called only once"
+    assert (
+        requests_mock.last_request.query == "api_key=my_api_key"
+    ), "API key must be given in query"
+    assert (
+        result_1
+        == result_2
+        == {
+            "version": "1.0",
+            "inputs": [{"type": "InferenceImage", "name": "image"}],
+            "steps": [
+                {
+                    "type": "CVModel",
+                    "name": "step_1",
+                    "image": "$inputs.image",
+                    "model_id": "thermal dogs and people/18",
+                }
+            ],
+            "outputs": [
+                {
+                    "type": "JsonField",
+                    "name": "a",
+                    "selector": "$steps.step_1.predictions",
+                }
+            ],
+        }
+    )
+    assert len(ephemeral_cache.cache) == 1, "Expected cache content to appear"

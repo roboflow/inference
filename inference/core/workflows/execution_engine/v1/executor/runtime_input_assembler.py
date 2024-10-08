@@ -18,14 +18,23 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
     WorkflowVideoMetadata,
 )
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
+)
 
 BATCH_ORIENTED_PARAMETER_TYPES = {WorkflowImage, WorkflowVideoMetadata}
 
 
+@execution_phase(
+    name="workflow_input_assembly",
+    categories=["execution_engine_operation"],
+)
 def assemble_runtime_parameters(
     runtime_parameters: Dict[str, Any],
     defined_inputs: List[InputType],
     prevent_local_images_loading: bool = False,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> Dict[str, Any]:
     input_batch_size = determine_input_batch_size(
         runtime_parameters=runtime_parameters,

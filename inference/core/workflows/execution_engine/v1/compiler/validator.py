@@ -1,7 +1,11 @@
-from typing import List
+from typing import List, Optional
 
 from inference.core.workflows.errors import DuplicatedNameError
 from inference.core.workflows.execution_engine.entities.base import InputType, JsonField
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     ParsedWorkflowDefinition,
 )
@@ -13,8 +17,13 @@ from inference.core.workflows.execution_engine.v1.compiler.utils import (
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 
+@execution_phase(
+    name="workflow_definition_validation",
+    categories=["execution_engine_operation"],
+)
 def validate_workflow_specification(
     workflow_definition: ParsedWorkflowDefinition,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> None:
     validate_inputs_names_are_unique(inputs=workflow_definition.inputs)
     validate_steps_names_are_unique(steps=workflow_definition.steps)
