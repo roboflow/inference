@@ -230,6 +230,9 @@ from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
 from inference.core.workflows.core_steps.visualizations.mask.v1 import (
     MaskVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.model_comparison.v1 import (
+    ModelComparisonVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
     PixelateVisualizationBlockV1,
 )
@@ -340,6 +343,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PixelateVisualizationBlockV1,
         PolygonVisualizationBlockV1,
         LineCounterZoneVisualizationBlockV1,
+        ModelComparisonVisualizationBlockV1,
         TriangleVisualizationBlockV1,
         RoboflowCustomMetadataBlockV1,
         DetectionsStitchBlockV1,
