@@ -552,9 +552,12 @@ class VideoSource:
         return video_frame
 
     def describe_source(self) -> SourceMetadata:
+        serialized_source_reference = self._stream_reference
+        if callable(serialized_source_reference):
+            serialized_source_reference = str(self._stream_reference)
         return SourceMetadata(
             source_properties=self._source_properties,
-            source_reference=self._stream_reference,
+            source_reference=serialized_source_reference,
             buffer_size=self._frames_buffer.maxsize,
             state=self._state,
             buffer_filling_strategy=self._video_consumer.buffer_filling_strategy,

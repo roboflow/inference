@@ -35,3 +35,8 @@ class FrameMetadata(BaseModel):
 class ConsumePipelineResponse(CommandResponse):
     outputs: List[dict]
     frames_metadata: List[FrameMetadata]
+
+
+class InitializeWebRTCPipelineResponse(CommandResponse):
+    sdp: str
+    type: str
