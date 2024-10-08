@@ -6,19 +6,19 @@ from collections import deque
 from dataclasses import asdict
 from functools import partial
 from multiprocessing import Process, Queue
-from threading import Lock
+from threading import Event, Lock
 from types import FrameType
 from typing import Deque, Dict, Optional, Tuple
 
 from aiortc import RTCPeerConnection
 from pydantic import ValidationError
 
+from inference.core import logger
 from inference.core.exceptions import (
     MissingApiKeyError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
 )
-from inference.core import logger
 from inference.core.interfaces.camera.entities import (
     VideoFrame,
     WebRTCVideoFrameProducer,
@@ -28,7 +28,7 @@ from inference.core.interfaces.http.orjson_utils import (
     serialise_single_workflow_result_element,
 )
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-from inference.core.interfaces.stream.sinks import InMemoryBufferSink
+from inference.core.interfaces.stream.sinks import InMemoryBufferSink, multi_sink
 from inference.core.interfaces.stream.watchdog import (
     BasePipelineWatchDog,
     PipelineWatchDog,
@@ -49,9 +49,7 @@ from inference.core.interfaces.stream_manager.manager_app.serialisation import (
 from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     init_rtc_peer_connection,
 )
-from inference.core.workflows.execution_engine.entities.base import (
-    WorkflowImageData,
-)
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 
 def ignore_signal(signal_number: int, frame: FrameType) -> None:
@@ -202,10 +200,7 @@ class InferencePipelineManager(Process):
         try:
             parsed_payload = InitialiseWebRTCPipelinePayload.model_validate(payload)
             watchdog = BasePipelineWatchDog()
-            buffer_sink = InMemoryBufferSink.init(
-                queue_size=parsed_payload.sink_configuration.results_buffer_size,
-            )
-            self._buffer_sink = buffer_sink
+            stop_event = Event()
 
             async def create_and_init_rtc_peer_connection(
                 webrtc_offer: WebRTCOffer,
@@ -213,30 +208,27 @@ class InferencePipelineManager(Process):
                 to_inference_lock: Lock,
                 from_inference_queue: Deque,
                 from_inference_lock: Lock,
+                feedback_stop_event: Event,
             ) -> RTCPeerConnection:
-                peer_connection_ready_event = asyncio.Event()
-                peer_connection = RTCPeerConnection()
-                asyncio.create_task(
+                return asyncio.create_task(
                     init_rtc_peer_connection(
                         peer_connection=peer_connection,
-                        peer_connection_ready_event=peer_connection_ready_event,
                         webrtc_offer=webrtc_offer,
                         to_inference_queue=to_inference_queue,
                         to_inference_lock=to_inference_lock,
                         from_inference_queue=from_inference_queue,
                         from_inference_lock=from_inference_lock,
                         webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
+                        feedback_stop_event=feedback_stop_event,
                     )
                 )
-                await peer_connection_ready_event.wait()
-                return peer_connection
 
             def start_loop(loop: asyncio.AbstractEventLoop):
                 asyncio.set_event_loop(loop)
                 loop.run_forever()
 
             loop = asyncio.new_event_loop()
-            t = threading.Thread(target=start_loop, args=(loop,))
+            t = threading.Thread(target=start_loop, args=(loop,), daemon=True)
             t.start()
 
             webrtc_offer = parsed_payload.webrtc_offer
@@ -251,6 +243,7 @@ class InferencePipelineManager(Process):
                     to_inference_lock=to_inference_lock,
                     from_inference_queue=from_inference_queue,
                     from_inference_lock=from_inference_lock,
+                    feedback_stop_event=stop_event,
                 ),
                 loop,
             )
@@ -271,15 +264,21 @@ class InferencePipelineManager(Process):
                 WebRTCVideoFrameProducer,
                 to_inference_lock=to_inference_lock,
                 to_inference_queue=to_inference_queue,
+                stop_event=stop_event,
             )
 
-            def custom_sink(
+            def webrtc_sink(
                 prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
             ) -> None:
                 with from_inference_lock:
                     from_inference_queue.appendleft(
                         prediction[parsed_payload.stream_output[0]].numpy_image
                     )
+
+            buffer_sink = InMemoryBufferSink.init(
+                queue_size=parsed_payload.sink_configuration.results_buffer_size,
+            )
+            chained_sink = partial(multi_sink, sinks=[buffer_sink, webrtc_sink])
 
             self._inference_pipeline = InferencePipeline.init_with_workflow(
                 video_reference=webrtc_producer,
@@ -289,7 +288,7 @@ class InferencePipelineManager(Process):
                 api_key=parsed_payload.api_key,
                 image_input_name=parsed_payload.processing_configuration.image_input_name,
                 workflows_parameters=parsed_payload.processing_configuration.workflows_parameters,
-                on_prediction=custom_sink,
+                on_prediction=chained_sink,
                 max_fps=parsed_payload.video_configuration.max_fps,
                 watchdog=watchdog,
                 source_buffer_filling_strategy=parsed_payload.video_configuration.source_buffer_filling_strategy,
@@ -305,7 +304,7 @@ class InferencePipelineManager(Process):
             self._responses_queue.put(
                 (request_id, {STATUS_KEY: OperationStatus.SUCCESS})
             )
-            logger.info(f"Pipeline initialised. request_id={request_id}...")
+            logger.info(f"WebRTC pipeline initialised. request_id={request_id}...")
         except (
             ValidationError,
             MissingApiKeyError,
