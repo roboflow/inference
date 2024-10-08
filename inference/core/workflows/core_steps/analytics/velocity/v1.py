@@ -17,6 +17,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    FLOAT_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
@@ -30,9 +31,10 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "velocity_detections"
-SHORT_DESCRIPTION = "Calculate the velocity of tracked objects in video frames."
+SHORT_DESCRIPTION = "Calculate the velocity and speed of tracked objects with smoothing and unit conversion."
 LONG_DESCRIPTION = """
-The `VelocityBlock` computes the velocity of objects tracked across video frames.
+The `VelocityBlock` computes the velocity and speed of objects tracked across video frames.
+It includes options to smooth the velocity and speed measurements over time and to convert units from pixels per second to meters per second.
 It requires detections with unique `tracker_id` assigned to each object, which persists between frames.
 The velocities are calculated based on the displacement of object centers over time.
 """
@@ -65,6 +67,16 @@ class VelocityManifest(WorkflowBlockManifest):
         description="Predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
+    smoothing_alpha: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+        default=0.5,
+        description="Smoothing factor (alpha) for exponential moving average (0 < alpha <= 1). Lower alpha means more smoothing.",
+        examples=[0.5],
+    )
+    pixel_to_meter_ratio: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+        default=1.0,
+        description="Conversion ratio from pixels to meters. Velocity will be converted to meters per second using this ratio.",
+        examples=[0.01],  # Example: 1 pixel = 0.01 meters
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -85,8 +97,13 @@ class VelocityManifest(WorkflowBlockManifest):
 
 class VelocityBlockV1(WorkflowBlock):
     def __init__(self):
+        # Store previous positions and timestamps for each tracker_id
         self._previous_positions: Dict[
             str, Dict[Union[int, str], Tuple[np.ndarray, float]]
+        ] = {}
+        # Store smoothed velocities for each tracker_id
+        self._smoothed_velocities: Dict[
+            str, Dict[Union[int, str], np.ndarray]
         ] = {}
 
     @classmethod
@@ -98,11 +115,19 @@ class VelocityBlockV1(WorkflowBlock):
         image: WorkflowImageData,
         detections: sv.Detections,
         metadata: VideoMetadata,
+        smoothing_alpha: float,
+        pixel_to_meter_ratio: float,
     ) -> BlockResult:
         if detections.tracker_id is None:
             raise ValueError(
                 "tracker_id not initialized, VelocityBlock requires detections to be tracked"
             )
+        print('======================================')
+        print(smoothing_alpha)
+        print('======================================')
+        if not (0 < smoothing_alpha <= 1):
+            raise ValueError("smoothing_alpha must be between 0 (exclusive) and 1 (inclusive)")
+        
         if metadata.comes_from_video_file and metadata.fps != 0:
             ts_current = metadata.frame_number / metadata.fps
         else:
@@ -110,6 +135,7 @@ class VelocityBlockV1(WorkflowBlock):
 
         video_id = metadata.video_identifier
         previous_positions = self._previous_positions.setdefault(video_id, {})
+        smoothed_velocities = self._smoothed_velocities.setdefault(video_id, {})
 
         num_detections = len(detections)
 
@@ -121,6 +147,8 @@ class VelocityBlockV1(WorkflowBlock):
 
         velocities = np.zeros_like(current_positions)  # Shape (num_detections, 2)
         speeds = np.zeros(num_detections)  # Shape (num_detections,)
+        smoothed_velocities_arr = np.zeros_like(current_positions)
+        smoothed_speeds = np.zeros(num_detections)
 
         for i, tracker_id in enumerate(detections.tracker_id):
             current_position = current_positions[i]
@@ -143,14 +171,36 @@ class VelocityBlockV1(WorkflowBlock):
                 velocity = np.array([0, 0])  # No previous position
                 speed = 0.0
 
+            # Apply exponential moving average for smoothing
+            if tracker_id in smoothed_velocities:
+                prev_smoothed_velocity = smoothed_velocities[tracker_id]
+                smoothed_velocity = (
+                    smoothing_alpha * velocity + (1 - smoothing_alpha) * prev_smoothed_velocity
+                )
+            else:
+                smoothed_velocity = velocity  # Initialize with current velocity
+
+            smoothed_speed = np.linalg.norm(smoothed_velocity)
+
             # Store current position and timestamp for the next frame
             previous_positions[tracker_id] = (current_position, ts_current)
+            smoothed_velocities[tracker_id] = smoothed_velocity
 
-            velocities[i] = velocity
-            speeds[i] = speed
+            # Convert velocities and speeds to meters per second if required
+            velocity_m_s = velocity * pixel_to_meter_ratio
+            smoothed_velocity_m_s = smoothed_velocity * pixel_to_meter_ratio
+            speed_m_s = speed * pixel_to_meter_ratio
+            smoothed_speed_m_s = smoothed_speed * pixel_to_meter_ratio
+
+            velocities[i] = velocity_m_s
+            speeds[i] = speed_m_s
+            smoothed_velocities_arr[i] = smoothed_velocity_m_s
+            smoothed_speeds[i] = smoothed_speed_m_s
 
         # Add velocities and speeds to detections
-        detections.data['velocity'] = velocities
-        detections.data['speed'] = speeds
+        detections.data['velocity'] = velocities  # Shape: (num_detections, 2)
+        detections.data['speed'] = speeds  # Shape: (num_detections,)
+        detections.data['smoothed_velocity'] = smoothed_velocities_arr  # Shape: (num_detections, 2)
+        detections.data['smoothed_speed'] = smoothed_speeds  # Shape: (num_detections,)
 
         return {OUTPUT_KEY: detections}
