@@ -200,28 +200,20 @@ class InferencePipelineManager(Process):
         try:
             parsed_payload = InitialiseWebRTCPipelinePayload.model_validate(payload)
             watchdog = BasePipelineWatchDog()
-            stop_event = Event()
 
-            async def create_and_init_rtc_peer_connection(
-                webrtc_offer: WebRTCOffer,
-                to_inference_queue: Deque,
-                to_inference_lock: Lock,
-                from_inference_queue: Deque,
-                from_inference_lock: Lock,
-                feedback_stop_event: Event,
-            ) -> RTCPeerConnection:
-                return asyncio.create_task(
-                    init_rtc_peer_connection(
-                        peer_connection=peer_connection,
-                        webrtc_offer=webrtc_offer,
-                        to_inference_queue=to_inference_queue,
-                        to_inference_lock=to_inference_lock,
-                        from_inference_queue=from_inference_queue,
-                        from_inference_lock=from_inference_lock,
-                        webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
-                        feedback_stop_event=feedback_stop_event,
-                    )
-                )
+            webrtc_offer = parsed_payload.webrtc_offer
+            to_inference_queue = deque()
+            to_inference_lock = Lock()
+            from_inference_queue = deque()
+            from_inference_lock = Lock()
+
+            stop_event = Event()
+            webrtc_producer = partial(
+                WebRTCVideoFrameProducer,
+                to_inference_lock=to_inference_lock,
+                to_inference_queue=to_inference_queue,
+                stop_event=stop_event,
+            )
 
             def start_loop(loop: asyncio.AbstractEventLoop):
                 asyncio.set_event_loop(loop)
@@ -231,41 +223,19 @@ class InferencePipelineManager(Process):
             t = threading.Thread(target=start_loop, args=(loop,), daemon=True)
             t.start()
 
-            webrtc_offer = parsed_payload.webrtc_offer
-            to_inference_queue = deque()
-            to_inference_lock = Lock()
-            from_inference_queue = deque()
-            from_inference_lock = Lock()
             future = asyncio.run_coroutine_threadsafe(
-                create_and_init_rtc_peer_connection(
+                init_rtc_peer_connection(
                     webrtc_offer=webrtc_offer,
                     to_inference_queue=to_inference_queue,
                     to_inference_lock=to_inference_lock,
                     from_inference_queue=from_inference_queue,
                     from_inference_lock=from_inference_lock,
+                    webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
                     feedback_stop_event=stop_event,
                 ),
                 loop,
             )
             peer_connection = future.result()
-
-            self._responses_queue.put(
-                (
-                    request_id,
-                    {
-                        STATUS_KEY: OperationStatus.SUCCESS,
-                        "sdp": peer_connection.localDescription.sdp,
-                        "type": peer_connection.localDescription.type,
-                    },
-                )
-            )
-
-            webrtc_producer = partial(
-                WebRTCVideoFrameProducer,
-                to_inference_lock=to_inference_lock,
-                to_inference_queue=to_inference_queue,
-                stop_event=stop_event,
-            )
 
             def webrtc_sink(
                 prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
@@ -302,7 +272,14 @@ class InferencePipelineManager(Process):
             self._watchdog = watchdog
             self._inference_pipeline.start(use_main_thread=False)
             self._responses_queue.put(
-                (request_id, {STATUS_KEY: OperationStatus.SUCCESS})
+                (
+                    request_id,
+                    {
+                        STATUS_KEY: OperationStatus.SUCCESS,
+                        "sdp": peer_connection.localDescription.sdp,
+                        "type": peer_connection.localDescription.type,
+                    },
+                )
             )
             logger.info(f"WebRTC pipeline initialised. request_id={request_id}...")
         except (
