@@ -37,6 +37,7 @@ from inference.core.interfaces.stream_manager.manager_app.tcp_server import (
     RoboflowTCPServer,
 )
 
+
 PROCESSES_TABLE: Dict[str, Tuple[Process, Queue, Queue]] = {}
 HEADER_SIZE = 4
 SOCKET_BUFFER_SIZE = 16384

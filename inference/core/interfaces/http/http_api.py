@@ -1356,7 +1356,6 @@ class HttpInterface(BaseInterface):
                 resp = await self.stream_manager_client.initialise_webrtc_pipeline(
                     initialisation_request=request
                 )
-                print(f"RESP, {resp}")
                 return resp
 
             @app.post(

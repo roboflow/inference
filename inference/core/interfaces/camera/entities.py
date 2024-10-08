@@ -9,6 +9,8 @@ from typing import Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
 
+from inference_sdk.utils.decorators import experimental
+
 FrameTimestamp = datetime
 FrameID = int
 
@@ -100,6 +102,10 @@ class VideoFrameProducer:
 
 
 class WebRTCVideoFrameProducer(VideoFrameProducer):
+    @experimental(
+        reason="Usage of WebRTCVideoFrameProducer with `InferencePipeline` is an experimental feature."
+        "Please report any issues here: https://github.com/roboflow/inference/issues"
+    )
     def __init__(self, to_inference_queue: deque, to_inference_lock: Lock):
         self.to_inference_queue: deque = to_inference_queue
         self.to_inference_lock: Lock = to_inference_lock

@@ -91,6 +91,7 @@ class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
     webrtc_offer: WebRTCOffer
     stream_output: Optional[List[str]] = Field(default_factory=list)
     data_output: Optional[List[str]] = Field(default_factory=list)
+    webrtc_peer_timeout: float = 1
 
 
 class ConsumeResultsPayload(BaseModel):

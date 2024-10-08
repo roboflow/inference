@@ -8,18 +8,17 @@ from functools import partial
 from multiprocessing import Process, Queue
 from threading import Lock
 from types import FrameType
-from typing import Any, Deque, Dict, Optional, Tuple, Union
+from typing import Deque, Dict, Optional, Tuple
 
-import supervision as sv
 from aiortc import RTCPeerConnection
 from pydantic import ValidationError
 
-from inference.core import logger
 from inference.core.exceptions import (
     MissingApiKeyError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
 )
+from inference.core import logger
 from inference.core.interfaces.camera.entities import (
     VideoFrame,
     WebRTCVideoFrameProducer,
@@ -51,7 +50,6 @@ from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     init_rtc_peer_connection,
 )
 from inference.core.workflows.execution_engine.entities.base import (
-    WorkflowImage,
     WorkflowImageData,
 )
 
@@ -227,6 +225,7 @@ class InferencePipelineManager(Process):
                         to_inference_lock=to_inference_lock,
                         from_inference_queue=from_inference_queue,
                         from_inference_lock=from_inference_lock,
+                        webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
                     )
                 )
                 await peer_connection_ready_event.wait()
@@ -290,7 +289,7 @@ class InferencePipelineManager(Process):
                 api_key=parsed_payload.api_key,
                 image_input_name=parsed_payload.processing_configuration.image_input_name,
                 workflows_parameters=parsed_payload.processing_configuration.workflows_parameters,
-                on_prediction=self._buffer_sink.on_prediction,
+                on_prediction=custom_sink,
                 max_fps=parsed_payload.video_configuration.max_fps,
                 watchdog=watchdog,
                 source_buffer_filling_strategy=parsed_payload.video_configuration.source_buffer_filling_strategy,
@@ -307,7 +306,6 @@ class InferencePipelineManager(Process):
                 (request_id, {STATUS_KEY: OperationStatus.SUCCESS})
             )
             logger.info(f"Pipeline initialised. request_id={request_id}...")
-            return webrtc_producer
         except (
             ValidationError,
             MissingApiKeyError,
