@@ -6,9 +6,16 @@ from supervision.annotators.base import BaseAnnotator
 
 class ModelComparisonAnnotator(BaseAnnotator):
     """
-    A class for drawing background colors outside of detected box or mask regions.
-    !!! warning
-        This annotator uses `sv.Detections.mask`.
+    A class for annotating images by highlighting regions predicted by two different models.
+    This annotator visually distinguishes areas uniquely predicted by each model as well as
+    the background where neither model made a prediction.
+
+    Attributes:
+        color_a (Color): Color used to highlight predictions made only by Model A.
+        color_b (Color): Color used to highlight predictions made only by Model B.
+        background_color (Color): Color used for parts of the image where neither model made a prediction.
+        opacity (float): Opacity level of the overlays, ranging between 0 and 1.
+        force_box (bool): If True, forces the use of bounding boxes for predictions even if masks are available.
     """
 
     def __init__(
@@ -20,11 +27,14 @@ class ModelComparisonAnnotator(BaseAnnotator):
         force_box: bool = False,
     ):
         """
+        Initializes the ModelComparisonAnnotator with the specified colors, opacity, and behavior.
+
         Args:
-            color_a (Color): Color of the predictions made only by Model A.
-            color_b (Color): Color of the predictions made only by Model B.
-            background_color (Color): Color of parts of the image not covered by any prediction.
-            opacity (float): Opacity of the overlay mask. Must be between `0` and `1`.
+            color_a (Color): Color used to highlight predictions made only by Model A.
+            color_b (Color): Color used to highlight predictions made only by Model B.
+            background_color (Color): Color for parts of the image not covered by any prediction.
+            opacity (float): Opacity of the overlay mask, must be between 0 and 1.
+            force_box (bool): Whether to use bounding boxes instead of masks if masks are available.
         """
         self.color_a: Color = color_a
         self.color_b: Color = color_b
@@ -36,15 +46,15 @@ class ModelComparisonAnnotator(BaseAnnotator):
         self, scene: np.ndarray, detections_a: Detections, detections_b: Detections
     ) -> np.ndarray:
         """
-        Annotates the given scene with masks based on the provided detections.
+        Annotates the given scene with highlights representing predictions from two models.
 
-        Parameters:
-        - scene: Original image as a NumPy array (H x W x C).
-        - detections_a: Detections from Model A.
-        - detections_b: Detections from Model B.
+        Args:
+            scene (np.ndarray): Original image as a NumPy array (H x W x C).
+            detections_a (Detections): Predictions from Model A.
+            detections_b (Detections): Predictions from Model B.
 
         Returns:
-        - Annotated image as a NumPy array.
+            np.ndarray: Annotated image as a NumPy array.
         """
 
         # Initialize single-channel masks
@@ -62,7 +72,6 @@ class ModelComparisonAnnotator(BaseAnnotator):
                 neither_predicted[y1:y2, x1:x2] = 0
         else:
             for mask in detections_a.mask:
-                # Assuming mask is a binary mask with 1s where predicted
                 a_predicted[mask.astype(bool)] = 1
                 neither_predicted[mask.astype(bool)] = 0
 
@@ -74,7 +83,6 @@ class ModelComparisonAnnotator(BaseAnnotator):
                 neither_predicted[y1:y2, x1:x2] = 0
         else:
             for mask in detections_b.mask:
-                # Assuming mask is a binary mask with 1s where predicted
                 b_predicted[mask.astype(bool)] = 1
                 neither_predicted[mask.astype(bool)] = 0
 
@@ -97,14 +105,14 @@ class ModelComparisonAnnotator(BaseAnnotator):
             """
             Blends the overlay with the base image where the mask is set.
 
-            Parameters:
-            - base_img: Original image.
-            - overlay_img: Overlay color image.
-            - mask: Single-channel mask where to apply the overlay.
-            - opacity: Opacity of the overlay (0 to 1).
+            Args:
+                base_img (np.ndarray): Original image.
+                overlay_img (np.ndarray): Overlay color image.
+                mask (np.ndarray): Single-channel mask where to apply the overlay.
+                opacity (float): Opacity of the overlay (0 to 1).
 
             Returns:
-            - Image with overlay applied.
+                np.ndarray: Image with overlay applied.
             """
             # Blend the entire images
             blended = cv2.addWeighted(base_img, 1 - opacity, overlay_img, opacity, 0)
