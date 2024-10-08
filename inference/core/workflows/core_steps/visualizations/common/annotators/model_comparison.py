@@ -68,6 +68,11 @@ class ModelComparisonAnnotator(BaseAnnotator):
                 x1, y1, x2, y2 = detections_b.xyxy[detection_idx].astype(int)
                 b_predicted[y1:y2, x1:x2] = 1
                 neither_predicted[y1:y2, x1:x2] = 0
+        else:
+            for mask in detections_b.mask:
+                # Assuming mask is a binary mask with 1s where predicted
+                b_predicted[mask.astype(bool)] = 1
+                neither_predicted[mask.astype(bool)] = 0
         
         # Define combined masks
         only_a_predicted = a_predicted & (a_predicted ^ b_predicted)
