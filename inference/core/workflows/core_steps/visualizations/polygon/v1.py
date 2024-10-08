@@ -6,7 +6,6 @@ from pydantic import ConfigDict, Field
 from inference.core.workflows.core_steps.visualizations.common.annotators.polygon import (
     PolygonAnnotator,
 )
-
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
 )

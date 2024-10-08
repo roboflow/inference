@@ -4,14 +4,9 @@ import cv2
 import numpy as np
 from supervision import Color, Detections
 from supervision.annotators.base import BaseAnnotator, ImageType
-from supervision.annotators.utils import (
-    ColorLookup,
-    resolve_color,
-)
+from supervision.annotators.utils import ColorLookup, resolve_color
 from supervision.draw.color import ColorPalette
-from supervision.utils.conversion import (
-    ensure_cv2_image_for_annotation,
-)
+from supervision.utils.conversion import ensure_cv2_image_for_annotation
 
 
 class HaloAnnotator(BaseAnnotator):
@@ -95,9 +90,11 @@ class HaloAnnotator(BaseAnnotator):
                 color=self.color,
                 detections=detections,
                 detection_idx=detection_idx,
-                color_lookup=self.color_lookup
-                if custom_color_lookup is None
-                else custom_color_lookup,
+                color_lookup=(
+                    self.color_lookup
+                    if custom_color_lookup is None
+                    else custom_color_lookup
+                ),
             )
             if detections.mask is None:
                 x1, y1, x2, y2 = detections.xyxy[detection_idx].astype(int)

@@ -14,21 +14,19 @@ from inference.core.workflows.core_steps.visualizations.common.base import (
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_ZERO_TO_ONE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    FLOAT_ZERO_TO_ONE_KIND,
     STRING_KIND,
-    StepOutputSelector,
     FloatZeroToOne,
+    StepOutputSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/model_comparison_visualization@v1"
-SHORT_DESCRIPTION = (
-    "Visualizes the difference between two models' detections."
-)
+SHORT_DESCRIPTION = "Visualizes the difference between two models' detections."
 LONG_DESCRIPTION = """
 The `ModelComparisonVisualization` block draws all areas
 predicted by neither model with a specified color,

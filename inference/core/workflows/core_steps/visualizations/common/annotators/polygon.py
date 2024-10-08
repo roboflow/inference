@@ -3,17 +3,12 @@ from typing import Optional, Union
 import cv2
 import numpy as np
 from supervision import Color, Detections
-from supervision.detection.utils import mask_to_polygons
 from supervision.annotators.base import BaseAnnotator, ImageType
-from supervision.annotators.utils import (
-    ColorLookup,
-    resolve_color,
-)
+from supervision.annotators.utils import ColorLookup, resolve_color
+from supervision.detection.utils import mask_to_polygons
 from supervision.draw.color import ColorPalette
 from supervision.draw.utils import draw_polygon
-from supervision.utils.conversion import (
-    ensure_cv2_image_for_annotation,
-)
+from supervision.utils.conversion import ensure_cv2_image_for_annotation
 
 
 class PolygonAnnotator(BaseAnnotator):
@@ -83,15 +78,17 @@ class PolygonAnnotator(BaseAnnotator):
         supervision-annotator-examples/polygon-annotator-example-purple.png)
         """
         assert isinstance(scene, np.ndarray)
-        
+
         for detection_idx in range(len(detections)):
             color = resolve_color(
                 color=self.color,
                 detections=detections,
                 detection_idx=detection_idx,
-                color_lookup=self.color_lookup
-                if custom_color_lookup is None
-                else custom_color_lookup,
+                color_lookup=(
+                    self.color_lookup
+                    if custom_color_lookup is None
+                    else custom_color_lookup
+                ),
             )
 
             if detections.mask is None:
