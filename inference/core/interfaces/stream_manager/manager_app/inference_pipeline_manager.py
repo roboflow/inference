@@ -248,7 +248,10 @@ class InferencePipelineManager(Process):
             buffer_sink = InMemoryBufferSink.init(
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
             )
-            chained_sink = partial(multi_sink, sinks=[buffer_sink, webrtc_sink])
+            self._buffer_sink = buffer_sink
+            chained_sink = partial(
+                multi_sink, sinks=[buffer_sink.on_prediction, webrtc_sink]
+            )
 
             self._inference_pipeline = InferencePipeline.init_with_workflow(
                 video_reference=webrtc_producer,

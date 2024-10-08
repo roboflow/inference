@@ -31,15 +31,13 @@ class VideoTransformTrack(MediaStreamTrack):
         self.webrtc_peer_timeout: float = webrtc_peer_timeout
 
         self.track: Optional[RemoteStreamTrack] = None
-        self._processed = 0
         self._id = time.time_ns()
+        self._processed = 0
         self.to_inference_queue: Deque = to_inference_queue
         self.from_inference_queue: Deque = from_inference_queue
         self.to_inference_lock: Lock = to_inference_lock
         self.from_inference_lock: Lock = from_inference_lock
-        self._loop = asyncio.get_event_loop()
         self._pool = concurrent.futures.ThreadPoolExecutor()
-        self._img = None
         self._track_active: bool = True
         self.dummy_frame: Optional[VideoFrame] = None
         self.last_pts = 0
@@ -104,10 +102,10 @@ class VideoTransformTrack(MediaStreamTrack):
             res = self.from_inference_queue.pop()
 
         logger.debug("Dropping %s every inference", dropped)
-        self._processed += 1
         new_frame = VideoFrame.from_ndarray(res, format="bgr24")
         new_frame.pts = frame.pts
         new_frame.time_base = frame.time_base
+        self._processed += 1
         return new_frame
 
 
