@@ -11,6 +11,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
+    FLOAT_KIND,
     STRING_KIND,
     StepOutputImageSelector,
     WorkflowImageSelector,
@@ -22,9 +23,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Resize, flip, or rotate an image."
+SHORT_DESCRIPTION = "Resize, flip, rotate, adjust the brightness or contrast of an image."
 LONG_DESCRIPTION = """
-Apply a resize, flip, or rotation step to an image. 
+Apply a resize, flip, or rotate operation to an image. Adjust the brightness or contrast of an image.
 
 Width and height are required for resizing. Degrees are required for rotating. Flip type is required for flipping.
 """
@@ -54,7 +55,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
-    task_type: Literal["resize", "rotate", "flip"] = Field(
+    task_type: Literal["resize", "rotate", "flip", "brightness", "contrast"] = Field(
         description="Preprocessing task to be applied to the image.",
     )
     width: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
@@ -117,6 +118,38 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             }
         },
     )
+    brightness: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+        title="Percentage of Brightness",
+        description="Percentage of brightness to be applied to the image.",
+        gte=-100,
+        default=0,
+        le=100,
+        examples=[0, 45, "$inputs.brightness"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": ["brightness"],
+                    "required": True,
+                },
+            }
+        },
+    )
+    contrast: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+        title="Percentage of Contrast",
+        description="The percentage of contrast to be applied to the image.",
+        examples=[0, 42, "$inputs.contrast"],
+        gte=-100,
+        default=0,
+        le=100,
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": ["contrast"],
+                    "required": True,
+                },
+            }
+        },
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -145,6 +178,8 @@ class ImagePreprocessingBlockV1(WorkflowBlock):
         height: Optional[int],
         rotation_degrees: Optional[int],
         flip_type: Optional[str],
+        brightness: Optional[str],
+        contrast: Optional[str],
         *args,
         **kwargs,
     ) -> BlockResult:
@@ -157,6 +192,10 @@ class ImagePreprocessingBlockV1(WorkflowBlock):
             response_image = apply_rotate_image(image.numpy_image, rotation_degrees)
         elif task_type == "flip":
             response_image = apply_flip_image(image.numpy_image, flip_type)
+        elif task_type == "brightness":
+            response_image = apply_brightness_image(image.numpy_image, brightness)
+        elif task_type == "contrast":
+            response_image = apply_contrast_image(image.numpy_image, contrast)
         else:
             raise ValueError(f"Invalid task type: {task_type}")
 
@@ -166,6 +205,7 @@ class ImagePreprocessingBlockV1(WorkflowBlock):
             numpy_image=response_image,
         )
         return {"image": output_image}
+
 
 
 def apply_resize_image(
@@ -215,3 +255,19 @@ def apply_flip_image(np_image: np.ndarray, flip_type: Optional[str]):
         return cv2.flip(np_image, -1)
     else:
         return np_image
+
+def normalize_value(value: float) -> float:
+    if not -100 <= value <= 100:
+        raise ValueError("Input value must be between -100 and 100")
+    
+    return 1 + (value / 100)
+
+def apply_brightness_image(np_image: np.ndarray, brightness: Optional[str]):
+    if brightness is None:
+        return np_image
+    return cv2.convertScaleAbs(np_image, alpha=normalize_value(brightness), beta=0)
+
+def apply_contrast_image(np_image: np.ndarray, contrast: Optional[str]):
+    if contrast is None:
+        return np_image
+    return cv2.convertScaleAbs(np_image, alpha=normalize_value(contrast), beta=0)
