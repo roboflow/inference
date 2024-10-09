@@ -1,0 +1,1 @@
+from inference.models.rtdetr.rtdetr import RTDETR
