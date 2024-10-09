@@ -2,6 +2,9 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
+    DataAggregatorBlockV1,
+)
 from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
     LineCounterBlockV1,
 )
@@ -53,6 +56,7 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
+from inference.core.workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
 from inference.core.workflows.core_steps.formatters.expression.v1 import (
     ExpressionBlockV1,
 )
@@ -145,6 +149,8 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.email.v1 import EmailBlockV1
+from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -189,6 +195,21 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop.v1
 )
 from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
     StitchImagesBlockV1,
+)
+from inference.core.workflows.core_steps.video_state_managers.retrieve_from_object_data_stash.v1 import (
+    RetrieveFromObjectDataStashBlockV1,
+)
+from inference.core.workflows.core_steps.video_state_managers.stash_object_data.v1 import (
+    StashObjectDataBlockV1,
+)
+from inference.core.workflows.core_steps.video_triggers.on_object_appeared.v1 import (
+    OnObjectAppearedBlockV1,
+)
+from inference.core.workflows.core_steps.video_triggers.on_object_location_updated.v1 import (
+    OnObjectLocationUpdatedBlockV1,
+)
+from inference.core.workflows.core_steps.video_triggers.on_object_lost.v1 import (
+    OnObjectLostBlockV1,
 )
 
 # Visualizers
@@ -287,6 +308,7 @@ REGISTERED_INITIALIZERS = {
     "background_tasks": None,
     "thread_pool_executor": None,
     "tracked_instances_cache": TrackedInstancesCache(cache_size=16384),
+    "allow_data_store_in_file_system": True,
 }
 
 
@@ -373,6 +395,15 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         StabilityAIInpaintingBlockV1,
         ImagePreprocessingBlockV1,
         PathDeviationAnalyticsBlockV1,
+        DataAggregatorBlockV1,
+        CSVFormatterBlockV1,
+        EmailBlockV1,
+        LocalFileSinkBlockV1,
+        RetrieveFromObjectDataStashBlockV1,
+        StashObjectDataBlockV1,
+        OnObjectAppearedBlockV1,
+        OnObjectLocationUpdatedBlockV1,
+        OnObjectLostBlockV1,
     ]
 
 

@@ -28,7 +28,7 @@ class BlockManifest(WorkflowBlockManifest):
             "short_description": "",
             "long_description": "",
             "license": "Apache-2.0",
-            "block_type": "video_trigger",
+            "block_type": "video_state_manager",
         }
     )
     type: Literal["roboflow_core/retrieve_from_object_data_stash@v1"]

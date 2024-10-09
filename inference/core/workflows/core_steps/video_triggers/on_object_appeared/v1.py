@@ -94,13 +94,16 @@ class OnObjectAppearedBlockV1(WorkflowBlock):
         cache = self._per_video_cache[video_metadata.video_identifier]
         output_predictions_mask = []
         for tracker_id in predictions.tracker_id.tolist():
-            output_predictions_mask.append(cache.record_instance(tracker_id=tracker_id))
+            output_predictions_mask.append(
+                not cache.record_instance(tracker_id=tracker_id)
+            )
         filtered_prediction = predictions[output_predictions_mask]
         if len(filtered_prediction) == 0:
             return {
                 "tracker_ids": None,
                 "predictions": None,
             }
+        print(filtered_prediction.tracker_id.tolist())
         return {
             "tracker_ids": filtered_prediction.tracker_id.tolist(),
             "predictions": filtered_prediction,

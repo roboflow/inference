@@ -67,12 +67,21 @@ class BlockManifest(WorkflowBlockManifest):
     aggregation_mode: Dict[
         str,
         List[
-            Literal["sum", "avg", "max", "min", "count", "distinct", "count_distinct"]
+            Literal[
+                "sum",
+                "avg",
+                "max",
+                "min",
+                "count",
+                "distinct",
+                "count_distinct",
+                "values_counts",
+            ]
         ],
     ]
-    rolling_window: int = Field(description="Number of minutes to aggregate.")
+    rolling_window: int = Field(description="Number of seconds to aggregate.")
     interval: int = Field(
-        description="Aggregation results interval trigger (in minutes).",
+        description="Aggregation results interval trigger (in seconds).",
     )
 
     @classmethod
@@ -85,7 +94,7 @@ class BlockManifest(WorkflowBlockManifest):
             for aggregation_mode in self.aggregation_mode.get(variable_name, []):
                 if aggregation_mode == "distinct":
                     kind = [LIST_OF_VALUES_KIND]
-                elif aggregation_mode == "count_distinct":
+                elif aggregation_mode == "values_counts":
                     kind = [DICTIONARY_KIND]
                 else:
                     kind = [FLOAT_KIND, INTEGER_KIND]
@@ -167,6 +176,7 @@ class DataAggregatorBlockV1(WorkflowBlock):
             for variable_name, value in data.items():
                 for mode in aggregation_mode.get(variable_name, []):
                     state_key = f"{variable_name}_{mode}"
+                    print("Saving", window, state_key, value)
                     self._open_aggregation_windows[window][state_key].on_data(value)
         last_affected_timestamp_results = None
         for window in affected_timestamps:
@@ -176,6 +186,7 @@ class DataAggregatorBlockV1(WorkflowBlock):
                     for k, v in self._open_aggregation_windows[window].items()
                 }
                 del self._open_aggregation_windows[window]
+        print("last_affected_timestamp_results", last_affected_timestamp_results)
         if last_affected_timestamp_results is None:
             return {
                 f"{variable_name}_{mode}": None
@@ -275,6 +286,10 @@ class DistinctState(AggregationState):
         self._distinct = set()
 
     def on_data(self, value: Any):
+        if isinstance(value, list):
+            for v in value:
+                self._distinct.add(v)
+            return None
         self._distinct.add(value)
 
     def get_result(self) -> Any:
@@ -299,6 +314,10 @@ class ValuesCountState(AggregationState):
         self._counts = defaultdict(int)
 
     def on_data(self, value: Any):
+        if isinstance(value, list):
+            for v in value:
+                self._counts[v] += 1
+            return None
         self._counts[value] += 1
 
     def get_result(self) -> Any:
@@ -312,7 +331,7 @@ STATE_INITIALIZERS = {
     "min": MinState,
     "count": CountState,
     "distinct": DistinctState,
-    "count_distinct": ConfigDict,
+    "count_distinct": CountDistinctState,
     "values_counts": ValuesCountState,
 }
 

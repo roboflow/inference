@@ -101,7 +101,9 @@ class CSVFormatterBlockV1(WorkflowBlock):
             columns_data[variable_name] = operations_chain(
                 columns_data[variable_name], global_parameters={}
             )
+        print("Appending column data", columns_data)
         self._buffer.append(columns_data)
+        print("DEBUG", (datetime.now() - self._last_flush_timestamp).total_seconds())
         minutes_since_last_flush = (
             datetime.now() - self._last_flush_timestamp
         ).total_seconds() // 60
@@ -109,7 +111,9 @@ class CSVFormatterBlockV1(WorkflowBlock):
             csv_content = to_csv(data=self._buffer)
             self._buffer = []
             self._last_flush_timestamp = datetime.now()
+            print("Flushing CSV content")
             return {"csv_content": csv_content}
+        print(f"To flush: {interval -  minutes_since_last_flush} minutes")
         return {"csv_content": None}
 
 
