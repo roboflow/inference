@@ -97,7 +97,7 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.2.0,<2.0.0"
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -201,18 +201,10 @@ class SIFTComparisonBlockV2(WorkflowBlock):
         images_match = good_matches_count >= good_matches_threshold
 
         if visualization_1 is not None:
-            visualization_1 = WorkflowImageData(
-                parent_metadata=input_1.parent_metadata,
-                workflow_root_ancestor_metadata=input_1.workflow_root_ancestor_metadata,
-                numpy_image=visualization_1,
-            )
+            visualization_1 = input_1.update_image(image=visualization_1)
 
         if visualization_2 is not None:
-            visualization_2 = WorkflowImageData(
-                parent_metadata=input_2.parent_metadata,
-                workflow_root_ancestor_metadata=input_2.workflow_root_ancestor_metadata,
-                numpy_image=visualization_2,
-            )
+            visualization_2 = input_2.update_image(image=visualization_2)
 
         visualization_matches = None
         if visualize and image_1 is not None and image_2 is not None:
@@ -237,11 +229,7 @@ class SIFTComparisonBlockV2(WorkflowBlock):
                 **draw_params,
             )
 
-            visualization_matches = WorkflowImageData(
-                parent_metadata=input_1.parent_metadata,
-                workflow_root_ancestor_metadata=input_1.workflow_root_ancestor_metadata,
-                numpy_image=visualization_matches,
-            )
+            visualization_matches = input_1.update_image(image=visualization_matches)
 
         return {
             "good_matches_count": good_matches_count,

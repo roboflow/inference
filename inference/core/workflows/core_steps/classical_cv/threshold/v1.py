@@ -93,7 +93,7 @@ class ImageThresholdManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.2.0,<2.0.0"
 
 
 class ImageThresholdBlockV1(WorkflowBlock):
@@ -117,13 +117,7 @@ class ImageThresholdBlockV1(WorkflowBlock):
         thresholded_image = apply_thresholding(
             image.numpy_image, threshold_type, thresh_value, max_value
         )
-
-        output = WorkflowImageData(
-            parent_metadata=image.parent_metadata,
-            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
-            numpy_image=thresholded_image,
-        )
-
+        output = image.update_image(image=thresholded_image)
         return {OUTPUT_IMAGE_KEY: output}
 
 

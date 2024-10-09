@@ -228,9 +228,12 @@ class WorkflowImageData:
         self._video_metadata = video_metadata
 
     def update_image(self, image: np.ndarray) -> "WorkflowImageData":
+        """
+        Creates new instance of `WorkflowImageData` with updated image, preserving metadata
+        """
         return WorkflowImageData(
-            parent_metadata=self.parent_metadata,
-            workflow_root_ancestor_metadata=self.workflow_root_ancestor_metadata,
+            parent_metadata=self._parent_metadata,
+            workflow_root_ancestor_metadata=self._workflow_root_ancestor_metadata,
             numpy_image=image,
             video_metadata=self._video_metadata,
         )
@@ -241,7 +244,12 @@ class WorkflowImageData:
         cropped_image: np.ndarray,
         offset_x: int,
         offset_y: int,
+        preserve_video_metadata: bool = False,
     ) -> "WorkflowImageData":
+        """
+        Creates new instance of `WorkflowImageData` being a crop of original image,
+        making adjustment to all metadata.
+        """
         parent_metadata = ImageParentMetadata(
             parent_id=crop_identifier,
             origin_coordinates=OriginCoordinatesSystem(
@@ -262,10 +270,17 @@ class WorkflowImageData:
             parent_id=self.workflow_root_ancestor_metadata.parent_id,
             origin_coordinates=workflow_root_ancestor_coordinates,
         )
+        video_metadata = None
+        if preserve_video_metadata and self._video_metadata is not None:
+            video_metadata = copy(self._video_metadata)
+            video_metadata.video_identifier = (
+                f"{video_metadata.video_identifier} | crop: {crop_identifier}"
+            )
         return WorkflowImageData(
             parent_metadata=parent_metadata,
             workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
             numpy_image=cropped_image,
+            video_metadata=video_metadata,
         )
 
     @property

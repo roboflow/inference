@@ -100,6 +100,12 @@ image's location within the original file (e.g., when working with cropped image
 HTTP, WorkflowImageData allows caching of different image representations, such as base64-encoded versions, 
 improving efficiency.
 
+!!! Note "Video Metadata"
+    
+    Since Execution Enginge `v1.2.0`, we have added `video_metadata` into `WorkflowImageData`. This 
+    object is supposed to hold the context of video processing and will only be relevant for video processing
+    blocks. Other blocks may ignore it's existance if not creating output image (covered in the next section). 
+
 Operating on `WorkflowImageData` is fairly simple once you understand its interface. Here are some of the key
 methods and properties:
 
@@ -128,6 +134,11 @@ def operate_on_image(workflow_image: WorkflowImageData) -> None:
     
     # or the same for root metadata (the oldest ancestor of the image - Workflow input image)
     root_metadata = workflow_image.workflow_root_ancestor_metadata
+    
+    # retrieving `VideoMetadata` object - see the usage guide section below
+    # if `workflow_image` is not provided with `VideoMetadata` - default metadata object will 
+    # be created on accessing the property
+    video_metadata = workflow_image.video_metadata 
 ```
 
 Below you can find an example showcasing how to preserve metadata, while transforming image
@@ -140,11 +151,13 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 
 def transform_image(image: WorkflowImageData) -> WorkflowImageData:
     transformed_image = some_transformation(image.numpy_image)
-    return WorkflowImageData(
-        parent_metadata=image.parent_metadata,
-        workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
-        numpy_image=transformed_image,
-    )
+    # `WorkflowImageData` exposes helper method to return a new object with
+    # updated image, but with preserved metadata. Metadata preservation
+    # should only be used when the output image is compatible regarding
+    # data lineage (the predecessor-successor relation for images).
+    # Lineage is not preserved for cropping and merging images (without common predecessor)
+    # - below you may find implementation tips.
+    return image.update_image(image=transformed_image)  
 
 def some_transformation(image: np.ndarray) -> np.ndarray:
     ...
@@ -153,16 +166,17 @@ def some_transformation(image: np.ndarray) -> np.ndarray:
 ??? tip "Images cropping"
 
     When your block increases dimensionality and provides output with `image` kind - usually that means cropping the 
-    image. Below you can find scratch of implementation for that operation:
-    
+    image. In such cases input image `video_metadata` is to be removed (as usually it does not make sense to
+    keep them, as underlying video processing blocks will not work correctly when for dynamically created blocks).
+
+    Below you can find scratch of implementation for that operation:
+
     ```python
     from typing import List, Tuple
     
     from dataclasses import replace
-    from inference.core.workflows.execution_engine.entities.base import \
-        WorkflowImageData, ImageParentMetadata, OriginCoordinatesSystem
-    
-    
+    from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+
     def crop_images(
         image: WorkflowImageData, 
         crops: List[Tuple[str, int, int, int, int]],
@@ -171,45 +185,77 @@ def some_transformation(image: np.ndarray) -> np.ndarray:
         original_image = image.numpy_image
         for crop_id, x_min, y_min, x_max, y_max in crops:
             cropped_image = original_image[y_min:y_max, x_min:x_max]
-            crop_parent_metadata = ImageParentMetadata(
-                parent_id=crop_id,
-                origin_coordinates=OriginCoordinatesSystem(
-                    left_top_x=x_min,
-                    left_top_y=y_min,
-                    origin_width=original_image.shape[1],
-                    origin_height=original_image.shape[0],
-                ),
-            )
-            # adding shift to root ancestor coordinates system
-            crop_root_ancestor_coordinates = replace(
-                image.workflow_root_ancestor_metadata.origin_coordinates,
-                left_top_x=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_x + x_min,
-                left_top_y=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_y + y_min,
-            )
-            workflow_root_ancestor_metadata = ImageParentMetadata(
-                parent_id=image.workflow_root_ancestor_metadata.parent_id,
-                origin_coordinates=crop_root_ancestor_coordinates,
-            )
-            result_crop = WorkflowImageData(
-                parent_metadata=crop_parent_metadata,
-                workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
-                numpy_image=cropped_image,
+            if not cropped_image.size:
+                # discarding empty crops
+                continue
+            result_crop = image.build_crop(
+                crop_identifier=crop_id,
+                cropped_image=cropped_image,
+                offset_x=x_min,
+                offset_y=y_min,
             )
             crops.append(result_crop)
         return crops
     ```
 
+    In some cases you may want to preserve `video_metadata`. Example of such situation is when 
+    your block produces crops based on fixed coordinates (like video single footage with multiple fixed Regions of 
+    Interest to be applied individual trackers) - then you want result crops to be processed in context of video,
+    as if they were produced by separate cameras. To adjust behaviour of `build_crop(...)` method, simply add 
+    `preserve_video_metadata=True`:
+
+    ```{ .py linenums="1" hl_lines="11"}
+    def crop_images(
+        image: WorkflowImageData, 
+        crops: List[Tuple[str, int, int, int, int]],
+    ) -> List[WorkflowImageData]:
+        # [...]
+        result_crop = image.build_crop(
+            crop_identifier=crop_id,
+            cropped_image=cropped_image,
+            offset_x=x_min,
+            offset_y=y_min,
+            preserve_video_metadata=True
+        )
+        # [...]
+    ```
+
+
+??? tip "Merging images without common predecessor"
+
+    If common `parent_metadata` cannot be pointed for multiple images you try to merge, you should denote that
+    "a new" image appears in the Workflow. To do it simply:
+
+    ```python
+    from typing import List, Tuple
+    
+    from dataclasses import replace
+    from inference.core.workflows.execution_engine.entities.base import \
+        WorkflowImageData, ImageParentMetadata
+
+    def merge_images(image_1: WorkflowImageData, image_2: WorkflowImageData) -> WorkflowImageData:
+        merged_image = some_mergin_operation(
+            image_1=image_1.numpy_image,
+            image_2=image_2.numpy_image
+        )
+        new_parent_metadata = ImageParentMetadata(
+            # this is just one of the option for creating id, yet sensible one
+            parent_id=f"{image_1.parent_metadata.parent_id} + {image_2.parent_metadata.parent_id}"
+        )
+        return WorkflowImageData(
+            parent_metadata=new_parent_metadata,
+            numpy_image=merged_imagem
+        )
+    ```
+
 
 ## `VideoMetadata`
 
-!!! warning "Early adoption"
+!!! warning "Deprecation"
 
-    `video_metadata` kind and `VideoMetadata` data representatio are in early adoption at the moment. They represent
-    new batch-oriented data type added to Workflows ecosystem that should provide extended set of metadata on top
-    of video frame, to make it possible to create stateful video processing blocks like ByteTracker. 
-
-    Authors still experiment with different, potenially more handy ways of onboarding video processing. Stay tuned 
-    and observe [video processing updates](/workflows/video_processing/overview/).
+    [`video_metadata` kind](/workflows/kinds/video_metadata) is deprecated - we advise not using that kind in new 
+    blocks. `VideoMetadata` data representation became a member of `WorkflowImageData` in Execution Engine `v1.2.0` 
+    (`inference` release `v0.23.0`)
 
 `VideoMetadata` is a dataclass that provides the following metadata about video frame and video source:
 

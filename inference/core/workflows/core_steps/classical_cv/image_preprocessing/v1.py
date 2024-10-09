@@ -126,7 +126,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.2.0,<2.0.0"
 
 
 class ImagePreprocessingBlockV1(WorkflowBlock):
@@ -160,11 +160,7 @@ class ImagePreprocessingBlockV1(WorkflowBlock):
         else:
             raise ValueError(f"Invalid task type: {task_type}")
 
-        output_image = WorkflowImageData(
-            parent_metadata=image.parent_metadata,
-            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
-            numpy_image=response_image,
-        )
+        output_image = image.update_image(image=response_image)
         return {"image": output_image}
 
 

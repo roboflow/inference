@@ -101,13 +101,7 @@ class ImageBlurBlockV1(WorkflowBlock):
     ) -> BlockResult:
         # Apply blur to the image
         blurred_image = apply_blur(image.numpy_image, blur_type, kernel_size)
-
-        output = WorkflowImageData(
-            parent_metadata=image.parent_metadata,
-            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
-            numpy_image=blurred_image,
-        )
-
+        output = image.update_image(image=blurred_image)
         return {OUTPUT_IMAGE_KEY: output}
 
 

@@ -69,7 +69,7 @@ class CameraFocusManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.2.0,<2.0.0"
 
 
 class CameraFocusBlockV1(WorkflowBlock):
@@ -83,12 +83,7 @@ class CameraFocusBlockV1(WorkflowBlock):
     def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
         # Calculate the Brenner measure
         brenner_image, brenner_value = calculate_brenner_measure(image.numpy_image)
-
-        output = WorkflowImageData(
-            parent_metadata=image.parent_metadata,
-            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
-            numpy_image=brenner_image,
-        )
+        output = image.update_image(image=brenner_image)
 
         return {
             OUTPUT_IMAGE_KEY: output,

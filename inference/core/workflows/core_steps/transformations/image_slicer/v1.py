@@ -109,7 +109,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.2.0,<2.0.0"
 
 
 class ImageSlicerBlockV1(WorkflowBlock):
@@ -137,31 +137,12 @@ class ImageSlicerBlockV1(WorkflowBlock):
         for offset in offsets:
             x_min, y_min, _, _ = offset
             crop_numpy = crop_image(image=image_numpy, xyxy=offset)
-            parent_metadata = ImageParentMetadata(
-                parent_id=f"image_slicer.{uuid4()}",
-                origin_coordinates=OriginCoordinatesSystem(
-                    left_top_x=x_min.item(),
-                    left_top_y=y_min.item(),
-                    origin_width=image.numpy_image.shape[1],
-                    origin_height=image.numpy_image.shape[0],
-                ),
-            )
-            workflow_root_ancestor_coordinates = replace(
-                image.workflow_root_ancestor_metadata.origin_coordinates,
-                left_top_x=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_x
-                + x_min,
-                left_top_y=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_y
-                + y_min,
-            )
-            workflow_root_ancestor_metadata = ImageParentMetadata(
-                parent_id=image.workflow_root_ancestor_metadata.parent_id,
-                origin_coordinates=workflow_root_ancestor_coordinates,
-            )
             if crop_numpy.size:
-                cropped_image = WorkflowImageData(
-                    parent_metadata=parent_metadata,
-                    workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
-                    numpy_image=crop_numpy,
+                cropped_image = image.build_crop(
+                    crop_identifier=f"image_slicer.{uuid4()}",
+                    cropped_image=crop_numpy,
+                    offset_x=x_min,
+                    offset_y=y_min,
                 )
                 slices.append({"slices": cropped_image})
             else:

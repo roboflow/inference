@@ -108,11 +108,7 @@ class ImageContoursDetectionBlockV1(WorkflowBlock):
             image.numpy_image, thickness=line_thickness
         )
 
-        output = WorkflowImageData(
-            parent_metadata=image.parent_metadata,
-            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
-            numpy_image=contour_image,
-        )
+        output = image.update_image(image=contour_image)
 
         return {
             OUTPUT_IMAGE_KEY: output,
