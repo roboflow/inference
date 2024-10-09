@@ -33,6 +33,7 @@ class ErrorType(str, Enum):
 
 class CommandType(str, Enum):
     INIT = "init"
+    WEBRTC = "webrtc"
     MUTE = "mute"
     RESUME = "resume"
     STATUS = "status"
@@ -79,6 +80,18 @@ class InitialisePipelinePayload(BaseModel):
         type="MemorySinkConfiguration"
     )
     api_key: Optional[str] = None
+
+
+class WebRTCOffer(BaseModel):
+    type: str
+    sdp: str
+
+
+class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
+    webrtc_offer: WebRTCOffer
+    stream_output: Optional[List[str]] = Field(default_factory=list)
+    data_output: Optional[List[str]] = Field(default_factory=list)
+    webrtc_peer_timeout: float = 1
 
 
 class ConsumeResultsPayload(BaseModel):
