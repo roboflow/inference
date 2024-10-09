@@ -5,16 +5,28 @@ from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Literal, Union, List, Optional, Type, Dict, Any
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.core_steps.common.query_language.entities.operations import AllOperationsType
-from inference.core.workflows.core_steps.common.query_language.operations.core import build_operations_chain
+from inference.core.workflows.core_steps.common.query_language.entities.operations import (
+    AllOperationsType,
+)
+from inference.core.workflows.core_steps.common.query_language.operations.core import (
+    build_operations_chain,
+)
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
-from inference.core.workflows.execution_engine.entities.types import StepOutputSelector, STRING_KIND, \
-    WorkflowParameterSelector, BOOLEAN_KIND
-from inference.core.workflows.prototypes.block import WorkflowBlockManifest, WorkflowBlock, BlockResult
+from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
+    STRING_KIND,
+    StepOutputSelector,
+    WorkflowParameterSelector,
+)
+from inference.core.workflows.prototypes.block import (
+    BlockResult,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -39,9 +51,11 @@ class BlockManifest(WorkflowBlockManifest):
     sender_email: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
         description="E-mail to be used to send the message",
     )
-    sender_email_password: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
-        description="Sender e-mail password to use SMTP server",
-        private=True,
+    sender_email_password: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = (
+        Field(
+            description="Sender e-mail password to use SMTP server",
+            private=True,
+        )
     )
     receiver_email: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
         description="Destination e-mail address",

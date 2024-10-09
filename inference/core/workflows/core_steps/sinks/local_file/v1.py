@@ -1,13 +1,21 @@
 import os.path
 from datetime import datetime
-from typing import Literal, Union, List, Optional, Type
+from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
-from inference.core.workflows.execution_engine.entities.types import StepOutputSelector, STRING_KIND, \
-    WorkflowParameterSelector, BOOLEAN_KIND
-from inference.core.workflows.prototypes.block import WorkflowBlockManifest, WorkflowBlock, BlockResult
+from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
+    STRING_KIND,
+    StepOutputSelector,
+    WorkflowParameterSelector,
+)
+from inference.core.workflows.prototypes.block import (
+    BlockResult,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -32,7 +40,9 @@ class BlockManifest(WorkflowBlockManifest):
         default="workflow_output",
         description="File name prefix",
     )
-    file_extension: Union[WorkflowParameterSelector(kind=[STRING_KIND]), Literal["csv", "json", "txt"]] = Field(
+    file_extension: Union[
+        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["csv", "json", "txt"]
+    ] = Field(
         default="csv",
         description="File name prefix",
     )

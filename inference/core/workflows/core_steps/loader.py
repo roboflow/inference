@@ -48,6 +48,7 @@ from inference.core.workflows.core_steps.classical_cv.template_matching.v1 impor
 from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
     ImageThresholdBlockV1,
 )
+from inference.core.workflows.core_steps.common.cache import TrackedInstancesCache
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
@@ -285,6 +286,7 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
+    "tracked_instances_cache": TrackedInstancesCache(cache_size=16384),
 }
 
 

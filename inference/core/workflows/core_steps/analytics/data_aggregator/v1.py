@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from copy import copy
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Literal, Optional, Type, Union, Iterable
+from typing import Any, Dict, Iterable, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
@@ -14,13 +14,18 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
+    DICTIONARY_KIND,
+    FLOAT_KIND,
+    INTEGER_KIND,
+    LIST_OF_VALUES_KIND,
     StepOutputSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector, LIST_OF_VALUES_KIND, DICTIONARY_KIND, FLOAT_KIND, INTEGER_KIND,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
+    BlockResult,
     WorkflowBlock,
-    WorkflowBlockManifest, BlockResult,
+    WorkflowBlockManifest,
 )
 
 
@@ -59,10 +64,13 @@ class BlockManifest(WorkflowBlockManifest):
         ],
         default_factory=lambda: {},
     )
-    aggregation_mode: Dict[str, List[Literal["sum", "avg", "max", "min", "count", "distinct", "count_distinct"]]]
-    rolling_window: int = Field(
-        description="Number of minutes to aggregate."
-    )
+    aggregation_mode: Dict[
+        str,
+        List[
+            Literal["sum", "avg", "max", "min", "count", "distinct", "count_distinct"]
+        ],
+    ]
+    rolling_window: int = Field(description="Number of minutes to aggregate.")
     interval: int = Field(
         description="Aggregation results interval trigger (in minutes).",
     )
@@ -81,7 +89,11 @@ class BlockManifest(WorkflowBlockManifest):
                     kind = [DICTIONARY_KIND]
                 else:
                     kind = [FLOAT_KIND, INTEGER_KIND]
-                result.append(OutputDefinition(name=f"{variable_name}_{aggregation_mode}", kind=kind))
+                result.append(
+                    OutputDefinition(
+                        name=f"{variable_name}_{aggregation_mode}", kind=kind
+                    )
+                )
         return result
 
     @classmethod
@@ -103,7 +115,21 @@ class DataAggregatorBlockV1(WorkflowBlock):
         self,
         data: Dict[str, Any],
         data_operations: Dict[str, List[AllOperationsType]],
-        aggregation_mode: Dict[str, List[Literal["sum", "avg", "max", "min", "count", "distinct", "count_distinct", "values_counts"]]],
+        aggregation_mode: Dict[
+            str,
+            List[
+                Literal[
+                    "sum",
+                    "avg",
+                    "max",
+                    "min",
+                    "count",
+                    "distinct",
+                    "count_distinct",
+                    "values_counts",
+                ]
+            ],
+        ],
         rolling_window: int,
         interval: int,
     ) -> BlockResult:
@@ -125,9 +151,13 @@ class DataAggregatorBlockV1(WorkflowBlock):
         else:
             time_elapsed = now_timestamp - self._start_timestamp
             elapsed_intervals = time_elapsed.total_seconds() // interval
-            last_window_timestamp = self._start_timestamp + timedelta(seconds=elapsed_intervals * interval)
+            last_window_timestamp = self._start_timestamp + timedelta(
+                seconds=elapsed_intervals * interval
+            )
         for i in range(missing_windows):
-            new_window_timestamp = last_window_timestamp + timedelta(seconds=(i + 1) * interval)
+            new_window_timestamp = last_window_timestamp + timedelta(
+                seconds=(i + 1) * interval
+            )
             self._open_aggregation_windows[new_window_timestamp] = initialize_states(
                 data_names=data.keys(),
                 aggregation_mode=aggregation_mode,
@@ -142,7 +172,8 @@ class DataAggregatorBlockV1(WorkflowBlock):
         for window in affected_timestamps:
             if window <= now_timestamp:
                 last_affected_timestamp_results = {
-                    k: v.get_result() for k, v in self._open_aggregation_windows[window].items()
+                    k: v.get_result()
+                    for k, v in self._open_aggregation_windows[window].items()
                 }
                 del self._open_aggregation_windows[window]
         if last_affected_timestamp_results is None:
@@ -229,7 +260,7 @@ class CountState(AggregationState):
         self._count = 0
 
     def on_data(self, value: Any):
-        if hasattr(value, '__len__'):
+        if hasattr(value, "__len__"):
             self._count += len(value)
         else:
             self._count += 1
@@ -288,7 +319,21 @@ STATE_INITIALIZERS = {
 
 def initialize_states(
     data_names: Iterable[str],
-    aggregation_mode: Dict[str, List[Literal["sum", "avg", "max", "min", "count", "distinct", "count_distinct", "values_counts"]]],
+    aggregation_mode: Dict[
+        str,
+        List[
+            Literal[
+                "sum",
+                "avg",
+                "max",
+                "min",
+                "count",
+                "distinct",
+                "count_distinct",
+                "values_counts",
+            ]
+        ],
+    ],
 ) -> Dict[str, AggregationState]:
     result = {}
     for data_name in data_names:

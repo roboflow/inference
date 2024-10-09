@@ -13,9 +13,10 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
+    STRING_KIND,
     StepOutputSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector, STRING_KIND,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -27,9 +28,7 @@ LONG_DESCRIPTION = """
 Creates CSV files with specified columns aggregating data over specified interval. 
 """
 
-SHORT_DESCRIPTION = (
-    "Creates CSV files with specified columns aggregating data over specified interval. "
-)
+SHORT_DESCRIPTION = "Creates CSV files with specified columns aggregating data over specified interval. "
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -103,7 +102,9 @@ class CSVFormatterBlockV1(WorkflowBlock):
                 columns_data[variable_name], global_parameters={}
             )
         self._buffer.append(columns_data)
-        minutes_since_last_flush = ((datetime.now() - self._last_flush_timestamp).total_seconds() // 60)
+        minutes_since_last_flush = (
+            datetime.now() - self._last_flush_timestamp
+        ).total_seconds() // 60
         if minutes_since_last_flush >= interval:
             csv_content = to_csv(data=self._buffer)
             self._buffer = []
