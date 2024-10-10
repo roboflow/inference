@@ -59,6 +59,7 @@ from inference.core.entities.requests.workflows import (
     WorkflowSpecificationDescribeInterfaceRequest,
     WorkflowSpecificationInferenceRequest,
 )
+from inference.core.managers.metrics import get_container_stats
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.responses.clip import (
     ClipCompareResponse,
@@ -116,6 +117,7 @@ from inference.core.env import (
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
+    IS_DOCKER,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -553,6 +555,13 @@ class HttpInterface(BaseInterface):
                 if self.model_manager.pingback and response.status_code >= 400:
                     self.model_manager.num_errors += 1
                 return response
+
+        if IS_DOCKER:
+
+            @app.get("/device/stats")
+            async def device_stats():
+                container_stats = get_container_stats()
+                return JSONResponse(status_code=200, content=container_stats)
 
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
             cached_api_keys = dict()
