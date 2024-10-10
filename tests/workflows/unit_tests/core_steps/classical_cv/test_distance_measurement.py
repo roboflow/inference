@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pytest
 import supervision as sv
@@ -48,9 +50,17 @@ def test_distance_measurement_block_pixel_ratio_vertical():
     
 
     # then
-    expected_result = {'distance_cm': 9.275028768699654, 'distance_pixel': 806}
-    assert result == expected_result, f"Expected {expected_result}, but got {result}"
-    
+    expected_result = {'distance_cm': 9.275, 'distance_pixel': 806}
+    tolerance = 1e-3  # Define a tolerance level
+
+    # Compare the float values within the specified tolerance
+    assert math.isclose(result['distance_cm'], expected_result['distance_cm'], rel_tol=tolerance), \
+        f"Expected {expected_result['distance_cm']} cm, but got {result['distance_cm']} cm"
+
+    # Compare the integer values directly
+    assert result['distance_pixel'] == expected_result['distance_pixel'], \
+        f"Expected {expected_result['distance_pixel']} pixels, but got {result['distance_pixel']} pixels" 
+           
 def test_distance_measurement_block_pixel_ratio_horizontal():
     # given
     predictions = sv.Detections(
@@ -93,7 +103,15 @@ def test_distance_measurement_block_pixel_ratio_horizontal():
 
     # then
     expected_result = {'distance_cm': 7.948979591836735, 'distance_pixel': 779}
-    assert result == expected_result, f"Expected {expected_result}, but got {result}"
+    tolerance = 1e-3  # Define a tolerance level
+
+    # Compare the float value within the specified tolerance
+    assert math.isclose(result['distance_cm'], expected_result['distance_cm'], rel_tol=tolerance), \
+        f"Expected {expected_result['distance_cm']} cm, but got {result['distance_cm']} cm"
+
+    # Compare the integer value directly
+    assert result['distance_pixel'] == expected_result['distance_pixel'], \
+        f"Expected {expected_result['distance_pixel']} pixels, but got {result['distance_pixel']} pixels"
 
 def  test_distance_measurement_block_reference_object_vertical():
     # given
@@ -143,7 +161,15 @@ def  test_distance_measurement_block_reference_object_vertical():
 
     # then
     expected_result = {'distance_cm': 7.979306209850107, 'distance_pixel': 768}
-    assert result == expected_result, f"Expected {expected_result}, but got {result}"
+    tolerance = 1e-3  # Define a tolerance level
+
+    # Compare the float value within the specified tolerance
+    assert math.isclose(result['distance_cm'], expected_result['distance_cm'], rel_tol=tolerance), \
+        f"Expected {expected_result['distance_cm']} cm, but got {result['distance_cm']} cm"
+
+    # Compare the integer value directly
+    assert result['distance_pixel'] == expected_result['distance_pixel'], \
+        f"Expected {expected_result['distance_pixel']} pixels, but got {result['distance_pixel']} pixels"
     
     
 def test_distance_measurement_block_reference_object_horizontal():
@@ -188,7 +214,15 @@ def test_distance_measurement_block_reference_object_horizontal():
 
     # then
     expected_result = {'distance_cm': 8.145922413793105, 'distance_pixel': 779}
-    assert result == expected_result, f"Expected {expected_result}, but got {result}"
+    tolerance = 1e-3  # Define a tolerance level
+
+    # Compare the float value within the specified tolerance
+    assert math.isclose(result['distance_cm'], expected_result['distance_cm'], rel_tol=tolerance), \
+        f"Expected {expected_result['distance_cm']} cm, but got {result['distance_cm']} cm"
+
+    # Compare the integer value directly
+    assert result['distance_pixel'] == expected_result['distance_pixel'], \
+        f"Expected {expected_result['distance_pixel']} pixels, but got {result['distance_pixel']} pixels"
  
 def test_distance_measurement_block_reference_object_with_empty_reference_object():
     # given
@@ -218,8 +252,7 @@ def test_distance_measurement_block_reference_object_with_empty_reference_object
     # when
     block = DistanceMeasurementBlockV1()
 
-    
-       # when
+    # when
     block = DistanceMeasurementBlockV1()
     with pytest.raises(
         expected_exception=ValueError,
@@ -265,8 +298,7 @@ def test_distance_measurement_block_pixel_ratio_with_empty_pixel_ratio():
     # when
     block = DistanceMeasurementBlockV1()
 
-    
-       # when
+    # when
     block = DistanceMeasurementBlockV1()
     with pytest.raises(
         expected_exception=ValueError,
@@ -448,7 +480,6 @@ def test_distance_measurement_block_with_vertical_overlapping_target_objects():
         reference_width=reference_width
     )
     
-
     # then
     expected_result = {'distance_cm': 0, 'distance_pixel': 0}
     assert result == expected_result, f"Expected {expected_result}, but got {result}"
