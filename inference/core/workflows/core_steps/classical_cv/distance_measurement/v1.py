@@ -195,7 +195,7 @@ class DistanceMeasurementBlockV1(WorkflowBlock):
         else:
             raise ValueError(f"Invalid calibration type: {calibration_method}")
         
-        return {OUTPUT_KEY: distances}
+        return distances
 
 
 def measure_distance_with_reference_object(
@@ -216,7 +216,7 @@ def measure_distance_with_reference_object(
     if not reference_bbox_1 or not reference_bbox_2:
         raise ValueError(f"Reference class '{object_1_class_name}' or '{object_2_class_name}' not found in predictions.")
 
-    if has_overlap(reference_bbox_1, reference_bbox_2) or has_axis_overlap(reference_bbox_1, reference_bbox_2, reference_axis):
+    if has_overlap(reference_bbox_1, reference_bbox_2) or not has_axis_gap(reference_bbox_1, reference_bbox_2, reference_axis):
         return {"distance_cm": 0, "distance_pixel": 0}
     
     # get the reference object bounding box
@@ -269,7 +269,7 @@ def measure_distance_with_pixel_ratio(
     if not reference_bbox_1 or not reference_bbox_2:
         raise ValueError(f"Reference class '{object_1_class_name}' or '{object_2_class_name}' not found in predictions.")
 
-    if has_overlap(reference_bbox_1, reference_bbox_2) or has_axis_overlap(reference_bbox_1, reference_bbox_2, reference_axis):
+    if has_overlap(reference_bbox_1, reference_bbox_2) or not has_axis_gap(reference_bbox_1, reference_bbox_2, reference_axis):
         return {"distance_cm": 0, "distance_pixel": 0}
 
     if pixel_ratio is None:
@@ -309,13 +309,15 @@ def has_overlap(bbox1: Tuple[int, int, int, int], bbox2: Tuple[int, int, int, in
 
     return True
 
-def has_axis_overlap(reference_bbox_1, reference_bbox_2, reference_axis):
+def has_axis_gap(reference_bbox_1, reference_bbox_2, reference_axis):
     if reference_axis == "horizontal":
         if reference_bbox_1[0] < reference_bbox_2[2] and reference_bbox_1[2] > reference_bbox_2[0]:
-            return True
+            return False
     else:
         if reference_bbox_1[1] < reference_bbox_2[3] and reference_bbox_1[3] > reference_bbox_2[1]:
-            return True
+            return False
+        
+    return True
 
 def find_reference_bboxes(detections, object_1_class_name, object_2_class_name):
     reference_bbox_1 = None

@@ -3,7 +3,6 @@ import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
-    OUTPUT_KEY,
     DistanceMeasurementBlockV1
 )
 from inference.core.workflows.execution_engine.entities.base import Batch
@@ -49,7 +48,7 @@ def test_distance_measurement_block_pixel_ratio_vertical():
     
 
     # then
-    expected_result = {OUTPUT_KEY: {'distance_cm': 9.275028768699654, 'distance_pixel': 806}}
+    expected_result = {'distance_cm': 9.275028768699654, 'distance_pixel': 806}
     assert result == expected_result, f"Expected {expected_result}, but got {result}"
     
 def test_distance_measurement_block_pixel_ratio_horizontal():
@@ -93,7 +92,7 @@ def test_distance_measurement_block_pixel_ratio_horizontal():
     
 
     # then
-    expected_result = {OUTPUT_KEY: {'distance_cm': 7.948979591836735, 'distance_pixel': 779}}
+    expected_result = {'distance_cm': 7.948979591836735, 'distance_pixel': 779}
     assert result == expected_result, f"Expected {expected_result}, but got {result}"
 
 def  test_distance_measurement_block_reference_object_vertical():
@@ -143,7 +142,7 @@ def  test_distance_measurement_block_reference_object_vertical():
     
 
     # then
-    expected_result = {OUTPUT_KEY: {'distance_cm': 7.979306209850107, 'distance_pixel': 768}}
+    expected_result = {'distance_cm': 7.979306209850107, 'distance_pixel': 768}
     assert result == expected_result, f"Expected {expected_result}, but got {result}"
     
     
@@ -188,7 +187,7 @@ def test_distance_measurement_block_reference_object_horizontal():
     
 
     # then
-    expected_result = {OUTPUT_KEY: {'distance_cm': 8.145922413793105, 'distance_pixel': 779}}
+    expected_result = {'distance_cm': 8.145922413793105, 'distance_pixel': 779}
     assert result == expected_result, f"Expected {expected_result}, but got {result}"
  
 def test_distance_measurement_block_reference_object_with_empty_reference_object():
@@ -409,7 +408,7 @@ def test_distance_measurement_block_with_horizontal_overlapping_target_objects()
     
 
     # then
-    expected_result = {OUTPUT_KEY: {'distance_cm': 0, 'distance_pixel': 0}}
+    expected_result = {'distance_cm': 0, 'distance_pixel': 0}
     assert result == expected_result, f"Expected {expected_result}, but got {result}"
     
 def test_distance_measurement_block_with_vertical_overlapping_target_objects():
@@ -451,5 +450,5 @@ def test_distance_measurement_block_with_vertical_overlapping_target_objects():
     
 
     # then
-    expected_result = {OUTPUT_KEY: {'distance_cm': 0, 'distance_pixel': 0}}
+    expected_result = {'distance_cm': 0, 'distance_pixel': 0}
     assert result == expected_result, f"Expected {expected_result}, but got {result}"
