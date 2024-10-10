@@ -1,11 +1,14 @@
+import json
 import platform
 import re
 import socket
+import subprocess
 import time
 import uuid
 
 from inference.core.cache import cache
 from inference.core.logger import logger
+from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.version import __version__
 
 
@@ -99,3 +102,36 @@ def get_inference_results_for_model(
         inference_results.append({"request_time": score, "inference": result})
 
     return inference_results
+
+
+def get_container_stats(socket_name: str = "/var/run/docker.sock"):
+    """
+    Gets the container stats.
+
+    Returns:
+        dict: A dictionary containing the container stats.
+    """
+    if not is_docker_socket_mounted(socket_name):
+        return {
+            "error": "Docker socket is not mounted",
+            "hint": "Mount the Docker socket when running the docker container to collect device stats (i.e. `docker run ... -v /var/run/docker.sock:/var/run/docker.sock ...`).",
+        }
+    try:
+        container_id = socket.gethostname()
+        result = subprocess.run(
+            [
+                "curl",
+                "--unix-socket",
+                socket_name,
+                f"http://localhost/containers/{container_id}/stats?stream=false",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise Exception(result.stderr)
+        stats = json.loads(result.stdout.strip())
+        return {"stats": stats}
+    except Exception as e:
+        logger.exception(e)
+        raise Exception("An error occurred while fetching container stats.")
