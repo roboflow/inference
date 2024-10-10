@@ -79,5 +79,7 @@ class ConvertGrayscaleBlockV1(WorkflowBlock):
     ) -> BlockResult:
         # Convert the image to grayscale
         gray = cv2.cvtColor(image.numpy_image, cv2.COLOR_BGR2GRAY)
-        output = image.update_image(image=gray)
+        output = WorkflowImageData.copy_and_replace(
+            origin_image_data=image, numpy_image=gray
+        )
         return {OUTPUT_IMAGE_KEY: output}

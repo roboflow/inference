@@ -157,7 +157,11 @@ def transform_image(image: WorkflowImageData) -> WorkflowImageData:
     # data lineage (the predecessor-successor relation for images).
     # Lineage is not preserved for cropping and merging images (without common predecessor)
     # - below you may find implementation tips.
-    return image.update_image(image=transformed_image)  
+    return WorkflowImageData.copy_and_replace(
+        origin_image_data=image,
+        numpy_image=transformed_image,
+    )
+
 
 def some_transformation(image: np.ndarray) -> np.ndarray:
     ...
@@ -188,7 +192,8 @@ def some_transformation(image: np.ndarray) -> np.ndarray:
             if not cropped_image.size:
                 # discarding empty crops
                 continue
-            result_crop = image.build_crop(
+            result_crop = WorkflowImageData.create_crop(
+                origin_image_data=image, 
                 crop_identifier=crop_id,
                 cropped_image=cropped_image,
                 offset_x=x_min,
@@ -201,7 +206,7 @@ def some_transformation(image: np.ndarray) -> np.ndarray:
     In some cases you may want to preserve `video_metadata`. Example of such situation is when 
     your block produces crops based on fixed coordinates (like video single footage with multiple fixed Regions of 
     Interest to be applied individual trackers) - then you want result crops to be processed in context of video,
-    as if they were produced by separate cameras. To adjust behaviour of `build_crop(...)` method, simply add 
+    as if they were produced by separate cameras. To adjust behaviour of `create_crop(...)` method, simply add 
     `preserve_video_metadata=True`:
 
     ```{ .py linenums="1" hl_lines="11"}
@@ -210,7 +215,8 @@ def some_transformation(image: np.ndarray) -> np.ndarray:
         crops: List[Tuple[str, int, int, int, int]],
     ) -> List[WorkflowImageData]:
         # [...]
-        result_crop = image.build_crop(
+        result_crop = WorkflowImageData.create_crop(
+            origin_image_data=image, 
             crop_identifier=crop_id,
             cropped_image=cropped_image,
             offset_x=x_min,

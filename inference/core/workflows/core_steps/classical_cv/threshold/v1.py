@@ -117,7 +117,10 @@ class ImageThresholdBlockV1(WorkflowBlock):
         thresholded_image = apply_thresholding(
             image.numpy_image, threshold_type, thresh_value, max_value
         )
-        output = image.update_image(image=thresholded_image)
+        output = WorkflowImageData.copy_and_replace(
+            origin_image_data=image,
+            numpy_image=thresholded_image,
+        )
         return {OUTPUT_IMAGE_KEY: output}
 
 

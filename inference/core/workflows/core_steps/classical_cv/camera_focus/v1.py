@@ -83,8 +83,10 @@ class CameraFocusBlockV1(WorkflowBlock):
     def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
         # Calculate the Brenner measure
         brenner_image, brenner_value = calculate_brenner_measure(image.numpy_image)
-        output = image.update_image(image=brenner_image)
-
+        output = WorkflowImageData.copy_and_replace(
+            origin_image_data=image,
+            numpy_image=brenner_image,
+        )
         return {
             OUTPUT_IMAGE_KEY: output,
             "focus_measure": brenner_value,

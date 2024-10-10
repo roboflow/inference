@@ -227,19 +227,59 @@ class WorkflowImageData:
         self._numpy_image = numpy_image
         self._video_metadata = video_metadata
 
-    def update_image(self, image: np.ndarray) -> "WorkflowImageData":
+    @classmethod
+    def copy_and_replace(
+        cls, origin_image_data: "WorkflowImageData", **kwargs
+    ) -> "WorkflowImageData":
         """
-        Creates new instance of `WorkflowImageData` with updated image, preserving metadata
+        Creates new instance of `WorkflowImageData` with updated property.
+
+        Properties are passed by kwargs, supported properties are:
+        * parent_metadata
+        * workflow_root_ancestor_metadata
+        * image_reference
+        * base64_image
+        * numpy_image
+        * video_metadata
+
+        When more than one from ["numpy_image", "base64_image", "image_reference"] args are
+        given, they MUST be compliant.
         """
-        return WorkflowImageData(
-            parent_metadata=self._parent_metadata,
-            workflow_root_ancestor_metadata=self._workflow_root_ancestor_metadata,
-            numpy_image=image,
-            video_metadata=self._video_metadata,
+        parent_metadata = origin_image_data._parent_metadata
+        workflow_root_ancestor_metadata = (
+            origin_image_data._workflow_root_ancestor_metadata
+        )
+        image_reference = origin_image_data._image_reference
+        base64_image = origin_image_data._base64_image
+        numpy_image = origin_image_data._numpy_image
+        video_metadata = origin_image_data._video_metadata
+        if any(k in kwargs for k in ["numpy_image", "base64_image", "image_reference"]):
+            numpy_image = kwargs.get("numpy_image")
+            base64_image = kwargs.get("base64_image")
+            image_reference = kwargs.get("image_reference")
+        if "parent_metadata" in kwargs:
+            if workflow_root_ancestor_metadata is parent_metadata:
+                workflow_root_ancestor_metadata = kwargs["parent_metadata"]
+            parent_metadata = kwargs["parent_metadata"]
+        if "workflow_root_ancestor_metadata" in kwargs:
+            if parent_metadata is workflow_root_ancestor_metadata:
+                parent_metadata = kwargs["workflow_root_ancestor_metadata"]
+            workflow_root_ancestor_metadata = kwargs["workflow_root_ancestor_metadata"]
+        if "video_metadata" in kwargs:
+            video_metadata = kwargs["video_metadata"]
+        return cls(
+            parent_metadata=parent_metadata,
+            workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
+            image_reference=image_reference,
+            base64_image=base64_image,
+            numpy_image=numpy_image,
+            video_metadata=video_metadata,
         )
 
-    def build_crop(
-        self,
+    @classmethod
+    def create_crop(
+        cls,
+        origin_image_data: "WorkflowImageData",
         crop_identifier: str,
         cropped_image: np.ndarray,
         offset_x: int,
@@ -255,24 +295,24 @@ class WorkflowImageData:
             origin_coordinates=OriginCoordinatesSystem(
                 left_top_x=offset_x,
                 left_top_y=offset_y,
-                origin_width=self.numpy_image.shape[1],
-                origin_height=self.numpy_image.shape[0],
+                origin_width=origin_image_data.numpy_image.shape[1],
+                origin_height=origin_image_data.numpy_image.shape[0],
             ),
         )
         workflow_root_ancestor_coordinates = replace(
-            self.workflow_root_ancestor_metadata.origin_coordinates,
-            left_top_x=self.workflow_root_ancestor_metadata.origin_coordinates.left_top_x
+            origin_image_data.workflow_root_ancestor_metadata.origin_coordinates,
+            left_top_x=origin_image_data.workflow_root_ancestor_metadata.origin_coordinates.left_top_x
             + offset_x,
-            left_top_y=self.workflow_root_ancestor_metadata.origin_coordinates.left_top_y
+            left_top_y=origin_image_data.workflow_root_ancestor_metadata.origin_coordinates.left_top_y
             + offset_y,
         )
         workflow_root_ancestor_metadata = ImageParentMetadata(
-            parent_id=self.workflow_root_ancestor_metadata.parent_id,
+            parent_id=origin_image_data.workflow_root_ancestor_metadata.parent_id,
             origin_coordinates=workflow_root_ancestor_coordinates,
         )
         video_metadata = None
-        if preserve_video_metadata and self._video_metadata is not None:
-            video_metadata = copy(self._video_metadata)
+        if preserve_video_metadata and origin_image_data._video_metadata is not None:
+            video_metadata = copy(origin_image_data._video_metadata)
             video_metadata.video_identifier = (
                 f"{video_metadata.video_identifier} | crop: {crop_identifier}"
             )

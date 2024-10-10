@@ -201,10 +201,16 @@ class SIFTComparisonBlockV2(WorkflowBlock):
         images_match = good_matches_count >= good_matches_threshold
 
         if visualization_1 is not None:
-            visualization_1 = input_1.update_image(image=visualization_1)
+            visualization_1 = WorkflowImageData.copy_and_replace(
+                origin_image_data=input_1,
+                numpy_image=visualization_1,
+            )
 
         if visualization_2 is not None:
-            visualization_2 = input_2.update_image(image=visualization_2)
+            visualization_2 = WorkflowImageData.copy_and_replace(
+                origin_image_data=input_2,
+                numpy_image=visualization_2,
+            )
 
         visualization_matches = None
         if visualize and image_1 is not None and image_2 is not None:
@@ -229,7 +235,10 @@ class SIFTComparisonBlockV2(WorkflowBlock):
                 **draw_params,
             )
 
-            visualization_matches = input_1.update_image(image=visualization_matches)
+            visualization_matches = WorkflowImageData.copy_and_replace(
+                origin_image_data=input_1,
+                numpy_image=visualization_matches,
+            )
 
         return {
             "good_matches_count": good_matches_count,

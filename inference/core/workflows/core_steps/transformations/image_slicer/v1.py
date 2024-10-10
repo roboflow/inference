@@ -138,7 +138,8 @@ class ImageSlicerBlockV1(WorkflowBlock):
             x_min, y_min, _, _ = offset
             crop_numpy = crop_image(image=image_numpy, xyxy=offset)
             if crop_numpy.size:
-                cropped_image = image.build_crop(
+                cropped_image = WorkflowImageData.create_crop(
+                    origin_image_data=image,
                     crop_identifier=f"image_slicer.{uuid4()}",
                     cropped_image=crop_numpy,
                     offset_x=x_min,

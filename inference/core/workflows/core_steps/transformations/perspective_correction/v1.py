@@ -412,7 +412,10 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                     M=perspective_transformer,
                     dsize=(transformed_rect_width, transformed_rect_height),
                 )
-                result_image = image.update_image(image=warped_image)
+                result_image = WorkflowImageData.copy_and_replace(
+                    origin_image_data=image,
+                    numpy_image=warped_image,
+                )
 
             if detections is None:
                 result.append(

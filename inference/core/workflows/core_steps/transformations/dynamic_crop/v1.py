@@ -185,7 +185,8 @@ def crop_image(
                 mask_opacity=mask_opacity,
                 background_color=background_color,
             )
-        result = image.build_crop(
+        result = WorkflowImageData.create_crop(
+            origin_image_data=image,
             crop_identifier=detection_id,
             cropped_image=cropped_image,
             offset_x=x_min,

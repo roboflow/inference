@@ -160,7 +160,9 @@ class ImagePreprocessingBlockV1(WorkflowBlock):
         else:
             raise ValueError(f"Invalid task type: {task_type}")
 
-        output_image = image.update_image(image=response_image)
+        output_image = WorkflowImageData.copy_and_replace(
+            origin_image_data=image, numpy_image=response_image
+        )
         return {"image": output_image}
 
 

@@ -112,4 +112,8 @@ class ColorVisualizationBlockV1(ColorableVisualizationBlock):
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
             detections=predictions,
         )
-        return {OUTPUT_IMAGE_KEY: image.update_image(image=annotated_image)}
+        return {
+            OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
+                origin_image_data=image, numpy_image=annotated_image
+            )
+        }

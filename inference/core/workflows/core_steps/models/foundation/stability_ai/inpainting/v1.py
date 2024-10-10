@@ -150,7 +150,10 @@ class StabilityAIInpaintingBlockV1(WorkflowBlock):
             )
         result_image = bytes_to_opencv_image(payload=response.content)
         return {
-            "image": image.update_image(image=result_image),
+            "image": WorkflowImageData.copy_and_replace(
+                origin_image_data=image,
+                numpy_image=result_image,
+            ),
         }
 
 

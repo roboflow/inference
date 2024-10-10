@@ -135,7 +135,8 @@ def take_static_crop(
     cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
     if not cropped_image.size:
         return None
-    return image.build_crop(
+    return WorkflowImageData.create_crop(
+        origin_image_data=image,
         crop_identifier=f"relative_static_crop.{uuid4()}",
         cropped_image=cropped_image,
         offset_x=x_min,

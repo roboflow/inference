@@ -87,7 +87,10 @@ class SIFTBlockV1(WorkflowBlock):
 
     def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
         img_with_kp, keypoints, descriptors = apply_sift(image.numpy_image)
-        output_image = image.update_image(image=img_with_kp)
+        output_image = WorkflowImageData.copy_and_replace(
+            origin_image_data=image,
+            numpy_image=img_with_kp,
+        )
         return {
             OUTPUT_IMAGE_KEY: output_image,
             "keypoints": keypoints,
