@@ -10,14 +10,16 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
     timeout-minutes: 20
     strategy:
       matrix:
         python-version: [3.9]
     steps:
       - name: 🛎️ Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v2
         with:

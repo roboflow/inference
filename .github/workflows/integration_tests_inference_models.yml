@@ -4,13 +4,15 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   build-dev-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on:
+      labels: depot-ubuntu-22.04-8
+      group: public-depot
+    timeout-minutes: 45
     strategy:
       matrix:
         python-version: ["3.8", "3.9", "3.10", "3.11"]
@@ -24,6 +26,13 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           check-latest: true
+      - name: 📦 Cache Python packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - name: 🚧 Install GDAL OS library
         run: sudo apt-get update && sudo apt-get install libgdal-dev
       - name: 📦 Install dependencies

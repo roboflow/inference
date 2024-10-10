@@ -4,13 +4,15 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   build-dev-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
+    timeout-minutes: 30
     strategy:
       matrix:
         python-version: ["3.9", "3.10"]
@@ -24,11 +26,17 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           check-latest: true
+      - name: 📦 Cache Python packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - name: 📦 Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install -r requirements/requirements.cli.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt
       - name: 🧪 Integration Tests of Inference CLI
-        timeout-minutes: 30
         run: python -m pytest tests/inference_cli/integration_tests
