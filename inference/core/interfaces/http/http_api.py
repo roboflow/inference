@@ -59,7 +59,6 @@ from inference.core.entities.requests.workflows import (
     WorkflowSpecificationDescribeInterfaceRequest,
     WorkflowSpecificationInferenceRequest,
 )
-from inference.core.managers.metrics import get_container_stats
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.entities.responses.clip import (
     ClipCompareResponse,
@@ -191,6 +190,7 @@ from inference.core.interfaces.stream_manager.manager_app.errors import (
     MessageToBigError,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.managers.metrics import get_container_stats
 from inference.core.roboflow_api import (
     get_roboflow_dataset_type,
     get_roboflow_workspace,

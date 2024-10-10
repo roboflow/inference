@@ -1,13 +1,14 @@
-import platform
 import json
-import subprocess
+import platform
 import re
 import socket
+import subprocess
 import time
 import uuid
-from inference.core.utils.container import is_docker_socket_mounted
+
 from inference.core.cache import cache
 from inference.core.logger import logger
+from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.version import __version__
 
 
