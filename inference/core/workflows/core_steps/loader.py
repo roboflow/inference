@@ -293,6 +293,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ROBOFLOW_PROJECT_KIND,
     SERIALISED_PAYLOADS_KIND,
     STRING_KIND,
+    TIMESTAMP_KIND,
     TOP_CLASS_KIND,
     VIDEO_METADATA_KIND,
     WILDCARD_KIND,
@@ -441,4 +442,5 @@ def load_kinds() -> List[Kind]:
         PREDICTION_TYPE_KIND,
         PARENT_ID_KIND,
         IMAGE_METADATA_KIND,
+        TIMESTAMP_KIND,
     ]

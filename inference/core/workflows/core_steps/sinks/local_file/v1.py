@@ -1,3 +1,4 @@
+import logging
 import os.path
 from datetime import datetime
 from typing import List, Literal, Optional, Type, Union
@@ -87,8 +88,11 @@ class LocalFileSinkBlockV1(WorkflowBlock):
             timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
             file_name = f"{file_name_prefix}_{timestamp}_.{file_extension}"
             target_path = os.path.abspath(os.path.join(target_directory, file_name))
+            parent_dir = os.path.dirname(target_path)
+            os.makedirs(parent_dir, exist_ok=True)
             with open(target_path, "w") as f:
                 f.write(content)
             return {"error_status": False, "message": "Data saved successfully"}
         except Exception as error:
+            logging.warning(f"Could not save local file: {error}")
             return {"error_status": True, "message": str(error)}

@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 import pandas as pd
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
@@ -70,6 +70,15 @@ class BlockManifest(WorkflowBlockManifest):
         description="Number of minutes to trigger output flush - 0 means on each prediction",
     )
 
+    @field_validator("columns_data", "columns_operations")
+    @classmethod
+    def protect_timestamp_column(cls, value: dict) -> dict:
+        if "timestamp" in value:
+            raise ValueError(
+                "Attempted to register column with reserved name `timestamp`."
+            )
+        return value
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [OutputDefinition(name="csv_content", kind=[STRING_KIND])]
@@ -101,6 +110,7 @@ class CSVFormatterBlockV1(WorkflowBlock):
             columns_data[variable_name] = operations_chain(
                 columns_data[variable_name], global_parameters={}
             )
+        columns_data["timestamp"] = datetime.now().isoformat()
         print("Appending column data", columns_data)
         self._buffer.append(columns_data)
         print("DEBUG", (datetime.now() - self._last_flush_timestamp).total_seconds())

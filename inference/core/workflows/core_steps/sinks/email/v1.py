@@ -1,3 +1,4 @@
+import logging
 import smtplib
 import ssl
 from copy import copy
@@ -153,4 +154,5 @@ class EmailBlockV1(WorkflowBlock):
                 server.sendmail(sender_email, receiver_email, to_sent)
             return {"error_status": False, "message": "Message sent successfully"}
         except Exception as error:
+            logging.warning(f"Could not send e-mail. Error: {str(error)}")
             return {"error_status": True, "message": str(error)}

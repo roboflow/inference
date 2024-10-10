@@ -16,6 +16,8 @@ WORKFLOW_DEFINITION = {
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
         {"type": "WorkflowVideoMetadata", "name": "video_metadata"},
+        {"type": "WorkflowParameter", "name": "email"},
+        {"type": "WorkflowParameter", "name": "email_password"},
     ],
     "steps": [
         {
@@ -48,7 +50,7 @@ WORKFLOW_DEFINITION = {
                     {"type": "DetectionsPropertyExtract", "property_name": "class_name"}
                 ]
             },
-            "aggregation_mode": {"predictions": ["values_counts"]},
+            "aggregation_mode": {"predictions": ["values_counts", "distinct"]},
             "rolling_window": 60,
             "interval": 30,
         },
@@ -59,6 +61,22 @@ WORKFLOW_DEFINITION = {
                 "unique_classes": "$steps.aggregation.predictions_values_counts"
             },
             "interval": 2,
+        },
+        {
+            "type": "roboflow_core/email_sink@v1",
+            "name": "email_sink",
+            "subject": "WORKFLOW ALERT",
+            "message": "Observed distinct classes `$parameters.distinct_classes`. See CSV attachment",
+            "smtp_server": "smtp.gmail.com",
+            "sender_email": "$inputs.email",
+            "sender_email_password": "$inputs.email_password",
+            "receiver_email": "$inputs.email",
+            "message_parameters": {
+                "distinct_classes": "$steps.aggregation.predictions_distinct",
+            },
+            "attachments": {
+                "report.csv": "$steps.csv_formatter.csv_content",
+            }
         },
         {
             "type": "roboflow_core/local_file_sink@v1",
@@ -89,6 +107,10 @@ def main() -> None:
         on_prediction=workflows_sink,
         source_buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
         source_buffer_consumption_strategy=BufferConsumptionStrategy.EAGER,
+        workflows_parameters={
+            "email": os.environ["EMAIL"],
+            "email_password": os.environ["EMAIL_PASSWORD"],
+        }
     )
     control_thread = Thread(target=command_thread, args=(pipeline, watchdog))
     control_thread.start()
