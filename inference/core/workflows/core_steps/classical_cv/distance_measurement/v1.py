@@ -10,6 +10,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
+    INTEGER_KIND,
     FLOAT_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -25,12 +26,13 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Measure the distance between two bounding boxes on a 2D plane with a camera perpendicular to the plane."
+SHORT_DESCRIPTION = "Measure the distance between two bounding boxes on a 2D plane using a perpendicular camera and either a reference object or a pixel-to-centimeter ratio for scaling."
 
 LONG_DESCRIPTION = """
-Measure the distance between two bounding boxes on a 2D plane with a camera perpendicular to the plane. The method requires footage from this specific perspective and a reference object with known dimensions or a pixel-to-centimeter ratio, placed in the same plane as the bounding boxes."""
+Measure the distance between two bounding boxes on a 2D plane using a camera positioned perpendicular to the plane. This method requires footage from this specific perspective, along with either a reference object of known dimensions placed in the same plane as the bounding boxes or a pixel-to-centimeter ratio that defines how many pixels correspond to one centimeter."""
 
-OUTPUT_KEY = "distance_measurement"
+OUTPUT_KEY_CENTIMETER = "distance_cm"
+OUTPUT_KEY_PIXEL = "distance_pixel"
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -146,9 +148,15 @@ class BlockManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name=OUTPUT_KEY, kind=[DICTIONARY_KIND]),
+            OutputDefinition(
+                name=OUTPUT_KEY_CENTIMETER,
+                kind=[INTEGER_KIND],
+            ),
+            OutputDefinition(
+                name=OUTPUT_KEY_PIXEL,
+                kind=[INTEGER_KIND],
+            ),
         ]
-
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
@@ -195,8 +203,7 @@ class DistanceMeasurementBlockV1(WorkflowBlock):
         else:
             raise ValueError(f"Invalid calibration type: {calibration_method}")
         
-        return distances
-
+        return  distances
 
 def measure_distance_with_reference_object(
     detections: sv.Detections,
@@ -217,7 +224,7 @@ def measure_distance_with_reference_object(
         raise ValueError(f"Reference class '{object_1_class_name}' or '{object_2_class_name}' not found in predictions.")
 
     if has_overlap(reference_bbox_1, reference_bbox_2) or not has_axis_gap(reference_bbox_1, reference_bbox_2, reference_axis):
-        return {"distance_cm": 0, "distance_pixel": 0}
+        return {OUTPUT_KEY_CENTIMETER: 0, OUTPUT_KEY_PIXEL: 0}
     
     # get the reference object bounding box
     reference_bbox = None
@@ -250,7 +257,7 @@ def measure_distance_with_reference_object(
     
     distance_cm = distance_pixels / pixel_ratio 
     
-    return {"distance_cm": distance_cm, "distance_pixel": distance_pixels}
+    return {OUTPUT_KEY_CENTIMETER: distance_cm, OUTPUT_KEY_PIXEL: distance_pixels}
 
 
         
@@ -270,7 +277,7 @@ def measure_distance_with_pixel_ratio(
         raise ValueError(f"Reference class '{object_1_class_name}' or '{object_2_class_name}' not found in predictions.")
 
     if has_overlap(reference_bbox_1, reference_bbox_2) or not has_axis_gap(reference_bbox_1, reference_bbox_2, reference_axis):
-        return {"distance_cm": 0, "distance_pixel": 0}
+        return {OUTPUT_KEY_CENTIMETER: 0, OUTPUT_KEY_PIXEL: 0}
 
     if pixel_ratio is None:
         raise ValueError("Pixel-to-centimeter ratio must be provided.")
@@ -285,7 +292,7 @@ def measure_distance_with_pixel_ratio(
     
     distance_cm = distance_pixels / pixel_ratio
     
-    return {"distance_cm": distance_cm, "distance_pixel": distance_pixels}
+    return {OUTPUT_KEY_CENTIMETER: distance_cm, OUTPUT_KEY_PIXEL: distance_pixels}
 
     
 def has_overlap(bbox1: Tuple[int, int, int, int], bbox2: Tuple[int, int, int, int]) -> bool:

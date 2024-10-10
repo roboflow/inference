@@ -5,6 +5,8 @@ import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
+    OUTPUT_KEY_CENTIMETER,
+    OUTPUT_KEY_PIXEL,
     DistanceMeasurementBlockV1
 )
 from inference.core.workflows.execution_engine.entities.base import Batch
@@ -50,16 +52,16 @@ def test_distance_measurement_block_pixel_ratio_vertical():
     
 
     # then
-    expected_result = {'distance_cm': 9.275, 'distance_pixel': 806}
-    tolerance = 1e-3  # Define a tolerance level
+    expected_result = {OUTPUT_KEY_CENTIMETER: 9.275028768, OUTPUT_KEY_PIXEL: 806}
+    tolerance = 1e-5  # Define a tolerance level
 
     # Compare the float values within the specified tolerance
-    assert math.isclose(result['distance_cm'], expected_result['distance_cm'], rel_tol=tolerance), \
-        f"Expected {expected_result['distance_cm']} cm, but got {result['distance_cm']} cm"
+    assert math.isclose(result[OUTPUT_KEY_CENTIMETER], expected_result[OUTPUT_KEY_CENTIMETER], rel_tol=tolerance), \
+        f"Expected {expected_result[OUTPUT_KEY_CENTIMETER]} cm, but got {result[OUTPUT_KEY_CENTIMETER]} cm"
 
     # Compare the integer values directly
-    assert result['distance_pixel'] == expected_result['distance_pixel'], \
-        f"Expected {expected_result['distance_pixel']} pixels, but got {result['distance_pixel']} pixels" 
+    assert result[OUTPUT_KEY_PIXEL] == expected_result[OUTPUT_KEY_PIXEL], \
+        f"Expected {expected_result[OUTPUT_KEY_PIXEL]} pixels, but got {result[OUTPUT_KEY_PIXEL]} pixels" 
            
 def test_distance_measurement_block_pixel_ratio_horizontal():
     # given
@@ -481,5 +483,5 @@ def test_distance_measurement_block_with_vertical_overlapping_target_objects():
     )
     
     # then
-    expected_result = {'distance_cm': 0, 'distance_pixel': 0}
+    expected_result = {OUTPUT_KEY_CENTIMETER: 0, OUTPUT_KEY_PIXEL: 0}
     assert result == expected_result, f"Expected {expected_result}, but got {result}"
