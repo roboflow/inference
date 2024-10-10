@@ -25,10 +25,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Measure the distance between two bounding boxes"
+SHORT_DESCRIPTION = "Measure the distance between two bounding boxes on a 2D plane with a camera perpendicular to the plane."
 
 LONG_DESCRIPTION = """
-Measure the distance between two bounding boxes in an image using a reference object with known dimensions or pixel-to-centimeter ratio."""
+Measure the distance between two bounding boxes on a 2D plane with a camera perpendicular to the plane. The method requires footage from this specific perspective and a reference object with known dimensions or a pixel-to-centimeter ratio, placed in the same plane as the bounding boxes."""
 
 OUTPUT_KEY = "distance_measurement"
 
@@ -44,7 +44,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     
-    type: Literal["roboflow_core/distance_measurement@v1", "DistanceMeasurement", "Distance"]
+    type: Literal["roboflow_core/distance_measurement@v1"]
     
     predictions: StepOutputSelector(
         kind=[
@@ -55,7 +55,6 @@ class BlockManifest(WorkflowBlockManifest):
         title="Object Detections",
         description="The output of a detection model describing the bounding boxes that will be used to measure the objects.",
         examples=["$steps.model.predictions"],
-        validation_alias=AliasChoices("predictions", "detections"),
     )
     
     object_1_class_name: str = Field(
@@ -76,7 +75,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["vertical", "horizontal", "$inputs.reference_axis"],
     )
     
-    calibration_type: Literal["reference object", "pixel-ratio"] = Field(
+    calibration_method: Literal["reference object", "pixel to centimeter"] = Field(
         title="Calibration Method",
         description="Select how to calibrate the measurement of distance between objects.",
     )
@@ -88,7 +87,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["reference-object", "$inputs.reference_object_class_name"],
         json_schema_extra={
             "relevant_for": {
-                "calibration_type": {
+                "calibration_method": {
                     "values": ["reference object"],
                     "required": True,
                 },
@@ -104,7 +103,7 @@ class BlockManifest(WorkflowBlockManifest):
         gt=0,
         json_schema_extra={
             "relevant_for": {
-                "calibration_type": {
+                "calibration_method": {
                     "values": ["reference object"],
                     "required": True,
                 },
@@ -120,7 +119,7 @@ class BlockManifest(WorkflowBlockManifest):
         gt=0,
         json_schema_extra={
             "relevant_for": {
-                "calibration_type": {
+                "calibration_method": {
                     "values": ["reference object"],
                     "required": True,
                 },
@@ -136,8 +135,8 @@ class BlockManifest(WorkflowBlockManifest):
         gt=0,
         json_schema_extra={
             "relevant_for": {
-                "calibration_type": {
-                    "values": ["pixel-ratio"],
+                "calibration_method": {
+                    "values": ["pixel to centimeter"],
                     "required": True,
                 },
             },
@@ -163,17 +162,17 @@ class DistanceMeasurementBlockV1(WorkflowBlock):
 
     def run(
         self,
-        predictions: Batch[sv.Detections],
+        predictions: sv.Detections,
         object_1_class_name: str,
         object_2_class_name: str,
         reference_axis: Literal["horizontal", "vertical"],
-        calibration_type: Literal["reference object", "pixel-ratio"],
+        calibration_method: Literal["reference object", "pixel to centimeter"],
         reference_object_class_name: str,
         reference_width: float,
         reference_height: float,
         pixel_ratio: float,
     ) -> BlockResult:
-        if calibration_type == "reference object":
+        if calibration_method == "reference object":
             reference_predictions = predictions
             distances = measure_distance_with_reference_object(
                 detections=predictions,
@@ -185,7 +184,7 @@ class DistanceMeasurementBlockV1(WorkflowBlock):
                 reference_height=reference_height,
                 reference_axis=reference_axis,
             )
-        elif calibration_type == "pixel-ratio":
+        elif calibration_method == "pixel to centimeter":
             distances = measure_distance_with_pixel_ratio(
                 detections=predictions,
                 pixel_ratio=pixel_ratio,
@@ -194,13 +193,13 @@ class DistanceMeasurementBlockV1(WorkflowBlock):
                 reference_axis=reference_axis,
             )
         else:
-            raise ValueError(f"Invalid calibration type: {calibration_type}")
+            raise ValueError(f"Invalid calibration type: {calibration_method}")
         
         return {OUTPUT_KEY: distances}
 
 
 def measure_distance_with_reference_object(
-    detections: Batch[sv.Detections],
+    detections: sv.Detections,
     object_1_class_name: str,
     object_2_class_name: str,
     reference_predictions: sv.Detections,
@@ -256,7 +255,7 @@ def measure_distance_with_reference_object(
 
         
 def measure_distance_with_pixel_ratio(
-    detections: Batch[sv.Detections],
+    detections: sv.Detections,
     pixel_ratio: float,
     object_1_class_name: str,
     object_2_class_name: str,

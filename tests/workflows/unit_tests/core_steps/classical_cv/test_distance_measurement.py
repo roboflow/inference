@@ -24,7 +24,7 @@ def test_distance_measurement_block_pixel_ratio_vertical():
             'class_name': np.array(['fork', 'computer keyboard', 'mouse'], dtype='<U17'),
         }
     )
-    calibration_type = "pixel-ratio"
+    calibration_type = "pixel to centimeter"
     object_1_class_name = "mouse"
     object_2_class_name = "computer keyboard"
     pixel_ratio = 86.9
@@ -37,7 +37,7 @@ def test_distance_measurement_block_pixel_ratio_vertical():
     block = DistanceMeasurementBlockV1()
     result = block.run(
         predictions=predictions,
-        calibration_type=calibration_type,
+        calibration_method=calibration_type,
         object_1_class_name=object_1_class_name,
         object_2_class_name=object_2_class_name,
         pixel_ratio=pixel_ratio,
@@ -68,7 +68,7 @@ def test_distance_measurement_block_pixel_ratio_horizontal():
             'class_name': np.array(['computer keyboard', 'mouse', 'coin'], dtype='<U17'),
         }
     )
-    calibration_type = "pixel-ratio"
+    calibration_type = "pixel to centimeter"
     object_1_class_name = "mouse"
     object_2_class_name = "computer keyboard"
     pixel_ratio = 98
@@ -81,7 +81,7 @@ def test_distance_measurement_block_pixel_ratio_horizontal():
     block = DistanceMeasurementBlockV1()
     result = block.run(
         predictions=predictions,
-        calibration_type=calibration_type,
+        calibration_method=calibration_type,
         object_1_class_name=object_1_class_name,
         object_2_class_name=object_2_class_name,
         pixel_ratio=pixel_ratio,
@@ -131,7 +131,7 @@ def  test_distance_measurement_block_reference_object_vertical():
     block = DistanceMeasurementBlockV1()
     result = block.run(
         predictions=predictions,
-        calibration_type=calibration_type,
+        calibration_method=calibration_type,
         object_1_class_name=object_1_class_name,
         object_2_class_name=object_2_class_name,
         pixel_ratio=pixel_ratio,
@@ -176,7 +176,7 @@ def test_distance_measurement_block_reference_object_horizontal():
     block = DistanceMeasurementBlockV1()
     result = block.run(
         predictions=predictions,
-        calibration_type=calibration_type,
+        calibration_method=calibration_type,
         object_1_class_name=object_1_class_name,
         object_2_class_name=object_2_class_name,
         pixel_ratio=pixel_ratio,
@@ -228,7 +228,7 @@ def test_distance_measurement_block_reference_object_with_empty_reference_object
     ):
         result = block.run(
         predictions=predictions,
-        calibration_type=calibration_type,
+        calibration_method=calibration_type,
         object_1_class_name=object_1_class_name,
         object_2_class_name=object_2_class_name,
         pixel_ratio=pixel_ratio,
@@ -254,7 +254,7 @@ def test_distance_measurement_block_pixel_ratio_with_empty_pixel_ratio():
             'class_name': np.array(['computer keyboard', 'mouse', 'coin'], dtype='<U17'),
         }
     )
-    calibration_type = "pixel-ratio"
+    calibration_type = "pixel to centimeter"
     object_1_class_name = "mouse"
     object_2_class_name = "computer keyboard"
     pixel_ratio = None
@@ -275,7 +275,7 @@ def test_distance_measurement_block_pixel_ratio_with_empty_pixel_ratio():
     ):
         block.run(
             predictions=predictions,
-            calibration_type=calibration_type,
+            calibration_method=calibration_type,
             object_1_class_name=object_1_class_name,
             object_2_class_name=object_2_class_name,
             pixel_ratio=pixel_ratio,
@@ -301,7 +301,7 @@ def test_distance_measurement_block_pixel_ratio_with_negative_pixel_ratio():
             'class_name': np.array(['computer keyboard', 'mouse', 'coin'], dtype='<U17'),
         }
     )
-    calibration_type = "pixel-ratio"
+    calibration_type = "pixel to centimeter"
     object_1_class_name = "mouse"
     object_2_class_name = "computer keyboard"
     pixel_ratio = -4.20
@@ -318,7 +318,7 @@ def test_distance_measurement_block_pixel_ratio_with_negative_pixel_ratio():
     ):
         block.run(
             predictions=predictions,
-            calibration_type=calibration_type,
+            calibration_method=calibration_type,
             object_1_class_name=object_1_class_name,
             object_2_class_name=object_2_class_name,
             pixel_ratio=pixel_ratio,
@@ -343,7 +343,7 @@ def test_distance_measurement_block_with_inexistent_object_1_class_name():
             'class_name': np.array(['fork', 'computer keyboard', 'mouse'], dtype='<U17'),
         }
     )
-    calibration_type = "pixel-ratio"
+    calibration_type = "pixel to centimeter"
     object_1_class_name = "rat"
     object_2_class_name = "computer keyboard"
     pixel_ratio = 86.9
@@ -360,7 +360,7 @@ def test_distance_measurement_block_with_inexistent_object_1_class_name():
     ):
         block.run(
             predictions=predictions,
-            calibration_type=calibration_type,
+            calibration_method=calibration_type,
             object_1_class_name=object_1_class_name,
             object_2_class_name=object_2_class_name,
             pixel_ratio=pixel_ratio,
@@ -384,7 +384,7 @@ def test_distance_measurement_block_with_horizontal_overlapping_target_objects()
             'class_name': np.array(['mouse', 'computer keyboard'], dtype='<U17')
         }
     )
-    calibration_type = "pixel-ratio"
+    calibration_type = "pixel to centimeter"
     object_1_class_name = "mouse"
     object_2_class_name = "computer keyboard"
     pixel_ratio = 86.9
@@ -397,7 +397,7 @@ def test_distance_measurement_block_with_horizontal_overlapping_target_objects()
     block = DistanceMeasurementBlockV1()
     result = block.run(
         predictions=predictions,
-        calibration_type=calibration_type,
+        calibration_method=calibration_type,
         object_1_class_name=object_1_class_name,
         object_2_class_name=object_2_class_name,
         pixel_ratio=pixel_ratio,
@@ -426,7 +426,7 @@ def test_distance_measurement_block_with_vertical_overlapping_target_objects():
             'class_name': np.array(['mouse', 'computer keyboard'], dtype='<U17')
         }
     )
-    calibration_type = "pixel-ratio"
+    calibration_type = "pixel to centimeter"
     object_1_class_name = "mouse"
     object_2_class_name = "computer keyboard"
     pixel_ratio = 86.9
@@ -439,7 +439,7 @@ def test_distance_measurement_block_with_vertical_overlapping_target_objects():
     block = DistanceMeasurementBlockV1()
     result = block.run(
         predictions=predictions,
-        calibration_type=calibration_type,
+        calibration_method=calibration_type,
         object_1_class_name=object_1_class_name,
         object_2_class_name=object_2_class_name,
         pixel_ratio=pixel_ratio,
