@@ -180,6 +180,8 @@ class DataAggregatorBlockV1(WorkflowBlock):
                     self._open_aggregation_windows[window][state_key].on_data(value)
         last_affected_timestamp_results = None
         for window in affected_timestamps:
+            # TODO: quite a harsh strategy on removing unclosed windows
+            #  given that we do not manage to "close" on time
             if window <= now_timestamp:
                 last_affected_timestamp_results = {
                     k: v.get_result()

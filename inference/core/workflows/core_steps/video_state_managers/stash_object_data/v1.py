@@ -104,20 +104,23 @@ class StashObjectDataBlockV1(WorkflowBlock):
     def run(
         self,
         video_metadata: VideoMetadata,
-        tracker_ids: List[int],
-        data_to_stash: Batch[Dict[str, Any]],
+        tracker_ids: Optional[List[int]],
+        data_to_stash: Dict[str, Batch[Any]],
         data_operations: Dict[str, AllOperationsType],
     ) -> BlockResult:
-        for tracker_id, data_to_stash_element in zip(tracker_ids, data_to_stash):
-            data = copy(data_to_stash_element)
-            for key, value in data.items():
+        if tracker_ids is None:
+            return {}
+        print("data_to_stash", data_to_stash["instance_appear_time"]._content)
+        for key, batch in data_to_stash.items():
+            for batch_idx, value in batch.iter_with_indices():
                 if value is None:
                     continue
+                tracker_id = tracker_ids[batch_idx[-1]]
                 if key in data_operations:
                     operations_chain = build_operations_chain(
                         operations=data_operations[key]
                     )
-                    data[key] = operations_chain(data[key], global_parameters={})
+                    value = operations_chain(value, global_parameters={})
                 self._tracked_instances_cache.save(
                     video_id=video_metadata.video_identifier,
                     tracker_id=tracker_id,

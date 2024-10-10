@@ -171,8 +171,8 @@ class InstanceCache:
             ):
                 to_be_removed = True
             if to_be_removed:
-                del self._cache[to_be_removed]
-                removed.append(to_be_removed)
+                del self._cache[tracker_id]
+                removed.append(tracker_id)
             else:
                 survivor_dequeue.append(tracker_id)
         self._cache_inserts_track = survivor_dequeue

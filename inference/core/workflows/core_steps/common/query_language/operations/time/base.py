@@ -9,7 +9,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.utils 
 )
 
 
-def get_current_timestamp(**kwargs) -> datetime:
+def get_current_timestamp(*args, **kwargs) -> datetime:
     return datetime.now()
 
 

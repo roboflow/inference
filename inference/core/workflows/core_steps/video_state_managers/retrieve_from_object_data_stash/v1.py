@@ -37,14 +37,6 @@ class BlockManifest(WorkflowBlockManifest):
     data_to_retrieve: List[str]
 
     @classmethod
-    def accepts_empty_values(cls) -> bool:
-        return True
-
-    @classmethod
-    def get_input_dimensionality_offsets(cls) -> Dict[str, int]:
-        return {"data_to_stash": 1}
-
-    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="tracker_id", kind=[INTEGER_KIND]),
@@ -90,10 +82,11 @@ class RetrieveFromObjectDataStashBlockV1(WorkflowBlock):
                 "tracker_id": tracker_id,
             }
             for field in data_to_retrieve:
-                result["field"] = self._tracked_instances_cache.get(
+                result[field] = self._tracked_instances_cache.get(
                     video_id=video_metadata.video_identifier,
                     tracker_id=tracker_id,
                     field=field,
                 )
             results.append(result)
+        print("STASH RESULTS", results)
         return results
