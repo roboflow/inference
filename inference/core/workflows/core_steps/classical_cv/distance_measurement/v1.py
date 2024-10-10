@@ -211,7 +211,7 @@ def measure_distance_with_reference_object(
     reference_width: float,
     reference_height: float,
     reference_axis: Literal["horizontal", "vertical"],
-):# -> List[Dict[str, Union[str, float]]]:
+):
     reference_bbox_1= None
     reference_bbox_2 = None
         
@@ -313,7 +313,7 @@ def has_overlap(bbox1: Tuple[int, int, int, int], bbox2: Tuple[int, int, int, in
 
     return True
 
-def has_axis_gap(reference_bbox_1, reference_bbox_2, reference_axis):
+def has_axis_gap(reference_bbox_1: Tuple[int, int, int, int], reference_bbox_2: Tuple[int, int, int, int], reference_axis: str) -> bool:
     if reference_axis == "horizontal":
         if reference_bbox_1[0] < reference_bbox_2[2] and reference_bbox_1[2] > reference_bbox_2[0]:
             return False
@@ -323,7 +323,7 @@ def has_axis_gap(reference_bbox_1, reference_bbox_2, reference_axis):
         
     return True
 
-def find_reference_bboxes(detections, object_1_class_name, object_2_class_name):
+def find_reference_bboxes(detections: sv.Detections, object_1_class_name: str, object_2_class_name: str):
     reference_bbox_1 = None
     reference_bbox_2 = None
 
@@ -341,8 +341,7 @@ def find_reference_bboxes(detections, object_1_class_name, object_2_class_name):
     return reference_bbox_1,reference_bbox_2
 
 
-
-def measure_distance_pixels(reference_axis, reference_bbox_1, reference_bbox_2):
+def measure_distance_pixels(reference_axis: str, reference_bbox_1: Tuple[int, int, int, int], reference_bbox_2: Tuple[int, int, int, int]):
     if reference_axis == "vertical":
         distance_pixels = abs(reference_bbox_2[1] - reference_bbox_1[3]) if reference_bbox_2[1] > reference_bbox_1[3] else abs(reference_bbox_1[1] - reference_bbox_2[3])
     else:
