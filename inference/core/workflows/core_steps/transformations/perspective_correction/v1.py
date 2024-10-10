@@ -124,7 +124,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.2.0,<2.0.0"
 
 
 def pick_largest_perspective_polygons(
@@ -412,8 +412,8 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
                     M=perspective_transformer,
                     dsize=(transformed_rect_width, transformed_rect_height),
                 )
-                result_image = WorkflowImageData(
-                    parent_metadata=image.parent_metadata,
+                result_image = WorkflowImageData.copy_and_replace(
+                    origin_image_data=image,
                     numpy_image=warped_image,
                 )
 

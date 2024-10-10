@@ -1,5 +1,6 @@
 import base64
 import os
+from datetime import datetime
 from unittest import mock
 from unittest.mock import MagicMock
 
@@ -12,6 +13,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     ImageParentMetadata,
     OriginCoordinatesSystem,
+    VideoMetadata,
     WorkflowImageData,
 )
 
@@ -574,3 +576,378 @@ def test_workflow_image_data_to_inference_format_when_numpy_not_preferred_but_ba
     # then
     assert result["type"] == "base64"
     assert result["value"] == "base64_value"
+
+
+@mock.patch.object(base, "datetime")
+def test_workflow_image_default_video_metadata_generation(
+    datetime_mock: MagicMock,
+) -> None:
+    # given
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+    )
+    timestamp = datetime.now()
+    datetime_mock.now.return_value = timestamp
+
+    # when
+    result = image.video_metadata
+
+    # then
+    assert result == VideoMetadata(
+        video_identifier="parent",
+        frame_number=0,
+        frame_timestamp=timestamp,
+        fps=30,
+        comes_from_video_file=None,
+    )
+
+
+def test_workflow_image_video_metadata_preservation() -> None:
+    # given
+    metadata = VideoMetadata(
+        video_identifier="parent",
+        frame_number=0,
+        frame_timestamp=datetime.now(),
+        fps=40,
+        comes_from_video_file=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        video_metadata=metadata,
+    )
+
+    # when
+    result = image.video_metadata
+
+    # then
+    assert result is metadata
+
+
+def test_workflow_image_replace_image_operation() -> None:
+    # given
+    metadata = VideoMetadata(
+        video_identifier="parent",
+        frame_number=0,
+        frame_timestamp=datetime.now(),
+        fps=40,
+        comes_from_video_file=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        workflow_root_ancestor_metadata=ImageParentMetadata(parent_id="root"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        base64_image="some",
+        image_reference="ref",
+        video_metadata=metadata,
+    )
+    updated_image = np.ones((192, 168, 3), dtype=np.uint8)
+
+    # when
+    result = WorkflowImageData.copy_and_replace(
+        origin_image_data=image,
+        numpy_image=updated_image,
+    )
+
+    # then
+    assert result is not image
+    assert result.parent_metadata == image.parent_metadata
+    assert (
+        result.workflow_root_ancestor_metadata == image.workflow_root_ancestor_metadata
+    )
+    assert result.video_metadata == metadata
+    assert np.allclose(result.numpy_image, updated_image)
+    assert result.base64_image != "some"
+
+
+def test_workflow_image_replace_base64_image_operation() -> None:
+    # given
+    metadata = VideoMetadata(
+        video_identifier="parent",
+        frame_number=0,
+        frame_timestamp=datetime.now(),
+        fps=40,
+        comes_from_video_file=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        workflow_root_ancestor_metadata=ImageParentMetadata(parent_id="root"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        base64_image="some",
+        image_reference="ref",
+        video_metadata=metadata,
+    )
+    updated_image = np.ones((192, 168, 3), dtype=np.uint8)
+    is_success, buffer = cv2.imencode(".jpg", updated_image)
+    base64_image = base64.b64encode(buffer.tobytes())
+
+    # when
+    result = WorkflowImageData.copy_and_replace(
+        origin_image_data=image,
+        base64_image=base64_image,
+    )
+
+    # then
+    assert result is not image
+    assert result.parent_metadata == image.parent_metadata
+    assert (
+        result.workflow_root_ancestor_metadata == image.workflow_root_ancestor_metadata
+    )
+    assert result.video_metadata == metadata
+    assert np.allclose(result.numpy_image, updated_image)
+    assert result.base64_image == base64_image
+
+
+def test_workflow_image_replace_all_image_representations() -> None:
+    # given
+    metadata = VideoMetadata(
+        video_identifier="parent",
+        frame_number=0,
+        frame_timestamp=datetime.now(),
+        fps=40,
+        comes_from_video_file=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        workflow_root_ancestor_metadata=ImageParentMetadata(parent_id="root"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        base64_image="some",
+        image_reference="ref",
+        video_metadata=metadata,
+    )
+    updated_image = np.ones((192, 168, 3), dtype=np.uint8)
+
+    # when
+    result = WorkflowImageData.copy_and_replace(
+        origin_image_data=image,
+        base64_image="dummy",
+        numpy_image=updated_image,
+    )
+
+    # then
+    assert result is not image
+    assert result.parent_metadata == image.parent_metadata
+    assert (
+        result.workflow_root_ancestor_metadata == image.workflow_root_ancestor_metadata
+    )
+    assert result.video_metadata == metadata
+    assert np.allclose(result.numpy_image, updated_image)
+    assert result.base64_image == "dummy"
+
+
+def test_workflow_image_replace_parent_metadata() -> None:
+    # given
+    metadata = VideoMetadata(
+        video_identifier="parent",
+        frame_number=0,
+        frame_timestamp=datetime.now(),
+        fps=40,
+        comes_from_video_file=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        workflow_root_ancestor_metadata=ImageParentMetadata(parent_id="root"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        base64_image="some",
+        image_reference="ref",
+        video_metadata=metadata,
+    )
+    updated_parent = ImageParentMetadata(parent_id="updated_parent")
+
+    # when
+    result = WorkflowImageData.copy_and_replace(
+        origin_image_data=image,
+        parent_metadata=updated_parent,
+    )
+
+    # then
+    assert result is not image
+    assert result.numpy_image.sum() == 0, "Image not changed"
+    assert result.parent_metadata.parent_id == updated_parent.parent_id
+    assert (
+        result.workflow_root_ancestor_metadata == image.workflow_root_ancestor_metadata
+    )
+    assert result.video_metadata == metadata
+
+
+def test_workflow_image_replace_parent_metadata_when_root_metadata_is_the_same_as_parent_one() -> (
+    None
+):
+    # given
+    metadata = VideoMetadata(
+        video_identifier="parent",
+        frame_number=0,
+        frame_timestamp=datetime.now(),
+        fps=40,
+        comes_from_video_file=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        workflow_root_ancestor_metadata=None,
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        base64_image="some",
+        image_reference="ref",
+        video_metadata=metadata,
+    )
+    updated_parent = ImageParentMetadata(parent_id="updated_parent")
+
+    # when
+    result = WorkflowImageData.copy_and_replace(
+        origin_image_data=image,
+        parent_metadata=updated_parent,
+    )
+
+    # then
+    assert result is not image
+    assert result.numpy_image.sum() == 0, "Image not changed"
+    assert result.parent_metadata.parent_id == updated_parent.parent_id
+    assert result.workflow_root_ancestor_metadata.parent_id == updated_parent.parent_id
+    assert result.video_metadata == metadata
+
+
+def test_workflow_image_replace_video_metadata() -> None:
+    # given
+    metadata = VideoMetadata(
+        video_identifier="parent",
+        frame_number=0,
+        frame_timestamp=datetime.now(),
+        fps=40,
+        comes_from_video_file=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        workflow_root_ancestor_metadata=ImageParentMetadata(parent_id="root"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        base64_image="some",
+        image_reference="ref",
+        video_metadata=metadata,
+    )
+    new_metadata = VideoMetadata(
+        video_identifier="new_metadata",
+        frame_number=0,
+        frame_timestamp=datetime.now(),
+        fps=40,
+        comes_from_video_file=None,
+    )
+
+    # when
+    result = WorkflowImageData.copy_and_replace(
+        origin_image_data=image,
+        video_metadata=new_metadata,
+    )
+
+    # then
+    assert result is not image
+    assert result.parent_metadata == image.parent_metadata
+    assert (
+        result.workflow_root_ancestor_metadata == image.workflow_root_ancestor_metadata
+    )
+    assert result.video_metadata == new_metadata
+    assert result.numpy_image.sum() == 0, "Image not changed"
+    assert result.base64_image == "some"
+
+
+def test_workflow_image_create_crop_operation() -> None:
+    # given
+    metadata = VideoMetadata(
+        video_identifier="video_id",
+        frame_number=0,
+        frame_timestamp=datetime.now(),
+        fps=40,
+        comes_from_video_file=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        workflow_root_ancestor_metadata=ImageParentMetadata(parent_id="root"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        base64_image="some",
+        image_reference="ref",
+        video_metadata=metadata,
+    )
+
+    # when
+    result = WorkflowImageData.create_crop(
+        origin_image_data=image,
+        crop_identifier="my_crop",
+        cropped_image=np.zeros((64, 60, 3)),
+        offset_x=100,
+        offset_y=20,
+    )
+
+    # then
+    assert np.allclose(result.numpy_image, np.zeros((64, 60, 3)))
+    assert result.parent_metadata.parent_id == "my_crop"
+    assert result.parent_metadata.origin_coordinates == OriginCoordinatesSystem(
+        left_top_x=100,
+        left_top_y=20,
+        origin_width=168,
+        origin_height=192,
+    )
+    assert result.workflow_root_ancestor_metadata.parent_id == "root"
+    assert (
+        result.workflow_root_ancestor_metadata.origin_coordinates
+        == OriginCoordinatesSystem(
+            left_top_x=100,
+            left_top_y=20,
+            origin_width=168,
+            origin_height=192,
+        )
+    )
+    assert (
+        result.video_metadata.video_identifier == "my_crop"
+    ), "Expected default metadata"
+    assert result.video_metadata.fps == 30, "Expected default metadata"
+
+
+def test_workflow_image_build_create_crop_with_video_metadata_preservation() -> None:
+    # given
+    metadata = VideoMetadata(
+        video_identifier="video_id",
+        frame_number=0,
+        frame_timestamp=datetime.now(),
+        fps=40,
+        comes_from_video_file=None,
+    )
+    image = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="parent"),
+        workflow_root_ancestor_metadata=ImageParentMetadata(parent_id="root"),
+        numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
+        base64_image="some",
+        image_reference="ref",
+        video_metadata=metadata,
+    )
+
+    # when
+    result = WorkflowImageData.create_crop(
+        origin_image_data=image,
+        crop_identifier="my_crop",
+        cropped_image=np.zeros((64, 60, 3)),
+        offset_x=100,
+        offset_y=20,
+        preserve_video_metadata=True,
+    )
+
+    # then
+    assert np.allclose(result.numpy_image, np.zeros((64, 60, 3)))
+    assert result.parent_metadata.parent_id == "my_crop"
+    assert result.parent_metadata.origin_coordinates == OriginCoordinatesSystem(
+        left_top_x=100,
+        left_top_y=20,
+        origin_width=168,
+        origin_height=192,
+    )
+    assert result.workflow_root_ancestor_metadata.parent_id == "root"
+    assert (
+        result.workflow_root_ancestor_metadata.origin_coordinates
+        == OriginCoordinatesSystem(
+            left_top_x=100,
+            left_top_y=20,
+            origin_width=168,
+            origin_height=192,
+        )
+    )
+    assert (
+        result.video_metadata.video_identifier == "video_id | crop: my_crop"
+    ), "Expected preserved metadata with updated id"
+    assert result.video_metadata.fps == 40, "Expected preserved metadata"

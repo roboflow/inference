@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Tuple, Union
 
 import numpy as np
@@ -13,6 +14,7 @@ from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import 
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     OriginCoordinatesSystem,
+    VideoMetadata,
     WorkflowImageData,
 )
 
@@ -94,6 +96,12 @@ def test_crop_image() -> None:
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="origin_image"),
         numpy_image=np_image,
+        video_metadata=VideoMetadata(
+            video_identifier="some",
+            frame_number=0,
+            frame_timestamp=datetime.now(),
+            fps=100,
+        ),
     )
     detections = sv.Detections(
         xyxy=np.array(
@@ -129,6 +137,9 @@ def test_crop_image() -> None:
         origin_height=1000,
     ), "Appropriate origin coordinates must be attached"
     assert (
+        result[0]["crops"].video_metadata.fps == 30
+    ), "Expected default video metadata to be generated"
+    assert (
         result[1]["crops"].numpy_image == (np.ones((40, 40, 3), dtype=np.uint8) * 49)
     ).all(), "Image must have expected size and color"
     assert (
@@ -143,6 +154,9 @@ def test_crop_image() -> None:
         origin_height=1000,
     ), "Appropriate origin coordinates must be attached"
     assert (
+        result[1]["crops"].video_metadata.fps == 30
+    ), "Expected default video metadata to be generated"
+    assert (
         result[2]["crops"].numpy_image == (np.ones((100, 100, 3), dtype=np.uint8) * 59)
     ).all(), "Image must have expected size and color"
     assert (
@@ -156,6 +170,9 @@ def test_crop_image() -> None:
         origin_width=1000,
         origin_height=1000,
     ), "Appropriate origin coordinates must be attached"
+    assert (
+        result[2]["crops"].video_metadata.fps == 30
+    ), "Expected default video metadata to be generated"
 
 
 def test_crop_image_on_empty_detections() -> None:

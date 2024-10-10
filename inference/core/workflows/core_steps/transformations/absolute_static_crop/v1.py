@@ -81,7 +81,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.2.0,<2.0.0"
 
 
 class AbsoluteStaticCropBlockV1(WorkflowBlock):
@@ -126,28 +126,11 @@ def take_static_crop(
     cropped_image = image.numpy_image[y_min:y_max, x_min:x_max]
     if not cropped_image.size:
         return None
-    workflow_root_ancestor_coordinates = replace(
-        image.workflow_root_ancestor_metadata.origin_coordinates,
-        left_top_x=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_x
-        + x_min,
-        left_top_y=image.workflow_root_ancestor_metadata.origin_coordinates.left_top_y
-        + y_min,
-    )
-    workflow_root_ancestor_metadata = ImageParentMetadata(
-        parent_id=image.workflow_root_ancestor_metadata.parent_id,
-        origin_coordinates=workflow_root_ancestor_coordinates,
-    )
-    parent_metadata = ImageParentMetadata(
-        parent_id=f"absolute_static_crop.{uuid4()}",
-        origin_coordinates=OriginCoordinatesSystem(
-            left_top_x=x_min,
-            left_top_y=y_min,
-            origin_width=image.numpy_image.shape[1],
-            origin_height=image.numpy_image.shape[0],
-        ),
-    )
-    return WorkflowImageData(
-        parent_metadata=parent_metadata,
-        workflow_root_ancestor_metadata=workflow_root_ancestor_metadata,
-        numpy_image=cropped_image,
+    return WorkflowImageData.create_crop(
+        origin_image_data=image,
+        crop_identifier=f"absolute_static_crop.{uuid4()}",
+        cropped_image=cropped_image,
+        offset_x=x_min,
+        offset_y=y_min,
+        preserve_video_metadata=True,
     )

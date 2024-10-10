@@ -60,7 +60,7 @@ class ConvertGrayscaleManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.2.0,<2.0.0"
 
 
 class ConvertGrayscaleBlockV1(WorkflowBlock):
@@ -79,11 +79,7 @@ class ConvertGrayscaleBlockV1(WorkflowBlock):
     ) -> BlockResult:
         # Convert the image to grayscale
         gray = cv2.cvtColor(image.numpy_image, cv2.COLOR_BGR2GRAY)
-
-        output = WorkflowImageData(
-            parent_metadata=image.parent_metadata,
-            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
-            numpy_image=gray,
+        output = WorkflowImageData.copy_and_replace(
+            origin_image_data=image, numpy_image=gray
         )
-
         return {OUTPUT_IMAGE_KEY: output}

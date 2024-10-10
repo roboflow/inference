@@ -52,19 +52,35 @@ WILDCARD_KIND = Kind(
     serialised_data_type="Any",
     internal_data_type="Any",
 )
-IMAGE_KIND_DOCS = f"""
+IMAGE_KIND_DOCS = """
 This is the representation of image in `workflows`. Underlying data type has different internal and
 external representation. As an input we support:
 
-* `np.ndarray` image when Workflows Execution Engine is used directly in `inference` python package
+!!! note "Update added in Execution Engine `v1.2.0`"
+
+    `video_metadata` added as optional property - should be injected in context of video processing to 
+    provide necessary context for blocks dedicated to video processing.
+    
+
+* `np.ndarray` image when Workflows Execution Engine is used directly in `inference` python package (array can be
+provided in a form of dictionary presented below, if `video_metadata` is intended to be injected)
 
 * dictionary compatible with [inference image utils](https://inference.roboflow.com/docs/reference/inference/core/utils/image_utils/):
 
 ```python
-{{
+{
     "type": "url",   # there are different types supported, including np arrays and PIL images
-    "value": "..."   # value depends on `type`
-}}
+    "value": "..."   # value depends on `type`,
+    "video_metadata": {  
+        # optional - can be added in context of video processing - introduced in 
+        # Execution Engine `v1.2.0` - released in inference `v0.23.0`
+        "video_identifier": "rtsp://some.com/stream1",
+        "comes_from_video_file": False,
+        "fps": 23.99,
+        "frame_number": 24,
+        "frame_timestamp": "2024-08-21T11:13:44.313999", 
+    }  
+}
 ```
 
 Whe using Workflows Execution Engine exposed behind `inference` server, two most common `type` values are `base64` and 
@@ -83,6 +99,12 @@ IMAGE_KIND = Kind(
 
 
 VIDEO_METADATA_KIND_DOCS = """
+
+!!! warning "Deprecated since Execution Engine `v1.2.0`"
+
+    `inference` maintainers decided to sunset `video_metadata` kind in favour of
+    auxiliary metadata added to `image` kind. 
+
 This is representation of metadata that describe images that come from videos.  
 It is helpful in cases of stateful video processing, as the metadata may bring 
 pieces of information that are required by specific blocks.
@@ -97,7 +119,7 @@ The kind has different internal end external representation. As input we support
     "frame_timestamp": "2024-08-21T11:13:44.313999", 
 }   
 ```
-Internally, [`WorkflowImageData`](/workflows/internal_data_types/#videometadata) is used. If you are a
+Internally, [`VideoMetadata`](/workflows/internal_data_types/#videometadata) is used. If you are a
 Workflow block developer, we advise checking out [usage guide](/workflows/internal_data_types/#videometadata).
 """
 

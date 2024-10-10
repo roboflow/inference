@@ -5,11 +5,20 @@ from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
 from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
     LineCounterBlockV1,
 )
+from inference.core.workflows.core_steps.analytics.line_counter.v2 import (
+    LineCounterBlockV2,
+)
 from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
     PathDeviationAnalyticsBlockV1,
 )
+from inference.core.workflows.core_steps.analytics.path_deviation.v2 import (
+    PathDeviationAnalyticsBlockV2,
+)
 from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
     TimeInZoneBlockV1,
+)
+from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
+    TimeInZoneBlockV2,
 )
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
@@ -161,6 +170,9 @@ from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import
 )
 from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
     ByteTrackerBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.byte_tracker.v2 import (
+    ByteTrackerBlockV2,
 )
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
@@ -371,6 +383,10 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         StabilityAIInpaintingBlockV1,
         ImagePreprocessingBlockV1,
         PathDeviationAnalyticsBlockV1,
+        ByteTrackerBlockV2,
+        PathDeviationAnalyticsBlockV2,
+        TimeInZoneBlockV2,
+        LineCounterBlockV2,
     ]
 
 
