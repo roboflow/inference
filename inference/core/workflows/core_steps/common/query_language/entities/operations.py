@@ -28,6 +28,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    TIMESTAMP_KIND,
     WILDCARD_KIND,
     ZONE_KIND,
 )
@@ -485,6 +486,31 @@ class DetectionsRename(OperationDefinition):
     )
 
 
+class CurrentTimestamp(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Replaces input data with current timestamp",
+            "compound": False,
+            "input_kind": [WILDCARD_KIND],
+            "output_kind": [TIMESTAMP_KIND],
+        },
+    )
+    type: Literal["CurrentTimestamp"]
+
+
+class TimeDifference(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Providing time difference between current timestamp and reference timestamp",
+            "compound": False,
+            "input_kind": [TIMESTAMP_KIND],
+            "output_kind": [FLOAT_KIND],
+        },
+    )
+    type: Literal["TimeDifference"]
+    base: Literal["days", "hours", "minutes", "seconds", "milliseconds"]
+
+
 AllOperationsType = Annotated[
     Union[
         StringToLowerCase,
@@ -514,6 +540,8 @@ AllOperationsType = Annotated[
         DetectionsSelection,
         SortDetections,
         ClassificationPropertyExtract,
+        CurrentTimestamp,
+        TimeDifference,
     ],
     Field(discriminator="type"),
 ]
