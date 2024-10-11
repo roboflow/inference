@@ -190,6 +190,60 @@ def test_assemble_runtime_parameters_when_image_is_provided_in_batch() -> None:
     )
 
 
+def test_assemble_runtime_parameters_when_image_is_provided_with_video_metadata() -> (
+    None
+):
+    # given
+    runtime_parameters = {
+        "image1": [
+            {
+                "type": "numpy_object",
+                "value": np.zeros((192, 168, 3), dtype=np.uint8),
+                "video_metadata": {
+                    "video_identifier": "some_id",
+                    "frame_number": 37,
+                    "frame_timestamp": datetime.now().isoformat(),
+                    "fps": 35,
+                },
+            },
+            {
+                "type": "numpy_object",
+                "value": np.ones((256, 256, 3), dtype=np.uint8),
+                "video_metadata": VideoMetadata(
+                    video_identifier="video_id",
+                    frame_number=127,
+                    frame_timestamp=datetime.now(),
+                    fps=40,
+                    comes_from_video_file=None,
+                ),
+            },
+        ]
+    }
+    defined_inputs = [WorkflowImage(type="WorkflowImage", name="image1")]
+
+    # when
+    result = assemble_runtime_parameters(
+        runtime_parameters=runtime_parameters,
+        defined_inputs=defined_inputs,
+    )
+
+    # then
+    assert (
+        len(result["image1"]) == 2
+    ), "All batche elements should be included in result"
+    assert result["image1"][0].parent_metadata.parent_id == "image1.[0]"
+    assert result["image1"][0].video_metadata.video_identifier == "some_id"
+    assert np.allclose(
+        result["image1"][0].numpy_image, np.zeros((192, 168, 3), dtype=np.uint8)
+    )
+    assert result["image1"][1].parent_metadata.parent_id == "image1.[1]"
+    assert np.allclose(
+        result["image1"][1].numpy_image,
+        np.ones((256, 256, 3), dtype=np.uint8),
+    )
+    assert result["image1"][1].video_metadata.video_identifier == "video_id"
+
+
 def test_assemble_runtime_parameters_when_parameter_not_provided() -> None:
     # given
     runtime_parameters = {}
