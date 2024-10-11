@@ -1,8 +1,9 @@
 import asyncio
+from collections import deque
 import concurrent.futures
 import time
 from threading import Event, Lock
-from typing import Deque, Optional
+from typing import Deque, Dict, Optional, Tuple
 
 import numpy as np
 from aiortc import VideoStreamTrack, RTCPeerConnection, RTCSessionDescription
@@ -12,8 +13,10 @@ from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
 
 from inference.core import logger
+from inference.core.interfaces.camera.entities import SourceProperties, VideoFrameProducer
 from inference.core.interfaces.stream_manager.manager_app.entities import WebRTCOffer
 from inference.core.utils.async_utils import async_lock
+from inference.core.utils.function import experimental
 
 
 class VideoTransformTrack(VideoStreamTrack):
@@ -115,6 +118,58 @@ class VideoTransformTrack(VideoStreamTrack):
         new_frame.time_base = frame.time_base
         self._processed += 1
         return new_frame
+
+
+class WebRTCVideoFrameProducer(VideoFrameProducer):
+    @experimental(
+        reason="Usage of WebRTCVideoFrameProducer with `InferencePipeline` is an experimental feature."
+        "Please report any issues here: https://github.com/roboflow/inference/issues"
+    )
+    def __init__(
+        self, to_inference_queue: deque, to_inference_lock: Lock, stop_event: Event, webrtc_video_transform_track: VideoTransformTrack
+    ):
+        self.to_inference_queue: deque = to_inference_queue
+        self.to_inference_lock: Lock = to_inference_lock
+        self._stop_event = stop_event
+        self._w: Optional[int] = None
+        self._h: Optional[int] = None
+        self._video_transform_track = webrtc_video_transform_track
+        self._is_opened = True
+
+    def grab(self) -> bool:
+        return self._is_opened
+
+    def retrieve(self) -> Tuple[bool, np.ndarray]:
+        while not self._stop_event.is_set() and not self.to_inference_queue:
+            time.sleep(0.1)
+        if self._stop_event.is_set():
+            logger.info("Received termination signal, closing.")
+            self._is_opened = False
+            return False, None
+        with self.to_inference_lock:
+            img = self.to_inference_queue.pop()
+        return True, img
+
+    def release(self):
+        self._is_opened = False
+
+    def isOpened(self) -> bool:
+        return self._is_opened
+
+    def discover_source_properties(self) -> SourceProperties:
+        while not self._video_transform_track.incoming_stream_fps:
+            time.sleep(0.1)
+        return SourceProperties(
+            width=self._w,
+            height=self._h,
+            total_frames=-1,
+            is_file=False,
+            fps=self._video_transform_track.incoming_stream_fps,
+            is_reconnectable=False,
+        )
+
+    def initialize_source_properties(self, properties: Dict[str, float]):
+        pass
 
 
 class RTCPeerConnectionWithFPS(RTCPeerConnection):

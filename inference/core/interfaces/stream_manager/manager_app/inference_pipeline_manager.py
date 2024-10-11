@@ -21,7 +21,6 @@ from inference.core.exceptions import (
 )
 from inference.core.interfaces.camera.entities import (
     VideoFrame,
-    WebRTCVideoFrameProducer,
 )
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
 from inference.core.interfaces.http.orjson_utils import (
@@ -47,6 +46,7 @@ from inference.core.interfaces.stream_manager.manager_app.serialisation import (
 )
 from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     RTCPeerConnectionWithFPS,
+    WebRTCVideoFrameProducer,
     init_rtc_peer_connection,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -232,15 +232,13 @@ class InferencePipelineManager(Process):
                 loop,
             )
             peer_connection: RTCPeerConnectionWithFPS = future.result()
-            while peer_connection.video_transform_track.incoming_stream_fps is None:
-                time.sleep(0.1)
 
             webrtc_producer = partial(
                 WebRTCVideoFrameProducer,
                 to_inference_lock=to_inference_lock,
                 to_inference_queue=to_inference_queue,
                 stop_event=stop_event,
-                fps=peer_connection.video_transform_track.incoming_stream_fps,
+                webrtc_video_transform_track=peer_connection.video_transform_track,
             )
 
             def webrtc_sink(
