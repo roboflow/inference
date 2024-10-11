@@ -8,8 +8,6 @@ import uuid
 
 from inference.core.cache import cache
 from inference.core.logger import logger
-from inference.core.utils.container import is_docker_socket_mounted
-from inference.core.version import __version__
 
 
 def get_model_metrics(
