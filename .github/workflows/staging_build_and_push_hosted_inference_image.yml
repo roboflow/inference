@@ -12,10 +12,11 @@ on:
         description: "Do you want to exclude CORE MODELS version of lambda?"
         default: false
 
-
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
     timeout-minutes: 60
     steps:
       - name: 🛎️ Checkout

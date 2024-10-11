@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import numpy as np
 
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
@@ -6,6 +8,7 @@ from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     OriginCoordinatesSystem,
+    VideoMetadata,
     WorkflowImageData,
 )
 
@@ -17,6 +20,12 @@ def test_take_absolute_static_crop() -> None:
     image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="origin_image"),
         numpy_image=np_image,
+        video_metadata=VideoMetadata(
+            video_identifier="some",
+            frame_number=0,
+            frame_timestamp=datetime.now(),
+            fps=100,
+        ),
     )
 
     # when
@@ -50,6 +59,11 @@ def test_take_absolute_static_crop() -> None:
             origin_height=100,
         )
     ), "Root Origin coordinates of crop and image size metadata must be maintained through the operation"
+    assert (
+        result.video_metadata.video_identifier.startswith("some")
+        and result.video_metadata.video_identifier != "some"
+    ), "Expected to generate new video identifier"
+    assert result.video_metadata.fps == 100, "Expected to preserve video metadata"
 
 
 def test_take_absolute_static_crop_when_output_crop_is_empty() -> None:

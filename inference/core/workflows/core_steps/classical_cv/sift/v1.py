@@ -59,7 +59,7 @@ class SIFTDetectionManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.2.0,<2.0.0"
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -87,9 +87,8 @@ class SIFTBlockV1(WorkflowBlock):
 
     def run(self, image: WorkflowImageData, *args, **kwargs) -> BlockResult:
         img_with_kp, keypoints, descriptors = apply_sift(image.numpy_image)
-        output_image = WorkflowImageData(
-            parent_metadata=image.parent_metadata,
-            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
+        output_image = WorkflowImageData.copy_and_replace(
+            origin_image_data=image,
             numpy_image=img_with_kp,
         )
         return {
