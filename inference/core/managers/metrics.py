@@ -104,25 +104,20 @@ def get_inference_results_for_model(
     return inference_results
 
 
-def get_container_stats(socket_name: str = "/var/run/docker.sock"):
+def get_container_stats(docker_socket_path: str) -> dict:
     """
     Gets the container stats.
 
     Returns:
         dict: A dictionary containing the container stats.
     """
-    if not is_docker_socket_mounted(socket_name):
-        return {
-            "error": "Docker socket is not mounted",
-            "hint": "Mount the Docker socket when running the docker container to collect device stats (i.e. `docker run ... -v /var/run/docker.sock:/var/run/docker.sock ...`).",
-        }
     try:
         container_id = socket.gethostname()
         result = subprocess.run(
             [
                 "curl",
                 "--unix-socket",
-                socket_name,
+                docker_socket_path,
                 f"http://localhost/containers/{container_id}/stats?stream=false",
             ],
             capture_output=True,

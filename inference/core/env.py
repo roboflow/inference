@@ -1,6 +1,7 @@
 import os
 import uuid
 import warnings
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -431,7 +432,7 @@ ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
 
 RUNS_ON_JETSON = str2bool(os.getenv("RUNS_ON_JETSON", "False"))
 
-IS_DOCKER = str2bool(os.getenv("IS_DOCKER", "False"))
+DOCKER_SOCKET_PATH: Optional[str] = os.getenv("DOCKER_SOCKET_PATH")
 
 ENABLE_WORKFLOWS_PROFILING = str2bool(os.getenv("ENABLE_WORKFLOWS_PROFILING", "False"))
 WORKFLOWS_PROFILER_BUFFER_SIZE = int(os.getenv("WORKFLOWS_PROFILER_BUFFER_SIZE", "64"))
