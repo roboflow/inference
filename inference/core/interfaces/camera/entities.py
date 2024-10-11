@@ -109,14 +109,14 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
         "Please report any issues here: https://github.com/roboflow/inference/issues"
     )
     def __init__(
-        self, to_inference_queue: deque, to_inference_lock: Lock, stop_event: Event
+        self, to_inference_queue: deque, to_inference_lock: Lock, stop_event: Event, fps: float
     ):
         self.to_inference_queue: deque = to_inference_queue
         self.to_inference_lock: Lock = to_inference_lock
         self._stop_event = stop_event
         self._w: Optional[int] = None
         self._h: Optional[int] = None
-        self._fps_buff = []
+        self._fps = fps
         self._is_opened = True
 
     def grab(self) -> bool:
@@ -140,17 +140,12 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
         return self._is_opened
 
     def discover_source_properties(self) -> SourceProperties:
-        max_ts = max(self._fps_buff, key=lambda x: x["ts"]) if self._fps_buff else 0
-        min_ts = min(self._fps_buff, key=lambda x: x["ts"]) if self._fps_buff else 0
-        if max_ts == min_ts:
-            max_ts += 0.1
-        fps = len(self._fps_buff) / (max_ts - min_ts)
         return SourceProperties(
             width=self._w,
             height=self._h,
             total_frames=-1,
             is_file=False,
-            fps=fps,
+            fps=self._fps,
             is_reconnectable=False,
         )
 

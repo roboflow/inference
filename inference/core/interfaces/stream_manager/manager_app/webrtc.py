@@ -5,7 +5,8 @@ from threading import Event, Lock
 from typing import Deque, Optional
 
 import numpy as np
-from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
+from aiortc import VideoStreamTrack, RTCPeerConnection, RTCSessionDescription
+from aiortc.mediastreams import MediaStreamError
 from aiortc.contrib.media import MediaRelay
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
@@ -15,7 +16,13 @@ from inference.core.interfaces.stream_manager.manager_app.entities import WebRTC
 from inference.core.utils.async_utils import async_lock
 
 
-class VideoTransformTrack(MediaStreamTrack):
+class RTCPeerConnectionWithFPS(RTCPeerConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.incoming_stream_fps: Optional[float] = None
+
+
+class VideoTransformTrack(VideoStreamTrack):
     kind = "video"
 
     def __init__(
@@ -25,7 +32,11 @@ class VideoTransformTrack(MediaStreamTrack):
         from_inference_queue: Deque,
         from_inference_lock: Lock,
         webrtc_peer_timeout: float = 1,
+        fps_probe_frames: int = 10,
+        *args,
+        **kwargs,
     ):
+        super().__init__(*args, **kwargs)
         if not webrtc_peer_timeout:
             webrtc_peer_timeout = 1
         self.webrtc_peer_timeout: float = webrtc_peer_timeout
@@ -39,9 +50,8 @@ class VideoTransformTrack(MediaStreamTrack):
         self.from_inference_lock: Lock = from_inference_lock
         self._pool = concurrent.futures.ThreadPoolExecutor()
         self._track_active: bool = True
-        self.dummy_frame: Optional[VideoFrame] = None
-        self.last_pts = 0
-        self.last_time_base = 0
+        self._fps_probe_frames = fps_probe_frames
+        self.incoming_stream_fps: Optional[float] = None
 
     def set_track(self, track: RemoteStreamTrack):
         if not self.track:
@@ -51,28 +61,41 @@ class VideoTransformTrack(MediaStreamTrack):
         self._track_active = False
 
     async def recv(self):
+        if self.incoming_stream_fps is None:
+            logger.debug("Probing incoming stream FPS")
+            t1 = 0
+            t2 = 0
+            for i in range(self._fps_probe_frames):
+                try:
+                    frame: VideoFrame = await asyncio.wait_for(
+                        self.track.recv(), self.webrtc_peer_timeout
+                    )
+                except (asyncio.TimeoutError, MediaStreamError):
+                    logger.info(
+                        "Timeout while waiting to receive frames sent through webrtc peer connection; assuming peer disconnected."
+                    )
+                    self.close()
+                    raise MediaStreamError
+                # drop first frame
+                if i == 1:
+                    t1 = time.time()
+            t2 = time.time()
+            if t1 == t2:
+                logger.info("All frames probed in the same time - could not calculate fps.")
+                raise MediaStreamError
+            self.incoming_stream_fps = 9 / (t2 - t1)
+            logger.debug("Incoming stream fps: %s", self.incoming_stream_fps)
+
         try:
             frame: VideoFrame = await asyncio.wait_for(
                 self.track.recv(), self.webrtc_peer_timeout
             )
-            self.last_pts = frame.pts
-            self.last_time_base = frame.time_base
-            if not self.dummy_frame:
-                self.dummy_frame = VideoFrame.from_ndarray(
-                    np.zeros_like(frame.to_ndarray(format="bgr24")), format="bgr24"
-                )
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, MediaStreamError):
             logger.info(
                 "Timeout while waiting to receive frames sent through webrtc peer connection; assuming peer disconnected."
             )
-            self._track_active = False
-            if self.dummy_frame:
-                self.dummy_frame.pts = self.last_pts
-                self.dummy_frame.time_base = self.last_time_base
-                return self.dummy_frame
-            return VideoFrame.from_ndarray(
-                np.zeros(shape=(640, 480, 3), dtype=np.uint8), format="bgr24"
-            )
+            self.close()
+            raise MediaStreamError
         img = frame.to_ndarray(format="bgr24")
 
         dropped = 0
@@ -83,20 +106,12 @@ class VideoTransformTrack(MediaStreamTrack):
                 frame: VideoFrame = await asyncio.wait_for(
                     self.track.recv(), self.webrtc_peer_timeout
                 )
-                self.last_pts = frame.pts
-                self.last_time_base = frame.time_base
-            except asyncio.TimeoutError:
+            except (asyncio.TimeoutError, MediaStreamError):
+                self.close()
                 logger.info(
                     "Timeout while waiting to receive frames sent through webrtc peer connection; assuming peer disconnected."
                 )
-                self._track_active = False
-                if self.dummy_frame:
-                    self.dummy_frame.pts = self.last_pts
-                    self.dummy_frame.time_base = self.last_time_base
-                    return self.dummy_frame
-                return VideoFrame.from_ndarray(
-                    np.zeros(shape=(640, 480, 3), dtype=np.uint8), format="bgr24"
-                )
+                raise MediaStreamError
             dropped += 1
         async with async_lock(lock=self.from_inference_lock, pool=self._pool):
             res = self.from_inference_queue.pop()
@@ -117,8 +132,8 @@ async def init_rtc_peer_connection(
     from_inference_lock: Lock,
     webrtc_peer_timeout: float,
     feedback_stop_event: Event,
-) -> RTCPeerConnection:
-    peer_connection = RTCPeerConnection()
+) -> RTCPeerConnectionWithFPS:
+    peer_connection = RTCPeerConnectionWithFPS()
     relay = MediaRelay()
 
     video_transform_track = VideoTransformTrack(
@@ -151,5 +166,9 @@ async def init_rtc_peer_connection(
     answer = await peer_connection.createAnswer()
     await peer_connection.setLocalDescription(answer)
     logger.debug(f"WebRTC connection status: {peer_connection.connectionState}")
+
+    while video_transform_track.incoming_stream_fps is None:
+        await asyncio.sleep(0.1)
+    peer_connection.incoming_stream_fps = video_transform_track.incoming_stream_fps
 
     return peer_connection

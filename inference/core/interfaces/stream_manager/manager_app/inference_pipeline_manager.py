@@ -10,7 +10,6 @@ from threading import Event, Lock
 from types import FrameType
 from typing import Deque, Dict, Optional, Tuple
 
-from aiortc import RTCPeerConnection
 from pydantic import ValidationError
 
 from inference.core import logger
@@ -41,12 +40,12 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     InitialisePipelinePayload,
     InitialiseWebRTCPipelinePayload,
     OperationStatus,
-    WebRTCOffer,
 )
 from inference.core.interfaces.stream_manager.manager_app.serialisation import (
     describe_error,
 )
 from inference.core.interfaces.stream_manager.manager_app.webrtc import (
+    RTCPeerConnectionWithFPS,
     init_rtc_peer_connection,
 )
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
@@ -208,12 +207,6 @@ class InferencePipelineManager(Process):
             from_inference_lock = Lock()
 
             stop_event = Event()
-            webrtc_producer = partial(
-                WebRTCVideoFrameProducer,
-                to_inference_lock=to_inference_lock,
-                to_inference_queue=to_inference_queue,
-                stop_event=stop_event,
-            )
 
             def start_loop(loop: asyncio.AbstractEventLoop):
                 asyncio.set_event_loop(loop)
@@ -235,7 +228,15 @@ class InferencePipelineManager(Process):
                 ),
                 loop,
             )
-            peer_connection = future.result()
+            peer_connection: RTCPeerConnectionWithFPS = future.result()
+
+            webrtc_producer = partial(
+                WebRTCVideoFrameProducer,
+                to_inference_lock=to_inference_lock,
+                to_inference_queue=to_inference_queue,
+                stop_event=stop_event,
+                fps=peer_connection.incoming_stream_fps,
+            )
 
             def webrtc_sink(
                 prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
