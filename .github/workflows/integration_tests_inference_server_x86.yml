@@ -2,15 +2,14 @@ name: INTEGRATION TESTS - Inference Server CPU x86
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
     if: ${{ !github.event.act }}
     runs-on:
-      labels: depot-ubuntu-22.04-8
-      group: public-depot
+      group: group8core
     timeout-minutes: 35
 
     steps:
@@ -19,21 +18,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: 🛎️ Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           ref: ${{ github.head_ref }}
-      - name: 📦 Cache Python packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
       - name: 🦾 Install dependencies
         run: |
           python -m pip install --upgrade pip
