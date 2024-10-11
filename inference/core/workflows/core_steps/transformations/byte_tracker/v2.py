@@ -3,6 +3,7 @@ from typing import Dict, List, Literal, Optional, Type, Union
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference.core import logger
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -126,9 +127,10 @@ class ByteTrackerBlockV2(WorkflowBlock):
         minimum_consecutive_frames: int = 1,
     ) -> BlockResult:
         metadata = image.video_metadata
-        if not metadata.fps:
-            # TODO: this is wrong for video processing when FPS cannot be established!
-            raise ValueError(
+        fps = metadata.fps
+        if not fps:
+            fps = 0
+            logger.warning(
                 f"Malformed fps in VideoMetadata, {self.__class__.__name__} requires fps in order to initialize ByteTrack"
             )
         if metadata.video_identifier not in self._trackers:
@@ -137,7 +139,7 @@ class ByteTrackerBlockV2(WorkflowBlock):
                 lost_track_buffer=lost_track_buffer,
                 minimum_matching_threshold=minimum_matching_threshold,
                 minimum_consecutive_frames=minimum_consecutive_frames,
-                frame_rate=metadata.fps,
+                frame_rate=fps,
             )
         tracker = self._trackers[metadata.video_identifier]
         tracked_detections = tracker.update_with_detections(

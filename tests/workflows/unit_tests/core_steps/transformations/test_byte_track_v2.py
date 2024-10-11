@@ -92,36 +92,6 @@ def test_byte_tracker() -> None:
     ), "Expected the same 3 first objects in third frame"
 
 
-def test_byte_tracker_no_fps() -> None:
-    # given
-    frame1_detections = sv.Detections(
-        xyxy=np.array(
-            [[10, 10, 20, 20], [21, 10, 31, 20], [31, 10, 41, 20], [100, 100, 110, 110]]
-        ),
-        confidence=np.array([0.9, 0.9, 0.9, 0.9]),
-        class_id=np.array([1, 1, 1, 1]),
-    )
-    frame1_metadata = VideoMetadata(
-        video_identifier="vid_1",
-        frame_number=10,
-        frame_timestamp=datetime.datetime.fromtimestamp(1726570875).astimezone(
-            tz=datetime.timezone.utc
-        ),
-        comes_from_video_file=True,
-    )
-    byte_tracker_block = ByteTrackerBlockV2()
-
-    # when
-    with pytest.raises(
-        ValueError,
-        match="Malformed fps in VideoMetadata, ByteTrackerBlockV2 requires fps in order to initialize ByteTrack",
-    ):
-        _ = byte_tracker_block.run(
-            image=_wrap_with_workflow_image(frame1_metadata),
-            detections=frame1_detections,
-        )
-
-
 def test_byte_tracker_not_video_file() -> None:
     # given
     frame1_detections = sv.Detections(

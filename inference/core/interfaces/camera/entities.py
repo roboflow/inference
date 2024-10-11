@@ -1,16 +1,10 @@
 import logging
-import time
-from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from threading import Event, Lock
 from typing import Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
-
-from inference.core import logger
-from inference.core.utils.function import experimental
 
 FrameTimestamp = datetime
 FrameID = int
@@ -98,61 +92,6 @@ class VideoFrameProducer:
 
     def discover_source_properties(self) -> SourceProperties:
         raise NotImplementedError
-
-    def initialize_source_properties(self, properties: Dict[str, float]):
-        pass
-
-
-class WebRTCVideoFrameProducer(VideoFrameProducer):
-    @experimental(
-        reason="Usage of WebRTCVideoFrameProducer with `InferencePipeline` is an experimental feature."
-        "Please report any issues here: https://github.com/roboflow/inference/issues"
-    )
-    def __init__(
-        self, to_inference_queue: deque, to_inference_lock: Lock, stop_event: Event
-    ):
-        self.to_inference_queue: deque = to_inference_queue
-        self.to_inference_lock: Lock = to_inference_lock
-        self._stop_event = stop_event
-        self._w: Optional[int] = None
-        self._h: Optional[int] = None
-        self._fps_buff = []
-        self._is_opened = True
-
-    def grab(self) -> bool:
-        return self._is_opened
-
-    def retrieve(self) -> Tuple[bool, np.ndarray]:
-        while not self._stop_event.is_set() and not self.to_inference_queue:
-            time.sleep(0.1)
-        if self._stop_event.is_set():
-            logger.info("Received termination signal, closing.")
-            self._is_opened = False
-            return False, None
-        with self.to_inference_lock:
-            img = self.to_inference_queue.pop()
-        return True, img
-
-    def release(self):
-        self._is_opened = False
-
-    def isOpened(self) -> bool:
-        return self._is_opened
-
-    def discover_source_properties(self) -> SourceProperties:
-        max_ts = max(self._fps_buff, key=lambda x: x["ts"]) if self._fps_buff else 0
-        min_ts = min(self._fps_buff, key=lambda x: x["ts"]) if self._fps_buff else 0
-        if max_ts == min_ts:
-            max_ts += 0.1
-        fps = len(self._fps_buff) / (max_ts - min_ts)
-        return SourceProperties(
-            width=self._w,
-            height=self._h,
-            total_frames=-1,
-            is_file=False,
-            fps=fps,
-            is_reconnectable=False,
-        )
 
     def initialize_source_properties(self, properties: Dict[str, float]):
         pass

@@ -92,6 +92,7 @@ class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
     stream_output: Optional[List[str]] = Field(default_factory=list)
     data_output: Optional[List[str]] = Field(default_factory=list)
     webrtc_peer_timeout: float = 1
+    webcam_fps: Optional[float] = None
 
 
 class ConsumeResultsPayload(BaseModel):
