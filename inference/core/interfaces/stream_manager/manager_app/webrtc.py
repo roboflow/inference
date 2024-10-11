@@ -33,6 +33,7 @@ class VideoTransformTrack(VideoStreamTrack):
         from_inference_lock: Lock,
         webrtc_peer_timeout: float = 1,
         fps_probe_frames: int = 10,
+        webcam_fps: Optional[float] = None
         *args,
         **kwargs,
     ):
@@ -51,7 +52,7 @@ class VideoTransformTrack(VideoStreamTrack):
         self._pool = concurrent.futures.ThreadPoolExecutor()
         self._track_active: bool = True
         self._fps_probe_frames = fps_probe_frames
-        self.incoming_stream_fps: Optional[float] = None
+        self.incoming_stream_fps: Optional[float] = webcam_fps
 
     def set_track(self, track: RemoteStreamTrack):
         if not self.track:
@@ -132,6 +133,7 @@ async def init_rtc_peer_connection(
     from_inference_lock: Lock,
     webrtc_peer_timeout: float,
     feedback_stop_event: Event,
+    webcam_fps: Optional[float] = None,
 ) -> RTCPeerConnectionWithFPS:
     peer_connection = RTCPeerConnectionWithFPS()
     relay = MediaRelay()
@@ -142,6 +144,7 @@ async def init_rtc_peer_connection(
         from_inference_lock=from_inference_lock,
         from_inference_queue=from_inference_queue,
         webrtc_peer_timeout=webrtc_peer_timeout,
+        webcam_fps=webcam_fps,
     )
 
     @peer_connection.on("track")

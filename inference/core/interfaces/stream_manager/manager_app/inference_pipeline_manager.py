@@ -201,6 +201,7 @@ class InferencePipelineManager(Process):
             watchdog = BasePipelineWatchDog()
 
             webrtc_offer = parsed_payload.webrtc_offer
+            webcam_fps = parsed_payload.webcam_fps
             to_inference_queue = deque()
             to_inference_lock = Lock()
             from_inference_queue = deque()
@@ -225,6 +226,7 @@ class InferencePipelineManager(Process):
                     from_inference_lock=from_inference_lock,
                     webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
                     feedback_stop_event=stop_event,
+                    webcam_fps=webcam_fps,
                 ),
                 loop,
             )
