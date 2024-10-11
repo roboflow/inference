@@ -94,6 +94,7 @@ nav:
         - Versioning: workflows/versioning.md
         - Testing: workflows/testing.md
         - Schema API: workflows/schema_api.md
+        - Changelog: workflows/execution_engine_changelog.md
   - Reference:
       - Inference Pipeline: using_inference/inference_pipeline.md
       - Active Learning:
