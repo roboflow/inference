@@ -33,7 +33,7 @@ class VideoTransformTrack(VideoStreamTrack):
         from_inference_lock: Lock,
         webrtc_peer_timeout: float = 1,
         fps_probe_frames: int = 10,
-        webcam_fps: Optional[float] = None
+        webcam_fps: Optional[float] = None,
         *args,
         **kwargs,
     ):
