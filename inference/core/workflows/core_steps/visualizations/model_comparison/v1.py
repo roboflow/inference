@@ -36,7 +36,7 @@ and colors areas predicted by only one model with a distinct color.
 
 
 class ModelComparisonManifest(VisualizationManifest):
-    type: Literal[f"{TYPE}", "ModelComparisonVisualization"]
+    type: Literal[f"{TYPE}"]
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Model Comparison Visualization",
@@ -45,6 +45,10 @@ class ModelComparisonManifest(VisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-not-equal",
+            },
         }
     )
 
@@ -164,9 +168,8 @@ class ModelComparisonVisualizationBlockV1(PredictionsVisualizationBlock):
             detections_b=predictions_b,
         )
 
-        output = WorkflowImageData(
-            parent_metadata=image.parent_metadata,
-            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
+        output = WorkflowImageData.copy_and_replace(
+            origin_image_data=image,
             numpy_image=annotated_image,
         )
 
