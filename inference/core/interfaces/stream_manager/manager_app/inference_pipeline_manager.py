@@ -7,6 +7,7 @@ from dataclasses import asdict
 from functools import partial
 from multiprocessing import Process, Queue
 from threading import Event, Lock
+import time
 from types import FrameType
 from typing import Deque, Dict, Optional, Tuple
 
@@ -231,13 +232,15 @@ class InferencePipelineManager(Process):
                 loop,
             )
             peer_connection: RTCPeerConnectionWithFPS = future.result()
+            while peer_connection.video_transform_track.incoming_stream_fps is None:
+                time.sleep(0.1)
 
             webrtc_producer = partial(
                 WebRTCVideoFrameProducer,
                 to_inference_lock=to_inference_lock,
                 to_inference_queue=to_inference_queue,
                 stop_event=stop_event,
-                fps=peer_connection.incoming_stream_fps,
+                fps=peer_connection.video_transform_track.incoming_stream_fps,
             )
 
             def webrtc_sink(

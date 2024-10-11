@@ -16,15 +16,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import WebRTC
 from inference.core.utils.async_utils import async_lock
 
 
-class RTCPeerConnectionWithFPS(RTCPeerConnection):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.incoming_stream_fps: Optional[float] = None
-
-
 class VideoTransformTrack(VideoStreamTrack):
-    kind = "video"
-
     def __init__(
         self,
         to_inference_queue: Deque,
@@ -62,7 +54,7 @@ class VideoTransformTrack(VideoStreamTrack):
         self._track_active = False
 
     async def recv(self):
-        if self.incoming_stream_fps is None:
+        if not self.incoming_stream_fps:
             logger.debug("Probing incoming stream FPS")
             t1 = 0
             t2 = 0
@@ -125,6 +117,12 @@ class VideoTransformTrack(VideoStreamTrack):
         return new_frame
 
 
+class RTCPeerConnectionWithFPS(RTCPeerConnection):
+    def __init__(self, video_transform_track: VideoTransformTrack, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.video_transform_track: VideoTransformTrack = video_transform_track
+
+
 async def init_rtc_peer_connection(
     webrtc_offer: WebRTCOffer,
     to_inference_queue: Deque,
@@ -135,9 +133,6 @@ async def init_rtc_peer_connection(
     feedback_stop_event: Event,
     webcam_fps: Optional[float] = None,
 ) -> RTCPeerConnectionWithFPS:
-    peer_connection = RTCPeerConnectionWithFPS()
-    relay = MediaRelay()
-
     video_transform_track = VideoTransformTrack(
         to_inference_lock=to_inference_lock,
         to_inference_queue=to_inference_queue,
@@ -146,6 +141,9 @@ async def init_rtc_peer_connection(
         webrtc_peer_timeout=webrtc_peer_timeout,
         webcam_fps=webcam_fps,
     )
+
+    peer_connection = RTCPeerConnectionWithFPS(video_transform_track=video_transform_track)
+    relay = MediaRelay()
 
     @peer_connection.on("track")
     def on_track(track: RemoteStreamTrack):
@@ -169,9 +167,5 @@ async def init_rtc_peer_connection(
     answer = await peer_connection.createAnswer()
     await peer_connection.setLocalDescription(answer)
     logger.debug(f"WebRTC connection status: {peer_connection.connectionState}")
-
-    while video_transform_track.incoming_stream_fps is None:
-        await asyncio.sleep(0.1)
-    peer_connection.incoming_stream_fps = video_transform_track.incoming_stream_fps
 
     return peer_connection
