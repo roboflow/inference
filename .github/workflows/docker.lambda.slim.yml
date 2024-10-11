@@ -2,26 +2,32 @@ name: Build CPU Lambda container SLIM
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
-      
+
 env:
-  VERSION: '0.0.0' # Default version, will be overwritten
+  VERSION: "0.0.0" # Default version, will be overwritten
 
 jobs:
   docker:
     runs-on:
-      group: group8core
+      labels: ubuntu-latest
     timeout-minutes: 120
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
       - name: 🛎️ Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
       - name: Build
-        run:
-          docker buildx build --platform linux/amd64 -t test-lambda-slim -f docker/dockerfiles/Dockerfile.onnx.lambda.slim .
+        uses: depot/build-push-action@v1
+        with:
+          push: false
+          project: grl7ffzxd7
+          tags: test-lambda-slim
+          platforms: linux/amd64
+          file: ./docker/dockerfiles/Dockerfile.onnx.lambda.slim
