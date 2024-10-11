@@ -583,21 +583,6 @@ class HttpInterface(BaseInterface):
                 )
                 return JSONResponse(status_code=200, content=container_stats)
 
-        else:
-
-            @app.get("/device/stats")
-            async def device_stats():
-                return JSONResponse(
-                    status_code=404,
-                    content={
-                        "error": "Device statistics endpoint is not enabled.",
-                        "hint": "Mount the Docker socket and point its location when running the docker "
-                        "container to collect device stats "
-                        "(i.e. `docker run ... -v /var/run/docker.sock:/var/run/docker.sock "
-                        "-e DOCKER_SOCKET_PATH=/var/run/docker.sock ...`).",
-                    },
-                )
-
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
             cached_api_keys = dict()
             cached_projects = dict()
