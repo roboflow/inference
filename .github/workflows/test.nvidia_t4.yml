@@ -1,9 +1,10 @@
 name: Code Quality & Regression Tests - NVIDIA T4
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_run:
+    workflows: ["Build and Push GPU Container"] # The name of the first workflow
+    types:
+      - completed # Trigger this workflow when the first workflow completes
 
 jobs:
   build:
@@ -17,19 +18,39 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: 🛎️ Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
+      - name: 📦 Cache Python packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+      - name: Read version from file
+        run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
       - name: 🦾 Install dependencies
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install -r requirements/requirements.test.integration.txt
-      - name: �🔨 Build and Push Test Docker - GPU
-        run: |
-          docker build -t roboflow/roboflow-inference-server-gpu:test -f docker/dockerfiles/Dockerfile.onnx.gpu .
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+      - name: Retireve build ID
+        uses: actions/download-artifact@v3
+        with:
+          name: build_id
+          path: .
+      - name: Read build ID
+        run: echo "BUILD_ID=$(cat build_id/build_id.txt)" >> $GITHUB_ENV
+      - name: Set Repo
+        run: echo "INFERENCE_SERVER_REPO=roboflow-inference-server-gpu" >> $GITHUB_ENV
+      - name: Pull GPU Image
+        run: depot pull $BUILD_ID -t roboflow/${INFERENCE_SERVER_REPO}:${VERSION}
       - name: 🔋 Start Test Docker - GPU
         run: |
-          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+          docker tag roboflow/${INFERENCE_SERVER_REPO}:${VERSION} roboflow/${INFERENCE_SERVER_REPO}:test
+          PORT=9101 make start_test_docker_gpu
       - name: 🧪 Regression Tests - GPU
         id: regression_tests
         run: |
@@ -85,7 +106,7 @@ jobs:
       - name: 🧪 Regression Tests - SAM2
         id: sam2_tests
         run: |
-           PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_SAM2_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam2.py
+          PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_SAM2_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam2.py
       - name: 🚨 Show server logs on error
         run: docker logs inference-test
         if: ${{ steps.sam2_tests.outcome != 'success' }}
