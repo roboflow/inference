@@ -3,8 +3,6 @@ name: Build and Push CPU Container
 on:
   release:
     types: [created]
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
