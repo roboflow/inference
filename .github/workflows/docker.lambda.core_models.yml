@@ -28,7 +28,7 @@ jobs:
         uses: depot/build-push-action@v1
         with:
           push: false
-          project: grl7ffzxd7
+          project: "grl7ffzxd7"
           tags: test-lambda-slim
           platforms: linux/amd64
           file: ./docker/dockerfiles/Dockerfile.onnx.lambda
