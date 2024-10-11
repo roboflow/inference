@@ -6,7 +6,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETPLATFORM
 
 RUN apt update -y && apt install -y \
-    ffmpeg \
     libxext6 \
     libopencv-dev \
     uvicorn \
@@ -75,6 +74,8 @@ ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV API_LOGGING_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
 ENV CORE_MODEL_TROCR_ENABLED=false
+ENV ENABLE_WORKFLOWS_PROFILING=True
+ENV ENABLE_PROMETHEUS=True
 
 ENTRYPOINT redis-server --io-threads 3 --save --port $REDIS_PORT & \
     celery -A inference.enterprise.parallel.tasks worker --prefetch-multiplier 2 --concurrency $NUM_CELERY_WORKERS -Q pre --loglevel=WARNING & \

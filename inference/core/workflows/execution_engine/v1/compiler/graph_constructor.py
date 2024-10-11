@@ -36,6 +36,10 @@ from inference.core.workflows.execution_engine.introspection.entities import (
 from inference.core.workflows.execution_engine.introspection.selectors_parser import (
     get_step_selectors,
 )
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     CompoundStepInputDefinition,
     DictOfStepInputDefinitions,
@@ -85,8 +89,13 @@ STEP_INPUT_SELECTORS_PROPERTY = "step_input_selectors"
 EXCLUDED_FIELDS = {"type", "name"}
 
 
+@execution_phase(
+    name="execution_graph_creation",
+    categories=["execution_engine_operation"],
+)
 def prepare_execution_graph(
     workflow_definition: ParsedWorkflowDefinition,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> DiGraph:
     execution_graph = construct_graph(
         workflow_definition=workflow_definition,

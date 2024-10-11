@@ -1,5 +1,7 @@
 import base64
 import json
+import os.path
+from glob import glob
 from io import BytesIO
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
@@ -3524,6 +3526,8 @@ def test_infer_from_workflow_when_v0_mode_used(
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
         "inputs": {},
+        "use_cache": True,
+        "enable_profiling": False,
     }, "Request payload must contain api key and inputs"
 
 
@@ -3566,6 +3570,8 @@ def test_infer_from_workflow_when_no_parameters_given(
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
         "inputs": {},
+        "use_cache": True,
+        "enable_profiling": False,
     }, "Request payload must contain api key and inputs"
 
 
@@ -3618,6 +3624,8 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     assert result == [{"some": 3}], "Response from API must be properly decoded"
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
+        "use_cache": True,
+        "enable_profiling": False,
         "inputs": {
             "image_1": {
                 "type": "base64",
@@ -3637,6 +3645,149 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
         },
         "excluded_fields": ["some"],
     }, "Request payload must contain api key and inputs"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+@pytest.mark.parametrize(
+    "legacy_endpoints, endpoint_to_use, parameter_name",
+    [
+        (True, "/infer/workflows/my_workspace/my_workflow", "workflow_name"),
+        (False, "/my_workspace/workflows/my_workflow", "workflow_id"),
+    ],
+)
+def test_infer_from_workflow_when_usage_of_cache_disabled(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+    legacy_endpoints: bool,
+    endpoint_to_use: str,
+    parameter_name: str,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}{endpoint_to_use}",
+        json={
+            "outputs": [{"some": 3}],
+        },
+    )
+    load_static_inference_input_mock.side_effect = [
+        [("base64_image_1", 0.5)],
+        [("base64_image_2", 0.5), ("base64_image_3", 0.5)],
+    ]
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
+
+    # when
+    result = method(
+        workspace_name="my_workspace",
+        images={"image_1": "https://...", "image_2": ["https://...", "https://..."]},
+        use_cache=False,
+        **{parameter_name: "my_workflow"},
+    )
+
+    # then
+    assert result == [{"some": 3}], "Response from API must be properly decoded"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "use_cache": False,
+        "enable_profiling": False,
+        "inputs": {
+            "image_1": {
+                "type": "base64",
+                "value": "base64_image_1",
+            },
+            "image_2": [
+                {
+                    "type": "base64",
+                    "value": "base64_image_2",
+                },
+                {
+                    "type": "base64",
+                    "value": "base64_image_3",
+                },
+            ],
+        },
+    }, "Request payload must contain api key, inputs and no cache flag"
+
+
+@mock.patch.object(client, "load_static_inference_input")
+@pytest.mark.parametrize(
+    "legacy_endpoints, endpoint_to_use, parameter_name",
+    [
+        (True, "/infer/workflows/my_workspace/my_workflow", "workflow_name"),
+        (False, "/my_workspace/workflows/my_workflow", "workflow_id"),
+    ],
+)
+def test_infer_from_workflow_when_usage_of_profiler_enabled(
+    load_static_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+    legacy_endpoints: bool,
+    endpoint_to_use: str,
+    parameter_name: str,
+    empty_directory: str,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url).configure(
+        inference_configuration=InferenceConfiguration(profiling_directory=empty_directory)
+    )
+    requests_mock.post(
+        f"{api_url}{endpoint_to_use}",
+        json={
+            "outputs": [{"some": 3}],
+            "profiler_trace": [{"my": "trace"}]
+        },
+    )
+    load_static_inference_input_mock.side_effect = [
+        [("base64_image_1", 0.5)],
+        [("base64_image_2", 0.5), ("base64_image_3", 0.5)],
+    ]
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
+
+    # when
+    result = method(
+        workspace_name="my_workspace",
+        images={"image_1": "https://...", "image_2": ["https://...", "https://..."]},
+        enable_profiling=True,
+        **{parameter_name: "my_workflow"},
+    )
+
+    # then
+    assert result == [{"some": 3}], "Response from API must be properly decoded"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "use_cache": True,
+        "enable_profiling": True,
+        "inputs": {
+            "image_1": {
+                "type": "base64",
+                "value": "base64_image_1",
+            },
+            "image_2": [
+                {
+                    "type": "base64",
+                    "value": "base64_image_2",
+                },
+                {
+                    "type": "base64",
+                    "value": "base64_image_3",
+                },
+            ],
+        },
+    }, "Request payload must contain api key, inputs and no cache flag"
+    json_files_in_profiling_directory = glob(os.path.join(empty_directory, "*.json"))
+    assert len(json_files_in_profiling_directory) == 1, "Expected to find one JSON file with profiler trace"
+    with open(json_files_in_profiling_directory[0], "r") as f:
+        data = json.load(f)
+    assert data == [{"my": "trace"}], "Trace content must be fully saved"
 
 
 @pytest.mark.parametrize(
@@ -3742,6 +3893,8 @@ def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_exclu
     assert result == [{"some": 3}], "Response from API must be properly decoded"
     assert requests_mock.request_history[0].json() == {
         "api_key": "my-api-key",
+        "use_cache": True,
+        "enable_profiling": False,
         "specification": {"my": "specification"},
         "inputs": {
             "image_1": {
@@ -3762,3 +3915,356 @@ def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_exclu
         },
         "excluded_fields": ["some"],
     }, "Request payload must contain api key and inputs"
+
+
+def test_list_inference_pipelines(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.get(
+        f"{api_url}/inference_pipelines/list",
+        json={
+            "status": "success",
+             "context": {"request_id": "52f5df39-b7de-4a56-8c42-b979d365cfa0",
+                         "pipeline_id": None},
+             "pipelines": ["acd62146-edca-4253-8eeb-40c88906cd70"]
+        },
+    )
+
+    # when
+    result = http_client.list_inference_pipelines()
+
+    # then
+    assert result == {
+        "status": "success",
+         "context": {"request_id": "52f5df39-b7de-4a56-8c42-b979d365cfa0",
+                     "pipeline_id": None},
+         "pipelines": ["acd62146-edca-4253-8eeb-40c88906cd70"]
+    }
+    assert requests_mock.request_history[0].json() == {"api_key": "my-api-key"}, \
+        "Expected payload to contain API key"
+
+
+def test_list_inference_pipelines_on_auth_error(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.get(
+        f"{api_url}/inference_pipelines/list",
+        status_code=401,
+    )
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.list_inference_pipelines()
+
+
+def test_get_inference_pipeline_status(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.get(
+        f"{api_url}/inference_pipelines/my-pipeline/status",
+        json={
+            "status": "success",
+        },
+    )
+
+    # when
+    result = http_client.get_inference_pipeline_status(pipeline_id="my-pipeline")
+
+    # then
+    assert result == {
+        "status": "success",
+    }
+    assert requests_mock.request_history[0].json() == {"api_key": "my-api-key"}, \
+        "Expected payload to contain API key"
+
+
+def test_get_inference_pipeline_status_when_pipeline_id_empty(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = http_client.get_inference_pipeline_status(pipeline_id="")
+
+
+def test_get_inference_pipeline_status_when_pipeline_id_not_found(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.get(
+        f"{api_url}/inference_pipelines/my-pipeline/status",
+        status_code=404,
+    )
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.get_inference_pipeline_status(pipeline_id="my-pipeline")
+
+
+def test_pause_inference_pipeline(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/inference_pipelines/my-pipeline/pause",
+        json={
+            "status": "success",
+        },
+    )
+
+    # when
+    result = http_client.pause_inference_pipeline(pipeline_id="my-pipeline")
+
+    # then
+    assert result == {
+        "status": "success",
+    }
+    assert requests_mock.request_history[0].json() == {"api_key": "my-api-key"}, \
+        "Expected payload to contain API key"
+
+
+def test_pause_inference_pipeline_when_pipeline_id_empty() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = http_client.pause_inference_pipeline(pipeline_id="")
+
+
+def test_pause_inference_pipeline_when_pipeline_id_not_found(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/inference_pipelines/my-pipeline/pause",
+        status_code=404,
+    )
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.pause_inference_pipeline(pipeline_id="my-pipeline")
+
+
+def test_resume_inference_pipeline(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/inference_pipelines/my-pipeline/resume",
+        json={
+            "status": "success",
+        },
+    )
+
+    # when
+    result = http_client.resume_inference_pipeline(pipeline_id="my-pipeline")
+
+    # then
+    assert result == {
+        "status": "success",
+    }
+    assert requests_mock.request_history[0].json() == {"api_key": "my-api-key"}, \
+        "Expected payload to contain API key"
+
+
+def test_resume_inference_pipeline_when_pipeline_id_empty() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = http_client.resume_inference_pipeline(pipeline_id="")
+
+
+def test_resume_inference_pipeline_when_pipeline_id_not_found(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/inference_pipelines/my-pipeline/resume",
+        status_code=404,
+    )
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.resume_inference_pipeline(pipeline_id="my-pipeline")
+
+
+def test_terminate_inference_pipeline(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/inference_pipelines/my-pipeline/terminate",
+        json={
+            "status": "success",
+        },
+    )
+
+    # when
+    result = http_client.terminate_inference_pipeline(pipeline_id="my-pipeline")
+
+    # then
+    assert result == {
+        "status": "success",
+    }
+    assert requests_mock.request_history[0].json() == {"api_key": "my-api-key"}, \
+        "Expected payload to contain API key"
+
+
+def test_terminate_inference_pipeline_when_pipeline_id_empty() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = http_client.terminate_inference_pipeline(pipeline_id="")
+
+
+def test_terminate_inference_pipeline_when_pipeline_id_not_found(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/inference_pipelines/my-pipeline/terminate",
+        status_code=404,
+    )
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.terminate_inference_pipeline(pipeline_id="my-pipeline")
+
+
+def test_consume_inference_pipeline_result(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.get(
+        f"{api_url}/inference_pipelines/my-pipeline/consume",
+        json={
+            "status": "success",
+        },
+    )
+
+    # when
+    result = http_client.consume_inference_pipeline_result(
+        pipeline_id="my-pipeline",
+        excluded_fields=["a"],
+    )
+
+    # then
+    assert result == {
+        "status": "success",
+    }
+    assert requests_mock.request_history[0].json() == {"api_key": "my-api-key", "excluded_fields": ["a"]}, \
+        "Expected payload to contain API key"
+
+
+def test_consume_inference_pipeline_result_when_pipeline_id_empty() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        _ = http_client.consume_inference_pipeline_result(pipeline_id="")
+
+
+def test_consume_inference_pipeline_result_when_pipeline_id_not_found(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.get(
+        f"{api_url}/inference_pipelines/my-pipeline/consume",
+        status_code=404,
+    )
+
+    # when
+    with pytest.raises(HTTPCallErrorError):
+        _ = http_client.consume_inference_pipeline_result(pipeline_id="my-pipeline")
+
+
+def test_start_inference_pipeline_with_workflow_when_configuration_does_not_specify_workflow() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        http_client.start_inference_pipeline_with_workflow(video_reference="rtsp://some/stream")
+
+
+def test_start_inference_pipeline_with_workflow_when_configuration_does_over_specify_workflow() -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+
+    # when
+    with pytest.raises(InvalidParameterError):
+        http_client.start_inference_pipeline_with_workflow(
+            video_reference="rtsp://some/stream",
+            workflow_specification={},
+            workspace_name="some",
+            workflow_id="some",
+        )
+
+
+def test_start_inference_pipeline_with_workflow_when_configuration_is_valid(requests_mock: Mocker) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}/inference_pipelines/initialise",
+        json={
+            "status": "success",
+        },
+    )
+
+    # when
+    result = http_client.start_inference_pipeline_with_workflow(
+        video_reference="rtsp://some/stream",
+        workspace_name="some",
+        workflow_id="other",
+    )
+
+    # then
+    assert result == {
+        "status": "success",
+    }
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "video_configuration": {
+            "type": "VideoConfiguration",
+            "video_reference": "rtsp://some/stream",
+            "max_fps": None,
+            "source_buffer_filling_strategy": "DROP_OLDEST",
+            "source_buffer_consumption_strategy": "EAGER",
+            "video_source_properties": None,
+            "batch_collection_timeout": None,
+        },
+        "processing_configuration": {
+            "type": "WorkflowConfiguration",
+            "workflow_specification": None,
+            "workspace_name": "some",
+            "workflow_id": "other",
+            "image_input_name": "image",
+            "workflows_parameters": None,
+            "workflows_thread_pool_workers": 4,
+            "cancel_thread_pool_tasks_on_exit": True,
+            "video_metadata_input_name": "video_metadata",
+        },
+        "sink_configuration": {
+            "type": "MemorySinkConfiguration",
+            "results_buffer_size": 64,
+        },
+    }
+
+

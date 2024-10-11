@@ -6,7 +6,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETPLATFORM
 
 RUN yum update -y && yum install -y \
-    ffmpeg \
     libsm6 \
     libxext6  \
     python3-pip \
@@ -72,6 +71,7 @@ ENV ALLOW_NON_HTTPS_URL_INPUT=False
 ENV ALLOW_URL_INPUT_WITHOUT_FQDN=False
 ENV ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False
 ENV CORE_MODEL_TROCR_ENABLED=false
+ENV USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS=False
 
 WORKDIR ${LAMBDA_TASK_ROOT}
 RUN rm -rf /build

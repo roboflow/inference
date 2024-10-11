@@ -1,5 +1,9 @@
+import json
+from dataclasses import dataclass
+from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Union
 
+import networkx as nx
 from packaging.version import Version
 
 from inference.core.workflows.execution_engine.entities.base import WorkflowParameter
@@ -7,7 +11,15 @@ from inference.core.workflows.execution_engine.introspection.blocks_loader impor
     load_initializers,
     load_workflow_blocks,
 )
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
+)
+from inference.core.workflows.execution_engine.v1.compiler.cache import (
+    BasicWorkflowsCache,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
+    BlockSpecification,
     CompiledWorkflow,
     InputSubstitution,
     ParsedWorkflowDefinition,
@@ -32,52 +44,119 @@ from inference.core.workflows.execution_engine.v1.debugger.core import (
 )
 from inference.core.workflows.execution_engine.v1.dynamic_blocks.block_assembler import (
     compile_dynamic_blocks,
+    ensure_dynamic_blocks_allowed,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 
+@dataclass(frozen=True)
+class GraphCompilationResult:
+    execution_graph: nx.DiGraph
+    parsed_workflow_definition: ParsedWorkflowDefinition
+    available_blocks: List[BlockSpecification]
+    initializers: Dict[str, Union[Any, Callable[[None], Any]]]
+
+
+COMPILATION_CACHE = BasicWorkflowsCache[GraphCompilationResult](
+    cache_size=256,
+    hash_functions=[
+        (
+            "workflow_definition",
+            partial(json.dumps, sort_keys=True),
+        ),
+        ("execution_engine_version", lambda version: str(version)),
+    ],
+)
+
+
+@execution_phase(
+    name="workflow_compilation",
+    categories=["execution_engine_operation"],
+)
 def compile_workflow(
     workflow_definition: dict,
     init_parameters: Dict[str, Union[Any, Callable[[None], Any]]],
     execution_engine_version: Optional[Version] = None,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> CompiledWorkflow:
-    statically_defined_blocks = load_workflow_blocks(
-        execution_engine_version=execution_engine_version
-    )
-    initializers = load_initializers()
-    dynamic_blocks = compile_dynamic_blocks(
-        dynamic_blocks_definitions=workflow_definition.get(
-            "dynamic_blocks_definitions", []
-        )
-    )
-    parsed_workflow_definition = parse_workflow_definition(
-        raw_workflow_definition=workflow_definition,
-        dynamic_blocks=dynamic_blocks,
+    graph_compilation_results = compile_workflow_graph(
+        workflow_definition=workflow_definition,
         execution_engine_version=execution_engine_version,
-    )
-    validate_workflow_specification(workflow_definition=parsed_workflow_definition)
-    execution_graph = prepare_execution_graph(
-        workflow_definition=parsed_workflow_definition,
+        profiler=profiler,
     )
     steps = initialise_steps(
-        steps_manifest=parsed_workflow_definition.steps,
-        available_bocks=statically_defined_blocks + dynamic_blocks,
+        steps_manifest=graph_compilation_results.parsed_workflow_definition.steps,
+        available_blocks=graph_compilation_results.available_blocks,
         explicit_init_parameters=init_parameters,
-        initializers=initializers,
+        initializers=graph_compilation_results.initializers,
+        profiler=profiler,
     )
     input_substitutions = collect_input_substitutions(
-        workflow_definition=parsed_workflow_definition,
+        workflow_definition=graph_compilation_results.parsed_workflow_definition,
     )
     steps_by_name = {step.manifest.name: step for step in steps}
-    dump_execution_graph(execution_graph=execution_graph)
+    dump_execution_graph(execution_graph=graph_compilation_results.execution_graph)
     return CompiledWorkflow(
-        workflow_definition=parsed_workflow_definition,
+        workflow_definition=graph_compilation_results.parsed_workflow_definition,
         workflow_json=workflow_definition,
         init_parameters=init_parameters,
-        execution_graph=execution_graph,
+        execution_graph=graph_compilation_results.execution_graph,
         steps=steps_by_name,
         input_substitutions=input_substitutions,
     )
+
+
+def compile_workflow_graph(
+    workflow_definition: dict,
+    execution_engine_version: Optional[Version] = None,
+    profiler: Optional[WorkflowsProfiler] = None,
+) -> GraphCompilationResult:
+    key = COMPILATION_CACHE.get_hash_key(
+        workflow_definition=workflow_definition,
+        execution_engine_version=execution_engine_version,
+    )
+    cached_value = COMPILATION_CACHE.get(key=key)
+    if cached_value is not None:
+        dynamic_blocks_definitions = workflow_definition.get(
+            "dynamic_blocks_definitions", []
+        )
+        ensure_dynamic_blocks_allowed(
+            dynamic_blocks_definitions=dynamic_blocks_definitions
+        )
+        return cached_value
+    statically_defined_blocks = load_workflow_blocks(
+        execution_engine_version=execution_engine_version,
+        profiler=profiler,
+    )
+    initializers = load_initializers(profiler=profiler)
+    dynamic_blocks = compile_dynamic_blocks(
+        dynamic_blocks_definitions=workflow_definition.get(
+            "dynamic_blocks_definitions", []
+        ),
+        profiler=profiler,
+    )
+    available_blocks = statically_defined_blocks + dynamic_blocks
+    parsed_workflow_definition = parse_workflow_definition(
+        raw_workflow_definition=workflow_definition,
+        available_blocks=available_blocks,
+        profiler=profiler,
+    )
+    validate_workflow_specification(
+        workflow_definition=parsed_workflow_definition,
+        profiler=profiler,
+    )
+    execution_graph = prepare_execution_graph(
+        workflow_definition=parsed_workflow_definition,
+        profiler=profiler,
+    )
+    result = GraphCompilationResult(
+        execution_graph=execution_graph,
+        parsed_workflow_definition=parsed_workflow_definition,
+        available_blocks=available_blocks,
+        initializers=initializers,
+    )
+    COMPILATION_CACHE.cache(key=key, value=result)
+    return result
 
 
 def collect_input_substitutions(

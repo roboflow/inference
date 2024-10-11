@@ -147,6 +147,9 @@ def test_execute_termination(exit_mock: MagicMock) -> None:
     }
 
     # when
+    # initial command makes sure the error handling is set and there is no time-hazard with execute_termination(...)
+    command_queue.put(("unknown", {}))
+    _ = responses_queue.get()
     execute_termination(9, MagicMock(), processes_table=processes_table)
 
     # then

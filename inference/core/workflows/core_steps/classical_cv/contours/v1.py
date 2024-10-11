@@ -107,13 +107,9 @@ class ImageContoursDetectionBlockV1(WorkflowBlock):
         contour_image, contours, hierarchy = find_and_draw_contours(
             image.numpy_image, thickness=line_thickness
         )
-
-        output = WorkflowImageData(
-            parent_metadata=image.parent_metadata,
-            workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
-            numpy_image=contour_image,
+        output = WorkflowImageData.copy_and_replace(
+            origin_image_data=image, numpy_image=contour_image
         )
-
         return {
             OUTPUT_IMAGE_KEY: output,
             "contours": contours,

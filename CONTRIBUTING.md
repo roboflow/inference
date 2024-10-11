@@ -57,6 +57,11 @@ but in some OS (like MacOS) that would require installing additional libs ([this
 
 After installation, you should be able to run both tests and the library components without issues.
 
+### Workflows
+
+The Workflows Execution Engine requires a specialized approach to development. The proposed strategy is outlined 
+[here](https://inference.roboflow.com/workflows/create_workflow_block/)
+
 ## 🐳 Building docker image with inference server
 
 To test the changes related to `inference` server, you would probably need to build docker image locally.
@@ -72,6 +77,28 @@ repo_root$ docker build -t roboflow/roboflow-inference-server-cpu:dev -f docker/
 # example build for GPU
 repo_root$ docker build -t roboflow/roboflow-inference-server-gpu:dev -f docker/dockerfiles/Dockerfile.onnx.gpu .
 ```
+
+> [!TIP]
+> While the Dockerfiles mentioned above are used for production builds, it can be beneficial during development to use 
+> a version of the Dockerfile that incorporates a watchdog to automatically restart the service whenever code changes 
+> are detected. 
+> We have prepared a development-specific Dockerfile that supports this functionality. 
+> You can find it at `docker/dockerfiles/Dockerfile.onnx.cpu.dev`.
+> To build the image, use the following command:
+> ```bash
+> repo_root$ docker build -t roboflow/roboflow-inference-server-cpu:dev -f docker/dockerfiles/Dockerfile.onnx.cpu.dev .
+> ```
+
+Running the container is possible using the following command:
+
+```bash
+inference_repo$ docker run -p 9001:9001 \
+   -v ./inference:/app/inference \
+   roboflow/roboflow-inference-server-cpu:dev
+```
+
+Running the command from `inference` repository root and mounting the volume is helpful for development as you 
+can build the image once and then run container iteratively improving the code.
 
 ## 🧹 Code quality 
 
@@ -93,12 +120,16 @@ We would like all low-level components to be covered with unit tests. That tests
 * deterministic (not flaky)
 * covering all [equivalence classes](https://piketec.com/testing-with-equivalence-classes/#:~:text=Testing%20with%20equivalence%20classes&text=Equivalence%20classes%20in%20the%20test,class%20you%20use%20as%20input.)
 
+Our test suites are organized to target different areas of the codebase, so when working on a specific feature, you 
+typically only need to focus on the relevant part of the test suite.
+
 Running the unit tests:
 
 ```bash
 repo_root$ (inference-development) pytest tests/inference/unit_tests/ 
 repo_root$ (inference-development) pytest tests/inference_cli/unit_tests/ 
 repo_root$ (inference-development) pytest tests/inference_sdk/unit_tests/ 
+repo_root$ (inference-development) pytest tests/workflows/unit_tests/
 ```
 
 With GH Actions defined in `.github` directory, the ones related to integration tests at `x86` platform 
@@ -113,6 +144,9 @@ Those should check specific functions e2e, including communication with external
 real service cannot be used for any reasons). Integration tests may be more bulky than unit tests, but we wish them
 not to require burning a lot of resources, and be completed within max 20-30 minutes.
 
+Similar to unit tests, integration tests are organized into different suites—each focused on a specific part 
+of the `inference` library.
+
 Running the integration tests locally is possible, but only in some cases. For instance, one may locally run:
 ```bash
 repo_root$ (inference-development) pytest tests/inference/models_predictions_tests/ 
@@ -122,6 +156,7 @@ repo_root$ (inference-development) pytest tests/inference_cli/integration_tests/
 But running 
 ```bash
 repo_root$ (inference-development) pytest tests/inference/integration_tests/ 
+repo_root$ (inference-development) pytest tests/workflows/integration_tests/
 ```
 will not be fully possible, as part of them require API key for Roboflow API.
 
@@ -129,6 +164,54 @@ will not be fully possible, as part of them require API key for Roboflow API.
 
 It would be a great contribution to make `inference` server integration tests running without API keys for Roboflow. 
 
+
+### 🚧 Testing requirements external contributions 🚦
+
+We utilize secrets API keys and custom GitHub Actions runners in our CI pipeline, which may result in the majority of 
+CI actions failing when submitting a pull request (PR) from a forked repository. While we are working to improve this 
+experience, you should not worry too much, as long as you have tested the following locally:
+
+#### For changes in the core of `inference`:
+
+- Add new tests to `tests/inference/unit_tests`.
+
+- Ensure that you can run `pytest tests/inference/unit_tests` without errors.
+
+- When adding a model, include tests with example model inference in `tests/inference/models_predictions_tests`, 
+and run `pytest tests/inference/models_predictions_tests/test_{{YOUR_MODEL}}.py` to confirm that the tests pass.
+
+#### For changes to the `inference` server:
+
+- Add tests to `tests/inference/integration_tests/`.
+
+- Build the inference server CPU locally and run it (see commands above).
+
+- Run your tests against the server using: `pytest tests/inference/integration_tests/test_{{YOUR-TEST-MODULE}}`.
+
+
+#### For changes in `inference-cli`:
+
+- Add tests for your changes in `tests/inference_cli`.
+
+- Run `pytest tests/inference_cli` without errors.
+
+
+#### For changes in `inference-sdk`:
+
+- Add tests to `tests/inference_sdk`.
+
+- Run pytest `tests/inference_sdk without` errors.
+
+
+#### For changes related to Workflows:
+
+- Add tests to `tests/workflows/unit_tests` and `tests/workflows/integration_tests`.
+
+- Run `pytest tests/workflows/unit_tests` without errors
+
+- Run `pytest tests/workflows/integration_tests/execution/test_workflow_with_{{YOUR-BLOCK}}` without errors
+
+Please refer to the details [here](https://inference.roboflow.com/workflows/create_workflow_block/#environment-setup).
 
 ## 📚 Documentation
 

@@ -59,6 +59,7 @@ In this example, Google's Gemini model is prompted with arbitrary text from user
 def test_workflow_with_unconstrained_prompt(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
+    license_plate_image: np.ndarray,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -74,17 +75,21 @@ def test_workflow_with_unconstrained_prompt(
     # when
     result = execution_engine.run(
         runtime_parameters={
-            "image": [dogs_image],
+            "image": [dogs_image, license_plate_image],
             "api_key": GOOGLE_API_KEY,
             "prompt": "What is the topic of the image?",
         }
     )
 
     # then
-    assert len(result) == 1, "Single image given, expected single output"
+    assert len(result) == 2, "Single image given, expected single output"
     assert set(result[0].keys()) == {"result"}, "Expected all outputs to be delivered"
+    assert set(result[1].keys()) == {"result"}, "Expected all outputs to be delivered"
     assert (
         isinstance(result[0]["result"], str) and len(result[0]["result"]) > 0
+    ), "Expected non-empty string generated"
+    assert (
+        isinstance(result[1]["result"], str) and len(result[1]["result"]) > 0
     ), "Expected non-empty string generated"
 
 

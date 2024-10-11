@@ -14,6 +14,7 @@ from inference.core.entities.responses.inference import (
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.sinks import (
     ImageWithSourceID,
+    InMemoryBufferSink,
     UDPSink,
     active_learning_sink,
     multi_sink,
@@ -394,3 +395,71 @@ def test_active_learning_sink_with_batch_input() -> None:
         prediction_type="object-detection",
         disable_preproc_auto_orient=False,
     )
+
+
+def test_in_memory_buffer_sink_for_singular_input() -> None:
+    # given
+    sink = InMemoryBufferSink.init(queue_size=2)
+    video_frames = [
+        VideoFrame(
+            image=np.ones((128, 128, 3), dtype=np.uint8) * 255,
+            frame_id=i,
+            frame_timestamp=datetime.now(),
+        )
+        for i in range(3)
+    ]
+
+    # when
+    sink.on_prediction(predictions={"some": 1}, video_frame=video_frames[0])
+    sink.on_prediction(predictions={"some": 2}, video_frame=video_frames[1])
+    sink.on_prediction(predictions={"some": 3}, video_frame=video_frames[2])
+
+    result_1 = sink.consume_prediction()
+    result_2 = sink.consume_prediction()
+    empty_status = sink.empty()
+
+    # then
+    assert result_1[0] == [
+        {"some": 2}
+    ], "Expected to be second dict wrapped in list (first to be lost by queue size)"
+    assert result_2[0] == [
+        {"some": 3}
+    ], "Expected to be third dict wrapped in list (first to be lost by queue size)"
+    assert empty_status is True, "Expected buffer to be purged during test"
+
+
+def test_in_memory_buffer_sink_for_batch_input() -> None:
+    # given
+    sink = InMemoryBufferSink.init(queue_size=2)
+    video_frames = [
+        [
+            VideoFrame(
+                image=np.ones((128, 128, 3), dtype=np.uint8) * 255,
+                frame_id=i,
+                frame_timestamp=datetime.now(),
+                source_id=0,
+            ),
+            None,
+        ]
+        for i in range(3)
+    ]
+
+    # when
+    sink.on_prediction(predictions=[{"some": 1}, None], video_frame=video_frames[0])
+    sink.on_prediction(predictions=[{"some": 2}, None], video_frame=video_frames[1])
+    sink.on_prediction(predictions=[{"some": 3}, None], video_frame=video_frames[2])
+
+    result_1 = sink.consume_prediction()
+    result_2 = sink.consume_prediction()
+    empty_status = sink.empty()
+
+    # then
+    assert result_1[0] == [
+        {"some": 2},
+        None,
+    ], "Expected to be second dict wrapped in list (first to be lost by queue size)"
+    assert result_2[0] == [
+        {"some": 3},
+        None,
+    ], "Expected to be third dict wrapped in list (first to be lost by queue size)"
+    assert empty_status is True, "Expected buffer to be purged during test"

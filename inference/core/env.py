@@ -169,6 +169,8 @@ ELASTICACHE_ENDPOINT = os.environ.get(
 # Flag to enable byte track, default is False
 ENABLE_BYTE_TRACK = str2bool(os.getenv("ENABLE_BYTE_TRACK", False))
 
+ENABLE_PROMETHEUS = str2bool(os.getenv("ENABLE_PROMETHEUS", False))
+
 # Flag to enforce FPS, default is False
 ENFORCE_FPS = str2bool(os.getenv("ENFORCE_FPS", False))
 MAX_FPS = os.getenv("MAX_FPS")
@@ -423,4 +425,17 @@ DEVICE = os.getenv("DEVICE")
 
 DEDICATED_DEPLOYMENT_WORKSPACE_URL = os.environ.get(
     "DEDICATED_DEPLOYMENT_WORKSPACE_URL", None
+)
+
+ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
+
+RUNS_ON_JETSON = str2bool(os.getenv("RUNS_ON_JETSON", "False"))
+
+ENABLE_WORKFLOWS_PROFILING = str2bool(os.getenv("ENABLE_WORKFLOWS_PROFILING", "False"))
+WORKFLOWS_PROFILER_BUFFER_SIZE = int(os.getenv("WORKFLOWS_PROFILER_BUFFER_SIZE", "64"))
+WORKFLOWS_DEFINITION_CACHE_EXPIRY = int(
+    os.getenv("WORKFLOWS_DEFINITION_CACHE_EXPIRY", 15 * 60)
+)
+USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS = str2bool(
+    os.getenv("USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS", "True")
 )

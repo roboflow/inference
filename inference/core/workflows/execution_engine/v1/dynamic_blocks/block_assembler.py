@@ -25,6 +25,10 @@ from inference.core.workflows.execution_engine.introspection.utils import (
     build_human_friendly_block_name,
     get_full_type_name,
 )
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
 )
@@ -43,18 +47,16 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
 from inference.core.workflows.prototypes.block import WorkflowBlockManifest
 
 
+@execution_phase(
+    name="dynamic_blocks_compilation",
+    categories=["execution_engine_operation"],
+)
 def compile_dynamic_blocks(
-    dynamic_blocks_definitions: List[dict],
+    dynamic_blocks_definitions: List[dict], profiler: Optional[WorkflowsProfiler] = None
 ) -> List[BlockSpecification]:
     if not dynamic_blocks_definitions:
         return []
-    if not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
-        raise WorkflowEnvironmentConfigurationError(
-            public_message="Cannot use dynamic blocks with custom Python code in this installation of `workflows`. "
-            "This can be changed by setting environmental variable "
-            "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
-            context="workflow_compilation | dynamic_blocks_compilation",
-        )
+    ensure_dynamic_blocks_allowed(dynamic_blocks_definitions=dynamic_blocks_definitions)
     all_defined_kinds = load_all_defined_kinds()
     kinds_lookup = {kind.name: kind for kind in all_defined_kinds}
     dynamic_blocks = [
@@ -69,6 +71,16 @@ def compile_dynamic_blocks(
         )
         compiled_blocks.append(block_specification)
     return compiled_blocks
+
+
+def ensure_dynamic_blocks_allowed(dynamic_blocks_definitions: List[dict]) -> None:
+    if dynamic_blocks_definitions and not ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS:
+        raise WorkflowEnvironmentConfigurationError(
+            public_message="Cannot use dynamic blocks with custom Python code in this installation of `workflows`. "
+            "This can be changed by setting environmental variable "
+            "`ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True`",
+            context="workflow_compilation | dynamic_blocks_compilation",
+        )
 
 
 def create_dynamic_block_specification(
@@ -112,7 +124,8 @@ def assembly_dynamic_block_manifest(
             json_schema_extra={
                 "name": build_human_friendly_block_name(
                     fully_qualified_name=manifest_description.block_type
-                )
+                ),
+                "short_description": manifest_description.description,
             },
         ),
         name=(str, ...),

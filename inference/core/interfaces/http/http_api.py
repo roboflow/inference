@@ -1,4 +1,5 @@
 import base64
+import os
 import traceback
 from functools import partial, wraps
 from time import sleep
@@ -11,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -51,6 +53,8 @@ from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
     DescribeInterfaceRequest,
+    PredefinedWorkflowDescribeInterfaceRequest,
+    PredefinedWorkflowInferenceRequest,
     WorkflowInferenceRequest,
     WorkflowSpecificationDescribeInterfaceRequest,
     WorkflowSpecificationInferenceRequest,
@@ -109,6 +113,9 @@ from inference.core.env import (
     CORE_MODELS_ENABLED,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
+    ENABLE_PROMETHEUS,
+    ENABLE_STREAM_API,
+    ENABLE_WORKFLOWS_PROFILING,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -120,6 +127,7 @@ from inference.core.env import (
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
+    WORKFLOWS_PROFILER_BUFFER_SIZE,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.exceptions import (
@@ -154,6 +162,32 @@ from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
     serialise_workflow_result,
 )
+from inference.core.interfaces.stream_manager.api.entities import (
+    CommandResponse,
+    ConsumePipelineResponse,
+    InferencePipelineStatusResponse,
+    InitializeWebRTCPipelineResponse,
+    ListPipelinesResponse,
+)
+from inference.core.interfaces.stream_manager.api.errors import (
+    ProcessesManagerAuthorisationError,
+    ProcessesManagerClientError,
+    ProcessesManagerInvalidPayload,
+    ProcessesManagerNotFoundError,
+)
+from inference.core.interfaces.stream_manager.api.stream_manager_client import (
+    StreamManagerClient,
+)
+from inference.core.interfaces.stream_manager.manager_app.entities import (
+    ConsumeResultsPayload,
+    InitialisePipelinePayload,
+    InitialiseWebRTCPipelinePayload,
+)
+from inference.core.interfaces.stream_manager.manager_app.errors import (
+    CommunicationProtocolError,
+    MalformedPayloadError,
+    MessageToBigError,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.roboflow_api import (
     get_roboflow_dataset_type,
@@ -182,6 +216,14 @@ from inference.core.workflows.execution_engine.core import (
     get_available_versions,
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.introspection.blocks_loader import (
+    load_workflow_blocks,
+)
+from inference.core.workflows.execution_engine.profiling.core import (
+    BaseWorkflowsProfiler,
+    NullWorkflowsProfiler,
+    WorkflowsProfiler,
+)
 from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser import (
     get_workflow_schema_description,
     parse_workflow_definition,
@@ -283,7 +325,20 @@ def with_route_exceptions(route):
                     "inner_error_message": str(error.inner_error),
                 },
             )
-        except RoboflowAPINotAuthorizedError:
+        except (
+            ProcessesManagerInvalidPayload,
+            MalformedPayloadError,
+            MessageToBigError,
+        ) as error:
+            resp = JSONResponse(
+                status_code=400,
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "inner_error_type": error.inner_error_type,
+                },
+            )
+        except (RoboflowAPINotAuthorizedError, ProcessesManagerAuthorisationError):
             resp = JSONResponse(
                 status_code=401,
                 content={
@@ -299,6 +354,16 @@ def with_route_exceptions(route):
                 content={
                     "message": "Requested Roboflow resource not found. Make sure that workspace, project or model "
                     "you referred in request exists."
+                },
+            )
+            traceback.print_exc()
+        except ProcessesManagerNotFoundError as error:
+            resp = JSONResponse(
+                status_code=404,
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "inner_error_type": error.inner_error_type,
                 },
             )
             traceback.print_exc()
@@ -367,6 +432,19 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
+        except (
+            ProcessesManagerClientError,
+            CommunicationProtocolError,
+        ) as error:
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "inner_error_type": error.inner_error_type,
+                },
+            )
+            traceback.print_exc()
         except Exception:
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
             traceback.print_exc()
@@ -426,6 +504,9 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
+
+        if ENABLE_PROMETHEUS:
+            Instrumentator().expose(app, endpoint="/metrics")
 
         if METLO_KEY:
             app.add_middleware(
@@ -560,6 +641,17 @@ class HttpInterface(BaseInterface):
 
         self.app = app
         self.model_manager = model_manager
+        self.stream_manager_client: Optional[StreamManagerClient] = None
+
+        if ENABLE_STREAM_API:
+            operations_timeout = os.getenv("STREAM_MANAGER_OPERATIONS_TIMEOUT")
+            if operations_timeout is not None:
+                operations_timeout = float(operations_timeout)
+            self.stream_manager_client = StreamManagerClient.init(
+                host=os.getenv("STREAM_MANAGER_HOST", "127.0.0.1"),
+                port=int(os.getenv("STREAM_MANAGER_PORT", "7070")),
+                operations_timeout=operations_timeout,
+            )
 
         async def process_inference_request(
             inference_request: InferenceRequest, **kwargs
@@ -585,6 +677,7 @@ class HttpInterface(BaseInterface):
             workflow_request: WorkflowInferenceRequest,
             workflow_specification: dict,
             background_tasks: Optional[BackgroundTasks],
+            profiler: WorkflowsProfiler,
         ) -> WorkflowInferenceResponse:
             workflow_init_parameters = {
                 "workflows_core.model_manager": model_manager,
@@ -596,13 +689,22 @@ class HttpInterface(BaseInterface):
                 init_parameters=workflow_init_parameters,
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 prevent_local_images_loading=True,
+                profiler=profiler,
             )
             result = execution_engine.run(runtime_parameters=workflow_request.inputs)
-            outputs = serialise_workflow_result(
-                result=result,
-                excluded_fields=workflow_request.excluded_fields,
+            with profiler.profile_execution_phase(
+                name="workflow_results_serialisation",
+                categories=["inference_package_operation"],
+            ):
+                outputs = serialise_workflow_result(
+                    result=result,
+                    excluded_fields=workflow_request.excluded_fields,
+                )
+            profiler_trace = profiler.export_trace()
+            response = WorkflowInferenceResponse(
+                outputs=outputs,
+                profiler_trace=profiler_trace,
             )
-            response = WorkflowInferenceResponse(outputs=outputs)
             return orjson_response(response=response)
 
         def load_core_model(
@@ -986,12 +1088,13 @@ class HttpInterface(BaseInterface):
             async def describe_predefined_workflow_interface(
                 workspace_name: str,
                 workflow_id: str,
-                workflow_request: DescribeInterfaceRequest,
+                workflow_request: PredefinedWorkflowDescribeInterfaceRequest,
             ) -> DescribeInterfaceResponse:
                 workflow_specification = get_workflow_specification(
                     api_key=workflow_request.api_key,
                     workspace_id=workspace_name,
                     workflow_id=workflow_id,
+                    use_cache=workflow_request.use_cache,
                 )
                 return handle_describe_workflows_interface(
                     definition=workflow_specification,
@@ -1028,19 +1131,31 @@ class HttpInterface(BaseInterface):
             async def infer_from_predefined_workflow(
                 workspace_name: str,
                 workflow_id: str,
-                workflow_request: WorkflowInferenceRequest,
+                workflow_request: PredefinedWorkflowInferenceRequest,
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
-                workflow_specification = get_workflow_specification(
-                    api_key=workflow_request.api_key,
-                    workspace_id=workspace_name,
-                    workflow_id=workflow_id,
-                )
+                if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
+                    profiler = BaseWorkflowsProfiler.init(
+                        max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE,
+                    )
+                else:
+                    profiler = NullWorkflowsProfiler.init()
+                with profiler.profile_execution_phase(
+                    name="workflow_definition_fetching",
+                    categories=["inference_package_operation"],
+                ):
+                    workflow_specification = get_workflow_specification(
+                        api_key=workflow_request.api_key,
+                        workspace_id=workspace_name,
+                        workflow_id=workflow_id,
+                        use_cache=workflow_request.use_cache,
+                    )
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
                     background_tasks=background_tasks if not LAMBDA else None,
+                    profiler=profiler,
                 )
 
             @app.post(
@@ -1062,10 +1177,17 @@ class HttpInterface(BaseInterface):
                 background_tasks: BackgroundTasks,
             ) -> WorkflowInferenceResponse:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
+                if ENABLE_WORKFLOWS_PROFILING and workflow_request.enable_profiling:
+                    profiler = BaseWorkflowsProfiler.init(
+                        max_runs_in_buffer=WORKFLOWS_PROFILER_BUFFER_SIZE,
+                    )
+                else:
+                    profiler = NullWorkflowsProfiler.init()
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_request.specification,
                     background_tasks=background_tasks if not LAMBDA else None,
+                    profiler=profiler,
                 )
 
             @app.get(
@@ -1151,9 +1273,10 @@ class HttpInterface(BaseInterface):
                     "steps": [step_manifest],
                     "outputs": [],
                 }
+                available_blocks = load_workflow_blocks()
                 parsed_definition = parse_workflow_definition(
                     raw_workflow_definition=dummy_workflow_definition,
-                    dynamic_blocks=[],
+                    available_blocks=available_blocks,
                 )
                 parsed_manifest = parsed_definition.steps[0]
                 return parsed_manifest.get_actual_outputs()
@@ -1183,6 +1306,111 @@ class HttpInterface(BaseInterface):
                     prevent_local_images_loading=True,
                 )
                 return WorkflowValidationStatus(status="ok")
+
+        if ENABLE_STREAM_API:
+
+            @app.get(
+                "/inference_pipelines/list",
+                response_model=ListPipelinesResponse,
+                summary="[EXPERIMENTAL] List active InferencePipelines",
+                description="[EXPERIMENTAL] Listing all active InferencePipelines processing videos",
+            )
+            @with_route_exceptions
+            async def list_pipelines(_: Request) -> ListPipelinesResponse:
+                return await self.stream_manager_client.list_pipelines()
+
+            @app.get(
+                "/inference_pipelines/{pipeline_id}/status",
+                response_model=InferencePipelineStatusResponse,
+                summary="[EXPERIMENTAL] Get status of InferencePipeline",
+                description="[EXPERIMENTAL] Get status of InferencePipeline",
+            )
+            @with_route_exceptions
+            async def get_status(pipeline_id: str) -> InferencePipelineStatusResponse:
+                return await self.stream_manager_client.get_status(
+                    pipeline_id=pipeline_id
+                )
+
+            @app.post(
+                "/inference_pipelines/initialise",
+                response_model=CommandResponse,
+                summary="[EXPERIMENTAL] Starts new InferencePipeline",
+                description="[EXPERIMENTAL] Starts new InferencePipeline",
+            )
+            @with_route_exceptions
+            async def initialise(request: InitialisePipelinePayload) -> CommandResponse:
+                return await self.stream_manager_client.initialise_pipeline(
+                    initialisation_request=request
+                )
+
+            @app.post(
+                "/inference_pipelines/initialise_webrtc",
+                response_model=InitializeWebRTCPipelineResponse,
+                summary="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
+                description="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
+            )
+            @with_route_exceptions
+            async def initialise_webrtc_inference_pipeline(
+                request: InitialiseWebRTCPipelinePayload,
+            ) -> CommandResponse:
+                resp = await self.stream_manager_client.initialise_webrtc_pipeline(
+                    initialisation_request=request
+                )
+                return resp
+
+            @app.post(
+                "/inference_pipelines/{pipeline_id}/pause",
+                response_model=CommandResponse,
+                summary="[EXPERIMENTAL] Pauses the InferencePipeline",
+                description="[EXPERIMENTAL] Pauses the InferencePipeline",
+            )
+            @with_route_exceptions
+            async def pause(pipeline_id: str) -> CommandResponse:
+                return await self.stream_manager_client.pause_pipeline(
+                    pipeline_id=pipeline_id
+                )
+
+            @app.post(
+                "/inference_pipelines/{pipeline_id}/resume",
+                response_model=CommandResponse,
+                summary="[EXPERIMENTAL] Resumes the InferencePipeline",
+                description="[EXPERIMENTAL] Resumes the InferencePipeline",
+            )
+            @with_route_exceptions
+            async def resume(pipeline_id: str) -> CommandResponse:
+                return await self.stream_manager_client.resume_pipeline(
+                    pipeline_id=pipeline_id
+                )
+
+            @app.post(
+                "/inference_pipelines/{pipeline_id}/terminate",
+                response_model=CommandResponse,
+                summary="[EXPERIMENTAL] Terminates the InferencePipeline",
+                description="[EXPERIMENTAL] Terminates the InferencePipeline",
+            )
+            @with_route_exceptions
+            async def terminate(pipeline_id: str) -> CommandResponse:
+                return await self.stream_manager_client.terminate_pipeline(
+                    pipeline_id=pipeline_id
+                )
+
+            @app.get(
+                "/inference_pipelines/{pipeline_id}/consume",
+                response_model=ConsumePipelineResponse,
+                summary="[EXPERIMENTAL] Consumes InferencePipeline result",
+                description="[EXPERIMENTAL] Consumes InferencePipeline result",
+            )
+            @with_route_exceptions
+            async def consume(
+                pipeline_id: str,
+                request: Optional[ConsumeResultsPayload] = None,
+            ) -> ConsumePipelineResponse:
+                if request is None:
+                    request = ConsumeResultsPayload()
+                return await self.stream_manager_client.consume_pipeline_result(
+                    pipeline_id=pipeline_id,
+                    excluded_fields=request.excluded_fields,
+                )
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:

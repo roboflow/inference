@@ -1,4 +1,3 @@
-import os
 from threading import Thread
 from typing import List, Optional
 
@@ -7,12 +6,13 @@ import supervision as sv
 
 from inference import InferencePipeline
 from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.camera.video_source import BufferFillingStrategy, BufferConsumptionStrategy
 from inference.core.interfaces.stream.watchdog import PipelineWatchDog, BasePipelineWatchDog
 from inference.core.utils.drawing import create_tiles
 
 STOP = False
 ANNOTATOR = sv.BoundingBoxAnnotator()
-TARGET_PROJECT = os.environ["TARGET_PROJECT"]
+fps_monitor = sv.FPSMonitor()
 
 
 def main() -> None:
@@ -32,36 +32,25 @@ def main() -> None:
                 "confidence": 0.5,
             },
             {
-                "type": "RoboflowDatasetUpload",
-                "name": "roboflow_dataset_upload",
-                "images": "$inputs.image",
+                "type": "roboflow_core/bounding_box_visualization@v1",
+                "name": "bbox_visualiser",
                 "predictions": "$steps.step_1.predictions",
-                "target_project": TARGET_PROJECT,
-                "usage_quota_name": "upload_quota_XXX",
-                "fire_and_forget": True,
-            },
-            {
-                "type": "RoboflowCustomMetadata",
-                "name": "metadata_upload",
-                "predictions": "$steps.step_1.predictions",
-                "field_name": "dummy",
-                "field_value": "dummy",
-                "fire_and_forget": True,
-            },
+                "image": "$inputs.image"
+            }
         ],
         "outputs": [
             {"type": "JsonField", "name": "predictions", "selector": "$steps.step_1.predictions"},
-            {"type": "JsonField", "name": "upload_error", "selector": "$steps.roboflow_dataset_upload.error_status"},
-            {"type": "JsonField", "name": "upload_message", "selector": "$steps.roboflow_dataset_upload.message"},
-            {"type": "JsonField", "name": "metadata_error", "selector": "$steps.metadata_upload.error_status"},
-            {"type": "JsonField", "name": "metadata_message", "selector": "$steps.metadata_upload.message"},
+            {"type": "JsonField", "name": "preview", "selector": "$steps.bbox_visualiser.image"},
+
         ],
     }
     pipeline = InferencePipeline.init_with_workflow(
-        video_reference=[os.environ["VIDEO_REFERENCE"]] * 2,
+        video_reference=["rtsp://localhost:8554/live0.stream"],
         workflow_specification=workflow_specification,
         watchdog=watchdog,
         on_prediction=workflows_sink,
+        source_buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
+        source_buffer_consumption_strategy=BufferConsumptionStrategy.EAGER,
     )
     control_thread = Thread(target=command_thread, args=(pipeline, watchdog))
     control_thread.start()
@@ -91,6 +80,10 @@ def workflows_sink(
     predictions: List[Optional[dict]],
     video_frames: List[Optional[VideoFrame]],
 ) -> None:
+    fps_monitor.tick()
+    if not isinstance(predictions, list):
+        predictions = [predictions]
+        video_frames = [video_frames]
     images_to_show = []
     for prediction, frame in zip(predictions, video_frames):
         if prediction is None or frame is None:
@@ -98,10 +91,14 @@ def workflows_sink(
         detections: sv.Detections = prediction["predictions"]
         visualised = ANNOTATOR.annotate(frame.image.copy(), detections)
         images_to_show.append(visualised)
-        print(prediction["upload_message"], prediction["metadata_message"])
     tiles = create_tiles(images=images_to_show)
     cv2.imshow(f"Predictions", tiles)
     cv2.waitKey(1)
+    if hasattr(fps_monitor, "fps"):
+        fps_value = fps_monitor.fps
+    else:
+        fps_value = fps_monitor()
+    print(f"FPS: {fps_value}")
 
 
 if __name__ == '__main__':

@@ -17,6 +17,7 @@ from inference.core.env import (
     DEFAULT_BUFFER_SIZE,
     DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
     DEFAULT_MINIMUM_ADAPTIVE_MODE_SAMPLES,
+    RUNS_ON_JETSON,
 )
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
@@ -132,7 +133,10 @@ def lock_state_transition(
 
 class CV2VideoFrameProducer(VideoFrameProducer):
     def __init__(self, video: Union[str, int]):
-        self.stream = cv2.VideoCapture(video)
+        if _consumes_camera_on_jetson(video=video):
+            self.stream = cv2.VideoCapture(video, cv2.CAP_V4L2)
+        else:
+            self.stream = cv2.VideoCapture(video)
 
     def isOpened(self) -> bool:
         return self.stream.isOpened()
@@ -163,6 +167,14 @@ class CV2VideoFrameProducer(VideoFrameProducer):
 
     def release(self):
         self.stream.release()
+
+
+def _consumes_camera_on_jetson(video: Union[str, int]) -> bool:
+    if not RUNS_ON_JETSON:
+        return False
+    if isinstance(video, int):
+        return True
+    return video.startswith("/dev/video")
 
 
 class VideoSource:
@@ -540,9 +552,12 @@ class VideoSource:
         return video_frame
 
     def describe_source(self) -> SourceMetadata:
+        serialized_source_reference = self._stream_reference
+        if callable(serialized_source_reference):
+            serialized_source_reference = str(self._stream_reference)
         return SourceMetadata(
             source_properties=self._source_properties,
-            source_reference=self._stream_reference,
+            source_reference=serialized_source_reference,
             buffer_size=self._frames_buffer.maxsize,
             state=self._state,
             buffer_filling_strategy=self._video_consumer.buffer_filling_strategy,

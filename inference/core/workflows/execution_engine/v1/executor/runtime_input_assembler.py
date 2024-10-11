@@ -18,14 +18,23 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
     WorkflowVideoMetadata,
 )
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
+)
 
 BATCH_ORIENTED_PARAMETER_TYPES = {WorkflowImage, WorkflowVideoMetadata}
 
 
+@execution_phase(
+    name="workflow_input_assembly",
+    categories=["execution_engine_operation"],
+)
 def assemble_runtime_parameters(
     runtime_parameters: Dict[str, Any],
     defined_inputs: List[InputType],
     prevent_local_images_loading: bool = False,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> Dict[str, Any]:
     input_batch_size = determine_input_batch_size(
         runtime_parameters=runtime_parameters,
@@ -114,6 +123,11 @@ def _assemble_input_image(
     parent_id = parameter
     if identifier is not None:
         parent_id = f"{parent_id}.[{identifier}]"
+    video_metadata = None
+    if isinstance(image, dict) and "video_metadata" in image:
+        video_metadata = _assemble_video_metadata(
+            parameter=parameter, video_metadata=image["video_metadata"]
+        )
     if isinstance(image, dict) and isinstance(image.get("value"), np.ndarray):
         image = image["value"]
     if isinstance(image, np.ndarray):
@@ -121,6 +135,7 @@ def _assemble_input_image(
         return WorkflowImageData(
             parent_metadata=parent_metadata,
             numpy_image=image,
+            video_metadata=video_metadata,
         )
     try:
         if isinstance(image, dict):
@@ -146,6 +161,7 @@ def _assemble_input_image(
                 numpy_image=image,
                 base64_image=base64_image,
                 image_reference=image_reference,
+                video_metadata=video_metadata,
             )
     except Exception as error:
         raise RuntimeInputError(
@@ -204,7 +220,7 @@ def _assemble_video_metadata(
         return video_metadata
     if not isinstance(video_metadata, dict):
         raise RuntimeInputError(
-            public_message=f"Detected runtime parameter `{parameter}` defined as "
+            public_message=f"Detected runtime parameter `{parameter}` holding "
             f"`WorkflowVideoMetadata`, but provided value is not a dict.",
             context="workflow_execution | runtime_input_validation",
         )
@@ -212,7 +228,7 @@ def _assemble_video_metadata(
         return VideoMetadata.model_validate(video_metadata)
     except ValidationError as error:
         raise RuntimeInputError(
-            public_message=f"Detected runtime parameter `{parameter}` defined as "
+            public_message=f"Detected runtime parameter `{parameter}` holding "
             f"`WorkflowVideoMetadata`, but provided value is malformed. "
             f"See details in inner error.",
             context="workflow_execution | runtime_input_validation",

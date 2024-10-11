@@ -3,7 +3,6 @@ FROM nvcr.io/nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04 as base
 WORKDIR /app
 
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    ffmpeg \
     libxext6 \
     libopencv-dev \
     uvicorn \
@@ -64,5 +63,7 @@ ENV REDIS_HOST=localhost
 ENV API_LOGGING_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
 ENV CORE_MODEL_TROCR_ENABLED=false
+ENV ENABLE_WORKFLOWS_PROFILING=True
+ENV ENABLE_PROMETHEUS=True
 
 ENTRYPOINT python3 entrypoint.py

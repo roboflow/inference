@@ -2,6 +2,7 @@ import importlib
 import logging
 import os
 from collections import Counter
+from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from packaging.specifiers import SpecifierSet
@@ -26,8 +27,15 @@ from inference.core.workflows.execution_engine.introspection.utils import (
     build_human_friendly_block_name,
     get_full_type_name,
 )
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     BlockSpecification,
+)
+from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import (
+    BLOCK_SOURCE,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
@@ -102,8 +110,13 @@ def get_manifest_type_identifiers(
     )
 
 
+@execution_phase(
+    name="blocks_loading",
+    categories=["execution_engine_operation"],
+)
 def load_workflow_blocks(
     execution_engine_version: Optional[Union[str, Version]] = None,
+    profiler: Optional[WorkflowsProfiler] = None,
 ) -> List[BlockSpecification]:
     if isinstance(execution_engine_version, str):
         try:
@@ -131,6 +144,7 @@ def load_workflow_blocks(
     return filtered_blocks
 
 
+@lru_cache()
 def load_core_workflow_blocks() -> List[BlockSpecification]:
     core_blocks = load_blocks()
     already_spotted_blocks = set()
@@ -235,7 +249,13 @@ def is_block_compatible_with_execution_engine(
         )
 
 
-def load_initializers() -> Dict[str, Union[Any, Callable[[None], Any]]]:
+@execution_phase(
+    name="blocks_initializers_loading",
+    categories=["execution_engine_operation"],
+)
+def load_initializers(
+    profiler: Optional[WorkflowsProfiler] = None,
+) -> Dict[str, Union[Any, Callable[[None], Any]]]:
     plugins_to_load = get_plugin_modules()
     result = load_core_blocks_initializers()
     for plugin_name in plugins_to_load:
@@ -287,16 +307,25 @@ def _validate_loaded_blocks_manifest_type_identifiers(
         for type_name in all_types:
             if type_name in types_already_defined:
                 clashing_block = types_already_defined[type_name]
+                block_identifier = _produce_readable_block_identifier(block=block)
+                clashing_block_identifier = _produce_readable_block_identifier(
+                    block=clashing_block
+                )
                 raise PluginLoadingError(
-                    public_message=f"Block defined in {block.block_source} plugin with fully qualified class "
-                    f"name {block.fully_qualified_block_class_name} clashes in terms of "
-                    f"the manifest type identifier (or its alias): {type_name} - defined in "
-                    f"{clashing_block.block_source} with fully qualified class name: "
-                    f"{clashing_block.fully_qualified_block_class_name}.",
+                    public_message=f"Block `{block_identifier}`, defined in `{block.block_source}` plugin,"
+                    f"clashes in terms of the manifest type identifier (or its alias): "
+                    f"`{type_name}` with `{clashing_block_identifier}` defined in "
+                    f"`{clashing_block.block_source}` plugin.",
                     context="blocks_loading",
                 )
             types_already_defined[type_name] = block
     return None
+
+
+def _produce_readable_block_identifier(block: BlockDescription) -> str:
+    if block.block_source == BLOCK_SOURCE:
+        return block.human_friendly_block_name
+    return block.fully_qualified_block_class_name
 
 
 def _validate_used_kinds_uniqueness(declared_kinds: List[Kind]) -> None:

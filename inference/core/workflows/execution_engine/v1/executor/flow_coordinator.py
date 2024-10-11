@@ -3,6 +3,10 @@ from typing import List, Optional
 
 import networkx as nx
 
+from inference.core.workflows.execution_engine.profiling.core import (
+    WorkflowsProfiler,
+    execution_phase,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import NodeCategory
 from inference.core.workflows.execution_engine.v1.compiler.graph_traversal import (
     assign_max_distances_from_start,
@@ -21,7 +25,9 @@ class StepExecutionCoordinator(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def get_steps_to_execute_next(self) -> Optional[List[str]]:
+    def get_steps_to_execute_next(
+        self, profiler: Optional[WorkflowsProfiler] = None
+    ) -> Optional[List[str]]:
         pass
 
 
@@ -36,7 +42,13 @@ class ParallelStepExecutionCoordinator(StepExecutionCoordinator):
         self.__execution_order: Optional[List[List[str]]] = None
         self.__execution_pointer = 0
 
-    def get_steps_to_execute_next(self) -> Optional[List[str]]:
+    @execution_phase(
+        name="next_steps_selection",
+        categories=["execution_engine_operation"],
+    )
+    def get_steps_to_execute_next(
+        self, profiler: Optional[WorkflowsProfiler] = None
+    ) -> Optional[List[str]]:
         if self.__execution_order is None:
             self.__execution_order = establish_execution_order(
                 execution_graph=self._execution_graph

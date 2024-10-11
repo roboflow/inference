@@ -57,6 +57,7 @@ setuptools.setup(
             "requirements/requirements.code_analysis.txt",
             "requirements/requirements.test.unit.txt",
             "requirements/requirements.test.integration.txt",
+            "requirements/requirements.transformers.txt",
         ]
     ),
     extras_require={

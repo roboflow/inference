@@ -3,7 +3,6 @@ FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 as base
 WORKDIR /app
 
 RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    ffmpeg \
     libxext6 \
     libopencv-dev \
     uvicorn \
@@ -74,10 +73,13 @@ ENV NUM_WORKERS=1
 ENV HOST=0.0.0.0
 ENV PORT=9001
 ENV WORKFLOWS_STEP_EXECUTION_MODE=local
-ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
+ENV WORKFLOWS_MAX_CONCURRENT_STEPS=4
 ENV API_LOGGING_ENABLED=True
 ENV LMM_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
 ENV CORE_MODEL_OWLV2_ENABLED=True
+ENV ENABLE_STREAM_API=True
+ENV ENABLE_WORKFLOWS_PROFILING=True
+ENV ENABLE_PROMETHEUS=True
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

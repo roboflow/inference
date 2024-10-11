@@ -89,6 +89,7 @@ ROBOFLOW_API_KEY = os.environ["HOSTED_PLATFORM_TESTS_API_KEY"]
 OPENAI_KEY = os.getenv("OPENAI_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+GOOGLE_VISION_API_KEY = os.getenv("GOOGLE_VISION_API_KEY")
 
 
 @pytest.fixture(scope="session")
