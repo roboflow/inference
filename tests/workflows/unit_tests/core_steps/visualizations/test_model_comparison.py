@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from inference.core.workflows.core_steps.visualizations.model_comparison.v1 import (
     ModelComparisonManifest,
-    ModelComparisonVisualizationBlockV1
+    ModelComparisonVisualizationBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -13,20 +13,17 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 
 
-@pytest.mark.parametrize(
-    "type_alias", ["roboflow_core/model_comparison_visualization@v1", "ModelComparisonVisualization"]
-)
 @pytest.mark.parametrize("images_field_alias", ["images", "image"])
 def test_model_comparison_validation_when_valid_manifest_is_given(
-    type_alias: str, images_field_alias: str
+    images_field_alias: str,
 ) -> None:
     # given
     data = {
-        "type": type_alias,
+        "type": "roboflow_core/model_comparison_visualization@v1",
         "name": "comparison1",
         "predictions_a": "$steps.od_model.predictions",
         "predictions_b": "$steps.od_model.predictions",
-        images_field_alias: "$inputs.image"
+        images_field_alias: "$inputs.image",
     }
 
     # when
@@ -36,18 +33,18 @@ def test_model_comparison_validation_when_valid_manifest_is_given(
 
     # then
     assert result == ModelComparisonManifest(
-        type=type_alias,
+        type="roboflow_core/model_comparison_visualization@v1",
         name="comparison1",
         images="$inputs.image",
         predictions_a="$steps.od_model.predictions",
-        predictions_b="$steps.od_model.predictions"
+        predictions_b="$steps.od_model.predictions",
     )
 
 
 def test_model_comparison_validation_when_invalid_image_is_given() -> None:
     # given
     data = {
-        "type": "ModelComparisonVisualization",
+        "type": "roboflow_core/model_comparison_visualization@v1",
         "name": "comparison1",
         "images": "invalid",
         "predictions": "$steps.od_model.predictions",

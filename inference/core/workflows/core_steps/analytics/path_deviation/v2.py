@@ -47,7 +47,8 @@ class PathDeviationManifest(WorkflowBlockManifest):
             "block_type": "analytics",
             "ui_manifest": {
                 "section": "video",
-                "icon": "far fa-tower-observation",
+                "icon": "far fa-road",
+                "blockPriority": 3,
             },
         }
     )
