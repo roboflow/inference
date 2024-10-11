@@ -1,19 +1,22 @@
 import asyncio
-from collections import deque
 import concurrent.futures
 import time
+from collections import deque
 from threading import Event, Lock
 from typing import Deque, Dict, Optional, Tuple
 
 import numpy as np
-from aiortc import VideoStreamTrack, RTCPeerConnection, RTCSessionDescription
-from aiortc.mediastreams import MediaStreamError
+from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
 from aiortc.contrib.media import MediaRelay
+from aiortc.mediastreams import MediaStreamError
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
 
 from inference.core import logger
-from inference.core.interfaces.camera.entities import SourceProperties, VideoFrameProducer
+from inference.core.interfaces.camera.entities import (
+    SourceProperties,
+    VideoFrameProducer,
+)
 from inference.core.interfaces.stream_manager.manager_app.entities import WebRTCOffer
 from inference.core.utils.async_utils import async_lock
 from inference.core.utils.function import experimental
@@ -77,7 +80,9 @@ class VideoTransformTrack(VideoStreamTrack):
                     t1 = time.time()
             t2 = time.time()
             if t1 == t2:
-                logger.info("All frames probed in the same time - could not calculate fps.")
+                logger.info(
+                    "All frames probed in the same time - could not calculate fps."
+                )
                 raise MediaStreamError
             self.incoming_stream_fps = 9 / (t2 - t1)
             logger.debug("Incoming stream fps: %s", self.incoming_stream_fps)
@@ -126,7 +131,11 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
         "Please report any issues here: https://github.com/roboflow/inference/issues"
     )
     def __init__(
-        self, to_inference_queue: deque, to_inference_lock: Lock, stop_event: Event, webrtc_video_transform_track: VideoTransformTrack
+        self,
+        to_inference_queue: deque,
+        to_inference_lock: Lock,
+        stop_event: Event,
+        webrtc_video_transform_track: VideoTransformTrack,
     ):
         self.to_inference_queue: deque = to_inference_queue
         self.to_inference_lock: Lock = to_inference_lock
@@ -197,7 +206,9 @@ async def init_rtc_peer_connection(
         webcam_fps=webcam_fps,
     )
 
-    peer_connection = RTCPeerConnectionWithFPS(video_transform_track=video_transform_track)
+    peer_connection = RTCPeerConnectionWithFPS(
+        video_transform_track=video_transform_track
+    )
     relay = MediaRelay()
 
     @peer_connection.on("track")

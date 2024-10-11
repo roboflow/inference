@@ -6,7 +6,6 @@ from typing import Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
 
-
 FrameTimestamp = datetime
 FrameID = int
 

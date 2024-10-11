@@ -2,12 +2,12 @@ import asyncio
 import os
 import signal
 import threading
+import time
 from collections import deque
 from dataclasses import asdict
 from functools import partial
 from multiprocessing import Process, Queue
 from threading import Event, Lock
-import time
 from types import FrameType
 from typing import Deque, Dict, Optional, Tuple
 
@@ -19,9 +19,7 @@ from inference.core.exceptions import (
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
 )
-from inference.core.interfaces.camera.entities import (
-    VideoFrame,
-)
+from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.camera.exceptions import StreamOperationNotAllowedError
 from inference.core.interfaces.http.orjson_utils import (
     serialise_single_workflow_result_element,

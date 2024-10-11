@@ -130,7 +130,9 @@ class ByteTrackerBlockV2(WorkflowBlock):
         fps = metadata.fps
         if not fps:
             fps = 0
-            logger.warning(f"Malformed fps in VideoMetadata, {self.__class__.__name__} requires fps in order to initialize ByteTrack")
+            logger.warning(
+                f"Malformed fps in VideoMetadata, {self.__class__.__name__} requires fps in order to initialize ByteTrack"
+            )
         if metadata.video_identifier not in self._trackers:
             self._trackers[metadata.video_identifier] = sv.ByteTrack(
                 track_activation_threshold=track_activation_threshold,
