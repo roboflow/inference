@@ -4,52 +4,51 @@ on:
   release:
     types: [created]
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       force_push:
         type: boolean
         description: "Do you want to push image after build?"
         default: false
-
 env:
-  VERSION: "0.0.0" # Default version, will be overwritten
+  VERSION: '0.0.0' # Default version, will be overwritten
 
 jobs:
   docker:
     runs-on:
-      labels: ubuntu-latest
+      group: group8core
     timeout-minutes: 120
-    permissions:
-      id-token: write
-      contents: read
     steps:
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - name: Remove unnecessary files
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      -
+        name: Login to Docker Hub
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: 🛎️ Checkout
-        uses: actions/checkout@v4
-      - name: Read version from file
+      - 
+        name: 🛎️ Checkout
+        uses: actions/checkout@v3
+      -
+        name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-      - name: Build and Push
-        uses: depot/build-push-action@v1
+      -
+        name: Build and Push
+        uses: docker/build-push-action@v4
         with:
-          save: true
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
-          project: grl7ffzxd7
           tags: roboflow/roboflow-inference-server-gpu:latest,roboflow/roboflow-inference-server-gpu:${{env.VERSION}}
+          cache-from: type=registry,ref=roboflow/roboflow-inference-server-gpu:cache
+          cache-to: type=registry,ref=roboflow/roboflow-inference-server-gpu:cache,mode=max
           platforms: linux/amd64
           file: ./docker/dockerfiles/Dockerfile.onnx.gpu
-      - name: Store build ID
-        run: echo ${{ steps.build.outputs.build-id }} > build_id.txt
-      - name: Upload build ID
-        uses: actions/upload-artifact@v3
-        with:
-          name: build_id
-          path: build_id.txt
