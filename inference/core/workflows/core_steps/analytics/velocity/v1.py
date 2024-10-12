@@ -122,11 +122,10 @@ class VelocityBlockV1(WorkflowBlock):
             raise ValueError(
                 "tracker_id not initialized, VelocityBlock requires detections to be tracked"
             )
-        print('======================================')
-        print(smoothing_alpha)
-        print('======================================')
         if not (0 < smoothing_alpha <= 1):
             raise ValueError("smoothing_alpha must be between 0 (exclusive) and 1 (inclusive)")
+        if not (pixel_to_meter_ratio > 0):
+            raise ValueError("pixel_to_meter_ratio must be greater than 0")
         
         if metadata.comes_from_video_file and metadata.fps != 0:
             ts_current = metadata.frame_number / metadata.fps
@@ -149,6 +148,8 @@ class VelocityBlockV1(WorkflowBlock):
         speeds = np.zeros(num_detections)  # Shape (num_detections,)
         smoothed_velocities_arr = np.zeros_like(current_positions)
         smoothed_speeds = np.zeros(num_detections)
+
+        velocity_data = []
 
         for i, tracker_id in enumerate(detections.tracker_id):
             current_position = current_positions[i]
@@ -197,10 +198,22 @@ class VelocityBlockV1(WorkflowBlock):
             smoothed_velocities_arr[i] = smoothed_velocity_m_s
             smoothed_speeds[i] = smoothed_speed_m_s
 
-        # Add velocities and speeds to detections
-        detections.data['velocity'] = velocities  # Shape: (num_detections, 2)
-        detections.data['speed'] = speeds  # Shape: (num_detections,)
-        detections.data['smoothed_velocity'] = smoothed_velocities_arr  # Shape: (num_detections, 2)
-        detections.data['smoothed_speed'] = smoothed_speeds  # Shape: (num_detections,)
+            velocity_entry = {
+                'tracker_id': tracker_id,
+                'velocity': velocity_m_s.tolist(),  # Convert numpy array to list
+                'speed': speed_m_s,
+                'smoothed_velocity': smoothed_velocity_m_s.tolist(),
+                'smoothed_speed': smoothed_speed_m_s,
+            }
 
-        return {OUTPUT_KEY: detections}
+            velocity_data.append(velocity_entry)
+
+        # # Add velocities and speeds to detections
+        # detections.data['velocity'] = velocities  # Shape: (num_detections, 2)
+        # detections.data['speed'] = speeds  # Shape: (num_detections,)
+        # detections.data['smoothed_velocity'] = smoothed_velocities_arr  # Shape: (num_detections, 2)
+        # detections.data['smoothed_speed'] = smoothed_speeds  # Shape: (num_detections,)
+
+        # Prepare velocity data entry
+
+        return {OUTPUT_KEY: velocity_data}
