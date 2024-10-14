@@ -108,7 +108,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.2.0,<2.0.0"
 
 
 class StabilityAIInpaintingBlockV1(WorkflowBlock):
@@ -150,11 +150,10 @@ class StabilityAIInpaintingBlockV1(WorkflowBlock):
             )
         result_image = bytes_to_opencv_image(payload=response.content)
         return {
-            "image": WorkflowImageData(
-                parent_metadata=image.parent_metadata,
-                workflow_root_ancestor_metadata=image.workflow_root_ancestor_metadata,
+            "image": WorkflowImageData.copy_and_replace(
+                origin_image_data=image,
                 numpy_image=result_image,
-            )
+            ),
         }
 
 

@@ -113,6 +113,7 @@ from inference.core.env import (
     CORE_MODELS_ENABLED,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
+    DOCKER_SOCKET_PATH,
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
@@ -166,6 +167,7 @@ from inference.core.interfaces.stream_manager.api.entities import (
     CommandResponse,
     ConsumePipelineResponse,
     InferencePipelineStatusResponse,
+    InitializeWebRTCPipelineResponse,
     ListPipelinesResponse,
 )
 from inference.core.interfaces.stream_manager.api.errors import (
@@ -180,6 +182,7 @@ from inference.core.interfaces.stream_manager.api.stream_manager_client import (
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     ConsumeResultsPayload,
     InitialisePipelinePayload,
+    InitialiseWebRTCPipelinePayload,
 )
 from inference.core.interfaces.stream_manager.manager_app.errors import (
     CommunicationProtocolError,
@@ -187,11 +190,13 @@ from inference.core.interfaces.stream_manager.manager_app.errors import (
     MessageToBigError,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.managers.metrics import get_container_stats
 from inference.core.roboflow_api import (
     get_roboflow_dataset_type,
     get_roboflow_workspace,
     get_workflow_specification,
 )
+from inference.core.utils.container import is_docker_socket_mounted
 from inference.core.utils.notebooks import start_notebook
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.query_language.errors import (
@@ -551,6 +556,32 @@ class HttpInterface(BaseInterface):
                 if self.model_manager.pingback and response.status_code >= 400:
                     self.model_manager.num_errors += 1
                 return response
+
+        if not LAMBDA:
+
+            @app.get("/device/stats")
+            async def device_stats():
+                not_configured_error_message = {
+                    "error": "Device statistics endpoint is not enabled.",
+                    "hint": "Mount the Docker socket and point its location when running the docker "
+                    "container to collect device stats "
+                    "(i.e. `docker run ... -v /var/run/docker.sock:/var/run/docker.sock "
+                    "-e DOCKER_SOCKET_PATH=/var/run/docker.sock ...`).",
+                }
+                if not DOCKER_SOCKET_PATH:
+                    return JSONResponse(
+                        status_code=404,
+                        content=not_configured_error_message,
+                    )
+                if not is_docker_socket_mounted(docker_socket_path=DOCKER_SOCKET_PATH):
+                    return JSONResponse(
+                        status_code=500,
+                        content=not_configured_error_message,
+                    )
+                container_stats = get_container_stats(
+                    docker_socket_path=DOCKER_SOCKET_PATH
+                )
+                return JSONResponse(status_code=200, content=container_stats)
 
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
             cached_api_keys = dict()
@@ -1340,6 +1371,21 @@ class HttpInterface(BaseInterface):
                 return await self.stream_manager_client.initialise_pipeline(
                     initialisation_request=request
                 )
+
+            @app.post(
+                "/inference_pipelines/initialise_webrtc",
+                response_model=InitializeWebRTCPipelineResponse,
+                summary="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
+                description="[EXPERIMENTAL] Establishes WebRTC peer connection and starts new InferencePipeline consuming video track",
+            )
+            @with_route_exceptions
+            async def initialise_webrtc_inference_pipeline(
+                request: InitialiseWebRTCPipelinePayload,
+            ) -> CommandResponse:
+                resp = await self.stream_manager_client.initialise_webrtc_pipeline(
+                    initialisation_request=request
+                )
+                return resp
 
             @app.post(
                 "/inference_pipelines/{pipeline_id}/pause",

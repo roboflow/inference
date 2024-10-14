@@ -8,11 +8,20 @@ from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
 from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
     LineCounterBlockV1,
 )
+from inference.core.workflows.core_steps.analytics.line_counter.v2 import (
+    LineCounterBlockV2,
+)
 from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
     PathDeviationAnalyticsBlockV1,
 )
+from inference.core.workflows.core_steps.analytics.path_deviation.v2 import (
+    PathDeviationAnalyticsBlockV2,
+)
 from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
     TimeInZoneBlockV1,
+)
+from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
+    TimeInZoneBlockV2,
 )
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
@@ -22,6 +31,9 @@ from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
 )
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
+    DistanceMeasurementBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
     DominantColorBlockV1,
@@ -169,6 +181,9 @@ from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import
 from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
     ByteTrackerBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.byte_tracker.v2 import (
+    ByteTrackerBlockV2,
+)
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
 )
@@ -251,6 +266,9 @@ from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.mask.v1 import (
     MaskVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.model_comparison.v1 import (
+    ModelComparisonVisualizationBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
     PixelateVisualizationBlockV1,
@@ -365,6 +383,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PixelateVisualizationBlockV1,
         PolygonVisualizationBlockV1,
         LineCounterZoneVisualizationBlockV1,
+        ModelComparisonVisualizationBlockV1,
         TriangleVisualizationBlockV1,
         RoboflowCustomMetadataBlockV1,
         DetectionsStitchBlockV1,
@@ -393,9 +412,14 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LineCounterBlockV1,
         PolygonZoneVisualizationBlockV1,
         Florence2BlockV1,
+        DistanceMeasurementBlockV1,
         StabilityAIInpaintingBlockV1,
         ImagePreprocessingBlockV1,
         PathDeviationAnalyticsBlockV1,
+        ByteTrackerBlockV2,
+        PathDeviationAnalyticsBlockV2,
+        TimeInZoneBlockV2,
+        LineCounterBlockV2,
         DataAggregatorBlockV1,
         CSVFormatterBlockV1,
         EmailBlockV1,

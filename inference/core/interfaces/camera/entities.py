@@ -74,6 +74,7 @@ class SourceProperties:
     total_frames: int
     is_file: bool
     fps: float
+    is_reconnectable: Optional[bool] = None
 
 
 class VideoFrameProducer:
