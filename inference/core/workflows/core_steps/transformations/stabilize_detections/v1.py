@@ -5,15 +5,15 @@ from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
-    VideoMetadata,
+    WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     StepOutputSelector,
+    WorkflowImageSelector,
     WorkflowParameterSelector,
-    WorkflowVideoMetadataSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -34,16 +34,16 @@ WARNING: this block will produce many short-lived bounding boxes for unstable tr
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Guard Tracked Detections",
+            "name": "Detections Stabilizer",
             "version": "v1",
-            "short_description": "Restore detections that randomly disappear",
+            "short_description": "Apply smoothing algorithm to reduce noise and flickering across video frames",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
         }
     )
     type: Literal["roboflow_core/guard_tracked_detections@v1"]
-    metadata: WorkflowVideoMetadataSelector
+    image: WorkflowImageSelector
     detections: StepOutputSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
@@ -76,7 +76,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.0.0,<2.0.0"
 
 
-class GuardTrackedDetectionsBlockV1(WorkflowBlock):
+class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
     def __init__(self):
         self._batch_of_last_known_detections: Dict[
             str, Dict[Union[int, str], Tuple[float, sv.Detections]]
@@ -88,10 +88,11 @@ class GuardTrackedDetectionsBlockV1(WorkflowBlock):
 
     def run(
         self,
+        image: WorkflowImageData,
         detections: sv.Detections,
-        metadata: VideoMetadata,
         consider_detection_gone_timeout: float,
     ) -> BlockResult:
+        metadata = image.video_metadata
         if metadata.comes_from_video_file and metadata.fps != 0:
             ts = metadata.frame_number / metadata.fps
         else:

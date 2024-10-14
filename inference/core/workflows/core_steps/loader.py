@@ -192,9 +192,6 @@ from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import 
 from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
     DynamicZonesBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.guard_tracked_detections.v1 import (
-    GuardTrackedDetectionsBlockV1,
-)
 from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
     ImageSlicerBlockV1,
 )
@@ -203,6 +200,9 @@ from inference.core.workflows.core_steps.transformations.perspective_correction.
 )
 from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
     RelativeStaticCropBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.stabilize_detections.v1 import (
+    StabilizeTrackedDetectionsBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
     StitchImagesBlockV1,
@@ -348,7 +348,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Florence2BlockV1,
         GoogleGeminiBlockV1,
         GoogleVisionOCRBlockV1,
-        GuardTrackedDetectionsBlockV1,
         HaloVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,
@@ -391,6 +390,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SegmentAnything2BlockV1,
         SizeMeasurementBlockV1,
         StabilityAIInpaintingBlockV1,
+        StabilizeTrackedDetectionsBlockV1,
         StitchImagesBlockV1,
         TemplateMatchingBlockV1,
         TimeInZoneBlockV1,
