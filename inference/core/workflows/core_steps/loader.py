@@ -192,6 +192,9 @@ from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import 
 from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
     DynamicZonesBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.guard_tracked_detections.v1 import (
+    GuardTrackedDetectionsBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
     ImageSlicerBlockV1,
 )
@@ -214,9 +217,6 @@ from inference.core.workflows.core_steps.visualizations.blur.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.bounding_box.v1 import (
     BoundingBoxVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.transformations.guard_tracked_detections.v1 import (
-    GuardTrackedDetectionsBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.circle.v1 import (
     CircleVisualizationBlockV1,
@@ -394,14 +394,11 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         StabilityAIInpaintingBlockV1,
         ImagePreprocessingBlockV1,
         PathDeviationAnalyticsBlockV1,
-<<<<<<< HEAD
         GuardTrackedDetectionsBlockV1,
-=======
         ByteTrackerBlockV2,
         PathDeviationAnalyticsBlockV2,
         TimeInZoneBlockV2,
         LineCounterBlockV2,
->>>>>>> main
     ]
 
 
