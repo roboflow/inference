@@ -10,6 +10,7 @@ from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import DISABLE_PREPROC_AUTO_ORIENT
 from inference.core.managers.base import ModelManager
+from inference.core.profiling.core import execution_phase
 from inference.core.registries.base import ModelRegistry
 from inference.models.aliases import resolve_roboflow_model_alias
 
@@ -29,6 +30,10 @@ class ActiveLearningManager(ModelManager):
         self._cache = cache
         self._middlewares = middlewares if middlewares is not None else {}
 
+    @execution_phase(
+        name="infer_from_request_active_learning_manager_proxy",
+        categories=["model_inference"]
+    )
     async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
@@ -48,6 +53,10 @@ class ActiveLearningManager(ModelManager):
         self.register(prediction=prediction, model_id=model_id, request=request)
         return prediction
 
+    @execution_phase(
+        name="infer_from_request_active_learning_manager_proxy",
+        categories=["model_inference"]
+    )
     def infer_from_request_sync(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:

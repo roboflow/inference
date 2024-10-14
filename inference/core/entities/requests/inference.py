@@ -37,6 +37,7 @@ class InferenceRequest(BaseRequest):
 
     model_id: Optional[str] = ModelID
     model_type: Optional[str] = ModelType
+    request_profiling: bool = Field(default=False)
 
 
 class InferenceRequestImage(BaseModel):

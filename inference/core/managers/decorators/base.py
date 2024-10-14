@@ -7,6 +7,7 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import API_KEY
 from inference.core.managers.base import Model, ModelManager
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.profiling.core import execution_phase, InferenceProfiler
 
 
 class ModelManagerDecorator(ModelManager):
@@ -48,8 +49,16 @@ class ModelManagerDecorator(ModelManager):
     def pingback(self):
         return self.model_manager.pingback
 
+    @execution_phase(
+        name="adding_model_to_model_manager_through_decorator",
+        categories=["model_management"]
+    )
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias: Optional[str] = None,
+        profiler: Optional[InferenceProfiler] = None,
     ):
         """Adds a model to the manager.
 
@@ -59,7 +68,7 @@ class ModelManagerDecorator(ModelManager):
         """
         if model_id in self:
             return
-        self.model_manager.add_model(model_id, api_key, model_id_alias=model_id_alias)
+        self.model_manager.add_model(model_id, api_key, model_id_alias=model_id_alias, profiler=profiler)
 
     async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs

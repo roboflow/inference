@@ -7,6 +7,7 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
+from inference.core.profiling.core import InferenceProfiler, execution_phase
 
 
 class WithFixedSizeCache(ModelManagerDecorator):
@@ -21,8 +22,16 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self.max_size = max_size
         self._key_queue = deque(self.model_manager.keys())
 
+    @execution_phase(
+        name="adding_model_to_fixed_size_cache_manager",
+        categories=["model_management"]
+    )
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias: Optional[str] = None,
+        profiler: Optional[InferenceProfiler] = None,
     ) -> None:
         """Adds a model to the manager and evicts the least recently used if the cache is full.
 
@@ -52,7 +61,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         logger.debug(f"Marking new model {queue_id} as most recently used.")
         self._key_queue.append(queue_id)
         try:
-            return super().add_model(model_id, api_key, model_id_alias=model_id_alias)
+            return super().add_model(model_id, api_key, model_id_alias=model_id_alias, profiler=profiler)
         except Exception as error:
             logger.debug(
                 f"Could not initialise model {queue_id}. Removing from WithFixedSizeCache models queue."

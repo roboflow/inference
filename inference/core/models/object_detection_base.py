@@ -22,6 +22,7 @@ from inference.core.models.utils.validate import (
     get_num_classes_from_model_prediction_shape,
 )
 from inference.core.nms import w_np_non_max_suppression
+from inference.core.profiling.core import execution_phase
 from inference.core.utils.postprocess import post_process_bboxes
 
 
@@ -31,6 +32,10 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
     task_type = "object-detection"
     box_format = "xywh"
 
+    @execution_phase(
+        name="infer_object_detection_base",
+        categories=["model_inference"]
+    )
     def infer(
         self,
         image: Any,
@@ -89,6 +94,10 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             **kwargs,
         )
 
+    @execution_phase(
+        name="make_response_object_detection_base",
+        categories=["model_inference"]
+    )
     def make_response(
         self,
         predictions: List[List[float]],
@@ -141,6 +150,10 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         ]
         return responses
 
+    @execution_phase(
+        name="postprocess_object_detection_base",
+        categories=["model_inference"]
+    )
     def postprocess(
         self,
         predictions: Tuple[np.ndarray, ...],
@@ -192,6 +205,10 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         )
         return self.make_response(predictions, img_dims, **kwargs)
 
+    @execution_phase(
+        name="preprocess_object_detection_base",
+        categories=["model_inference"]
+    )
     def preprocess(
         self,
         image: Any,

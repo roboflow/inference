@@ -13,6 +13,7 @@ from inference.core.entities.requests.inference import (
 from inference.core.entities.responses.inference import response_from_type
 from inference.core.env import NUM_PARALLEL_TASKS
 from inference.core.managers.base import ModelManager
+from inference.core.profiling.core import InferenceProfiler
 from inference.core.registries.base import ModelRegistry
 from inference.core.registries.roboflow import get_model_type
 from inference.enterprise.parallel.tasks import preprocess
@@ -140,7 +141,7 @@ class DispatchModelManager(ModelManager):
         return responses[0]
 
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: str = None
+        self, model_id: str, api_key: str, model_id_alias: str = None, profiler: Optional[InferenceProfiler] = None,
     ) -> None:
         pass
 

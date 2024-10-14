@@ -5,13 +5,18 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.logger import logger
 from inference.core.managers.base import Model
 from inference.core.managers.decorators.base import ModelManagerDecorator
+from inference.core.profiling.core import InferenceProfiler
 
 
 class WithLogger(ModelManagerDecorator):
     """Logger Decorator, it logs what's going on inside the manager."""
 
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias: Optional[str] = None,
+        profiler: Optional[InferenceProfiler] = None,
     ):
         """Adds a model to the manager and logs the action.
 
@@ -23,7 +28,7 @@ class WithLogger(ModelManagerDecorator):
             The result of the add_model method from the superclass.
         """
         logger.info(f"🤖 {model_id} added.")
-        return super().add_model(model_id, api_key, model_id_alias=model_id_alias)
+        return super().add_model(model_id, api_key, model_id_alias=model_id_alias, profiler=profiler)
 
     async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs

@@ -5,6 +5,7 @@ import numpy as np
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
+from inference.core.profiling.core import execution_phase
 
 
 class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
@@ -29,6 +30,10 @@ class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         """
         return "weights.onnx"
 
+    @execution_phase(
+        name="predict_yolov8_object_detection",
+        categories=["model_inference"]
+    )
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session.
 

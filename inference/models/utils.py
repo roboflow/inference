@@ -7,6 +7,7 @@ from inference.core.models.stubs import (
     KeypointsDetectionModelStub,
     ObjectDetectionModelStub,
 )
+from inference.core.profiling.core import execution_phase
 from inference.core.registries.roboflow import get_model_type
 from inference.core.utils.function import deprecated
 from inference.models import (
@@ -347,6 +348,10 @@ except:
     pass
 
 
+@execution_phase(
+    name="get_model_inference_core",
+    categories=["model_loading"]
+)
 def get_model(model_id, api_key=API_KEY, **kwargs) -> Model:
     task, model = get_model_type(model_id, api_key=api_key)
     return ROBOFLOW_MODEL_TYPES[(task, model)](model_id, api_key=api_key, **kwargs)

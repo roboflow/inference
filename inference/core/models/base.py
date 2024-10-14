@@ -1,5 +1,5 @@
 from time import perf_counter
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Tuple, Union, Optional
 
 import numpy as np
 
@@ -7,6 +7,7 @@ from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.profiling.core import execution_phase, InferenceProfiler
 from inference.usage_tracking.collector import usage_collector
 
 
@@ -17,6 +18,10 @@ class BaseInference:
     """
 
     @usage_collector
+    @execution_phase(
+        name="infer_base_model_class",
+        categories=["model_inference"]
+    )
     def infer(self, image: Any, **kwargs) -> Any:
         """Runs inference on given data.
         - image:
@@ -96,9 +101,14 @@ class Model(BaseInference):
         """Clears any cache if necessary. This method should be implemented in derived classes as needed."""
         pass
 
+    @execution_phase(
+        name="infer_from_request_base_model_class",
+        categories=["model_inference"]
+    )
     def infer_from_request(
         self,
         request: InferenceRequest,
+        profiler: Optional[InferenceProfiler] = None,
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         """
         Perform inference based on the details provided in the request, and return the associated responses.
@@ -127,7 +137,7 @@ class Model(BaseInference):
               is also included in the response.
         """
         t1 = perf_counter()
-        responses = self.infer(**request.dict(), return_image_dims=False)
+        responses = self.infer(**request.dict(), return_image_dims=False, profiler=profiler)
         for response in responses:
             response.time = perf_counter() - t1
             if request.id:

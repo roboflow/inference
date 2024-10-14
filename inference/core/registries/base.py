@@ -1,5 +1,8 @@
+from typing import Optional
+
 from inference.core.exceptions import ModelNotRecognisedError
 from inference.core.models.base import Model
+from inference.core.profiling.core import InferenceProfiler, execution_phase
 
 
 class ModelRegistry:
@@ -17,7 +20,11 @@ class ModelRegistry:
         """
         self.registry_dict = registry_dict
 
-    def get_model(self, model_type: str, model_id: str) -> Model:
+    @execution_phase(
+        name="get_model_from_model_registry",
+        categories=["model_loading"]
+    )
+    def get_model(self, model_type: str, model_id: str, profiler: Optional[InferenceProfiler] = None) -> Model:
         """Returns the model class based on the given model type.
 
         Args:

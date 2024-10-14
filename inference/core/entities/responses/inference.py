@@ -181,6 +181,7 @@ class InferenceResponse(BaseModel):
         default=None,
         description="The time in seconds it took to produce the predictions including image preprocessing",
     )
+    profiler_trace: Optional[List[dict]] = Field(default=None)
 
 
 class CvInferenceResponse(InferenceResponse):

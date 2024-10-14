@@ -1,8 +1,17 @@
+from typing import Optional
+
 from inference.core.managers.base import ModelManager
+from inference.core.profiling.core import InferenceProfiler
 
 
 class StubLoaderManager(ModelManager):
-    def add_model(self, model_id: str, api_key: str, model_id_alias=None) -> None:
+    def add_model(
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias=None,
+        profiler: Optional[InferenceProfiler] = None,
+    ) -> None:
         """Adds a new model to the manager.
 
         Args:

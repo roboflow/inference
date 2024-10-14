@@ -129,7 +129,7 @@ from inference.core.env import (
     ROBOFLOW_SERVICE_SECRET,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
-    WORKFLOWS_STEP_EXECUTION_MODE,
+    WORKFLOWS_STEP_EXECUTION_MODE, ENABLE_INFERENCE_CORE_PROFILING, INFERENCE_CORE_PROFILER_BUFFER_SIZE,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -191,6 +191,7 @@ from inference.core.interfaces.stream_manager.manager_app.errors import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
+from inference.core.profiling.core import NullInferenceProfiler, BaseInferenceProfiler
 from inference.core.roboflow_api import (
     get_roboflow_dataset_type,
     get_roboflow_workspace,
@@ -693,14 +694,25 @@ class HttpInterface(BaseInterface):
             Returns:
                 InferenceResponse: The response containing the inference results.
             """
-            de_aliased_model_id = resolve_roboflow_model_alias(
-                model_id=inference_request.model_id
-            )
-            self.model_manager.add_model(de_aliased_model_id, inference_request.api_key)
-            resp = await self.model_manager.infer_from_request(
-                de_aliased_model_id, inference_request, **kwargs
-            )
-            return orjson_response(resp)
+            if ENABLE_INFERENCE_CORE_PROFILING:
+                profiler = BaseInferenceProfiler.init(
+                    buffer_size=INFERENCE_CORE_PROFILER_BUFFER_SIZE,
+                )
+            else:
+                profiler = NullInferenceProfiler.init()
+            with profiler.profile_execution_phase(name="inference_request_handling"):
+                de_aliased_model_id = resolve_roboflow_model_alias(
+                    model_id=inference_request.model_id
+                )
+                self.model_manager.add_model(de_aliased_model_id, inference_request.api_key, profiler=profiler)
+                resp = await self.model_manager.infer_from_request(
+                    de_aliased_model_id, inference_request, profiler=profiler, **kwargs
+                )
+            resp.profiler_trace = profiler.export_trace()
+            start = time.time()
+            result = orjson_response(resp)
+            print(f"SERIALISATION DURATION: {round((time.time() - start) * 1000, 2)} ms", flush=True)
+            return result
 
         def process_workflow_inference_request(
             workflow_request: WorkflowInferenceRequest,

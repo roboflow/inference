@@ -12,6 +12,7 @@ from inference.core.exceptions import (
 )
 from inference.core.logger import logger
 from inference.core.models.base import Model
+from inference.core.profiling.core import InferenceProfiler, execution_phase
 from inference.core.registries.base import ModelRegistry
 from inference.core.roboflow_api import (
     MODEL_TYPE_DEFAULTS,
@@ -49,7 +50,11 @@ class RoboflowModelRegistry(ModelRegistry):
     then returns a model class based on the model type.
     """
 
-    def get_model(self, model_id: str, api_key: str) -> Model:
+    @execution_phase(
+        name="get_model_from_roboflow_model_registry",
+        categories=["model_loading"]
+    )
+    def get_model(self, model_id: str, api_key: str, profiler: Optional[InferenceProfiler] = None) -> Model:
         """Returns the model class based on the given model id and API key.
 
         Args:

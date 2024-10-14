@@ -20,6 +20,7 @@ from inference.core.logger import logger
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model, PreprocessReturnMetadata
+from inference.core.profiling.core import InferenceProfiler, execution_phase
 from inference.core.registries.base import ModelRegistry
 
 
@@ -39,8 +40,16 @@ class ModelManager:
             self.pingback = PingbackInfo(self)
             self.pingback.start()
 
+    @execution_phase(
+        name="adding_model_to_base_model_manager",
+        categories=["model_management"]
+    )
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias: Optional[str] = None,
+        profiler: Optional[InferenceProfiler] = None,
     ) -> None:
         """Adds a new model to the manager.
 
@@ -58,10 +67,14 @@ class ModelManager:
             )
             return
         logger.debug("ModelManager - model initialisation...")
-        model = self.model_registry.get_model(resolved_identifier, api_key)(
-            model_id=model_id,
-            api_key=api_key,
-        )
+        with profiler.profile_execution_phase(
+            name="model_loading",
+            categories=["model_management"],
+        ):
+            model = self.model_registry.get_model(resolved_identifier, api_key, profiler=profiler)(
+                model_id=model_id,
+                api_key=api_key,
+            )
         logger.debug("ModelManager - model successfully loaded.")
         self._models[resolved_identifier] = model
 
@@ -77,6 +90,10 @@ class ModelManager:
         if model_id not in self:
             raise InferenceModelNotFound(f"Model with id {model_id} not loaded.")
 
+    @execution_phase(
+        name="infer_from_request_base_class",
+        categories=["model_inference"]
+    )
     async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
@@ -151,6 +168,10 @@ class ModelManager:
                 )
             raise
 
+    @execution_phase(
+        name="infer_from_request_manager_proxy",
+        categories=["model_inference"]
+    )
     def infer_from_request_sync(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> InferenceResponse:
@@ -225,16 +246,28 @@ class ModelManager:
                 )
             raise
 
+    @execution_phase(
+        name="model_infer_manager_proxy",
+        categories=["model_inference"]
+    )
     async def model_infer(self, model_id: str, request: InferenceRequest, **kwargs):
         self.check_for_model(model_id)
-        return self._models[model_id].infer_from_request(request)
+        return self._models[model_id].infer_from_request(request, profiler=kwargs.get("profiler"))
 
+    @execution_phase(
+        name="model_infer_manager_proxy",
+        categories=["model_inference"]
+    )
     def model_infer_sync(
         self, model_id: str, request: InferenceRequest, **kwargs
     ) -> Union[List[InferenceResponse], InferenceResponse]:
         self.check_for_model(model_id)
-        return self._models[model_id].infer_from_request(request)
+        return self._models[model_id].infer_from_request(request, profiler=kwargs.get("profiler"))
 
+    @execution_phase(
+        name="make_response_manager_proxy",
+        categories=["model_inference"]
+    )
     def make_response(
         self, model_id: str, predictions: List[List[float]], *args, **kwargs
     ) -> InferenceResponse:
@@ -250,6 +283,10 @@ class ModelManager:
         self.check_for_model(model_id)
         return self._models[model_id].make_response(predictions, *args, **kwargs)
 
+    @execution_phase(
+        name="postprocess_manager_proxy",
+        categories=["model_inference"]
+    )
     def postprocess(
         self,
         model_id: str,
@@ -272,6 +309,10 @@ class ModelManager:
             predictions, preprocess_return_metadata, *args, **kwargs
         )
 
+    @execution_phase(
+        name="predict_manager_proxy",
+        categories=["model_inference"]
+    )
     def predict(self, model_id: str, *args, **kwargs) -> Tuple[np.ndarray, ...]:
         """Runs prediction on the specified model.
 
@@ -289,6 +330,10 @@ class ModelManager:
         self._models[model_id].metrics["avg_inference_time"] += toc - tic
         return res
 
+    @execution_phase(
+        name="preprocess_manager_proxy",
+        categories=["model_inference"]
+    )
     def preprocess(
         self, model_id: str, request: InferenceRequest
     ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
