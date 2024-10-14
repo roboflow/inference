@@ -81,8 +81,8 @@ MULTI_STAGES_WORKFLOW = {
 
 
 @add_to_workflows_gallery(
-    category="Workflows with multiple models",
-    use_case_title="Workflow detection models and OCR",
+    category="Workflows for OCR",
+    use_case_title="Workflow with DocTR model",
     use_case_description="""
 This example showcases quite sophisticated workflows usage scenario that assume the following:
 

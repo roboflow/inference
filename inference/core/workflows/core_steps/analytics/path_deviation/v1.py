@@ -45,6 +45,10 @@ class PathDeviationManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "analytics",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "far fa-tower-observation",
+            },
         }
     )
     type: Literal["roboflow_core/path_deviation_analytics@v1"]

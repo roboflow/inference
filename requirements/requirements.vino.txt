@@ -1,1 +1,1 @@
-onnxruntime-openvino<=1.15.1
+onnxruntime-openvino~=1.15.0

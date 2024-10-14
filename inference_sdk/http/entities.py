@@ -96,6 +96,7 @@ class InferenceConfiguration:
     max_batch_size: int = 1
     source: Optional[str] = None
     source_info: Optional[str] = None
+    profiling_directory: str = "./inference_profiling"
 
     @classmethod
     def init_default(cls) -> "InferenceConfiguration":

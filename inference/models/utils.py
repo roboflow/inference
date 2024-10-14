@@ -21,8 +21,13 @@ from inference.models import (
     YOLOv8ObjectDetection,
     YOLOv9ObjectDetection,
     YOLOv10ObjectDetection,
+    YOLOv11InstanceSegmentation,
+    YOLOv11ObjectDetection,
 )
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
+from inference.models.yolov11.yolov11_keypoints_detection import (
+    YOLOv11KeypointsDetection,
+)
 
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "stub"): ClassificationModelStub,
@@ -59,6 +64,63 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov10m"): YOLOv10ObjectDetection,
     ("object-detection", "yolov10l"): YOLOv10ObjectDetection,
     ("object-detection", "yolov10x"): YOLOv10ObjectDetection,
+    ("object-detection", "yolov11"): YOLOv11ObjectDetection,
+    ("object-detection", "yolov11s"): YOLOv11ObjectDetection,
+    ("object-detection", "yolov11n"): YOLOv11ObjectDetection,
+    ("object-detection", "yolov11b"): YOLOv11ObjectDetection,
+    ("object-detection", "yolov11m"): YOLOv11ObjectDetection,
+    ("object-detection", "yolov11l"): YOLOv11ObjectDetection,
+    ("object-detection", "yolov11x"): YOLOv11ObjectDetection,
+    (
+        "instance-segmentation",
+        "yolov11n",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11s",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11m",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11l",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11x",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11n-seg",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11s-seg",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11m-seg",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11l-seg",
+    ): YOLOv11InstanceSegmentation,
+    (
+        "instance-segmentation",
+        "yolov11x-seg",
+    ): YOLOv11InstanceSegmentation,
+    ("keypoint-detection", "yolov11n"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11s"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11m"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11l"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11x"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11n-pose"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11s-pose"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11m-pose"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11l-pose"): YOLOv11KeypointsDetection,
+    ("keypoint-detection", "yolov11x-pose"): YOLOv11KeypointsDetection,
     ("instance-segmentation", "stub"): InstanceSegmentationModelStub,
     (
         "instance-segmentation",

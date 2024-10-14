@@ -5,11 +5,20 @@ from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
 from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
     LineCounterBlockV1,
 )
+from inference.core.workflows.core_steps.analytics.line_counter.v2 import (
+    LineCounterBlockV2,
+)
 from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
     PathDeviationAnalyticsBlockV1,
 )
+from inference.core.workflows.core_steps.analytics.path_deviation.v2 import (
+    PathDeviationAnalyticsBlockV2,
+)
 from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
     TimeInZoneBlockV1,
+)
+from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
+    TimeInZoneBlockV2,
 )
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
@@ -19,6 +28,9 @@ from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
 )
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
+    DistanceMeasurementBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
     DominantColorBlockV1,
@@ -38,6 +50,9 @@ from inference.core.workflows.core_steps.classical_cv.sift_comparison.v1 import 
 )
 from inference.core.workflows.core_steps.classical_cv.sift_comparison.v2 import (
     SIFTComparisonBlockV2,
+)
+from inference.core.workflows.core_steps.classical_cv.size_measurement.v1 import (
+    SizeMeasurementBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.template_matching.v1 import (
     TemplateMatchingBlockV1,
@@ -97,6 +112,9 @@ from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
+    GoogleVisionOCRBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
@@ -155,6 +173,9 @@ from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import
 )
 from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
     ByteTrackerBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.byte_tracker.v2 import (
+    ByteTrackerBlockV2,
 )
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
@@ -226,6 +247,9 @@ from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.mask.v1 import (
     MaskVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.model_comparison.v1 import (
+    ModelComparisonVisualizationBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
     PixelateVisualizationBlockV1,
@@ -316,6 +340,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ContinueIfBlockV1,
         PerspectiveCorrectionBlockV1,
         DynamicZonesBlockV1,
+        SizeMeasurementBlockV1,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
         PropertyDefinitionBlockV1,
@@ -336,6 +361,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PixelateVisualizationBlockV1,
         PolygonVisualizationBlockV1,
         LineCounterZoneVisualizationBlockV1,
+        ModelComparisonVisualizationBlockV1,
         TriangleVisualizationBlockV1,
         RoboflowCustomMetadataBlockV1,
         DetectionsStitchBlockV1,
@@ -358,15 +384,24 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         JSONParserBlockV1,
         VLMAsClassifierBlockV1,
         GoogleGeminiBlockV1,
+        GoogleVisionOCRBlockV1,
         VLMAsDetectorBlockV1,
         AntropicClaudeBlockV1,
         LineCounterBlockV1,
         PolygonZoneVisualizationBlockV1,
         Florence2BlockV1,
+        DistanceMeasurementBlockV1,
         StabilityAIInpaintingBlockV1,
         ImagePreprocessingBlockV1,
         PathDeviationAnalyticsBlockV1,
+<<<<<<< HEAD
         GuardTrackedDetectionsBlockV1,
+=======
+        ByteTrackerBlockV2,
+        PathDeviationAnalyticsBlockV2,
+        TimeInZoneBlockV2,
+        LineCounterBlockV2,
+>>>>>>> main
     ]
 
 

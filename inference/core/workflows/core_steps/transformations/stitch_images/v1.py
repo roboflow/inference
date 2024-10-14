@@ -6,6 +6,7 @@ from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.logger import logger
 from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -39,6 +40,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "transformation",
+                "icon": "far fa-object-union",
+                "opencv": True,
+            },
         }
     )
     type: Literal["roboflow_core/stitch_images@v1"]
@@ -108,9 +114,12 @@ class StitchImagesBlockV1(WorkflowBlock):
         except Exception as exc:
             logger.info("Stitching failed, %s", exc)
             return {OUTPUT_KEY: None}
+        parent_metadata = ImageParentMetadata(
+            parent_id=f"{image1.parent_metadata.parent_id} + {image2.parent_metadata.parent_id}"
+        )
         return {
             OUTPUT_KEY: WorkflowImageData(
-                parent_metadata=image1.parent_metadata,
+                parent_metadata=parent_metadata,
                 numpy_image=merged_image,
             )
         }

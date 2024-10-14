@@ -209,6 +209,14 @@ pipeline = InferencePipeline.init_with_workflow(
 )
 ```
 
+!!! tip "Workflows profiling"
+
+    Since `inference v0.22.0`, you may profile your Workflow execution inside `InferencePipeline` when 
+    you export environmental variable `ENABLE_WORKFLOWS_PROFILING=True`. Additionally, you can tune the 
+    number of frames you keep in profiler buffer via another environmental variable `WORKFLOWS_PROFILER_BUFFER_SIZE`.
+    `init_with_workflow(...)` was also given a new parameter `profiling_directory` which can be adjusted to 
+    dictate where to save the trace. 
+
 ## Sinks
 
 Sinks define what an Inference Pipeline should do with each prediction. A sink is a function with signature:

@@ -301,14 +301,14 @@ def run_gpt_4v_llm_prompting(
         base64_image = base64.b64encode(
             encode_image_to_jpeg_bytes(loaded_image)
         ).decode("ascii")
-        prompt = PROMPT_BUILDERS[task_type](
+        generated_prompt = PROMPT_BUILDERS[task_type](
             base64_image=base64_image,
             prompt=prompt,
             output_structure=output_structure,
             classes=classes,
             gpt_image_detail=gpt_image_detail,
         )
-        gpt4_prompts.append(prompt)
+        gpt4_prompts.append(generated_prompt)
     return execute_gpt_4v_requests(
         openai_api_key=openai_api_key,
         gpt4_prompts=gpt4_prompts,
@@ -430,7 +430,7 @@ def prepare_multi_label_classification_prompt(
         {
             "role": "system",
             "content": "You act as multi-label classification model. You must provide reasonable predictions. "
-            "You are only allowed to produce JSON document in Markdown ```json [...]``` markers. "
+            "You are only allowed to produce JSON document in Markdown ```json``` markers. "
             'Expected structure of json: {"predicted_classes": [{"class": "class-name-1", "confidence": 0.9}, '
             '{"class": "class-name-2", "confidence": 0.7}]}. '
             "`class-name-X` must be one of the class names defined by user and `confidence` is a float value in range "

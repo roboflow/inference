@@ -22,10 +22,7 @@ class WorkflowRunner:
         if fps is None:
             # for FPS reporting we expect 0 when FPS cannot be determined
             fps = 0
-        workflows_parameters[image_input_name] = [
-            video_frame.image for video_frame in video_frames
-        ]
-        workflows_parameters[video_metadata_input_name] = [
+        video_metadata_for_images = [
             VideoMetadata(
                 video_identifier=(
                     str(video_frame.source_id)
@@ -39,6 +36,17 @@ class WorkflowRunner:
             )
             for video_frame in video_frames
         ]
+        workflows_parameters[image_input_name] = [
+            {
+                "type": "numpy_object",
+                "value": video_frame.image,
+                "video_metadata": video_metadata,
+            }
+            for video_frame, video_metadata in zip(
+                video_frames, video_metadata_for_images
+            )
+        ]
+        workflows_parameters[video_metadata_input_name] = video_metadata_for_images
         return execution_engine.run(
             runtime_parameters=workflows_parameters,
             fps=fps,

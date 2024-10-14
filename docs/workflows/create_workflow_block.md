@@ -247,6 +247,14 @@ The most important are:
 
 * `WorkflowBlockManifest` - base class for block manifest
 
+!!! warning "Understanding internal data representation"
+
+      You may have noticed that we recommend importing the `Batch` and `WorkflowImageData` classes, which are 
+      fundamental components used when constructing building blocks in our system. For a deeper understanding of 
+      how these classes fit into the overall architecture, we encourage you to refer to the 
+      [Data Representations](/workflows/internal_data_types) page for more detailed information. 
+
+
 ## Block manifest
 
 A manifest is a crucial component of a Workflow block that defines a prototype 

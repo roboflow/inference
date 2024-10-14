@@ -1,12 +1,13 @@
+import json
 import platform
 import re
 import socket
+import subprocess
 import time
 import uuid
 
 from inference.core.cache import cache
 from inference.core.logger import logger
-from inference.core.version import __version__
 
 
 def get_model_metrics(
@@ -99,3 +100,31 @@ def get_inference_results_for_model(
         inference_results.append({"request_time": score, "inference": result})
 
     return inference_results
+
+
+def get_container_stats(docker_socket_path: str) -> dict:
+    """
+    Gets the container stats.
+
+    Returns:
+        dict: A dictionary containing the container stats.
+    """
+    try:
+        container_id = socket.gethostname()
+        result = subprocess.run(
+            [
+                "curl",
+                "--unix-socket",
+                docker_socket_path,
+                f"http://localhost/containers/{container_id}/stats?stream=false",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise Exception(result.stderr)
+        stats = json.loads(result.stdout.strip())
+        return {"stats": stats}
+    except Exception as e:
+        logger.exception(e)
+        raise Exception("An error occurred while fetching container stats.")

@@ -87,3 +87,8 @@ from inference.models.yolov8 import (
 )
 from inference.models.yolov9 import YOLOv9ObjectDetection
 from inference.models.yolov10 import YOLOv10ObjectDetection
+from inference.models.yolov11 import (
+    YOLOv11InstanceSegmentation,
+    YOLOv11KeypointsDetection,
+    YOLOv11ObjectDetection,
+)
