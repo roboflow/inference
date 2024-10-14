@@ -279,6 +279,8 @@ from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
 from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
     PolygonZoneVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.reference_path.v1 import ReferencePathVisualizationBlockV1
+from inference.core.workflows.core_steps.visualizations.trace.v1 import TraceVisualizationBlockV1
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
@@ -429,6 +431,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OnObjectAppearedBlockV1,
         OnObjectLocationUpdatedBlockV1,
         OnObjectLostBlockV1,
+        TraceVisualizationBlockV1,
+        ReferencePathVisualizationBlockV1,
     ]
 
 
