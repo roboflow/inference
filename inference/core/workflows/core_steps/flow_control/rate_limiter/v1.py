@@ -1,9 +1,9 @@
-from typing import List, Literal, Optional, Type
+from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition, WorkflowImageData
-from inference.core.workflows.execution_engine.entities.types import StepSelector, WorkflowImageSelector
+from inference.core.workflows.execution_engine.entities.types import StepOutputSelector, StepSelector, WorkflowImageSelector, WorkflowParameterSelector
 from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -32,6 +32,10 @@ class RateLimiterManifest(WorkflowBlockManifest):
         examples=[1.0],
         default=1.0,
     )
+    depends_on: Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()] = Field(
+        description="Reference to the step which immediately preceeds this branch.",
+        examples=["$steps.model"],
+    )
     next_steps: List[StepSelector] = Field(
         description="Reference to steps which shall be executed if rate limit allows.",
         examples=[["$steps.upload"]],
@@ -58,6 +62,7 @@ class RateLimiterBlockV1(WorkflowBlock):
         self,
         image: WorkflowImageData,
         seconds: float,
+        depends_on: any,
         next_steps: List[StepSelector],
         **kwargs,
     ) -> BlockResult:
