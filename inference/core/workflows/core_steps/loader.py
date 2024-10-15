@@ -68,6 +68,9 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
+from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
+    RateLimiterBlockV1,
+)
 from inference.core.workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
 from inference.core.workflows.core_steps.formatters.expression.v1 import (
     ExpressionBlockV1,
@@ -279,8 +282,12 @@ from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
 from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
     PolygonZoneVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.visualizations.reference_path.v1 import ReferencePathVisualizationBlockV1
-from inference.core.workflows.core_steps.visualizations.trace.v1 import TraceVisualizationBlockV1
+from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
+    ReferencePathVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.trace.v1 import (
+    TraceVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
@@ -362,6 +369,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
         ContinueIfBlockV1,
+        RateLimiterBlockV1,
         PerspectiveCorrectionBlockV1,
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,

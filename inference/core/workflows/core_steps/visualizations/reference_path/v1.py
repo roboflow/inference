@@ -39,8 +39,11 @@ class ReferencePathVisualizationManifest(VisualizationManifest):
             "block_type": "visualization",
         }
     )
-    reference_path: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(
-        kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    reference_path: Union[
+        list,
+        StepOutputSelector(kind=[LIST_OF_VALUES_KIND]),
+        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
+    ] = Field(  # type: ignore
         description="Reference path in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
         examples=["$inputs.expected_path"],
     )
@@ -89,7 +92,7 @@ class ReferencePathVisualizationBlockV1(VisualizationBlock):
         result_image = cv2.polylines(
             numpy_image if not copy_image else numpy_image.copy(),
             [reference_path_array],
-                False,
+            False,
             str_to_color(color).as_bgr(),
             thickness,
         )
