@@ -1,14 +1,16 @@
-from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+from collections import deque
+from typing import Deque, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 
-import supervision as sv
+import numpy as np
 from pydantic import ConfigDict, Field
+import supervision as sv
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    FLOAT_KIND,
+    INTEGER_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     StepOutputSelector,
@@ -42,7 +44,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "transformation",
         }
     )
-    type: Literal["roboflow_core/guard_tracked_detections@v1"]
+    type: Literal["roboflow_core/smooth_tracked_detections@v1"]
     image: WorkflowImageSelector
     detections: StepOutputSelector(
         kind=[
@@ -53,10 +55,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Tracked detections",
         examples=["$steps.object_detection_model.predictions"],
     )
-    consider_detection_gone_timeout: Union[Optional[float], WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
-        default=2,
-        description="Drop detections that had not been seen for longer than this timeout (in seconds)",
-        examples=[2, "$inputs.disappeared_detections_timeout"],
+    smoothing_window_size: Union[Optional[int], WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        default=3,
+        description="Predicted movement of detection will be smoothed based on historical measurements of velocity,"
+                    " this parameter controls number of historical measurements taken under account when calculating smoothed velocity."
+                    " Detections will be removed from generating smoothed predictions if they had been missing for longer than this number of frames.",
+        examples=[5, "$inputs.smoothing_window_size"],
     )
 
     @classmethod
@@ -79,8 +83,9 @@ class BlockManifest(WorkflowBlockManifest):
 class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
     def __init__(self):
         self._batch_of_last_known_detections: Dict[
-            str, Dict[Union[int, str], Tuple[float, sv.Detections]]
+            str, Dict[Union[int, str], sv.Detections]
         ] = {}
+        self._batch_of_kalman_filters: Dict[Union[int, str], VelocityKalmanFilter] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -90,13 +95,9 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         self,
         image: WorkflowImageData,
         detections: sv.Detections,
-        consider_detection_gone_timeout: float,
+        smoothing_window_size: int,
     ) -> BlockResult:
         metadata = image.video_metadata
-        if metadata.comes_from_video_file and metadata.fps != 0:
-            ts = metadata.frame_number / metadata.fps
-        else:
-            ts = metadata.frame_timestamp.timestamp()
         if detections.tracker_id is None:
             raise ValueError(
                 f"tracker_id not initialized, {self.__class__.__name__} requires detections to be tracked"
@@ -104,16 +105,81 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         cached_detections = self._batch_of_last_known_detections.setdefault(
             metadata.video_identifier, {}
         )
-        this_frame_tracked_ids = set()
-        for i, tracked_id in zip(range(len(detections)), detections.tracker_id):
-            this_frame_tracked_ids.add(tracked_id)
-            cached_detections[tracked_id] = (ts, detections[i])
-        for tracked_id in list(cached_detections.keys()):
-            last_seen_ts = cached_detections[tracked_id][0]
-            if ts - last_seen_ts > consider_detection_gone_timeout:
-                del cached_detections[tracked_id]
+        kalman_filter = self._batch_of_kalman_filters.setdefault(metadata.video_identifier, VelocityKalmanFilter(smoothing_window_size=smoothing_window_size))
+        measured_velocities = {}
+        for i, (tracker_id, xyxy) in enumerate(zip(detections.tracker_id, detections.xyxy)):
+            if tracker_id not in cached_detections:
+                cached_detections[tracker_id] = detections[i]
+                continue
+            x1, y1, x2, y2 = xyxy
+            this_frame_center_xy = ([x1 + abs(x2 - x1), y1 + abs(y2 - y1)])
+            x1, y1, x2, y2 = cached_detections[tracker_id].xyxy[0]
+            prev_frame_center_xy = ([x1 + abs(x2 - x1), y1 + abs(y2 - y1)])
+            measured_velocities[tracker_id] =  this_frame_center_xy[0] - prev_frame_center_xy[0], this_frame_center_xy[1] - prev_frame_center_xy[1]
+        predicted_velocities = kalman_filter.update(measurements=measured_velocities)
+
+        predicted_detections = {}
+        for tracker_id, predicted_velocity in predicted_velocities.items():
+            if tracker_id in measured_velocities:
+                continue
+            prev_frame_detection = cached_detections[tracker_id]
+            prev_frame_detection.xyxy = np.array([prev_frame_detection.xyxy[0] + np.array([predicted_velocity, predicted_velocity]).flatten()])
+            predicted_detections[tracker_id] = prev_frame_detection
+        for i, tracker_id in enumerate(detections.tracker_id):
+            if tracker_id not in predicted_detections:
+                predicted_detections[tracker_id] = detections[i]
+        for tracker_id in list(cached_detections.keys()):
+            if tracker_id not in kalman_filter.tracked_vectors and tracker_id not in predicted_detections:
+                del cached_detections[tracker_id]
         return {
-            OUTPUT_KEY: sv.Detections.merge(
-                cached_detection[1] for cached_detection in cached_detections.values()
-            )
+            OUTPUT_KEY: sv.Detections.merge(predicted_detections.values())
         }
+
+
+class VelocityKalmanFilter:
+    def __init__(self, smoothing_window_size: int):
+        self.time_step = 1
+        self.smoothing_window_size = smoothing_window_size
+        self.state_transition_matrix = np.array([[1, 0],
+                                                 [0, 1]])
+        self.process_noise_covariance = np.eye(2) * 0.001
+        self.measurement_noise_covariance = np.eye(2) * 0.01
+        self.tracked_vectors: Dict[Union[int, str], Dict[Literal["velocity", "error_covariance", "history"], Union[np.ndarray, Deque[float, float]]]] = {}
+
+    def predict(self) -> Dict[Union[int, str], np.ndarray]:
+        predictions: Dict[Union[int, str], np.ndarray] = {}
+        for tracker_id, data in self.tracked_vectors.items():
+            data["velocity"] = np.dot(self.state_transition_matrix, data["velocity"])
+            data["error_covariance"] = np.dot(np.dot(self.state_transition_matrix, data["error_covariance"]),
+                                              self.state_transition_matrix.T) + self.process_noise_covariance
+            predictions[tracker_id] = data["velocity"]
+        return predictions
+
+    def update(self, measurements: Dict[Union[int, str], tuple[float, float]]) -> Dict[Union[int, str], np.ndarray]:
+        updated_vector_ids: Set[Union[int, str]] = set()
+        for tracker_id, velocity in measurements.items():
+            updated_vector_ids.add(tracker_id)
+            if tracker_id in self.tracked_vectors:
+                measurement = np.array(velocity).reshape(2, 1)
+                tracked_vector = self.tracked_vectors[tracker_id]
+                tracked_vector["history"].appendleft(measurement)
+                smoothed_measurement = np.mean(tracked_vector["history"], axis=0)
+                measurement_residual = smoothed_measurement - tracked_vector["velocity"]
+                residual_covariance = tracked_vector["error_covariance"] + self.measurement_noise_covariance
+                kalman_gain = np.dot(tracked_vector["error_covariance"], np.linalg.inv(residual_covariance))
+                tracked_vector["velocity"] = tracked_vector["velocity"] + np.dot(kalman_gain, measurement_residual)
+                tracked_vector["error_covariance"] = tracked_vector["error_covariance"] - np.dot(kalman_gain, tracked_vector["error_covariance"])
+            else:
+                self.tracked_vectors[tracker_id] = {
+                    "velocity": np.array([[velocity[0]], [velocity[1]]]),
+                    "error_covariance": np.eye(2),
+                    "history": deque(maxlen=self.smoothing_window_size),
+                }
+
+        for tracker_id in set(self.tracked_vectors.keys()) - updated_vector_ids:
+            if self.tracked_vectors[tracker_id]["history"]:
+                self.tracked_vectors[tracker_id]["history"].popleft()
+            if not self.tracked_vectors[tracker_id]["history"]:
+                del self.tracked_vectors[tracker_id]
+
+        return self.predict()
