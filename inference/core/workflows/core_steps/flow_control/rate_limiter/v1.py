@@ -1,3 +1,4 @@
+import time
 from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
@@ -58,7 +59,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.2.0,<2.0.0"
 
 
 class RateLimiterBlockV1(WorkflowBlock):
@@ -78,25 +79,11 @@ class RateLimiterBlockV1(WorkflowBlock):
         next_steps: List[StepSelector],
         **kwargs,
     ) -> BlockResult:
-        import time
-
         current_time = time.time()
-
-        # Extract video identifier; use 'default' if not available
         metadata = image.video_metadata
-        video_id = (
-            metadata.video_identifier
-            if metadata and metadata.video_identifier
-            else "default"
-        )
-
-        last_executed_at = self._last_executed_at.get(video_id)
-
+        last_executed_at = self._last_executed_at.get(metadata.video_identifier)
         if last_executed_at is None or (current_time - last_executed_at) >= seconds:
-            # Update the last executed time for this video
-            self._last_executed_at[video_id] = current_time
-            # Proceed to next steps
+            self._last_executed_at[metadata.video_identifier] = current_time
             return FlowControl(mode="select_step", context=next_steps)
         else:
-            # Terminate the branch
             return FlowControl(mode="terminate_branch")
