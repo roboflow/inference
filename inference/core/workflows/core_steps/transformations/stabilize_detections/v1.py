@@ -211,7 +211,7 @@ class VelocityKalmanFilter:
         return predictions
 
     def update(
-        self, measurements: Dict[Union[int, str], tuple[float, float]]
+        self, measurements: Dict[Union[int, str], Tuple[float, float]]
     ) -> Dict[Union[int, str], np.ndarray]:
         updated_vector_ids: Set[Union[int, str]] = set()
         for tracker_id, velocity in measurements.items():
