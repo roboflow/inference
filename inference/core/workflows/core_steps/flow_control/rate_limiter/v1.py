@@ -2,14 +2,23 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.execution_engine.entities.base import OutputDefinition, WorkflowImageData
-from inference.core.workflows.execution_engine.entities.types import StepOutputSelector, StepSelector, WorkflowImageSelector, WorkflowParameterSelector
+from inference.core.workflows.execution_engine.entities.base import (
+    OutputDefinition,
+    WorkflowImageData,
+)
+from inference.core.workflows.execution_engine.entities.types import (
+    StepOutputSelector,
+    StepSelector,
+    WorkflowImageSelector,
+    WorkflowParameterSelector,
+)
 from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+
 
 class RateLimiterManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/rate_limiter@v1"]
@@ -32,7 +41,9 @@ class RateLimiterManifest(WorkflowBlockManifest):
         examples=[1.0],
         default=1.0,
     )
-    depends_on: Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()] = Field(
+    depends_on: Union[
+        WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()
+    ] = Field(
         description="Reference to the step which immediately preceeds this branch.",
         examples=["$steps.model"],
     )
@@ -48,6 +59,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
+
 
 class RateLimiterBlockV1(WorkflowBlock):
     def __init__(self):
@@ -72,7 +84,11 @@ class RateLimiterBlockV1(WorkflowBlock):
 
         # Extract video identifier; use 'default' if not available
         metadata = image.video_metadata
-        video_id = metadata.video_identifier if metadata and metadata.video_identifier else "default"
+        video_id = (
+            metadata.video_identifier
+            if metadata and metadata.video_identifier
+            else "default"
+        )
 
         last_executed_at = self._last_executed_at.get(video_id)
 

@@ -60,6 +60,10 @@ from inference.core.workflows.core_steps.common.query_language.operations.string
     string_to_upper,
     to_string,
 )
+from inference.core.workflows.core_steps.common.query_language.operations.time.base import (
+    get_current_timestamp,
+    get_time_difference,
+)
 
 
 def execute_operations(
@@ -189,6 +193,8 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "SortDetections": sort_detections,
     "ClassificationPropertyExtract": extract_classification_property,
     "DetectionsRename": rename_detections,
+    "CurrentTimestamp": get_current_timestamp,
+    "TimeDifference": get_time_difference,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

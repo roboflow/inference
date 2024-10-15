@@ -2,6 +2,9 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
+    DataAggregatorBlockV1,
+)
 from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
     LineCounterBlockV1,
 )
@@ -60,6 +63,7 @@ from inference.core.workflows.core_steps.classical_cv.template_matching.v1 impor
 from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
     ImageThresholdBlockV1,
 )
+from inference.core.workflows.core_steps.common.cache import TrackedInstancesCache
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
@@ -67,6 +71,7 @@ from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
 from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
     RateLimiterBlockV1,
 )
+from inference.core.workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
 from inference.core.workflows.core_steps.formatters.expression.v1 import (
     ExpressionBlockV1,
 )
@@ -159,6 +164,8 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.email.v1 import EmailBlockV1
+from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -206,6 +213,21 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop.v1
 )
 from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
     StitchImagesBlockV1,
+)
+from inference.core.workflows.core_steps.video_state_managers.retrieve_from_object_data_stash.v1 import (
+    RetrieveFromObjectDataStashBlockV1,
+)
+from inference.core.workflows.core_steps.video_state_managers.stash_object_data.v1 import (
+    StashObjectDataBlockV1,
+)
+from inference.core.workflows.core_steps.video_triggers.on_object_appeared.v1 import (
+    OnObjectAppearedBlockV1,
+)
+from inference.core.workflows.core_steps.video_triggers.on_object_location_updated.v1 import (
+    OnObjectLocationUpdatedBlockV1,
+)
+from inference.core.workflows.core_steps.video_triggers.on_object_lost.v1 import (
+    OnObjectLostBlockV1,
 )
 
 # Visualizers
@@ -260,6 +282,12 @@ from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
 from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
     PolygonZoneVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
+    ReferencePathVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.trace.v1 import (
+    TraceVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
@@ -292,6 +320,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ROBOFLOW_PROJECT_KIND,
     SERIALISED_PAYLOADS_KIND,
     STRING_KIND,
+    TIMESTAMP_KIND,
     TOP_CLASS_KIND,
     VIDEO_METADATA_KIND,
     WILDCARD_KIND,
@@ -306,6 +335,8 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
+    "tracked_instances_cache": TrackedInstancesCache(cache_size=16384),
+    "allow_data_store_in_file_system": True,
 }
 
 
@@ -399,6 +430,17 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PathDeviationAnalyticsBlockV2,
         TimeInZoneBlockV2,
         LineCounterBlockV2,
+        DataAggregatorBlockV1,
+        CSVFormatterBlockV1,
+        EmailBlockV1,
+        LocalFileSinkBlockV1,
+        RetrieveFromObjectDataStashBlockV1,
+        StashObjectDataBlockV1,
+        OnObjectAppearedBlockV1,
+        OnObjectLocationUpdatedBlockV1,
+        OnObjectLostBlockV1,
+        TraceVisualizationBlockV1,
+        ReferencePathVisualizationBlockV1,
     ]
 
 
@@ -436,4 +478,5 @@ def load_kinds() -> List[Kind]:
         PREDICTION_TYPE_KIND,
         PARENT_ID_KIND,
         IMAGE_METADATA_KIND,
+        TIMESTAMP_KIND,
     ]
