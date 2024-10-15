@@ -11,6 +11,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
+    FLOAT_ZERO_TO_ONE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     StepOutputSelector,
@@ -62,6 +63,12 @@ class BlockManifest(WorkflowBlockManifest):
                     " Detections will be removed from generating smoothed predictions if they had been missing for longer than this number of frames.",
         examples=[5, "$inputs.smoothing_window_size"],
     )
+    bbox_smoothing_coefficient: Union[Optional[float], WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+        default=0.2,
+        description="Bounding box smoothing coefficient applied when given tracker_id is present on current frame."
+                    " This parameter must be initialized with value between 0 and 1",
+        examples=[0.2, "$inputs.bbox_smoothing_coefficient"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -96,6 +103,7 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         image: WorkflowImageData,
         detections: sv.Detections,
         smoothing_window_size: int,
+        bbox_smoothing_coefficient: float,
     ) -> BlockResult:
         metadata = image.video_metadata
         if detections.tracker_id is None:
@@ -109,7 +117,6 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         measured_velocities = {}
         for i, (tracker_id, xyxy) in enumerate(zip(detections.tracker_id, detections.xyxy)):
             if tracker_id not in cached_detections:
-                cached_detections[tracker_id] = detections[i]
                 continue
             x1, y1, x2, y2 = xyxy
             this_frame_center_xy = ([x1 + abs(x2 - x1), y1 + abs(y2 - y1)])
@@ -119,21 +126,37 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         predicted_velocities = kalman_filter.update(measurements=measured_velocities)
 
         predicted_detections = {}
+        for i, tracker_id in enumerate(detections.tracker_id):
+            if tracker_id in cached_detections:
+                prev_frame_detection = cached_detections[tracker_id]
+                prev_frame_xyxy = prev_frame_detection.xyxy[0]
+                curr_frame_detection = detections[i]
+                curr_frame_xyxy = curr_frame_detection.xyxy[0]
+                curr_frame_detection.xyxy[0] = smooth_xyxy(prev_xyxy=prev_frame_xyxy, curr_xyxy=curr_frame_xyxy, alpha=bbox_smoothing_coefficient)
+                predicted_detections[tracker_id] = curr_frame_detection
+            else:
+                predicted_detections[tracker_id] = detections[i]
+            cached_detections[tracker_id] = detections[i]
         for tracker_id, predicted_velocity in predicted_velocities.items():
-            if tracker_id in measured_velocities:
+            if tracker_id in predicted_detections:
                 continue
             prev_frame_detection = cached_detections[tracker_id]
-            prev_frame_detection.xyxy = np.array([prev_frame_detection.xyxy[0] + np.array([predicted_velocity, predicted_velocity]).flatten()])
+            prev_frame_xyxy = prev_frame_detection.xyxy[0]
+            curr_frame_xyxy = np.array([prev_frame_detection.xyxy[0] + np.array([predicted_velocity, predicted_velocity]).flatten()])
+            prev_frame_detection.xyxy = smooth_xyxy(prev_xyxy=prev_frame_xyxy, curr_xyxy=curr_frame_xyxy, alpha=bbox_smoothing_coefficient)
             predicted_detections[tracker_id] = prev_frame_detection
-        for i, tracker_id in enumerate(detections.tracker_id):
-            if tracker_id not in predicted_detections:
-                predicted_detections[tracker_id] = detections[i]
         for tracker_id in list(cached_detections.keys()):
             if tracker_id not in kalman_filter.tracked_vectors and tracker_id not in predicted_detections:
                 del cached_detections[tracker_id]
         return {
             OUTPUT_KEY: sv.Detections.merge(predicted_detections.values())
         }
+
+
+def smooth_xyxy(prev_xyxy: np.ndarray, curr_xyxy: np.ndarray, alpha=0.2) -> np.ndarray:
+    smoothed_xyxy = alpha * curr_xyxy + (1 - alpha) * prev_xyxy
+
+    return smoothed_xyxy
 
 
 class VelocityKalmanFilter:
