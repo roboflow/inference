@@ -2,17 +2,17 @@ from collections import deque
 from typing import Deque, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 
 import numpy as np
-from pydantic import ConfigDict, Field
 import supervision as sv
+from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    INTEGER_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     StepOutputSelector,
     WorkflowImageSelector,
@@ -59,14 +59,14 @@ class BlockManifest(WorkflowBlockManifest):
     smoothing_window_size: Union[Optional[int], WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=3,
         description="Predicted movement of detection will be smoothed based on historical measurements of velocity,"
-                    " this parameter controls number of historical measurements taken under account when calculating smoothed velocity."
-                    " Detections will be removed from generating smoothed predictions if they had been missing for longer than this number of frames.",
+        " this parameter controls number of historical measurements taken under account when calculating smoothed velocity."
+        " Detections will be removed from generating smoothed predictions if they had been missing for longer than this number of frames.",
         examples=[5, "$inputs.smoothing_window_size"],
     )
     bbox_smoothing_coefficient: Union[Optional[float], WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         default=0.2,
         description="Bounding box smoothing coefficient applied when given tracker_id is present on current frame."
-                    " This parameter must be initialized with value between 0 and 1",
+        " This parameter must be initialized with value between 0 and 1",
         examples=[0.2, "$inputs.bbox_smoothing_coefficient"],
     )
 
@@ -113,16 +113,24 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
         cached_detections = self._batch_of_last_known_detections.setdefault(
             metadata.video_identifier, {}
         )
-        kalman_filter = self._batch_of_kalman_filters.setdefault(metadata.video_identifier, VelocityKalmanFilter(smoothing_window_size=smoothing_window_size))
+        kalman_filter = self._batch_of_kalman_filters.setdefault(
+            metadata.video_identifier,
+            VelocityKalmanFilter(smoothing_window_size=smoothing_window_size),
+        )
         measured_velocities = {}
-        for i, (tracker_id, xyxy) in enumerate(zip(detections.tracker_id, detections.xyxy)):
+        for i, (tracker_id, xyxy) in enumerate(
+            zip(detections.tracker_id, detections.xyxy)
+        ):
             if tracker_id not in cached_detections:
                 continue
             x1, y1, x2, y2 = xyxy
-            this_frame_center_xy = ([x1 + abs(x2 - x1), y1 + abs(y2 - y1)])
+            this_frame_center_xy = [x1 + abs(x2 - x1), y1 + abs(y2 - y1)]
             x1, y1, x2, y2 = cached_detections[tracker_id].xyxy[0]
-            prev_frame_center_xy = ([x1 + abs(x2 - x1), y1 + abs(y2 - y1)])
-            measured_velocities[tracker_id] =  this_frame_center_xy[0] - prev_frame_center_xy[0], this_frame_center_xy[1] - prev_frame_center_xy[1]
+            prev_frame_center_xy = [x1 + abs(x2 - x1), y1 + abs(y2 - y1)]
+            measured_velocities[tracker_id] = (
+                this_frame_center_xy[0] - prev_frame_center_xy[0],
+                this_frame_center_xy[1] - prev_frame_center_xy[1],
+            )
         predicted_velocities = kalman_filter.update(measurements=measured_velocities)
 
         predicted_detections = {}
@@ -132,7 +140,11 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
                 prev_frame_xyxy = prev_frame_detection.xyxy[0]
                 curr_frame_detection = detections[i]
                 curr_frame_xyxy = curr_frame_detection.xyxy[0]
-                curr_frame_detection.xyxy[0] = smooth_xyxy(prev_xyxy=prev_frame_xyxy, curr_xyxy=curr_frame_xyxy, alpha=bbox_smoothing_coefficient)
+                curr_frame_detection.xyxy[0] = smooth_xyxy(
+                    prev_xyxy=prev_frame_xyxy,
+                    curr_xyxy=curr_frame_xyxy,
+                    alpha=bbox_smoothing_coefficient,
+                )
                 predicted_detections[tracker_id] = curr_frame_detection
             else:
                 predicted_detections[tracker_id] = detections[i]
@@ -142,15 +154,25 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
                 continue
             prev_frame_detection = cached_detections[tracker_id]
             prev_frame_xyxy = prev_frame_detection.xyxy[0]
-            curr_frame_xyxy = np.array([prev_frame_detection.xyxy[0] + np.array([predicted_velocity, predicted_velocity]).flatten()])
-            prev_frame_detection.xyxy = smooth_xyxy(prev_xyxy=prev_frame_xyxy, curr_xyxy=curr_frame_xyxy, alpha=bbox_smoothing_coefficient)
+            curr_frame_xyxy = np.array(
+                [
+                    prev_frame_detection.xyxy[0]
+                    + np.array([predicted_velocity, predicted_velocity]).flatten()
+                ]
+            )
+            prev_frame_detection.xyxy = smooth_xyxy(
+                prev_xyxy=prev_frame_xyxy,
+                curr_xyxy=curr_frame_xyxy,
+                alpha=bbox_smoothing_coefficient,
+            )
             predicted_detections[tracker_id] = prev_frame_detection
         for tracker_id in list(cached_detections.keys()):
-            if tracker_id not in kalman_filter.tracked_vectors and tracker_id not in predicted_detections:
+            if (
+                tracker_id not in kalman_filter.tracked_vectors
+                and tracker_id not in predicted_detections
+            ):
                 del cached_detections[tracker_id]
-        return {
-            OUTPUT_KEY: sv.Detections.merge(predicted_detections.values())
-        }
+        return {OUTPUT_KEY: sv.Detections.merge(predicted_detections.values())}
 
 
 def smooth_xyxy(prev_xyxy: np.ndarray, curr_xyxy: np.ndarray, alpha=0.2) -> np.ndarray:
@@ -163,22 +185,34 @@ class VelocityKalmanFilter:
     def __init__(self, smoothing_window_size: int):
         self.time_step = 1
         self.smoothing_window_size = smoothing_window_size
-        self.state_transition_matrix = np.array([[1, 0],
-                                                 [0, 1]])
+        self.state_transition_matrix = np.array([[1, 0], [0, 1]])
         self.process_noise_covariance = np.eye(2) * 0.001
         self.measurement_noise_covariance = np.eye(2) * 0.01
-        self.tracked_vectors: Dict[Union[int, str], Dict[Literal["velocity", "error_covariance", "history"], Union[np.ndarray, Deque[float, float]]]] = {}
+        self.tracked_vectors: Dict[
+            Union[int, str],
+            Dict[
+                Literal["velocity", "error_covariance", "history"],
+                Union[np.ndarray, Deque[float, float]],
+            ],
+        ] = {}
 
     def predict(self) -> Dict[Union[int, str], np.ndarray]:
         predictions: Dict[Union[int, str], np.ndarray] = {}
         for tracker_id, data in self.tracked_vectors.items():
             data["velocity"] = np.dot(self.state_transition_matrix, data["velocity"])
-            data["error_covariance"] = np.dot(np.dot(self.state_transition_matrix, data["error_covariance"]),
-                                              self.state_transition_matrix.T) + self.process_noise_covariance
+            data["error_covariance"] = (
+                np.dot(
+                    np.dot(self.state_transition_matrix, data["error_covariance"]),
+                    self.state_transition_matrix.T,
+                )
+                + self.process_noise_covariance
+            )
             predictions[tracker_id] = data["velocity"]
         return predictions
 
-    def update(self, measurements: Dict[Union[int, str], tuple[float, float]]) -> Dict[Union[int, str], np.ndarray]:
+    def update(
+        self, measurements: Dict[Union[int, str], tuple[float, float]]
+    ) -> Dict[Union[int, str], np.ndarray]:
         updated_vector_ids: Set[Union[int, str]] = set()
         for tracker_id, velocity in measurements.items():
             updated_vector_ids.add(tracker_id)
@@ -188,10 +222,20 @@ class VelocityKalmanFilter:
                 tracked_vector["history"].appendleft(measurement)
                 smoothed_measurement = np.mean(tracked_vector["history"], axis=0)
                 measurement_residual = smoothed_measurement - tracked_vector["velocity"]
-                residual_covariance = tracked_vector["error_covariance"] + self.measurement_noise_covariance
-                kalman_gain = np.dot(tracked_vector["error_covariance"], np.linalg.inv(residual_covariance))
-                tracked_vector["velocity"] = tracked_vector["velocity"] + np.dot(kalman_gain, measurement_residual)
-                tracked_vector["error_covariance"] = tracked_vector["error_covariance"] - np.dot(kalman_gain, tracked_vector["error_covariance"])
+                residual_covariance = (
+                    tracked_vector["error_covariance"]
+                    + self.measurement_noise_covariance
+                )
+                kalman_gain = np.dot(
+                    tracked_vector["error_covariance"],
+                    np.linalg.inv(residual_covariance),
+                )
+                tracked_vector["velocity"] = tracked_vector["velocity"] + np.dot(
+                    kalman_gain, measurement_residual
+                )
+                tracked_vector["error_covariance"] = tracked_vector[
+                    "error_covariance"
+                ] - np.dot(kalman_gain, tracked_vector["error_covariance"])
             else:
                 self.tracked_vectors[tracker_id] = {
                     "velocity": np.array([[velocity[0]], [velocity[1]]]),
