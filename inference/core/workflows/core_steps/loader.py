@@ -2,6 +2,9 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
+    DataAggregatorBlockV1,
+)
 from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
     LineCounterBlockV1,
 )
@@ -64,6 +67,10 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
+from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
+    RateLimiterBlockV1,
+)
+from inference.core.workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
 from inference.core.workflows.core_steps.formatters.expression.v1 import (
     ExpressionBlockV1,
 )
@@ -156,6 +163,10 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
+    EmailNotificationBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -176,6 +187,9 @@ from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import 
 )
 from inference.core.workflows.core_steps.transformations.byte_tracker.v2 import (
     ByteTrackerBlockV2,
+)
+from inference.core.workflows.core_steps.transformations.byte_tracker.v3 import (
+    ByteTrackerBlockV3,
 )
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
@@ -257,6 +271,12 @@ from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
 from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
     PolygonZoneVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
+    ReferencePathVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.trace.v1 import (
+    TraceVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
@@ -303,6 +323,7 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
+    "allow_data_store_in_file_system": True,
 }
 
 
@@ -335,6 +356,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
         ContinueIfBlockV1,
+        RateLimiterBlockV1,
         PerspectiveCorrectionBlockV1,
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
@@ -395,6 +417,13 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PathDeviationAnalyticsBlockV2,
         TimeInZoneBlockV2,
         LineCounterBlockV2,
+        DataAggregatorBlockV1,
+        CSVFormatterBlockV1,
+        EmailNotificationBlockV1,
+        LocalFileSinkBlockV1,
+        TraceVisualizationBlockV1,
+        ReferencePathVisualizationBlockV1,
+        ByteTrackerBlockV3,
     ]
 
 
