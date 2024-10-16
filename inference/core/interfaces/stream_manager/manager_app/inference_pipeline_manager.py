@@ -86,12 +86,10 @@ class InferencePipelineManager(Process):
         )
 
     def run(self) -> None:
-        print("RUNNING INFERENCE PIPELINE MANAGER")
         signal.signal(signal.SIGINT, ignore_signal)
         signal.signal(signal.SIGTERM, self._handle_termination_signal)
 
         while not self._stop:
-            print("LOOP")
             self._check_pipeline_timeout()
             # Handle commands from the queue
             try:
@@ -104,17 +102,9 @@ class InferencePipelineManager(Process):
             self._handle_command(request_id=request_id, payload=payload)
 
     def _check_pipeline_timeout(self) -> None:
-        print("CHECKING PIPELINE TIMEOUT")
         if self._inference_pipeline and self._consumption_timeout is not None:
-
             time_since_last_consume = time.monotonic() - self._last_consume_time
-            print(
-                "PIPELINE AND CONSUMPTION TIMEOUT",
-                time_since_last_consume,
-                self._consumption_timeout,
-            )
             if time_since_last_consume > self._consumption_timeout:
-                print("TIME SINCE LAST CONSUME > CONSUMPTION TIMEOUT...terminating")
                 logger.info("Terminating pipeline due to zero consume timeout...")
                 try:
                     pid = os.getpid()
