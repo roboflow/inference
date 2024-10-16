@@ -80,7 +80,7 @@ class BlockManifest(WorkflowBlockManifest):
                     "name": "Append Log",
                     "description": "Aggregates multiple documents in single file",
                 },
-                "custom": {
+                "separate_files": {
                     "name": "Separate File",
                     "description": "Outputs single document for each input datapoint",
                 },
@@ -93,6 +93,9 @@ class BlockManifest(WorkflowBlockManifest):
     file_name_prefix: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
         default="workflow_output",
         description="File name prefix",
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     max_entries_per_file: Union[int, WorkflowParameterSelector(kind=[STRING_KIND])] = (
         Field(

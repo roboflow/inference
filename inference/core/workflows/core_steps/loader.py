@@ -188,6 +188,9 @@ from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import 
 from inference.core.workflows.core_steps.transformations.byte_tracker.v2 import (
     ByteTrackerBlockV2,
 )
+from inference.core.workflows.core_steps.transformations.byte_tracker.v3 import (
+    ByteTrackerBlockV3,
+)
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
 )
@@ -214,15 +217,6 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop.v1
 )
 from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
     StitchImagesBlockV1,
-)
-from inference.core.workflows.core_steps.video_triggers.on_object_appeared.v1 import (
-    OnObjectAppearedBlockV1,
-)
-from inference.core.workflows.core_steps.video_triggers.on_object_location_updated.v1 import (
-    OnObjectLocationUpdatedBlockV1,
-)
-from inference.core.workflows.core_steps.video_triggers.on_object_lost.v1 import (
-    OnObjectLostBlockV1,
 )
 
 # Visualizers
@@ -427,11 +421,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CSVFormatterBlockV1,
         EmailNotificationBlockV1,
         LocalFileSinkBlockV1,
-        OnObjectAppearedBlockV1,
-        OnObjectLocationUpdatedBlockV1,
-        OnObjectLostBlockV1,
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,
+        ByteTrackerBlockV3,
     ]
 
 

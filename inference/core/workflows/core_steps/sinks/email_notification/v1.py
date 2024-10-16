@@ -174,6 +174,7 @@ class BlockManifest(WorkflowBlockManifest):
         default="roboflow",
         description="Provider for Email service.",
         json_schema_extra={
+            "always_visible": True,
             "values_metadata": {
                 "roboflow": {
                     "name": "Roboflow E-Mail service",
@@ -183,7 +184,7 @@ class BlockManifest(WorkflowBlockManifest):
                     "name": "Custom setup",
                     "description": "Provide setup for your own SMTP e-mail server",
                 },
-            }
+            },
         },
     )
     subject: str = Field(description="Subject of the message")
@@ -204,6 +205,7 @@ class BlockManifest(WorkflowBlockManifest):
             WorkflowParameterSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
         ]
     ] = Field(
+        default=None,
         description="Destination e-mail address",
     )
     bcc_receiver_email: Optional[
@@ -213,6 +215,7 @@ class BlockManifest(WorkflowBlockManifest):
             WorkflowParameterSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
         ]
     ] = Field(
+        default=None,
         description="Destination e-mail address",
     )
     message_parameters: Dict[
