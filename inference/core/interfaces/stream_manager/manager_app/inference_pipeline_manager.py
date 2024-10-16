@@ -7,10 +7,10 @@ from collections import deque
 from dataclasses import asdict
 from functools import partial
 from multiprocessing import Process, Queue
+from queue import Empty
 from threading import Event, Lock
 from types import FrameType
 from typing import Deque, Dict, Optional, Tuple
-from queue import Empty
 
 from pydantic import ValidationError
 
