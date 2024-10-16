@@ -114,7 +114,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @field_validator("max_entries_per_file")
     @classmethod
-    def ensure_receiver_email_is_not_an_empty_list(cls, value: Any) -> dict:
+    def ensure_max_entries_per_file_is_correct(cls, value: Any) -> dict:
         if isinstance(value, int) and value < 1:
             raise ValueError("`max_entries_per_file` cannot be lower than 1.")
         return value

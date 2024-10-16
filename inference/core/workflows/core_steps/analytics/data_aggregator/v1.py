@@ -94,7 +94,7 @@ encountered. If aggregation data is list - operation will add each element of th
 encountered into the number of observations. If aggregation data is list - operation will add each element of the list 
 into aggregated state.
 
-* **`values_difference`:** calculates the difference between first and last observed value (requires data to be numeric)
+* **`values_difference`:** calculates the difference between max and min observed value (requires data to be numeric)
 
 If we take the `data` and `data_operations` from the example above and specify `aggregation_mode` in the following way:
 
@@ -263,8 +263,8 @@ class BlockManifest(WorkflowBlockManifest):
                     "operation will add each element of the list into aggregated state.",
                 },
                 "values_difference": {
-                    "name": "",
-                    "description": "",
+                    "name": "Observed Values Difference",
+                    "description": "Calculate difference between max and min value observed.",
                 },
             },
         },
@@ -380,8 +380,8 @@ class DataAggregatorBlockV1(WorkflowBlock):
             it_is_time_to_flush = seconds_since_last_dump >= interval_seconds
         if not it_is_time_to_flush:
             return {k: None for k in self._aggregation_cache.keys()}
-        result = self._aggregation_cache
-        self._aggregation_cache = None
+        result = {k: v.get_result() for k, v in self._aggregation_cache.items()}
+        self._aggregation_cache = {}
         self._runs = 0
         self._aggregation_start_timestamp = datetime.now()
         return result
@@ -530,19 +530,23 @@ class ValuesCountState(AggregationState):
 class ValuesDifferenceState(AggregationState):
 
     def __init__(self):
-        self._start_value: Optional[Union[int, float]] = None
-        self._end_value: Optional[Union[int, float]] = None
+        self._min_value: Optional[Union[int, float]] = None
+        self._max_value: Optional[Union[int, float]] = None
 
     def on_data(self, value: Any) -> None:
-        if self._start_value is None:
-            self._start_value = value
+        if self._min_value is None:
+            self._min_value = value
             return None
-        self._end_value = value
+        if self._max_value is None:
+            self._max_value = value
+            return None
+        self._min_value = min(self._min_value, value)
+        self._max_value = max(self._max_value, value)
 
     def get_result(self) -> Any:
-        if self._end_value is None:
+        if self._min_value is None or self._max_value is None:
             return None
-        return self._end_value - self._start_value
+        return self._max_value - self._min_value
 
 
 STATE_INITIALIZERS = {

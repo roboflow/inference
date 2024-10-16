@@ -405,19 +405,22 @@ class EmailNotificationBlockV1(WorkflowBlock):
         disable_sink: bool,
         cooldown_seconds: int,
     ) -> BlockResult:
+        print("EMAIL SINK")
         if disable_sink:
             return {
                 "error_status": False,
                 "throttling_status": False,
                 "message": "Sink was disabled by parameter `disable_sink`",
             }
-        seconds_since_last_notification = 0
+        print("EMAIL SINK NOT DISABLED")
+        seconds_since_last_notification = cooldown_seconds
         if self._last_notification_fired is not None:
             seconds_since_last_notification = (
                 datetime.now() - self._last_notification_fired
             ).total_seconds()
         if seconds_since_last_notification < cooldown_seconds:
             logging.info(f"Activated `roboflow_core/email_notification@v1` cooldown.")
+            print("EMAIL SINK COOLDOWN")
             return {
                 "error_status": False,
                 "throttling_status": True,
@@ -487,7 +490,9 @@ class EmailNotificationBlockV1(WorkflowBlock):
                 "throttling_status": False,
                 "message": "Notification sent in the background task",
             }
+        print("SENDING")
         error_status, message = send_email_handler()
+        print(error_status, message)
         return {
             "error_status": error_status,
             "throttling_status": False,
@@ -516,7 +521,7 @@ def format_email_message(
             parameter_value, global_parameters={}
         )
     parameter_to_placeholders = defaultdict(list)
-    for placeholder, parameter_name in parameters_to_get_values:
+    for placeholder, parameter_name in matching_parameters:
         if parameter_name not in parameters_to_get_values:
             continue
         parameter_to_placeholders[parameter_name].append(placeholder)

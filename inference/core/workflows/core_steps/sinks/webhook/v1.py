@@ -295,13 +295,6 @@ class BlockManifest(WorkflowBlockManifest):
         )
     )
 
-    @field_validator("max_entries_per_file")
-    @classmethod
-    def ensure_receiver_email_is_not_an_empty_list(cls, value: Any) -> dict:
-        if isinstance(value, int) and value < 1:
-            raise ValueError("`max_entries_per_file` cannot be lower than 1.")
-        return value
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -351,7 +344,7 @@ class WebhookSinkBlockV1(WorkflowBlock):
                 "throttling_status": False,
                 "message": "Sink was disabled by parameter `disable_sink`",
             }
-        seconds_since_last_notification = 0
+        seconds_since_last_notification = cooldown_seconds
         if self._last_notification_fired is not None:
             seconds_since_last_notification = (
                 datetime.now() - self._last_notification_fired
