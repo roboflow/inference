@@ -45,7 +45,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "transformation",
         }
     )
-    type: Literal["roboflow_core/smooth_tracked_detections@v1"]
+    type: Literal["roboflow_core/stabilize_detections@v1"]
     image: WorkflowImageSelector
     detections: StepOutputSelector(
         kind=[
@@ -172,7 +172,10 @@ class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):
                 and tracker_id not in predicted_detections
             ):
                 del cached_detections[tracker_id]
-        return {OUTPUT_KEY: sv.Detections.merge(predicted_detections.values())}
+        merged_detections = sv.Detections.merge(predicted_detections.values())
+        if len(merged_detections) == 0:
+            merged_detections.tracker_id = np.array([])
+        return {OUTPUT_KEY: merged_detections}
 
 
 def smooth_xyxy(prev_xyxy: np.ndarray, curr_xyxy: np.ndarray, alpha=0.2) -> np.ndarray:
@@ -240,8 +243,13 @@ class VelocityKalmanFilter:
                 self.tracked_vectors[tracker_id] = {
                     "velocity": np.array([[velocity[0]], [velocity[1]]]),
                     "error_covariance": np.eye(2),
-                    "history": deque(maxlen=self.smoothing_window_size),
+                    "history": deque(
+                        [np.array([[velocity[0]], [velocity[1]]])],
+                        maxlen=self.smoothing_window_size,
+                    ),
                 }
+
+        predicted_velocities = self.predict()
 
         for tracker_id in set(self.tracked_vectors.keys()) - updated_vector_ids:
             if self.tracked_vectors[tracker_id]["history"]:
@@ -249,4 +257,4 @@ class VelocityKalmanFilter:
             if not self.tracked_vectors[tracker_id]["history"]:
                 del self.tracked_vectors[tracker_id]
 
-        return self.predict()
+        return predicted_velocities
