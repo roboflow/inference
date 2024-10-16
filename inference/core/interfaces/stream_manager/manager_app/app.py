@@ -5,6 +5,8 @@ import sys
 from functools import partial
 from multiprocessing import Process, Queue
 from socketserver import BaseRequestHandler, BaseServer
+from threading import Thread
+import time
 from types import FrameType
 from typing import Any, Dict, Optional, Tuple
 from uuid import uuid4
@@ -294,6 +296,19 @@ def join_inference_pipeline(
     del processes_table[pipeline_id]
 
 
+def check_process_health() -> None:
+    while True:
+        for pipeline_id, (process, _, _) in list(PROCESSES_TABLE.items()):
+            if not process.is_alive():
+                logger.warning(
+                    f"Process for pipeline_id={pipeline_id} is not alive. Terminating..."
+                )
+                process.terminate()
+                process.join()
+                del PROCESSES_TABLE[pipeline_id]
+        time.sleep(1)
+
+
 def start() -> None:
     signal.signal(
         signal.SIGINT, partial(execute_termination, processes_table=PROCESSES_TABLE)
@@ -301,6 +316,10 @@ def start() -> None:
     signal.signal(
         signal.SIGTERM, partial(execute_termination, processes_table=PROCESSES_TABLE)
     )
+
+    # check process health in daemon thread
+    Thread(target=check_process_health, daemon=True).start()
+
     with RoboflowTCPServer(
         server_address=(HOST, PORT),
         handler_class=partial(
