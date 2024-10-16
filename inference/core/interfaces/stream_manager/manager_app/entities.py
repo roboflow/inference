@@ -79,6 +79,7 @@ class InitialisePipelinePayload(BaseModel):
     sink_configuration: MemorySinkConfiguration = MemorySinkConfiguration(
         type="MemorySinkConfiguration"
     )
+    consumption_timeout: Optional[float] = None
     api_key: Optional[str] = None
 
 
