@@ -133,18 +133,19 @@ class BlockManifest(WorkflowBlockManifest):
 
 class LocalFileSinkBlockV1(WorkflowBlock):
 
-    def __init__(self, allow_data_store_in_file_system: bool):
-        if not allow_data_store_in_file_system:
+    def __init__(self, allow_access_to_file_system: bool):
+        if not allow_access_to_file_system:
             raise RuntimeError(
                 "`roboflow_core/local_file_sink@v1` block cannot run in this environment - "
-                "local file system usage is forbidden."
+                "local file system usage is forbidden - use self-hosted `inference` or "
+                "Roboflow Dedicated Deployment."
             )
         self._active_file: Optional[str] = None
         self._entries_in_file = 0
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["allow_data_store_in_file_system"]
+        return ["allow_access_to_file_system"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

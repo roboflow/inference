@@ -1,6 +1,8 @@
 import logging
+import re
 import smtplib
 import ssl
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from copy import copy
 from datetime import datetime
@@ -64,7 +66,7 @@ Content of the message can be parametrised with Workflow execution outcomes. Tak
 message using dynamic parameters:
 
 ```
-message = "This is example notification. Predicted classes: `$parameters.predicted_classes`"
+message = "This is example notification. Predicted classes: {{ $parameters.predicted_classes }}"
 ```
 
 Message parameters are delivered by Workflows Execution Engine by setting proper data selectors in
@@ -156,6 +158,8 @@ Sometimes it would be convenient to manually disable the e-mail notifier block. 
 setting `disable_sink` flag to hold reference to Workflow input. with such setup, caller would be
 able to disable the sink when needed sending agreed input parameter.
 """
+
+PARAMETER_REGEX = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -496,14 +500,31 @@ def format_email_message(
     message_parameters: Dict[str, Any],
     message_parameters_operations: Dict[str, List[AllOperationsType]],
 ) -> str:
-    message_parameters = copy(message_parameters)
-    for variable_name, operations in message_parameters_operations.items():
+    matching_parameters = PARAMETER_REGEX.findall(message)
+    parameters_to_get_values = {
+        p[1] for p in matching_parameters if p[1] in message_parameters
+    }
+    parameters_values = {}
+    for parameter_name in parameters_to_get_values:
+        parameter_value = message_parameters[parameter_name]
+        operations = message_parameters_operations.get(parameter_name)
+        if not operations:
+            parameters_values[parameter_name] = parameter_value
+            continue
         operations_chain = build_operations_chain(operations=operations)
-        message_parameters[variable_name] = operations_chain(
-            message_parameters[variable_name], global_parameters={}
+        parameters_values[parameter_name] = operations_chain(
+            parameter_value, global_parameters={}
         )
-    for variable_name, value in message_parameters.items():
-        message = message.replace(f"`$parameters.{variable_name}`", str(value))
+    parameter_to_placeholders = defaultdict(list)
+    for placeholder, parameter_name in parameters_to_get_values:
+        if parameter_name not in parameters_to_get_values:
+            continue
+        parameter_to_placeholders[parameter_name].append(placeholder)
+    for parameter_name, placeholders in parameter_to_placeholders.items():
+        for placeholder in placeholders:
+            message = message.replace(
+                placeholder, str(parameters_values[parameter_name])
+            )
     return message
 
 
@@ -542,7 +563,7 @@ def send_email_using_smtp_server(
             smtp_port=smtp_port,
             sender_email_password=sender_email_password,
         )
-        return False, "Message sent successfully"
+        return False, "Notification sent successfully"
     except Exception as error:
         logging.warning(
             f"Could not send e-mail using custom SMTP server. Error: {str(error)}"
