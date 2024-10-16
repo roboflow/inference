@@ -114,7 +114,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @field_validator("max_entries_per_file")
     @classmethod
-    def ensure_receiver_email_is_not_an_empty_list(cls, value: Any) -> dict:
+    def ensure_max_entries_per_file_is_correct(cls, value: Any) -> dict:
         if isinstance(value, int) and value < 1:
             raise ValueError("`max_entries_per_file` cannot be lower than 1.")
         return value
@@ -133,18 +133,19 @@ class BlockManifest(WorkflowBlockManifest):
 
 class LocalFileSinkBlockV1(WorkflowBlock):
 
-    def __init__(self, allow_data_store_in_file_system: bool):
-        if not allow_data_store_in_file_system:
+    def __init__(self, allow_access_to_file_system: bool):
+        if not allow_access_to_file_system:
             raise RuntimeError(
                 "`roboflow_core/local_file_sink@v1` block cannot run in this environment - "
-                "local file system usage is forbidden."
+                "local file system usage is forbidden - use self-hosted `inference` or "
+                "Roboflow Dedicated Deployment."
             )
         self._active_file: Optional[str] = None
         self._entries_in_file = 0
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["allow_data_store_in_file_system"]
+        return ["allow_access_to_file_system"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

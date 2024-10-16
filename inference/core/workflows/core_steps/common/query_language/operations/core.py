@@ -38,6 +38,8 @@ from inference.core.workflows.core_steps.common.query_language.operations.generi
     generate_random_number,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.images.base import (
+    encode_image_to_base64,
+    encode_image_to_jpeg,
     extract_image_property,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.numbers.base import (
@@ -189,6 +191,8 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "SortDetections": sort_detections,
     "ClassificationPropertyExtract": extract_classification_property,
     "DetectionsRename": rename_detections,
+    "ConvertImageToJPEG": encode_image_to_jpeg,
+    "ConvertImageToBase64": encode_image_to_base64,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

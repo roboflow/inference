@@ -271,6 +271,15 @@ SERIALISED_PAYLOADS_KIND = Kind(
     internal_data_type="List[Union[str, bytes, dict]]",
 )
 
+BYTES_KIND = Kind(
+    name="bytes",
+    description="This kind represent bytes",
+    docs="This kind represent bytes. Default serializer turns bytes into base64-encoded string and "
+    "this is the source of different data representation.",
+    serialised_data_type="str",
+    internal_data_type="bytes",
+)
+
 
 BOOLEAN_KIND_DOCS = """
 This kind represents boolean value - `True` or `False`

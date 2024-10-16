@@ -16,6 +16,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    BYTES_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     DETECTION_KIND,
     DICTIONARY_KIND,
@@ -378,6 +379,29 @@ class ExtractImageProperty(OperationDefinition):
     property_name: ImageProperty
 
 
+class ConvertImageToJPEG(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Converts image to JPEG",
+            "input_kind": [IMAGE_KIND],
+            "output_kind": [BYTES_KIND],
+        },
+    )
+    type: Literal["ConvertImageToJPEG"]
+    compression_level: int = Field(default=95, le=100, ge=1)
+
+
+class ConvertImageToBase64(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Converts image to base64-encoded JPEG",
+            "input_kind": [IMAGE_KIND],
+            "output_kind": [STRING_KIND],
+        },
+    )
+    type: Literal["ConvertImageToBase64"]
+
+
 class StringMatches(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -514,6 +538,8 @@ AllOperationsType = Annotated[
         DetectionsSelection,
         SortDetections,
         ClassificationPropertyExtract,
+        ConvertImageToJPEG,
+        ConvertImageToBase64,
     ],
     Field(discriminator="type"),
 ]

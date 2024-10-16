@@ -1,7 +1,11 @@
 from typing import List, Type
 
 from inference.core.cache import cache
-from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.env import (
+    ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
+    API_KEY,
+    WORKFLOWS_STEP_EXECUTION_MODE,
+)
 from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
     DataAggregatorBlockV1,
 )
@@ -176,6 +180,7 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
     RoboflowDatasetUploadBlockV2,
 )
+from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
@@ -283,6 +288,7 @@ from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
 from inference.core.workflows.execution_engine.entities.types import (
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
+    BYTES_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     CONTOURS_KIND,
     DETECTION_KIND,
@@ -323,7 +329,7 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
-    "allow_data_store_in_file_system": True,
+    "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
 }
 
 
@@ -424,6 +430,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
+        WebhookSinkBlockV1,
     ]
 
 
@@ -461,4 +468,5 @@ def load_kinds() -> List[Kind]:
         PREDICTION_TYPE_KIND,
         PARENT_ID_KIND,
         IMAGE_METADATA_KIND,
+        BYTES_KIND,
     ]
