@@ -356,18 +356,14 @@ def prepare_parameters(
     ]
     ensure_compound_input_indices_match(indices=batch_parameters_indices)
     if not batch_parameters_indices:
-        return BatchModeSIMDStepInput(
-            indices=[],
-            parameters={},
+        raise ExecutionEngineRuntimeError(
+            public_message=f"For step: {step_node.name} which is assessed by Workflows Compiler as "
+            f"SIMD step Execution Engine cannot detect batch inputs. "
+            f"This is most likely a bug. Contact Roboflow team through github issues "
+            f"(https://github.com/roboflow/inference/issues) providing full context of"
+            f"the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
         )
-        # raise ExecutionEngineRuntimeError(
-        #     public_message=f"For step: {step_node.name} which is assessed by Workflows Compiler as "
-        #     f"SIMD step Execution Engine cannot detect batch inputs. "
-        #     f"This is most likely a bug. Contact Roboflow team through github issues "
-        #     f"(https://github.com/roboflow/inference/issues) providing full context of"
-        #     f"the problem - including workflow definition you use.",
-        #     context="workflow_execution | step_input_assembling",
-        # )
     indices = batch_parameters_indices[0]
     if not step_node.step_manifest.accepts_empty_values():
         empty_indices = get_empty_batch_elements_indices(value=result)
