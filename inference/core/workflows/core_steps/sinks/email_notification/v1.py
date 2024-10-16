@@ -3,6 +3,7 @@ import smtplib
 import ssl
 from concurrent.futures import ThreadPoolExecutor
 from copy import copy
+from datetime import datetime
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -24,6 +25,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     StepOutputSelector,
@@ -38,7 +40,7 @@ from inference.core.workflows.prototypes.block import (
 ROBOFLOW_EMAIL_ENDPOINT = "/notifications/email"
 
 LONG_DESCRIPTION = """
-The **Email Sink** block allows users to send email notifications as part of a workflow. 
+The **Email Notification** block allows users to send email notifications as part of a workflow. 
 It supports two providers for e-mail service
 
 * **Roboflow Email Service** - Uses the Roboflow platform to send emails easily 
@@ -119,6 +121,15 @@ block properly.
     input and providing it each time by the caller, avoiding storing it in Workflow 
     definition.
     
+### Cooldown
+
+The block accepts `cooldown_seconds` (which **defaults to `5` seconds**) to prevent unintended bursts of 
+notifications. Please adjust it according to your needs, setting `0` indicate no cooldown. 
+
+During cooldown period, consecutive runs of the step will cause `throttling_status` output to be set `True`
+and no notification will be sent.
+
+
 ### Attachments
 
 You may specify attachment files to be send with your e-mail. Attachments can only be generated 
@@ -150,7 +161,7 @@ able to disable the sink when needed sending agreed input parameter.
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Email Sink",
+            "name": "Email Notification",
             "version": "v1",
             "short_description": "Send notification via E-Mail",
             "long_description": LONG_DESCRIPTION,
@@ -158,7 +169,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "sink",
         }
     )
-    type: Literal["roboflow_core/email_sink@v1"]
+    type: Literal["roboflow_core/email_notification@v1"]
     email_service_provider: Literal["roboflow", "custom"] = Field(
         default="roboflow",
         description="Provider for Email service.",
@@ -301,6 +312,15 @@ class BlockManifest(WorkflowBlockManifest):
         "data collection for specific request",
         examples=[False, "$inputs.disable_email_notifications"],
     )
+    cooldown_seconds: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
+        Field(
+            default=5,
+            description="Number of seconds to wait until follow-up notification can be sent",
+            json_schema_extra={
+                "always_visible": True,
+            },
+        )
+    )
 
     @field_validator("receiver_email")
     @classmethod
@@ -329,6 +349,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
+            OutputDefinition(name="throttling_status", kind=[BOOLEAN_KIND]),
             OutputDefinition(name="message", kind=[STRING_KIND]),
         ]
 
@@ -337,7 +358,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.0.0,<2.0.0"
 
 
-class EmailBlockV1(WorkflowBlock):
+class EmailNotificationBlockV1(WorkflowBlock):
 
     def __init__(
         self,
@@ -348,6 +369,7 @@ class EmailBlockV1(WorkflowBlock):
         self._api_key = api_key
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
+        self._last_notification_fired: Optional[datetime] = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -374,11 +396,25 @@ class EmailBlockV1(WorkflowBlock):
         smtp_port: int,
         fire_and_forget: bool,
         disable_sink: bool,
+        cooldown_seconds: int,
     ) -> BlockResult:
         if disable_sink:
             return {
                 "error_status": False,
+                "throttling_status": False,
                 "message": "Sink was disabled by parameter `disable_sink`",
+            }
+        seconds_since_last_notification = 0
+        if self._last_notification_fired is not None:
+            seconds_since_last_notification = (
+                datetime.now() - self._last_notification_fired
+            ).total_seconds()
+        if seconds_since_last_notification < cooldown_seconds:
+            logging.info(f"Activated `roboflow_core/email_notification@v1` cooldown.")
+            return {
+                "error_status": False,
+                "throttling_status": True,
+                "message": "Sink cooldown applies",
             }
         message = format_email_message(
             message=message,
@@ -429,20 +465,27 @@ class EmailBlockV1(WorkflowBlock):
                 smtp_port=smtp_port,
                 sender_email_password=sender_email_password,
             )
+        self._last_notification_fired = datetime.now()
         if fire_and_forget and self._background_tasks:
             self._background_tasks.add_task(send_email_handler)
             return {
                 "error_status": False,
+                "throttling_status": False,
                 "message": "Notification sent in the background task",
             }
         if fire_and_forget and self._thread_pool_executor:
             self._thread_pool_executor.submit(send_email_handler)
             return {
                 "error_status": False,
+                "throttling_status": False,
                 "message": "Notification sent in the background task",
             }
         error_status, message = send_email_handler()
-        return {"error_status": error_status, "message": message}
+        return {
+            "error_status": error_status,
+            "throttling_status": False,
+            "message": message,
+        }
 
 
 def format_email_message(

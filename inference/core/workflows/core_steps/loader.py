@@ -63,7 +63,6 @@ from inference.core.workflows.core_steps.classical_cv.template_matching.v1 impor
 from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
     ImageThresholdBlockV1,
 )
-from inference.core.workflows.core_steps.common.cache import TrackedInstancesCache
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
@@ -164,7 +163,9 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
 )
-from inference.core.workflows.core_steps.sinks.email.v1 import EmailBlockV1
+from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
+    EmailNotificationBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
@@ -213,12 +214,6 @@ from inference.core.workflows.core_steps.transformations.relative_static_crop.v1
 )
 from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
     StitchImagesBlockV1,
-)
-from inference.core.workflows.core_steps.video_state_managers.retrieve_from_object_data_stash.v1 import (
-    RetrieveFromObjectDataStashBlockV1,
-)
-from inference.core.workflows.core_steps.video_state_managers.stash_object_data.v1 import (
-    StashObjectDataBlockV1,
 )
 from inference.core.workflows.core_steps.video_triggers.on_object_appeared.v1 import (
     OnObjectAppearedBlockV1,
@@ -320,7 +315,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     ROBOFLOW_PROJECT_KIND,
     SERIALISED_PAYLOADS_KIND,
     STRING_KIND,
-    TIMESTAMP_KIND,
     TOP_CLASS_KIND,
     VIDEO_METADATA_KIND,
     WILDCARD_KIND,
@@ -335,7 +329,6 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
-    "tracked_instances_cache": TrackedInstancesCache(cache_size=16384),
     "allow_data_store_in_file_system": True,
 }
 
@@ -432,10 +425,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LineCounterBlockV2,
         DataAggregatorBlockV1,
         CSVFormatterBlockV1,
-        EmailBlockV1,
+        EmailNotificationBlockV1,
         LocalFileSinkBlockV1,
-        RetrieveFromObjectDataStashBlockV1,
-        StashObjectDataBlockV1,
         OnObjectAppearedBlockV1,
         OnObjectLocationUpdatedBlockV1,
         OnObjectLostBlockV1,
@@ -478,5 +469,4 @@ def load_kinds() -> List[Kind]:
         PREDICTION_TYPE_KIND,
         PARENT_ID_KIND,
         IMAGE_METADATA_KIND,
-        TIMESTAMP_KIND,
     ]

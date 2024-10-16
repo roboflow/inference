@@ -94,7 +94,7 @@ hide:
 <p class="card block-card" data-url="image_preprocessing" data-name="Image Preprocessing" data-desc="Resize, flip, or rotate an image." data-labels="CLASSICAL_COMPUTER_VISION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="pathdeviation" data-name="Path deviation" data-desc="Calculate Fréchet distance of object from reference path" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="data_aggregator" data-name="Data Aggregator" data-desc="" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
-<p class="card block-card" data-url="csv_formatter" data-name="CSV Formatter" data-desc="Creates CSV files with specified columns aggregating data over specified interval. " data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="csv_formatter" data-name="CSV Formatter" data-desc="Creates CSV files with specified columns." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="email_sink" data-name="Email Sink" data-desc="Send notification via E-Mail" data-labels="SINK, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="local_file_sink" data-name="Local File Sink" data-desc="" data-labels="SINK, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="retrieve_from_object_data_stash" data-name="Retrieve From Object Data Stash" data-desc="" data-labels="VIDEO_STATE_MANAGER, APACHE-2.0" data-author="dummy"></p>

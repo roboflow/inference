@@ -1010,28 +1010,6 @@ LANGUAGE_MODEL_OUTPUT_KIND = Kind(
     internal_data_type="str",
 )
 
-TIMESTAMP_KIND_DOCS = """
-This kind represents timestamp object:
-
-Internally it is represented as Python [`datetime.datetime`](https://docs.python.org/3/library/datetime.html)
-object, serialization and de-serialization is using 
-[`datetime.isoformat(...)`](https://docs.python.org/3/library/datetime.html#datetime.datetime.isoformat)
-and [`datetime.fromisoformat(...)`](https://docs.python.org/3/library/datetime.html#datetime.date.fromisoformat)
-respectively - all with default parameters.
-
-Example:
-```
-datetime.datetime(2024, 10, 10, 12, 5, 4, 100439)
-```
-"""
-
-TIMESTAMP_KIND = Kind(
-    name="timestamp",
-    description="Timestamp object",
-    docs=TIMESTAMP_KIND_DOCS,
-    serialised_data_type="str",
-    internal_data_type="datetime.datetime",
-)
 
 STEP_AS_SELECTED_ELEMENT = "step"
 STEP_OUTPUT_AS_SELECTED_ELEMENT = "step_output"
