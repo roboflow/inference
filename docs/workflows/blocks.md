@@ -93,12 +93,10 @@ hide:
 <p class="card block-card" data-url="stability_ai_inpainting" data-name="Stability AI Inpainting" data-desc="Uses segmentation masks to inpaint objects into image" data-labels="MODEL, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="image_preprocessing" data-name="Image Preprocessing" data-desc="Resize, flip, or rotate an image." data-labels="CLASSICAL_COMPUTER_VISION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="pathdeviation" data-name="Path deviation" data-desc="Calculate Fréchet distance of object from reference path" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
-<p class="card block-card" data-url="data_aggregator" data-name="Data Aggregator" data-desc="" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="data_aggregator" data-name="Data Aggregator" data-desc="Aggregates workflow data to produce time-based statistics" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="csv_formatter" data-name="CSV Formatter" data-desc="Creates CSV files with specified columns." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
-<p class="card block-card" data-url="email_sink" data-name="Email Sink" data-desc="Send notification via E-Mail" data-labels="SINK, APACHE-2.0" data-author="dummy"></p>
-<p class="card block-card" data-url="local_file_sink" data-name="Local File Sink" data-desc="" data-labels="SINK, APACHE-2.0" data-author="dummy"></p>
-<p class="card block-card" data-url="retrieve_from_object_data_stash" data-name="Retrieve From Object Data Stash" data-desc="" data-labels="VIDEO_STATE_MANAGER, APACHE-2.0" data-author="dummy"></p>
-<p class="card block-card" data-url="stash_object_data" data-name="Stash Object Data" data-desc="" data-labels="VIDEO_STATE_MANAGER, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="email_notification" data-name="Email Notification" data-desc="Send notification via E-Mail" data-labels="SINK, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="local_file_sink" data-name="Local File Sink" data-desc="Saves data into local file" data-labels="SINK, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="on_object_appeared" data-name="On Object Appeared" data-desc="" data-labels="VIDEO_TRIGGER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="on_object_location_updated" data-name="On Object Location Updated" data-desc="" data-labels="VIDEO_TRIGGER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="on_object_lost" data-name="On Object Lost" data-desc="" data-labels="VIDEO_TRIGGER, APACHE-2.0" data-author="dummy"></p>
