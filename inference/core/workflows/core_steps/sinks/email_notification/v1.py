@@ -4,7 +4,6 @@ import smtplib
 import ssl
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from copy import copy
 from datetime import datetime
 from email import encoders
 from email.mime.base import MIMEBase
@@ -13,11 +12,9 @@ from email.mime.text import MIMEText
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-import requests
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from inference.core.env import API_BASE_URL
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
 )
@@ -297,18 +294,16 @@ class EmailNotificationBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        api_key: Optional[str],
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
     ):
-        self._api_key = api_key
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
         self._last_notification_fired: Optional[datetime] = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["api_key", "background_tasks", "thread_pool_executor"]
+        return ["background_tasks", "thread_pool_executor"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:

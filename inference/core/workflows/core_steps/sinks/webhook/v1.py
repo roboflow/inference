@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import requests
 from fastapi import BackgroundTasks
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
@@ -247,22 +247,49 @@ class BlockManifest(WorkflowBlockManifest):
         default_factory=dict,
         examples=[{"image": "$steps.visualization.image"}],
     )
-    multi_part_encoded_files_operations: Dict[str, List[List[AllOperationsType]]] = (
-        Field(
-            description="UQL definitions of operations to be performed on defined data w.r.t. each value of "
-            "`multi_part_encoded_files` parameter",
-            examples=[
-                {
-                    "predictions": [
-                        {
-                            "type": "DetectionsPropertyExtract",
-                            "property_name": "class_name",
-                        }
-                    ]
-                }
-            ],
-            default_factory=dict,
-        )
+    multi_part_encoded_files_operations: Dict[str, List[AllOperationsType]] = Field(
+        description="UQL definitions of operations to be performed on defined data w.r.t. each value of "
+        "`multi_part_encoded_files` parameter",
+        examples=[
+            {
+                "predictions": [
+                    {
+                        "type": "DetectionsPropertyExtract",
+                        "property_name": "class_name",
+                    }
+                ]
+            }
+        ],
+        default_factory=dict,
+    )
+    form_data: Dict[
+        str,
+        Union[
+            WorkflowParameterSelector(),
+            StepOutputSelector(),
+            str,
+            float,
+            bool,
+            int,
+            dict,
+            list,
+        ],
+    ] = Field(
+        description="Fields to put into form-data",
+        default_factory=dict,
+        examples=[{"field": "$steps.model.predictions"}],
+    )
+    form_data_operations: Dict[str, List[AllOperationsType]] = Field(
+        description="UQL definitions of operations to be performed on defined data w.r.t. each value of "
+        "`form_data` parameter",
+        examples=[
+            {
+                "predictions": [
+                    {"type": "DetectionsPropertyExtract", "property_name": "class_name"}
+                ]
+            }
+        ],
+        default_factory=dict,
     )
     request_timeout: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
         default=2,
@@ -320,6 +347,10 @@ class WebhookSinkBlockV1(WorkflowBlock):
         self._last_notification_fired: Optional[datetime] = None
 
     @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["background_tasks", "thread_pool_executor"]
+
+    @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
@@ -333,6 +364,8 @@ class WebhookSinkBlockV1(WorkflowBlock):
         json_payload_operations: Dict[str, List[AllOperationsType]],
         multi_part_encoded_files: Dict[str, Any],
         multi_part_encoded_files_operations: Dict[str, List[AllOperationsType]],
+        form_data: Dict[str, Any],
+        form_data_operations: Dict[str, List[AllOperationsType]],
         request_timeout: int,
         fire_and_forget: bool,
         disable_sink: bool,
@@ -364,6 +397,10 @@ class WebhookSinkBlockV1(WorkflowBlock):
             parameters=multi_part_encoded_files,
             operations=multi_part_encoded_files_operations,
         )
+        form_data = execute_operations_on_parameters(
+            parameters=form_data,
+            operations=form_data_operations,
+        )
         request_handler = partial(
             execute_request,
             url=url,
@@ -372,6 +409,7 @@ class WebhookSinkBlockV1(WorkflowBlock):
             headers=headers,
             json_payload=json_payload,
             multi_part_encoded_files=multi_part_encoded_files,
+            form_data=form_data,
             timeout=request_timeout,
         )
         self._last_notification_fired = datetime.now()
@@ -418,6 +456,7 @@ def execute_request(
     query_parameters: Dict[str, Any],
     headers: Dict[str, Any],
     json_payload: Dict[str, Any],
+    form_data: Dict[str, Any],
     multi_part_encoded_files: Dict[str, Any],
     timeout: int,
 ) -> Tuple[bool, str]:
@@ -429,13 +468,12 @@ def execute_request(
             headers=headers,
             json_payload=json_payload,
             multi_part_encoded_files=multi_part_encoded_files,
+            form_data=form_data,
             timeout=timeout,
         )
         return False, "Notification sent successfully"
     except Exception as error:
-        logging.warning(
-            f"Could not send e-mail using custom SMTP server. Error: {str(error)}"
-        )
+        logging.warning(f"Could not send webhook notification. Error: {str(error)}")
         return (
             True,
             f"Failed to send webhook notification. Internal error details: {error}",
@@ -451,6 +489,7 @@ def _execute_request(
     query_parameters: Dict[str, Any],
     headers: Dict[str, Any],
     json_payload: Dict[str, Any],
+    form_data: Dict[str, Any],
     multi_part_encoded_files: Dict[str, Any],
     timeout: int,
 ) -> None:
@@ -463,6 +502,7 @@ def _execute_request(
         headers=headers,
         json=json_payload,
         files=multi_part_encoded_files,
+        data=form_data,
         timeout=timeout,
     )
     response.raise_for_status()

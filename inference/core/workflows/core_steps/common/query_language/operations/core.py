@@ -25,6 +25,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
     extract_detection_property,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.detections.base import (
+    detections_to_dictionary,
     extract_detections_property,
     filter_detections,
     offset_detections,
@@ -193,6 +194,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "DetectionsRename": rename_detections,
     "ConvertImageToJPEG": encode_image_to_jpeg,
     "ConvertImageToBase64": encode_image_to_base64,
+    "DetectionsToDictionary": detections_to_dictionary,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

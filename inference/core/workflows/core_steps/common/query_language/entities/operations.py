@@ -208,6 +208,22 @@ class DetectionsPropertyExtract(OperationDefinition):
     property_name: DetectionsProperty
 
 
+class DetectionsToDictionary(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Converts detections into `inference` response format dictionary",
+            "compound": False,
+            "input_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+            "output_kind": [DICTIONARY_KIND],
+        },
+    )
+    type: Literal["DetectionsToDictionary"]
+
+
 class ClassificationPropertyExtract(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -540,6 +556,7 @@ AllOperationsType = Annotated[
         ClassificationPropertyExtract,
         ConvertImageToJPEG,
         ConvertImageToBase64,
+        DetectionsToDictionary,
     ],
     Field(discriminator="type"),
 ]

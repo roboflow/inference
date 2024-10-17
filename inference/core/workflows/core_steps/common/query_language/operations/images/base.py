@@ -46,7 +46,7 @@ def extract_image_property(
 
 
 def encode_image_to_jpeg(
-    value: Any, compression_level: int, execution_context: str
+    value: Any, compression_level: int, execution_context: str, **kwargs
 ) -> bytes:
     if not isinstance(value, WorkflowImageData):
         value_as_str = safe_stringify(value=value)
@@ -69,7 +69,7 @@ def encode_image_to_jpeg(
         )
 
 
-def encode_image_to_base64(value: Any, execution_context: str) -> str:
+def encode_image_to_base64(value: Any, execution_context: str, **kwargs) -> str:
     if not isinstance(value, WorkflowImageData):
         value_as_str = safe_stringify(value=value)
         raise InvalidInputTypeError(
