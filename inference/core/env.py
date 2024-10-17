@@ -264,7 +264,7 @@ NUM_WORKERS = int(os.getenv("NUM_WORKERS", 1))
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = os.getenv(
     "ONNXRUNTIME_EXECUTION_PROVIDERS",
-    "[CUDAExecutionProvider,OpenVINOExecutionProvider,CPUExecutionProvider]",
+    "[CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider]",
 )
 
 # Port, default is 9001

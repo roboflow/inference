@@ -1,1 +1,1 @@
-onnxruntime-openvino~=1.15.0
+onnxruntime-openvino~=1.19.0
