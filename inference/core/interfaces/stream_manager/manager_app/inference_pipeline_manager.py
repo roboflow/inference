@@ -2,14 +2,13 @@ import asyncio
 import os
 import signal
 import threading
-import time
 from collections import deque
 from dataclasses import asdict
 from functools import partial
 from multiprocessing import Process, Queue
-from threading import Event, Lock
+from threading import Condition, Event
 from types import FrameType
-from typing import Deque, Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from pydantic import ValidationError
 
@@ -47,6 +46,7 @@ from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     WebRTCVideoFrameProducer,
     init_rtc_peer_connection,
 )
+from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 
@@ -199,15 +199,6 @@ class InferencePipelineManager(Process):
             parsed_payload = InitialiseWebRTCPipelinePayload.model_validate(payload)
             watchdog = BasePipelineWatchDog()
 
-            webrtc_offer = parsed_payload.webrtc_offer
-            webcam_fps = parsed_payload.webcam_fps
-            to_inference_queue = deque()
-            to_inference_lock = Lock()
-            from_inference_queue = deque()
-            from_inference_lock = Lock()
-
-            stop_event = Event()
-
             def start_loop(loop: asyncio.AbstractEventLoop):
                 asyncio.set_event_loop(loop)
                 loop.run_forever()
@@ -216,15 +207,21 @@ class InferencePipelineManager(Process):
             t = threading.Thread(target=start_loop, args=(loop,), daemon=True)
             t.start()
 
+            webrtc_offer = parsed_payload.webrtc_offer
+            webcam_fps = parsed_payload.webcam_fps
+            to_inference_queue = SyncAsyncQueue(loop=loop)
+            from_inference_queue = SyncAsyncQueue(loop=loop)
+
+            stop_event = Event()
+
             future = asyncio.run_coroutine_threadsafe(
                 init_rtc_peer_connection(
                     webrtc_offer=webrtc_offer,
                     to_inference_queue=to_inference_queue,
-                    to_inference_lock=to_inference_lock,
                     from_inference_queue=from_inference_queue,
-                    from_inference_lock=from_inference_lock,
                     webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
                     feedback_stop_event=stop_event,
+                    asyncio_loop=loop,
                     webcam_fps=webcam_fps,
                 ),
                 loop,
@@ -233,7 +230,6 @@ class InferencePipelineManager(Process):
 
             webrtc_producer = partial(
                 WebRTCVideoFrameProducer,
-                to_inference_lock=to_inference_lock,
                 to_inference_queue=to_inference_queue,
                 stop_event=stop_event,
                 webrtc_video_transform_track=peer_connection.video_transform_track,
@@ -242,8 +238,7 @@ class InferencePipelineManager(Process):
             def webrtc_sink(
                 prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
             ) -> None:
-                with from_inference_lock:
-                    from_inference_queue.appendleft(
+                    from_inference_queue.sync_put(
                         prediction[parsed_payload.stream_output[0]].numpy_image
                     )
 
