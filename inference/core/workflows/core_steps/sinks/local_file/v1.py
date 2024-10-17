@@ -67,13 +67,16 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/local_file_sink@v1"]
     content: StepOutputSelector(kind=[STRING_KIND]) = Field(
         description="Content of the file to save",
+        examples=["$steps.csv_formatter.csv_content"],
     )
     file_type: Literal["csv", "json", "txt"] = Field(
         default="csv",
         description="Type of the file",
+        examples=["csv"],
     )
     output_mode: Literal["append_log", "separate_files"] = Field(
         description="Decides how to organise the content of the file",
+        examples=["append_log"],
         json_schema_extra={
             "values_metadata": {
                 "append_log": {
@@ -89,10 +92,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
     target_directory: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
         description="Target directory",
+        examples=["/some/location"],
     )
     file_name_prefix: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
         default="workflow_output",
         description="File name prefix",
+        examples=["my_file"],
         json_schema_extra={
             "always_visible": True,
         },
@@ -101,6 +106,7 @@ class BlockManifest(WorkflowBlockManifest):
         Field(
             default=1024,
             description="Defines how many datapoints can be appended to a single file",
+            examples=[1024],
             json_schema_extra={
                 "relevant_for": {
                     "output_mode": {

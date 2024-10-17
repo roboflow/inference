@@ -277,7 +277,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         description="Fields to put into form-data",
         default_factory=dict,
-        examples=[{"field": "$steps.model.predictions"}],
+        examples=[{"field": "$inputs.field_value"}],
     )
     form_data_operations: Dict[str, List[AllOperationsType]] = Field(
         description="UQL definitions of operations to be performed on defined data w.r.t. each value of "

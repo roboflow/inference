@@ -221,6 +221,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     aggregation_mode: Dict[str, List[AggregationType]] = Field(
         description="Lists of aggregation operations to apply on each input data",
+        examples=[{"predictions": ["distinct", "count_distinct"]}],
         json_schema_extra={
             "keys_bound_in": "data",
             "values_metadata": {
@@ -271,11 +272,13 @@ class BlockManifest(WorkflowBlockManifest):
     )
     interval: int = Field(
         description="Length of aggregation interval",
+        examples=[10, 100],
         gt=0,
     )
     interval_unit: Literal["seconds", "minutes", "hours", "runs"] = Field(
         default="seconds",
         description="Unit to measure `interval`",
+        examples=["seconds", "hours"],
         json_schema_extra={
             "always_visible": True,
             "values_metadata": {

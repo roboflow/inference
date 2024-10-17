@@ -166,12 +166,19 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/email_notification@v1"]
-    subject: str = Field(description="Subject of the message")
+    subject: str = Field(
+        description="Subject of the message",
+        examples=["Workflow alert"],
+    )
     message: str = Field(
         description="Content of the message to send",
+        examples=[
+            "During last 5 minutes detected {{ $parameters.num_instances }} instances"
+        ],
     )
     sender_email: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
         description="E-mail to be used to send the message",
+        examples=["sender@gmail.com"],
     )
     receiver_email: Union[
         str,
@@ -179,6 +186,7 @@ class BlockManifest(WorkflowBlockManifest):
         WorkflowParameterSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
     ] = Field(
         description="Destination e-mail address",
+        examples=["receiver@gmail.com"],
     )
     cc_receiver_email: Optional[
         Union[
@@ -189,6 +197,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=None,
         description="Destination e-mail address",
+        examples=["cc-receiver@gmail.com"],
     )
     bcc_receiver_email: Optional[
         Union[
@@ -199,6 +208,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default=None,
         description="Destination e-mail address",
+        examples=["bcc-receiver@gmail.com"],
     )
     message_parameters: Dict[
         str,
@@ -227,19 +237,23 @@ class BlockManifest(WorkflowBlockManifest):
     attachments: Dict[str, StepOutputSelector(kind=[STRING_KIND])] = Field(
         description="Attachments",
         default_factory=dict,
+        examples=[{"report.cvs": "$steps.csv_formatter.csv_content"}],
     )
     smtp_server: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
         description="Custom SMTP server to use",
+        examples=["$inputs.smtp_server", "smtp.google.com"],
     )
     sender_email_password: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = (
         Field(
             description="Sender e-mail password to use SMTP server",
             private=True,
+            examples=["$inputs.email_password"],
         )
     )
     smtp_port: int = Field(
         default=465,
         description="Port of custom SMTP server to use",
+        examples=[465],
         json_schema_extra={
             "always_visible": True,
         },
@@ -250,6 +264,7 @@ class BlockManifest(WorkflowBlockManifest):
             description="Boolean flag dictating if sink is supposed to be executed in the background, "
             "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
             "registration is needed, use `False` while debugging and if error handling is needed",
+            examples=["$inputs.fire_and_forget", False],
         )
     )
     disable_sink: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
@@ -262,6 +277,7 @@ class BlockManifest(WorkflowBlockManifest):
         Field(
             default=5,
             description="Number of seconds to wait until follow-up notification can be sent",
+            examples=["$inputs.cooldown_seconds", 3],
             json_schema_extra={
                 "always_visible": True,
             },
