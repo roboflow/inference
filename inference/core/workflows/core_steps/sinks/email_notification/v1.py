@@ -43,12 +43,7 @@ ROBOFLOW_EMAIL_ENDPOINT = "/notifications/email"
 
 LONG_DESCRIPTION = """
 The **Email Notification** block allows users to send email notifications as part of a workflow. 
-It supports two providers for e-mail service
-
-* **Roboflow Email Service** - Uses the Roboflow platform to send emails easily 
-(requires Roboflow account).
-
-* Custom SMTP Setup - Allows users to set up their own SMTP server for sending emails.
+It **requires** SMTP server setup to send the notification 
 
 ### Customizable Email Content
 
@@ -96,9 +91,9 @@ As a result, in the e-mail that will be sent, you can expect:
 This is example notification. Predicted classes: ["class_a", "class_b"].
 ```
 
-### Using Custom SMTP server
+### Configuring SMTP server
 
-Setting `email_service_provider` make it require to set the following parameters:
+Those are the parameters configuring SMTP server: 
 
 * `smtp_server` - hostname of the SMTP server to use
 
@@ -174,26 +169,12 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/email_notification@v1"]
-    email_service_provider: Literal["roboflow", "custom"] = Field(
-        default="roboflow",
-        description="Provider for Email service.",
-        json_schema_extra={
-            "always_visible": True,
-            "values_metadata": {
-                "roboflow": {
-                    "name": "Roboflow E-Mail service",
-                    "description": "Rely on Roboflow to send your e-mail notifications",
-                },
-                "custom": {
-                    "name": "Custom setup",
-                    "description": "Provide setup for your own SMTP e-mail server",
-                },
-            },
-        },
-    )
     subject: str = Field(description="Subject of the message")
     message: str = Field(
         description="Content of the message to send",
+    )
+    sender_email: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
+        description="E-mail to be used to send the message",
     )
     receiver_email: Union[
         str,
@@ -250,59 +231,20 @@ class BlockManifest(WorkflowBlockManifest):
         description="Attachments",
         default_factory=dict,
     )
-    smtp_server: Optional[Union[str, WorkflowParameterSelector(kind=[STRING_KIND])]] = (
+    smtp_server: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
+        description="Custom SMTP server to use",
+    )
+    sender_email_password: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = (
         Field(
-            default=None,
-            description="Custom SMTP server to use",
-            json_schema_extra={
-                "relevant_for": {
-                    "email_service_provider": {
-                        "values": ["custom"],
-                        "required": True,
-                    },
-                }
-            },
+            description="Sender e-mail password to use SMTP server",
+            private=True,
         )
-    )
-    sender_email: Optional[
-        Union[str, WorkflowParameterSelector(kind=[STRING_KIND])]
-    ] = Field(
-        default=None,
-        description="E-mail to be used to send the message",
-        json_schema_extra={
-            "relevant_for": {
-                "email_service_provider": {
-                    "values": ["custom"],
-                    "required": True,
-                },
-            }
-        },
-    )
-    sender_email_password: Optional[
-        Union[str, WorkflowParameterSelector(kind=[STRING_KIND])]
-    ] = Field(
-        default=None,
-        description="Sender e-mail password to use SMTP server",
-        private=True,
-        json_schema_extra={
-            "relevant_for": {
-                "email_service_provider": {
-                    "values": ["custom"],
-                    "required": True,
-                },
-            }
-        },
     )
     smtp_port: int = Field(
         default=465,
         description="Port of custom SMTP server to use",
         json_schema_extra={
-            "relevant_for": {
-                "email_service_provider": {
-                    "values": ["custom"],
-                    "required": True,
-                },
-            }
+            "always_visible": True,
         },
     )
     fire_and_forget: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
@@ -337,20 +279,6 @@ class BlockManifest(WorkflowBlockManifest):
                 "E-mail notification must have at least one receiver defined."
             )
         return value
-
-    @model_validator(mode="after")
-    def validate(self) -> "BlockManifest":
-        if self.email_service_provider == "roboflow":
-            return self
-        must_not_be_empty = ["sender_email", "smtp_server", "sender_email_password"]
-        for field_name in must_not_be_empty:
-            value = getattr(self, field_name)
-            ensure_value_provided(
-                value=value,
-                error_message=f"Value `{field_name}` of `roboflow_core/email_sink@v1` "
-                f"block must be specified when the custom SMTP server is in use",
-            )
-        return self
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -388,31 +316,28 @@ class EmailNotificationBlockV1(WorkflowBlock):
 
     def run(
         self,
-        email_service_provider: Literal["roboflow", "custom"],
         subject: str,
         message: str,
+        sender_email: str,
         receiver_email: Union[str, List[str]],
         cc_receiver_email: Union[str, List[str]],
         bcc_receiver_email: Union[str, List[str]],
         message_parameters: Dict[str, Any],
         message_parameters_operations: Dict[str, List[AllOperationsType]],
         attachments: Dict[str, str],
-        smtp_server: Optional[str],
-        sender_email: Optional[str],
-        sender_email_password: Optional[str],
+        smtp_server: str,
+        sender_email_password: str,
         smtp_port: int,
         fire_and_forget: bool,
         disable_sink: bool,
         cooldown_seconds: int,
     ) -> BlockResult:
-        print("EMAIL SINK")
         if disable_sink:
             return {
                 "error_status": False,
                 "throttling_status": False,
                 "message": "Sink was disabled by parameter `disable_sink`",
             }
-        print("EMAIL SINK NOT DISABLED")
         seconds_since_last_notification = cooldown_seconds
         if self._last_notification_fired is not None:
             seconds_since_last_notification = (
@@ -420,7 +345,6 @@ class EmailNotificationBlockV1(WorkflowBlock):
             ).total_seconds()
         if seconds_since_last_notification < cooldown_seconds:
             logging.info(f"Activated `roboflow_core/email_notification@v1` cooldown.")
-            print("EMAIL SINK COOLDOWN")
             return {
                 "error_status": False,
                 "throttling_status": True,
@@ -446,35 +370,19 @@ class EmailNotificationBlockV1(WorkflowBlock):
                 if isinstance(bcc_receiver_email, list)
                 else [bcc_receiver_email]
             )
-        if email_service_provider == "roboflow":
-            ensure_value_provided(
-                value=self._api_key,
-                error_message="Roboflow API key must be provided to send e-mails with Roboflow notifications service.",
-            )
-            send_email_handler = partial(
-                send_email_using_roboflow_api,
-                receiver_email=receiver_email,
-                cc_receiver_email=cc_receiver_email,
-                bcc_receiver_email=bcc_receiver_email,
-                subject=subject,
-                message=message,
-                attachments=attachments,
-                roboflow_api_key=self._api_key,
-            )
-        else:
-            send_email_handler = partial(
-                send_email_using_smtp_server,
-                sender_email=sender_email,
-                receiver_email=receiver_email,
-                cc_receiver_email=cc_receiver_email,
-                bcc_receiver_email=bcc_receiver_email,
-                subject=subject,
-                message=message,
-                attachments=attachments,
-                smtp_server=smtp_server,
-                smtp_port=smtp_port,
-                sender_email_password=sender_email_password,
-            )
+        send_email_handler = partial(
+            send_email_using_smtp_server,
+            sender_email=sender_email,
+            receiver_email=receiver_email,
+            cc_receiver_email=cc_receiver_email,
+            bcc_receiver_email=bcc_receiver_email,
+            subject=subject,
+            message=message,
+            attachments=attachments,
+            smtp_server=smtp_server,
+            smtp_port=smtp_port,
+            sender_email_password=sender_email_password,
+        )
         self._last_notification_fired = datetime.now()
         if fire_and_forget and self._background_tasks:
             self._background_tasks.add_task(send_email_handler)
@@ -490,9 +398,7 @@ class EmailNotificationBlockV1(WorkflowBlock):
                 "throttling_status": False,
                 "message": "Notification sent in the background task",
             }
-        print("SENDING")
         error_status, message = send_email_handler()
-        print(error_status, message)
         return {
             "error_status": error_status,
             "throttling_status": False,
@@ -534,28 +440,18 @@ def format_email_message(
 
 
 def send_email_using_smtp_server(
-    sender_email: Optional[str],
+    sender_email: str,
     receiver_email: List[str],
     cc_receiver_email: Optional[List[str]],
     bcc_receiver_email: Optional[List[str]],
     subject: str,
     message: str,
     attachments: Dict[str, str],
-    smtp_server: Optional[str],
+    smtp_server: str,
     smtp_port: int,
-    sender_email_password: Optional[str],
+    sender_email_password: str,
 ) -> Tuple[bool, str]:
     try:
-        ensure_value_provided(
-            value=sender_email, error_message="`sender_email` not specified"
-        )
-        ensure_value_provided(
-            value=smtp_server, error_message="`smtp_server` not specified"
-        )
-        ensure_value_provided(
-            value=sender_email_password,
-            error_message="`sender_email_password` not specified",
-        )
         _send_email_using_smtp_server(
             sender_email=sender_email,
             receiver_email=receiver_email,
@@ -611,59 +507,3 @@ def _send_email_using_smtp_server(
     with smtplib.SMTP_SSL(smtp_server, smtp_port, context=context) as server:
         server.login(sender_email, sender_email_password)
         server.sendmail(sender_email, receiver_email, to_sent)
-
-
-def send_email_using_roboflow_api(
-    receiver_email: List[str],
-    cc_receiver_email: Optional[List[str]],
-    bcc_receiver_email: Optional[List[str]],
-    subject: str,
-    message: str,
-    attachments: Dict[str, str],
-    roboflow_api_key: str,
-) -> Tuple[bool, str]:
-    try:
-        _send_email_using_roboflow_api(
-            receiver_email=receiver_email,
-            cc_receiver_email=cc_receiver_email,
-            bcc_receiver_email=bcc_receiver_email,
-            subject=subject,
-            message=message,
-            attachments=attachments,
-            roboflow_api_key=roboflow_api_key,
-        )
-        return False, "Message sent successfully"
-    except Exception as error:
-        logging.warning(
-            f"Could not send e-mail using custom SMTP server. Error: {str(error)}"
-        )
-        return True, f"Failed to send e-mail. Internal error details: {error}"
-
-
-def _send_email_using_roboflow_api(
-    receiver_email: List[str],
-    cc_receiver_email: Optional[List[str]],
-    bcc_receiver_email: Optional[List[str]],
-    subject: str,
-    message: str,
-    attachments: Dict[str, str],
-    roboflow_api_key: str,
-) -> None:
-    response = requests.post(
-        f"{API_BASE_URL}{ROBOFLOW_EMAIL_ENDPOINT}",
-        json={
-            "api_key": roboflow_api_key,
-            "subject": subject,
-            "receiver_email": receiver_email,
-            "cc_receiver_email": cc_receiver_email,
-            "bcc_receiver_email": bcc_receiver_email,
-            "message": message,
-            "attachments": attachments,
-        },
-    )
-    response.raise_for_status()
-
-
-def ensure_value_provided(value: Optional[Any], error_message: str) -> None:
-    if value is None:
-        raise ValueError(error_message)
