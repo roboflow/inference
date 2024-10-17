@@ -1,12 +1,9 @@
-import time
+from datetime import datetime
 from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.execution_engine.entities.base import (
-    OutputDefinition,
-    WorkflowImageData,
-)
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     StepOutputSelector,
     StepSelector,
@@ -20,6 +17,31 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+LONG_DESCRIPTION = """
+The **Rate Limiter** block controls the execution frequency of a branch within a Workflow by enforcing a 
+cooldown period. It ensures that the connected steps do not run more frequently than a specified interval, 
+helping to manage resource usage and prevent over-execution.
+
+### Block usage
+
+**Rate Limiter** is useful when you have two blocks that are directly connected, as shown below:
+
+--- input_a --> ┌───────────┐                    ┌───────────┐
+--- input_b --> │   step_1  │ -->  output_a -->  │   step_2  │
+--- input_c --> └───────────┘                    └───────────┘
+
+If you need you want to throttle the *Step 2* execution rate - you should apply rate limiter in between:
+
+* keep the existing blocks configuration as is (do not change connections)
+
+* set `depends_on` reference of **Rate Limiter** into `output_a`
+
+* set `next_steps` reference to be a list referring to `[$steps.step_2]`
+
+* adjust `cooldown_seconds` to specify what is the number of seconds that must be awaited before next time
+when `step_2` is fired 
+"""
+
 
 class RateLimiterManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/rate_limiter@v1"]
@@ -28,16 +50,12 @@ class RateLimiterManifest(WorkflowBlockManifest):
             "name": "Rate Limiter",
             "version": "v1",
             "short_description": "Limits the rate at which a branch of the Workflow will fire.",
-            "long_description": "This block only continues to execute the next steps once every `seconds` seconds. Otherwise, it terminates the branch.",
+            "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "flow_control",
         }
     )
-    image: WorkflowImageSelector = Field(
-        description="The input image for this step.",
-        examples=["$inputs.image"],
-    )
-    seconds: float = Field(
+    cooldown_seconds: float = Field(
         description="The minimum number of seconds between allowed executions.",
         examples=[1.0],
         default=1.0,
@@ -45,7 +63,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
     depends_on: Union[
         WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()
     ] = Field(
-        description="Reference to the step which immediately preceeds this branch.",
+        description="Reference to any output of the the step which immediately preceeds this branch.",
         examples=["$steps.model"],
     )
     next_steps: List[StepSelector] = Field(
@@ -65,7 +83,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
 class RateLimiterBlockV1(WorkflowBlock):
     def __init__(self):
         super().__init__()
-        self._last_executed_at = {}
+        self._last_executed_at: Optional[datetime] = None
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -73,17 +91,17 @@ class RateLimiterBlockV1(WorkflowBlock):
 
     def run(
         self,
-        image: WorkflowImageData,
-        seconds: float,
+        cooldown_seconds: float,
         depends_on: any,
         next_steps: List[StepSelector],
-        **kwargs,
     ) -> BlockResult:
-        current_time = time.time()
-        metadata = image.video_metadata
-        last_executed_at = self._last_executed_at.get(metadata.video_identifier)
-        if last_executed_at is None or (current_time - last_executed_at) >= seconds:
-            self._last_executed_at[metadata.video_identifier] = current_time
-            return FlowControl(mode="select_step", context=next_steps)
-        else:
+        current_time = datetime.now()
+        should_throttle = False
+        if self._last_executed_at is not None:
+            should_throttle = (
+                current_time - self._last_executed_at
+            ).total_seconds() < cooldown_seconds
+        if should_throttle:
             return FlowControl(mode="terminate_branch")
+        self._last_executed_at = current_time
+        return FlowControl(mode="select_step", context=next_steps)
