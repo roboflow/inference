@@ -55,7 +55,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "model",
             "ui_manifest": {
                 "section": "model",
-                "icon": "far fa-google",
+                "icon": "fa-brands fa-google",
             },
         },
         protected_namespaces=(),
