@@ -21,6 +21,9 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 from inference.core.workflows.core_steps.common.query_language.operations.utils import (
     safe_stringify,
 )
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_sv_detections,
+)
 
 PROPERTIES_EXTRACTORS = {
     DetectionsProperty.CONFIDENCE: lambda detections: detections.confidence.tolist(),
@@ -311,3 +314,26 @@ def _build_non_strict_class_to_id_mapping(
         original_mapping[new_target_class] = new_class_id
         new_class_id += 1
     return original_mapping
+
+
+def detections_to_dictionary(
+    detections: Any,
+    execution_context: str,
+    **kwargs,
+) -> dict:
+    if not isinstance(detections, sv.Detections):
+        value_as_str = safe_stringify(value=detections)
+        raise InvalidInputTypeError(
+            public_message=f"Executing detections_to_dictionary(...) in context {execution_context}, "
+            f"expected sv.Detections object as value, got {value_as_str} of type {type(detections)}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+        )
+    try:
+        return serialise_sv_detections(detections=detections)
+    except Exception as error:
+        raise OperationError(
+            public_message=f"While Using operation detections_to_dictionary(...) in context {execution_context} "
+            f"encountered error: {error}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+            inner_error=error,
+        )

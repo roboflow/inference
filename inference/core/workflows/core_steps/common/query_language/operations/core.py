@@ -25,6 +25,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
     extract_detection_property,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.detections.base import (
+    detections_to_dictionary,
     extract_detections_property,
     filter_detections,
     offset_detections,
@@ -33,11 +34,16 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
     shift_detections,
     sort_detections,
 )
+from inference.core.workflows.core_steps.common.query_language.operations.dictionaries.base import (
+    dictionary_to_json,
+)
 from inference.core.workflows.core_steps.common.query_language.operations.generic.base import (
     apply_lookup,
     generate_random_number,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.images.base import (
+    encode_image_to_base64,
+    encode_image_to_jpeg,
     extract_image_property,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.numbers.base import (
@@ -189,6 +195,10 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "SortDetections": sort_detections,
     "ClassificationPropertyExtract": extract_classification_property,
     "DetectionsRename": rename_detections,
+    "ConvertImageToJPEG": encode_image_to_jpeg,
+    "ConvertImageToBase64": encode_image_to_base64,
+    "DetectionsToDictionary": detections_to_dictionary,
+    "ConvertDictionaryToJSON": dictionary_to_json,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {
