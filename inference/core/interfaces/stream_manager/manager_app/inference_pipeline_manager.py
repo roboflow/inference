@@ -2,11 +2,10 @@ import asyncio
 import os
 import signal
 import threading
-from collections import deque
 from dataclasses import asdict
 from functools import partial
 from multiprocessing import Process, Queue
-from threading import Condition, Event
+from threading import Event
 from types import FrameType
 from typing import Dict, Optional, Tuple
 
@@ -238,9 +237,9 @@ class InferencePipelineManager(Process):
             def webrtc_sink(
                 prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
             ) -> None:
-                    from_inference_queue.sync_put(
-                        prediction[parsed_payload.stream_output[0]].numpy_image
-                    )
+                from_inference_queue.sync_put(
+                    prediction[parsed_payload.stream_output[0]].numpy_image
+                )
 
             buffer_sink = InMemoryBufferSink.init(
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
