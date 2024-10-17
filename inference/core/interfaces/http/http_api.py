@@ -12,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
-from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -191,6 +190,7 @@ from inference.core.interfaces.stream_manager.manager_app.errors import (
 )
 from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
+from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
     get_roboflow_dataset_type,
     get_roboflow_workspace,
@@ -509,7 +509,9 @@ class HttpInterface(BaseInterface):
         )
 
         if ENABLE_PROMETHEUS:
-            Instrumentator().expose(app, endpoint="/metrics")
+            InferenceInstrumentator(
+                app, model_manager=model_manager, endpoint="/metrics"
+            )
 
         if METLO_KEY:
             app.add_middleware(
