@@ -267,6 +267,7 @@ class InferencePipelineManager(Process):
                 to_inference_queue=to_inference_queue,
                 stop_event=stop_event,
                 webrtc_video_transform_track=peer_connection.video_transform_track,
+                webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
             )
 
             def webrtc_sink(
