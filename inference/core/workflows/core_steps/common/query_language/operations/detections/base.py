@@ -328,4 +328,12 @@ def detections_to_dictionary(
             f"expected sv.Detections object as value, got {value_as_str} of type {type(detections)}",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
         )
-    return serialise_sv_detections(detections=detections)
+    try:
+        return serialise_sv_detections(detections=detections)
+    except Exception as error:
+        raise OperationError(
+            public_message=f"While Using operation detections_to_dictionary(...) in context {execution_context} "
+            f"encountered error: {error}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+            inner_error=error,
+        )
