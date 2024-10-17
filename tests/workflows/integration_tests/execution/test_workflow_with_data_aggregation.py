@@ -4,13 +4,19 @@ from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import add_to_workflows_gallery
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    add_to_workflows_gallery,
+)
 
 WORKFLOW_WITH_DATA_AGGREGATION = {
     "version": "1.0",
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
-        {"type": "WorkflowParameter", "name": "model_id", "default_value": "yolov8n-640"},
+        {
+            "type": "WorkflowParameter",
+            "name": "model_id",
+            "default_value": "yolov8n-640",
+        },
     ],
     "steps": [
         {
@@ -30,7 +36,7 @@ WORKFLOW_WITH_DATA_AGGREGATION = {
                 "predicted_classes": [
                     {"type": "DetectionsPropertyExtract", "property_name": "class_name"}
                 ],
-                "number_of_predictions": [{"type": "SequenceLength"}]
+                "number_of_predictions": [{"type": "SequenceLength"}],
             },
             "aggregation_mode": {
                 "predicted_classes": ["distinct", "count_distinct", "values_counts"],
@@ -99,7 +105,9 @@ def test_workflow_with_data_aggregation(
         results.append(result)
 
     for result in results:
-        assert len(result) == 3, "Each result must hold output values for 3 input images"
+        assert (
+            len(result) == 3
+        ), "Each result must hold output values for 3 input images"
 
     empty_aggregation = {
         "predicted_classes_distinct": None,
@@ -109,19 +117,43 @@ def test_workflow_with_data_aggregation(
         "number_of_predictions_max": None,
         "number_of_predictions_sum": None,
     }
-    assert results[0] == [{"aggregation_results": empty_aggregation}] * 3, "Aggregation results should be empty for first round of images"
-    assert results[1][:2] == [{"aggregation_results": empty_aggregation}] * 2, "Aggregation results should be empty for first two elements of second round of images"
-    assert results[2] == [{"aggregation_results": empty_aggregation}] * 3, "Aggregation results should be empty for third round of images"
-    assert results[3][:2] == [{"aggregation_results": empty_aggregation}] * 2, "Aggregation results should be empty for first two elements of fourth round of images"
-    assert set(results[1][2]["aggregation_results"]["predicted_classes_distinct"]) == {"car", "person", "dog"}
+    assert (
+        results[0] == [{"aggregation_results": empty_aggregation}] * 3
+    ), "Aggregation results should be empty for first round of images"
+    assert (
+        results[1][:2] == [{"aggregation_results": empty_aggregation}] * 2
+    ), "Aggregation results should be empty for first two elements of second round of images"
+    assert (
+        results[2] == [{"aggregation_results": empty_aggregation}] * 3
+    ), "Aggregation results should be empty for third round of images"
+    assert (
+        results[3][:2] == [{"aggregation_results": empty_aggregation}] * 2
+    ), "Aggregation results should be empty for first two elements of fourth round of images"
+    assert set(results[1][2]["aggregation_results"]["predicted_classes_distinct"]) == {
+        "car",
+        "person",
+        "dog",
+    }
     assert results[1][2]["aggregation_results"]["predicted_classes_count_distinct"] == 3
-    assert results[1][2]["aggregation_results"]["predicted_classes_values_counts"] == {"dog": 4, "person": 24, "car": 6}
+    assert results[1][2]["aggregation_results"]["predicted_classes_values_counts"] == {
+        "dog": 4,
+        "person": 24,
+        "car": 6,
+    }
     assert results[1][2]["aggregation_results"]["number_of_predictions_min"] == 2
     assert results[1][2]["aggregation_results"]["number_of_predictions_max"] == 12
     assert results[1][2]["aggregation_results"]["number_of_predictions_sum"] == 34
-    assert set(results[3][2]["aggregation_results"]["predicted_classes_distinct"]) == {"car", "person", "dog"}
+    assert set(results[3][2]["aggregation_results"]["predicted_classes_distinct"]) == {
+        "car",
+        "person",
+        "dog",
+    }
     assert results[3][2]["aggregation_results"]["predicted_classes_count_distinct"] == 3
-    assert results[3][2]["aggregation_results"]["predicted_classes_values_counts"] == {"dog": 4, "person": 24, "car": 6}
+    assert results[3][2]["aggregation_results"]["predicted_classes_values_counts"] == {
+        "dog": 4,
+        "person": 24,
+        "car": 6,
+    }
     assert results[3][2]["aggregation_results"]["number_of_predictions_min"] == 2
     assert results[3][2]["aggregation_results"]["number_of_predictions_max"] == 12
     assert results[3][2]["aggregation_results"]["number_of_predictions_sum"] == 34
