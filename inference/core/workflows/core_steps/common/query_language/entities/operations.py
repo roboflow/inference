@@ -407,6 +407,17 @@ class ConvertImageToJPEG(OperationDefinition):
     compression_level: int = Field(default=95, le=100, ge=1)
 
 
+class ConvertDictionaryToJSON(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Converts dictionary to JSON",
+            "input_kind": [DICTIONARY_KIND],
+            "output_kind": [STRING_KIND],
+        },
+    )
+    type: Literal["ConvertDictionaryToJSON"]
+
+
 class ConvertImageToBase64(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -557,6 +568,7 @@ AllOperationsType = Annotated[
         ConvertImageToJPEG,
         ConvertImageToBase64,
         DetectionsToDictionary,
+        ConvertDictionaryToJSON,
     ],
     Field(discriminator="type"),
 ]

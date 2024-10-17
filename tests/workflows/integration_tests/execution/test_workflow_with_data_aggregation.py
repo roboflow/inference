@@ -60,9 +60,7 @@ WORKFLOW_WITH_DATA_AGGREGATION = {
     category="Data analytics in Workflows",
     use_case_title="Aggregation of results over time",
     use_case_description="""
-This example shows how to aggregate and analyse predictions using Workflows. **It is designed to
-work on time-series of data, hence will not be meaningful in preview, but you can test the Workflow
-against video.**
+This example shows how to aggregate and analyse predictions using Workflows.
 
 The key for data analytics in this example is **Data Aggregator** block which is fed with model 
 predictions and perform the following aggregations **on each 6 consecutive predictions:**
@@ -72,6 +70,12 @@ number of bounding boxes for each class**
 
 * taking the **number of detected bounding boxes** in each prediction, it outputs **minimum, maximum and total number** 
 of bounding boxes per prediction in aggregated time window 
+
+!!! warning "Run on video to produce *meaningful* results"
+
+    This workflow will not work using the docs preview. You must run it on video file.
+    Copy the template into your Roboflow app, start `inference` server and use video preview 
+    to get the results. 
 """,
     workflow_definition=WORKFLOW_WITH_DATA_AGGREGATION,
     workflow_name_in_app="data-aggregation",

@@ -34,6 +34,9 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
     shift_detections,
     sort_detections,
 )
+from inference.core.workflows.core_steps.common.query_language.operations.dictionaries.base import (
+    dictionary_to_json,
+)
 from inference.core.workflows.core_steps.common.query_language.operations.generic.base import (
     apply_lookup,
     generate_random_number,
@@ -195,6 +198,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "ConvertImageToJPEG": encode_image_to_jpeg,
     "ConvertImageToBase64": encode_image_to_base64,
     "DetectionsToDictionary": detections_to_dictionary,
+    "ConvertDictionaryToJSON": dictionary_to_json,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

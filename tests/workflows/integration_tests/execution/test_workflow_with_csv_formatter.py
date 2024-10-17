@@ -52,7 +52,7 @@ WORKFLOW_WITH_CSV_FORMATTER = {
 
 
 @add_to_workflows_gallery(
-    category="Producing data with Workflows",
+    category="Data analytics in Workflows",
     use_case_title="Workflow producing CSV",
     use_case_description="""
 This example showcases how to export CSV file out of Workflow. Object detection results are 

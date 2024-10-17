@@ -206,7 +206,7 @@ class LocalFileSinkBlockV1(WorkflowBlock):
 def generate_new_file_path(
     target_directory: str, file_name_prefix: str, file_type: str
 ) -> str:
-    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
     file_name = f"{file_name_prefix}_{timestamp}.{file_type}"
     return os.path.abspath(os.path.join(target_directory, file_name))
 
