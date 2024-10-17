@@ -133,6 +133,7 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
         to_inference_queue: "SyncAsyncQueue[VideoFrame]",
         stop_event: Event,
         webrtc_video_transform_track: VideoTransformTrack,
+        webrtc_peer_timeout: float,
     ):
         self.to_inference_queue: "SyncAsyncQueue[VideoFrame]" = to_inference_queue
         self._stop_event = stop_event
@@ -140,6 +141,7 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
         self._h: Optional[int] = None
         self._video_transform_track = webrtc_video_transform_track
         self._is_opened = True
+        self.webrtc_peer_timeout = webrtc_peer_timeout
 
     def grab(self) -> bool:
         if self._stop_event.is_set():
@@ -147,16 +149,26 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
             self._is_opened = False
             return False
 
-        self.to_inference_queue.sync_get()
+        try:
+            self.to_inference_queue.sync_get(timeout=self.webrtc_peer_timeout)
+        except asyncio.TimeoutError:
+            logger.error("Timeout while grabbing frame, considering source depleted.")
+            return False
         return True
 
-    def retrieve(self) -> Tuple[bool, np.ndarray]:
+    def retrieve(self) -> Tuple[bool, Optional[np.ndarray]]:
         if self._stop_event.is_set():
             logger.info("Received termination signal, closing.")
             self._is_opened = False
             return False, None
 
-        frame: VideoFrame = self.to_inference_queue.sync_get()
+        try:
+            frame: VideoFrame = self.to_inference_queue.sync_get(
+                timeout=self.webrtc_peer_timeout
+            )
+        except asyncio.TimeoutError:
+            logger.error("Timeout while retrieving frame, considering source depleted.")
+            return False, None
         img = frame.to_ndarray(format="bgr24")
 
         return True, img
