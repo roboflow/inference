@@ -45,7 +45,7 @@ WORKFLOW_WITH_RATE_LIMITER = {
 }
 
 
-def test_detection_plus_classification_workflow_when_minimal_valid_input_provided(
+def test_workflow_with_rate_limiter(
     model_manager: ModelManager,
     dogs_image: np.ndarray,
     crowd_image: np.ndarray,
