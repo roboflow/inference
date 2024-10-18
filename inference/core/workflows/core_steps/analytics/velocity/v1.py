@@ -1,5 +1,4 @@
 from typing import Dict, List, Optional, Tuple, Union
-
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
@@ -8,15 +7,11 @@ from typing_extensions import Literal, Type
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     VideoMetadata,
-    WorkflowImageData,
 )
-# TODO: Cleanup below imports
+
 from inference.core.workflows.execution_engine.entities.types import (
-    BOOLEAN_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    STRING_KIND,
     FLOAT_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
@@ -35,7 +30,7 @@ SHORT_DESCRIPTION = "Calculate the velocity and speed of tracked objects with sm
 LONG_DESCRIPTION = """
 The `VelocityBlock` computes the velocity and speed of objects tracked across video frames.
 It includes options to smooth the velocity and speed measurements over time and to convert units from pixels per second to meters per second.
-It requires detections with unique `tracker_id` assigned to each object, which persists between frames.
+It requires detections from Byte Track with unique `tracker_id` assigned to each object, which persists between frames.
 The velocities are calculated based on the displacement of object centers over time.
 """
 
@@ -52,11 +47,6 @@ class VelocityManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/velocity@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
-        title="Image",
-        description="The input image for this step.",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-    )
     metadata: WorkflowVideoMetadataSelector
     detections: StepOutputSelector(
         kind=[
@@ -72,9 +62,9 @@ class VelocityManifest(WorkflowBlockManifest):
         description="Smoothing factor (alpha) for exponential moving average (0 < alpha <= 1). Lower alpha means more smoothing.",
         examples=[0.5],
     )
-    pixel_to_meter_ratio: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+    pixel_to_meter: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         default=1.0,
-        description="Conversion ratio from pixels to meters. Velocity will be converted to meters per second using this ratio.",
+        description="Conversion from pixels to meters. Velocity will be converted to meters per second using this value.",
         examples=[0.01],  # Example: 1 pixel = 0.01 meters
     )
 
@@ -112,11 +102,10 @@ class VelocityBlockV1(WorkflowBlock):
 
     def run(
         self,
-        image: WorkflowImageData,
         detections: sv.Detections,
         metadata: VideoMetadata,
         smoothing_alpha: float,
-        pixel_to_meter_ratio: float,
+        pixel_to_meter: float,
     ) -> BlockResult:
         if detections.tracker_id is None:
             raise ValueError(
@@ -124,8 +113,8 @@ class VelocityBlockV1(WorkflowBlock):
             )
         if not (0 < smoothing_alpha <= 1):
             raise ValueError("smoothing_alpha must be between 0 (exclusive) and 1 (inclusive)")
-        if not (pixel_to_meter_ratio > 0):
-            raise ValueError("pixel_to_meter_ratio must be greater than 0")
+        if not (pixel_to_meter > 0):
+            raise ValueError("pixel_to_meter must be greater than 0")
         
         if metadata.comes_from_video_file and metadata.fps != 0:
             ts_current = metadata.frame_number / metadata.fps
@@ -148,8 +137,6 @@ class VelocityBlockV1(WorkflowBlock):
         speeds = np.zeros(num_detections)  # Shape (num_detections,)
         smoothed_velocities_arr = np.zeros_like(current_positions)
         smoothed_speeds = np.zeros(num_detections)
-
-        velocity_data = []
 
         for i, tracker_id in enumerate(detections.tracker_id):
             current_position = current_positions[i]
@@ -188,32 +175,35 @@ class VelocityBlockV1(WorkflowBlock):
             smoothed_velocities[tracker_id] = smoothed_velocity
 
             # Convert velocities and speeds to meters per second if required
-            velocity_m_s = velocity * pixel_to_meter_ratio
-            smoothed_velocity_m_s = smoothed_velocity * pixel_to_meter_ratio
-            speed_m_s = speed * pixel_to_meter_ratio
-            smoothed_speed_m_s = smoothed_speed * pixel_to_meter_ratio
+            velocity_m_s = velocity / pixel_to_meter
+            smoothed_velocity_m_s = smoothed_velocity / pixel_to_meter
+            speed_m_s = speed / pixel_to_meter
+            smoothed_speed_m_s = smoothed_speed / pixel_to_meter
 
             velocities[i] = velocity_m_s
             speeds[i] = speed_m_s
             smoothed_velocities_arr[i] = smoothed_velocity_m_s
             smoothed_speeds[i] = smoothed_speed_m_s
 
-            velocity_entry = {
-                'tracker_id': tracker_id,
-                'velocity': velocity_m_s.tolist(),  # Convert numpy array to list
-                'speed': speed_m_s,
-                'smoothed_velocity': smoothed_velocity_m_s.tolist(),
-                'smoothed_speed': smoothed_speed_m_s,
-            }
+            # Add velocity and speed to detections.data
+            # Ensure that 'data' is a dictionary for each detection
+            if detections.data is None:
+                detections.data = {}
 
-            velocity_data.append(velocity_entry)
+            # Initialize dictionaries if not present
+            if 'velocity' not in detections.data:
+                detections.data['velocity'] = {}
+            if 'speed' not in detections.data:
+                detections.data['speed'] = {}
+            if 'smoothed_velocity' not in detections.data:
+                detections.data['smoothed_velocity'] = {}
+            if 'smoothed_speed' not in detections.data:
+                detections.data['smoothed_speed'] = {}
 
-        # # Add velocities and speeds to detections
-        # detections.data['velocity'] = velocities  # Shape: (num_detections, 2)
-        # detections.data['speed'] = speeds  # Shape: (num_detections,)
-        # detections.data['smoothed_velocity'] = smoothed_velocities_arr  # Shape: (num_detections, 2)
-        # detections.data['smoothed_speed'] = smoothed_speeds  # Shape: (num_detections,)
+            # Assign velocity data to the corresponding tracker_id
+            detections.data['velocity'][tracker_id] = velocity_m_s.tolist()  # [vx, vy]
+            detections.data['speed'][tracker_id] = speed_m_s  # Scalar
+            detections.data['smoothed_velocity'][tracker_id] = smoothed_velocity_m_s.tolist()  # [vx, vy]
+            detections.data['smoothed_speed'][tracker_id] = smoothed_speed_m_s  # Scalar
 
-        # Prepare velocity data entry
-
-        return {OUTPUT_KEY: velocity_data}
+        return {OUTPUT_KEY: detections}
