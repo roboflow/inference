@@ -40,6 +40,7 @@ hide:
 <p class="card block-card" data-url="detections_transformation" data-name="Detections Transformation" data-desc="Apply transformations on detected bounding boxes." data-labels="TRANSFORMATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="roboflow_dataset_upload" data-name="Roboflow Dataset Upload" data-desc="Save images and predictions in your Roboflow Dataset" data-labels="SINK, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="continue_if" data-name="Continue If" data-desc="Conditionally stop execution of a branch." data-labels="FLOW_CONTROL, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="rate_limiter" data-name="Rate Limiter" data-desc="Limits the rate at which a branch of the Workflow will fire." data-labels="FLOW_CONTROL, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="perspective_correction" data-name="Perspective Correction" data-desc="Correct coordinates of detections from plane defined by given polygon to straight rectangular plane of given width and height" data-labels="TRANSFORMATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="dynamic_zone" data-name="Dynamic Zone" data-desc="Simplify polygons so they are geometrically convex and simplify them to contain only requested amount of vertices" data-labels="TRANSFORMATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="size_measurement" data-name="Size Measurement" data-desc="Measure the dimensions of objects in relation to a reference object." data-labels="TRANSFORMATION, APACHE-2.0" data-author="dummy"></p>
@@ -63,6 +64,7 @@ hide:
 <p class="card block-card" data-url="pixelate_visualization" data-name="Pixelate Visualization" data-desc="Pixelates detected objects in an image." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="polygon_visualization" data-name="Polygon Visualization" data-desc="Draws a polygon around detected objects in an image." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="line_counter_visualization" data-name="Line Counter Visualization" data-desc="Paints a mask over line zone in an image." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="model_comparison_visualization" data-name="Model Comparison Visualization" data-desc="Visualizes the difference between two models' detections." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="triangle_visualization" data-name="Triangle Visualization" data-desc="Draws triangle markers on an image at specific coordinates based on provided detections." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="roboflow_custom_metadata" data-name="Roboflow Custom Metadata" data-desc="Add custom metadata to Roboflow Model Monitoring dashboard" data-labels="SINK, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="detections_stitch" data-name="Detections Stitch" data-desc="Merges detections made against multiple pieces of input image into single detection." data-labels="FUSION, APACHE-2.0" data-author="dummy"></p>
@@ -87,9 +89,19 @@ hide:
 <p class="card block-card" data-url="line_counter" data-name="Line Counter" data-desc="Count detections passing line" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="polygon_zone_visualization" data-name="Polygon Zone Visualization" data-desc="Paints a mask over polygon zone in an image." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="florence2_model" data-name="Florence-2 Model" data-desc="Run Florence-2 on an image" data-labels="MODEL, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="distance_measurement" data-name="Distance Measurement" data-desc="Measure the distance between two bounding boxes on a 2D plane using a perpendicular camera and either a reference object or a pixel-to-centimeter ratio for scaling." data-labels="CLASSICAL_COMPUTER_VISION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="stability_ai_inpainting" data-name="Stability AI Inpainting" data-desc="Uses segmentation masks to inpaint objects into image" data-labels="MODEL, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="image_preprocessing" data-name="Image Preprocessing" data-desc="Resize, flip, or rotate an image." data-labels="CLASSICAL_COMPUTER_VISION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="pathdeviation" data-name="Path deviation" data-desc="Calculate Fréchet distance of object from reference path" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="data_aggregator" data-name="Data Aggregator" data-desc="Aggregates workflow data to produce time-based statistics" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="csv_formatter" data-name="CSV Formatter" data-desc="Creates CSV files with specified columns." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="email_notification" data-name="Email Notification" data-desc="Send notification via E-Mail" data-labels="SINK, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="local_file_sink" data-name="Local File Sink" data-desc="Saves data into local file" data-labels="SINK, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="on_object_appeared" data-name="On Object Appeared" data-desc="" data-labels="VIDEO_TRIGGER, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="on_object_location_updated" data-name="On Object Location Updated" data-desc="" data-labels="VIDEO_TRIGGER, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="on_object_lost" data-name="On Object Lost" data-desc="" data-labels="VIDEO_TRIGGER, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="trace_visualization" data-name="Trace Visualization" data-desc="Draws traces based on detections tracking results." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="reference_path_visualization" data-name="Reference Path Visualization" data-desc="Draws a reference path in the image" data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
 <!--- AUTOGENERATED_BLOCKS_LIST -->
     </div>
   </div>

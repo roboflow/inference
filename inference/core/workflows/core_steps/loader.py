@@ -1,7 +1,15 @@
 from typing import List, Type
 
 from inference.core.cache import cache
-from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.env import (
+    ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
+    API_KEY,
+    WORKFLOW_BLOCKS_WRITE_DIRECTORY,
+    WORKFLOWS_STEP_EXECUTION_MODE,
+)
+from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
+    DataAggregatorBlockV1,
+)
 from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
     LineCounterBlockV1,
 )
@@ -64,6 +72,10 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
+from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
+    RateLimiterBlockV1,
+)
+from inference.core.workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
 from inference.core.workflows.core_steps.formatters.expression.v1 import (
     ExpressionBlockV1,
 )
@@ -156,6 +168,10 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
+    EmailNotificationBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -165,6 +181,7 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
     RoboflowDatasetUploadBlockV2,
 )
+from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
@@ -176,6 +193,9 @@ from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import 
 )
 from inference.core.workflows.core_steps.transformations.byte_tracker.v2 import (
     ByteTrackerBlockV2,
+)
+from inference.core.workflows.core_steps.transformations.byte_tracker.v3 import (
+    ByteTrackerBlockV3,
 )
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
@@ -260,12 +280,19 @@ from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
 from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
     PolygonZoneVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
+    ReferencePathVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.trace.v1 import (
+    TraceVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
+    BYTES_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     CONTOURS_KIND,
     DETECTION_KIND,
@@ -306,19 +333,37 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
+    "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
+    "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
 }
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
         AbsoluteStaticCropBlockV1,
+        DynamicCropBlockV1,
+        DetectionsFilterBlockV1,
+        DetectionOffsetBlockV1,
+        ByteTrackerBlockV1,
+        RelativeStaticCropBlockV1,
+        DetectionsTransformationBlockV1,
+        RoboflowDatasetUploadBlockV1,
+        ContinueIfBlockV1,
+        RateLimiterBlockV1,
+        PerspectiveCorrectionBlockV1,
+        DynamicZonesBlockV1,
+        SizeMeasurementBlockV1,
+        DetectionsClassesReplacementBlockV1,
+        ExpressionBlockV1,
+        PropertyDefinitionBlockV1,
+        DimensionCollapseBlockV1,
+        FirstNonEmptyOrDefaultBlockV1,
         AntropicClaudeBlockV1,
         BackgroundColorVisualizationBlockV1,
         BarcodeDetectorBlockV1,
         BlurVisualizationBlockV1,
         BoundingBoxVisualizationBlockV1,
         BoundingRectBlockV1,
-        ByteTrackerBlockV1,
         ByteTrackerBlockV2,
         CameraFocusBlockV1,
         CircleVisualizationBlockV1,
@@ -326,25 +371,15 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ClipComparisonBlockV2,
         CogVLMBlockV1,
         ColorVisualizationBlockV1,
-        ContinueIfBlockV1,
         ConvertGrayscaleBlockV1,
         CornerVisualizationBlockV1,
         CropVisualizationBlockV1,
-        DetectionOffsetBlockV1,
-        DetectionsClassesReplacementBlockV1,
         DetectionsConsensusBlockV1,
-        DetectionsFilterBlockV1,
         DetectionsStitchBlockV1,
-        DetectionsTransformationBlockV1,
-        DimensionCollapseBlockV1,
         DistanceMeasurementBlockV1,
         DominantColorBlockV1,
         DotVisualizationBlockV1,
-        DynamicCropBlockV1,
-        DynamicZonesBlockV1,
         EllipseVisualizationBlockV1,
-        ExpressionBlockV1,
-        FirstNonEmptyOrDefaultBlockV1,
         Florence2BlockV1,
         GoogleGeminiBlockV1,
         GoogleVisionOCRBlockV1,
@@ -368,17 +403,13 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OpenAIBlockV2,
         PathDeviationAnalyticsBlockV1,
         PathDeviationAnalyticsBlockV2,
-        PerspectiveCorrectionBlockV1,
         PixelateVisualizationBlockV1,
         PixelationCountBlockV1,
         PolygonVisualizationBlockV1,
         PolygonZoneVisualizationBlockV1,
-        PropertyDefinitionBlockV1,
         QRCodeDetectorBlockV1,
-        RelativeStaticCropBlockV1,
         RoboflowClassificationModelBlockV1,
         RoboflowCustomMetadataBlockV1,
-        RoboflowDatasetUploadBlockV1,
         RoboflowDatasetUploadBlockV2,
         RoboflowInstanceSegmentationModelBlockV1,
         RoboflowKeypointDetectionModelBlockV1,
@@ -388,7 +419,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV1,
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
-        SizeMeasurementBlockV1,
         StabilityAIInpaintingBlockV1,
         StabilizeTrackedDetectionsBlockV1,
         StitchImagesBlockV1,
@@ -399,6 +429,14 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         VLMAsClassifierBlockV1,
         VLMAsDetectorBlockV1,
         YoloWorldModelBlockV1,
+        DataAggregatorBlockV1,
+        CSVFormatterBlockV1,
+        EmailNotificationBlockV1,
+        LocalFileSinkBlockV1,
+        TraceVisualizationBlockV1,
+        ReferencePathVisualizationBlockV1,
+        ByteTrackerBlockV3,
+        WebhookSinkBlockV1,
     ]
 
 
@@ -436,4 +474,5 @@ def load_kinds() -> List[Kind]:
         PREDICTION_TYPE_KIND,
         PARENT_ID_KIND,
         IMAGE_METADATA_KIND,
+        BYTES_KIND,
     ]
