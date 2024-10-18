@@ -9,6 +9,9 @@ from inference.core.interfaces.camera.video_source import (
 )
 
 STATUS_KEY = "status"
+STATE_KEY = "state"
+SOURCES_METADATA_KEY = "sources_metadata"
+REPORT_KEY = "report"
 TYPE_KEY = "type"
 ERROR_TYPE_KEY = "error_type"
 REQUEST_ID_KEY = "request_id"
@@ -79,6 +82,7 @@ class InitialisePipelinePayload(BaseModel):
     sink_configuration: MemorySinkConfiguration = MemorySinkConfiguration(
         type="MemorySinkConfiguration"
     )
+    consumption_timeout: Optional[float] = None
     api_key: Optional[str] = None
 
 

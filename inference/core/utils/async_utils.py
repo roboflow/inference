@@ -39,8 +39,10 @@ class Queue:
     def sync_put(self, item):
         asyncio.run_coroutine_threadsafe(self._queue.put(item), self._loop).result()
 
-    def sync_get(self):
-        return asyncio.run_coroutine_threadsafe(self._queue.get(), self._loop).result()
+    def sync_get(self, timeout: float):
+        return asyncio.run_coroutine_threadsafe(
+            asyncio.wait_for(self._queue.get(), timeout), self._loop
+        ).result()
 
     def sync_empty(self):
         return self._queue.empty()
