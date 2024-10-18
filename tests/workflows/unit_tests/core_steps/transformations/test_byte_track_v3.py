@@ -251,7 +251,7 @@ def test_instance_cache_flushing_on_overflow() -> None:
     for i in range(11):
         _ = cache.record_instance(tracker_id=i)
     result_for_zero = cache.record_instance(tracker_id=0)
-    result_for_one = cache.record_instance(tracker_id=1)
+    result_for_one = cache.record_instance(tracker_id=2)
 
     # then
     assert (
@@ -259,4 +259,4 @@ def test_instance_cache_flushing_on_overflow() -> None:
     ), "Expected id=0 not to be seen in cache previously, as the flush should happen"
     assert (
         result_for_one is True
-    ), "Expected id=1 to still be in cache - as this is supposed to be the first non flushed id"
+    ), "Expected id=2 to still be in cache - as this is supposed to be the first non flushed id"
