@@ -2,12 +2,10 @@ from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
 import cv2
 import numpy as np
-import supervision as sv
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
-    VisualizationBlock,
     VisualizationManifest,
 )
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
@@ -19,11 +17,17 @@ from inference.core.workflows.execution_engine.entities.types import (
     StepOutputSelector,
     WorkflowParameterSelector,
 )
-from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference.core.workflows.prototypes.block import (
+    BlockResult,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
 
 SHORT_DESCRIPTION = "Draws a reference path in the image"
 LONG_DESCRIPTION = """
-The `Reference Path Visualization` block draws reference path in the image.
+The **Reference Path Visualization** block draws reference path in the image.
+To be used in combination with **Path deviation** block - to display the reference
+path.
 """
 
 
@@ -56,15 +60,23 @@ class ReferencePathVisualizationManifest(VisualizationManifest):
         description="Thickness of the lines in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],
-        gt=0,
     )
+
+    @field_validator("thickness")
+    @classmethod
+    def validate_thickness_greater_than_zero(
+        cls, value: Union[int, str]
+    ) -> Union[int, str]:
+        if isinstance(value, int) and value <= 0:
+            raise ValueError("Thickness must be greater or equal to zero")
+        return value
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.2.0,<2.0.0"
 
 
-class ReferencePathVisualizationBlockV1(VisualizationBlock):
+class ReferencePathVisualizationBlockV1(WorkflowBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._cache: Dict[str, np.ndarray] = {}
@@ -72,12 +84,6 @@ class ReferencePathVisualizationBlockV1(VisualizationBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ReferencePathVisualizationManifest
-
-    def getAnnotator(
-        self,
-        **kwargs,
-    ) -> sv.PolygonZoneAnnotator:
-        pass
 
     def run(
         self,
