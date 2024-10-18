@@ -30,7 +30,7 @@ helping to manage resource usage and prevent over-execution.
 --- input_b --> │   step_1  │ -->  output_a -->  │   step_2  │
 --- input_c --> └───────────┘                    └───────────┘
 
-If you need you want to throttle the *Step 2* execution rate - you should apply rate limiter in between:
+If you want to throttle the *Step 2* execution rate - you should apply rate limiter in between:
 
 * keep the existing blocks configuration as is (do not change connections)
 

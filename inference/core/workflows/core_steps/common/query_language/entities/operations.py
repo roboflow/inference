@@ -410,7 +410,7 @@ class ConvertImageToJPEG(OperationDefinition):
 class ConvertDictionaryToJSON(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
-            "description": "Converts dictionary to JSON",
+            "description": "Converts dictionary to serialized JSON",
             "input_kind": [DICTIONARY_KIND],
             "output_kind": [STRING_KIND],
         },

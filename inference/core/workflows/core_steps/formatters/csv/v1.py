@@ -1,5 +1,5 @@
 from copy import copy
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Literal, Optional, Type, Union
 
 import pandas as pd
@@ -49,6 +49,9 @@ Use `columns_data` property to specify name of the columns and data sources. Def
 !!! Note "Timestamp column"
 
     The block automatically adds `timestamp` column and this column name is reserved and cannot be used.
+    
+    The value of timestamp would be in the following format: `2024-10-18T14:09:57.622297+00:00`, values 
+    **are scaled** to UTC time zone.
 
 
 For example, the following definition
@@ -67,7 +70,7 @@ columns_operations = {
 Will generate CSV content:
 ```csv
 timestamp,predictions,reference
-"2024-10-16T11:15:15.336322","['a', 'b', 'c']","['a', 'b']"
+"2024-10-16T11:15:15.336322+00:00","['a', 'b', 'c']","['a', 'b']"
 ```
 
 When applied on object detection predictions from a single image, assuming that `$inputs.reference_class_names`
@@ -115,9 +118,9 @@ the last batch element:
     
     ```csv
     timestamp,predictions,reference
-    "2024-10-16T11:15:15.336322","['a', 'b', 'c']","['a', 'b']"
-    "2024-10-16T11:15:15.436322","['b', 'c']","['a', 'b']"
-    "2024-10-16T11:15:15.536322","['a', 'c']","['a', 'b']"
+    "2024-10-16T11:15:15.336322+00:00","['a', 'b', 'c']","['a', 'b']"
+    "2024-10-16T11:15:15.436322+00:00","['b', 'c']","['a', 'b']"
+    "2024-10-16T11:15:15.536322+00:00","['a', 'c']","['a', 'b']"
     ```
 """
 
@@ -228,7 +231,7 @@ def prepare_csv_content(
             columns_data[variable_name] = operations_chain(
                 columns_data[variable_name], global_parameters={}
             )
-        columns_data["timestamp"] = datetime.now().isoformat()
+        columns_data["timestamp"] = datetime.now(tz=timezone.utc).isoformat()
         result.append(columns_data)
     return result
 

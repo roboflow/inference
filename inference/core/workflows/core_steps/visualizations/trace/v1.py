@@ -1,7 +1,7 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import Any, List, Literal, Optional, Type, Union
 
 import supervision as sv
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 from supervision.annotators.base import BaseAnnotator
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
@@ -61,14 +61,19 @@ class TraceManifest(ColorableVisualizationManifest):
         default=30,
         description="Maximum number of historical tracked objects positions to display.",
         examples=[30, "$inputs.trace_length"],
-        gt=0,
     )
     thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the track visualization line.",
         default=1,
         examples=[1, "$inputs.track_thickness"],
-        gt=0,
     )
+
+    @field_validator("trace_length", "thickness")
+    @classmethod
+    def ensure_max_entries_per_file_is_correct(cls, value: Any) -> Any:
+        if isinstance(value, int) and value < 1:
+            raise ValueError("`trace_length` and `thickness` cannot be lower than 1.")
+        return value
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:

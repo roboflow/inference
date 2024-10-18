@@ -71,7 +71,7 @@ message_parameters = {
 }
 ```
 
-Selecting data is not the only option - data may be processed in the block. In the example we wish to
+Selecting data is not the only option - data may be processed in the block. In the example below we wish to
 extract names of predicted classes. We can apply transformation **for each parameter** by setting
 `message_parameters_operations`:
 
@@ -172,7 +172,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["Workflow alert"],
     )
     message: str = Field(
-        description="Content of the message to send",
+        description="Content of the message to be send",
         examples=[
             "During last 5 minutes detected {{ $parameters.num_instances }} instances"
         ],
@@ -241,19 +241,19 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[{"report.cvs": "$steps.csv_formatter.csv_content"}],
     )
     smtp_server: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
-        description="Custom SMTP server to use",
+        description="Custom SMTP server to be used",
         examples=["$inputs.smtp_server", "smtp.google.com"],
     )
     sender_email_password: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = (
         Field(
-            description="Sender e-mail password to use SMTP server",
+            description="Sender e-mail password be used when authenticating to SMTP server",
             private=True,
             examples=["$inputs.email_password"],
         )
     )
     smtp_port: int = Field(
         default=465,
-        description="Port of custom SMTP server to use",
+        description="SMTP server port",
         examples=[465],
         json_schema_extra={
             "always_visible": True,
