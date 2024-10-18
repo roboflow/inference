@@ -167,3 +167,78 @@ def test_workflow_with_csv_formatter_against_single_image(
     assert parsed_data["additional_column"].tolist() == [
         2137
     ], "Expected input data to propagate to output CSV"
+
+
+WORKFLOW_WITH_NON_BATCH_ORIENTED_CSV_FORMATTER = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "a"},
+        {"type": "WorkflowParameter", "name": "b"},
+        {"type": "WorkflowParameter", "name": "c"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/csv_formatter@v1",
+            "name": "csv_formatter",
+            "columns_data": {
+                "a": "$inputs.a",
+                "b": "$inputs.b",
+                "c": "$inputs.c",
+            },
+            "columns_operations": {
+                "a": [{"type": "StringToUpperCase"}],
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "csv",
+            "coordinates_system": "own",
+            "selector": "$steps.csv_formatter.csv_content",
+        }
+    ],
+}
+
+
+def test_workflow_with_csv_formatter_against_non_batch_inputs(
+    model_manager: ModelManager,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_CSV_FORMATTER,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "a": "some",
+            "b": "other",
+            "c": 4,
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "csv",
+    }, "Expected all declared outputs to be delivered"
+    parsed_data = pd.read_csv(io.StringIO(result[0]["csv"]))
+    assert set(parsed_data.columns.tolist()) == {
+        "a",
+        "b",
+        "c",
+        "timestamp",
+    }, "Expected to see specific columns in output CSV"
+    assert len(parsed_data) == 1, "Expected 1 rows i dataframe"
+    assert parsed_data["a"].tolist() == ["SOME"]
+    assert parsed_data["b"].tolist() == ["other"]
+    assert parsed_data["c"].tolist() == [4]

@@ -92,7 +92,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     target_directory: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
         description="Target directory",
-        examples=["/some/location"],
+        examples=["some/location"],
     )
     file_name_prefix: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
         default="workflow_output",

@@ -136,7 +136,15 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/csv_formatter@v1"]
     columns_data: Dict[
         str,
-        Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
+        Union[
+            WorkflowImageSelector,
+            WorkflowParameterSelector(),
+            StepOutputSelector(),
+            str,
+            int,
+            float,
+            bool,
+        ],
     ] = Field(
         description="References data to be used to construct each and every column",
         examples=[
@@ -196,7 +204,7 @@ class CSVFormatterBlockV1(WorkflowBlock):
         has_batch_oriented_inputs = any(
             isinstance(v, Batch) for v in columns_data.values()
         )
-        csv_rows = prepare_csv_rows(
+        csv_rows = prepare_csv_content(
             batch_columns_data=columns_data,
             columns_operations=columns_operations,
         )
@@ -209,7 +217,7 @@ class CSVFormatterBlockV1(WorkflowBlock):
         return result
 
 
-def prepare_csv_rows(
+def prepare_csv_content(
     batch_columns_data: Dict[str, Any],
     columns_operations: Dict[str, List[AllOperationsType]],
 ) -> List[dict]:

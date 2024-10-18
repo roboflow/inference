@@ -59,6 +59,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
         description="The minimum number of seconds between allowed executions.",
         examples=[1.0],
         default=1.0,
+        ge=0.0,
     )
     depends_on: Union[
         WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()

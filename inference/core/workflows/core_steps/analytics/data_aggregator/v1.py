@@ -270,11 +270,6 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    interval: int = Field(
-        description="Length of aggregation interval",
-        examples=[10, 100],
-        gt=0,
-    )
     interval_unit: Literal["seconds", "minutes", "hours", "runs"] = Field(
         default="seconds",
         description="Unit to measure `interval`",
@@ -301,6 +296,11 @@ class BlockManifest(WorkflowBlockManifest):
                 },
             },
         },
+    )
+    interval: int = Field(
+        description="Length of aggregation interval",
+        examples=[10, 100],
+        gt=0,
     )
 
     @classmethod
@@ -352,8 +352,8 @@ class DataAggregatorBlockV1(WorkflowBlock):
         data: Dict[str, Any],
         data_operations: Dict[str, List[AllOperationsType]],
         aggregation_mode: Dict[str, List[AggregationType]],
-        interval: int,
         interval_unit: Literal["seconds", "minutes", "hours", "runs"],
+        interval: int,
     ) -> BlockResult:
         self._aggregation_cache = ensure_states_initialised(
             aggregation_cache=self._aggregation_cache,

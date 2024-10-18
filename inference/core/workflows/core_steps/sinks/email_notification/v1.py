@@ -212,7 +212,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     message_parameters: Dict[
         str,
-        Union[WorkflowParameterSelector(), StepOutputSelector()],
+        Union[WorkflowParameterSelector(), StepOutputSelector(), str, int, float, bool],
     ] = Field(
         description="References data to be used to construct each and every column",
         examples=[

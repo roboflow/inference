@@ -103,6 +103,7 @@ multi_part_encoded_files = {
 multi_part_encoded_files_operations = {
     "image": [{"type": "ConvertImageToJPEG"}]
 }
+```
 
 ### Cooldown
 
@@ -124,7 +125,6 @@ debugging purposes**.
 Sometimes it would be convenient to manually disable the **Webhook sink** block. This is possible 
 setting `disable_sink` flag to hold reference to Workflow input. with such setup, caller would be
 able to disable the sink when needed sending agreed input parameter.
-```
 """
 
 QUERY_PARAMS_KIND = [
