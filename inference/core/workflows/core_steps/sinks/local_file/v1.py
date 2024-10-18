@@ -143,12 +143,7 @@ class LocalFileSinkBlockV1(WorkflowBlock):
     def __init__(self, allow_access_to_file_system: bool):
         self._active_file_descriptor: Optional[TextIOWrapper] = None
         self._entries_in_file = 0
-        if not allow_access_to_file_system:
-            raise RuntimeError(
-                "`roboflow_core/local_file_sink@v1` block cannot run in this environment - "
-                "local file system usage is forbidden - use self-hosted `inference` or "
-                "Roboflow Dedicated Deployment."
-            )
+        self._allow_access_to_file_system = allow_access_to_file_system
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -167,6 +162,12 @@ class LocalFileSinkBlockV1(WorkflowBlock):
         file_name_prefix: str,
         max_entries_per_file: int,
     ) -> BlockResult:
+        if not self._allow_access_to_file_system:
+            raise RuntimeError(
+                "`roboflow_core/local_file_sink@v1` block cannot run in this environment - "
+                "local file system usage is forbidden - use self-hosted `inference` or "
+                "Roboflow Dedicated Deployment."
+            )
         if output_mode == "separate_files":
             return self._save_to_separate_file(
                 content=content,

@@ -59,10 +59,23 @@ def test_manifest_parsing_when_max_entries_per_file_param_is_invalid() -> None:
         _ = BlockManifest.model_validate(raw_manifest)
 
 
-def test_saving_into_file_when_execution_is_prevented() -> None:
+def test_saving_into_file_when_execution_is_prevented(empty_directory: str) -> None:
+    # given
+    block = LocalFileSinkBlockV1(allow_access_to_file_system=False)
+
     # when
     with pytest.raises(RuntimeError):
-        _ = LocalFileSinkBlockV1(allow_access_to_file_system=False)
+        _ = block.run(
+            content="content-1",
+            file_type="txt",
+            output_mode="separate_files",
+            target_directory=empty_directory,
+            file_name_prefix="my_file",
+            max_entries_per_file=100,
+        )
+
+    # then
+    assert len(os.listdir(empty_directory)) == 0
 
 
 def test_saving_txt_into_separate_files(empty_directory: str) -> None:
