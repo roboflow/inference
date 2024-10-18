@@ -37,6 +37,11 @@ class CustomCollector(Collector):
         start = now - self.time_window
         count = 0
         results = {}
+        if self.model_manager is None:
+            logger.warning(
+                "This inference server type does not support custom Prometheus metrics, skipping."
+            )
+            return results
         for model_id in self.model_manager.models():
             if count >= maxModels:
                 break
