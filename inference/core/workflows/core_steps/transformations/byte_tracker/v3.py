@@ -147,11 +147,11 @@ class ByteTrackerBlockV3(WorkflowBlock):
         self,
         image: WorkflowImageData,
         detections: sv.Detections,
-        track_activation_threshold: float,
-        lost_track_buffer: int,
-        minimum_matching_threshold: float,
-        minimum_consecutive_frames: int,
-        instances_cache_size: int,
+        track_activation_threshold: float = 0.25,
+        lost_track_buffer: int = 30,
+        minimum_matching_threshold: float = 0.8,
+        minimum_consecutive_frames: int = 1,
+        instances_cache_size: int = 16384,
     ) -> BlockResult:
         metadata = image.video_metadata
         fps = metadata.fps
