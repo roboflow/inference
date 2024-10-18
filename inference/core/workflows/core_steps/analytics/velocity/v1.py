@@ -62,7 +62,7 @@ class VelocityManifest(WorkflowBlockManifest):
         description="Smoothing factor (alpha) for exponential moving average (0 < alpha <= 1). Lower alpha means more smoothing.",
         examples=[0.5],
     )
-    pixel_to_meter: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+    pixels_per_meter: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         default=1.0,
         description="Conversion from pixels to meters. Velocity will be converted to meters per second using this value.",
         examples=[0.01],  # Example: 1 pixel = 0.01 meters
@@ -105,7 +105,7 @@ class VelocityBlockV1(WorkflowBlock):
         detections: sv.Detections,
         metadata: VideoMetadata,
         smoothing_alpha: float,
-        pixel_to_meter: float,
+        pixels_per_meter: float,
     ) -> BlockResult:
         if detections.tracker_id is None:
             raise ValueError(
@@ -113,8 +113,8 @@ class VelocityBlockV1(WorkflowBlock):
             )
         if not (0 < smoothing_alpha <= 1):
             raise ValueError("smoothing_alpha must be between 0 (exclusive) and 1 (inclusive)")
-        if not (pixel_to_meter > 0):
-            raise ValueError("pixel_to_meter must be greater than 0")
+        if not (pixels_per_meter > 0):
+            raise ValueError("pixels_per_meter must be greater than 0")
         
         if metadata.comes_from_video_file and metadata.fps != 0:
             ts_current = metadata.frame_number / metadata.fps
@@ -175,10 +175,10 @@ class VelocityBlockV1(WorkflowBlock):
             smoothed_velocities[tracker_id] = smoothed_velocity
 
             # Convert velocities and speeds to meters per second if required
-            velocity_m_s = velocity / pixel_to_meter
-            smoothed_velocity_m_s = smoothed_velocity / pixel_to_meter
-            speed_m_s = speed / pixel_to_meter
-            smoothed_speed_m_s = smoothed_speed / pixel_to_meter
+            velocity_m_s = velocity / pixels_per_meter
+            smoothed_velocity_m_s = smoothed_velocity / pixels_per_meter
+            speed_m_s = speed / pixels_per_meter
+            smoothed_speed_m_s = smoothed_speed / pixels_per_meter
 
             velocities[i] = velocity_m_s
             speeds[i] = speed_m_s
