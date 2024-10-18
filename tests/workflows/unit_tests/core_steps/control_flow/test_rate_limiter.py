@@ -1,11 +1,17 @@
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import RateLimiterManifest
+from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
+    RateLimiterManifest,
+)
 
 
-@pytest.mark.parametrize("depends_on_selector", ["$inputs.image", "$inputs.param", "$steps.some.data"])
-def test_rate_limiter_manifest_parsing_when_input_is_valid(depends_on_selector: str) -> None:
+@pytest.mark.parametrize(
+    "depends_on_selector", ["$inputs.image", "$inputs.param", "$steps.some.data"]
+)
+def test_rate_limiter_manifest_parsing_when_input_is_valid(
+    depends_on_selector: str,
+) -> None:
     # given
     raw_manifest = {
         "type": "roboflow_core/rate_limiter@v1",

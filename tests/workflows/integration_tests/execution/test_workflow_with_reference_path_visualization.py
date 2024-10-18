@@ -64,8 +64,12 @@ def test_workflow_with_rate_limiter_when_list_of_lists_is_given_as_reference_pat
     # then
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 1, "Expected single result for single input image"
-    assert set(result[0].keys()) == {"visualization"}, "Expected all outputs to be registered"
-    assert isinstance(result[0]["visualization"], WorkflowImageData), "Expected visualization to be image"
+    assert set(result[0].keys()) == {
+        "visualization"
+    }, "Expected all outputs to be registered"
+    assert isinstance(
+        result[0]["visualization"], WorkflowImageData
+    ), "Expected visualization to be image"
 
 
 def test_workflow_with_rate_limiter_when_list_of_tuples_is_given_as_reference_path(
@@ -95,8 +99,12 @@ def test_workflow_with_rate_limiter_when_list_of_tuples_is_given_as_reference_pa
     # then
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 1, "Expected single result for single input image"
-    assert set(result[0].keys()) == {"visualization"}, "Expected all outputs to be registered"
-    assert isinstance(result[0]["visualization"], WorkflowImageData), "Expected visualization to be image"
+    assert set(result[0].keys()) == {
+        "visualization"
+    }, "Expected all outputs to be registered"
+    assert isinstance(
+        result[0]["visualization"], WorkflowImageData
+    ), "Expected visualization to be image"
 
 
 def test_workflow_with_rate_limiter_when_invalid_thickness_is_given(

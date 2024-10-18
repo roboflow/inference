@@ -4,16 +4,17 @@ import smtplib
 import ssl
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, Generator, List, Literal, Optional, Tuple, Type, Union
 
 from fastapi import BackgroundTasks
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
@@ -331,8 +332,8 @@ class EmailNotificationBlockV1(WorkflowBlock):
         message: str,
         sender_email: str,
         receiver_email: Union[str, List[str]],
-        cc_receiver_email: Union[str, List[str]],
-        bcc_receiver_email: Union[str, List[str]],
+        cc_receiver_email: Optional[Union[str, List[str]]],
+        bcc_receiver_email: Optional[Union[str, List[str]]],
         message_parameters: Dict[str, Any],
         message_parameters_operations: Dict[str, List[AllOperationsType]],
         attachments: Dict[str, str],
@@ -514,7 +515,17 @@ def _send_email_using_smtp_server(
         )
         e_mail_message.attach(part)
     to_sent = e_mail_message.as_string()
-    context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(smtp_server, smtp_port, context=context) as server:
+    with establish_smtp_connection(
+        smtp_server=smtp_server, smtp_port=smtp_port
+    ) as server:
         server.login(sender_email, sender_email_password)
         server.sendmail(sender_email, receiver_email, to_sent)
+
+
+@contextmanager
+def establish_smtp_connection(
+    smtp_server: str, smtp_port: int
+) -> Generator[smtplib.SMTP_SSL, None, None]:
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL(smtp_server, smtp_port, context=context) as server:
+        yield server

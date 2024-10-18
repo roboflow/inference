@@ -2,8 +2,13 @@ import json
 
 import pytest
 
-from inference.core.workflows.core_steps.common.query_language.errors import InvalidInputTypeError, OperationError
-from inference.core.workflows.core_steps.common.query_language.operations.core import execute_operations
+from inference.core.workflows.core_steps.common.query_language.errors import (
+    InvalidInputTypeError,
+    OperationError,
+)
+from inference.core.workflows.core_steps.common.query_language.operations.core import (
+    execute_operations,
+)
 
 
 def test_dictionary_to_json_when_invalid_input_is_provided() -> None:

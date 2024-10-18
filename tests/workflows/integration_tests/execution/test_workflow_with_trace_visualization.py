@@ -18,7 +18,7 @@ WORKFLOW_WITH_TRACE_VISUALIZATION = {
             "image": "$inputs.image",
             "model_id": "yolov8n-640",
             "confidence": 0.2,
-            "class_filter": ["person"]
+            "class_filter": ["person"],
         },
         {
             "type": "roboflow_core/byte_tracker@v3",
@@ -31,10 +31,14 @@ WORKFLOW_WITH_TRACE_VISUALIZATION = {
             "name": "trace_visualization",
             "image": "$inputs.image",
             "predictions": "$steps.byte_tracker.tracked_detections",
-        }
+        },
     ],
     "outputs": [
-        {"type": "JsonField", "name": "visualization", "selector": "$steps.trace_visualization.image"}
+        {
+            "type": "JsonField",
+            "name": "visualization",
+            "selector": "$steps.trace_visualization.image",
+        }
     ],
 }
 
@@ -65,6 +69,9 @@ def test_workflow_with_trace_visualization(
     # then
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 1, "Expected single result for single input image"
-    assert set(result[0].keys()) == {"visualization"}, "Expected all outputs to be registered"
-    assert isinstance(result[0]["visualization"], WorkflowImageData), "Expected visualization to be image"
-
+    assert set(result[0].keys()) == {
+        "visualization"
+    }, "Expected all outputs to be registered"
+    assert isinstance(
+        result[0]["visualization"], WorkflowImageData
+    ), "Expected visualization to be image"
