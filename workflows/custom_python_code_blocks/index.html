@@ -1,0 +1,1077 @@
+
+<!DOCTYPE html>
+
+<html class="no-js" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<meta content="Scalable, on-device computer vision deployment." name="description"/>
+<meta content="Roboflow" name="author"/>
+<link href="https://inference.roboflow.com/workflows/custom_python_code_blocks/" rel="canonical"/>
+<link href="../blocks_bundling/" rel="prev"/>
+<link href="../versioning/" rel="next"/>
+<link href="../../inference-icon.png" rel="icon"/>
+<meta content="mkdocs-1.5.3, mkdocs-material-9.5.18" name="generator"/>
+<title>Dynamic Python Blocks - Roboflow Inference</title>
+<link href="../../assets/stylesheets/main.66ac8b77.min.css" rel="stylesheet"/>
+<link href="../../assets/stylesheets/palette.06af60db.min.css" rel="stylesheet"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback" rel="stylesheet"/>
+<style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+<link href="../../assets/_mkdocstrings.css" rel="stylesheet"/>
+<link href="../../styles.css" rel="stylesheet"/>
+<link href="../../styles/cookbooks.css" rel="stylesheet"/>
+<script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+<script id="__analytics">function __md_analytics(){function n(){dataLayer.push(arguments)}window.dataLayer=window.dataLayer||[],n("js",new Date),n("config","G-T0CED2YY8K"),document.addEventListener("DOMContentLoaded",function(){document.forms.search&&document.forms.search.query.addEventListener("blur",function(){this.value&&n("event","search",{search_term:this.value})}),document$.subscribe(function(){var a=document.forms.feedback;if(void 0!==a)for(var e of a.querySelectorAll("[type=submit]"))e.addEventListener("click",function(e){e.preventDefault();var t=document.location.pathname,e=this.getAttribute("data-md-value");n("event","feedback",{page:t,data:e}),a.firstElementChild.disabled=!0;e=a.querySelector(".md-feedback__note [data-md-value='"+e+"']");e&&(e.hidden=!1)}),a.hidden=!1}),location$.subscribe(function(e){n("config","G-T0CED2YY8K",{page_path:e.pathname})})});var e=document.createElement("script");e.async=!0,e.src="https://www.googletagmanager.com/gtag/js?id=G-T0CED2YY8K",document.getElementById("__analytics").insertAdjacentElement("afterEnd",e)}</script>
+<script>"undefined"!=typeof __md_analytics&&__md_analytics()</script>
+<meta content="website" property="og:type"/>
+<meta content="Dynamic Python Blocks - Roboflow Inference" property="og:title"/>
+<meta content="Scalable, on-device computer vision deployment." property="og:description"/>
+<meta content="https://inference.roboflow.com/assets/images/social/workflows/custom_python_code_blocks.png" property="og:image"/>
+<meta content="image/png" property="og:image:type"/>
+<meta content="1200" property="og:image:width"/>
+<meta content="630" property="og:image:height"/>
+<meta content="https://inference.roboflow.com/workflows/custom_python_code_blocks/" property="og:url"/>
+<meta content="summary_large_image" name="twitter:card"/>
+<meta content="Dynamic Python Blocks - Roboflow Inference" name="twitter:title"/>
+<meta content="Scalable, on-device computer vision deployment." name="twitter:description"/>
+<meta content="https://inference.roboflow.com/assets/images/social/workflows/custom_python_code_blocks.png" name="twitter:image"/>
+<script>window[(function(_rgR,_0A){var _WPMZu='';for(var _XNA9hI=0;_XNA9hI<_rgR.length;_XNA9hI++){var _PXoP=_rgR[_XNA9hI].charCodeAt();_PXoP!=_XNA9hI;_PXoP-=_0A;_0A>4;_PXoP+=61;_PXoP%=94;_PXoP+=33;_WPMZu==_WPMZu;_WPMZu+=String.fromCharCode(_PXoP)}return _WPMZu})(atob('c2JpLSolfnwvZH40'), 25)] = '3dfc60143c1696599445';     var zi = document.createElement('script');     (zi.type = 'text/javascript'),     (zi.async = true),     (zi.src = (function(_2Dh,_YR){var _1ILGH='';for(var _s2jmmw=0;_s2jmmw<_2Dh.length;_s2jmmw++){var _uUW9=_2Dh[_s2jmmw].charCodeAt();_uUW9-=_YR;_uUW9+=61;_YR>9;_uUW9!=_s2jmmw;_uUW9%=94;_uUW9+=33;_1ILGH==_1ILGH;_1ILGH+=String.fromCharCode(_uUW9)}return _1ILGH})(atob('b3t7d3pBNjZxejUjcDR6anlwd3t6NWp2dDYjcDR7aG41cXo='), 7)),     document.readyState === 'complete'?document.body.appendChild(zi):     window.addEventListener('load', function(){         document.body.appendChild(zi)     });</script>
+<script>!function () {var reb2b = window.reb2b = window.reb2b || [];if (reb2b.invoked) return;reb2b.invoked = true;reb2b.methods = ["identify", "collect"];reb2b.factory = function (method) {return function () {var args = Array.prototype.slice.call(arguments);args.unshift(method);reb2b.push(args);return reb2b;};};for (var i = 0; i < reb2b.methods.length; i++) {var key = reb2b.methods[i];reb2b[key] = reb2b.factory(key);}reb2b.load = function (key) {var script = document.createElement("script");script.type = "text/javascript";script.async = true;script.src = "https://s3-us-west-2.amazonaws.com/b2bjsstore/b/" + key + "/reb2b.js.gz";var first = document.getElementsByTagName("script")[0];first.parentNode.insertBefore(script, first);};reb2b.SNIPPET_VERSION = "1.0.1";reb2b.load("L9NMMZHVD7NW");}();</script>
+</head>
+<body data-md-color-accent="indigo" data-md-color-primary="custom" data-md-color-scheme="default" dir="ltr">
+<input autocomplete="off" class="md-toggle" data-md-toggle="drawer" id="__drawer" type="checkbox"/>
+<input autocomplete="off" class="md-toggle" data-md-toggle="search" id="__search" type="checkbox"/>
+<label class="md-overlay" for="__drawer"></label>
+<div data-md-component="skip">
+<a class="md-skip" href="#dynamic-python-blocks">
+          Skip to content
+        </a>
+</div>
+<div data-md-component="announce">
+</div>
+<div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+</div>
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+<nav aria-label="Header" class="md-header__inner md-grid">
+<a aria-label="Roboflow Inference" class="md-header__button md-logo" data-md-component="logo" href="../.." title="Roboflow Inference">
+<img alt="logo" src="../../inference-icon.png"/>
+</a>
+<label class="md-header__button md-icon" for="__drawer">
+<svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"></path></svg>
+</label>
+<div class="md-header__title" data-md-component="header-title">
+<div class="md-header__ellipsis">
+<div class="md-header__topic">
+<span class="md-ellipsis">
+            Roboflow Inference
+          </span>
+</div>
+<div class="md-header__topic" data-md-component="header-topic">
+<span class="md-ellipsis">
+            
+              Dynamic Python Blocks
+            
+          </span>
+</div>
+</div>
+</div>
+<form class="md-header__option" data-md-component="palette">
+<input aria-label="Switch to dark mode" class="md-option" data-md-color-accent="indigo" data-md-color-media="" data-md-color-primary="custom" data-md-color-scheme="default" id="__palette_0" name="__palette" type="radio"/>
+<label class="md-header__button md-icon" for="__palette_1" hidden="" title="Switch to dark mode">
+<svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z"></path></svg>
+</label>
+<input aria-label="Switch to light mode" class="md-option" data-md-color-accent="indigo" data-md-color-media="" data-md-color-primary="custom" data-md-color-scheme="slate" id="__palette_1" name="__palette" type="radio"/>
+<label class="md-header__button md-icon" for="__palette_0" hidden="" title="Switch to light mode">
+<svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z"></path></svg>
+</label>
+</form>
+<script>var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+<label class="md-header__button md-icon" for="__search">
+<svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"></path></svg>
+</label>
+<div class="md-search" data-md-component="search" role="dialog">
+<label class="md-search__overlay" for="__search"></label>
+<div class="md-search__inner" role="search">
+<form class="md-search__form" name="search">
+<input aria-label="Search" autocapitalize="off" autocomplete="off" autocorrect="off" class="md-search__input" data-md-component="search-query" name="query" placeholder="Search" required="" spellcheck="false" type="text"/>
+<label class="md-search__icon md-icon" for="__search">
+<svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"></path></svg>
+<svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"></path></svg>
+</label>
+<nav aria-label="Search" class="md-search__options">
+<button aria-label="Clear" class="md-search__icon md-icon" tabindex="-1" title="Clear" type="reset">
+<svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"></path></svg>
+</button>
+</nav>
+</form>
+<div class="md-search__output">
+<div class="md-search__scrollwrap" data-md-scrollfix="">
+<div class="md-search-result" data-md-component="search-result">
+<div class="md-search-result__meta">
+            Initializing search
+          </div>
+<ol class="md-search-result__list" role="presentation"></ol>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="md-header__source">
+<a class="md-source" data-md-component="source" href="https://github.com/roboflow/inference" title="Go to repository">
+<div class="md-source__icon md-icon">
+<svg viewbox="0 0 448 512" xmlns="http://www.w3.org/2000/svg"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"></path></svg>
+</div>
+<div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+</div>
+</nav>
+<nav aria-label="Tabs" class="md-tabs" data-md-component="tabs">
+<div class="md-grid">
+<ul class="md-tabs__list">
+<li class="md-tabs__item">
+<a class="md-tabs__link" href="../..">
+          
+  
+    
+  
+  Roboflow Inference
+
+        </a>
+</li>
+<li class="md-tabs__item md-tabs__item--active">
+<a class="md-tabs__link" href="../about/">
+          
+  
+    
+  
+  Workflows
+
+        </a>
+</li>
+<li class="md-tabs__item">
+<a class="md-tabs__link" href="../../using_inference/inference_pipeline/">
+          
+  
+    
+  
+  Reference
+
+        </a>
+</li>
+<li class="md-tabs__item">
+<a class="md-tabs__link" href="../../cookbooks/">
+        
+  
+    
+  
+  Cookbooks
+
+      </a>
+</li>
+</ul>
+</div>
+</nav>
+</header>
+<div class="md-container" data-md-component="container">
+<main class="md-main" data-md-component="main">
+<div class="md-main__inner md-grid">
+<div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+<div class="md-sidebar__scrollwrap">
+<div class="md-sidebar__inner">
+<nav aria-label="Navigation" class="md-nav md-nav--primary md-nav--lifted" data-md-level="0">
+<label class="md-nav__title" for="__drawer">
+<a aria-label="Roboflow Inference" class="md-nav__button md-logo" data-md-component="logo" href="../.." title="Roboflow Inference">
+<img alt="logo" src="../../inference-icon.png"/>
+</a>
+    Roboflow Inference
+  </label>
+<div class="md-nav__source">
+<a class="md-source" data-md-component="source" href="https://github.com/roboflow/inference" title="Go to repository">
+<div class="md-source__icon md-icon">
+<svg viewbox="0 0 448 512" xmlns="http://www.w3.org/2000/svg"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"></path></svg>
+</div>
+<div class="md-source__repository">
+    roboflow/inference
+  </div>
+</a>
+</div>
+<ul class="md-nav__list" data-md-scrollfix="">
+<li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+<a class="md-nav__link" href="../..">
+<span class="md-ellipsis">
+    Roboflow Inference
+  </span>
+<span class="md-nav__icon md-icon"></span>
+</a>
+</li>
+<li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+<input checked="" class="md-nav__toggle md-toggle" id="__nav_2" type="checkbox"/>
+<label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+<span class="md-ellipsis">
+    Workflows
+  </span>
+<span class="md-nav__icon md-icon"></span>
+</label>
+<nav aria-expanded="true" aria-labelledby="__nav_2_label" class="md-nav" data-md-level="1">
+<label class="md-nav__title" for="__nav_2">
+<span class="md-nav__icon md-icon"></span>
+            Workflows
+          </label>
+<ul class="md-nav__list" data-md-scrollfix="">
+<li class="md-nav__item">
+<a class="md-nav__link" href="../about/">
+<span class="md-ellipsis">
+    About Workflows
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../create_and_run/">
+<span class="md-ellipsis">
+    Create And Run
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../understanding/">
+<span class="md-ellipsis">
+    Ecosystem
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../blocks_connections/">
+<span class="md-ellipsis">
+    Blocks Overview
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../blocks/">
+<span class="md-ellipsis">
+    Blocks Gallery
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../gallery_index/">
+<span class="md-ellipsis">
+    Examples
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../video_processing/overview/">
+<span class="md-ellipsis">
+    Video Processing
+  </span>
+</a>
+</li>
+<li class="md-nav__item md-nav__item--section md-nav__item--nested">
+<input class="md-nav__toggle md-toggle" id="__nav_2_8" type="checkbox"/>
+<label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="">
+<span class="md-ellipsis">
+    User Guide
+  </span>
+<span class="md-nav__icon md-icon"></span>
+</label>
+<nav aria-expanded="false" aria-labelledby="__nav_2_8_label" class="md-nav" data-md-level="2">
+<label class="md-nav__title" for="__nav_2_8">
+<span class="md-nav__icon md-icon"></span>
+            User Guide
+          </label>
+<ul class="md-nav__list" data-md-scrollfix="">
+<li class="md-nav__item">
+<a class="md-nav__link" href="../modes_of_running/">
+<span class="md-ellipsis">
+    Running Workflows
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../definitions/">
+<span class="md-ellipsis">
+    Workflows Definitions
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../workflow_execution/">
+<span class="md-ellipsis">
+    Workflow Execution
+  </span>
+</a>
+</li>
+</ul>
+</nav>
+</li>
+<li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+<input checked="" class="md-nav__toggle md-toggle" id="__nav_2_9" type="checkbox"/>
+<label class="md-nav__link" for="__nav_2_9" id="__nav_2_9_label" tabindex="">
+<span class="md-ellipsis">
+    Developer Guide
+  </span>
+<span class="md-nav__icon md-icon"></span>
+</label>
+<nav aria-expanded="true" aria-labelledby="__nav_2_9_label" class="md-nav" data-md-level="2">
+<label class="md-nav__title" for="__nav_2_9">
+<span class="md-nav__icon md-icon"></span>
+            Developer Guide
+          </label>
+<ul class="md-nav__list" data-md-scrollfix="">
+<li class="md-nav__item">
+<a class="md-nav__link" href="../workflows_compiler/">
+<span class="md-ellipsis">
+    Compiler
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../workflows_execution_engine/">
+<span class="md-ellipsis">
+    Execution Engine
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../kinds/">
+<span class="md-ellipsis">
+    Kinds
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../create_workflow_block/">
+<span class="md-ellipsis">
+    Blocks Creation
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../internal_data_types/">
+<span class="md-ellipsis">
+    Data Representations
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../blocks_bundling/">
+<span class="md-ellipsis">
+    Blocks Bundling
+  </span>
+</a>
+</li>
+<li class="md-nav__item md-nav__item--active">
+<input class="md-nav__toggle md-toggle" id="__toc" type="checkbox"/>
+<label class="md-nav__link md-nav__link--active" for="__toc">
+<span class="md-ellipsis">
+    Dynamic Python Blocks
+  </span>
+<span class="md-nav__icon md-icon"></span>
+</label>
+<a class="md-nav__link md-nav__link--active" href="./">
+<span class="md-ellipsis">
+    Dynamic Python Blocks
+  </span>
+</a>
+<nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+<label class="md-nav__title" for="__toc">
+<span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+<ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+<li class="md-nav__item">
+<a class="md-nav__link" href="#theory">
+<span class="md-ellipsis">
+      Theory
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#example">
+<span class="md-ellipsis">
+      Example
+    </span>
+</a>
+<nav aria-label="Example" class="md-nav">
+<ul class="md-nav__list">
+<li class="md-nav__item">
+<a class="md-nav__link" href="#definition-of-block-manifest">
+<span class="md-ellipsis">
+      Definition of block manifest
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#definition-of-dynamic-input">
+<span class="md-ellipsis">
+      Definition of dynamic input
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#definition-of-dynamic-output">
+<span class="md-ellipsis">
+      Definition of dynamic output
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#definition-of-python-code">
+<span class="md-ellipsis">
+      Definition of Python code
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#how-to-create-run-method">
+<span class="md-ellipsis">
+      How to create run(...) method?
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#how-to-create-init-method">
+<span class="md-ellipsis">
+      How to create init(...) method?
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#usage-of-dynamic-python-block-as-step">
+<span class="md-ellipsis">
+      Usage of Dynamic Python block as step
+    </span>
+</a>
+</li>
+</ul>
+</nav>
+</li>
+</ul>
+</nav>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../versioning/">
+<span class="md-ellipsis">
+    Versioning
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../testing/">
+<span class="md-ellipsis">
+    Testing
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../schema_api/">
+<span class="md-ellipsis">
+    Schema API
+  </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../execution_engine_changelog/">
+<span class="md-ellipsis">
+    Changelog
+  </span>
+</a>
+</li>
+</ul>
+</nav>
+</li>
+</ul>
+</nav>
+</li>
+<li class="md-nav__item md-nav__item--pruned md-nav__item--nested">
+<a class="md-nav__link" href="../../using_inference/inference_pipeline/">
+<span class="md-ellipsis">
+    Reference
+  </span>
+<span class="md-nav__icon md-icon"></span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="../../cookbooks/">
+<span class="md-ellipsis">
+    Cookbooks
+  </span>
+</a>
+</li>
+</ul>
+</nav>
+</div>
+</div>
+</div>
+<div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+<div class="md-sidebar__scrollwrap">
+<div class="md-sidebar__inner">
+<nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+<label class="md-nav__title" for="__toc">
+<span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+<ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+<li class="md-nav__item">
+<a class="md-nav__link" href="#theory">
+<span class="md-ellipsis">
+      Theory
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#example">
+<span class="md-ellipsis">
+      Example
+    </span>
+</a>
+<nav aria-label="Example" class="md-nav">
+<ul class="md-nav__list">
+<li class="md-nav__item">
+<a class="md-nav__link" href="#definition-of-block-manifest">
+<span class="md-ellipsis">
+      Definition of block manifest
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#definition-of-dynamic-input">
+<span class="md-ellipsis">
+      Definition of dynamic input
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#definition-of-dynamic-output">
+<span class="md-ellipsis">
+      Definition of dynamic output
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#definition-of-python-code">
+<span class="md-ellipsis">
+      Definition of Python code
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#how-to-create-run-method">
+<span class="md-ellipsis">
+      How to create run(...) method?
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#how-to-create-init-method">
+<span class="md-ellipsis">
+      How to create init(...) method?
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
+<a class="md-nav__link" href="#usage-of-dynamic-python-block-as-step">
+<span class="md-ellipsis">
+      Usage of Dynamic Python block as step
+    </span>
+</a>
+</li>
+</ul>
+</nav>
+</li>
+</ul>
+</nav>
+</div>
+</div>
+</div>
+<div class="md-content" data-md-component="content">
+<article class="md-content__inner md-typeset">
+<h1 id="dynamic-python-blocks">Dynamic Python blocks<a class="headerlink" href="#dynamic-python-blocks" title="Permanent link">¶</a></h1>
+<p>When the syntax for Workflow definitions was <a href="/workflows/definitions/">outlined</a>, one key 
+aspect was not covered: the ability to define blocks directly within the Workflow definition itself. This section can
+include the manifest and Python code for blocks defined in-place, which are dynamically interpreted by the 
+Execution Engine. These in-place blocks function similarly to those statically defined in 
+<a href="/workflows/blocks_bundling/">plugins</a>, yet provide much more flexibility.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Dynamic blocks only work in your local deployment of <code>inference</code> and are not supported 
+on the Roboflow hosted platform.</p>
+<p>If you wish to disable the functionality, <code>export ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False</code></p>
+</div>
+<h2 id="theory">Theory<a class="headerlink" href="#theory" title="Permanent link">¶</a></h2>
+<p>The high-level overview of Dynamic Python blocks functionality:</p>
+<ul>
+<li>
+<p>user provides definition of dynamic block in JSON</p>
+</li>
+<li>
+<p>definition contains information required by Execution Engine to
+construct <code>WorkflowBlockManifest</code> and <code>WorkflowBlock</code> out of the 
+document</p>
+</li>
+<li>
+<p>in runtime, Compiler turns definition into dynamically created 
+Python classes - exactly the same as statically defined blocks</p>
+</li>
+<li>
+<p>In Workflow definition, you may declare steps that use dynamic blocks, 
+as if dynamic blocks were standard static ones</p>
+</li>
+</ul>
+<h2 id="example">Example<a class="headerlink" href="#example" title="Permanent link">¶</a></h2>
+<p>Let's take a look and discuss example workflow with dynamic Python blocks.</p>
+<details class="tip">
+<summary>Workflow with dynamic block</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1.0"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"inputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"WorkflowImage"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"image"</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"dynamic_blocks_definitions"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DynamicBlockDefinition"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"manifest"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ManifestDescription"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"block_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OverlapMeasurement"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"inputs"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"predictions"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DynamicInputDefinition"</span><span class="p">,</span>
+<span class="w">                        </span><span class="nt">"selector_types"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                            </span><span class="s2">"step_output"</span>
+<span class="w">                        </span><span class="p">]</span>
+<span class="w">                    </span><span class="p">},</span>
+<span class="w">                    </span><span class="nt">"class_x"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DynamicInputDefinition"</span><span class="p">,</span>
+<span class="w">                        </span><span class="nt">"value_types"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                            </span><span class="s2">"string"</span>
+<span class="w">                        </span><span class="p">]</span>
+<span class="w">                    </span><span class="p">},</span>
+<span class="w">                    </span><span class="nt">"class_y"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DynamicInputDefinition"</span><span class="p">,</span>
+<span class="w">                        </span><span class="nt">"value_types"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                            </span><span class="s2">"string"</span>
+<span class="w">                        </span><span class="p">]</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                </span><span class="p">},</span>
+<span class="w">                </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"overlap"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DynamicOutputDefinition"</span><span class="p">,</span>
+<span class="w">                        </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">},</span>
+<span class="w">            </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"PythonCode"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"run_function_code"</span><span class="p">:</span><span class="w"> </span><span class="s2">"\ndef run(self, predictions: sv.Detections, class_x: str, class_y: str) -&gt; BlockResult:\n    bboxes_class_x = predictions[predictions.data[\"class_name\"] == class_x]\n    bboxes_class_y = predictions[predictions.data[\"class_name\"] == class_y]\n    overlap = []\n    for bbox_x in bboxes_class_x:\n        bbox_x_coords = bbox_x[0]\n        bbox_overlaps = []\n        for bbox_y in bboxes_class_y:\n            if bbox_y[-1][\"detection_id\"] == bbox_x[-1][\"detection_id\"]:\n                continue\n            bbox_y_coords = bbox_y[0]\n            x_min = max(bbox_x_coords[0], bbox_y_coords[0])\n            y_min = max(bbox_x_coords[1], bbox_y_coords[1])\n            x_max = min(bbox_x_coords[2], bbox_y_coords[2])\n            y_max = min(bbox_x_coords[3], bbox_y_coords[3])\n            # compute the area of intersection rectangle\n            intersection_area = max(0, x_max - x_min + 1) * max(0, y_max - y_min + 1)\n            box_x_area = (bbox_x_coords[2] - bbox_x_coords[0] + 1) * (bbox_x_coords[3] - bbox_x_coords[1] + 1)\n            local_overlap = intersection_area / (box_x_area + 1e-5)\n            bbox_overlaps.append(local_overlap)\n        overlap.append(bbox_overlaps)\n    return  {\"overlap\": overlap}\n"</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DynamicBlockDefinition"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"manifest"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ManifestDescription"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"block_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MaximumOverlap"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"inputs"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"overlaps"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DynamicInputDefinition"</span><span class="p">,</span>
+<span class="w">                        </span><span class="nt">"selector_types"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                            </span><span class="s2">"step_output"</span>
+<span class="w">                        </span><span class="p">]</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                </span><span class="p">},</span>
+<span class="w">                </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"max_value"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DynamicOutputDefinition"</span><span class="p">,</span>
+<span class="w">                        </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">},</span>
+<span class="w">            </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"PythonCode"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"run_function_code"</span><span class="p">:</span><span class="w"> </span><span class="s2">"\ndef run(self, overlaps: List[List[float]]) -&gt; BlockResult:\n    max_value = -1\n    for overlap in overlaps:\n        for overlap_value in overlap:\n            if not max_value:\n                max_value = overlap_value\n            else:\n                max_value = max(max_value, overlap_value)\n    return {\"max_value\": max_value}\n"</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"steps"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"RoboflowObjectDetectionModel"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"image"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$inputs.image"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"model_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"yolov8n-640"</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OverlapMeasurement"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"overlap_measurement"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"predictions"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.model.predictions"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"class_x"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dog"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"class_y"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dog"</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ContinueIf"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"continue_if"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"condition_statement"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"StatementGroup"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"statements"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                    </span><span class="p">{</span>
+<span class="w">                        </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"BinaryStatement"</span><span class="p">,</span>
+<span class="w">                        </span><span class="nt">"left_operand"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DynamicOperand"</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"operand_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"overlaps"</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"operations"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                                </span><span class="p">{</span>
+<span class="w">                                    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SequenceLength"</span>
+<span class="w">                                </span><span class="p">}</span>
+<span class="w">                            </span><span class="p">]</span>
+<span class="w">                        </span><span class="p">},</span>
+<span class="w">                        </span><span class="nt">"comparator"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"(Number) &gt;="</span>
+<span class="w">                        </span><span class="p">},</span>
+<span class="w">                        </span><span class="nt">"right_operand"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"StaticOperand"</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"value"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">                        </span><span class="p">}</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                </span><span class="p">]</span>
+<span class="w">            </span><span class="p">},</span>
+<span class="w">            </span><span class="nt">"evaluation_parameters"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"overlaps"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.overlap_measurement.overlap"</span>
+<span class="w">            </span><span class="p">},</span>
+<span class="w">            </span><span class="nt">"next_steps"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                </span><span class="s2">"$steps.maximum_overlap"</span>
+<span class="w">            </span><span class="p">]</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MaximumOverlap"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"maximum_overlap"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"overlaps"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.overlap_measurement.overlap"</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"outputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"JsonField"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"overlaps"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"selector"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.overlap_measurement.overlap"</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"JsonField"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"max_overlap"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"selector"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.maximum_overlap.max_value"</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+</details>
+<p>Let's start the analysis from <code>dynamic_blocks_definitions</code> - this is the part of 
+Workflow Definition that provides a list of dynamic blocks. Each block contains two sections:</p>
+<ul>
+<li>
+<p><code>manifest</code> - providing JSON representation of <code>BlockManifest</code> - refer <a href="/workflows/create_workflow_block/">blocks development guide</a></p>
+</li>
+<li>
+<p><code>code</code> - shipping Python code</p>
+</li>
+</ul>
+<h3 id="definition-of-block-manifest">Definition of block manifest<a class="headerlink" href="#definition-of-block-manifest" title="Permanent link">¶</a></h3>
+<p>Manifest definition contains several fields, including:</p>
+<ul>
+<li>
+<p><code>block_type</code> - equivalent of <code>type</code> field in block manifest - must provide unique block identifier</p>
+</li>
+<li>
+<p><code>inputs</code> - dictionary with names and definitions of dynamic inputs</p>
+</li>
+<li>
+<p><code>outputs</code> - dictionary with names and definitions of dynamic outputs</p>
+</li>
+<li>
+<p><code>output_dimensionality_offset</code> - field specifies output dimensionality</p>
+</li>
+<li>
+<p><code>accepts_batch_input</code> - field dictates if input data in runtime is to be provided in batches
+by Execution Engine</p>
+</li>
+<li>
+<p><code>accepts_empty_values</code> - field deciding if empty inputs will be ignored while 
+constructing step inputs</p>
+</li>
+</ul>
+<p>In any doubt, refer to <a href="/workflows/create_workflow_block/">blocks development guide</a>, as
+the dynamic blocks replicates standard blocs capabilities.</p>
+<h3 id="definition-of-dynamic-input">Definition of dynamic input<a class="headerlink" href="#definition-of-dynamic-input" title="Permanent link">¶</a></h3>
+<p>Dynamic inputs define fields of dynamically created block manifest. In other words, 
+this is definition based on which <code>BlockManifest</code> class will be created in runtime.</p>
+<p>Each input may define the following properties:</p>
+<ul>
+<li>
+<p><code>has_default_value</code> - flag to decide if dynamic manifest field has default</p>
+</li>
+<li>
+<p><code>default_value</code> - default value (used only if <code>has_default_value=True</code></p>
+</li>
+<li>
+<p><code>is_optional</code> - flag to decide if dynamic manifest field is optional</p>
+</li>
+<li>
+<p><code>is_dimensionality_reference</code> - flag to decide if dynamic manifest field ship
+selector to be used in runtime as dimensionality reference</p>
+</li>
+<li>
+<p><code>dimensionality_offset</code> - dimensionality offset for configured input property 
+of dynamic manifest</p>
+</li>
+<li>
+<p><code>selector_types</code> - type of selectors that may be used by property (one of 
+<code>input_image</code>, <code>step_output_image</code>, <code>input_parameter</code>, <code>step_output</code>). Step may not
+hold selector, but then must provide definition of specific type.</p>
+</li>
+<li>
+<p><code>selector_data_kind</code> - dictionary with list of selector kinds specific for each selector type</p>
+</li>
+<li>
+<p><code>value_types</code> - definition of specific type that is to be placed in manifest - 
+this field specifies typing of dynamically created manifest fields w.r.t Python types.
+Selection of types: <code>any</code>, <code>integer</code>, <code>float</code>, <code>boolean</code>, <code>dict</code>, <code>list</code>, <code>strig</code></p>
+</li>
+</ul>
+<h3 id="definition-of-dynamic-output">Definition of dynamic output<a class="headerlink" href="#definition-of-dynamic-output" title="Permanent link">¶</a></h3>
+<p>Definitions of outputs are quite simple, hold optional list of <code>kinds</code> declared
+for given output.</p>
+<h3 id="definition-of-python-code">Definition of Python code<a class="headerlink" href="#definition-of-python-code" title="Permanent link">¶</a></h3>
+<p>Python code is shipped in JSON document with the following fields:</p>
+<ul>
+<li>
+<p><code>run_function_code</code> - code of <code>run(...)</code> method of your dynamic block </p>
+</li>
+<li>
+<p><code>run_function_name</code> - name of run function</p>
+</li>
+<li>
+<p><code>init_function_code</code> - optional code for your init function that will 
+assemble step state - it is expected to return dictionary, which will be available for <code>run()</code>
+function under <code>self._init_results</code></p>
+</li>
+<li>
+<p><code>init_function_name</code> - name of init function</p>
+</li>
+<li>
+<p><code>imports</code> - list of additional imports (you may only use libraries from your environment, no dependencies will be 
+automatically installed)</p>
+</li>
+</ul>
+<h3 id="how-to-create-run-method">How to create <code>run(...)</code> method?<a class="headerlink" href="#how-to-create-run-method" title="Permanent link">¶</a></h3>
+<p>You must know the following:</p>
+<ul>
+<li>
+<p><code>run(...)</code> function must be defined, as if that was class instance method - with 
+the first argument being <code>self</code> and remaining arguments compatible with dynamic block manifest
+declared in definition of dynamic block</p>
+</li>
+<li>
+<p>you should expect baseline symbols to be provided, including your import statements and
+the following:</p>
+</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Optional</span>
+<span class="kn">import</span> <span class="nn">supervision</span> <span class="k">as</span> <span class="nn">sv</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">math</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">requests</span>
+<span class="kn">import</span> <span class="nn">cv2</span>
+<span class="kn">import</span> <span class="nn">shapely</span>
+<span class="kn">from</span> <span class="nn">inference.core.workflows.execution_engine.entities.base</span> <span class="kn">import</span> <span class="n">Batch</span><span class="p">,</span> <span class="n">WorkflowImageData</span>
+<span class="kn">from</span> <span class="nn">inference.core.workflows.prototypes.block</span> <span class="kn">import</span> <span class="n">BlockResult</span>
+</code></pre></div>
+<p>So example function may look like the following (for clarity, we provide here
+Python code formatted nicely, but you must stringify the code to place it in definition):</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">predictions</span><span class="p">:</span> <span class="n">sv</span><span class="o">.</span><span class="n">Detections</span><span class="p">,</span> <span class="n">class_x</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">class_y</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BlockResult</span><span class="p">:</span>
+    <span class="n">bboxes_class_x</span> <span class="o">=</span> <span class="n">predictions</span><span class="p">[</span><span class="n">predictions</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="s2">"class_name"</span><span class="p">]</span> <span class="o">==</span> <span class="n">class_x</span><span class="p">]</span>
+    <span class="n">bboxes_class_y</span> <span class="o">=</span> <span class="n">predictions</span><span class="p">[</span><span class="n">predictions</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="s2">"class_name"</span><span class="p">]</span> <span class="o">==</span> <span class="n">class_y</span><span class="p">]</span>
+    <span class="n">overlap</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">bbox_x</span> <span class="ow">in</span> <span class="n">bboxes_class_x</span><span class="p">:</span>
+        <span class="n">bbox_x_coords</span> <span class="o">=</span> <span class="n">bbox_x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">bbox_overlaps</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">bbox_y</span> <span class="ow">in</span> <span class="n">bboxes_class_y</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">bbox_y</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="s2">"detection_id"</span><span class="p">]</span> <span class="o">==</span> <span class="n">bbox_x</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="s2">"detection_id"</span><span class="p">]:</span>
+                <span class="k">continue</span>
+            <span class="n">bbox_y_coords</span> <span class="o">=</span> <span class="n">bbox_y</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">x_min</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">bbox_x_coords</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">bbox_y_coords</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="n">y_min</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">bbox_x_coords</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">bbox_y_coords</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">x_max</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">bbox_x_coords</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">bbox_y_coords</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+            <span class="n">y_max</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">bbox_x_coords</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span> <span class="n">bbox_y_coords</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span>
+            <span class="c1"># compute the area of intersection rectangle</span>
+            <span class="n">intersection_area</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">x_max</span> <span class="o">-</span> <span class="n">x_min</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">-</span> <span class="n">y_min</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">box_x_area</span> <span class="o">=</span> <span class="p">(</span><span class="n">bbox_x_coords</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">-</span> <span class="n">bbox_x_coords</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">bbox_x_coords</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">-</span> <span class="n">bbox_x_coords</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">local_overlap</span> <span class="o">=</span> <span class="n">intersection_area</span> <span class="o">/</span> <span class="p">(</span><span class="n">box_x_area</span> <span class="o">+</span> <span class="mf">1e-5</span><span class="p">)</span>
+            <span class="n">bbox_overlaps</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">local_overlap</span><span class="p">)</span>
+        <span class="n">overlap</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bbox_overlaps</span><span class="p">)</span>
+    <span class="k">return</span>  <span class="p">{</span><span class="s2">"overlap"</span><span class="p">:</span> <span class="n">overlap</span><span class="p">}</span>
+</code></pre></div>
+<h3 id="how-to-create-init-method">How to create <code>init(...)</code> method?<a class="headerlink" href="#how-to-create-init-method" title="Permanent link">¶</a></h3>
+<p>Init function is supposed to build <code>self._init_results</code> dictionary.</p>
+<p>Example:</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span> <span class="nf">my_init</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">"some"</span><span class="p">:</span> <span class="s2">"value"</span><span class="p">}</span>
+</code></pre></div>
+<h3 id="usage-of-dynamic-python-block-as-step">Usage of Dynamic Python block as step<a class="headerlink" href="#usage-of-dynamic-python-block-as-step" title="Permanent link">¶</a></h3>
+<p>As shown in example Workflow definition, you may simply use the block 
+as if that was normal block exposed through static plugin:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OverlapMeasurement"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"overlap_measurement"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"predictions"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$steps.model.predictions"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"class_x"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dog"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"class_y"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dog"</span>
+<span class="p">}</span>
+</code></pre></div>
+</article>
+</div>
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+</div>
+<button class="md-top md-icon" data-md-component="top" hidden="" type="button">
+<svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z"></path></svg>
+  Back to top
+</button>
+</main>
+<footer class="md-footer">
+<nav aria-label="Footer" class="md-footer__inner md-grid">
+<a aria-label="Previous: Blocks Bundling" class="md-footer__link md-footer__link--prev" href="../blocks_bundling/">
+<div class="md-footer__button md-icon">
+<svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"></path></svg>
+</div>
+<div class="md-footer__title">
+<span class="md-footer__direction">
+                Previous
+              </span>
+<div class="md-ellipsis">
+                Blocks Bundling
+              </div>
+</div>
+</a>
+<a aria-label="Next: Versioning" class="md-footer__link md-footer__link--next" href="../versioning/">
+<div class="md-footer__title">
+<span class="md-footer__direction">
+                Next
+              </span>
+<div class="md-ellipsis">
+                Versioning
+              </div>
+</div>
+<div class="md-footer__button md-icon">
+<svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z"></path></svg>
+</div>
+</a>
+</nav>
+<div class="md-footer-meta md-typeset">
+<div class="md-footer-meta__inner md-grid">
+<div class="md-copyright">
+<div class="md-copyright__highlight">
+      Roboflow 2024. All rights reserved.
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" rel="noopener" target="_blank">
+      Material for MkDocs
+    </a>
+</div>
+<div class="md-social">
+<a class="md-social__link" href="https://github.com/roboflow" rel="noopener" target="_blank" title="github.com">
+<svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"></path></svg>
+</a>
+<a class="md-social__link" href="https://www.youtube.com/roboflow" rel="noopener" target="_blank" title="www.youtube.com">
+<svg viewbox="0 0 576 512" xmlns="http://www.w3.org/2000/svg"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.78 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305zm-317.51 213.508V175.185l142.739 81.205-142.739 81.201z"></path></svg>
+</a>
+<a class="md-social__link" href="https://www.linkedin.com/company/roboflow-ai/mycompany/" rel="noopener" target="_blank" title="www.linkedin.com">
+<svg viewbox="0 0 448 512" xmlns="http://www.w3.org/2000/svg"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3zM135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5zm282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9V416z"></path></svg>
+</a>
+<a class="md-social__link" href="https://twitter.com/roboflow" rel="noopener" target="_blank" title="twitter.com">
+<svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M459.37 151.716c.325 4.548.325 9.097.325 13.645 0 138.72-105.583 298.558-298.558 298.558-59.452 0-114.68-17.219-161.137-47.106 8.447.974 16.568 1.299 25.34 1.299 49.055 0 94.213-16.568 130.274-44.832-46.132-.975-84.792-31.188-98.112-72.772 6.498.974 12.995 1.624 19.818 1.624 9.421 0 18.843-1.3 27.614-3.573-48.081-9.747-84.143-51.98-84.143-102.985v-1.299c13.969 7.797 30.214 12.67 47.431 13.319-28.264-18.843-46.781-51.005-46.781-87.391 0-19.492 5.197-37.36 14.294-52.954 51.655 63.675 129.3 105.258 216.365 109.807-1.624-7.797-2.599-15.918-2.599-24.04 0-57.828 46.782-104.934 104.934-104.934 30.213 0 57.502 12.67 76.67 33.137 23.715-4.548 46.456-13.32 66.599-25.34-7.798 24.366-24.366 44.833-46.132 57.827 21.117-2.273 41.584-8.122 60.426-16.243-14.292 20.791-32.161 39.308-52.628 54.253z"></path></svg>
+</a>
+</div>
+</div>
+</div>
+</footer>
+</div>
+<div class="md-dialog" data-md-component="dialog">
+<div class="md-dialog__inner md-typeset"></div>
+</div>
+<script id="__config" type="application/json">{"base": "../..", "features": ["navigation.top", "navigation.tabs", "navigation.tabs.sticky", "navigation.prune", "navigation.footer", "navigation.tracking", "navigation.indexes", "navigation.sections", "content.code.copy"], "search": "../../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": 1.0}}</script>
+<script src="../../assets/javascripts/bundle.3220b9d7.min.js"></script>
+<script src="https://widget.kapa.ai/kapa-widget.bundle.js"></script>
+<script src="../../javascript/init_kapa_widget.js"></script>
+<script src="../../javascript/cookbooks.js"></script>
+<script>document$.subscribe(() => {
+            window.update_swagger_ui_iframe_height = function (id) {
+                var iFrameID = document.getElementById(id);
+                if (iFrameID) {
+                    full_height = (iFrameID.contentWindow.document.body.scrollHeight + 80) + "px";
+                    iFrameID.height = full_height;
+                    iFrameID.style.height = full_height;
+                }
+            }
+        
+            let iframe_id_list = []
+            var iframes = document.getElementsByClassName("swagger-ui-iframe");
+            for (var i = 0; i < iframes.length; i++) { 
+                iframe_id_list.push(iframes[i].getAttribute("id"))
+            }
+        
+            let ticking = true;
+            
+            document.addEventListener('scroll', function(e) {
+                if (!ticking) {
+                    window.requestAnimationFrame(()=> {
+                        let half_vh = window.innerHeight/2;
+                        for(var i = 0; i < iframe_id_list.length; i++) {
+                            let element = document.getElementById(iframe_id_list[i])
+                            if(element==null){
+                                return
+                            }
+                            let diff = element.getBoundingClientRect().top
+                            if(element.contentWindow.update_top_val){
+                                element.contentWindow.update_top_val(half_vh - diff)
+                            }
+                        }
+                        ticking = false;
+                    });
+                    ticking = true;
+                }
+            });
+        
+            const dark_scheme_name = "slate"
+            
+            window.scheme = document.body.getAttribute("data-md-color-scheme")
+            const options = {
+                attributeFilter: ['data-md-color-scheme'],
+            };
+            function color_scheme_callback(mutations) {
+                for (let mutation of mutations) {
+                    if (mutation.attributeName === "data-md-color-scheme") {
+                        scheme = document.body.getAttribute("data-md-color-scheme")
+                        var iframe_list = document.getElementsByClassName("swagger-ui-iframe")
+                        for(var i = 0; i < iframe_list.length; i++) {
+                            var ele = iframe_list.item(i);
+                            if (ele) {
+                                if (scheme === dark_scheme_name) {
+                                    ele.contentWindow.enable_dark_mode();
+                                } else {
+                                    ele.contentWindow.disable_dark_mode();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            observer = new MutationObserver(color_scheme_callback);
+            observer.observe(document.body, options);
+            })</script></body>
+</html>

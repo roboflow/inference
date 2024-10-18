@@ -1,0 +1,18 @@
+:root {
+  --md-primary-fg-color: #8315f9;
+}
+.md-typeset h1 {
+  margin-bottom: 0;
+}
+.md-tabs__link {
+  font-size: 1rem;
+}
+
+.half-button {
+  width: 49%;
+}
+
+.button-holder {
+  display: flex;
+  justify-content: space-between;
+}
