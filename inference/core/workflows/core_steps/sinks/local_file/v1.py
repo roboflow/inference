@@ -2,6 +2,7 @@ import json
 import logging
 import os.path
 from datetime import datetime
+from io import TextIOWrapper
 from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field, field_validator
@@ -146,7 +147,7 @@ class LocalFileSinkBlockV1(WorkflowBlock):
                 "local file system usage is forbidden - use self-hosted `inference` or "
                 "Roboflow Dedicated Deployment."
             )
-        self._active_file: Optional[str] = None
+        self._active_file_descriptor: Optional[TextIOWrapper] = None
         self._entries_in_file = 0
 
     @classmethod
@@ -167,40 +168,109 @@ class LocalFileSinkBlockV1(WorkflowBlock):
         max_entries_per_file: int,
     ) -> BlockResult:
         if output_mode == "separate_files":
-            target_path = generate_new_file_path(
+            return self._save_to_separate_file(
+                content=content,
+                file_type=file_type,
                 target_directory=target_directory,
                 file_name_prefix=file_name_prefix,
-                file_type=file_type,
             )
-            return handle_content_saving(
-                target_path=target_path,
-                file_operation_mode="w",
-                content=content,
-            )
+        return self._append_to_file(
+            content=content,
+            file_type=file_type,
+            target_directory=target_directory,
+            file_name_prefix=file_name_prefix,
+            max_entries_per_file=max_entries_per_file,
+        )
+
+    def _save_to_separate_file(
+        self,
+        content: str,
+        file_type: Literal["csv", "json", "txt"],
+        target_directory: str,
+        file_name_prefix: str,
+    ) -> BlockResult:
+        target_path = generate_new_file_path(
+            target_directory=target_directory,
+            file_name_prefix=file_name_prefix,
+            file_type=file_type,
+        )
+        return handle_content_saving(
+            target_path=target_path,
+            file_operation_mode="w",
+            content=content,
+        )
+
+    def _append_to_file(
+        self,
+        content: str,
+        file_type: Literal["csv", "json", "txt"],
+        target_directory: str,
+        file_name_prefix: str,
+        max_entries_per_file: int,
+    ) -> BlockResult:
         if file_type == "json":
             try:
                 content = dump_json_inline(content=content)
             except Exception as error:
                 logging.warning(f"Could not process JSON file in append mode: {error}")
                 return {"error_status": True, "message": "Invalid JSON content"}
-        if self._active_file is None or self._entries_in_file >= max_entries_per_file:
-            extension = file_type if file_type != "json" else "jsonl"
-            self._active_file = generate_new_file_path(
-                target_directory=target_directory,
-                file_name_prefix=file_name_prefix,
-                file_type=extension,
-            )
-            self._entries_in_file = 0
+        if (
+            self._active_file_descriptor is None
+            or self._entries_in_file >= max_entries_per_file
+        ):
+            if self._active_file_descriptor is not None:
+                self._active_file_descriptor.close()
+                self._active_file_descriptor = None
+                self._entries_in_file = 0
+            try:
+                self._active_file_descriptor = self._open_new_append_log_file(
+                    file_type=file_type,
+                    target_directory=target_directory,
+                    file_name_prefix=file_name_prefix,
+                )
+                self._entries_in_file = 0
+            except Exception as error:
+                logging.warning(f"Could not create new sink file: {error}")
+                return {
+                    "error_status": True,
+                    "message": "Could not create new sink file",
+                }
         elif file_type == "csv":
+            # deduct CSV headers only on append to existing sink
             content = deduct_csv_header(content=content)
-        result = handle_content_saving(
-            target_path=self._active_file,
-            file_operation_mode="a",
-            content=content,
+        if not content.endswith("\n"):
+            content = f"{content}\n"
+        try:
+            self._active_file_descriptor.write(content)
+            self._active_file_descriptor.flush()
+        except Exception as error:
+            logging.warning(f"Could not append content to append log: {error}")
+            return {
+                "error_status": True,
+                "message": "Could not append content to append log",
+            }
+        self._entries_in_file += 1
+        return {"error_status": False, "message": "Data saved successfully"}
+
+    def _open_new_append_log_file(
+        self,
+        file_type: Literal["csv", "json", "txt"],
+        target_directory: str,
+        file_name_prefix: str,
+    ) -> TextIOWrapper:
+        extension = file_type if file_type != "json" else "jsonl"
+        file_path = generate_new_file_path(
+            target_directory=target_directory,
+            file_name_prefix=file_name_prefix,
+            file_type=extension,
         )
-        if not result["error_status"]:
-            self._entries_in_file += 1
-        return result
+        parent_dir = os.path.dirname(file_path)
+        os.makedirs(parent_dir, exist_ok=True)
+        return open(file_path, "w")
+
+    def __del__(self):
+        if self._active_file_descriptor is not None:
+            self._active_file_descriptor.close()
 
 
 def generate_new_file_path(

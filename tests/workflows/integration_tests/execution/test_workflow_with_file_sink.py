@@ -162,7 +162,10 @@ def test_workflow_with_data_aggregation(
         )
         for result in results:
             recorded_predictions.append(result["predictions"])
+    # trigger aggregated file flush
+    del execution_engine
 
+    # then
     assert len(recorded_predictions) == 12, "Expected 12 predictions"
     persisted_predictions = glob(os.path.join(empty_directory, "prediction_*.json"))
     assert len(persisted_predictions) == 12, "Expected all predictions to be persisted"
