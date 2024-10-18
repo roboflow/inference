@@ -4,6 +4,7 @@ from inference.core.cache import cache
 from inference.core.env import (
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     API_KEY,
+    WORKFLOW_BLOCKS_WRITE_DIRECTORY,
     WORKFLOWS_STEP_EXECUTION_MODE,
 )
 from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
@@ -333,6 +334,7 @@ REGISTERED_INITIALIZERS = {
     "background_tasks": None,
     "thread_pool_executor": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
+    "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
 }
 
 

@@ -51,6 +51,17 @@ passed to `content` input up to `max_entries_per_file`. In this mode it is impor
     * **`file_type=csv`**: in `append_log` mode, the block will deduct the first line from the 
     content (making it **required for CSV content to always be shipped with header row**) of 
     consecutive updates into the content of already created file.
+    
+
+!!! warning "Security considerations"
+
+    The block has an ability to write to the file system. If you find this unintended in your system, 
+    you can disable the block setting environmental variable `ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=False`
+    in the environment which host Workflows Execution Engine.
+    
+    If you want to **restrict** the directory which may be used to write data - set 
+    environmental variable `WORKFLOW_BLOCKS_WRITE_DIRECTORY` to the absolute path of directory which you
+    allow to be used.
 """
 
 
@@ -140,14 +151,17 @@ class BlockManifest(WorkflowBlockManifest):
 
 class LocalFileSinkBlockV1(WorkflowBlock):
 
-    def __init__(self, allow_access_to_file_system: bool):
+    def __init__(
+        self, allow_access_to_file_system: bool, allowed_write_directory: Optional[str]
+    ):
         self._active_file_descriptor: Optional[TextIOWrapper] = None
         self._entries_in_file = 0
         self._allow_access_to_file_system = allow_access_to_file_system
+        self._allowed_write_directory = allowed_write_directory
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["allow_access_to_file_system"]
+        return ["allow_access_to_file_system", "allowed_write_directory"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -168,6 +182,7 @@ class LocalFileSinkBlockV1(WorkflowBlock):
                 "local file system usage is forbidden - use self-hosted `inference` or "
                 "Roboflow Dedicated Deployment."
             )
+        self._verify_write_access_to_directory(target_directory=target_directory)
         if output_mode == "separate_files":
             return self._save_to_separate_file(
                 content=content,
@@ -182,6 +197,19 @@ class LocalFileSinkBlockV1(WorkflowBlock):
             file_name_prefix=file_name_prefix,
             max_entries_per_file=max_entries_per_file,
         )
+
+    def _verify_write_access_to_directory(self, target_directory: str) -> None:
+        if self._allowed_write_directory is None:
+            return None
+        if not path_is_within_specified_directory(
+            path=target_directory,
+            specified_directory=self._allowed_write_directory,
+        ):
+            raise ValueError(
+                f"Requested file sink to save data in `{target_directory}` which is not sub-directory of "
+                f"the location pointed to dump data from `roboflow_core/local_file_sink@v1` block. "
+                f"Expected sub-directory of {self._allowed_write_directory}"
+            )
 
     def _save_to_separate_file(
         self,
@@ -311,3 +339,19 @@ def deduct_csv_header(content: str) -> str:
 def dump_json_inline(content: str) -> str:
     parsed_content = json.loads(content)
     return json.dumps(parsed_content)
+
+
+def path_is_within_specified_directory(
+    path: str,
+    specified_directory: str,
+) -> bool:
+    absolute_path = normalize_directory_path(path=path)
+    specified_directory = normalize_directory_path(path=specified_directory)
+    return absolute_path.startswith(specified_directory)
+
+
+def normalize_directory_path(path: str) -> str:
+    absolute_path = os.path.abspath(path)
+    if not absolute_path.endswith(os.sep):
+        absolute_path = f"{absolute_path}{os.sep}"
+    return absolute_path
