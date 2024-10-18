@@ -18,7 +18,6 @@ async def handle_json_payload_with_get(payload: Request) -> Response:
     data = await payload.json()
     logging.info(f"Received the request with the following payload: {data}")
     logging.info(f"Query params: {list(payload.query_params.items())}")
-    logging.info(f"Headers: {payload.headers}")
     return JSONResponse(content={"status": "ok"})
 
 
