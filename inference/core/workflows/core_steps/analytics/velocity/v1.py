@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
@@ -8,11 +9,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     VideoMetadata,
 )
-
 from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    FLOAT_KIND,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
@@ -92,9 +92,7 @@ class VelocityBlockV1(WorkflowBlock):
             str, Dict[Union[int, str], Tuple[np.ndarray, float]]
         ] = {}
         # Store smoothed velocities for each tracker_id
-        self._smoothed_velocities: Dict[
-            str, Dict[Union[int, str], np.ndarray]
-        ] = {}
+        self._smoothed_velocities: Dict[str, Dict[Union[int, str], np.ndarray]] = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -112,10 +110,12 @@ class VelocityBlockV1(WorkflowBlock):
                 "tracker_id not initialized, VelocityBlock requires detections to be tracked"
             )
         if not (0 < smoothing_alpha <= 1):
-            raise ValueError("smoothing_alpha must be between 0 (exclusive) and 1 (inclusive)")
+            raise ValueError(
+                "smoothing_alpha must be between 0 (exclusive) and 1 (inclusive)"
+            )
         if not (pixels_per_meter > 0):
             raise ValueError("pixels_per_meter must be greater than 0")
-        
+
         if metadata.comes_from_video_file and metadata.fps != 0:
             ts_current = metadata.frame_number / metadata.fps
         else:
@@ -131,7 +131,9 @@ class VelocityBlockV1(WorkflowBlock):
         bbox_xyxy = detections.xyxy  # Shape (num_detections, 4)
         x_centers = (bbox_xyxy[:, 0] + bbox_xyxy[:, 2]) / 2
         y_centers = (bbox_xyxy[:, 1] + bbox_xyxy[:, 3]) / 2
-        current_positions = np.stack([x_centers, y_centers], axis=1)  # Shape (num_detections, 2)
+        current_positions = np.stack(
+            [x_centers, y_centers], axis=1
+        )  # Shape (num_detections, 2)
 
         velocities = np.zeros_like(current_positions)  # Shape (num_detections, 2)
         speeds = np.zeros(num_detections)  # Shape (num_detections,)
@@ -151,7 +153,9 @@ class VelocityBlockV1(WorkflowBlock):
                 if delta_time > 0:
                     displacement = current_position - prev_position
                     velocity = displacement / delta_time  # Pixels per second
-                    speed = np.linalg.norm(velocity)  # Speed is the magnitude of velocity vector
+                    speed = np.linalg.norm(
+                        velocity
+                    )  # Speed is the magnitude of velocity vector
                 else:
                     velocity = np.array([0, 0])
                     speed = 0.0
@@ -163,7 +167,8 @@ class VelocityBlockV1(WorkflowBlock):
             if tracker_id in smoothed_velocities:
                 prev_smoothed_velocity = smoothed_velocities[tracker_id]
                 smoothed_velocity = (
-                    smoothing_alpha * velocity + (1 - smoothing_alpha) * prev_smoothed_velocity
+                    smoothing_alpha * velocity
+                    + (1 - smoothing_alpha) * prev_smoothed_velocity
                 )
             else:
                 smoothed_velocity = velocity  # Initialize with current velocity
@@ -191,19 +196,21 @@ class VelocityBlockV1(WorkflowBlock):
                 detections.data = {}
 
             # Initialize dictionaries if not present
-            if 'velocity' not in detections.data:
-                detections.data['velocity'] = {}
-            if 'speed' not in detections.data:
-                detections.data['speed'] = {}
-            if 'smoothed_velocity' not in detections.data:
-                detections.data['smoothed_velocity'] = {}
-            if 'smoothed_speed' not in detections.data:
-                detections.data['smoothed_speed'] = {}
+            if "velocity" not in detections.data:
+                detections.data["velocity"] = {}
+            if "speed" not in detections.data:
+                detections.data["speed"] = {}
+            if "smoothed_velocity" not in detections.data:
+                detections.data["smoothed_velocity"] = {}
+            if "smoothed_speed" not in detections.data:
+                detections.data["smoothed_speed"] = {}
 
             # Assign velocity data to the corresponding tracker_id
-            detections.data['velocity'][tracker_id] = velocity_m_s.tolist()  # [vx, vy]
-            detections.data['speed'][tracker_id] = speed_m_s  # Scalar
-            detections.data['smoothed_velocity'][tracker_id] = smoothed_velocity_m_s.tolist()  # [vx, vy]
-            detections.data['smoothed_speed'][tracker_id] = smoothed_speed_m_s  # Scalar
+            detections.data["velocity"][tracker_id] = velocity_m_s.tolist()  # [vx, vy]
+            detections.data["speed"][tracker_id] = speed_m_s  # Scalar
+            detections.data["smoothed_velocity"][
+                tracker_id
+            ] = smoothed_velocity_m_s.tolist()  # [vx, vy]
+            detections.data["smoothed_speed"][tracker_id] = smoothed_speed_m_s  # Scalar
 
         return {OUTPUT_KEY: detections}

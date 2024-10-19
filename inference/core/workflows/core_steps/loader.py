@@ -11,9 +11,7 @@ from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
 from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
     TimeInZoneBlockV1,
 )
-from inference.core.workflows.core_steps.analytics.velocity.v1 import (
-    VelocityBlockV1,
-)
+from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
