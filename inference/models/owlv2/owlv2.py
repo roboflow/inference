@@ -65,9 +65,7 @@ class OwlV2(RoboflowCoreModel):
         hf_id = os.path.join("google", self.version_id)
         self.processor = Owlv2Processor.from_pretrained(hf_id)
         self.model = Owlv2ForObjectDetection.from_pretrained(hf_id).eval().to(DEVICE)
-        self.image_embed_cache = LimitedSizeDict(
-            size_limit=50
-        )  # NOTE: this should have a max size
+        self.image_embed_cache = LimitedSizeDict(size_limit=50)
 
     def draw_predictions(
         self,
@@ -166,7 +164,7 @@ class OwlV2(RoboflowCoreModel):
                 query_embeds.append(embeds)
         if not query_embeds:
             return None
-        query = torch.cat(query_embeds).mean(dim=0)
+        query = torch.cat(query_embeds, dim=0)
         query /= torch.linalg.norm(query, ord=2) + 1e-6
         return query
 
@@ -178,27 +176,52 @@ class OwlV2(RoboflowCoreModel):
         predicted_classes = []
         predicted_scores = []
         class_names = sorted(list(query_embeddings.keys()))
-        class_map = {class_name: i for i, class_name in enumerate(class_names)}
-        for class_name, embedding in query_embeddings.items():
-            if embedding is None:
-                continue
-            pred_logits = torch.einsum("sd,d->s", image_class_embeds, embedding)
-            pred_logits = (pred_logits + logit_shift) * logit_scale
-            prediction_scores = pred_logits.sigmoid()
-            score_mask = prediction_scores > confidence
-            predicted_boxes.append(image_boxes[score_mask, :])
-            scores = prediction_scores[score_mask]
-            predicted_scores.append(scores)
-            class_ind = class_map[class_name]
-            predicted_classes.append(class_ind * torch.ones_like(scores))
+        class_map = {
+            (class_name, "positive"): i for i, class_name in enumerate(class_names)
+        }
+        class_map = {
+            **class_map,
+            **{
+                (class_name, "negative"): i + len(class_names)
+                for i, class_name in enumerate(class_names)
+            },
+        }
+        all_boxes, all_classes, all_scores = [], [], []
+        for class_name, pos_neg_embedding_dict in query_embeddings.items():
+            predicted_boxes = []
+            predicted_classes = []
+            predicted_scores = []
+            positive_arr = []
+            for positive, embedding in pos_neg_embedding_dict.items():
+                if embedding is None:
+                    continue
+                pred_logits = torch.einsum("sd,nd->ns", image_class_embeds, embedding)
+                pred_logits = (pred_logits + logit_shift) * logit_scale
+                prediction_scores = pred_logits.sigmoid().max(dim=0)[0]
+                score_mask = prediction_scores > confidence
+                predicted_boxes.append(image_boxes[score_mask, :])
+                scores = prediction_scores[score_mask]
+                predicted_scores.append(scores)
+                class_ind = class_map[(class_name, positive)]
+                predicted_classes.append(class_ind * torch.ones_like(scores))
+                positive_arr.append(int(positive == "positive") * torch.ones_like(scores))
 
-        all_boxes = torch.cat(predicted_boxes, dim=0)
-        all_classes = torch.cat(predicted_classes, dim=0)
-        all_scores = torch.cat(predicted_scores, dim=0)
-        survival_indices = torchvision.ops.nms(to_corners(all_boxes), all_scores, 0.3)
-        pred_boxes = all_boxes[survival_indices].detach().cpu().numpy()
-        pred_classes = all_classes[survival_indices].detach().cpu().numpy()
-        pred_scores = all_scores[survival_indices].detach().cpu().numpy()
+            pred_boxes = torch.cat(predicted_boxes, dim=0)
+            pred_classes = torch.cat(predicted_classes, dim=0)
+            pred_scores = torch.cat(predicted_scores, dim=0)
+            positive = torch.cat(positive_arr, dim=0)
+            survival_indices = torchvision.ops.nms(
+                to_corners(pred_boxes), pred_scores, 0.3
+            )
+            pred_boxes = pred_boxes[survival_indices].detach().cpu().numpy()
+            pred_classes = pred_classes[survival_indices].detach().cpu().numpy()
+            pred_scores = pred_scores[survival_indices].detach().cpu().numpy()
+            positive = positive[survival_indices].detach().cpu().numpy()
+            is_positive = positive == 1
+            all_boxes.extend(pred_boxes[is_positive])
+            all_classes.extend(pred_classes[is_positive])
+            all_scores.extend(pred_scores[is_positive])
+            print(pred_classes)
         return [
             {
                 "class_name": class_names[int(c)],
@@ -208,7 +231,7 @@ class OwlV2(RoboflowCoreModel):
                 "h": float(h),
                 "confidence": float(score),
             }
-            for c, (x, y, w, h), score in zip(pred_classes, pred_boxes, pred_scores)
+            for c, (x, y, w, h), score in zip(all_classes, all_boxes, all_scores)
         ]
 
     def infer(self, image, training_data, confidence=0.99, **kwargs):
@@ -218,15 +241,22 @@ class OwlV2(RoboflowCoreModel):
             train_image = load_image_rgb(train_image)
             image_hash = self.embed_image(train_image)
             for box in boxes:
+                negative = box["negative"]
+                positive = not negative
                 class_name = box["cls"]
                 coords = box["x"], box["y"], box["w"], box["h"]
                 coords = tuple([c / max(train_image.shape[:2]) for c in coords])
-                class_to_query_spec[class_name][image_hash].append(coords)
+                class_to_query_spec[(class_name, positive)][image_hash].append(coords)
 
-        my_class_to_embeddings_dict = dict()
-        for class_name, query_spec in class_to_query_spec.items():
+        my_class_to_embeddings_dict = defaultdict(
+            lambda: {"positive": None, "negative": None}
+        )
+        class_pos = {True: "positive", False: "negative"}
+        for (class_name, positive), query_spec in class_to_query_spec.items():
             class_embedding = self.get_query_embedding(query_spec)
-            my_class_to_embeddings_dict[class_name] = class_embedding
+            my_class_to_embeddings_dict[class_name][
+                class_pos[positive]
+            ] = class_embedding
 
         if not isinstance(image, list):
             images = [image]
