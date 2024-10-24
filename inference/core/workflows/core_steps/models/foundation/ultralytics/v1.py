@@ -147,7 +147,7 @@ class UltralyticsBlockV1(WorkflowBlock):
         half_precision: bool,
         imgsz: int,
     ) -> BlockResult:
-        if "YOLO" not in locals():
+        if "YOLO" not in globals():
             raise RuntimeError(
                 "You must install ultralytics in order to use this block."
             )
