@@ -152,16 +152,26 @@ class OwlV2(RoboflowCoreModel):
             iou, union = box_iou(
                 to_corners(image_boxes), to_corners(query_boxes_tensor)
             )  # 3000, k
-            iou_mask = iou > 0.4
-            valid_objectness = torch.where(
-                iou_mask, objectness.unsqueeze(-1), -1
-            )  # 3000, k
-            if torch.all(iou_mask == 0):
+            print("iou first", iou.shape)
+            # iou_mask = iou > 0.4
+            # valid_objectness = torch.where(
+            #     iou_mask, objectness.unsqueeze(-1), -1
+            # )  # 3000, k
+            print("valid_objectness_shape", objectness.shape)
+            objectness_values, objectness_indices = torch.topk(objectness, int(0.1 * objectness.size(0)), dim=0)
+            iou = iou[objectness_indices]
+            print("iou", iou.shape)
+            indices = torch.argmax(iou, dim=0)
+            print("indices", indices.shape)
+            max_iou = iou[indices]
+            print("max_iou", max_iou.shape)
+            print("objectness_indices", objectness_indices, "indices", indices)
+            print("objectness_indices shape", objectness_indices.shape,"indices shape",  indices.shape)
+            print("iou_shape", iou.shape)
+            if max_iou.item() < 0.4:
                 continue
-            else:
-                indices = torch.argmax(valid_objectness, dim=0)
-                embeds = image_class_embeds[indices]
-                query_embeds.append(embeds)
+            embeds = image_class_embeds[objectness_indices[indices]]
+            query_embeds.append(embeds)
         if not query_embeds:
             return None
         query = torch.cat(query_embeds, dim=0)
@@ -196,8 +206,8 @@ class OwlV2(RoboflowCoreModel):
                 if embedding is None:
                     continue
                 pred_logits = torch.einsum("sd,nd->ns", image_class_embeds, embedding)
-                pred_logits = (pred_logits + logit_shift) * logit_scale
-                prediction_scores = pred_logits.sigmoid().max(dim=0)[0]
+                prediction_scores = pred_logits.max(dim=0)[0]
+                prediction_scores = (prediction_scores + 1) /2
                 score_mask = prediction_scores > confidence
                 predicted_boxes.append(image_boxes[score_mask, :])
                 scores = prediction_scores[score_mask]
@@ -205,6 +215,7 @@ class OwlV2(RoboflowCoreModel):
                 class_ind = class_map[(class_name, positive)]
                 predicted_classes.append(class_ind * torch.ones_like(scores))
                 positive_arr.append(int(positive == "positive") * torch.ones_like(scores))
+            
 
             pred_boxes = torch.cat(predicted_boxes, dim=0)
             pred_classes = torch.cat(predicted_classes, dim=0)
@@ -213,7 +224,7 @@ class OwlV2(RoboflowCoreModel):
             survival_indices = torchvision.ops.nms(
                 to_corners(pred_boxes), pred_scores, 0.3
             )
-            pred_boxes = pred_boxes[survival_indices].detach().cpu().numpy()
+            pred_boxes = pred_boxes[survival_indices, :].detach().cpu().numpy()
             pred_classes = pred_classes[survival_indices].detach().cpu().numpy()
             pred_scores = pred_scores[survival_indices].detach().cpu().numpy()
             positive = positive[survival_indices].detach().cpu().numpy()
@@ -221,7 +232,6 @@ class OwlV2(RoboflowCoreModel):
             all_boxes.extend(pred_boxes[is_positive])
             all_classes.extend(pred_classes[is_positive])
             all_scores.extend(pred_scores[is_positive])
-            print(pred_classes)
         return [
             {
                 "class_name": class_names[int(c)],
