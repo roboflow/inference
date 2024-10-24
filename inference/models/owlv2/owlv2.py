@@ -6,7 +6,7 @@ from typing import Dict, List, NewType
 import numpy as np
 import torch
 import torchvision
-from PIL import Image
+import torch.nn.functional as F
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import box_iou
 
@@ -56,16 +56,54 @@ class LimitedSizeDict(OrderedDict):
                 self.popitem(last=False)
 
 
+def preprocess_image(np_image: np.ndarray, image_size: tuple[int, int], image_mean: torch.Tensor, image_std: torch.Tensor) -> torch.Tensor:
+    current_size = np_image.shape[:2]
+
+    r = min(image_size[0] / current_size[0], image_size[1] / current_size[1])
+    target_size = (int(r * current_size[0]), int(r * current_size[1]))
+
+    torch_image = torch.tensor(np_image).permute(2, 0, 1).unsqueeze(0).to(DEVICE).to(dtype=torch.float32) / 255.0
+    torch_image = F.interpolate(torch_image, size=target_size, mode="bilinear", align_corners=False)
+
+    padded_image_tensor = torch.ones((1, 3, *image_size), device=DEVICE) * 0.5
+    padded_image_tensor[:, :, : torch_image.shape[2], : torch_image.shape[3]] = (
+        torch_image
+    )
+
+    padded_image_tensor = (padded_image_tensor - image_mean) / image_std
+
+    return padded_image_tensor
+
+
 class OwlV2(RoboflowCoreModel):
     task_type = "object-detection"
     box_format = "xywh"
 
-    def __init__(self, *args, model_id="owlv2/owlv2-base-patch16-ensemble", **kwargs):
+    def __init__(self, *args, model_id="owlv2/owlv2-large-patch14-ensemble", **kwargs):
         super().__init__(*args, model_id=model_id, **kwargs)
         hf_id = os.path.join("google", self.version_id)
-        self.processor = Owlv2Processor.from_pretrained(hf_id)
+        processor = Owlv2Processor.from_pretrained(hf_id)
+        self.image_size = tuple(processor.image_processor.size.values())
+        self.image_mean = torch.tensor(processor.image_processor.image_mean, device=DEVICE).view(1, 3, 1, 1)
+        self.image_std = torch.tensor(processor.image_processor.image_std, device=DEVICE).view(1, 3, 1, 1)
         self.model = Owlv2ForObjectDetection.from_pretrained(hf_id).eval().to(DEVICE)
-        self.image_embed_cache = LimitedSizeDict(size_limit=50)
+        self.reset_cache()
+        
+        # compile the model
+        # NOTE that this is able to fix the manual attention implementation used in OWLv2
+        # so we don't have to force in flash attention by ourselves
+        # however that is only true if torch version 2.4 or later is used
+        # for torch < 2.4, this is a LOT slower and using flash attention by ourselves is faster
+        # this also breaks in torch < 2.1 so we supress torch._dynamo errors
+        torch._dynamo.config.suppress_errors = True
+        self.model.owlv2.vision_model = torch.compile(
+            self.model.owlv2.vision_model
+        )
+
+    def reset_cache(self):
+        self.image_embed_cache = LimitedSizeDict(
+            size_limit=50
+        )  # NOTE: this should have a max size
 
     def draw_predictions(
         self,
@@ -98,22 +136,26 @@ class OwlV2(RoboflowCoreModel):
         pass
 
     @torch.no_grad()
-    def embed_image(self, image: Image.Image) -> Hash:
-        image_hash = hashlib.sha256(np.array(image).tobytes()).hexdigest()
+    def embed_image(self, image: np.ndarray) -> Hash:
+        image_hash = hashlib.sha256(image.tobytes()).hexdigest()
 
         if (image_embeds := self.image_embed_cache.get(image_hash)) is not None:
             return image_hash
 
-        pixel_values = self.processor(
-            images=image, return_tensors="pt"
-        ).pixel_values.to(DEVICE)
-        image_embeds, _ = self.model.image_embedder(pixel_values=pixel_values)
-        batch_size, h, w, dim = image_embeds.shape
-        image_features = image_embeds.reshape(batch_size, h * w, dim)
-        objectness = self.model.objectness_predictor(image_features)
-        boxes = self.model.box_predictor(image_features, feature_map=image_embeds)
+        pixel_values = preprocess_image(image, self.image_size, self.image_mean, self.image_std)
 
-        # class_embeddings =  model.class_predictor(image_features)[1]
+        # torch 2.4 lets you use "cuda:0" as device_type
+        # but this crashes in 2.3
+        # so we parse DEVICE as a string to make it work in both 2.3 and 2.4
+        # as we don't know a priori our torch version
+        device = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
+        with torch.autocast(device_type=device, dtype=torch.bfloat16):  # we use bfloat16 to support both CPU and GPU
+            image_embeds, _ = self.model.image_embedder(pixel_values=pixel_values)
+            batch_size, h, w, dim = image_embeds.shape
+            image_features = image_embeds.reshape(batch_size, h * w, dim)
+            objectness = self.model.objectness_predictor(image_features)
+            boxes = self.model.box_predictor(image_features, feature_map=image_embeds)
+
         image_class_embeds = self.model.class_head.dense0(image_features)
         image_class_embeds /= (
             torch.linalg.norm(image_class_embeds, ord=2, dim=-1, keepdim=True) + 1e-6
@@ -147,7 +189,7 @@ class OwlV2(RoboflowCoreModel):
                 raise KeyError("We didn't embed the image first!") from error
 
             query_boxes_tensor = torch.tensor(
-                query_boxes, dtype=torch.float, device=image_boxes.device
+                query_boxes, dtype=image_boxes.dtype, device=image_boxes.device
             )
             iou, union = box_iou(
                 to_corners(image_boxes), to_corners(query_boxes_tensor)
@@ -217,10 +259,10 @@ class OwlV2(RoboflowCoreModel):
                 positive_arr.append(int(positive == "positive") * torch.ones_like(scores))
             
 
-            pred_boxes = torch.cat(predicted_boxes, dim=0)
-            pred_classes = torch.cat(predicted_classes, dim=0)
-            pred_scores = torch.cat(predicted_scores, dim=0)
-            positive = torch.cat(positive_arr, dim=0)
+            pred_boxes = torch.cat(predicted_boxes, dim=0).float()
+            pred_classes = torch.cat(predicted_classes, dim=0).float()
+            pred_scores = torch.cat(predicted_scores, dim=0).float()
+            positive = torch.cat(positive_arr, dim=0).float()
             survival_indices = torchvision.ops.nms(
                 to_corners(pred_boxes), pred_scores, 0.3
             )
