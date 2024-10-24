@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.4.2-cudnn8-runtime-ubuntu20.04
+FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
 WORKDIR /app
 
@@ -18,6 +18,8 @@ COPY requirements/requirements.sam.txt \
     ./
 
 RUN pip3 install --upgrade pip  && pip3 install \
+    --extra-index-url https://download.pytorch.org/whl/cu118 \
+    --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/ \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
