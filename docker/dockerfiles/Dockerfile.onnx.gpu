@@ -35,7 +35,7 @@ RUN apt-get update && \
         && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
-RUN python3 -m pip install -U pip numpy<=1.26.4
+RUN python3 -m pip install -U "pip" "numpy<=1.26.4"
 
 # Set OpenCV version to build
 ARG OPENCV_VERSION="4.x"
