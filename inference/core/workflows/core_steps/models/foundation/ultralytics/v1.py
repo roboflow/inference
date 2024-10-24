@@ -4,7 +4,11 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field, PositiveInt
-from ultralytics import YOLO
+
+try:
+    from ultralytics import YOLO
+except ImportError:
+    pass
 
 from inference.core.logger import logger
 from inference.core.workflows.execution_engine.entities.base import (
@@ -143,6 +147,10 @@ class UltralyticsBlockV1(WorkflowBlock):
         half_precision: bool,
         imgsz: int,
     ) -> BlockResult:
+        if "YOLO" not in locals():
+            raise RuntimeError(
+                "You must install ultralytics in order to use this block."
+            )
         if not self._model:
             self._model = YOLO(model_path)
 
