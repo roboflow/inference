@@ -92,6 +92,10 @@ class OwlV2(RoboflowCoreModel):
         # compile the model
         # NOTE that this is able to fix the manual attention implementation used in OWLv2
         # so we don't have to force in flash attention by ourselves
+        # however that is only true if torch version 2.4 or later is used
+        # for torch < 2.4, this is a LOT slower and using flash attention by ourselves is faster
+        # this also breaks in torch < 2.1 so we supress torch._dynamo errors
+        torch._dynamo.config.suppress_errors = True
         self.model.owlv2.vision_model = torch.compile(
             self.model.owlv2.vision_model
         )
@@ -140,7 +144,12 @@ class OwlV2(RoboflowCoreModel):
 
         pixel_values = preprocess_image(image, self.image_size, self.image_mean, self.image_std)
 
-        with torch.autocast(device_type=DEVICE, dtype=torch.bfloat16):  # we use bfloat16 to support both CPU and GPU
+        # torch 2.4 lets you use "cuda:0" as device_type
+        # but this crashes in 2.3
+        # so we parse DEVICE as a string to make it work in both 2.3 and 2.4
+        # as we don't know a priori our torch version
+        device = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
+        with torch.autocast(device_type=device, dtype=torch.bfloat16):  # we use bfloat16 to support both CPU and GPU
             image_embeds, _ = self.model.image_embedder(pixel_values=pixel_values)
             batch_size, h, w, dim = image_embeds.shape
             image_features = image_embeds.reshape(batch_size, h * w, dim)
