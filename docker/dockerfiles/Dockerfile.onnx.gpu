@@ -30,6 +30,8 @@ RUN apt-get update && \
         gfortran \
         python3-dev \
         python3-pip \
+        wget \
+        unzip \
         cuda-cudart-dev-${CUDA_PKG_VERSION} \
         cuda-driver-dev-${CUDA_PKG_VERSION} \
         && rm -rf /var/lib/apt/lists/*
@@ -45,6 +47,19 @@ WORKDIR /opt
 RUN git clone --branch ${OPENCV_VERSION} --depth 1 https://github.com/opencv/opencv.git && \
     git clone --branch ${OPENCV_VERSION} --depth 1 https://github.com/opencv/opencv_contrib.git
 
+# Add NVIDIA Video Codec SDK libraries
+RUN wget "https://media.roboflow.com/build-artifacts/Video_Codec_SDK_12.2.72.zip" && \
+    unzip Video_Codec_SDK_12.2.72.zip && \
+    mv Video_Codec_SDK_12.2.72 /opt/Video_Codec_SDK && \
+    rm Video_Codec_SDK_12.2.72.zip
+
+# Copy necessary headers
+ENV LD_LIBRARY_PATH /usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH} 
+RUN cp -r /opt/Video_Codec_SDK/Interface/* /usr/local/cuda/include/ && \
+    cp /opt/Video_Codec_SDK/Lib/linux/stubs/x86_64/* /usr/local/cuda/lib64/stubs/ && \
+    cp /opt/Video_Codec_SDK/Lib/linux/stubs/x86_64/* /usr/lib/ && \
+    echo "/usr/local/cuda/lib64/stubs\n" > /etc/ld.so.conf.d/900_video-extractor.conf && ldconfig
+
 # Build OpenCV with CUDA support and include contrib modules
 RUN mkdir -p /opt/opencv/build && cd /opt/opencv/build && \
     cmake -D CMAKE_BUILD_TYPE=RELEASE \
@@ -58,6 +73,8 @@ RUN mkdir -p /opt/opencv/build && cd /opt/opencv/build && \
           -D PYTHON3_INCLUDE_DIR=$(python3 -c "from distutils.sysconfig import get_python_inc; print(get_python_inc())") \
           -D PYTHON3_LIBRARY=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))") \
           -D PYTHON3_NUMPY_INCLUDE_DIRS=$(python3 -c "import numpy; print(numpy.get_include())") \
+          -D CUDA_CUDA_LIBRARY=/usr/local/cuda/lib64/stubs/libcuda.so \
+          -D VIDEO_CODEC_SDK_PATH=/usr/local/cuda \
           -D BUILD_EXAMPLES=OFF \
           -D BUILD_opencv_cudacodec=ON \
           -D BUILD_opencv_python3=ON \
@@ -76,6 +93,8 @@ RUN mkdir -p /opt/opencv/build && cd /opt/opencv/build && \
           -D WITH_EIGEN=ON \
           -D WITH_GSTREAMER=ON \
           -D WITH_GTK=OFF \
+          -D WITH_NVCUVID=ON \
+          -D WITH_NVCUVENC=ON \
           -D WITH_QT=OFF \
           -D WITH_VTK=OFF \
           .. && \
