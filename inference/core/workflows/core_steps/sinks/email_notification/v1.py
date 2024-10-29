@@ -30,6 +30,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     StepOutputSelector,
     WorkflowParameterSelector,
+    BYTES_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -235,7 +236,7 @@ class BlockManifest(WorkflowBlockManifest):
         ],
         default_factory=dict,
     )
-    attachments: Dict[str, StepOutputSelector(kind=[STRING_KIND])] = Field(
+    attachments: Dict[str, StepOutputSelector(kind=[STRING_KIND, BYTES_KIND])] = Field(
         description="Attachments",
         default_factory=dict,
         examples=[{"report.cvs": "$steps.csv_formatter.csv_content"}],
@@ -507,7 +508,10 @@ def _send_email_using_smtp_server(
     e_mail_message.attach(MIMEText(message, "plain"))
     for attachment_name, attachment_content in attachments.items():
         part = MIMEBase("application", "octet-stream")
-        part.set_payload(attachment_content.encode("utf-8"))
+        binary_payload = attachment_content
+        if not isinstance(binary_payload, bytes):
+            binary_payload = binary_payload.encode("utf-8")
+        part.set_payload(binary_payload)
         encoders.encode_base64(part)
         part.add_header(
             "Content-Disposition",
