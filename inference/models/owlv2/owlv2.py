@@ -5,8 +5,8 @@ from typing import Dict, List, NewType
 
 import numpy as np
 import torch
-import torchvision
 import torch.nn.functional as F
+import torchvision
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import box_iou
 
