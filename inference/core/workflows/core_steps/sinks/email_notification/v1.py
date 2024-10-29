@@ -25,12 +25,12 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    BYTES_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     StepOutputSelector,
     WorkflowParameterSelector,
-    BYTES_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
