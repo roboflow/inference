@@ -56,14 +56,40 @@ class LimitedSizeDict(OrderedDict):
                 self.popitem(last=False)
 
 
-def preprocess_image(np_image: np.ndarray, image_size: tuple[int, int], image_mean: torch.Tensor, image_std: torch.Tensor) -> torch.Tensor:
+def preprocess_image(
+    np_image: np.ndarray,
+    image_size: tuple[int, int],
+    image_mean: torch.Tensor,
+    image_std: torch.Tensor,
+) -> torch.Tensor:
+    """Preprocess an image for OWLv2 by resizing, normalizing, and padding it.
+    This is much faster than using the Owlv2Processor directly, as we ensure we use GPU if available.
+
+    Args:
+        np_image (np.ndarray): The image to preprocess, with shape (H, W, 3)
+        image_size (tuple[int, int]): The target size of the image
+        image_mean (torch.Tensor): The mean of the image, on DEVICE, with shape (1, 3, 1, 1)
+        image_std (torch.Tensor): The standard deviation of the image, on DEVICE, with shape (1, 3, 1, 1)
+
+    Returns:
+        torch.Tensor: The preprocessed image, on DEVICE, with shape (1, 3, H, W)
+    """
     current_size = np_image.shape[:2]
 
     r = min(image_size[0] / current_size[0], image_size[1] / current_size[1])
     target_size = (int(r * current_size[0]), int(r * current_size[1]))
 
-    torch_image = torch.tensor(np_image).permute(2, 0, 1).unsqueeze(0).to(DEVICE).to(dtype=torch.float32) / 255.0
-    torch_image = F.interpolate(torch_image, size=target_size, mode="bilinear", align_corners=False)
+    torch_image = (
+        torch.tensor(np_image)
+        .permute(2, 0, 1)
+        .unsqueeze(0)
+        .to(DEVICE)
+        .to(dtype=torch.float32)
+        / 255.0
+    )
+    torch_image = F.interpolate(
+        torch_image, size=target_size, mode="bilinear", align_corners=False
+    )
 
     padded_image_tensor = torch.ones((1, 3, *image_size), device=DEVICE) * 0.5
     padded_image_tensor[:, :, : torch_image.shape[2], : torch_image.shape[3]] = (
@@ -84,21 +110,23 @@ class OwlV2(RoboflowCoreModel):
         hf_id = os.path.join("google", self.version_id)
         processor = Owlv2Processor.from_pretrained(hf_id)
         self.image_size = tuple(processor.image_processor.size.values())
-        self.image_mean = torch.tensor(processor.image_processor.image_mean, device=DEVICE).view(1, 3, 1, 1)
-        self.image_std = torch.tensor(processor.image_processor.image_std, device=DEVICE).view(1, 3, 1, 1)
+        self.image_mean = torch.tensor(
+            processor.image_processor.image_mean, device=DEVICE
+        ).view(1, 3, 1, 1)
+        self.image_std = torch.tensor(
+            processor.image_processor.image_std, device=DEVICE
+        ).view(1, 3, 1, 1)
         self.model = Owlv2ForObjectDetection.from_pretrained(hf_id).eval().to(DEVICE)
         self.reset_cache()
-        
-        # compile the model
+
+        # compile forward pass of the visual backbone of the model
         # NOTE that this is able to fix the manual attention implementation used in OWLv2
         # so we don't have to force in flash attention by ourselves
         # however that is only true if torch version 2.4 or later is used
         # for torch < 2.4, this is a LOT slower and using flash attention by ourselves is faster
         # this also breaks in torch < 2.1 so we supress torch._dynamo errors
         torch._dynamo.config.suppress_errors = True
-        self.model.owlv2.vision_model = torch.compile(
-            self.model.owlv2.vision_model
-        )
+        self.model.owlv2.vision_model = torch.compile(self.model.owlv2.vision_model)
 
     def reset_cache(self):
         self.image_embed_cache = LimitedSizeDict(
@@ -142,7 +170,9 @@ class OwlV2(RoboflowCoreModel):
         if (image_embeds := self.image_embed_cache.get(image_hash)) is not None:
             return image_hash
 
-        pixel_values = preprocess_image(image, self.image_size, self.image_mean, self.image_std)
+        pixel_values = preprocess_image(
+            image, self.image_size, self.image_mean, self.image_std
+        )
 
         # torch 2.4 lets you use "cuda:0" as device_type
         # but this crashes in 2.3
@@ -150,7 +180,9 @@ class OwlV2(RoboflowCoreModel):
         # as we don't know a priori our torch version
         device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
         # we disable autocast on CPU for stability, although it's possible using bfloat16 would work
-        with torch.autocast(device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"):
+        with torch.autocast(
+            device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
+        ):
             image_embeds, _ = self.model.image_embedder(pixel_values=pixel_values)
             batch_size, h, w, dim = image_embeds.shape
             image_features = image_embeds.reshape(batch_size, h * w, dim)
