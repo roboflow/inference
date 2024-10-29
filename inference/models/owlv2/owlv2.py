@@ -1,7 +1,7 @@
 import hashlib
 import os
 from collections import defaultdict
-from typing import Dict, List, NewType
+from typing import Dict, List, NewType, Tuple
 
 import numpy as np
 import torch
@@ -58,7 +58,7 @@ class LimitedSizeDict(OrderedDict):
 
 def preprocess_image(
     np_image: np.ndarray,
-    image_size: tuple[int, int],
+    image_size: Tuple[int, int],
     image_mean: torch.Tensor,
     image_std: torch.Tensor,
 ) -> torch.Tensor:
