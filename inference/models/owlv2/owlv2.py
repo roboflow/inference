@@ -79,7 +79,7 @@ class OwlV2(RoboflowCoreModel):
     task_type = "object-detection"
     box_format = "xywh"
 
-    def __init__(self, *args, model_id="owlv2/owlv2-large-patch14-ensemble", **kwargs):
+    def __init__(self, *args, model_id="owlv2/owlv2-base-patch16-ensemble", **kwargs):
         super().__init__(*args, model_id=model_id, **kwargs)
         hf_id = os.path.join("google", self.version_id)
         processor = Owlv2Processor.from_pretrained(hf_id)
@@ -148,8 +148,9 @@ class OwlV2(RoboflowCoreModel):
         # but this crashes in 2.3
         # so we parse DEVICE as a string to make it work in both 2.3 and 2.4
         # as we don't know a priori our torch version
-        device = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
-        with torch.autocast(device_type=device, dtype=torch.bfloat16):  # we use bfloat16 to support both CPU and GPU
+        device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
+        # we disable autocast on CPU for stability, although it's possible using bfloat16 would work
+        with torch.autocast(device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"):
             image_embeds, _ = self.model.image_embedder(pixel_values=pixel_values)
             batch_size, h, w, dim = image_embeds.shape
             image_features = image_embeds.reshape(batch_size, h * w, dim)

@@ -20,9 +20,11 @@ def test_owlv2():
     )
 
     response = OwlV2().infer_from_request(request)
-    # the exact value here is highly sensitive to the interpolation mode used
+    # the exact value here is highly sensitive to the image interpolation mode used
     # as well as the data type used in the model, ie bfloat16 vs float16 vs float32
-    assert abs(222.4 - response.predictions[0].x) < 0.1
+    # and of course the size of the model itself, ie base vs large
+    # we set a tolerance of 1.5 pixels from the expected value, which should cover most of the cases
+    assert abs(223 - response.predictions[0].x) < 1.5
 
 
 if __name__ == "__main__":
