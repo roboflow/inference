@@ -337,6 +337,9 @@ REGISTERED_INITIALIZERS = {
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
 }
 
+KINDS_SERIALIZERS = {}
+KINDS_DESERIALIZERS = {}
+
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
