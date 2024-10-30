@@ -126,8 +126,8 @@ class OwlV2(RoboflowCoreModel):
         # however that is only true if torch version 2.4 or later is used
         # for torch < 2.4, this is a LOT slower and using flash attention by ourselves is faster
         # this also breaks in torch < 2.1 so we supress torch._dynamo errors
-        # torch._dynamo.config.suppress_errors = True
-        # self.model.owlv2.vision_model = torch.compile(self.model.owlv2.vision_model)
+        torch._dynamo.config.suppress_errors = True
+        self.model.owlv2.vision_model = torch.compile(self.model.owlv2.vision_model)
 
     def reset_cache(self):
         self.image_embed_cache = LimitedSizeDict(
