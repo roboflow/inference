@@ -1,6 +1,6 @@
 import itertools
 from collections import defaultdict
-from copy import copy
+from copy import copy, deepcopy
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import networkx as nx
@@ -28,6 +28,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     STEP_AS_SELECTED_ELEMENT,
+    WILDCARD_KIND,
     Kind,
 )
 from inference.core.workflows.execution_engine.introspection.entities import (
@@ -428,22 +429,35 @@ def add_edges_for_outputs(
             node_selector = get_step_selector_from_its_output(
                 step_output_selector=node_selector
             )
-        output_name = construct_output_selector(name=output.name)
+        output_selector = construct_output_selector(name=output.name)
         verify_edge_is_created_between_existing_nodes(
             execution_graph=execution_graph,
             start=node_selector,
-            end=output_name,
+            end=output_selector,
+        )
+        output_node_manifest = node_as(
+            execution_graph=execution_graph,
+            node=output_selector,
+            expected_type=OutputNode,
         )
         if is_step_output_selector(selector_or_value=output.selector):
             step_manifest = execution_graph.nodes[node_selector][
                 NODE_COMPILATION_OUTPUT_PROPERTY
             ].step_manifest
             step_outputs = step_manifest.get_actual_outputs()
-            verify_output_selector_points_to_valid_output(
+            denote_output_node_kind_based_on_step_outputs(
                 output_selector=output.selector,
                 step_outputs=step_outputs,
+                output_node_manifest=output_node_manifest,
             )
-        execution_graph.add_edge(node_selector, output_name)
+        else:
+            input_manifest = node_as(
+                execution_graph=execution_graph,
+                node=node_selector,
+                expected_type=InputNode,
+            ).input_manifest
+            output_node_manifest.kind = copy(input_manifest.kind)
+        execution_graph.add_edge(node_selector, output_selector)
     return execution_graph
 
 
@@ -464,20 +478,24 @@ def verify_edge_is_created_between_existing_nodes(
         )
 
 
-def verify_output_selector_points_to_valid_output(
+def denote_output_node_kind_based_on_step_outputs(
     output_selector: str,
     step_outputs: List[OutputDefinition],
+    output_node_manifest: OutputNode,
 ) -> None:
     selected_output_name = get_last_chunk_of_selector(selector=output_selector)
+    kinds_for_outputs = {output.name: output.kind for output in step_outputs}
     if selected_output_name == "*":
+        output_node_manifest.kind = deepcopy(kinds_for_outputs)
         return None
-    defined_output_names = {output.name for output in step_outputs}
-    if selected_output_name not in defined_output_names:
+    if selected_output_name not in kinds_for_outputs:
         raise InvalidReferenceTargetError(
             public_message=f"Graph definition contains selector {output_selector} that points to output of step "
             f"that is not defined in workflow block used to create step.",
             context="workflow_compilation | execution_graph_construction",
         )
+    output_node_manifest.kind = copy(kinds_for_outputs[selected_output_name])
+    return None
 
 
 def denote_data_flow_in_workflow(

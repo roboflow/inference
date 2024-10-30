@@ -68,7 +68,19 @@ from inference.core.workflows.core_steps.classical_cv.template_matching.v1 impor
 from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
     ImageThresholdBlockV1,
 )
+from inference.core.workflows.core_steps.common.deserializers import (
+    deserialize_detections_kind,
+    deserialize_image_kind,
+    deserialize_numpy_array,
+    deserialize_video_metadata_kind,
+)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_image,
+    serialise_sv_detections,
+    serialize_video_metadata_kind,
+    serialize_wildcard_kind,
+)
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
@@ -337,8 +349,26 @@ REGISTERED_INITIALIZERS = {
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
 }
 
-KINDS_SERIALIZERS = {}
-KINDS_DESERIALIZERS = {}
+KINDS_SERIALIZERS = {
+    IMAGE_KIND.name: serialise_image,
+    VIDEO_METADATA_KIND.name: serialize_video_metadata_kind,
+    OBJECT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_sv_detections,
+    KEYPOINT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
+    QR_CODE_DETECTION_KIND.name: serialise_sv_detections,
+    BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
+    WILDCARD_KIND.name: serialize_wildcard_kind,
+}
+KINDS_DESERIALIZERS = {
+    IMAGE_KIND.name: deserialize_image_kind,
+    VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,
+    OBJECT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_detections_kind,
+    KEYPOINT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
+    QR_CODE_DETECTION_KIND.name: deserialize_detections_kind,
+    BAR_CODE_DETECTION_KIND.name: deserialize_detections_kind,
+    NUMPY_ARRAY_KIND.name: deserialize_numpy_array,
+}
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:

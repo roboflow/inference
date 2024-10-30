@@ -155,6 +155,7 @@ from inference.core.exceptions import (
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.handlers.workflows import (
+    filter_out_unwanted_workflow_outputs,
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
@@ -722,13 +723,16 @@ class HttpInterface(BaseInterface):
                 prevent_local_images_loading=True,
                 profiler=profiler,
             )
-            result = execution_engine.run(runtime_parameters=workflow_request.inputs)
+            workflow_results = execution_engine.run(
+                runtime_parameters=workflow_request.inputs,
+                serialize_results=True,
+            )
             with profiler.profile_execution_phase(
-                name="workflow_results_serialisation",
+                name="workflow_results_filtering",
                 categories=["inference_package_operation"],
             ):
-                outputs = serialise_workflow_result(
-                    result=result,
+                outputs = filter_out_unwanted_workflow_outputs(
+                    workflow_results=workflow_results,
                     excluded_fields=workflow_request.excluded_fields,
                 )
             profiler_trace = profiler.export_trace()

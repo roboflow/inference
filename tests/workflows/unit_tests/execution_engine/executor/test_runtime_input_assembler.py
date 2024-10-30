@@ -7,15 +7,14 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from inference.core.workflows.core_steps.common import deserializers
+from inference.core.workflows.core_steps.loader import KINDS_DESERIALIZERS
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
     WorkflowImage,
     WorkflowParameter,
     WorkflowVideoMetadata,
-)
-from inference.core.workflows.execution_engine.v1.executor import (
-    runtime_input_assembler,
 )
 from inference.core.workflows.execution_engine.v1.executor.runtime_input_assembler import (
     assemble_runtime_parameters,
@@ -32,10 +31,11 @@ def test_assemble_runtime_parameters_when_image_is_not_provided() -> None:
         _ = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
         )
 
 
-@mock.patch.object(runtime_input_assembler, "load_image_from_url")
+@mock.patch.object(deserializers, "load_image_from_url")
 def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_dict(
     load_image_from_url_mock: MagicMock,
 ) -> None:
@@ -53,6 +53,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_di
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -83,6 +84,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_di
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -115,6 +117,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_di
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
             prevent_local_images_loading=True,
+            kinds_deserializers=KINDS_DESERIALIZERS,
         )
 
 
@@ -129,6 +132,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_np
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -153,6 +157,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_as_unknown_element()
         _ = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
         )
 
 
@@ -173,6 +178,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_in_batch() -> None:
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -225,6 +231,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_with_video_metadata(
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -253,6 +260,7 @@ def test_assemble_runtime_parameters_when_parameter_not_provided() -> None:
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -268,6 +276,7 @@ def test_assemble_runtime_parameters_when_parameter_provided() -> None:
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -297,6 +306,7 @@ def test_assemble_runtime_parameters_when_images_with_different_matching_batch_s
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -338,6 +348,7 @@ def test_assemble_runtime_parameters_when_images_with_different_and_not_matching
         _ = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
         )
 
 
@@ -379,6 +390,7 @@ def test_assemble_runtime_parameters_when_video_metadata_with_different_matching
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -405,6 +417,7 @@ def test_assemble_runtime_parameters_when_video_metadata_declared_but_not_provid
         _ = assemble_runtime_parameters(
             runtime_parameters={},
             defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
         )
 
 
@@ -430,6 +443,7 @@ def test_assemble_runtime_parameters_when_video_metadata_declared_and_provided_a
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -456,6 +470,7 @@ def test_assemble_runtime_parameters_when_video_metadata_declared_and_provided_a
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -505,4 +520,5 @@ def test_assemble_runtime_parameters_when_video_metadata_with_different_and_not_
         _ = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
         )

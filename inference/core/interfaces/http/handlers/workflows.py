@@ -137,3 +137,21 @@ def get_unique_kinds(
             for output_field_kinds in output_definition.values():
                 all_kinds.update(output_field_kinds)
     return all_kinds
+
+
+def filter_out_unwanted_workflow_outputs(
+    workflow_results: List[dict],
+    excluded_fields: Optional[List[str]],
+) -> List[dict]:
+    if not excluded_fields:
+        return workflow_results
+    excluded_fields = set(excluded_fields)
+    filtered_results = []
+    for result_element in workflow_results:
+        filtered_result = {}
+        for key, value in result_element.items():
+            if key in excluded_fields:
+                continue
+            filtered_result[key] = value
+        filtered_results.append(filtered_result)
+    return filtered_results

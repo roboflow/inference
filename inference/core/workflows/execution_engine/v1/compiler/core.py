@@ -9,6 +9,8 @@ from packaging.version import Version
 from inference.core.workflows.execution_engine.entities.base import WorkflowParameter
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_initializers,
+    load_kinds_deserializers,
+    load_kinds_serializers,
     load_workflow_blocks,
 )
 from inference.core.workflows.execution_engine.profiling.core import (
@@ -55,6 +57,8 @@ class GraphCompilationResult:
     parsed_workflow_definition: ParsedWorkflowDefinition
     available_blocks: List[BlockSpecification]
     initializers: Dict[str, Union[Any, Callable[[None], Any]]]
+    kinds_serializers: Dict[str, Callable[[Any], Any]]
+    kinds_deserializers: Dict[str, Callable[[str, Any], Any]]
 
 
 COMPILATION_CACHE = BasicWorkflowsCache[GraphCompilationResult](
@@ -103,6 +107,8 @@ def compile_workflow(
         execution_graph=graph_compilation_results.execution_graph,
         steps=steps_by_name,
         input_substitutions=input_substitutions,
+        kinds_serializers=graph_compilation_results.kinds_serializers,
+        kinds_deserializers=graph_compilation_results.kinds_deserializers,
     )
 
 
@@ -129,6 +135,8 @@ def compile_workflow_graph(
         profiler=profiler,
     )
     initializers = load_initializers(profiler=profiler)
+    kinds_serializers = load_kinds_serializers(profiler=profiler)
+    kinds_deserializers = load_kinds_deserializers(profiler=profiler)
     dynamic_blocks = compile_dynamic_blocks(
         dynamic_blocks_definitions=workflow_definition.get(
             "dynamic_blocks_definitions", []
@@ -154,6 +162,8 @@ def compile_workflow_graph(
         parsed_workflow_definition=parsed_workflow_definition,
         available_blocks=available_blocks,
         initializers=initializers,
+        kinds_serializers=kinds_serializers,
+        kinds_deserializers=kinds_deserializers,
     )
     COMPILATION_CACHE.cache(key=key, value=result)
     return result

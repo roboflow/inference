@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import numpy as np
 import supervision as sv
@@ -35,7 +35,10 @@ from inference.core.workflows.execution_engine.constants import (
     X_KEY,
     Y_KEY,
 )
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference.core.workflows.execution_engine.entities.base import (
+    VideoMetadata,
+    WorkflowImageData,
+)
 
 
 def serialise_sv_detections(detections: sv.Detections) -> dict:
@@ -143,4 +146,51 @@ def serialise_image(image: WorkflowImageData) -> Dict[str, Any]:
     return {
         "type": "base64",
         "value": image.base64_image,
+        "video_metadata": image.video_metadata.dict(),
     }
+
+
+def serialize_video_metadata_kind(video_metadata: VideoMetadata) -> dict:
+    return video_metadata.dict()
+
+
+def serialize_wildcard_kind(value: Any) -> Any:
+    if isinstance(value, WorkflowImageData):
+        value = serialise_image(image=value)
+    elif isinstance(value, dict):
+        value = serialise_dict(elements=value)
+    elif isinstance(value, list):
+        value = serialise_list(elements=value)
+    elif isinstance(value, sv.Detections):
+        value = serialise_sv_detections(detections=value)
+    return value
+
+
+def serialise_list(elements: List[Any]) -> List[Any]:
+    result = []
+    for element in elements:
+        if isinstance(element, WorkflowImageData):
+            element = serialise_image(image=element)
+        elif isinstance(element, dict):
+            element = serialise_dict(elements=element)
+        elif isinstance(element, list):
+            element = serialise_list(elements=element)
+        elif isinstance(element, sv.Detections):
+            element = serialise_sv_detections(detections=element)
+        result.append(element)
+    return result
+
+
+def serialise_dict(elements: Dict[str, Any]) -> Dict[str, Any]:
+    serialised_result = {}
+    for key, value in elements.items():
+        if isinstance(value, WorkflowImageData):
+            value = serialise_image(image=value)
+        elif isinstance(value, dict):
+            value = serialise_dict(elements=value)
+        elif isinstance(value, list):
+            value = serialise_list(elements=value)
+        elif isinstance(value, sv.Detections):
+            value = serialise_sv_detections(detections=value)
+        serialised_result[key] = value
+    return serialised_result

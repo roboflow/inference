@@ -6,6 +6,7 @@ import pytest
 import supervision as sv
 from networkx import DiGraph
 
+from inference.core.workflows.core_steps.loader import KINDS_SERIALIZERS
 from inference.core.workflows.execution_engine.entities.base import JsonField
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     NodeCategory,
@@ -413,6 +414,8 @@ def test_construct_workflow_output_when_no_batch_outputs_present() -> None:
         workflow_outputs=workflow_outputs,
         execution_graph=execution_graph,
         execution_data_manager=execution_data_manager,
+        serialize_results=True,
+        kinds_serializers=KINDS_SERIALIZERS,
     )
 
     # then
@@ -529,6 +532,8 @@ def test_construct_workflow_output_when_batch_outputs_present() -> None:
         workflow_outputs=workflow_outputs,
         execution_graph=execution_graph,
         execution_data_manager=execution_data_manager,
+        serialize_results=True,
+        kinds_serializers=KINDS_SERIALIZERS,
     )
 
     # then

@@ -55,6 +55,9 @@ class JsonField(BaseModel):
 
 
 class WorkflowInput(BaseModel):
+    type: str
+    name: str
+    kind: List[Kind]
 
     @classmethod
     def is_batch_oriented(cls) -> bool:
@@ -81,6 +84,12 @@ class WorkflowVideoMetadata(WorkflowInput):
         return True
 
 
+class WorkflowDataBatch(WorkflowInput):
+    type: Literal["WorkflowDataBatch"]
+    name: str
+    kind: List[Kind] = Field(default_factory=lambda: [WILDCARD_KIND])
+
+
 class WorkflowParameter(WorkflowInput):
     type: Literal["WorkflowParameter", "InferenceParameter"]
     name: str
@@ -91,7 +100,7 @@ class WorkflowParameter(WorkflowInput):
 
 
 InputType = Annotated[
-    Union[WorkflowImage, WorkflowVideoMetadata, WorkflowParameter],
+    Union[WorkflowImage, WorkflowVideoMetadata, WorkflowParameter, WorkflowDataBatch],
     Field(discriminator="type"),
 ]
 
