@@ -200,6 +200,7 @@ def run_simd_step_in_batch_mode(
         step_input = execution_data_manager.get_simd_step_input(
             step_selector=step_selector
         )
+        print(f"step [{step_selector}] input: {step_input}")
     with profiler.profile_execution_phase(
         name="step_code_execution",
         categories=["workflow_block_operation"],

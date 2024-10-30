@@ -1058,7 +1058,10 @@ def StepOutputSelector(kind: Optional[List[Kind]] = None):
     }
     return Annotated[
         str,
-        StringConstraints(pattern=r"^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$"),
+        StringConstraints(
+            # pattern=r"^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$"
+            pattern=r"(^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$)|(^\$inputs.[A-Za-z_0-9\-]+$)"
+        ),
         Field(json_schema_extra=json_schema_extra),
     ]
 

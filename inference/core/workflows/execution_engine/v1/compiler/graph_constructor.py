@@ -2,6 +2,7 @@ import itertools
 from collections import defaultdict
 from copy import copy, deepcopy
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from uuid import uuid4
 
 import networkx as nx
 from networkx import DiGraph
@@ -146,11 +147,20 @@ def add_input_nodes_for_graph(
 ) -> DiGraph:
     for input_spec in inputs:
         input_selector = construct_input_selector(input_name=input_spec.name)
-        data_lineage = (
-            []
-            if not input_spec.is_batch_oriented()
-            else [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
-        )
+        if input_spec.is_batch_oriented():
+            if input_spec.dimensionality < 1:
+                raise ExecutionGraphStructureError(
+                    public_message=f"Detected batch oriented input `{input_spec.name}` with "
+                    f"declared dimensionality `{input_spec.dimensionality}` which is below "
+                    f"one (one is minimum dimensionality of the batch). Fix input definition in"
+                    f"your Workflow.",
+                    context="workflow_compilation | execution_graph_construction",
+                )
+            data_lineage = [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
+            for _ in range(input_spec.dimensionality - 1):
+                data_lineage.append(f"{uuid4()}")
+        else:
+            data_lineage = []
         compilation_output = InputNode(
             node_category=NodeCategory.INPUT_NODE,
             name=input_spec.name,
@@ -288,7 +298,8 @@ def add_edge_for_step(
         f"Failed to validate reference provided for step: {source_step_selector} regarding property: "
         f"{target_step_parsed_selector.definition.property_name} with value: {target_step_parsed_selector.value}. "
         f"Allowed kinds of references for this property: {list(set(e.name for e in expected_input_kind))}. "
-        f"Types of output for referred property: {list(set(a.name for a in actual_input_kind))}"
+        f"Types of output for referred property: "
+        f"{list(set(a.name if isinstance(a, Kind) else a for a in actual_input_kind))}"
     )
     validate_reference_kinds(
         expected=expected_input_kind,

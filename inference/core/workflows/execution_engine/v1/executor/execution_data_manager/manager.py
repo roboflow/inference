@@ -245,6 +245,7 @@ class ExecutionDataManager:
                 outputs=outputs,
             )
             return None
+        print(f"Registering: {step_name}, {indices}, {len(outputs)}")
         self._execution_cache.register_batch_of_step_outputs(
             step_name=step_name,
             indices=indices,

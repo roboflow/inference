@@ -46,6 +46,8 @@ def deserialize_image_kind(
     image: Any,
     prevent_local_images_loading: bool = False,
 ) -> WorkflowImageData:
+    if isinstance(image, WorkflowImageData):
+        return image
     video_metadata = None
     if isinstance(image, dict) and "video_metadata" in image:
         video_metadata = deserialize_video_metadata_kind(
@@ -94,7 +96,7 @@ def deserialize_image_kind(
         ) from error
     raise RuntimeInputError(
         public_message=f"Detected runtime parameter `{parameter}` defined as `WorkflowImage` "
-        f"with type {type(image)} that is invalid. Workflows accept only np.arrays "
+        f"with type {type(image)} that is invalid. Workflows accept only np.arrays, `WorkflowImageData` "
         f"and dicts with keys `type` and `value` compatible with `inference` (or list of them).",
         context="workflow_execution | runtime_input_validation",
     )

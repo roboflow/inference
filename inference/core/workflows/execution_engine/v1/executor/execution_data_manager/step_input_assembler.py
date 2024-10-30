@@ -454,7 +454,10 @@ def get_non_compound_parameter_value(
     mask_for_dimension = masks[parameter_dimensionality]
     if dynamic_parameter.points_to_input():
         input_name = get_last_chunk_of_selector(selector=dynamic_parameter.selector)
-        batch_input = runtime_parameters[input_name]
+        batch_input = _flatten_batch_oriented_inputs(
+            runtime_parameters[input_name],
+            dimensionality=parameter_dimensionality,
+        )
         if mask_for_dimension is not None:
             if len(lineage_indices) != len(batch_input):
                 raise ExecutionEngineRuntimeError(
@@ -514,6 +517,29 @@ def get_non_compound_parameter_value(
         guard_of_indices_wrapping=guard_of_indices_wrapping,
     )
     return result, result.indices
+
+
+def _flatten_batch_oriented_inputs(
+    inputs: list,
+    dimensionality: int,
+) -> List[Any]:
+    if dimensionality == 0 or not isinstance(inputs, list):
+        raise AssumptionError(
+            public_message=f"Could not prepare batch-oriented input data. This is most likely the bug. Contact "
+            f"Roboflow team through github issues (https://github.com/roboflow/inference/issues) "
+            f"providing full context of the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
+    if dimensionality == 1:
+        return inputs
+    result = []
+    for element in inputs:
+        result.extend(
+            _flatten_batch_oriented_inputs(
+                inputs=element, dimensionality=dimensionality - 1
+            )
+        )
+    return result
 
 
 def reduce_batch_dimensionality(

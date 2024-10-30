@@ -91,8 +91,11 @@ def construct_workflow_output(
         )
     )
     for name in batch_oriented_outputs:
+        print(f"constructing output: {name}")
         array = outputs_arrays[name]
+        print(f"output array: {array}")
         indices = output_name2indices[name]
+        print(f"output indices: {indices}")
         data = execution_data_manager.get_batch_data(
             selector=name2selector[name],
             indices=indices,
@@ -179,7 +182,7 @@ def create_empty_index_array(level: int, accumulator: list) -> list:
 def serialize_data_piece(
     output_name: str,
     data_piece: Any,
-    kind: Union[List[Kind], Dict[str, List[Kind]]],
+    kind: Union[List[Union[Kind, str]], Dict[str, List[Union[Kind, str]]]],
     kinds_serializers: Dict[str, Callable[[Any], Any]],
 ) -> Any:
     if isinstance(kind, dict):
@@ -212,14 +215,15 @@ def serialize_data_piece(
 def serialize_single_workflow_result_field(
     output_name: str,
     value: Any,
-    kind: List[Kind],
+    kind: List[Union[Kind, str]],
     kinds_serializers: Dict[str, Callable[[Any], Any]],
 ) -> Any:
     kinds_without_serializer = set()
     for single_kind in kind:
-        serializer = kinds_serializers.get(single_kind.name)
+        kind_name = single_kind.name if isinstance(single_kind, Kind) else kind
+        serializer = kinds_serializers.get(kind_name)
         if serializer is None:
-            kinds_without_serializer.add(single_kind.name)
+            kinds_without_serializer.add(kind_name)
             continue
         try:
             return serializer(value)

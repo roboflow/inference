@@ -91,7 +91,7 @@ class InputNode(ExecutionGraphNode):
 @dataclass
 class OutputNode(ExecutionGraphNode):
     output_manifest: JsonField
-    kind: Union[List[Kind], Dict[str, List[Kind]]] = field(
+    kind: Union[List[Union[Kind, str]], Dict[str, List[Union[Kind, str]]]] = field(
         default_factory=lambda: [WILDCARD_KIND]
     )
 

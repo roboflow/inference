@@ -57,7 +57,8 @@ class JsonField(BaseModel):
 class WorkflowInput(BaseModel):
     type: str
     name: str
-    kind: List[Kind]
+    kind: List[Union[str, Kind]]
+    dimensionality: int
 
     @classmethod
     def is_batch_oriented(cls) -> bool:
@@ -67,7 +68,8 @@ class WorkflowInput(BaseModel):
 class WorkflowImage(WorkflowInput):
     type: Literal["WorkflowImage", "InferenceImage"]
     name: str
-    kind: List[Kind] = Field(default=[IMAGE_KIND])
+    kind: List[Union[str, Kind]] = Field(default=[IMAGE_KIND])
+    dimensionality: int = Field(default=1)
 
     @classmethod
     def is_batch_oriented(cls) -> bool:
@@ -77,7 +79,8 @@ class WorkflowImage(WorkflowInput):
 class WorkflowVideoMetadata(WorkflowInput):
     type: Literal["WorkflowVideoMetadata"]
     name: str
-    kind: List[Kind] = Field(default=[VIDEO_METADATA_KIND])
+    kind: List[Union[str, Kind]] = Field(default=[VIDEO_METADATA_KIND])
+    dimensionality: int = Field(default=1)
 
     @classmethod
     def is_batch_oriented(cls) -> bool:
@@ -87,16 +90,22 @@ class WorkflowVideoMetadata(WorkflowInput):
 class WorkflowDataBatch(WorkflowInput):
     type: Literal["WorkflowDataBatch"]
     name: str
-    kind: List[Kind] = Field(default_factory=lambda: [WILDCARD_KIND])
+    kind: List[Union[str, Kind]] = Field(default_factory=lambda: [WILDCARD_KIND])
+    dimensionality: int = Field(default=1)
+
+    @classmethod
+    def is_batch_oriented(cls) -> bool:
+        return True
 
 
 class WorkflowParameter(WorkflowInput):
     type: Literal["WorkflowParameter", "InferenceParameter"]
     name: str
-    kind: List[Kind] = Field(default_factory=lambda: [WILDCARD_KIND])
+    kind: List[Union[str, Kind]] = Field(default_factory=lambda: [WILDCARD_KIND])
     default_value: Optional[Union[float, int, str, bool, list, set]] = Field(
         default=None
     )
+    dimensionality: int = Field(default=0)
 
 
 InputType = Annotated[

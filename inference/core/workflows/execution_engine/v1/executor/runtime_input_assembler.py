@@ -1,7 +1,8 @@
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
-from inference.core.workflows.errors import RuntimeInputError
+from inference.core.workflows.errors import AssumptionError, RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import InputType
+from inference.core.workflows.execution_engine.entities.types import Kind
 from inference.core.workflows.execution_engine.profiling.core import (
     WorkflowsProfiler,
     execution_phase,
@@ -63,7 +64,7 @@ def assemble_batch_oriented_input(
     if value is None:
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{defined_input.name}` defined as "
-            f"`{defined_input.type}` (of kind `{defined_input.kind}`), "
+            f"`{defined_input.type}` (of kind `{[_get_kind_name(k) for k in defined_input.kind]}`), "
             f"but value is not provided.",
             context="workflow_execution | runtime_input_validation",
         )
@@ -78,12 +79,13 @@ def assemble_batch_oriented_input(
         ] * input_batch_size
     else:
         result = [
-            assemble_single_element_of_batch_oriented_input(
+            assemble_nested_batch_oriented_input(
+                current_depth=1,
                 defined_input=defined_input,
                 value=element,
                 kinds_deserializers=kinds_deserializers,
                 prevent_local_images_loading=prevent_local_images_loading,
-                identifier=identifier,
+                identifier=f"{defined_input.name}.[{identifier}]",
             )
             for identifier, element in enumerate(value)
         ]
@@ -97,23 +99,71 @@ def assemble_batch_oriented_input(
     return result
 
 
+def assemble_nested_batch_oriented_input(
+    current_depth: int,
+    defined_input: InputType,
+    value: Any,
+    kinds_deserializers: Dict[str, Callable[[str, Any], Any]],
+    prevent_local_images_loading: bool,
+    identifier: Optional[str] = None,
+) -> Union[list, Any]:
+    if current_depth > defined_input.dimensionality:
+        raise AssumptionError(
+            public_message=f"While constructing input `{defined_input.name}`, Execution Engine encountered the state "
+            f"in which it is not possible to construct nested batch-oriented input. "
+            f"This is most likely the bug. Contact Roboflow team "
+            f"through github issues (https://github.com/roboflow/inference/issues) providing full "
+            f"context of the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
+    if current_depth == defined_input.dimensionality:
+        return assemble_single_element_of_batch_oriented_input(
+            defined_input=defined_input,
+            value=value,
+            kinds_deserializers=kinds_deserializers,
+            prevent_local_images_loading=prevent_local_images_loading,
+            identifier=identifier,
+        )
+    if not isinstance(value, list):
+        raise RuntimeInputError(
+            public_message=f"Workflow input `{defined_input.name}` is declared to be nested batch with dimensionality "
+            f"`{defined_input.dimensionality}`. Input data does not define batch at the {current_depth} "
+            f"dimensionality level.",
+            context="workflow_execution | runtime_input_validation",
+        )
+    return [
+        assemble_nested_batch_oriented_input(
+            current_depth=current_depth + 1,
+            defined_input=defined_input,
+            value=element,
+            kinds_deserializers=kinds_deserializers,
+            prevent_local_images_loading=prevent_local_images_loading,
+            identifier=f"{identifier}.[{idx}]",
+        )
+        for idx, element in enumerate(value)
+    ]
+
+
 def assemble_single_element_of_batch_oriented_input(
     defined_input: InputType,
     value: Any,
     kinds_deserializers: Dict[str, Callable[[str, Any], Any]],
     prevent_local_images_loading: bool,
-    identifier: Optional[int] = None,
-) -> None:
-    matching_deserializers = [
-        (kind.name, kinds_deserializers[kind.name])
-        for kind in defined_input.kind
-        if kind.name in kinds_deserializers
-    ]
+    identifier: Optional[str] = None,
+) -> Any:
+    if value is None:
+        return None
+    matching_deserializers = []
+    for kind in defined_input.kind:
+        kind_name = _get_kind_name(kind=kind)
+        if kind_name not in kinds_deserializers:
+            continue
+        matching_deserializers.append((kind_name, kinds_deserializers[kind_name]))
     if not matching_deserializers:
         return value
     parameter_identifier = defined_input.name
     if identifier is not None:
-        parameter_identifier = f"{parameter_identifier}.[{identifier}]"
+        parameter_identifier = identifier
     errors = []
     for kind, deserializer in matching_deserializers:
         try:
@@ -138,6 +188,12 @@ def assemble_single_element_of_batch_oriented_input(
         public_message=error_message,
         context="workflow_execution | runtime_input_validation",
     )
+
+
+def _get_kind_name(kind: Union[Kind, str]) -> str:
+    if isinstance(kind, Kind):
+        return kind.name
+    return kind
 
 
 def assemble_inference_parameter(
