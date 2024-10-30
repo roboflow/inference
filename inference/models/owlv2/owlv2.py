@@ -22,6 +22,7 @@ from inference.core.models.roboflow import (
     draw_detection_predictions,
 )
 from inference.core.utils.image_utils import load_image_rgb
+from inference.core.env import MAX_DETECTIONS
 
 Hash = NewType("Hash", str)
 if DEVICE is None:
@@ -125,8 +126,8 @@ class OwlV2(RoboflowCoreModel):
         # however that is only true if torch version 2.4 or later is used
         # for torch < 2.4, this is a LOT slower and using flash attention by ourselves is faster
         # this also breaks in torch < 2.1 so we supress torch._dynamo errors
-        torch._dynamo.config.suppress_errors = True
-        self.model.owlv2.vision_model = torch.compile(self.model.owlv2.vision_model)
+        # torch._dynamo.config.suppress_errors = True
+        # self.model.owlv2.vision_model = torch.compile(self.model.owlv2.vision_model)
 
     def reset_cache(self):
         self.image_embed_cache = LimitedSizeDict(
@@ -200,14 +201,24 @@ class OwlV2(RoboflowCoreModel):
         )
         objectness = objectness.sigmoid()
 
-        objectness, objectness_indices = torch.topk(objectness, int(0.1 * objectness.size(0)), dim=0)
+        print("objectness", objectness.shape)
+        objectness = objectness.squeeze(0)
+        objectness, objectness_indices = torch.topk(objectness, MAX_DETECTIONS, dim=0)
+        boxes = boxes.squeeze(0)
+        image_class_embeds = image_class_embeds.squeeze(0)
+        logit_shift = logit_shift.squeeze(0).squeeze(1)
+        logit_scale = logit_scale.squeeze(0).squeeze(1)
+        boxes = boxes[objectness_indices]
+        image_class_embeds = image_class_embeds[objectness_indices]
+        logit_shift = logit_shift[objectness_indices]
+        logit_scale = logit_scale[objectness_indices]
 
         self.image_embed_cache[image_hash] = (
-            objectness.squeeze(0),
-            boxes.squeeze(0),
-            image_class_embeds.squeeze(0),
-            logit_shift.squeeze(0).squeeze(1),
-            logit_scale.squeeze(0).squeeze(1),
+            objectness,
+            boxes,
+            image_class_embeds,
+            logit_shift,
+            logit_scale,
         )
 
         return image_hash
@@ -215,6 +226,8 @@ class OwlV2(RoboflowCoreModel):
     def get_query_embedding(self, query_spec: Dict[Hash, List[List[int]]]):
         # NOTE: for now we're handling each image seperately
         query_embeds = []
+        # 5 x 4 x e
+        # 20 x e
         for image_hash, query_boxes in query_spec.items():
             try:
                 objectness, image_boxes, image_class_embeds, _, _ = (
@@ -226,35 +239,21 @@ class OwlV2(RoboflowCoreModel):
             query_boxes_tensor = torch.tensor(
                 query_boxes, dtype=image_boxes.dtype, device=image_boxes.device
             )
-            print("QUERY SHAPE")
-            print(query_boxes_tensor.shape)
             iou, union = box_iou(
                 to_corners(image_boxes), to_corners(query_boxes_tensor)
             )  # 3000, k
-            print("iou first", iou.shape)
-            iou_mask = iou > 0.4
-            valid_objectness = torch.where(
-                iou_mask, objectness.unsqueeze(-1), -1
-            )  # 3000, k
-            print("valid_objectness_shape", objectness.shape)
-            objectness_values, objectness_indices = torch.topk(objectness, int(0.1 * objectness.size(0)), dim=0)
-            iou = iou[objectness_indices]
-            print("iou", iou.shape)
+            print("iou shape", iou.shape)
+            # if iou.max() < 0.4:
+            #     return None
             indices = torch.argmax(iou, dim=0)
-            print("indices shape", indices.shape)
-            print("indices", indices)
-            print("objectness_indices", objectness_indices, "indices", indices)
-            print("objectness_indices shape", objectness_indices.shape,"indices shape",  indices.shape)
-            print("iou_shape", iou.shape)
-            valid_image_embeds = image_class_embeds[objectness_indices]
-            embeds = valid_image_embeds[indices]
-            print(embeds.shape)
+            embeds = image_class_embeds[indices]
             query_embeds.append(embeds)
+            print("embeds_shape", embeds.shape)
         if not query_embeds:
             return None
         query = torch.cat(query_embeds, dim=0)
-        query /= torch.linalg.norm(query, ord=2) + 1e-6
-        print(query.shape)
+        print("Query shape", query.shape)
+        # query /= torch.linalg.norm(query, ord=2, dim=-1) + 1e-6
         return query
 
     def infer_from_embed(self, image_hash: Hash, query_embeddings, confidence):
@@ -282,10 +281,9 @@ class OwlV2(RoboflowCoreModel):
             predicted_scores = []
             positive_arr = []
             for positive, embedding in pos_neg_embedding_dict.items():
-                print((positive, embedding))
                 if embedding is None:
                     continue
-                print(image_class_embeds[:10])
+                print((positive, embedding[:, :10]))
                 pred_logits = torch.einsum("sd,nd->ns", image_class_embeds, embedding)
                 prediction_scores = pred_logits.max(dim=0)[0]
                 prediction_scores = (prediction_scores + 1) / 2
@@ -293,7 +291,6 @@ class OwlV2(RoboflowCoreModel):
                 score_mask = prediction_scores > confidence
                 predicted_boxes.append(image_boxes[score_mask])
                 scores = prediction_scores[score_mask]
-                print(scores)
                 predicted_scores.append(scores)
                 class_ind = class_map[(class_name, positive)]
                 predicted_classes.append(class_ind * torch.ones_like(scores))
