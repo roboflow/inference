@@ -239,7 +239,11 @@ class OwlV2(RoboflowCoreModel):
             iou, _union = box_iou(
                 to_corners(image_boxes), to_corners(query_boxes_tensor)
             )  # 3000, k
-            indices = torch.argmax(iou, dim=0)
+            ious, indices = torch.max(iou, dim=0)
+            iou_mask = ious > 0.4
+            indices = indices[iou_mask]
+            if not indices.numel() > 0:
+                continue
 
             embeds = image_class_embeds[indices]
             query_embeds.append(embeds)
@@ -287,6 +291,9 @@ class OwlV2(RoboflowCoreModel):
                 positive_arr.append(
                     int(positive == "positive") * torch.ones_like(scores)
                 )
+
+            if not predicted_boxes:
+                continue
 
             pred_boxes = torch.cat(predicted_boxes, dim=0).float()
             pred_classes = torch.cat(predicted_classes, dim=0).float()
