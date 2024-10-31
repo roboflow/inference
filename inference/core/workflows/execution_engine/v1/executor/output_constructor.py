@@ -91,11 +91,8 @@ def construct_workflow_output(
         )
     )
     for name in batch_oriented_outputs:
-        print(f"constructing output: {name}")
         array = outputs_arrays[name]
-        print(f"output array: {array}")
         indices = output_name2indices[name]
-        print(f"output indices: {indices}")
         data = execution_data_manager.get_batch_data(
             selector=name2selector[name],
             indices=indices,

@@ -314,7 +314,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                     ReferenceDefinition(
                         selected_element="step_output",
                         kind=[IMAGE_KIND],
-                        points_to_batch=False,
+                        points_to_batch=True,
                     )
                 ],
                 is_list_element=False,

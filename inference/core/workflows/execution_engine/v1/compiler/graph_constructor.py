@@ -20,6 +20,7 @@ from inference.core.workflows.errors import (
 )
 from inference.core.workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
+    PARSED_NODE_INPUT_SELECTORS_PROPERTY,
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -226,10 +227,14 @@ def add_steps_edges(
     execution_graph: DiGraph,
 ) -> DiGraph:
     for step in workflow_definition.steps:
+        source_step_selector = construct_step_selector(step_name=step.name)
         step_selectors = get_step_selectors(step_manifest=step)
+        execution_graph.nodes[source_step_selector][
+            PARSED_NODE_INPUT_SELECTORS_PROPERTY
+        ] = step_selectors
         execution_graph = add_edges_for_step(
             execution_graph=execution_graph,
-            step_name=step.name,
+            source_step_selector=source_step_selector,
             target_step_parsed_selectors=step_selectors,
         )
     return execution_graph
@@ -237,10 +242,9 @@ def add_steps_edges(
 
 def add_edges_for_step(
     execution_graph: DiGraph,
-    step_name: str,
+    source_step_selector: str,
     target_step_parsed_selectors: List[ParsedSelector],
 ) -> DiGraph:
-    source_step_selector = construct_step_selector(step_name=step_name)
     for target_step_parsed_selector in target_step_parsed_selectors:
         execution_graph = add_edge_for_step(
             execution_graph=execution_graph,
@@ -276,9 +280,6 @@ def add_edge_for_step(
             expected_type=InputNode,
         )
         actual_input_kind = input_node_compilation_data.input_manifest.kind
-        actual_input_is_batch = (
-            input_node_compilation_data.input_manifest.is_batch_oriented()
-        )
     else:
         other_step_compilation_data = node_as(
             execution_graph=execution_graph,
@@ -290,25 +291,6 @@ def add_edge_for_step(
             step_property=get_last_chunk_of_selector(
                 selector=target_step_parsed_selector.value
             ),
-        )
-        actual_input_is_batch = other_step_compilation_data.is_batch_oriented()
-
-    batch_input_expected = bool(
-        sum(
-            ref.points_to_batch
-            for ref in target_step_parsed_selector.definition.allowed_references
-        )
-    )
-    if not batch_input_expected and actual_input_is_batch:
-        property_name = target_step_parsed_selector.definition.property_name
-        raise ExecutionGraphStructureError(
-            public_message=f"Detected invalid reference `{target_step_parsed_selector.value}` plugged "
-            f"into property `{property_name}` of step `{source_step_selector}` - the step "
-            f"property do not accept batch-oriented inputs, yet the selector "
-            f"`{target_step_parsed_selector.value}` holds one - this indicates the problem with "
-            f"construction of your Workflow - usually the problem occurs when non-batch oriented "
-            f"step inputs are filled with outputs of batch-oriented steps or batch-oriented inputs.",
-            context="workflow_compilation | execution_graph_construction",
         )
     expected_input_kind = list(
         itertools.chain.from_iterable(
@@ -693,6 +675,52 @@ def denote_data_flow_for_step(
             output_dimensionality_offset=output_dimensionality_offset,
         )
     )
+    parsed_step_input_selectors: List[ParsedSelector] = execution_graph.nodes[node][
+        PARSED_NODE_INPUT_SELECTORS_PROPERTY
+    ]
+    input_property2batch_expected = {}
+    for parsed_selector in parsed_step_input_selectors:
+        input_property2batch_expected[parsed_selector.definition.property_name] = {
+            ref.points_to_batch for ref in parsed_selector.definition.allowed_references
+        }
+    for property_name, input_definition in input_data.items():
+        if property_name not in input_property2batch_expected:
+            # only values plugged vi selectors are to be validated
+            continue
+        if input_definition.is_compound_input():
+            actual_input_is_batch = {
+                element.is_batch_oriented()
+                for element in input_definition.iterate_through_definitions()
+            }
+        else:
+            actual_input_is_batch = {input_definition.is_batch_oriented()}
+        batch_input_expected = input_property2batch_expected[property_name]
+        if batch_input_expected == {False} and True in actual_input_is_batch:
+            raise ExecutionGraphStructureError(
+                public_message=f"Detected invalid reference plugged "
+                f"into property `{property_name}` of step `{node}` - the step "
+                f"property do not accept batch-oriented inputs, yet the input selector "
+                f"holds one - this indicates the problem with "
+                f"construction of your Workflow - usually the problem occurs when non-batch oriented "
+                f"step inputs are filled with outputs of batch-oriented steps or batch-oriented inputs.",
+                context="workflow_compilation | execution_graph_construction",
+            )
+        step_accepts_batch_input = step_node_data.step_manifest.accepts_batch_input()
+        if (
+            step_accepts_batch_input
+            and batch_input_expected == {True}
+            and False in actual_input_is_batch
+        ):
+            raise ExecutionGraphStructureError(
+                public_message=f"Detected invalid reference plugged "
+                f"into property `{property_name}` of step `{node}` - the step "
+                f"property strictly requires batch-oriented inputs, yet the input selector "
+                f"holds non-batch oriented input - this indicates the "
+                f"problem with construction of your Workflow - usually the problem occurs when "
+                f"non-batch oriented step inputs are filled with outputs of non batch-oriented "
+                f"steps or non batch-oriented inputs.",
+                context="workflow_compilation | execution_graph_construction",
+            )
     if not parameters_with_batch_inputs:
         data_lineage = []
     else:

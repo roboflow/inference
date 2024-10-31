@@ -1,4 +1,5 @@
 NODE_COMPILATION_OUTPUT_PROPERTY = "node_compilation_output"
+PARSED_NODE_INPUT_SELECTORS_PROPERTY = "parsed_node_input_selectors"
 STEP_DEFINITION_PROPERTY = "definition"
 WORKFLOW_INPUT_BATCH_LINEAGE_ID = "<workflow_input>"
 IMAGE_TYPE_KEY = "type"
