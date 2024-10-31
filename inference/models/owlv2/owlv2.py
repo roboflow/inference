@@ -103,8 +103,12 @@ def preprocess_image(
 
 
 def filter_tensors_by_objectness(
-    objectness, boxes, image_class_embeds, logit_shift, logit_scale
-):
+    objectness: torch.Tensor,
+    boxes: torch.Tensor,
+    image_class_embeds: torch.Tensor,
+    logit_shift: torch.Tensor,
+    logit_scale: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     objectness = objectness.squeeze(0)
     objectness, objectness_indices = torch.topk(objectness, MAX_DETECTIONS, dim=0)
     boxes = boxes.squeeze(0)
@@ -117,6 +121,65 @@ def filter_tensors_by_objectness(
     logit_scale = logit_scale[objectness_indices]
     return objectness, boxes, image_class_embeds, logit_shift, logit_scale
 
+
+def get_class_preds_from_embeds(
+    pos_neg_embedding_dict,
+    image_class_embeds,
+    confidence,
+    image_boxes,
+    class_map,
+    class_name,
+):
+    predicted_boxes_per_class = []
+    predicted_class_indices_per_class = []
+    predicted_scores_per_class = []
+    positive_arr_per_class = []
+    for positive, embedding in pos_neg_embedding_dict.items():
+        if embedding is None:
+            continue
+        pred_logits = torch.einsum("sd,nd->ns", image_class_embeds, embedding)
+        prediction_scores = pred_logits.max(dim=0)[0]
+        prediction_scores = (prediction_scores + 1) / 2
+        score_mask = prediction_scores > confidence
+        predicted_boxes_per_class.append(image_boxes[score_mask])
+        scores = prediction_scores[score_mask]
+        predicted_scores_per_class.append(scores)
+        class_ind = class_map[(class_name, positive)]
+        predicted_class_indices_per_class.append(class_ind * torch.ones_like(scores))
+        positive_arr_per_class.append(
+            int(positive == "positive") * torch.ones_like(scores)
+        )
+
+    if not predicted_boxes_per_class:
+        return (
+            np.empty((0, 4)),
+            np.empty((0,)),
+            np.empty((0,)),
+        )
+
+    pred_boxes = torch.cat(predicted_boxes_per_class, dim=0).float()
+    pred_classes = torch.cat(predicted_class_indices_per_class, dim=0).float()
+    pred_scores = torch.cat(predicted_scores_per_class, dim=0).float()
+    positive = torch.cat(positive_arr_per_class, dim=0).float()
+    survival_indices = torchvision.ops.nms(to_corners(pred_boxes), pred_scores, 0.3)
+    pred_boxes = pred_boxes[survival_indices, :].detach().cpu().numpy()
+    pred_classes = pred_classes[survival_indices].detach().cpu().numpy()
+    pred_scores = pred_scores[survival_indices].detach().cpu().numpy()
+    positive = positive[survival_indices].detach().cpu().numpy()
+    is_positive = positive == 1
+    return pred_boxes[is_positive], pred_classes[is_positive], pred_scores[is_positive]
+
+def make_class_map(query_embeddings):
+    class_names = sorted(list(query_embeddings.keys()))
+    class_map_positive = {
+        (class_name, "positive"): i for i, class_name in enumerate(class_names)
+    }
+    class_map_negative = {
+        (class_name, "negative"): i + len(class_names)
+        for i, class_name in enumerate(class_names)
+    }
+    class_map = {**class_map_positive, **class_map_negative}
+    return class_map, class_names
 
 class OwlV2(RoboflowCoreModel):
     task_type = "object-detection"
@@ -142,8 +205,8 @@ class OwlV2(RoboflowCoreModel):
         # however that is only true if torch version 2.4 or later is used
         # for torch < 2.4, this is a LOT slower and using flash attention by ourselves is faster
         # this also breaks in torch < 2.1 so we supress torch._dynamo errors
-        torch._dynamo.config.suppress_errors = True
-        self.model.owlv2.vision_model = torch.compile(self.model.owlv2.vision_model)
+        # torch._dynamo.config.suppress_errors = True
+        # self.model.owlv2.vision_model = torch.compile(self.model.owlv2.vision_model)
 
     def reset_cache(self):
         self.image_embed_cache = LimitedSizeDict(
@@ -264,63 +327,22 @@ class OwlV2(RoboflowCoreModel):
         return query
 
     def infer_from_embed(self, image_hash: Hash, query_embeddings, confidence):
-        _objectness, image_boxes, image_class_embeds, _logit_shift, _logit_scale = (
-            self.image_embed_cache[image_hash]
-        )
-        predicted_boxes = []
-        predicted_classes = []
-        predicted_scores = []
-        class_names = sorted(list(query_embeddings.keys()))
-        class_map = {
-            (class_name, "positive"): i for i, class_name in enumerate(class_names)
-        }
-        class_map = {
-            **class_map,
-            **{
-                (class_name, "negative"): i + len(class_names)
-                for i, class_name in enumerate(class_names)
-            },
-        }
-        all_boxes, all_classes, all_scores = [], [], []
+        _, image_boxes, image_class_embeds, _, _ = self.image_embed_cache[image_hash]
+        class_map, class_names = make_class_map(query_embeddings)
+        all_predicted_boxes, all_predicted_classes, all_predicted_scores = [], [], []
         for class_name, pos_neg_embedding_dict in query_embeddings.items():
-            predicted_boxes = []
-            predicted_classes = []
-            predicted_scores = []
-            positive_arr = []
-            for positive, embedding in pos_neg_embedding_dict.items():
-                if embedding is None:
-                    continue
-                pred_logits = torch.einsum("sd,nd->ns", image_class_embeds, embedding)
-                prediction_scores = pred_logits.max(dim=0)[0]
-                prediction_scores = (prediction_scores + 1) / 2
-                score_mask = prediction_scores > confidence
-                predicted_boxes.append(image_boxes[score_mask])
-                scores = prediction_scores[score_mask]
-                predicted_scores.append(scores)
-                class_ind = class_map[(class_name, positive)]
-                predicted_classes.append(class_ind * torch.ones_like(scores))
-                positive_arr.append(
-                    int(positive == "positive") * torch.ones_like(scores)
-                )
-
-            if not predicted_boxes:
-                continue
-
-            pred_boxes = torch.cat(predicted_boxes, dim=0).float()
-            pred_classes = torch.cat(predicted_classes, dim=0).float()
-            pred_scores = torch.cat(predicted_scores, dim=0).float()
-            positive = torch.cat(positive_arr, dim=0).float()
-            survival_indices = torchvision.ops.nms(
-                to_corners(pred_boxes), pred_scores, 0.3
+            boxes, classes, scores  = get_class_preds_from_embeds(
+                pos_neg_embedding_dict,
+                image_class_embeds,
+                confidence,
+                image_boxes,
+                class_map,
+                class_name,
             )
-            pred_boxes = pred_boxes[survival_indices, :].detach().cpu().numpy()
-            pred_classes = pred_classes[survival_indices].detach().cpu().numpy()
-            pred_scores = pred_scores[survival_indices].detach().cpu().numpy()
-            positive = positive[survival_indices].detach().cpu().numpy()
-            is_positive = positive == 1
-            all_boxes.extend(pred_boxes[is_positive])
-            all_classes.extend(pred_classes[is_positive])
-            all_scores.extend(pred_scores[is_positive])
+
+            all_predicted_boxes.extend(boxes)
+            all_predicted_classes.extend(classes)
+            all_predicted_scores.extend(scores)
         return [
             {
                 "class_name": class_names[int(c)],
@@ -330,7 +352,9 @@ class OwlV2(RoboflowCoreModel):
                 "h": float(h),
                 "confidence": float(score),
             }
-            for c, (x, y, w, h), score in zip(all_classes, all_boxes, all_scores)
+            for c, (x, y, w, h), score in zip(
+                all_predicted_classes, all_predicted_boxes, all_predicted_scores
+            )
         ]
 
     def infer(self, image, training_data, confidence=0.99, **kwargs):
