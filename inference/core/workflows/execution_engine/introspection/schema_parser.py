@@ -7,6 +7,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     KIND_KEY,
     REFERENCE_KEY,
     SELECTED_ELEMENT_KEY,
+    SELECTOR_POINTS_TO_BATCH_KEY,
     Kind,
 )
 from inference.core.workflows.execution_engine.introspection.entities import (
@@ -288,6 +289,9 @@ def retrieve_selectors_from_simple_property(
                     Kind.model_validate(k)
                     for k in property_definition.get(KIND_KEY, [])
                 ],
+                points_to_batch=property_definition.get(
+                    SELECTOR_POINTS_TO_BATCH_KEY, False
+                ),
             )
         ]
         return SelectorDefinition(
@@ -362,20 +366,32 @@ def retrieve_selectors_from_union_definition(
     results_references = list(
         itertools.chain.from_iterable(r.allowed_references for r in results)
     )
-    results_references_by_selected_element = defaultdict(set)
+    results_references_kind_by_selected_element = defaultdict(set)
+    results_references_batch_pointing_by_selected_element = defaultdict(bool)
     for reference in results_references:
-        results_references_by_selected_element[reference.selected_element].update(
+        results_references_kind_by_selected_element[reference.selected_element].update(
             reference.kind
+        )
+        results_references_batch_pointing_by_selected_element[
+            reference.selected_element
+        ] = (
+            results_references_batch_pointing_by_selected_element[
+                reference.selected_element
+            ]
+            or reference.points_to_batch
         )
     merged_references = []
     for (
         reference_selected_element,
         kind,
-    ) in results_references_by_selected_element.items():
+    ) in results_references_kind_by_selected_element.items():
         merged_references.append(
             ReferenceDefinition(
                 selected_element=reference_selected_element,
                 kind=list(kind),
+                points_to_batch=results_references_batch_pointing_by_selected_element[
+                    reference_selected_element
+                ],
             )
         )
     if not merged_references:

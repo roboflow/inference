@@ -89,6 +89,8 @@ def assemble_batch_oriented_input(
             )
             for identifier, element in enumerate(value)
         ]
+        if len(result) == 1 and len(result) != input_batch_size:
+            result = result * input_batch_size
     if len(result) != input_batch_size:
         raise RuntimeInputError(
             public_message="Expected all batch-oriented workflow inputs be the same length, or of length 1 - "

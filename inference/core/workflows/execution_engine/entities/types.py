@@ -35,6 +35,7 @@ SELECTED_ELEMENT_KEY = "selected_element"
 KIND_KEY = "kind"
 DIMENSIONALITY_OFFSET_KEY = "dimensionality_offset"
 DIMENSIONALITY_REFERENCE_PROPERTY_KEY = "dimensionality_reference_property"
+SELECTOR_POINTS_TO_BATCH_KEY = "selector_points_to_batch"
 
 WILDCARD_KIND_DOCS = """
 This is a special kind that represents Any value - which is to be used by default if 
@@ -1055,6 +1056,7 @@ def StepOutputSelector(kind: Optional[List[Kind]] = None):
         REFERENCE_KEY: True,
         SELECTED_ELEMENT_KEY: STEP_OUTPUT_AS_SELECTED_ELEMENT,
         KIND_KEY: [k.dict() for k in kind],
+        SELECTOR_POINTS_TO_BATCH_KEY: True,
     }
     return Annotated[
         str,
@@ -1089,6 +1091,7 @@ WorkflowImageSelector = Annotated[
             REFERENCE_KEY: True,
             SELECTED_ELEMENT_KEY: "workflow_image",
             KIND_KEY: [IMAGE_KIND.dict()],
+            SELECTOR_POINTS_TO_BATCH_KEY: True,
         }
     ),
 ]
@@ -1101,6 +1104,7 @@ StepOutputImageSelector = Annotated[
             REFERENCE_KEY: True,
             SELECTED_ELEMENT_KEY: STEP_OUTPUT_AS_SELECTED_ELEMENT,
             KIND_KEY: [IMAGE_KIND.dict()],
+            SELECTOR_POINTS_TO_BATCH_KEY: True,
         }
     ),
 ]
@@ -1116,6 +1120,7 @@ WorkflowVideoMetadataSelector = Annotated[
             REFERENCE_KEY: True,
             SELECTED_ELEMENT_KEY: "workflow_video_metadata",
             KIND_KEY: [VIDEO_METADATA_KIND.dict()],
+            SELECTOR_POINTS_TO_BATCH_KEY: True,
         }
     ),
 ]

@@ -159,10 +159,7 @@ from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
-from inference.core.interfaces.http.orjson_utils import (
-    orjson_response,
-    serialise_workflow_result,
-)
+from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandResponse,
     ConsumePipelineResponse,

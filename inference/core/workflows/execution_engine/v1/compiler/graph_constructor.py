@@ -276,6 +276,9 @@ def add_edge_for_step(
             expected_type=InputNode,
         )
         actual_input_kind = input_node_compilation_data.input_manifest.kind
+        actual_input_is_batch = (
+            input_node_compilation_data.input_manifest.is_batch_oriented()
+        )
     else:
         other_step_compilation_data = node_as(
             execution_graph=execution_graph,
@@ -287,6 +290,25 @@ def add_edge_for_step(
             step_property=get_last_chunk_of_selector(
                 selector=target_step_parsed_selector.value
             ),
+        )
+        actual_input_is_batch = other_step_compilation_data.is_batch_oriented()
+
+    batch_input_expected = bool(
+        sum(
+            ref.points_to_batch
+            for ref in target_step_parsed_selector.definition.allowed_references
+        )
+    )
+    if not batch_input_expected and actual_input_is_batch:
+        property_name = target_step_parsed_selector.definition.property_name
+        raise ExecutionGraphStructureError(
+            public_message=f"Detected invalid reference `{target_step_parsed_selector.value}` plugged "
+            f"into property `{property_name}` of step `{source_step_selector}` - the step "
+            f"property do not accept batch-oriented inputs, yet the selector "
+            f"`{target_step_parsed_selector.value}` holds one - this indicates the problem with "
+            f"construction of your Workflow - usually the problem occurs when non-batch oriented "
+            f"step inputs are filled with outputs of batch-oriented steps or batch-oriented inputs.",
+            context="workflow_compilation | execution_graph_construction",
         )
     expected_input_kind = list(
         itertools.chain.from_iterable(
