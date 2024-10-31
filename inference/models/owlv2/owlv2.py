@@ -1,7 +1,7 @@
 import hashlib
 import os
 from collections import defaultdict
-from typing import Dict, List, NewType, Tuple
+from typing import Any, Dict, List, Literal, NewType, Tuple
 
 import numpy as np
 import torch
@@ -15,16 +15,19 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import DEVICE
+from inference.core.env import DEVICE, MAX_DETECTIONS
 from inference.core.models.roboflow import (
     DEFAULT_COLOR_PALETTE,
     RoboflowCoreModel,
     draw_detection_predictions,
 )
 from inference.core.utils.image_utils import load_image_rgb
-from inference.core.env import MAX_DETECTIONS
 
+# TYPES
 Hash = NewType("Hash", str)
+PosNegKey = Literal["positive", "negative"]
+PosNegDictType = Dict[PosNegKey, torch.Tensor]
+QuerySpecType = Dict[Hash, List[List[int]]]
 if DEVICE is None:
     DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -123,13 +126,13 @@ def filter_tensors_by_objectness(
 
 
 def get_class_preds_from_embeds(
-    pos_neg_embedding_dict,
-    image_class_embeds,
-    confidence,
-    image_boxes,
-    class_map,
-    class_name,
-):
+    pos_neg_embedding_dict: PosNegDictType,
+    image_class_embeds: torch.Tensor,
+    confidence: torch.Tensor,
+    image_boxes: torch.Tensor,
+    class_map: torch.Tensor,
+    class_name: torch.Tensor,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     predicted_boxes_per_class = []
     predicted_class_indices_per_class = []
     predicted_scores_per_class = []
@@ -157,19 +160,26 @@ def get_class_preds_from_embeds(
             np.empty((0,)),
         )
 
+    # concat tensors
     pred_boxes = torch.cat(predicted_boxes_per_class, dim=0).float()
     pred_classes = torch.cat(predicted_class_indices_per_class, dim=0).float()
     pred_scores = torch.cat(predicted_scores_per_class, dim=0).float()
     positive = torch.cat(positive_arr_per_class, dim=0).float()
+    # nms
     survival_indices = torchvision.ops.nms(to_corners(pred_boxes), pred_scores, 0.3)
+    # put on numpy and filter to post-nms
     pred_boxes = pred_boxes[survival_indices, :].detach().cpu().numpy()
     pred_classes = pred_classes[survival_indices].detach().cpu().numpy()
     pred_scores = pred_scores[survival_indices].detach().cpu().numpy()
     positive = positive[survival_indices].detach().cpu().numpy()
     is_positive = positive == 1
+    # return only positive elements of tensor
     return pred_boxes[is_positive], pred_classes[is_positive], pred_scores[is_positive]
 
-def make_class_map(query_embeddings):
+
+def make_class_map(
+    query_embeddings: Dict[str, PosNegDictType]
+) -> Tuple[Dict[Tuple[str, str], int], List[str]]:
     class_names = sorted(list(query_embeddings.keys()))
     class_map_positive = {
         (class_name, "positive"): i for i, class_name in enumerate(class_names)
@@ -180,6 +190,7 @@ def make_class_map(query_embeddings):
     }
     class_map = {**class_map_positive, **class_map_negative}
     return class_map, class_names
+
 
 class OwlV2(RoboflowCoreModel):
     task_type = "object-detection"
@@ -205,8 +216,8 @@ class OwlV2(RoboflowCoreModel):
         # however that is only true if torch version 2.4 or later is used
         # for torch < 2.4, this is a LOT slower and using flash attention by ourselves is faster
         # this also breaks in torch < 2.1 so we supress torch._dynamo errors
-        # torch._dynamo.config.suppress_errors = True
-        # self.model.owlv2.vision_model = torch.compile(self.model.owlv2.vision_model)
+        torch._dynamo.config.suppress_errors = True
+        self.model.owlv2.vision_model = torch.compile(self.model.owlv2.vision_model)
 
     def reset_cache(self):
         self.image_embed_cache = LimitedSizeDict(
@@ -296,7 +307,7 @@ class OwlV2(RoboflowCoreModel):
 
         return image_hash
 
-    def get_query_embedding(self, query_spec: Dict[Hash, List[List[int]]]):
+    def get_query_embedding(self, query_spec: QuerySpecType) -> torch.Tensor:
         # NOTE: for now we're handling each image seperately
         query_embeds = []
         for image_hash, query_boxes in query_spec.items():
@@ -310,10 +321,11 @@ class OwlV2(RoboflowCoreModel):
             query_boxes_tensor = torch.tensor(
                 query_boxes, dtype=image_boxes.dtype, device=image_boxes.device
             )
-            iou, _union = box_iou(
+            iou, _ = box_iou(
                 to_corners(image_boxes), to_corners(query_boxes_tensor)
             )  # 3000, k
             ious, indices = torch.max(iou, dim=0)
+            # filter for only iou > 0.4
             iou_mask = ious > 0.4
             indices = indices[iou_mask]
             if not indices.numel() > 0:
@@ -326,12 +338,17 @@ class OwlV2(RoboflowCoreModel):
         query = torch.cat(query_embeds, dim=0)
         return query
 
-    def infer_from_embed(self, image_hash: Hash, query_embeddings, confidence):
+    def infer_from_embed(
+        self,
+        image_hash: Hash,
+        query_embeddings: Dict[str, PosNegDictType],
+        confidence: float,
+    ) -> List[Dict]:
         _, image_boxes, image_class_embeds, _, _ = self.image_embed_cache[image_hash]
         class_map, class_names = make_class_map(query_embeddings)
         all_predicted_boxes, all_predicted_classes, all_predicted_scores = [], [], []
         for class_name, pos_neg_embedding_dict in query_embeddings.items():
-            boxes, classes, scores  = get_class_preds_from_embeds(
+            boxes, classes, scores = get_class_preds_from_embeds(
                 pos_neg_embedding_dict,
                 image_class_embeds,
                 confidence,
@@ -357,29 +374,10 @@ class OwlV2(RoboflowCoreModel):
             )
         ]
 
-    def infer(self, image, training_data, confidence=0.99, **kwargs):
-        class_to_query_spec = defaultdict(lambda: defaultdict(list))
-        for train_image_dict in training_data:
-            boxes, train_image = train_image_dict["boxes"], train_image_dict["image"]
-            train_image = load_image_rgb(train_image)
-            image_hash = self.embed_image(train_image)
-            for box in boxes:
-                negative = box["negative"]
-                positive = not negative
-                class_name = box["cls"]
-                coords = box["x"], box["y"], box["w"], box["h"]
-                coords = tuple([c / max(train_image.shape[:2]) for c in coords])
-                class_to_query_spec[(class_name, positive)][image_hash].append(coords)
+    def infer(self, image: Any, training_data: Dict, confidence=0.99, **kwargs):
+        class_to_query_spec = self.make_class_box_query_dict(training_data)
 
-        my_class_to_embeddings_dict = defaultdict(
-            lambda: {"positive": None, "negative": None}
-        )
-        class_pos = {True: "positive", False: "negative"}
-        for (class_name, positive), query_spec in class_to_query_spec.items():
-            class_embedding = self.get_query_embedding(query_spec)
-            my_class_to_embeddings_dict[class_name][
-                class_pos[positive]
-            ] = class_embedding
+        class_embeddings_dict = self.make_class_embeddings_dict(class_to_query_spec)
 
         if not isinstance(image, list):
             images = [image]
@@ -393,12 +391,42 @@ class OwlV2(RoboflowCoreModel):
             image_sizes.append(image.shape[:2][::-1])
             image_hash = self.embed_image(image)
             result = self.infer_from_embed(
-                image_hash, my_class_to_embeddings_dict, confidence
+                image_hash, class_embeddings_dict, confidence
             )
             results.append(result)
         return self.make_response(
-            results, image_sizes, sorted(list(my_class_to_embeddings_dict.keys()))
+            results, image_sizes, sorted(list(class_embeddings_dict.keys()))
         )
+
+    def make_class_embeddings_dict(
+        self, class_to_query_spec: Dict[Tuple[str, str], Dict]
+    ) -> Dict[str, PosNegDictType]:
+        class_embeddings_dict = defaultdict(
+            lambda: {"positive": None, "negative": None}
+        )
+        bool_to_literal = {True: "positive", False: "negative"}
+        for (class_name, positive), query_spec in class_to_query_spec.items():
+            class_embedding = self.get_query_embedding(query_spec)
+            class_embeddings_dict[class_name][
+                bool_to_literal[positive]
+            ] = class_embedding
+
+        return class_embeddings_dict
+
+    def make_class_box_query_dict(self, training_data):
+        class_to_query_spec = defaultdict(lambda: defaultdict(list))
+        for train_image_dict in training_data:
+            boxes, train_image = train_image_dict["boxes"], train_image_dict["image"]
+            train_image = load_image_rgb(train_image)
+            image_hash = self.embed_image(train_image)
+            for box in boxes:
+                negative = box["negative"]
+                positive = not negative
+                class_name = box["cls"]
+                coords = box["x"], box["y"], box["w"], box["h"]
+                coords = tuple([c / max(train_image.shape[:2]) for c in coords])
+                class_to_query_spec[(class_name, positive)][image_hash].append(coords)
+        return class_to_query_spec
 
     def make_response(self, predictions, image_sizes, class_names):
         responses = [
