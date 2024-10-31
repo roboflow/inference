@@ -37,9 +37,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    BatchOfDataSelector,
     ImageInputField,
     StepOutputImageSelector,
-    StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
@@ -82,7 +82,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/segment_anything@v1"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     boxes: Optional[
-        StepOutputSelector(
+        BatchOfDataSelector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,

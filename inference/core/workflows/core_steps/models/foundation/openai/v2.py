@@ -94,7 +94,8 @@ class BlockManifest(WorkflowBlockManifest):
             "search_keywords": ["LMM", "VLM", "ChatGPT", "GPT", "OpenAI"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
-        }
+        },
+        protected_namespaces=(),
     )
     type: Literal["roboflow_core/open_ai@v2"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField

@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputSelector,
+    BatchOfDataSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
@@ -47,7 +47,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/stabilize_detections@v1"]
     image: WorkflowImageSelector
-    detections: StepOutputSelector(
+    detections: BatchOfDataSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,

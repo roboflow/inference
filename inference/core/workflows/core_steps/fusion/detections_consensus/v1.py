@@ -35,8 +35,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    BatchOfDataSelector,
     FloatZeroToOne,
-    StepOutputSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -81,7 +81,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/detections_consensus@v1", "DetectionsConsensus"]
     predictions_batches: List[
-        StepOutputSelector(
+        BatchOfDataSelector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,

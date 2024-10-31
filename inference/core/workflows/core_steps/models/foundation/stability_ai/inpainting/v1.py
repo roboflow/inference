@@ -19,8 +19,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     STRING_KIND,
+    BatchOfDataSelector,
     StepOutputImageSelector,
-    StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
@@ -68,7 +68,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="The image which was the base to generate VLM prediction",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    segmentation_mask: StepOutputSelector(
+    segmentation_mask: BatchOfDataSelector(
         kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
     ) = Field(
         name="Segmentation Mask",
@@ -77,7 +77,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     prompt: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]),
-        StepOutputSelector(kind=[STRING_KIND]),
+        BatchOfDataSelector(kind=[STRING_KIND]),
         str,
     ] = Field(
         description="Prompt to inpainting model (what you wish to see)",
@@ -86,7 +86,7 @@ class BlockManifest(WorkflowBlockManifest):
     negative_prompt: Optional[
         Union[
             WorkflowParameterSelector(kind=[STRING_KIND]),
-            StepOutputSelector(kind=[STRING_KIND]),
+            BatchOfDataSelector(kind=[STRING_KIND]),
             str,
         ]
     ] = Field(

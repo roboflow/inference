@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    StepOutputSelector,
+    BatchOfDataSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -45,7 +45,7 @@ class ReferencePathVisualizationManifest(VisualizationManifest):
     )
     reference_path: Union[
         list,
-        StepOutputSelector(kind=[LIST_OF_VALUES_KIND]),
+        BatchOfDataSelector(kind=[LIST_OF_VALUES_KIND]),
         WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
     ] = Field(  # type: ignore
         description="Reference path in a format [(x1, y1), (x2, y2), (x3, y3), ...]",

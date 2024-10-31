@@ -95,7 +95,8 @@ class BlockManifest(WorkflowBlockManifest):
             "search_keywords": ["LMM", "VLM", "Claude", "Anthropic"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
-        }
+        },
+        protected_namespaces=(),
     )
     type: Literal["roboflow_core/anthropic_claude@v1"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField

@@ -19,8 +19,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
+    BatchOfDataSelector,
     FloatZeroToOne,
-    StepOutputSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
@@ -47,7 +47,7 @@ class LineCounterZoneVisualizationManifest(VisualizationManifest):
             "block_type": "visualization",
         }
     )
-    zone: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    zone: Union[list, BatchOfDataSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Line in the format [[x1, y1], [x2, y2]] consisting of exactly two points.",
         examples=[[[0, 50], [500, 50]], "$inputs.zones"],
     )
@@ -71,13 +71,13 @@ class LineCounterZoneVisualizationManifest(VisualizationManifest):
         default=1.0,
         examples=[1.0, "$inputs.text_scale"],
     )
-    count_in: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND]), StepOutputSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    count_in: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND]), BatchOfDataSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Reference to the number of objects that crossed into the line zone.",
         default=0,
         examples=["$steps.line_counter.count_in"],
         json_schema_extra={"always_visible": True},
     )
-    count_out: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND]), StepOutputSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    count_out: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND]), BatchOfDataSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Reference to the number of objects that crossed out of the line zone.",
         default=0,
         examples=["$steps.line_counter.count_out"],

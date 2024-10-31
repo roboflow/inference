@@ -19,8 +19,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    BatchOfDataSelector,
     FloatZeroToOne,
-    StepOutputSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
@@ -52,7 +52,7 @@ class ModelComparisonManifest(VisualizationManifest):
         }
     )
 
-    predictions_a: StepOutputSelector(
+    predictions_a: BatchOfDataSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -69,7 +69,7 @@ class ModelComparisonManifest(VisualizationManifest):
         examples=["GREEN", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.color_a"],
     )
 
-    predictions_b: StepOutputSelector(
+    predictions_b: BatchOfDataSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,

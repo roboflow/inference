@@ -22,9 +22,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    BatchOfDataSelector,
     ImageInputField,
     StepOutputImageSelector,
-    StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
@@ -218,7 +218,7 @@ class BlockManifest(WorkflowBlockManifest):
         Union[
             List[int],
             List[float],
-            StepOutputSelector(
+            BatchOfDataSelector(
                 kind=[
                     OBJECT_DETECTION_PREDICTION_KIND,
                     INSTANCE_SEGMENTATION_PREDICTION_KIND,

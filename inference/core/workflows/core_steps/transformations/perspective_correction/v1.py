@@ -23,8 +23,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    BatchOfDataSelector,
     StepOutputImageSelector,
-    StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
@@ -62,7 +62,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/perspective_correction@v1", "PerspectiveCorrection"]
     predictions: Optional[
-        StepOutputSelector(
+        BatchOfDataSelector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -79,7 +79,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    perspective_polygons: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    perspective_polygons: Union[list, BatchOfDataSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Perspective polygons (for each batch at least one must be consisting of 4 vertices)",
         examples=["$steps.perspective_wrap.zones"],
     )

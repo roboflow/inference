@@ -9,7 +9,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     INTEGER_KIND,
     NUMPY_ARRAY_KIND,
-    StepOutputSelector,
+    BatchOfDataSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -39,11 +39,11 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/sift_comparison@v1"]
-    descriptor_1: StepOutputSelector(kind=[NUMPY_ARRAY_KIND]) = Field(
+    descriptor_1: BatchOfDataSelector(kind=[NUMPY_ARRAY_KIND]) = Field(
         description="Reference to SIFT descriptors from the first image to compare",
         examples=["$steps.sift.descriptors"],
     )
-    descriptor_2: StepOutputSelector(kind=[NUMPY_ARRAY_KIND]) = Field(
+    descriptor_2: BatchOfDataSelector(kind=[NUMPY_ARRAY_KIND]) = Field(
         description="Reference to SIFT descriptors from the second image to compare",
         examples=["$steps.sift.descriptors"],
     )

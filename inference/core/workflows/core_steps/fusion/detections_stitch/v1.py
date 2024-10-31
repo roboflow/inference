@@ -23,9 +23,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    BatchOfDataSelector,
     FloatZeroToOne,
     StepOutputImageSelector,
-    StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
@@ -63,7 +63,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Image that was origin to take crops that yielded predictions.",
         examples=["$inputs.image"],
     )
-    predictions: StepOutputSelector(
+    predictions: BatchOfDataSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,

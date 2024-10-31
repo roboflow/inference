@@ -104,7 +104,8 @@ class BlockManifest(WorkflowBlockManifest):
             "beta": True,
             "is_vlm_block": True,
             "task_type_property": "task_type",
-        }
+        },
+        protected_namespaces=(),
     )
     type: Literal["roboflow_core/google_gemini@v1"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField

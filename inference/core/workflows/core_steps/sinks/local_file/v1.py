@@ -11,7 +11,7 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     STRING_KIND,
-    StepOutputSelector,
+    BatchOfDataSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -77,7 +77,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/local_file_sink@v1"]
-    content: StepOutputSelector(kind=[STRING_KIND]) = Field(
+    content: BatchOfDataSelector(kind=[STRING_KIND]) = Field(
         description="Content of the file to save",
         examples=["$steps.csv_formatter.csv_content"],
     )

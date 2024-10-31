@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.constants import (
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    StepOutputSelector,
+    BatchOfDataSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -47,7 +47,7 @@ class BoundingRectManifest(WorkflowBlockManifest):
         }
     )
     type: Literal[f"roboflow_core/bounding_rect@v1"]
-    predictions: StepOutputSelector(
+    predictions: BatchOfDataSelector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]

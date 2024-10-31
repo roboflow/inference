@@ -28,7 +28,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    StepOutputSelector,
+    BatchOfDataSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -59,7 +59,7 @@ Content of the message can be parametrised with Workflow execution outcomes. Tak
 message using dynamic parameters:
 
 ```
-message = "This is example notification. Predicted classes: {{ $parameters.predicted_classes }}"
+message = "This is example notification. Predicted classes: \{\{ $parameters.predicted_classes \}\}"
 ```
 
 Message parameters are delivered by Workflows Execution Engine by setting proper data selectors in
@@ -174,7 +174,7 @@ class BlockManifest(WorkflowBlockManifest):
     message: str = Field(
         description="Content of the message to be send",
         examples=[
-            "During last 5 minutes detected {{ $parameters.num_instances }} instances"
+            "During last 5 minutes detected \{\{ $parameters.num_instances \}\} instances"
         ],
     )
     sender_email: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
@@ -213,7 +213,9 @@ class BlockManifest(WorkflowBlockManifest):
     )
     message_parameters: Dict[
         str,
-        Union[WorkflowParameterSelector(), StepOutputSelector(), str, int, float, bool],
+        Union[
+            WorkflowParameterSelector(), BatchOfDataSelector(), str, int, float, bool
+        ],
     ] = Field(
         description="References data to be used to construct each and every column",
         examples=[
@@ -235,7 +237,7 @@ class BlockManifest(WorkflowBlockManifest):
         ],
         default_factory=dict,
     )
-    attachments: Dict[str, StepOutputSelector(kind=[STRING_KIND])] = Field(
+    attachments: Dict[str, BatchOfDataSelector(kind=[STRING_KIND])] = Field(
         description="Attachments",
         default_factory=dict,
         examples=[{"report.cvs": "$steps.csv_formatter.csv_content"}],

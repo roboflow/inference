@@ -8,7 +8,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
-    StepOutputSelector,
+    BatchOfDataSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -42,7 +42,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/dimension_collapse@v1", "DimensionCollapse"]
-    data: StepOutputSelector() = Field(
+    data: BatchOfDataSelector() = Field(
         description="Reference to step outputs at depth level n to be concatenated and moved into level n-1.",
         examples=["$steps.ocr_step.results"],
     )

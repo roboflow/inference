@@ -10,7 +10,7 @@ from inference.core.workflows.core_steps.common.query_language.evaluation_engine
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    StepOutputSelector,
+    BatchOfDataSelector,
     StepSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -63,7 +63,9 @@ class BlockManifest(WorkflowBlockManifest):
     )
     evaluation_parameters: Dict[
         str,
-        Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
+        Union[
+            WorkflowImageSelector, WorkflowParameterSelector(), BatchOfDataSelector()
+        ],
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parametrise operations",
         examples=[{"left": "$inputs.some"}],

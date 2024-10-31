@@ -9,6 +9,7 @@ class SelectorType(Enum):
     STEP_OUTPUT_IMAGE = "step_output_image"
     INPUT_PARAMETER = "input_parameter"
     STEP_OUTPUT = "step_output"
+    BATCH_OF_DATA = "batch_of_data"
 
 
 class ValueType(Enum):

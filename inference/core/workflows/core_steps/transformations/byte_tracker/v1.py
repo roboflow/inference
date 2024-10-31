@@ -12,7 +12,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputSelector,
+    BatchOfDataSelector,
     WorkflowParameterSelector,
     WorkflowVideoMetadataSelector,
 )
@@ -52,7 +52,7 @@ class ByteTrackerBlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/byte_tracker@v1"]
     metadata: WorkflowVideoMetadataSelector
-    detections: StepOutputSelector(
+    detections: BatchOfDataSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,

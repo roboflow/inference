@@ -12,6 +12,7 @@ from inference.core.workflows.errors import (
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     WILDCARD_KIND,
+    BatchOfDataSelector,
     Kind,
     StepOutputImageSelector,
     StepOutputSelector,
@@ -249,6 +250,8 @@ def collect_python_types_for_selectors(
             result.append(WorkflowParameterSelector(kind=selector_kind))
         elif selector_type is SelectorType.STEP_OUTPUT:
             result.append(StepOutputSelector(kind=selector_kind))
+        elif selector_type is SelectorType.BATCH_OF_DATA:
+            result.append(BatchOfDataSelector(kind=selector_kind))
         else:
             raise DynamicBlockError(
                 public_message=f"Could not recognise selector type `{selector_type}` declared for input `{input_name}` "

@@ -17,8 +17,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     NUMPY_ARRAY_KIND,
     STRING_KIND,
+    BatchOfDataSelector,
     StepOutputImageSelector,
-    StepOutputSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
@@ -52,7 +52,7 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
     input_1: Union[
         WorkflowImageSelector,
         StepOutputImageSelector,
-        StepOutputSelector(kind=[NUMPY_ARRAY_KIND]),
+        BatchOfDataSelector(kind=[NUMPY_ARRAY_KIND]),
     ] = Field(
         description="Reference to Image or SIFT descriptors from the first image to compare",
         examples=["$inputs.image1", "$steps.sift.descriptors"],
@@ -60,7 +60,7 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
     input_2: Union[
         WorkflowImageSelector,
         StepOutputImageSelector,
-        StepOutputSelector(kind=[NUMPY_ARRAY_KIND]),
+        BatchOfDataSelector(kind=[NUMPY_ARRAY_KIND]),
     ] = Field(
         description="Reference to Image or SIFT descriptors from the second image to compare",
         examples=["$inputs.image2", "$steps.sift.descriptors"],

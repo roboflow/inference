@@ -18,8 +18,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
+    BatchOfDataSelector,
     FloatZeroToOne,
-    StepOutputSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
@@ -46,7 +46,7 @@ class HaloManifest(ColorableVisualizationManifest):
         }
     )
 
-    predictions: StepOutputSelector(
+    predictions: BatchOfDataSelector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]

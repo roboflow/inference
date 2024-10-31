@@ -17,7 +17,7 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
-    StepOutputSelector,
+    BatchOfDataSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
@@ -44,7 +44,7 @@ class PolygonManifest(ColorableVisualizationManifest):
         }
     )
 
-    predictions: StepOutputSelector(
+    predictions: BatchOfDataSelector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]

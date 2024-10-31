@@ -13,7 +13,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
-    StepOutputSelector,
+    BatchOfDataSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -49,7 +49,7 @@ class DynamicZonesManifest(WorkflowBlockManifest):
         }
     )
     type: Literal[f"{TYPE}", "DynamicZone"]
-    predictions: StepOutputSelector(
+    predictions: BatchOfDataSelector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]

@@ -27,7 +27,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
     TOP_CLASS_KIND,
-    StepOutputSelector,
+    BatchOfDataSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -174,7 +174,7 @@ class BlockManifest(WorkflowBlockManifest):
         str,
         Union[
             WorkflowParameterSelector(kind=QUERY_PARAMS_KIND),
-            StepOutputSelector(kind=QUERY_PARAMS_KIND),
+            BatchOfDataSelector(kind=QUERY_PARAMS_KIND),
             str,
             float,
             bool,
@@ -190,7 +190,7 @@ class BlockManifest(WorkflowBlockManifest):
         str,
         Union[
             WorkflowParameterSelector(kind=HEADER_KIND),
-            StepOutputSelector(kind=HEADER_KIND),
+            BatchOfDataSelector(kind=HEADER_KIND),
             str,
             float,
             bool,
@@ -205,7 +205,7 @@ class BlockManifest(WorkflowBlockManifest):
         str,
         Union[
             WorkflowParameterSelector(),
-            StepOutputSelector(),
+            BatchOfDataSelector(),
             str,
             float,
             bool,
@@ -234,7 +234,7 @@ class BlockManifest(WorkflowBlockManifest):
         str,
         Union[
             WorkflowParameterSelector(),
-            StepOutputSelector(),
+            BatchOfDataSelector(),
             str,
             float,
             bool,
@@ -266,7 +266,7 @@ class BlockManifest(WorkflowBlockManifest):
         str,
         Union[
             WorkflowParameterSelector(),
-            StepOutputSelector(),
+            BatchOfDataSelector(),
             str,
             float,
             bool,
