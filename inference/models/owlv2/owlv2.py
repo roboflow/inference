@@ -454,7 +454,7 @@ class OwlV2(RoboflowCoreModel):
             # compute the embeddings for the box prompts
             query_spec = {image_hash: coords}
             # NOTE: because we just computed the embedding for this image, this should never result in a KeyError
-            embeddings = self.get_query_embedding(query_spec)
+            embeddings = self.get_query_embedding(query_spec, iou_threshold)
 
             # add the embeddings to their appropriate class and positive/negative list
             for embedding, class_name, is_positive in zip(
