@@ -465,10 +465,11 @@ class OwlV2(RoboflowCoreModel):
                 )
 
         # convert the lists of embeddings to tensors
+
         class_embeddings_dict = {
             k: {
-                "positive": torch.stack(v["positive"]),
-                "negative": torch.stack(v["negative"]),
+                "positive": torch.stack(v["positive"]) if v["positive"] else None,
+                "negative": torch.stack(v["negative"]) if v["negative"] else None,
             }
             for k, v in class_embeddings_dict.items()
         }
