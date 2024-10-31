@@ -10,6 +10,7 @@ import torchvision
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import box_iou
 
+from inference.core.entities.requests.owlv2 import TrainingImage
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
@@ -221,7 +222,7 @@ class OwlV2(RoboflowCoreModel):
 
     def reset_cache(self):
         self.image_embed_cache = LimitedSizeDict(
-            size_limit=50
+            size_limit=1000
         )  # NOTE: this should have a max size
 
     def draw_predictions(
@@ -374,10 +375,10 @@ class OwlV2(RoboflowCoreModel):
             )
         ]
 
-    def infer(self, image: Any, training_data: Dict, confidence=0.99, **kwargs):
-        class_to_query_spec = self.make_class_box_query_dict(training_data)
-
-        class_embeddings_dict = self.make_class_embeddings_dict(class_to_query_spec)
+    def infer(
+        self, image: Any, training_data: List[TrainingImage], confidence=0.99, **kwargs
+    ):
+        class_embeddings_dict = self.make_class_embeddings_dict(training_data)
 
         if not isinstance(image, list):
             images = [image]
@@ -399,34 +400,49 @@ class OwlV2(RoboflowCoreModel):
         )
 
     def make_class_embeddings_dict(
-        self, class_to_query_spec: Dict[Tuple[str, str], Dict]
+        self, training_data: List[TrainingImage]
     ) -> Dict[str, PosNegDictType]:
-        class_embeddings_dict = defaultdict(
-            lambda: {"positive": None, "negative": None}
-        )
+        class_embeddings_dict = defaultdict(lambda: {"positive": [], "negative": []})
+
         bool_to_literal = {True: "positive", False: "negative"}
-        for (class_name, positive), query_spec in class_to_query_spec.items():
-            class_embedding = self.get_query_embedding(query_spec)
-            class_embeddings_dict[class_name][
-                bool_to_literal[positive]
-            ] = class_embedding
+
+        for train_image in training_data:
+            # grab and embed image
+            image = load_image_rgb(train_image["image"])
+            image_hash = self.embed_image(image)
+
+            # grab and normalize box prompts for this image
+            boxes = train_image["boxes"]
+            coords = [[box["x"], box["y"], box["w"], box["h"]] for box in boxes]
+            coords = [
+                tuple([c / max(image.shape[:2]) for c in coord]) for coord in coords
+            ]
+            classes = [box["cls"] for box in boxes]
+            is_positive = [not box["negative"] for box in boxes]
+
+            # compute the embeddings for the box prompts
+            query_spec = {image_hash: coords}
+            # NOTE: because we just computed the embedding for this image, this should never result in a KeyError
+            embeddings = self.get_query_embedding(query_spec)
+
+            # add the embeddings to their appropriate class and positive/negative list
+            for embedding, class_name, is_positive in zip(
+                embeddings, classes, is_positive
+            ):
+                class_embeddings_dict[class_name][bool_to_literal[is_positive]].append(
+                    embedding
+                )
+
+        # convert the lists of embeddings to tensors
+        class_embeddings_dict = {
+            k: {
+                "positive": torch.stack(v["positive"]),
+                "negative": torch.stack(v["negative"]),
+            }
+            for k, v in class_embeddings_dict.items()
+        }
 
         return class_embeddings_dict
-
-    def make_class_box_query_dict(self, training_data):
-        class_to_query_spec = defaultdict(lambda: defaultdict(list))
-        for train_image_dict in training_data:
-            boxes, train_image = train_image_dict["boxes"], train_image_dict["image"]
-            train_image = load_image_rgb(train_image)
-            image_hash = self.embed_image(train_image)
-            for box in boxes:
-                negative = box["negative"]
-                positive = not negative
-                class_name = box["cls"]
-                coords = box["x"], box["y"], box["w"], box["h"]
-                coords = tuple([c / max(train_image.shape[:2]) for c in coords])
-                class_to_query_spec[(class_name, positive)][image_hash].append(coords)
-        return class_to_query_spec
 
     def make_response(self, predictions, image_sizes, class_names):
         responses = [
