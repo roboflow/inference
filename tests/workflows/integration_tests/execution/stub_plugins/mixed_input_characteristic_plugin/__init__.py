@@ -1,4 +1,4 @@
-from typing import Any, List, Literal, Type, Union
+from typing import Any, Dict, List, Literal, Type, Union
 
 from pydantic import ConfigDict
 
@@ -196,6 +196,152 @@ class BatchInputNotProcessingBatchesBlock(WorkflowBlock):
         return {"float_value": 0.4}
 
 
+class CompoundNonBatchInputBlockManifest(WorkflowBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "short_description": "",
+            "long_description": "",
+            "license": "Apache-2.0",
+            "block_type": "dummy",
+        }
+    )
+    type: Literal["CompoundNonBatchInputBlock"]
+    compound_parameter: Dict[str, Union[WorkflowParameterSelector(), Any]]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="float_value",
+                kind=[FLOAT_ZERO_TO_ONE_KIND],
+            ),
+        ]
+
+
+class CompoundNonBatchInputBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return CompoundNonBatchInputBlockManifest
+
+    def run(self, compound_parameter: Dict[str, Any]) -> BlockResult:
+        return {"float_value": 0.4}
+
+
+class CompoundMixedInputBlockManifest(WorkflowBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "short_description": "",
+            "long_description": "",
+            "license": "Apache-2.0",
+            "block_type": "dummy",
+        }
+    )
+    type: Literal["CompoundMixedInputBlockManifestBlock"]
+    compound_parameter: Dict[
+        str, Union[WorkflowParameterSelector(), StepOutputSelector(), Any]
+    ]
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="float_value",
+                kind=[FLOAT_ZERO_TO_ONE_KIND],
+            ),
+        ]
+
+
+class CompoundMixedInputBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return CompoundMixedInputBlockManifest
+
+    def run(self, compound_parameter: Dict[str, Any]) -> BlockResult:
+        retrieved_batches = [
+            v for v in compound_parameter.values() if isinstance(v, Batch)
+        ]
+        if not retrieved_batches:
+            return {"float_value": 0.4}
+        return [{"float_value": 0.4}] * len(retrieved_batches[0])
+
+
+class CompoundStrictBatchBlockManifest(WorkflowBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "short_description": "",
+            "long_description": "",
+            "license": "Apache-2.0",
+            "block_type": "dummy",
+        }
+    )
+    type: Literal["CompoundStrictBatchBlock"]
+    compound_parameter: Dict[str, Union[StepOutputSelector()]]
+
+    @classmethod
+    def accepts_batch_input(cls) -> bool:
+        return True
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="float_value",
+                kind=[FLOAT_ZERO_TO_ONE_KIND],
+            ),
+        ]
+
+
+class CompoundStrictBatchBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return CompoundStrictBatchBlockManifest
+
+    def run(self, compound_parameter: Dict[str, Any]) -> BlockResult:
+        retrieved_batches = [
+            v for v in compound_parameter.values() if isinstance(v, Batch)
+        ]
+        return [{"float_value": 0.4}] * len(retrieved_batches[0])
+
+
+class CompoundNonStrictBatchBlockManifest(WorkflowBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "short_description": "",
+            "long_description": "",
+            "license": "Apache-2.0",
+            "block_type": "dummy",
+        }
+    )
+    type: Literal["CompoundNonStrictBatchBlock"]
+    compound_parameter: Dict[str, Union[StepOutputSelector()]]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(
+                name="float_value",
+                kind=[FLOAT_ZERO_TO_ONE_KIND],
+            ),
+        ]
+
+
+class CompoundNonStrictBatchBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return CompoundNonStrictBatchBlockManifest
+
+    def run(self, compound_parameter: Dict[str, Any]) -> BlockResult:
+        return {"float_value": 0.4}
+
+
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
         NonBatchInputBlock,
@@ -203,4 +349,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         MixedInputWithoutBatchesBlock,
         BatchInputProcessingBatchesBlock,
         BatchInputNotProcessingBatchesBlock,
+        CompoundNonBatchInputBlock,
+        CompoundMixedInputBlock,
+        CompoundStrictBatchBlock,
+        CompoundNonStrictBatchBlock,
     ]

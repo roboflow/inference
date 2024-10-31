@@ -1088,3 +1088,884 @@ def test_workflow_when_batch_oriented_input_feeds_non_batch_input_step(
             init_parameters=workflow_init_parameters,
             max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
         )
+
+
+WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "non_batch_parameter"},
+    ],
+    "steps": [
+        {
+            "type": "NonBatchInputBlock",
+            "name": "step_one",
+            "non_batch_parameter": "$inputs.non_batch_parameter",
+        },
+        {
+            "type": "CompoundNonBatchInputBlock",
+            "name": "step_two",
+            "compound_parameter": {
+                "some": "$steps.step_one.float_value",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_two.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_non_batch_oriented_step_feeds_compound_non_batch_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # then
+    result = execution_engine.run(
+        runtime_parameters={
+            "non_batch_parameter": "some",
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Expected singular result"
+    assert result[0]["result"] == 0.4, "Expected hardcoded result"
+
+
+WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_MIXED_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "non_batch_parameter"},
+    ],
+    "steps": [
+        {
+            "type": "NonBatchInputBlock",
+            "name": "step_one",
+            "non_batch_parameter": "$inputs.non_batch_parameter",
+        },
+        {
+            "type": "CompoundMixedInputBlockManifestBlock",
+            "name": "step_two",
+            "compound_parameter": {
+                "some": "$steps.step_one.float_value",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_two.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_non_batch_oriented_step_feeds_compound_mixed_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_MIXED_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # then
+    result = execution_engine.run(
+        runtime_parameters={
+            "non_batch_parameter": "some",
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Expected singular result"
+    assert result[0]["result"] == 0.4, "Expected hardcoded result"
+
+
+WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_LOOSELY_BATCH_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "non_batch_parameter"},
+    ],
+    "steps": [
+        {
+            "type": "NonBatchInputBlock",
+            "name": "step_one",
+            "non_batch_parameter": "$inputs.non_batch_parameter",
+        },
+        {
+            "type": "CompoundNonStrictBatchBlock",
+            "name": "step_two",
+            "compound_parameter": {
+                "some": "$steps.step_one.float_value",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_two.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_non_batch_oriented_step_feeds_compound_loosely_batch_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_LOOSELY_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # then
+    result = execution_engine.run(
+        runtime_parameters={
+            "non_batch_parameter": "some",
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Expected singular result"
+    assert result[0]["result"] == 0.4, "Expected hardcoded result"
+
+
+WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "non_batch_parameter"},
+    ],
+    "steps": [
+        {
+            "type": "NonBatchInputBlock",
+            "name": "step_one",
+            "non_batch_parameter": "$inputs.non_batch_parameter",
+        },
+        {
+            "type": "CompoundStrictBatchBlock",
+            "name": "step_two",
+            "compound_parameter": {
+                "some": "$steps.step_one.float_value",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_two.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_non_batch_oriented_step_feeds_compound_strictly_batch_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    # then
+    with pytest.raises(ExecutionGraphStructureError):
+        _ = ExecutionEngine.init(
+            workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP,
+            init_parameters=workflow_init_parameters,
+            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        )
+
+
+WORKFLOW_WITH_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "non_batch_parameter"},
+    ],
+    "steps": [
+        {
+            "type": "NonBatchInputBlock",
+            "name": "step_one",
+            "non_batch_parameter": "$inputs.non_batch_parameter",
+        },
+        {
+            "type": "BatchInputBlockNotProcessingBatches",
+            "name": "step_two",
+            "batch_parameter": "$steps.step_one.float_value",
+        },
+        {
+            "type": "CompoundNonBatchInputBlock",
+            "name": "step_three",
+            "compound_parameter": {
+                "some": "$steps.step_two.float_value",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_three.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_batch_oriented_step_feeds_compound_non_batch_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # then
+    result = execution_engine.run(
+        runtime_parameters={
+            "non_batch_parameter": "some",
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Expected singular result"
+    assert result[0]["result"] == 0.4, "Expected hardcoded result"
+
+
+WORKFLOW_WITH_BATCH_ORIENTED_STEP_FEEDING_MIXED_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "non_batch_parameter"},
+    ],
+    "steps": [
+        {
+            "type": "NonBatchInputBlock",
+            "name": "step_one",
+            "non_batch_parameter": "$inputs.non_batch_parameter",
+        },
+        {
+            "type": "BatchInputBlockNotProcessingBatches",
+            "name": "step_two",
+            "batch_parameter": "$steps.step_one.float_value",
+        },
+        {
+            "type": "CompoundMixedInputBlockManifestBlock",
+            "name": "step_three",
+            "compound_parameter": {
+                "some": "$steps.step_two.float_value",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_three.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_batch_oriented_step_feeds_compound_mixed_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BATCH_ORIENTED_STEP_FEEDING_MIXED_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # then
+    result = execution_engine.run(
+        runtime_parameters={
+            "non_batch_parameter": "some",
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Expected singular result"
+    assert result[0]["result"] == 0.4, "Expected hardcoded result"
+
+
+WORKFLOW_WITH_BATCH_ORIENTED_STEP_FEEDING_BATCH_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "non_batch_parameter"},
+    ],
+    "steps": [
+        {
+            "type": "NonBatchInputBlock",
+            "name": "step_one",
+            "non_batch_parameter": "$inputs.non_batch_parameter",
+        },
+        {
+            "type": "BatchInputBlockNotProcessingBatches",
+            "name": "step_two",
+            "batch_parameter": "$steps.step_one.float_value",
+        },
+        {
+            "type": "CompoundNonStrictBatchBlock",
+            "name": "step_three",
+            "compound_parameter": {
+                "some": "$steps.step_two.float_value",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_three.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_batch_oriented_step_feeds_compound_batch_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BATCH_ORIENTED_STEP_FEEDING_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # then
+    result = execution_engine.run(
+        runtime_parameters={
+            "non_batch_parameter": "some",
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Expected singular result"
+    assert result[0]["result"] == 0.4, "Expected hardcoded result"
+
+
+WORKFLOW_WITH_NON_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "data"},
+    ],
+    "steps": [
+        {
+            "type": "CompoundNonBatchInputBlock",
+            "name": "step_one",
+            "compound_parameter": {
+                "some": "$inputs.data",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_one.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_non_batch_oriented_input_feeds_compound_non_batch_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # then
+    result = execution_engine.run(
+        runtime_parameters={
+            "data": "some",
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Expected singular result"
+    assert result[0]["result"] == 0.4, "Expected hardcoded result"
+
+
+WORKFLOW_WITH_NON_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_MIXED_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "data"},
+    ],
+    "steps": [
+        {
+            "type": "CompoundMixedInputBlockManifestBlock",
+            "name": "step_one",
+            "compound_parameter": {
+                "some": "$inputs.data",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_one.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_non_batch_oriented_input_feeds_compound_mixed_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_MIXED_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # then
+    result = execution_engine.run(
+        runtime_parameters={
+            "data": "some",
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Expected singular result"
+    assert result[0]["result"] == 0.4, "Expected hardcoded result"
+
+
+WORKFLOW_WITH_NON_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_LOOSELY_BATCH_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "data"},
+    ],
+    "steps": [
+        {
+            "type": "CompoundNonStrictBatchBlock",
+            "name": "step_one",
+            "compound_parameter": {
+                "some": "$inputs.data",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_one.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_non_batch_oriented_input_feeds_compound_loosely_batch_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_LOOSELY_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # then
+    result = execution_engine.run(
+        runtime_parameters={
+            "data": "some",
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Expected singular result"
+    assert result[0]["result"] == 0.4, "Expected hardcoded result"
+
+
+WORKFLOW_WITH_NON_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {"type": "WorkflowParameter", "name": "data"},
+    ],
+    "steps": [
+        {
+            "type": "CompoundStrictBatchBlock",
+            "name": "step_one",
+            "compound_parameter": {
+                "some": "$inputs.data",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_one.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_non_batch_oriented_input_feeds_compound_strictly_batch_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    # then
+    with pytest.raises(ExecutionGraphStructureError):
+        _ = ExecutionEngine.init(
+            workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP,
+            init_parameters=workflow_init_parameters,
+            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        )
+
+
+WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {
+            "type": "WorkflowDataBatch",
+            "name": "data",
+        },
+    ],
+    "steps": [
+        {
+            "type": "CompoundNonBatchInputBlock",
+            "name": "step_one",
+            "compound_parameter": {
+                "some": "$inputs.data",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_one.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_batch_oriented_input_feeds_compound_non_batch_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    # when
+    with pytest.raises(ExecutionGraphStructureError):
+        _ = ExecutionEngine.init(
+            workflow_definition=WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP,
+            init_parameters=workflow_init_parameters,
+            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+        )
+
+
+WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_MIXED_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {
+            "type": "WorkflowDataBatch",
+            "name": "data",
+        },
+    ],
+    "steps": [
+        {
+            "type": "CompoundMixedInputBlockManifestBlock",
+            "name": "step_one",
+            "compound_parameter": {
+                "some": "$inputs.data",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_one.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_batch_oriented_input_feeds_compound_mixed_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_MIXED_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "data": ["some", "other"],
+        }
+    )
+
+    # then
+    assert len(result) == 2, "Expected singular result"
+    assert result[0]["result"] == 0.4, "Expected hardcoded result"
+    assert result[1]["result"] == 0.4, "Expected hardcoded result"
+
+
+WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_LOOSELY_BATCH_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {
+            "type": "WorkflowDataBatch",
+            "name": "data",
+        },
+    ],
+    "steps": [
+        {
+            "type": "CompoundNonStrictBatchBlock",
+            "name": "step_one",
+            "compound_parameter": {
+                "some": "$inputs.data",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_one.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_batch_oriented_input_feeds_compound_loosely_batch_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_LOOSELY_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "data": ["some", "other"],
+        }
+    )
+
+    # then
+    assert len(result) == 2, "Expected singular result"
+    assert result[0]["result"] == 0.4, "Expected hardcoded result"
+    assert result[1]["result"] == 0.4, "Expected hardcoded result"
+
+
+WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP = {
+    "version": "1.3.0",
+    "inputs": [
+        {
+            "type": "WorkflowDataBatch",
+            "name": "data",
+        },
+    ],
+    "steps": [
+        {
+            "type": "CompoundStrictBatchBlock",
+            "name": "step_one",
+            "compound_parameter": {
+                "some": "$inputs.data",
+            },
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.step_one.float_value",
+        },
+    ],
+}
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_workflow_when_batch_oriented_input_feeds_compound_strictly_batch_oriented_step(
+    get_plugin_modules_mock: MagicMock,
+    model_manager: ModelManager,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.integration_tests.execution.stub_plugins.mixed_input_characteristic_plugin",
+    ]
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "data": ["some", "other"],
+        }
+    )
+
+    # then
+    assert len(result) == 2, "Expected singular result"
+    assert result[0]["result"] == 0.4, "Expected hardcoded result"
+    assert result[1]["result"] == 0.4, "Expected hardcoded result"
