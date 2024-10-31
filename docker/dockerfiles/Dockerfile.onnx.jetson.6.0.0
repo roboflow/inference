@@ -34,8 +34,7 @@ RUN python3 -m pip install --upgrade pip && \
     -r requirements/requirements.groundingdino.txt \
     -r requirements/requirements.sdk.http.txt \
     -r requirements/requirements.yolo_world.txt \
-    -r requirements/requirements.jetson.txt \
-    rm -rf ~/.cache/pip
+    -r requirements/requirements.jetson.txt
 
 # Build the application
 WORKDIR /build
