@@ -409,7 +409,7 @@ class OwlV2(RoboflowCoreModel):
         **kwargs,
     ):
         class_embeddings_dict = self.make_class_embeddings_dict(
-           training_data, iou_threshold
+            training_data, iou_threshold
         )
 
         if not isinstance(image, list):
