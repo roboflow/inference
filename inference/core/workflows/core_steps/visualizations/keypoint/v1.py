@@ -54,7 +54,7 @@ class KeypointManifest(VisualizationManifest):
             "block_type": "visualization",
             "ui_manifest": {
                 "section": "visualization",
-                "icon": "far fa-arrow-down-up-across-line",
+                "icon": "far fa-braille",
                 "blockPriority": 20,
             },
         }
