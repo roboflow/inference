@@ -264,7 +264,7 @@ NUM_WORKERS = int(os.getenv("NUM_WORKERS", 1))
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = os.getenv(
     "ONNXRUNTIME_EXECUTION_PROVIDERS",
-    "[CUDAExecutionProvider,OpenVINOExecutionProvider,CPUExecutionProvider]",
+    "[CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider]",
 )
 
 # Port, default is 9001
@@ -442,3 +442,7 @@ WORKFLOWS_DEFINITION_CACHE_EXPIRY = int(
 USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS = str2bool(
     os.getenv("USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS", "True")
 )
+ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE = str2bool(
+    os.getenv("ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE", "True")
+)
+WORKFLOW_BLOCKS_WRITE_DIRECTORY = os.getenv("WORKFLOW_BLOCKS_WRITE_DIRECTORY")

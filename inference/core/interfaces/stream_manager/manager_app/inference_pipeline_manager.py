@@ -2,10 +2,12 @@ import asyncio
 import os
 import signal
 import threading
+import time
 from dataclasses import asdict
 from functools import partial
 from multiprocessing import Process, Queue
-from threading import Event
+from queue import Empty
+from threading import Event, Lock
 from types import FrameType
 from typing import Dict, Optional, Tuple
 
@@ -76,16 +78,47 @@ class InferencePipelineManager(Process):
         self._watchdog: Optional[PipelineWatchDog] = None
         self._stop = False
         self._buffer_sink: Optional[InMemoryBufferSink] = None
+        self._last_consume_time = (
+            time.monotonic()
+        )  # Track last consume time for the pipeline
+        self._consumption_timeout: Optional[float] = (
+            None  # Track zero consume timeout for the pipeline
+        )
 
     def run(self) -> None:
         signal.signal(signal.SIGINT, ignore_signal)
         signal.signal(signal.SIGTERM, self._handle_termination_signal)
+
         while not self._stop:
-            command: Optional[Tuple[str, dict]] = self._command_queue.get()
+            self._check_pipeline_timeout()
+            # Handle commands from the queue
+            try:
+                command: Optional[Tuple[str, dict]] = self._command_queue.get(timeout=1)
+            except Empty:
+                continue
             if command is None:
                 break
             request_id, payload = command
             self._handle_command(request_id=request_id, payload=payload)
+
+    def _check_pipeline_timeout(self) -> None:
+        if self._inference_pipeline and self._consumption_timeout is not None:
+            time_since_last_consume = time.monotonic() - self._last_consume_time
+            if time_since_last_consume > self._consumption_timeout:
+                logger.info("Terminating pipeline due to zero consume timeout...")
+                try:
+                    pid = os.getpid()
+                    logger.info(
+                        f"Terminating pipeline due to timeout (no consumption):{pid}..."
+                    )
+                    if self._inference_pipeline is not None:
+                        self._execute_termination()
+                    self._command_queue.put(None)
+                    logger.info(f"Timeout Termination successful in process:{pid}...")
+                except Exception as error:
+                    logger.warning(
+                        f"Could not terminate pipeline gracefully. Error: {error}"
+                    )
 
     def _handle_command(self, request_id: str, payload: dict) -> None:
         try:
@@ -159,6 +192,8 @@ class InferencePipelineManager(Process):
                 batch_collection_timeout=parsed_payload.video_configuration.batch_collection_timeout,
             )
             self._watchdog = watchdog
+            self._consumption_timeout = parsed_payload.consumption_timeout
+            self._last_consume_time = time.monotonic()
             self._inference_pipeline.start(use_main_thread=False)
             self._responses_queue.put(
                 (request_id, {STATUS_KEY: OperationStatus.SUCCESS})
@@ -232,6 +267,7 @@ class InferencePipelineManager(Process):
                 to_inference_queue=to_inference_queue,
                 stop_event=stop_event,
                 webrtc_video_transform_track=peer_connection.video_transform_track,
+                webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
             )
 
             def webrtc_sink(
@@ -430,6 +466,7 @@ class InferencePipelineManager(Process):
                 return None
             excluded_fields = payload.get("excluded_fields")
             predictions, frames = self._buffer_sink.consume_prediction()
+            self._last_consume_time = time.monotonic()
             predictions = [
                 (
                     serialise_single_workflow_result_element(

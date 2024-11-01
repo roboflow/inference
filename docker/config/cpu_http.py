@@ -21,6 +21,13 @@ from inference.core.env import (
 )
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
+
+if ENABLE_STREAM_API:
+    stream_manager_process = Process(
+        target=start,
+    )
+    stream_manager_process.start()
+
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 
 if ACTIVE_LEARNING_ENABLED:
@@ -39,10 +46,3 @@ model_manager = WithFixedSizeCache(model_manager, max_size=MAX_ACTIVE_MODELS)
 model_manager.init_pingback()
 interface = HttpInterface(model_manager)
 app = interface.app
-
-
-if ENABLE_STREAM_API:
-    stream_manager_process = Process(
-        target=start,
-    )
-    stream_manager_process.start()

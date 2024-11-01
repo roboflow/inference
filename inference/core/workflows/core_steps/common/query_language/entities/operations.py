@@ -16,6 +16,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    BYTES_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     DETECTION_KIND,
     DICTIONARY_KIND,
@@ -207,6 +208,22 @@ class DetectionsPropertyExtract(OperationDefinition):
     property_name: DetectionsProperty
 
 
+class DetectionsToDictionary(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Converts detections into `inference` response format dictionary",
+            "compound": False,
+            "input_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+            "output_kind": [DICTIONARY_KIND],
+        },
+    )
+    type: Literal["DetectionsToDictionary"]
+
+
 class ClassificationPropertyExtract(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -378,6 +395,40 @@ class ExtractImageProperty(OperationDefinition):
     property_name: ImageProperty
 
 
+class ConvertImageToJPEG(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Converts image to JPEG",
+            "input_kind": [IMAGE_KIND],
+            "output_kind": [BYTES_KIND],
+        },
+    )
+    type: Literal["ConvertImageToJPEG"]
+    compression_level: int = Field(default=95, le=100, ge=1)
+
+
+class ConvertDictionaryToJSON(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Converts dictionary to serialized JSON",
+            "input_kind": [DICTIONARY_KIND],
+            "output_kind": [STRING_KIND],
+        },
+    )
+    type: Literal["ConvertDictionaryToJSON"]
+
+
+class ConvertImageToBase64(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Converts image to base64-encoded JPEG",
+            "input_kind": [IMAGE_KIND],
+            "output_kind": [STRING_KIND],
+        },
+    )
+    type: Literal["ConvertImageToBase64"]
+
+
 class StringMatches(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -514,6 +565,10 @@ AllOperationsType = Annotated[
         DetectionsSelection,
         SortDetections,
         ClassificationPropertyExtract,
+        ConvertImageToJPEG,
+        ConvertImageToBase64,
+        DetectionsToDictionary,
+        ConvertDictionaryToJSON,
     ],
     Field(discriminator="type"),
 ]

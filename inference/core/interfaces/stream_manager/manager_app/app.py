@@ -2,20 +2,27 @@ import os
 import signal
 import socket
 import sys
+import time
+import uuid
 from functools import partial
 from multiprocessing import Process, Queue
 from socketserver import BaseRequestHandler, BaseServer
+from threading import Lock, Thread
 from types import FrameType
 from typing import Any, Dict, Optional, Tuple
 from uuid import uuid4
 
 from inference.core import logger
+from inference.core.interfaces.camera.video_source import StreamState
 from inference.core.interfaces.stream_manager.manager_app.communication import (
     receive_socket_data,
     send_data_trough_socket,
 )
 from inference.core.interfaces.stream_manager.manager_app.entities import (
     PIPELINE_ID_KEY,
+    REPORT_KEY,
+    SOURCES_METADATA_KEY,
+    STATE_KEY,
     STATUS_KEY,
     TYPE_KEY,
     CommandType,
@@ -37,7 +44,7 @@ from inference.core.interfaces.stream_manager.manager_app.tcp_server import (
     RoboflowTCPServer,
 )
 
-PROCESSES_TABLE: Dict[str, Tuple[Process, Queue, Queue]] = {}
+PROCESSES_TABLE: Dict[str, Tuple[Process, Queue, Queue, Lock]] = {}
 HEADER_SIZE = 4
 SOCKET_BUFFER_SIZE = 16384
 HOST = os.getenv("STREAM_MANAGER_HOST", "127.0.0.1")
@@ -51,9 +58,9 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
         request: socket.socket,
         client_address: Any,
         server: BaseServer,
-        processes_table: Dict[str, Tuple[Process, Queue, Queue]],
+        processes_table: Dict[str, Tuple[Process, Queue, Queue, Lock]],
     ):
-        self._processes_table = processes_table  # in this case it's required to set the state of class before superclass init - as it invokes handle()
+        self._processes_table = processes_table  # in this case it's required to set the state of class before superclass init - as it invokes ()
         super().__init__(request, client_address, server)
 
     def handle(self) -> None:
@@ -159,6 +166,7 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
             inference_pipeline_manager,
             command_queue,
             responses_queue,
+            Lock(),
         )
         command_queue.put((request_id, command))
         response = get_response_ignoring_thrash(
@@ -189,6 +197,7 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
             inference_pipeline_manager,
             command_queue,
             responses_queue,
+            Lock(),
         )
         command_queue.put((request_id, command))
         response = get_response_ignoring_thrash(
@@ -237,7 +246,7 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
 
 
 def handle_command(
-    processes_table: Dict[str, Tuple[Process, Queue, Queue]],
+    processes_table: Dict[str, Tuple[Process, Queue, Queue, Lock]],
     request_id: str,
     pipeline_id: str,
     command: dict,
@@ -246,13 +255,14 @@ def handle_command(
         return describe_error(
             exception=None,
             error_type=ErrorType.NOT_FOUND,
-            public_error_message=f"Could not found InferencePipeline with id={pipeline_id}.",
+            public_error_message=f"Could not find InferencePipeline with id={pipeline_id}.",
         )
-    _, command_queue, responses_queue = processes_table[pipeline_id]
-    command_queue.put((request_id, command))
-    return get_response_ignoring_thrash(
-        responses_queue=responses_queue, matching_request_id=request_id
-    )
+    _, command_queue, responses_queue, command_lock = processes_table[pipeline_id]
+    with command_lock:
+        command_queue.put((request_id, command))
+        return get_response_ignoring_thrash(
+            responses_queue=responses_queue, matching_request_id=request_id
+        )
 
 
 def get_response_ignoring_thrash(
@@ -270,7 +280,7 @@ def get_response_ignoring_thrash(
 def execute_termination(
     signal_number: int,
     frame: FrameType,
-    processes_table: Dict[str, Tuple[Process, Queue, Queue]],
+    processes_table: Dict[str, Tuple[Process, Queue, Queue, Lock]],
 ) -> None:
     pipeline_ids = list(processes_table.keys())
     for pipeline_id in pipeline_ids:
@@ -285,13 +295,70 @@ def execute_termination(
 
 
 def join_inference_pipeline(
-    processes_table: Dict[str, Tuple[Process, Queue, Queue]], pipeline_id: str
+    processes_table: Dict[str, Tuple[Process, Queue, Queue, Lock]], pipeline_id: str
 ) -> None:
-    inference_pipeline_manager, command_queue, responses_queue = processes_table[
-        pipeline_id
-    ]
+    inference_pipeline_manager, *_ = processes_table[pipeline_id]
     inference_pipeline_manager.join()
     del processes_table[pipeline_id]
+
+
+def check_process_health() -> None:
+    while True:
+        for pipeline_id, (process, *_) in list(PROCESSES_TABLE.items()):
+            if not process.is_alive():
+                logger.warning(
+                    "Process for pipeline_id=%s is not alive. Terminating...",
+                    pipeline_id,
+                )
+                process.terminate()
+                process.join()
+                del PROCESSES_TABLE[pipeline_id]
+                continue
+            command = {
+                TYPE_KEY: CommandType.STATUS,
+                PIPELINE_ID_KEY: pipeline_id,
+            }
+            response = handle_command(
+                processes_table=PROCESSES_TABLE,
+                request_id=uuid.uuid4().hex,
+                pipeline_id=pipeline_id,
+                command=command,
+            )
+            if (
+                REPORT_KEY not in response
+                or SOURCES_METADATA_KEY not in response[REPORT_KEY]
+            ):
+                continue
+            all_sources_statues = set(
+                source_metadata[STATE_KEY]
+                for source_metadata in response[REPORT_KEY][SOURCES_METADATA_KEY]
+                if STATE_KEY in source_metadata
+            )
+            if not all_sources_statues:
+                continue
+            if all_sources_statues.issubset({StreamState.ENDED, StreamState.ERROR}):
+                logger.info(
+                    "All sources depleted in pipeline %s, terminating", pipeline_id
+                )
+                command = {
+                    TYPE_KEY: CommandType.TERMINATE,
+                    PIPELINE_ID_KEY: pipeline_id,
+                }
+                response = handle_command(
+                    processes_table=PROCESSES_TABLE,
+                    request_id=uuid.uuid4().hex,
+                    pipeline_id=pipeline_id,
+                    command=command,
+                )
+                if not response.get(STATUS_KEY) == "success":
+                    logger.error(
+                        "Malformed response returned by termination command, '%s'",
+                        response,
+                    )
+                    continue
+                process.join()
+                del PROCESSES_TABLE[pipeline_id]
+        time.sleep(1)
 
 
 def start() -> None:
@@ -301,6 +368,10 @@ def start() -> None:
     signal.signal(
         signal.SIGTERM, partial(execute_termination, processes_table=PROCESSES_TABLE)
     )
+
+    # check process health in daemon thread
+    Thread(target=check_process_health, daemon=True).start()
+
     with RoboflowTCPServer(
         server_address=(HOST, PORT),
         handler_class=partial(

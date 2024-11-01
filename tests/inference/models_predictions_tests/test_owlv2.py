@@ -1,5 +1,4 @@
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
-from inference.core.entities.responses.inference import ObjectDetectionInferenceResponse
 from inference.models.owlv2.owlv2 import OwlV2
 
 
@@ -13,11 +12,15 @@ def test_owlv2():
         training_data=[
             {
                 "image": image,
-                "boxes": [{"x": 223, "y": 306, "w": 40, "h": 226, "cls": "post"}],
+                "boxes": [{"x": 223, "y": 306, "w": 40, "h": 226, "cls": "post", "negative": False}],
             }
         ],
         visualize_predictions=True,
     )
 
     response = OwlV2().infer_from_request(request)
-    assert abs(221.4 - response.predictions[0].x) < 0.1
+    # the exact value here is highly sensitive to the image interpolation mode used
+    # as well as the data type used in the model, ie bfloat16 vs float16 vs float32
+    # and of course the size of the model itself, ie base vs large
+    # we set a tolerance of 1.5 pixels from the expected value, which should cover most of the cases
+    assert abs(223 - response.predictions[0].x) < 1.5

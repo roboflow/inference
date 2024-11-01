@@ -44,10 +44,10 @@ RUN pip3 install --upgrade pip  && pip3 install \
     && rm -rf ~/.cache/pip
 
 RUN pip3 uninstall --yes onnxruntime
-RUN wget https://nvidia.box.com/shared/static/v59xkrnvederwewo2f1jtv6yurl92xso.whl -O onnxruntime_gpu-1.12.1-cp38-cp38-linux_aarch64.whl
-RUN pip3 install onnxruntime_gpu-1.12.1-cp38-cp38-linux_aarch64.whl "opencv-python-headless<4.3" \
+RUN wget https://nvidia.box.com/shared/static/iizg3ggrtdkqawkmebbfixo7sce6j365.whl -O onnxruntime_gpu-1.16.0-cp38-cp38-linux_aarch64.whl
+RUN pip3 install onnxruntime_gpu-1.16.0-cp38-cp38-linux_aarch64.whl "opencv-python-headless<4.3" \
     && rm -rf ~/.cache/pip \
-    && rm onnxruntime_gpu-1.12.1-cp38-cp38-linux_aarch64.whl
+    && rm onnxruntime_gpu-1.16.0-cp38-cp38-linux_aarch64.whl
 
 WORKDIR /app/
 COPY inference inference
