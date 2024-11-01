@@ -313,10 +313,9 @@ class OwlV2(RoboflowCoreModel):
 
     def get_query_embedding(
         self, query_spec: QuerySpecType, iou_threshold: float
-    ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+    ) -> torch.Tensor:
         # NOTE: for now we're handling each image seperately
         query_embeds = []
-        has_overlap = []
         for image_hash, query_boxes in query_spec.items():
             try:
                 _objectness, image_boxes, image_class_embeds, _, _ = (
@@ -330,19 +329,22 @@ class OwlV2(RoboflowCoreModel):
             )
             if image_boxes.numel() == 0 or query_boxes_tensor.numel() == 0:
                 continue
-            iou, _ = box_iou(to_corners(image_boxes), to_corners(query_boxes_tensor))
+            iou, _ = box_iou(
+                to_corners(image_boxes), to_corners(query_boxes_tensor)
+            )  # 3000, k
             ious, indices = torch.max(iou, dim=0)
+            # filter for only iou > 0.4
+            iou_mask = ious > iou_threshold
+            indices = indices[iou_mask]
+            if not indices.numel() > 0:
+                continue
 
             embeds = image_class_embeds[indices]
-
-            iou_mask = ious > iou_threshold
-
-            # we don't filter by the mask here so as to maintain parallel structure
-            # with the metadata in the external calling function
             query_embeds.append(embeds)
-            has_overlap.append(iou_mask)
-
-        return query_embeds, has_overlap
+        if not query_embeds:
+            return None
+        query = torch.cat(query_embeds, dim=0)
+        return query
 
     def infer_from_embed(
         self,
@@ -369,7 +371,7 @@ class OwlV2(RoboflowCoreModel):
             all_predicted_classes.append(classes)
             all_predicted_scores.append(scores)
 
-        if len(all_predicted_boxes) == 0:
+        if not all_predicted_boxes:
             return []
 
         all_predicted_boxes = torch.cat(all_predicted_boxes, dim=0)
@@ -441,16 +443,12 @@ class OwlV2(RoboflowCoreModel):
 
         bool_to_literal = {True: "positive", False: "negative"}
         for train_image in training_data:
-            boxes = train_image["boxes"]
-            if len(boxes) == 0:
-                # no prompts for this image, so we skip it
-                continue
-
             # grab and embed image
             image = load_image_rgb(train_image["image"])
             image_hash = self.embed_image(image)
 
-            # normalize box prompts
+            # grab and normalize box prompts for this image
+            boxes = train_image["boxes"]
             coords = [[box["x"], box["y"], box["w"], box["h"]] for box in boxes]
             coords = [
                 tuple([c / max(image.shape[:2]) for c in coord]) for coord in coords
@@ -461,24 +459,18 @@ class OwlV2(RoboflowCoreModel):
             # compute the embeddings for the box prompts
             query_spec = {image_hash: coords}
             # NOTE: because we just computed the embedding for this image, this should never result in a KeyError
-            batched_embeddings, batched_has_overlap = self.get_query_embedding(
-                query_spec, iou_threshold
-            )
-            # get_query_embedding is designed to handle multiple images
-            # so we take the first (and only) element
-            embeddings = batched_embeddings[0]
-            has_overlap = batched_has_overlap[0]
+            embeddings = self.get_query_embedding(query_spec, iou_threshold)
+
+            if embeddings is None:
+                continue
 
             # add the embeddings to their appropriate class and positive/negative list
-            for embedding, class_name, is_positive, fits_the_prompt in zip(
-                embeddings, classes, is_positive, has_overlap
+            for embedding, class_name, is_positive in zip(
+                embeddings, classes, is_positive
             ):
-                # we checked if the found box sufficiently overlaps with the prompt
-                # so we skip adding it to the class embeddings dict if it doesn't
-                if fits_the_prompt:
-                    class_embeddings_dict[class_name][
-                        bool_to_literal[is_positive]
-                    ].append(embedding)
+                class_embeddings_dict[class_name][bool_to_literal[is_positive]].append(
+                    embedding
+                )
 
         # convert the lists of embeddings to tensors
 

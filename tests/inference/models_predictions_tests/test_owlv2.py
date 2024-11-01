@@ -172,6 +172,47 @@ def test_owlv2_bad_prompt():
 
 
 @pytest.mark.slow
+def test_owlv2_bad_prompt_hidden_among_good_prompts():
+    image = {
+        "type": "url",
+        "value": "https://media.roboflow.com/inference/seawithdock.jpeg",
+    }
+
+    # test that we can handle a bad prompt
+    request = OwlV2InferenceRequest(
+        image=image,
+        training_data=[
+            {
+                "image": image,
+                "boxes": [
+                    {
+                        "x": 1,
+                        "y": 1,
+                        "w": 1,
+                        "h": 1,
+                        "cls": "post",
+                        "negative": False,
+                    },
+                    {
+                        "x": 223,
+                        "y": 306,
+                        "w": 40,
+                        "h": 226,
+                        "cls": "post",
+                        "negative": False,
+                    },
+                ],
+            }
+        ],
+        visualize_predictions=True,
+        confidence=0.9,
+    )
+
+    response = OwlV2().infer_from_request(request)
+    assert len(response.predictions) == 5
+
+
+@pytest.mark.slow
 def test_owlv2_no_training_data():
     image = {
         "type": "url",
