@@ -15,7 +15,14 @@ def test_owlv2():
             {
                 "image": image,
                 "boxes": [
-                    {"x": 223, "y": 306, "w": 40, "h": 226, "cls": "post", "negative": False},
+                    {
+                        "x": 223,
+                        "y": 306,
+                        "w": 40,
+                        "h": 226,
+                        "cls": "post",
+                        "negative": False,
+                    },
                 ],
             }
         ],
@@ -42,7 +49,6 @@ def test_owlv2():
     assert abs(532 - posts[3].x) < 1.5
     assert abs(572 - posts[4].x) < 1.5
 
-
     # test we can handle multiple (positive and negative) prompts for the same image
     request = OwlV2InferenceRequest(
         image=image,
@@ -50,9 +56,30 @@ def test_owlv2():
             {
                 "image": image,
                 "boxes": [
-                    {"x": 223, "y": 306, "w": 40, "h": 226, "cls": "post", "negative": False},
-                    {"x": 247, "y": 294, "w": 25, "h": 165, "cls": "post", "negative": True},
-                    {"x": 264, "y": 327, "w": 21, "h": 74, "cls": "post", "negative": False},
+                    {
+                        "x": 223,
+                        "y": 306,
+                        "w": 40,
+                        "h": 226,
+                        "cls": "post",
+                        "negative": False,
+                    },
+                    {
+                        "x": 247,
+                        "y": 294,
+                        "w": 25,
+                        "h": 165,
+                        "cls": "post",
+                        "negative": True,
+                    },
+                    {
+                        "x": 264,
+                        "y": 327,
+                        "w": 21,
+                        "h": 74,
+                        "cls": "post",
+                        "negative": False,
+                    },
                 ],
             }
         ],
@@ -76,7 +103,14 @@ def test_owlv2():
             {
                 "image": image,
                 "boxes": [
-                    {"x": 223, "y": 306, "w": 40, "h": 226, "cls": "post", "negative": False}
+                    {
+                        "x": 223,
+                        "y": 306,
+                        "w": 40,
+                        "h": 226,
+                        "cls": "post",
+                        "negative": False,
+                    }
                 ],
             },
             {
