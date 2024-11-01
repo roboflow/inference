@@ -327,6 +327,8 @@ class OwlV2(RoboflowCoreModel):
             query_boxes_tensor = torch.tensor(
                 query_boxes, dtype=image_boxes.dtype, device=image_boxes.device
             )
+            if image_boxes.numel() == 0 or query_boxes_tensor.numel() == 0:
+                continue
             iou, _ = box_iou(
                 to_corners(image_boxes), to_corners(query_boxes_tensor)
             )  # 3000, k
@@ -455,6 +457,9 @@ class OwlV2(RoboflowCoreModel):
             query_spec = {image_hash: coords}
             # NOTE: because we just computed the embedding for this image, this should never result in a KeyError
             embeddings = self.get_query_embedding(query_spec, iou_threshold)
+
+            if embeddings is None:
+                continue
 
             # add the embeddings to their appropriate class and positive/negative list
             for embedding, class_name, is_positive in zip(
