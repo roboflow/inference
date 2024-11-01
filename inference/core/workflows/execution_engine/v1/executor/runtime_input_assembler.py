@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 
 from inference.core.workflows.errors import AssumptionError, RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import InputType
@@ -155,12 +155,10 @@ def assemble_single_element_of_batch_oriented_input(
 ) -> Any:
     if value is None:
         return None
-    matching_deserializers = []
-    for kind in defined_input.kind:
-        kind_name = _get_kind_name(kind=kind)
-        if kind_name not in kinds_deserializers:
-            continue
-        matching_deserializers.append((kind_name, kinds_deserializers[kind_name]))
+    matching_deserializers = _get_matching_deserializers(
+        defined_input=defined_input,
+        kinds_deserializers=kinds_deserializers,
+    )
     if not matching_deserializers:
         return value
     parameter_identifier = defined_input.name
@@ -190,6 +188,19 @@ def assemble_single_element_of_batch_oriented_input(
         public_message=error_message,
         context="workflow_execution | runtime_input_validation",
     )
+
+
+def _get_matching_deserializers(
+    defined_input: InputType,
+    kinds_deserializers: Dict[str, Callable[[str, Any], Any]],
+) -> List[Tuple[str, Callable[[str, Any], Any]]]:
+    matching_deserializers = []
+    for kind in defined_input.kind:
+        kind_name = _get_kind_name(kind=kind)
+        if kind_name not in kinds_deserializers:
+            continue
+        matching_deserializers.append((kind_name, kinds_deserializers[kind_name]))
+    return matching_deserializers
 
 
 def _get_kind_name(kind: Union[Kind, str]) -> str:
