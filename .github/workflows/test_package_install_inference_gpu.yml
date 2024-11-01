@@ -45,7 +45,7 @@ jobs:
       - name: 🧪 Testing package installation
         env:
           GITHUB_CONTEXT: ${{ toJSON(github) }}
-        run: echo "$GITHUB_CONTEXT"        working-directory: "/"
+        working-directory: "/"
         run: |
           echo "$GITHUB_CONTEXT"
           python -c "import os; import platform; print(f'Python version: {platform.python_version()}'); print(f'CWD: {os.getcwd()}'); from inference import get_model"
