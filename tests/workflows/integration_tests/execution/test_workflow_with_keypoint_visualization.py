@@ -1,17 +1,10 @@
-from datetime import datetime
-import os
-import time
-
 import numpy as np
-from unittest import mock
-from unittest.mock import MagicMock
+import cv2
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-from inference.core.workflows.execution_engine.entities.base import VideoMetadata
-from inference.core.workflows.execution_engine.introspection import blocks_loader
 
 
 WORKFLOW_KEYPOINT_VISUALIZATION = {
@@ -35,8 +28,8 @@ WORKFLOW_KEYPOINT_VISUALIZATION = {
             "type": "roboflow_core/keypoint_visualization@v1",
             "name": "visualization",
             "image": "$inputs.image",
-            "predictions": "$steps.model.predictions"
-        }
+            "predictions": "$steps.model.predictions",
+        },
     ],
     "outputs": [
         {
