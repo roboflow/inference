@@ -1,38 +1,37 @@
+from pprint import pprint
 from typing import List, Literal, Optional, Type, Union
 
+import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
-from pprint import pprint
 
-from inference.core.workflows.execution_engine.constants import (
-    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
-)
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
-    VisualizationManifest,
     VisualizationBlock,
+    VisualizationManifest,
 )
 from inference.core.workflows.core_steps.visualizations.common.base_colorable import (
     ColorableVisualizationBlock,
     ColorableVisualizationManifest,
 )
-
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
+from inference.core.workflows.execution_engine.constants import (
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+)
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
-    KEYPOINT_DETECTION_PREDICTION_KIND,
-    INTEGER_KIND,
-    STRING_KIND,
     FLOAT_KIND,
+    INTEGER_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
+    STRING_KIND,
     StepOutputSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
-    WorkflowBlockManifest,
     WorkflowBlock,
+    WorkflowBlockManifest,
 )
-import numpy as np
 
 TYPE: str = "roboflow_core/keypoint_visualization@v1"
 SHORT_DESCRIPTION = "Draws keypoints on detected objects in an image."
@@ -96,8 +95,8 @@ class KeypointManifest(VisualizationManifest):
     )
     text_scale: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         description="Scale of the text.",
-        default=1.0,
-        examples=[1.0, "$inputs.text_scale"],
+        default=0.5,
+        examples=[0.5, "$inputs.text_scale"],
         json_schema_extra={
             "relevant_for": {
                 "annotator_type": {
@@ -266,7 +265,9 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
             annotator_type,
         )
 
+        print("predictions", predictions)
         keypoints = self.convert_detections_to_keypoints(predictions)
+        print("keypoints", keypoints)
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
