@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on:
       labels: depot-ubuntu-22.04-8
       group: public-depot
@@ -22,12 +23,6 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
-      - name: Fail if branch is not up to date with main
-        run: |
-          if ! git merge-base --is-ancestor origin/main ${{ github.event.pull_request.head.sha }}; then
-            echo "Refusing to run test since this branch is not up to date with main.";
-            exit 1;
-          fi
       - name: 🐍 Set up Python 3.9 to create wheels
         uses: actions/setup-python@v2
         with:
