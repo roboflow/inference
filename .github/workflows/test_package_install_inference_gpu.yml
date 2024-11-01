@@ -43,10 +43,9 @@ jobs:
       - name: 📦 Installing `inference` package...
         run: pip install ./dist/inference_gpu-*-py3-none-any.whl
       - name: 🧪 Testing package installation
-        working-directory: "/"
+        env:
+          GITHUB_CONTEXT: ${{ toJSON(github) }}
+        run: echo "$GITHUB_CONTEXT"        working-directory: "/"
         run: |
-          echo "${{ github.event.pull_request.base.sha }}"
-          echo "${{ github.event.pull_request.head.sha }}"
-          echo "${{ github.event_name }}"
-          echo "${{ github.event_name != 'pull_request' || github.event.pull_request.base.sha == github.event.pull_request.head.sha }}"
+          echo "$GITHUB_CONTEXT"
           python -c "import os; import platform; print(f'Python version: {platform.python_version()}'); print(f'CWD: {os.getcwd()}'); from inference import get_model"
