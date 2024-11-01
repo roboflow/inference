@@ -81,6 +81,12 @@ WORKFLOW_DEFINITION = {
             }
         },
         {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "image_as_jpeg",
+            "operations": [{"type": "ConvertImageToJPEG"}],
+            "data": "$steps.line_counter_visualization.image",
+        },
+        {
             "type": "roboflow_core/email_notification@v1",
             "name": "email_notifier",
             "email_service_provider": "custom",
@@ -91,6 +97,7 @@ WORKFLOW_DEFINITION = {
             },
             "attachments": {
                 "report.csv": "$steps.csv_formatter.csv_content",
+                "image.jpeg": "$steps.image_as_jpeg.output",
             },
             "receiver_email": "$inputs.email",
             "smtp_server": "smtp.gmail.com",
