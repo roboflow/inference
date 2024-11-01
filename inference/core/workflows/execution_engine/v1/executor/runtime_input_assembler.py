@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from inference.core.workflows.errors import AssumptionError, RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import InputType

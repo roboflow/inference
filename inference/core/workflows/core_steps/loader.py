@@ -239,6 +239,9 @@ from inference.core.workflows.core_steps.transformations.stabilize_detections.v1
 from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
     StitchImagesBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v1 import (
+    StitchOCRDetectionsBlockV1,
+)
 
 # Visualizers
 from inference.core.workflows.core_steps.visualizations.background_color.v1 import (
@@ -270,6 +273,9 @@ from inference.core.workflows.core_steps.visualizations.ellipse.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.halo.v1 import (
     HaloVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.keypoint.v1 import (
+    KeypointVisualizationBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.label.v1 import (
     LabelVisualizationBlockV1,
@@ -455,6 +461,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         StabilityAIInpaintingBlockV1,
         StabilizeTrackedDetectionsBlockV1,
         StitchImagesBlockV1,
+        StitchOCRDetectionsBlockV1,
         TemplateMatchingBlockV1,
         TimeInZoneBlockV1,
         TimeInZoneBlockV2,
@@ -462,6 +469,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         VLMAsClassifierBlockV1,
         VLMAsDetectorBlockV1,
         YoloWorldModelBlockV1,
+        KeypointVisualizationBlockV1,
         DataAggregatorBlockV1,
         CSVFormatterBlockV1,
         EmailNotificationBlockV1,

@@ -12,12 +12,21 @@ from inference.core.workflows.core_steps.loader import KINDS_DESERIALIZERS
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
+    WorkflowDataBatch,
     WorkflowImage,
+    WorkflowImageData,
     WorkflowParameter,
-    WorkflowVideoMetadata, WorkflowDataBatch, WorkflowImageData,
+    WorkflowVideoMetadata,
 )
-from inference.core.workflows.execution_engine.entities.types import IMAGE_KIND, STRING_KIND, INTEGER_KIND, \
-    LIST_OF_VALUES_KIND, BOOLEAN_KIND, DICTIONARY_KIND, FLOAT_KIND
+from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
+    DICTIONARY_KIND,
+    FLOAT_KIND,
+    IMAGE_KIND,
+    INTEGER_KIND,
+    LIST_OF_VALUES_KIND,
+    STRING_KIND,
+)
 from inference.core.workflows.execution_engine.v1.executor.runtime_input_assembler import (
     assemble_runtime_parameters,
 )
@@ -534,7 +543,9 @@ def test_assemble_runtime_parameters_when_video_metadata_with_different_and_not_
         )
 
 
-def test_assemble_runtime_parameters_when_parameters_at_different_dimensionality_depth_emerge() -> None:
+def test_assemble_runtime_parameters_when_parameters_at_different_dimensionality_depth_emerge() -> (
+    None
+):
     # given
     runtime_parameters = {
         "image1": [
@@ -542,25 +553,40 @@ def test_assemble_runtime_parameters_when_parameters_at_different_dimensionality
             np.zeros((192, 168, 3), dtype=np.uint8),
         ],
         "image2": [
-            [np.zeros((192, 168, 3), dtype=np.uint8), np.zeros((192, 168, 3), dtype=np.uint8)],
-            [np.zeros((192, 168, 3), dtype=np.uint8),]
+            [
+                np.zeros((192, 168, 3), dtype=np.uint8),
+                np.zeros((192, 168, 3), dtype=np.uint8),
+            ],
+            [
+                np.zeros((192, 168, 3), dtype=np.uint8),
+            ],
         ],
         "image3": [
             [
                 [np.zeros((192, 168, 3), dtype=np.uint8)],
-                [np.zeros((192, 168, 3), dtype=np.uint8), np.zeros((192, 168, 3), dtype=np.uint8)],
+                [
+                    np.zeros((192, 168, 3), dtype=np.uint8),
+                    np.zeros((192, 168, 3), dtype=np.uint8),
+                ],
             ],
             [
                 [np.zeros((192, 168, 3), dtype=np.uint8)],
-                [np.zeros((192, 168, 3), dtype=np.uint8), np.zeros((192, 168, 3), dtype=np.uint8)],
+                [
+                    np.zeros((192, 168, 3), dtype=np.uint8),
+                    np.zeros((192, 168, 3), dtype=np.uint8),
+                ],
                 [np.zeros((192, 168, 3), dtype=np.uint8)],
             ],
         ],
     }
     defined_inputs = [
         WorkflowDataBatch(type="WorkflowDataBatch", name="image1", kind=["image"]),
-        WorkflowDataBatch(type="WorkflowDataBatch", name="image2", kind=[IMAGE_KIND], dimensionality=2),
-        WorkflowDataBatch(type="WorkflowDataBatch", name="image3", kind=["image"], dimensionality=3),
+        WorkflowDataBatch(
+            type="WorkflowDataBatch", name="image2", kind=[IMAGE_KIND], dimensionality=2
+        ),
+        WorkflowDataBatch(
+            type="WorkflowDataBatch", name="image3", kind=["image"], dimensionality=3
+        ),
     ]
 
     # when
@@ -572,15 +598,24 @@ def test_assemble_runtime_parameters_when_parameters_at_different_dimensionality
 
     # then
     assert len(result["image1"]) == 2, "image1 is 1D batch of size (2, )"
-    assert all(isinstance(e, WorkflowImageData) for e in result["image1"]), \
-        "Expected deserialized image data at the bottom level of batch"
+    assert all(
+        isinstance(e, WorkflowImageData) for e in result["image1"]
+    ), "Expected deserialized image data at the bottom level of batch"
     # then
     sizes_of_image2 = [len(e) for e in result["image2"]]
     assert sizes_of_image2 == [2, 1], "image1 is 2D batch of size [(2, ), (1, )]"
-    assert all(isinstance(e, WorkflowImageData) for nested_batch in result["image2"] for e in nested_batch), \
-        "Expected deserialized image data at the bottom level of batch"
-    sizes_of_image3 = [[len(e) for e in inner_batch] for inner_batch in result["image3"]]
-    assert sizes_of_image3 == [[1, 2], [1, 2, 1]], "image1 is 3D batch of size [[(1, ), (2, )], [(1, ), (2, ), (1, )]]"
+    assert all(
+        isinstance(e, WorkflowImageData)
+        for nested_batch in result["image2"]
+        for e in nested_batch
+    ), "Expected deserialized image data at the bottom level of batch"
+    sizes_of_image3 = [
+        [len(e) for e in inner_batch] for inner_batch in result["image3"]
+    ]
+    assert sizes_of_image3 == [
+        [1, 2],
+        [1, 2, 1],
+    ], "image1 is 3D batch of size [[(1, ), (2, )], [(1, ), (2, ), (1, )]]"
     assert all(
         isinstance(e, WorkflowImageData)
         for nested_batch in result["image3"]
@@ -589,7 +624,9 @@ def test_assemble_runtime_parameters_when_parameters_at_different_dimensionality
     ), "Expected deserialized image data at the bottom level of batch"
 
 
-def test_assemble_runtime_parameters_when_basic_types_are_passed_as_batch_oriented_inputs() -> None:
+def test_assemble_runtime_parameters_when_basic_types_are_passed_as_batch_oriented_inputs() -> (
+    None
+):
     # given
     runtime_parameters = {
         "string_param": ["a", "b"],
@@ -597,15 +634,27 @@ def test_assemble_runtime_parameters_when_basic_types_are_passed_as_batch_orient
         "int_param": [3, 4],
         "list_param": [["some", "list"], ["other", "list"]],
         "boolean_param": [False, True],
-        "dict_param": [{"some": "dict"}, {"other": "dict"}]
+        "dict_param": [{"some": "dict"}, {"other": "dict"}],
     }
     defined_inputs = [
-        WorkflowDataBatch(type="WorkflowDataBatch", name="string_param", kind=[STRING_KIND.name]),
-        WorkflowDataBatch(type="WorkflowDataBatch", name="float_param", kind=[FLOAT_KIND.name]),
-        WorkflowDataBatch(type="WorkflowDataBatch", name="int_param", kind=[INTEGER_KIND]),
-        WorkflowDataBatch(type="WorkflowDataBatch", name="list_param", kind=[LIST_OF_VALUES_KIND]),
-        WorkflowDataBatch(type="WorkflowDataBatch", name="boolean_param", kind=[BOOLEAN_KIND]),
-        WorkflowDataBatch(type="WorkflowDataBatch", name="dict_param", kind=[DICTIONARY_KIND]),
+        WorkflowDataBatch(
+            type="WorkflowDataBatch", name="string_param", kind=[STRING_KIND.name]
+        ),
+        WorkflowDataBatch(
+            type="WorkflowDataBatch", name="float_param", kind=[FLOAT_KIND.name]
+        ),
+        WorkflowDataBatch(
+            type="WorkflowDataBatch", name="int_param", kind=[INTEGER_KIND]
+        ),
+        WorkflowDataBatch(
+            type="WorkflowDataBatch", name="list_param", kind=[LIST_OF_VALUES_KIND]
+        ),
+        WorkflowDataBatch(
+            type="WorkflowDataBatch", name="boolean_param", kind=[BOOLEAN_KIND]
+        ),
+        WorkflowDataBatch(
+            type="WorkflowDataBatch", name="dict_param", kind=[DICTIONARY_KIND]
+        ),
     ]
 
     # when
@@ -622,7 +671,7 @@ def test_assemble_runtime_parameters_when_basic_types_are_passed_as_batch_orient
         "int_param": [3, 4],
         "list_param": [["some", "list"], ["other", "list"]],
         "boolean_param": [False, True],
-        "dict_param": [{"some": "dict"}, {"other": "dict"}]
+        "dict_param": [{"some": "dict"}, {"other": "dict"}],
     }, "Expected values not to be changed"
 
 
@@ -633,8 +682,15 @@ def test_assemble_runtime_parameters_when_input_batch_shallower_than_declared() 
         "float_param": [1.0, 2.0],
     }
     defined_inputs = [
-        WorkflowDataBatch(type="WorkflowDataBatch", name="string_param", kind=[STRING_KIND.name]),
-        WorkflowDataBatch(type="WorkflowDataBatch", name="float_param", kind=[FLOAT_KIND.name], dimensionality=2),
+        WorkflowDataBatch(
+            type="WorkflowDataBatch", name="string_param", kind=[STRING_KIND.name]
+        ),
+        WorkflowDataBatch(
+            type="WorkflowDataBatch",
+            name="float_param",
+            kind=[FLOAT_KIND.name],
+            dimensionality=2,
+        ),
     ]
 
     # when
@@ -653,8 +709,12 @@ def test_assemble_runtime_parameters_when_input_batch_deeper_than_declared() -> 
         "float_param": [[1.0], [2.0]],
     }
     defined_inputs = [
-        WorkflowDataBatch(type="WorkflowDataBatch", name="string_param", kind=[STRING_KIND.name]),
-        WorkflowDataBatch(type="WorkflowDataBatch", name="float_param", kind=[FLOAT_KIND.name]),
+        WorkflowDataBatch(
+            type="WorkflowDataBatch", name="string_param", kind=[STRING_KIND.name]
+        ),
+        WorkflowDataBatch(
+            type="WorkflowDataBatch", name="float_param", kind=[FLOAT_KIND.name]
+        ),
     ]
 
     # when

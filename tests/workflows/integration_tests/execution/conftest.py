@@ -36,6 +36,11 @@ def fruit_image() -> np.ndarray:
 
 
 @pytest.fixture(scope="function")
+def multi_line_text_image() -> np.ndarray:
+    return cv2.imread(os.path.join(ASSETS_DIR, "multi_line_text.jpg"))
+
+
+@pytest.fixture(scope="function")
 def stitch_left_image() -> np.ndarray:
     return cv2.imread(os.path.join(ASSETS_DIR, "stitch", "v_left.jpeg"))
 
