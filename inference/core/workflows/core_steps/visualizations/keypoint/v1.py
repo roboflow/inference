@@ -1,5 +1,4 @@
-from pprint import pprint
-from typing import List, Literal, Optional, Type, Union
+from typing import Literal, Optional, Type, Union
 
 import numpy as np
 import supervision as sv
@@ -10,14 +9,7 @@ from inference.core.workflows.core_steps.visualizations.common.base import (
     VisualizationBlock,
     VisualizationManifest,
 )
-from inference.core.workflows.core_steps.visualizations.common.base_colorable import (
-    ColorableVisualizationBlock,
-    ColorableVisualizationManifest,
-)
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
-from inference.core.workflows.execution_engine.constants import (
-    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
-)
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
@@ -29,7 +21,6 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
-    WorkflowBlock,
     WorkflowBlockManifest,
 )
 
@@ -75,13 +66,13 @@ class KeypointManifest(VisualizationManifest):
         json_schema_extra={"always_visible": True},
     )
 
-    color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
+    color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the keypoint.",
         default="#A351FB",
         examples=["#A351FB", "green", "$inputs.color"],
     )
 
-    text_color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
+    text_color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Text color of the keypoint.",
         default="black",
         examples=["black", "$inputs.text_color"],
@@ -265,9 +256,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
             annotator_type,
         )
 
-        print("predictions", predictions)
         keypoints = self.convert_detections_to_keypoints(predictions)
-        print("keypoints", keypoints)
 
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
