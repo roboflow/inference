@@ -259,6 +259,9 @@ from inference.core.workflows.core_steps.visualizations.ellipse.v1 import (
 from inference.core.workflows.core_steps.visualizations.halo.v1 import (
     HaloVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.keypoint.v1 import (
+    KeypointVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.label.v1 import (
     LabelVisualizationBlockV1,
 )
@@ -429,6 +432,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         VLMAsClassifierBlockV1,
         VLMAsDetectorBlockV1,
         YoloWorldModelBlockV1,
+        KeypointVisualizationBlockV1,
         DataAggregatorBlockV1,
         CSVFormatterBlockV1,
         EmailNotificationBlockV1,
