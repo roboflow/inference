@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.base.sha == github.event.pull_request.head.base_sha }}
     runs-on:
       labels: depot-ubuntu-22.04-8
       group: public-depot
