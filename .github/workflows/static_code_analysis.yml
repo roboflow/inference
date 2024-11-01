@@ -8,6 +8,7 @@ on:
 
 jobs:
   build-dev-test:
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
