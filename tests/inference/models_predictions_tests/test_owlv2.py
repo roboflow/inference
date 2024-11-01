@@ -124,3 +124,25 @@ def test_owlv2():
 
     response = OwlV2().infer_from_request(request)
     assert len(response.predictions) == 5
+
+    # test that it can handle a bad prompt
+    request = OwlV2InferenceRequest(
+        image=image,
+        training_data=[
+            {
+                "image": image,
+                "boxes": [
+                    {"x": 1, "y": 1, "w": 1, "h": 1, "cls": "post", "negative": False}
+                ],
+            }
+        ],
+        visualize_predictions=True,
+        confidence=0.9,
+    )
+
+    response = OwlV2().infer_from_request(request)
+    assert len(response.predictions) == 0
+
+
+if __name__ == "__main__":
+    test_owlv2()
