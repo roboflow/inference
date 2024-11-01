@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     if: ${{ !github.event.act }}
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.base.sha == github.event.pull_request.head.base_sha }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.mergeable == true }} }}
     runs-on:
       group: group8core
     timeout-minutes: 35
