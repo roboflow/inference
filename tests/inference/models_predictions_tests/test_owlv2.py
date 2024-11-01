@@ -159,7 +159,14 @@ def test_owlv2_bad_prompt():
             {
                 "image": image,
                 "boxes": [
-                    {"x": 1, "y": 1, "w": 1, "h": 1, "cls": "post", "negative": False}
+                    {
+                        "x": 1,
+                        "y": 1,
+                        "w": 1,
+                        "h": 1,
+                        "cls": "post",
+                        "negative": False,
+                    }
                 ],
             }
         ],
