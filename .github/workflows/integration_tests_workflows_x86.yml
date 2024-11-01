@@ -23,8 +23,8 @@ jobs:
           ref: ${{ github.head_ref }}
       - name: Fail if branch is not up to date with main
         run: |
-          if [ ! git merge-base --is-ancestor origin/main ${{ github.event.pull_request.head.sha }} ]; then
-            echo "Refusing to run tests since this branch is not up to date with main.";
+          if ! git merge-base --is-ancestor origin/main ${{ github.event.pull_request.head.sha }}; then
+            echo "Refusing to run test since this branch is not up to date with main.";
             exit 1;
           fi
       - name: 🐍 Set up Python ${{ matrix.python-version }}
