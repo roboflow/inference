@@ -358,3 +358,45 @@ def test_keypoint_visualization_block_nocopy() -> None:
         output.get("image").numpy_image.__array_interface__["data"][0]
         == start_image.__array_interface__["data"][0]
     )
+
+def test_keypoint_visualization_block_no_predictions() -> None:
+    # given
+    block = KeypointVisualizationBlockV1()
+    start_image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+
+    empty_predictions = sv.Detections.empty()
+
+    output = block.run(
+        image=WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=start_image,
+        ),
+        predictions=empty_predictions,
+        copy_image=True,
+        annotator_type="edge",
+        color="#A351FB", 
+        text_color="black",
+        text_scale=0.5,
+        text_thickness=1,
+        text_padding=10,
+        thickness=2,
+        radius=10,
+    )
+
+    assert output is not None
+    assert "image" in output
+    assert hasattr(output.get("image"), "numpy_image")
+
+    # dimensions of output match input
+    assert output.get("image").numpy_image.shape == (1000, 1000, 3)
+    
+    # check if the image is unchanged since there were no predictions
+    assert np.array_equal(
+        output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
+    )
+
+    # check that the image is copied
+    assert (
+        output.get("image").numpy_image.__array_interface__["data"][0]
+        != start_image.__array_interface__["data"][0]
+    )
