@@ -171,7 +171,7 @@ def get_class_preds_from_embeds(
     survival_indices = torchvision.ops.nms(
         to_corners(pred_boxes), pred_scores, iou_threshold
     )
-    # put on numpy and filter to post-nms
+    # filter to post-nms
     pred_boxes = pred_boxes[survival_indices, :]
     pred_classes = pred_classes[survival_indices]
     pred_scores = pred_scores[survival_indices]
@@ -370,6 +370,9 @@ class OwlV2(RoboflowCoreModel):
             all_predicted_boxes.append(boxes)
             all_predicted_classes.append(classes)
             all_predicted_scores.append(scores)
+
+        if not all_predicted_boxes:
+            return []
 
         all_predicted_boxes = torch.cat(all_predicted_boxes, dim=0)
         all_predicted_classes = torch.cat(all_predicted_classes, dim=0)
