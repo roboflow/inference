@@ -22,7 +22,7 @@ RUN apt-get update -y && \
 COPY requirements/ ./requirements/
 
 # Remove specific packages from requirements files
-RUN sed -i '/^opencv-python/d;/^onnxruntime/d' requirements/*.txt
+RUN sed -i '/^opencv-python/d;/^onnxruntime/d;/^opencv-python-contrib/d' requirements/*.txt
 
 # Upgrade pip and install Python packages
 RUN python3 -m pip install --upgrade pip && \
