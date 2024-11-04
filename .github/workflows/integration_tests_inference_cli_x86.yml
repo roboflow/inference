@@ -23,8 +23,6 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
       - name: 🛎️ Checkout branch
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
       - name: Check and store mergable state
         id: mergeable_check
         run: |
