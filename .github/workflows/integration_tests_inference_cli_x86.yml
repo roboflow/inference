@@ -16,26 +16,22 @@ jobs:
       group: public-depot
     timeout-minutes: 15
     steps:
-      - name: 🛎️ Checkout main HEAD
+      - name: 🛎️ Checkout branch with all history
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
-      - name: 🛎️ Checkout branch HEAD
-        uses: actions/checkout@v4
-        with:
+          fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
       - name: Check and store mergable state
         id: mergeable_check
         run: |
-          echo "Check if ${{ github.event.pull_request.head.sha }} (branch HEAD) can be merged with ${{ github.event.pull_request.base.sha }} (main HEAD)";
-          if $(git merge --no-commit --no-ff ${{ github.event.pull_request.base.sha }}); then
+          echo "Check if ${{ github.event.pull_request.head.sha }} (branch HEAD) is ancestor of ${{ github.event.pull_request.base.sha }} (main HEAD)";
+          if $(git merge-base --is-ancestor ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}); then
             echo "Branch is mergeable";
             echo "mergeable_state=clean" >> "$GITHUB_OUTPUT";
           else
             echo "Branch needs to be updated";
             echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT";
           fi
-          git reset --merge
   build-dev-test:
     needs: is_mergeable
     if: ${{ github.event_name != 'pull_request' || needs.is_mergeable.outputs.mergeable_state != 'not_clean' }}
