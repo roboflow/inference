@@ -23,7 +23,7 @@ jobs:
       - name: Wait for mergeable state
         id: mergeable_check
         run: |
-          if $(git merge-base --is-ancestor ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}); then
+          if $(git merge-base --is-ancestor origin/main ${{ github.event.pull_request.head.sha }}); then
             echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
           fi
   build-dev-test:
