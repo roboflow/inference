@@ -558,6 +558,7 @@ class UsageCollector:
             resource_id = "unknown"
             category = "unknown"
 
+        countinference = kwargs.get("countinference", True)
         source = None
         runtime_parameters = func_kwargs.get("runtime_parameters")
         if (
@@ -597,6 +598,7 @@ class UsageCollector:
             "resource_id": resource_id,
             "inference_test_run": usage_inference_test_run,
             "fps": usage_fps,
+            "count_inference": countinference,
         }
 
     def __call__(self, func: Callable[P, T]) -> Callable[P, T]:
