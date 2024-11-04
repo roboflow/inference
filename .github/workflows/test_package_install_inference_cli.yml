@@ -2,7 +2,6 @@ name: Test package install - inference-cli
 
 on:
   pull_request:
-    paths-ignore: "**/*.md"
     branches: [main]
   push:
     branches: [main]
@@ -26,7 +25,8 @@ jobs:
         id: mergeable_check
         run: |
           if $(git merge-base --is-ancestor origin/main ${{ github.event.pull_request.head.sha }}); then
-            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
+            echo "Branch is mergeable";
+            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT";
           fi
   build:
     needs: is_mergeable
