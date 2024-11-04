@@ -340,6 +340,8 @@ class UsageCollector:
         inference_test_run: bool = False,
         fps: float = 0,
     ) -> DefaultDict[str, Any]:
+        if not api_key:
+            return
         if self._settings.opt_out and not api_key:
             return
         self.record_system_info()
