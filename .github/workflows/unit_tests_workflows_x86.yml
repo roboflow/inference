@@ -21,6 +21,8 @@ jobs:
         with:
           fetch-depth: ${{ env.FETCH_DEPTH }}
           ref: main
+      - name : Store main sha in context
+        run: echo "main_sha=$(git rev-parse main)" >> "${GITHUB_ENV}"
       - name: Calculate depth
         run: echo "FETCH_DEPTH=$(( ${{ github.event.pull_request.commits }} + 1 ))" >> "${GITHUB_ENV}"
       - name: 🛎️ Checkout branch with all history
@@ -32,7 +34,7 @@ jobs:
         id: mergeable_check
         run: |
           echo "Check if main is ancestor of ${{ github.event.pull_request.head.sha }} (branch HEAD)";
-          if $(git merge-base --is-ancestor main ${{ github.event.pull_request.head.sha }}); then
+          if $(git merge-base --is-ancestor ${{ env.main_sha }} ${{ github.event.pull_request.head.sha }}); then
             echo "Branch is mergeable";
             echo "mergeable_state=clean" >> "$GITHUB_OUTPUT";
           else
