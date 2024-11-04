@@ -6,9 +6,26 @@ on:
   workflow_dispatch:
 
 jobs:
+  is_mergeable:
+    outputs:
+      mergeable_state: ${{ steps.mergeable_check.outputs.mergeable_state }}
+    runs-on:
+      labels: depot-ubuntu-22.04-8
+      group: public-depot
+    timeout-minutes: 15
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v4
+      - name: Wait for mergeable state
+        id: mergeable_check
+        run: |
+          if [ ! git merge-base --is-ancestor origin/main ${{ github.event.pull_request.head.sha }} ]; then
+            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
+          fi
   build:
+    needs: is_mergeable
+    if: ${{ github.event_name != 'pull_request' || needs.is_mergeable.outputs.mergeable_state == 'clean' }}
     if: ${{ !github.event.act }}
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.base.sha == github.event.pull_request.head.sha }}
     runs-on:
       group: group8core
     timeout-minutes: 35

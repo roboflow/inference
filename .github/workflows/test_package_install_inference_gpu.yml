@@ -2,6 +2,7 @@ name: Test package install - inference-gpu
 
 on:
   pull_request:
+    paths-ignore: "**/*.md"
     branches: [main]
   push:
     branches: [main]
@@ -11,7 +12,25 @@ permissions:
   id-token: write
 
 jobs:
+  is_mergeable:
+    outputs:
+      mergeable_state: ${{ steps.mergeable_check.outputs.mergeable_state }}
+    runs-on:
+      labels: depot-ubuntu-22.04-8
+      group: public-depot
+    timeout-minutes: 15
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v4
+      - name: Wait for mergeable state
+        id: mergeable_check
+        run: |
+          if [ ! git merge-base --is-ancestor origin/main ${{ github.event.pull_request.head.sha }} ]; then
+            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
+          fi
   build:
+    needs: is_mergeable
+    if: ${{ github.event_name != 'pull_request' || needs.is_mergeable.outputs.mergeable_state == 'clean' }}
     runs-on:
       labels: depot-ubuntu-22.04-8
       group: public-depot
@@ -20,6 +39,11 @@ jobs:
       matrix:
         python-version: ["3.8", "3.9", "3.10", "3.11"]
     steps:
+      - name: test
+        env:
+          - mergeable_state: ${{needs.is_mergeable.outputs.mergeable_state}}
+        run: |
+          echo "$mergeable_state"
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
       - name: 🐍 Set up Python 3.9 to create wheels
@@ -43,9 +67,6 @@ jobs:
       - name: 📦 Installing `inference` package...
         run: pip install ./dist/inference_gpu-*-py3-none-any.whl
       - name: 🧪 Testing package installation
-        env:
-          GITHUB_CONTEXT: ${{ toJSON(github) }}
         working-directory: "/"
         run: |
-          echo "$GITHUB_CONTEXT"
           python -c "import os; import platform; print(f'Python version: {platform.python_version()}'); print(f'CWD: {os.getcwd()}'); from inference import get_model"
