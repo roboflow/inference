@@ -17,12 +17,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: 🛎️ Checkout main
-        uses: actions/checkout@v4
-        fetch-depth: 1
-        ref: ${{ github.event.pull_request.base.sha }}
+        uses: 
+        with:
+          fetch-depth: 1
+          ref: ${{ github.event.pull_request.base.sha }}
       - name: 🛎️ Checkout branch
         uses: actions/checkout@v4
-        fetch-depth: 1
+        with:
+          fetch-depth: 1
       - name: Check and store mergable state
         id: mergeable_check
         run: |
