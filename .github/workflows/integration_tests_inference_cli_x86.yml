@@ -26,8 +26,8 @@ jobs:
       - name: Check and store mergable state
         id: mergeable_check
         run: |
-          echo "Check if ${{ github.event.pull_request.base.sha }} is ancestor of ${{ github.event.pull_request.head.sha }}";
-          if $(git merge-base --is-ancestor ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}); then
+          echo "Check if branch HEAD is ancestor of ${{ github.event.pull_request.head.sha }}";
+          if $(git merge-base --is-ancestor ${{ github.event.pull_request.base.sha }} HEAD); then
             echo "Branch is mergeable";
             echo "mergeable_state=clean" >> "$GITHUB_OUTPUT";
           else
