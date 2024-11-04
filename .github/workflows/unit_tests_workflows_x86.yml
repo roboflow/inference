@@ -16,6 +16,11 @@ jobs:
       group: public-depot
     timeout-minutes: 15
     steps:
+      - name: 🛎️ Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: ${{ env.FETCH_DEPTH }}
+          ref: main
       - name: Calculate depth
         run: echo "FETCH_DEPTH=$(( ${{ github.event.pull_request.commits }} + 1 ))" >> "${GITHUB_ENV}"
       - name: 🛎️ Checkout branch with all history
@@ -26,8 +31,8 @@ jobs:
       - name: Check and store mergable state
         id: mergeable_check
         run: |
-          echo "Check if ${{ github.event.pull_request.head.sha }} (branch HEAD) is ancestor of ${{ github.event.pull_request.base.sha }} (main HEAD)";
-          if $(git merge-base --is-ancestor ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}); then
+          echo "Check if main is ancestor of ${{ github.event.pull_request.head.sha }} (branch HEAD)";
+          if $(git merge-base --is-ancestor main ${{ github.event.pull_request.head.sha }}); then
             echo "Branch is mergeable";
             echo "mergeable_state=clean" >> "$GITHUB_OUTPUT";
           else
