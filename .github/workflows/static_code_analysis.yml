@@ -12,7 +12,7 @@ jobs:
     secrets: inherit
   build-dev-test:
     needs: call_is_mergeable
-    if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state == 'clean' }}
+    if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot

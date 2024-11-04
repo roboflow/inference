@@ -2,6 +2,10 @@ name: Check if PR is mergeable
 
 on:
   workflow_call:
+    outputs:
+      mergeable_state:
+        description: "Set to 'clean' if branch is mergeable, otherwise set to 'not_clean'"
+        value: ${{ jobs.mergeable_check.outputs.mergeable_state }}
 
 jobs:
   is_mergeable:
