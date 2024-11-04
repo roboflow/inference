@@ -162,7 +162,7 @@ def deserialize_detections_kind(
         detection.get(PARENT_ID_KEY, parameter)
         for detection in detections["predictions"]
     ]
-    detections[PARENT_ID_KEY] = np.array(parent_ids)
+    parsed_detections[PARENT_ID_KEY] = np.array(parent_ids)
     optional_elements_keys = [
         (PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE, PATH_DEVIATION_KEY_IN_SV_DETECTIONS),
         (TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE, TIME_IN_ZONE_KEY_IN_SV_DETECTIONS),
@@ -227,6 +227,12 @@ def _attach_optional_key_points_detections(
 def deserialize_numpy_array(parameter: str, raw_array: Any) -> np.ndarray:
     if isinstance(raw_array, np.ndarray):
         return raw_array
+    if not isinstance(raw_array, list):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"numpy array value, but invalid type of data found (`{type(raw_array).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
     return np.array(raw_array)
 
 
@@ -268,11 +274,7 @@ def deserialize_float_kind(parameter: str, value: Any) -> float:
 
 
 def deserialize_list_of_values_kind(parameter: str, value: Any) -> list:
-    if (
-        not isinstance(value, list)
-        and not isinstance(value, set)
-        and not isinstance(value, tuple)
-    ):
+    if not isinstance(value, list) and not isinstance(value, tuple):
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "
             f"list, but invalid type of data found (`{type(value).__name__}`).",
@@ -416,6 +418,12 @@ def deserialize_rgb_color_kind(
         )
     if isinstance(value, str):
         return value
+    if len(value) < 3:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"RGB color, but not all colors defined.",
+            context="workflow_execution | runtime_input_validation",
+        )
     return tuple(value[:3])
 
 
