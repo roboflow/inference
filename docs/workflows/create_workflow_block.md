@@ -313,16 +313,17 @@ we will be creating SIMD block.
     
     Let's see how to add definitions of those inputs to manifest: 
 
-    ```{ .py linenums="1" hl_lines="2 6 7 8 9 17 18 19 20 21 22"}
+    ```{ .py linenums="1" hl_lines="2 6-9 18-23"}
     from typing import Literal, Union
     from pydantic import Field
     from inference.core.workflows.prototypes.block import (
         WorkflowBlockManifest,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        StepOutputImageSelector,
-        WorkflowImageSelector,
+        BatchOfDataSelector,
+        IMAGE_KIND,
     )
+    
     
     class ImagesSimilarityManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/images_similarity@v1"] 
@@ -330,20 +331,20 @@ we will be creating SIMD block.
         # all properties apart from `type` and `name` are treated as either 
         # definitions of batch-oriented data to be processed by block or its 
         # parameters that influence execution of steps created based on block
-        image_1: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
     ```
     
     * in the lines `2-9`, we've added a couple of imports to ensure that we have everything needed
     
-    * line `17` defines `image_1` parameter - as manifest is prototype for Workflow Definition, 
+    * line `18` defines `image_1` parameter - as manifest is prototype for Workflow Definition, 
     the only way to tell about image to be used by step is to provide selector - we have 
-    two specialised types in core library that can be used - `WorkflowImageSelector` and `StepOutputImageSelector`.
-    If you look deeper into codebase, you will discover those are type aliases - telling `pydantic`
+    a specialised type in core library that can be used - `BatchOfDataSelector`.
+    If you look deeper into codebase, you will discover this is type alias constructor function - telling `pydantic`
     to expect string matching `$inputs.{name}` and `$steps.{name}.*` patterns respectively, additionally providing 
     extra schema field metadata that tells Workflows ecosystem components that the `kind` of data behind selector is 
     [image](/workflows/kinds/image/).
@@ -351,7 +352,7 @@ we will be creating SIMD block.
     * denoting `pydantic` `Field(...)` attribute in the last parts of line `17` is optional, yet appreciated, 
     especially for blocks intended to cooperate with Workflows UI 
   
-    * starting in line `20`, you can find definition of `image_2` parameter which is very similar to `image_1`.
+    * starting in line `21`, you can find definition of `image_2` parameter which is very similar to `image_1`.
 
 
 Such definition of manifest can handle the following step declaration in Workflow definition:
@@ -385,19 +386,20 @@ batch-oriented and will affect all batch elements passed to the step.
 
 ??? example "Adding parameter to the manifest"
 
-    ```{ .py linenums="1" hl_lines="9 10 11 26 27 28 29 30 31 32"}
+    ```{ .py linenums="1" hl_lines="9-11 27-33"}
     from typing import Literal, Union
     from pydantic import Field
     from inference.core.workflows.prototypes.block import (
         WorkflowBlockManifest,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        StepOutputImageSelector,
-        WorkflowImageSelector,
+        BatchOfDataSelector,
+        IMAGE_KIND,
         FloatZeroToOne,
         WorkflowParameterSelector,
         FLOAT_ZERO_TO_ONE_KIND,
     )
+    
     
     class ImagesSimilarityManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/images_similarity@v1"] 
@@ -405,10 +407,10 @@ batch-oriented and will affect all batch elements passed to the step.
         # all properties apart from `type` and `name` are treated as either 
         # definitions of batch-oriented data to be processed by block or its 
         # parameters that influence execution of steps created based on block
-        image_1: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
         similarity_threshold: Union[
@@ -430,7 +432,7 @@ batch-oriented and will affect all batch elements passed to the step.
   
     * line `11` imports [`float_zero_to_one`](/workflows/kinds/float_zero_to_one) `kind` definition which will be used later
   
-    * in line `26` we start defining parameter called `similarity_threshold`. Manifest will accept 
+    * in line `27` we start defining parameter called `similarity_threshold`. Manifest will accept 
     either float values (in range `[0.0-1.0]`) or selector to workflow input of `kind`
     [`float_zero_to_one`](/workflows/kinds/float_zero_to_one). Please point out on how 
     function creating type annotation (`WorkflowParameterSelector(...)`) is used - 
@@ -461,42 +463,6 @@ or alternatively:
 }
 ```
 
-??? hint "LEARN MORE: Selecting step outputs"
-
-    Our siplified example showcased declaration of properties that accept selectors to
-    images produced by other steps via `BatchOfDataSelector`.
-
-    You can use function `BatchOfDataSelector(...)` creating field annotations dynamically
-    to express the that block accepts batch-oriented outputs from other steps or Workflow inputs 
-    (of specified kinds).
-
-    ```{ .py linenums="1" hl_lines="7 18 21 24"}
-    from typing import Literal, Union
-    from pydantic import Field
-    from inference.core.workflows.prototypes.block import (
-        WorkflowBlockManifest,
-    )
-    from inference.core.workflows.execution_engine.entities.types import (
-        BatchOfDataSelector,
-        NUMPY_ARRAY_KIND,
-        IMAGE_KIND,
-    )
-    
-    class ImagesSimilarityManifest(WorkflowBlockManifest):
-        type: Literal["my_plugin/images_similarity@v1"] 
-        name: str
-        # all properties apart from `type` and `name` are treated as either 
-        # definitions of batch-oriented data to be processed by block or its 
-        # parameters that influence execution of steps created based on block
-        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
-            description="First image to calculate similarity",
-        )
-        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
-            description="Second image to calculate similarity",
-        )
-        example: BatchOfDataSelector(kind=[NUMPY_ARRAY_KIND])
-    ```
-
 ### Declaring block outputs
 
 Our manifest is ready regarding properties that can be declared in Workflow definitions, 
@@ -509,7 +475,7 @@ run the block.
     to increase block stability, we advise to provide information about execution engine 
     compatibility.
     
-    ```{ .py linenums="1" hl_lines="1 5 13 33-40 42-44"}
+    ```{ .py linenums="1" hl_lines="1 5 13 34-41 43-45"}
     from typing import Literal, Union, List, Optional
     from pydantic import Field
     from inference.core.workflows.prototypes.block import (
@@ -517,21 +483,22 @@ run the block.
         OutputDefinition,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        StepOutputImageSelector,
-        WorkflowImageSelector,
+        BatchOfDataSelector,
+        IMAGE_KIND,
         FloatZeroToOne,
         WorkflowParameterSelector,
         FLOAT_ZERO_TO_ONE_KIND,
         BOOLEAN_KIND,
     )
     
+    
     class ImagesSimilarityManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/images_similarity@v1"] 
         name: str
-        image_1: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
         similarity_threshold: Union[
@@ -563,11 +530,11 @@ run the block.
     * line `13` imports [`boolean`](/workflows/kinds/boolean) `kind` to be used 
     in outputs definitions
   
-    * lines `33-40` declare class method to specify outputs from the block - 
+    * lines `34-41` declare class method to specify outputs from the block - 
     each entry in list declare one return property for each batch element and its `kind`.
     Our block will return boolean flag `images_match` for each pair of images.
   
-    * lines `42-44` declare compatibility of the block with Execution Engine -
+    * lines `43-45` declare compatibility of the block with Execution Engine -
     see [versioning page](/workflows/versioning/) for more details
 
 As a result of those changes:
@@ -590,7 +557,7 @@ in their inputs
     * additionally, block manifest should implement instance method `get_actual_outputs(...)`
     that provides list of actual outputs that can be generated based on filled manifest data 
 
-    ```{ .py linenums="1" hl_lines="14 35-42 44-49"}
+    ```{ .py linenums="1" hl_lines="14 36-43 45-50"}
     from typing import Literal, Union, List, Optional
     from pydantic import Field
     from inference.core.workflows.prototypes.block import (
@@ -598,8 +565,8 @@ in their inputs
         OutputDefinition,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        StepOutputImageSelector,
-        WorkflowImageSelector,
+        BatchOfDataSelector,
+        IMAGE_KIND,
         FloatZeroToOne,
         WorkflowParameterSelector,
         FLOAT_ZERO_TO_ONE_KIND,
@@ -607,13 +574,14 @@ in their inputs
         WILDCARD_KIND,
     )
     
+    
     class ImagesSimilarityManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/images_similarity@v1"] 
         name: str
-        image_1: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
         similarity_threshold: Union[
@@ -656,7 +624,7 @@ block.
 
 ??? example "Block scaffolding"
 
-    ```{ .py linenums="1" hl_lines="1 5 6 8-11 56-68"}
+    ```{ .py linenums="1" hl_lines="1 5 6 8-11 54-56 58-64"}
     from typing import Literal, Union, List, Optional, Type
     from pydantic import Field
     from inference.core.workflows.prototypes.block import (
@@ -669,8 +637,8 @@ block.
         WorkflowImageData,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        StepOutputImageSelector,
-        WorkflowImageSelector,
+        BatchOfDataSelector,
+        IMAGE_KIND,
         FloatZeroToOne,
         WorkflowParameterSelector,
         FLOAT_ZERO_TO_ONE_KIND,
@@ -680,10 +648,10 @@ block.
     class ImagesSimilarityManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/images_similarity@v1"] 
         name: str
-        image_1: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
         similarity_threshold: Union[
@@ -727,10 +695,10 @@ block.
     provide additional symbols required to properly define block class and all
     of its methods signatures
 
-    * line `59` defines class method `get_manifest(...)` to simply return 
+    * lines `54-56` defines class method `get_manifest(...)` to simply return 
     the manifest class we cretaed earlier
 
-    * lines `62-68` define `run(...)` function, which Execution Engine
+    * lines `58-64` define `run(...)` function, which Execution Engine
     will invoke with data to get desired results
 
 ### Providing implementation for block logic
@@ -761,8 +729,8 @@ it can produce meaningful results.
         WorkflowImageData,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        StepOutputImageSelector,
-        WorkflowImageSelector,
+        BatchOfDataSelector,
+        IMAGE_KIND,
         FloatZeroToOne,
         WorkflowParameterSelector,
         FLOAT_ZERO_TO_ONE_KIND,
@@ -772,10 +740,10 @@ it can produce meaningful results.
     class ImagesSimilarityManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/images_similarity@v1"] 
         name: str
-        image_1: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
         similarity_threshold: Union[
@@ -910,8 +878,8 @@ on how to use it for your block.
         Batch,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        StepOutputImageSelector,
-        WorkflowImageSelector,
+        BatchOfDataSelector,
+        IMAGE_KIND,
         FloatZeroToOne,
         WorkflowParameterSelector,
         FLOAT_ZERO_TO_ONE_KIND,
@@ -921,10 +889,10 @@ on how to use it for your block.
     class ImagesSimilarityManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/images_similarity@v1"] 
         name: str
-        image_1: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
         similarity_threshold: Union[
@@ -1028,8 +996,8 @@ batch element (SIMD flow-control) or whole workflow execution (non-SIMD flow-con
     )
     from inference.core.workflows.execution_engine.entities.types import (
         StepSelector,
-        WorkflowImageSelector,
-        StepOutputImageSelector,
+        BatchOfDataSelector,
+        IMAGE_KIND,
     )
     from inference.core.workflows.execution_engine.v1.entities import FlowControl
     from inference.core.workflows.prototypes.block import (
@@ -1043,7 +1011,7 @@ batch element (SIMD flow-control) or whole workflow execution (non-SIMD flow-con
     class BlockManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/random_continue@v1"]
         name: str
-        image: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+        image: BatchOfDataSelector(kind=[IMAGE_KIND]) = ImageInputField
         probability: float
         next_steps: List[StepSelector] = Field(
             description="Reference to step which shall be executed if expression evaluates to true",
@@ -1195,7 +1163,7 @@ def run(self, predictions: List[dict]) -> BlockResult:
       OutputDefinition,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        StepOutputSelector,
+        BatchOfDataSelector,
         OBJECT_DETECTION_PREDICTION_KIND,
     )
     from inference.core.workflows.prototypes.block import (
@@ -1209,7 +1177,7 @@ def run(self, predictions: List[dict]) -> BlockResult:
     class BlockManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/fusion_of_predictions@v1"]
         name: str
-        predictions: List[StepOutputSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = Field(
+        predictions: List[BatchOfDataSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = Field(
             description="Selectors to step outputs",
             examples=[["$steps.model_1.predictions", "$steps.model_2.predictions"]],
         )
@@ -1280,7 +1248,7 @@ keys serve as names for those selectors.
       OutputDefinition,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        StepOutputSelector,
+        BatchOfDataSelector,
         WorkflowParameterSelector,
     )
     from inference.core.workflows.prototypes.block import (
@@ -1294,7 +1262,7 @@ keys serve as names for those selectors.
     class BlockManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/named_selectors_example@v1"]
         name: str
-        data: Dict[str, StepOutputSelector(), WorkflowParameterSelector()] = Field(
+        data: Dict[str, BatchOfDataSelector(), WorkflowParameterSelector()] = Field(
             description="Selectors to step outputs",
             examples=[{"a": $steps.model_1.predictions", "b": "$Inputs.data"}],
         )
@@ -1325,7 +1293,7 @@ keys serve as names for those selectors.
     ```
 
     * lines `23-26` depict how to define manifest field capable of accepting 
-    list of selectors
+    dictionary of selectors - providing mapping between selector name and value
 
     * line `47` shows what to expect as input to block's `run(...)` method - 
     dict of objects which are reffered with selectors. If the block accepted 
@@ -1386,7 +1354,7 @@ the method signatures.
 
         In this example, we perform dynamic crop of image based on predictions.
 
-        ```{ .py linenums="1" hl_lines="30-32 65 66-67"}
+        ```{ .py linenums="1" hl_lines="28-30 63 64-65"}
         from typing import Dict, List, Literal, Optional, Type, Union
         from uuid import uuid4
 
@@ -1399,9 +1367,7 @@ the method signatures.
         from inference.core.workflows.execution_engine.entities.types import (
             IMAGE_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,
-            StepOutputImageSelector,
-            StepOutputSelector,
-            WorkflowImageSelector,
+            BatchOfDataSelector,
         )
         from inference.core.workflows.prototypes.block import (
             BlockResult,
@@ -1411,8 +1377,8 @@ the method signatures.
         
         class BlockManifest(WorkflowBlockManifest):
             type: Literal["my_block/dynamic_crop@v1"]
-            image: Union[WorkflowImageSelector, StepOutputImageSelector]
-            predictions: StepOutputSelector(
+            image: BatchOfDataSelector(kind=[IMAGE_KIND])
+            predictions: BatchOfDataSelector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND],
             )
         
@@ -1456,16 +1422,16 @@ the method signatures.
                 return crops
         ```
 
-        * in lines `30-32` manifest class declares output dimensionality 
+        * in lines `28-30` manifest class declares output dimensionality 
         offset - value `1` should be understood as adding `1` to dimensionality level
         
-        * point out, that in line `65`, block eliminates empty images from further processing but 
+        * point out, that in line `63`, block eliminates empty images from further processing but 
         placing `None` instead of dictionatry with outputs. This would utilise the same 
         Execution Engine behaviour that is used for conditional execution - datapoint will
         be eliminated from downstream processing (unless steps requesting empty inputs 
         are present down the line).
 
-        * in lines `66-67` results for single input `image` and `predictions` are collected - 
+        * in lines `64-65` results for single input `image` and `predictions` are collected - 
         it is meant to be list of dictionares containing all registered outputs as keys. Execution
         engine will understand that the step returns batch of elements for each input element and
         create nested sturcures of indices to keep track of during execution of downstream steps.
@@ -1475,7 +1441,7 @@ the method signatures.
         In this example, the block visualises crops predictions and creates tiles
         presenting all crops predictions in single output image.
 
-        ```{ .py linenums="1" hl_lines="31-33 50-51 61-62"}
+        ```{ .py linenums="1" hl_lines="29-31 48-49 59-60"}
         from typing import List, Literal, Type, Union
 
         import supervision as sv
@@ -1488,9 +1454,7 @@ the method signatures.
         from inference.core.workflows.execution_engine.entities.types import (
             IMAGE_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,
-            StepOutputImageSelector,
-            StepOutputSelector,
-            WorkflowImageSelector,
+            BatchOfDataSelector,
         )
         from inference.core.workflows.prototypes.block import (
             BlockResult,
@@ -1501,8 +1465,8 @@ the method signatures.
         
         class BlockManifest(WorkflowBlockManifest):
             type: Literal["my_plugin/tile_detections@v1"]
-            crops: Union[WorkflowImageSelector, StepOutputImageSelector]
-            crops_predictions: StepOutputSelector(
+            crops: BatchOfDataSelector(kind=[IMAGE_KIND])
+            crops_predictions: BatchOfDataSelector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND]
             )
         
@@ -1540,10 +1504,10 @@ the method signatures.
                 return {"visualisations": tile}
         ```
 
-        * in lines `31-33` manifest class declares output dimensionality 
+        * in lines `29-31` manifest class declares output dimensionality 
         offset - value `-1` should be understood as decreasing dimensionality level by `1`
 
-        * in lines `50-51` you can see the impact of output dimensionality decrease
+        * in lines `48-49` you can see the impact of output dimensionality decrease
         on the method signature. Both inputs are artificially wrapped in `Batch[]` container.
         This is done by Execution Engine automatically on output dimensionality decrease when 
         all inputs have the same dimensionality to enable access to all elements occupying 
@@ -1551,7 +1515,7 @@ the method signatures.
         from top-level batch will be grouped. For instance, if you had two input images that you 
         cropped - crops from those two different images will be grouped separately.
 
-        * lines `61-62` illustrate how output is constructed - single value is returned and that value 
+        * lines `59-60` illustrate how output is constructed - single value is returned and that value 
         will be indexed by Execution Engine in output batch with reduced dimensionality
 
     === "different input dimensionalities"
@@ -1560,7 +1524,7 @@ the method signatures.
         crops of original image - result is to provide single detections with 
         all partial ones being merged.
 
-        ```{ .py linenums="1" hl_lines="32-37 39-41 63-64 70"}
+        ```{ .py linenums="1" hl_lines="31-36 38-40 62-63 69"}
         from copy import deepcopy
         from typing import Dict, List, Literal, Optional, Type, Union
         
@@ -1574,9 +1538,8 @@ the method signatures.
         )
         from inference.core.workflows.execution_engine.entities.types import (
             OBJECT_DETECTION_PREDICTION_KIND,
-            StepOutputImageSelector,
-            StepOutputSelector,
-            WorkflowImageSelector,
+            BatchOfDataSelector,
+            IMAGE_KIND,
         )
         from inference.core.workflows.prototypes.block import (
             BlockResult,
@@ -1587,8 +1550,8 @@ the method signatures.
         
         class BlockManifest(WorkflowBlockManifest):
             type: Literal["my_plugin/stitch@v1"]
-            image: Union[WorkflowImageSelector, StepOutputImageSelector]
-            image_predictions: StepOutputSelector(
+            image: BatchOfDataSelector(kind=[IMAGE_KIND])
+            image_predictions: BatchOfDataSelector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND],
             )
         
@@ -1634,11 +1597,11 @@ the method signatures.
 
         ```
 
-        * in lines `32-37` manifest class declares input dimensionalities offset, indicating
+        * in lines `31-36` manifest class declares input dimensionalities offset, indicating
         `image` parameter being top-level and `image_predictions` being nested batch of predictions
 
         * whenever different input dimensionalities are declared, dimensionality reference property
-        must be pointed (see lines `39-41`) - this dimensionality level would be used to calculate 
+        must be pointed (see lines `38-40`) - this dimensionality level would be used to calculate 
         output dimensionality - in this particular case, we specify `image`. This choice 
         has an implication in the expected format of result - in the chosen scenario we are supposed
         to return single dictionary with all registered outputs keys. If our choice is `image_predictions`,
@@ -1646,11 +1609,11 @@ the method signatures.
         `get_dimensionality_reference_property(...)` which dimensionality level should be associated
         to the output.
 
-        * lines `63-64` present impact of dimensionality offsets specified in lines `32-37`. It is clearly
+        * lines `63-64` present impact of dimensionality offsets specified in lines `31-36`. It is clearly
         visible that `image_predictions` is a nested batch regarding `image`. Obviously, only nested predictions
         relevant for the specific `images` are grouped in batch and provided to the method in runtime.
 
-        * as mentioned earlier, line `70` construct output being single dictionary, as we register output 
+        * as mentioned earlier, line `69` construct output being single dictionary, as we register output 
         at dimensionality level of `image` (which was also shipped as single element)
 
 
@@ -1660,7 +1623,7 @@ the method signatures.
 
         In this example, we perform dynamic crop of image based on predictions.
 
-        ```{ .py linenums="1" hl_lines="31-33 35-37 57-58 72 73-75"}
+        ```{ .py linenums="1" hl_lines="29-31 33-35 55-56 70 71-73"}
         from typing import Dict, List, Literal, Optional, Type, Union
         from uuid import uuid4
 
@@ -1674,9 +1637,7 @@ the method signatures.
         from inference.core.workflows.execution_engine.entities.types import (
             IMAGE_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,
-            StepOutputImageSelector,
-            StepOutputSelector,
-            WorkflowImageSelector,
+            BatchOfDataSelector,
         )
         from inference.core.workflows.prototypes.block import (
             BlockResult,
@@ -1686,8 +1647,8 @@ the method signatures.
         
         class BlockManifest(WorkflowBlockManifest):
             type: Literal["my_block/dynamic_crop@v1"]
-            image: Union[WorkflowImageSelector, StepOutputImageSelector]
-            predictions: StepOutputSelector(
+            image: BatchOfDataSelector(kind=[IMAGE_KIND])
+            predictions: BatchOfDataSelector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND],
             )
 
@@ -1738,21 +1699,21 @@ the method signatures.
                 return results
         ```
       
-        * in lines `31-33` manifest declares that block accepts batches of inputs
+        * in lines `29-31` manifest declares that block accepts batches of inputs
 
-        * in lines `35-37` manifest class declares output dimensionality 
+        * in lines `33-35` manifest class declares output dimensionality 
         offset - value `1` should be understood as adding `1` to dimensionality level
         
-        * in lines `57-68`, signature of input parameters reflects that the `run(...)` method
+        * in lines `55-66`, signature of input parameters reflects that the `run(...)` method
         runs against inputs of the same dimensionality and those inputs are provided in batches
 
-        * point out, that in line `72`, block eliminates empty images from further processing but 
+        * point out, that in line `70`, block eliminates empty images from further processing but 
         placing `None` instead of dictionatry with outputs. This would utilise the same 
         Execution Engine behaviour that is used for conditional execution - datapoint will
         be eliminated from downstream processing (unless steps requesting empty inputs 
         are present down the line).
 
-        * construction of the output, presented in lines `73-75` indicates two levels of nesting.
+        * construction of the output, presented in lines `71-73` indicates two levels of nesting.
         First of all, block operates on batches, so it is expected to return list of outputs, one 
         output for each input batch element. Additionally, this output element for each input batch 
         element turns out to be nested batch - hence for each input iage and prediction, block 
@@ -1764,7 +1725,7 @@ the method signatures.
         In this example, the block visualises crops predictions and creates tiles
         presenting all crops predictions in single output image.
 
-        ```{ .py linenums="1" hl_lines="31-33 35-37 54-55 68-69"}
+        ```{ .py linenums="1" hl_lines="29-31 33-35 52-53 66-67"}
         from typing import List, Literal, Type, Union
 
         import supervision as sv
@@ -1777,9 +1738,7 @@ the method signatures.
         from inference.core.workflows.execution_engine.entities.types import (
             IMAGE_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,
-            StepOutputImageSelector,
-            StepOutputSelector,
-            WorkflowImageSelector,
+            BatchOfDataSelector,
         )
         from inference.core.workflows.prototypes.block import (
             BlockResult,
@@ -1790,8 +1749,8 @@ the method signatures.
         
         class BlockManifest(WorkflowBlockManifest):
             type: Literal["my_plugin/tile_detections@v1"]
-            images_crops: Union[WorkflowImageSelector, StepOutputImageSelector]
-            crops_predictions: StepOutputSelector(
+            images_crops: BatchOfDataSelector(kind=[IMAGE_KIND])
+            crops_predictions: BatchOfDataSelector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND]
             )
 
@@ -1836,19 +1795,19 @@ the method signatures.
                 return visualisations
         ```
         
-        * lines `31-33` manifest that block is expected to take batches as input
+        * lines `29-31` manifest that block is expected to take batches as input
 
-        * in lines `35-37` manifest class declares output dimensionality 
+        * in lines `33-35` manifest class declares output dimensionality 
         offset - value `-1` should be understood as decreasing dimensionality level by `1`
 
-        * in lines `54-55` you can see the impact of output dimensionality decrease
+        * in lines `52-53` you can see the impact of output dimensionality decrease
         and batch processing on the method signature. First "layer" of `Batch[]` is a side effect of the 
         fact that manifest declared that block accepts batches of inputs. The second "layer" comes 
         from output dimensionality decrease. Execution Engine wrapps up the dimension to be reduced into 
         additional `Batch[]` container porvided in inputs, such that programmer is able to collect all nested
         batches elements that belong to specific top-level batch element.
 
-        * lines `68-69` illustrate how output is constructed - for each top-level batch element, block
+        * lines `66-67` illustrate how output is constructed - for each top-level batch element, block
         aggregates all crops and predictions and creates a single tile. As block accepts batches of inputs,
         this procedure end up with one tile for each top-level batch element - hence list of dictionaries
         is expected to be returned.
@@ -1859,7 +1818,7 @@ the method signatures.
         crops of original image - result is to provide single detections with 
         all partial ones being merged.
 
-        ```{ .py linenums="1" hl_lines="32-34 36-41 43-45 67-68 77-78"}
+        ```{ .py linenums="1" hl_lines="31-33 35-40 42-44 66-67 76-77"}
         from copy import deepcopy
         from typing import Dict, List, Literal, Optional, Type, Union
         
@@ -1873,9 +1832,8 @@ the method signatures.
         )
         from inference.core.workflows.execution_engine.entities.types import (
             OBJECT_DETECTION_PREDICTION_KIND,
-            StepOutputImageSelector,
-            StepOutputSelector,
-            WorkflowImageSelector,
+            BatchOfDataSelector,
+            IMAGE_KIND,
         )
         from inference.core.workflows.prototypes.block import (
             BlockResult,
@@ -1886,8 +1844,8 @@ the method signatures.
         
         class BlockManifest(WorkflowBlockManifest):
             type: Literal["my_plugin/stitch@v1"]
-            images: Union[WorkflowImageSelector, StepOutputImageSelector]
-            images_predictions: StepOutputSelector(
+            images: BatchOfDataSelector(kind=[IMAGE_KIND])
+            images_predictions: BatchOfDataSelector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND],
             )
 
@@ -1940,26 +1898,26 @@ the method signatures.
                 return result
         ```
 
-        * lines `32-34` manifest that block is expected to take batches as input
+        * lines `31-33` manifest that block is expected to take batches as input
 
-        * in lines `36-41` manifest class declares input dimensionalities offset, indicating
+        * in lines `35-40` manifest class declares input dimensionalities offset, indicating
         `image` parameter being top-level and `image_predictions` being nested batch of predictions
 
         * whenever different input dimensionalities are declared, dimensionality reference property
-        must be pointed (see lines `43-45`) - this dimensionality level would be used to calculate 
+        must be pointed (see lines `42-44`) - this dimensionality level would be used to calculate 
         output dimensionality - in this particular case, we specify `image`. This choice 
         has an implication in the expected format of result - in the chosen scenario we are supposed
         to return single dictionary for each element of `image` batch. If our choice is `image_predictions`,
         we would return list of dictionaries (of size equal to length of nested `image_predictions` batch) for each
         input `image` batch element.
 
-        * lines `67-68` present impact of dimensionality offsets specified in lines `36-41` as well as 
+        * lines `66-67` present impact of dimensionality offsets specified in lines `35-40` as well as 
         the declararion of batch processing from lines `32-34`. First "layer" of `Batch[]` container comes 
         from the latter, nested `Batch[Batch[]]` for `images_predictions` comes from the definition of input 
         dimensionality offset. It is clearly visible that `image_predictions` holds batch of predictions relevant
         for specific elements of `image` batch.
         
-        * as mentioned earlier, lines `77-78` construct output being single dictionary for each element of `image` 
+        * as mentioned earlier, lines `76-77` construct output being single dictionary for each element of `image` 
         batch
 
 
@@ -1988,7 +1946,7 @@ that even if some elements are empty, the output lacks missing elements making i
         Batch,
         OutputDefinition,
     )
-    from inference.core.workflows.execution_engine.entities.types import StepOutputSelector
+    from inference.core.workflows.execution_engine.entities.types import BatchOfDataSelector
     from inference.core.workflows.prototypes.block import (
         BlockResult,
         WorkflowBlock,
@@ -1998,7 +1956,7 @@ that even if some elements are empty, the output lacks missing elements making i
 
     class BlockManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/first_non_empty_or_default@v1"]
-        data: List[StepOutputSelector()]
+        data: List[BatchOfDataSelector()]
         default: Any
     
         @classmethod
@@ -2071,7 +2029,7 @@ Let's see how to request init parameters while defining block.
         Batch,
         OutputDefinition,
     )
-    from inference.core.workflows.execution_engine.entities.types import StepOutputSelector
+    from inference.core.workflows.execution_engine.entities.types import BatchOfDataSelector
     from inference.core.workflows.prototypes.block import (
         BlockResult,
         WorkflowBlock,
@@ -2081,7 +2039,7 @@ Let's see how to request init parameters while defining block.
 
     class BlockManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/example@v1"]
-        data: List[StepOutputSelector()]
+        data: List[BatchOfDataSelector()]
     
         @classmethod
         def describe_outputs(cls) -> List[OutputDefinition]:
