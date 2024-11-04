@@ -17,7 +17,7 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
-      - name: Wait for mergeable state
+      - name: Check and store mergable state
         id: mergeable_check
         run: |
           if $(git merge-base --is-ancestor origin/main ${{ github.event.pull_request.head.sha }}); then
