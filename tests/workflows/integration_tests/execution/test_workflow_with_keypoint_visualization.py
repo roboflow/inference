@@ -1,11 +1,10 @@
-import numpy as np
 import cv2
+import numpy as np
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
-
 
 WORKFLOW_KEYPOINT_VISUALIZATION = {
     "version": "1.1",
