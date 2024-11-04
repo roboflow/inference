@@ -56,28 +56,7 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
     for usage_payload in usage_payloads:
         for api_key_hash, resource_payloads in usage_payload.items():
             if api_key_hash == "":
-                if (
-                    resource_payloads
-                    and len(resource_payloads) > 1
-                    or list(resource_payloads.keys()) != [""]
-                ):
-                    continue
-                api_key_usage_with_resource = get_api_key_usage_containing_resource(
-                    api_key_hash=api_key_hash,
-                    usage_payloads=usage_payloads,
-                )
-                if not api_key_usage_with_resource:
-                    system_info_payload = resource_payloads
-                    continue
-                api_key_hash = api_key_usage_with_resource["api_key_hash"]
-                resource_id = api_key_usage_with_resource["resource_id"]
-                category = api_key_usage_with_resource.get("category")
-                for v in resource_payloads.values():
-                    v["api_key_hash"] = api_key_hash
-                    if "resource_id" not in v or not v["resource_id"]:
-                        v["resource_id"] = resource_id
-                    if "category" not in v or not v["category"]:
-                        v["category"] = category
+                continue
             api_key_usage_by_exec_session_id = usage_by_exec_session_id.setdefault(
                 api_key_hash, {}
             )
