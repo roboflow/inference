@@ -232,6 +232,7 @@ is a batch of data - all batch elements are affected.
 * **The flow-control step operates on batch-oriented inputs with compatible lineage** - here, the flow-control step 
 can decide separately for each element in the batch which ones will proceed and which ones will be stopped.
 
+#### Batch-processing compatibility 
 
 ## Initializing Workflow steps from blocks
 

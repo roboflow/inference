@@ -53,7 +53,8 @@ actual data values. It simply tells the Execution Engine how to direct and handl
 
 Input data in a Workflow can be divided into two types:
 
-- Data to be processed: This can be submitted as a batch of data points.
+- Batch-Oriented Data to be processed: Main data to be processed, which you expect to derive results 
+from (for instance: making inference with your model)
 
 - Parameters: These are single values used for specific settings or configurations.
 

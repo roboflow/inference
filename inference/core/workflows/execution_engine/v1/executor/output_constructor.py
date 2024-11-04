@@ -11,7 +11,7 @@ from inference.core.workflows.core_steps.common.serializers import (
 from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
-from inference.core.workflows.errors import ExecutionEngineRuntimeError
+from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.constants import (
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
@@ -184,7 +184,7 @@ def serialize_data_piece(
 ) -> Any:
     if isinstance(kind, dict):
         if not isinstance(data_piece, dict):
-            raise ExecutionEngineRuntimeError(
+            raise AssumptionError(
                 public_message=f"Could not serialize Workflow output `{output_name}` - expected the "
                 f"output to be dictionary containing all outputs of the step, which is not the case."
                 f"This is most likely a bug. Contact Roboflow team through github issues "

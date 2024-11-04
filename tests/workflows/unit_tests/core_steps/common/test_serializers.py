@@ -7,6 +7,7 @@ import supervision as sv
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
     serialise_sv_detections,
+    serialize_wildcard_kind,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
@@ -203,6 +204,151 @@ def test_serialise_image() -> None:
     # then
     assert result["type"] == "base64", "Type of image must point base64"
     decoded = base64.b64decode(result["value"])
+    recovered_image = cv2.imdecode(
+        np.fromstring(decoded, dtype=np.uint8),
+        cv2.IMREAD_UNCHANGED,
+    )
+    assert (
+        recovered_image == np_image
+    ).all(), "Recovered image should be equal to input image"
+
+
+def test_serialize_wildcard_kind_when_workflow_image_data_is_given() -> None:
+    # given
+    np_image = np.zeros((192, 168, 3), dtype=np.uint8)
+    value = WorkflowImageData(
+        parent_metadata=ImageParentMetadata(parent_id="some"),
+        numpy_image=np_image,
+    )
+
+    # when
+    result = serialize_wildcard_kind(value=value)
+
+    # then
+    assert (
+        result["type"] == "base64"
+    ), "Type of third element must be changed into base64"
+    decoded = base64.b64decode(result["value"])
+    recovered_image = cv2.imdecode(
+        np.fromstring(decoded, dtype=np.uint8),
+        cv2.IMREAD_UNCHANGED,
+    )
+    assert (
+        recovered_image == np_image
+    ).all(), "Recovered image should be equal to input image"
+
+
+def test_serialize_wildcard_kind_when_dictionary_is_given() -> None:
+    # given
+    np_image = np.zeros((192, 168, 3), dtype=np.uint8)
+    elements = {
+        "a": 3,
+        "b": "some",
+        "c": WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np_image,
+        ),
+    }
+
+    # when
+    result = serialize_wildcard_kind(value=elements)
+
+    # then
+    assert len(result) == 3, "The same number of elements must be returned"
+    assert result["a"] == 3, "First element of list must be untouched"
+    assert result["b"] == "some", "Second element of list must be untouched"
+    assert (
+        result["c"]["type"] == "base64"
+    ), "Type of third element must be changed into base64"
+    decoded = base64.b64decode(result["c"]["value"])
+    recovered_image = cv2.imdecode(
+        np.fromstring(decoded, dtype=np.uint8),
+        cv2.IMREAD_UNCHANGED,
+    )
+    assert (
+        recovered_image == np_image
+    ).all(), "Recovered image should be equal to input image"
+
+
+def test_serialize_wildcard_kind_when_list_is_given() -> None:
+    # given
+    np_image = np.zeros((192, 168, 3), dtype=np.uint8)
+    elements = [
+        3,
+        "some",
+        WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np_image,
+        ),
+    ]
+
+    # when
+    result = serialize_wildcard_kind(value=elements)
+
+    # then
+    assert len(result) == 3, "The same number of elements must be returned"
+    assert result[0] == 3, "First element of list must be untouched"
+    assert result[1] == "some", "Second element of list must be untouched"
+    assert (
+        result[2]["type"] == "base64"
+    ), "Type of third element must be changed into base64"
+    decoded = base64.b64decode(result[2]["value"])
+    recovered_image = cv2.imdecode(
+        np.fromstring(decoded, dtype=np.uint8),
+        cv2.IMREAD_UNCHANGED,
+    )
+    assert (
+        recovered_image == np_image
+    ).all(), "Recovered image should be equal to input image"
+
+
+def test_serialize_wildcard_kind_when_compound_input_is_given() -> None:
+    # given
+    np_image = np.zeros((192, 168, 3), dtype=np.uint8)
+    elements = [
+        3,
+        "some",
+        WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id="some"),
+            numpy_image=np_image,
+        ),
+        {
+            "nested": [
+                WorkflowImageData(
+                    parent_metadata=ImageParentMetadata(parent_id="other"),
+                    numpy_image=np_image,
+                )
+            ]
+        },
+    ]
+
+    # when
+    result = serialize_wildcard_kind(value=elements)
+
+    # then
+    assert len(result) == 4, "The same number of elements must be returned"
+    assert result[0] == 3, "First element of list must be untouched"
+    assert result[1] == "some", "Second element of list must be untouched"
+    assert (
+        result[2]["type"] == "base64"
+    ), "Type of third element must be changed into base64"
+    decoded = base64.b64decode(result[2]["value"])
+    recovered_image = cv2.imdecode(
+        np.fromstring(decoded, dtype=np.uint8),
+        cv2.IMREAD_UNCHANGED,
+    )
+    assert (
+        recovered_image == np_image
+    ).all(), "Recovered image should be equal to input image"
+    nested_dict = result[3]
+    assert len(nested_dict["nested"]) == 1, "Expected one element in nested list"
+    assert (
+        nested_dict["nested"][0]["type"] == "base64"
+    ), "Expected image serialized to base64"
+    assert (
+        "video_metadata" in nested_dict["nested"][0]
+    ), "Expected video metadata attached"
+    decoded = base64.b64decode(nested_dict["nested"][0]["value"])
     recovered_image = cv2.imdecode(
         np.fromstring(decoded, dtype=np.uint8),
         cv2.IMREAD_UNCHANGED,
