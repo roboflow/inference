@@ -718,10 +718,9 @@ def test_assemble_runtime_parameters_when_input_batch_deeper_than_declared() -> 
     ]
 
     # when
-    result = assemble_runtime_parameters(
-        runtime_parameters=runtime_parameters,
-        defined_inputs=defined_inputs,
-        kinds_deserializers=KINDS_DESERIALIZERS,
-    )
-
-    pass
+    with pytest.raises(RuntimeInputError):
+        _ = assemble_runtime_parameters(
+            runtime_parameters=runtime_parameters,
+            defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
+        )

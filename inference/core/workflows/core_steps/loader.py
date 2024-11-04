@@ -69,10 +69,23 @@ from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
     ImageThresholdBlockV1,
 )
 from inference.core.workflows.core_steps.common.deserializers import (
+    deserialize_boolean_kind,
+    deserialize_bytes_kind,
+    deserialize_classification_prediction_kind,
     deserialize_detections_kind,
+    deserialize_dictionary_kind,
+    deserialize_float_kind,
+    deserialize_float_zero_to_one_kind,
     deserialize_image_kind,
+    deserialize_integer_kind,
+    deserialize_list_of_values_kind,
     deserialize_numpy_array,
+    deserialize_optional_string_kind,
+    deserialize_point_kind,
+    deserialize_rgb_color_kind,
+    deserialize_string_kind,
     deserialize_video_metadata_kind,
+    deserialize_zone_kind,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
@@ -374,6 +387,25 @@ KINDS_DESERIALIZERS = {
     QR_CODE_DETECTION_KIND.name: deserialize_detections_kind,
     BAR_CODE_DETECTION_KIND.name: deserialize_detections_kind,
     NUMPY_ARRAY_KIND.name: deserialize_numpy_array,
+    ROBOFLOW_MODEL_ID_KIND.name: deserialize_string_kind,
+    ROBOFLOW_PROJECT_KIND.name: deserialize_string_kind,
+    ROBOFLOW_API_KEY_KIND.name: deserialize_optional_string_kind,
+    FLOAT_ZERO_TO_ONE_KIND.name: deserialize_float_zero_to_one_kind,
+    LIST_OF_VALUES_KIND.name: deserialize_list_of_values_kind,
+    BOOLEAN_KIND.name: deserialize_boolean_kind,
+    INTEGER_KIND.name: deserialize_integer_kind,
+    STRING_KIND.name: deserialize_string_kind,
+    TOP_CLASS_KIND.name: deserialize_string_kind,
+    FLOAT_KIND.name: deserialize_float_kind,
+    DICTIONARY_KIND.name: deserialize_dictionary_kind,
+    CLASSIFICATION_PREDICTION_KIND.name: deserialize_classification_prediction_kind,
+    POINT_KIND.name: deserialize_point_kind,
+    ZONE_KIND.name: deserialize_zone_kind,
+    RGB_COLOR_KIND.name: deserialize_rgb_color_kind,
+    LANGUAGE_MODEL_OUTPUT_KIND.name: deserialize_string_kind,
+    PREDICTION_TYPE_KIND.name: deserialize_string_kind,
+    PARENT_ID_KIND.name: deserialize_string_kind,
+    BYTES_KIND.name: deserialize_bytes_kind,
 }
 
 
