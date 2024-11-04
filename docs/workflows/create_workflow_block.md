@@ -464,23 +464,22 @@ or alternatively:
 ??? hint "LEARN MORE: Selecting step outputs"
 
     Our siplified example showcased declaration of properties that accept selectors to
-    images produced by other steps via `StepOutputImageSelector`.
+    images produced by other steps via `BatchOfDataSelector`.
 
-    You can use function `StepOutputSelector(...)` creating field annotations dynamically
-    to express the that block accepts batch-oriented outputs from other steps of specified
-    kinds
+    You can use function `BatchOfDataSelector(...)` creating field annotations dynamically
+    to express the that block accepts batch-oriented outputs from other steps or Workflow inputs 
+    (of specified kinds).
 
-    ```{ .py linenums="1" hl_lines="9 10 25"}
+    ```{ .py linenums="1" hl_lines="7 18 21 24"}
     from typing import Literal, Union
     from pydantic import Field
     from inference.core.workflows.prototypes.block import (
         WorkflowBlockManifest,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        StepOutputImageSelector,
-        WorkflowImageSelector,
-        StepOutputSelector,
+        BatchOfDataSelector,
         NUMPY_ARRAY_KIND,
+        IMAGE_KIND,
     )
     
     class ImagesSimilarityManifest(WorkflowBlockManifest):
@@ -489,13 +488,13 @@ or alternatively:
         # all properties apart from `type` and `name` are treated as either 
         # definitions of batch-oriented data to be processed by block or its 
         # parameters that influence execution of steps created based on block
-        image_1: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
-        example: StepOutputSelector(kind=[NUMPY_ARRAY_KIND])
+        example: BatchOfDataSelector(kind=[NUMPY_ARRAY_KIND])
     ```
 
 ### Declaring block outputs

@@ -232,7 +232,18 @@ is a batch of data - all batch elements are affected.
 * **The flow-control step operates on batch-oriented inputs with compatible lineage** - here, the flow-control step 
 can decide separately for each element in the batch which ones will proceed and which ones will be stopped.
 
-#### Batch-processing compatibility 
+#### Batch-orientation compatibility
+
+As it was outlined, Workflows define batch-oriented data and parameters.
+Some blocks may require batch-oriented inputs, but that is always required. When 
+block do not require batch-oriented input, it will be fed only with parameters and
+will produce a single result. Such outputs can be used as inputs to other steps, 
+but only if block class returns `False` from `block.accepts_batch_input(...)` method. The 
+constraint is introduced to ensure stability of blocks interface **for now, and we plan to fix
+this in the future releases**.
+
+On the other hand, batch-oriented outputs are prevented to be feed into 
+inputs that do expect non-batch parameters.
 
 ## Initializing Workflow steps from blocks
 
