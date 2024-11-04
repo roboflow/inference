@@ -15,10 +15,12 @@ jobs:
       group: public-depot
     timeout-minutes: 15
     steps:
+      - name: Calculate depth
+        run: echo "FETCH_DEPTH=$(( ${{ github.event.pull_request.commits }} + 1 ))" >> "${GITHUB_ENV}"
       - name: 🛎️ Checkout branch with all history
         uses: actions/checkout@v4
         with:
-          fetch-depth: ${{ github.event.pull_request.commits + 1 }}
+          fetch-depth: ${{ env.FETCH_DEPTH }}
           ref: ${{ github.event.pull_request.head.sha }}
       - name: Check and store mergable state
         id: mergeable_check
