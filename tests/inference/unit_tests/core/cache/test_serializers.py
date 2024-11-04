@@ -1,4 +1,5 @@
 import unittest
+import os
 from unittest.mock import MagicMock
 from inference.core.cache.serializers import (
     to_cachable_inference_item,
@@ -25,24 +26,42 @@ class TestSerializers(unittest.TestCase):
 
         self.mock_response = MagicMock(spec=InferenceResponse)
         self.mock_response.predictions = [
-            {"class_name": "cat", "confidence": 0.95},
-            {"class_name": "dog", "confidence": 0.85},
+            {"class": "cat", "confidence": 0.95},
+            {"class": "dog", "confidence": 0.85},
         ]
         self.mock_response.time = "2023-10-01T12:00:00Z"
 
     def test_to_cachable_inference_item_no_tiny_cache(self):
-        # Assuming TINY_CACHE is False
+        os.environ["TINY_CACHE"] = "False"
         result = to_cachable_inference_item(self.mock_request, self.mock_response)
-        self.assertIn("inference_id", result)
-        self.assertIn("request", result)
-        self.assertIn("response", result)
+        self.assertEqual(result["inference_id"], self.mock_request.id)
+        self.assertEqual(
+            result["request"]["api_key"], self.mock_request.dict.return_value["api_key"]
+        )
+        self.assertEqual(
+            result["response"][0]["predictions"][0]["class"],
+            self.mock_response.predictions[0]["class"],
+        )
+        self.assertEqual(
+            result["response"][0]["predictions"][0]["confidence"],
+            self.mock_response.predictions[0]["confidence"],
+        )
 
     def test_to_cachable_inference_item_with_tiny_cache(self):
-        # TINY_CACHE is True
+        os.environ["TINY_CACHE"] = "True"
         result = to_cachable_inference_item(self.mock_request, self.mock_response)
-        self.assertIn("inference_id", result)
-        self.assertIn("request", result)
-        self.assertIn("response", result)
+        self.assertEqual(result["inference_id"], self.mock_request.id)
+        self.assertEqual(
+            result["request"]["api_key"], self.mock_request.dict.return_value["api_key"]
+        )
+        self.assertEqual(
+            result["response"][0]["predictions"][0]["class"],
+            self.mock_response.predictions[0]["class"],
+        )
+        self.assertEqual(
+            result["response"][0]["predictions"][0]["confidence"],
+            self.mock_response.predictions[0]["confidence"],
+        )
 
     def test_build_condensed_response_single(self):
         result = build_condensed_response(self.mock_response, self.mock_request)
