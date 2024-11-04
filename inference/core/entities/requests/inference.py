@@ -202,6 +202,10 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         visualize_predictions (Optional[bool]): If true, the predictions will be drawn on the original image and returned as a base64 string.
     """
 
+    def __init__(self, **kwargs):
+        kwargs["model_type"] = "classification"
+        super().__init__(**kwargs)
+
     confidence: Optional[float] = Field(
         default=0.4,
         examples=[0.5],

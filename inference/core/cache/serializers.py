@@ -32,7 +32,7 @@ def to_cachable_inference_item(
         "source_info",
     }
     request = infer_request.dict(include=included_request_fields)
-    response = build_condensed_response(infer_response)
+    response = build_condensed_response(infer_response, infer_request)
 
     return {
         "inference_id": infer_request.id,
@@ -43,7 +43,7 @@ def to_cachable_inference_item(
     }
 
 
-def build_condensed_response(responses):
+def build_condensed_response(responses, request):
     if not isinstance(responses, list):
         responses = [responses]
 
@@ -52,10 +52,19 @@ def build_condensed_response(responses):
         if not getattr(response, "predictions", None):
             continue
         try:
-            predictions = [
-                {"confidence": pred.confidence, "class": pred.class_name}
-                for pred in response.predictions
-            ]
+            predictions = []
+            for pred in response.predictions:
+                if type(pred) == str:
+                    predictions.append(
+                        {"class": pred, "confidence": request.confidence}
+                    )
+                else:
+                    predictions.append(
+                        {
+                            "confidence": pred.confidence,
+                            "class": pred.class_name,
+                        }
+                    )
             formatted_responses.append(
                 {
                     "predictions": predictions,

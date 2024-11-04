@@ -2303,7 +2303,6 @@ class HttpInterface(BaseInterface):
                     source_info=source_info,
                     **args,
                 )
-
                 inference_response = await self.model_manager.infer_from_request(
                     inference_request.model_id,
                     inference_request,
