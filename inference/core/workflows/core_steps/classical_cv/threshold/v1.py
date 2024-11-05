@@ -15,9 +15,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
     STRING_KIND,
+    BatchSelector,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -44,7 +43,7 @@ class ImageThresholdManifest(WorkflowBlockManifest):
         }
     )
 
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],

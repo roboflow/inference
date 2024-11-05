@@ -20,14 +20,13 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     BatchSelector,
     FloatZeroToOne,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -59,7 +58,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/detections_stitch@v1"]
-    reference_image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    reference_image: BatchSelector(kind=[IMAGE_KIND]) = Field(
         description="Image that was origin to take crops that yielded predictions.",
         examples=["$inputs.image"],
     )

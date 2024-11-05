@@ -64,7 +64,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/stability_ai_inpainting@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
         description="The image which was the base to generate VLM prediction",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )

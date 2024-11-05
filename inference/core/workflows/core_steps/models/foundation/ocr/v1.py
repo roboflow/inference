@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field
 
@@ -27,12 +27,12 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     STRING_KIND,
+    BatchSelector,
     ImageInputField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -71,7 +71,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/ocr_model@v1", "OCRModel"]
     name: str = Field(description="Unique name of step in workflows")
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
 
     @classmethod
     def accepts_batch_input(cls) -> bool:

@@ -15,14 +15,13 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     BatchSelector,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
     WorkflowVideoMetadataSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -52,7 +51,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/time_in_zone@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
         title="Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],

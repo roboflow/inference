@@ -27,14 +27,13 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     BatchSelector,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -94,7 +93,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["roboflow_core/vlm_as_detector@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
         description="The image which was the base to generate VLM prediction",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )

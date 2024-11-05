@@ -58,6 +58,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
@@ -66,8 +67,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     BatchSelector,
     ImageInputField,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -104,7 +103,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/roboflow_dataset_upload@v1", "RoboflowDatasetUpload"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
     predictions: Optional[
         BatchSelector(
             kind=[

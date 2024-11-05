@@ -1,4 +1,3 @@
-from dataclasses import replace
 from typing import List, Literal, Optional, Type, Union
 from uuid import uuid4
 
@@ -6,19 +5,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
-    ImageParentMetadata,
-    OriginCoordinatesSystem,
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
+    BatchSelector,
     FloatZeroToOne,
     ImageInputField,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -48,7 +44,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/relative_statoic_crop@v1", "RelativeStaticCrop"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
     x_center: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = (
         Field(
             description="Center X of static crop (relative coordinate 0.0-1.0)",

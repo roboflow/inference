@@ -20,6 +20,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
@@ -28,8 +29,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     BatchSelector,
     ImageInputField,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -68,7 +67,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/roboflow_dataset_upload@v2"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
     target_project: Union[ScalarSelector(kind=[ROBOFLOW_PROJECT_KIND]), str] = Field(
         description="name of Roboflow dataset / project to be used as target for collected data",
         examples=["my_dataset", "$inputs.target_al_dataset"],

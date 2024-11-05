@@ -20,11 +20,11 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    BatchSelector,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -61,7 +61,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["roboflow_core/google_vision_ocr@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
         description="Image to run OCR",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )

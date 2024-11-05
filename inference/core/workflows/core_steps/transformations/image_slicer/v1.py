@@ -8,8 +8,6 @@ from supervision import crop_image
 from typing_extensions import Annotated
 
 from inference.core.workflows.execution_engine.entities.base import (
-    ImageParentMetadata,
-    OriginCoordinatesSystem,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -17,9 +15,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
+    BatchSelector,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -60,7 +57,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/image_slicer@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
         title="Image to slice",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],

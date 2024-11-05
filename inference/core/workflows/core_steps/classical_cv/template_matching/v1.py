@@ -24,12 +24,12 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
     INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    BatchSelector,
     FloatZeroToOne,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -66,13 +66,13 @@ class TemplateMatchingManifest(WorkflowBlockManifest):
             "block_type": "classical_computer_vision",
         }
     )
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
-    template: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    template: BatchSelector(kind=[IMAGE_KIND]) = Field(
         title="Template Image",
         description="The template image for this step.",
         examples=["$inputs.template", "$steps.cropping.template"],

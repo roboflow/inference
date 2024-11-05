@@ -60,7 +60,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/dynamic_crop@v1", "DynamicCrop", "Crop"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    images: BatchSelector(kind=[IMAGE_KIND]) = Field(
         title="Image to Crop",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],

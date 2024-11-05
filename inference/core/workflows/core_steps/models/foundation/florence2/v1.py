@@ -16,6 +16,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
@@ -25,8 +26,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     BatchSelector,
     ImageInputField,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -163,7 +162,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["roboflow_core/florence_2@v1"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
     model_version: Union[
         ScalarSelector(kind=[STRING_KIND]),
         Literal["florence-2-base", "florence-2-large"],

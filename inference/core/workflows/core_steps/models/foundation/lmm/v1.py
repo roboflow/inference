@@ -31,14 +31,14 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
+    IMAGE_KIND,
     IMAGE_METADATA_KIND,
     PARENT_ID_KIND,
     STRING_KIND,
     WILDCARD_KIND,
+    BatchSelector,
     ImageInputField,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -94,7 +94,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/lmm@v1", "LMM"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
     prompt: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
         description="Holds unconstrained text prompt to LMM mode",
         examples=["my prompt", "$inputs.prompt"],

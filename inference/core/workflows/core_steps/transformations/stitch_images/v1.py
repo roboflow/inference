@@ -14,9 +14,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
+    BatchSelector,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -48,13 +47,13 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/stitch_images@v1"]
-    image1: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image1: BatchSelector(kind=[IMAGE_KIND]) = Field(
         title="First image to stitch",
         description="First input image for this step.",
         examples=["$inputs.image1"],
         validation_alias=AliasChoices("image1"),
     )
-    image2: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image2: BatchSelector(kind=[IMAGE_KIND]) = Field(
         title="Second image to stitch",
         description="Second input image for this step.",
         examples=["$inputs.image2"],

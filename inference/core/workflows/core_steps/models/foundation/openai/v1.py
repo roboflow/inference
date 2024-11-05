@@ -22,21 +22,20 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
+    IMAGE_KIND,
     IMAGE_METADATA_KIND,
     PARENT_ID_KIND,
     STRING_KIND,
     WILDCARD_KIND,
+    BatchSelector,
     ImageInputField,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk.http.utils.iterables import make_batches
 
 NOT_DETECTED_VALUE = "not_detected"
 JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json\n([\s\S]*?)\n```")
@@ -72,7 +71,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/open_ai@v1", "OpenAI"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
     prompt: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
         description="Text prompt to the OpenAI model",
         examples=["my prompt", "$inputs.prompt"],

@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type
 
 import cv2
 import numpy as np
@@ -15,8 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KEYPOINTS_KIND,
     IMAGE_KIND,
     NUMPY_ARRAY_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
+    BatchSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -50,7 +49,7 @@ class SIFTDetectionManifest(WorkflowBlockManifest):
         }
     )
 
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],

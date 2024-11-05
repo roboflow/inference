@@ -1,4 +1,3 @@
-from dataclasses import replace
 from typing import List, Literal, Optional, Type, Union
 from uuid import uuid4
 
@@ -6,18 +5,15 @@ from pydantic import ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
-    ImageParentMetadata,
-    OriginCoordinatesSystem,
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
+    BatchSelector,
     ImageInputField,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -47,7 +43,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/absolute_static_crop@v1", "AbsoluteStaticCrop"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
     x_center: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = Field(
         description="Center X of static crop (absolute coordinate)",
         examples=[40, "$inputs.center_x"],

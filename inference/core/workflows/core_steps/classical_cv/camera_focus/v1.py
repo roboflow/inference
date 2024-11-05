@@ -14,8 +14,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     IMAGE_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
+    BatchSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -45,7 +44,7 @@ class CameraFocusManifest(WorkflowBlockManifest):
         }
     )
 
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],

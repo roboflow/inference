@@ -35,7 +35,7 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             "block_type": "visualization",
         }
     )
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],

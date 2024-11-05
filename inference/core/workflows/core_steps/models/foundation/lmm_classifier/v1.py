@@ -23,16 +23,16 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     IMAGE_METADATA_KIND,
     LIST_OF_VALUES_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     STRING_KIND,
     TOP_CLASS_KIND,
+    BatchSelector,
     ImageInputField,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -68,7 +68,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/lmm_for_classification@v1", "LMMForClassification"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
     lmm_type: Union[
         ScalarSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
     ] = Field(

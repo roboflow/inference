@@ -30,18 +30,18 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
+    BatchSelector,
     FloatZeroToOne,
     ImageInputField,
     RoboflowModelField,
     ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -79,7 +79,7 @@ class BlockManifest(WorkflowBlockManifest):
         "RoboflowKeypointDetectionModel",
         "KeypointsDetectionModel",
     ]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[ScalarSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
         RoboflowModelField
     )
