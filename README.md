@@ -37,6 +37,14 @@ Inference turns any computer or edge device into a command center for your compu
 * 🔗 Connect with external systems and APIs
 * 🚀 Extend with your own code and models
 
+See [Example Workflows](https://roboflow.com/workflows/templates) for common use-cases like detecting small objects, active learning, reading license plates, blurring faces, background removal, and more.
+
+<video autoplay loop src="https://cdn.prod.website-files.com/5f6bc60e665f54545a1e52a5%2F66faf8a9507a7b92b5063718_workflow-example-720-cropv2-transcode.mp4">Workflows Example</video>
+
+<video autoplay loop src="https://cdn.prod.website-files.com/5f6bc60e665f54545a1e52a5%2F66faf8a9507a7b92b5063718_workflow-example-720-cropv2-transcode.webm">Workflows Example</video>
+
+![Workflows Example](https://cdn.prod.website-files.com/5f6bc60e665f54545a1e52a5%2F66faf8a9507a7b92b5063718_workflow-example-720-cropv2-transcode.webm)
+
 ## 🔥 quickstart
 
 [Install Docker](https://docs.docker.com/engine/install/) (and
@@ -49,9 +57,9 @@ pip install inference_cli && inference server start --dev
 
 This will pull the proper image for your machine, start it in development mode, and run you through a wizard to configure the server. 
 
-If you linked an API key during setup, your device will now show up in your [Roboflow](https://app.roboflow.com) account and you can [start building & deploying Workflows in the UI](https://app.roboflow.com/workflows). Otherwise, interact with the server via its API.
+If you linked [an API key](https://app.roboflow.com/settings/api) during setup, your device will now show up in your [Roboflow](https://app.roboflow.com) account and you can [start building & deploying Workflows in the UI](https://app.roboflow.com/workflows). Otherwise, interact with the server via its API.
 
-Now you're ready to connect to your camera streams and start building.
+Now you're ready to connect to your camera streams and [start building](https://inference.roboflow.com/workflows/create_and_run/).
 
 ## 📟 connecting via api
   
@@ -74,7 +82,7 @@ To interface with the server via Python, use our SDK. `pip install inference_sdk
 
 In other languages, use the server's REST API; you can access the API docs for your server at [`/docs` (OpenAPI format)](http://localhost:9001/docs) or [`/redoc` (Redoc Format)](http://localhost:9001/redoc).
 
-Check out [the inference_sdk docs]() to see what else you can do with your new server.
+Check out [the inference_sdk docs](https://inference.roboflow.com/inference_helpers/inference_sdk/) to see what else you can do with your new server.
 
 ## 🎥 inference pipeline
 
@@ -97,7 +105,7 @@ pipeline.start()
 pipeline.join()
 ```
 
-*Coming Soon:* The server can also programmatically start and connect to a video stream (either by polling for results or streaming them over WebRTC) via the API. [Get early access]().
+*Coming Soon:* The server can also programmatically start and connect to a video stream (either by polling for results or streaming them over WebRTC) via the API. [Get early access](https://app.roboflow.com/request/videoSdk).
 
 ## 🛠️ Workflows
 
@@ -122,7 +130,50 @@ Without an API Key, you can access a wide range of pre-trained and foundational 
 
 Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to the `inference_sdk` or API to access your fine-tuned models, Workflows you've built in the Roboflow UI, the thousands of models shared by the [Roboflow Universe](https://universe.roboflow.com/) community, and additional features like device management, model monitoring, and active learning.
 
-## Hosted Compute
+## 🖥️ Hardware
+
+Inference is designed to run on a wide range of hardware from beefy cloud servers to tiny edge devices. This lets you easily develop against your local machine or our cloud infrastructure and then seamlessly switch to another device for production deployment.
+
+`inference server start` attempts to automatically choose the optimal container to optimize performance on your machine, special installation notes and performance tips by device are listed below.
+
+<details>
+<summary>CPU</summary>
+Todo
+</details>
+<details>
+<summary>Mac / Apple Silicon (MPS)</summary>
+Todo
+</details>
+<details>
+<summary>NVIDIA GPU (Linux)</summary>
+Todo
+</details>
+<details>
+<summary>NVIDIA GPU (Windows/WSL)</summary>
+Todo
+</details>
+<details>
+<summary>NVIDIA Jetson / Jetpack</summary>
+Todo
+</details>
+<details>
+<summary>Other GPUs</summary>
+Todo
+</details>
+<details>
+<summary>Raspberry Pi</summary>
+Todo
+</details>
+<details>
+<summary>Other Edge Devices</summary>
+Todo
+</details>
+
+### ⭐️ New: Enterprise Hardware
+
+For manufacturing and logistics use-cases Roboflow now offers [the Flowbox](https://roboflow.com/industries/manufacturing/box), a ruggedized CV center pre-configured with Inference and optimized for running in secure networks. It has integrated support for machine vision cameras like Basler and Lucid over GigE, supports interfacing with PLCs and HMIs via OPC or MQTT, enables enterprise device management through a DMZ, and comes with the support of our team of computer vision experts to ensure your project is a success.
+
+## 🌩️ Hosted Compute
 
 If you don't want to stand up your own infrastructure, Roboflow offers a hosted Inference Server via [one-click Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) (CPU and GPU machines) billed hourly, or simple models and Workflows (CPU-only) via our [serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) billed per API-call.
 
@@ -131,10 +182,6 @@ We offer a [generous free-tier](https://roboflow.com/pricing) to get started.
 ## 📚 documentation
 
 Visit our [documentation](https://inference.roboflow.com) to explore comprehensive guides, detailed API references, and a wide array of tutorials designed to help you harness the full potential of the Inference package.
-
-## ⚡️ Model-specific extras
-
-Explore the list of [`inference` extras](https://inference.roboflow.com/#extras) to install model-specific dependencies. 
 
 ## © license
 
