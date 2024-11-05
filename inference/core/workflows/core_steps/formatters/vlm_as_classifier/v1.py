@@ -17,9 +17,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     BatchSelector,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -76,7 +76,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[["$steps.lmm.output"]],
     )
     classes: Union[
-        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
+        ScalarSelector(kind=[LIST_OF_VALUES_KIND]),
         BatchSelector(kind=[LIST_OF_VALUES_KIND]),
         List[str],
     ] = Field(

@@ -18,9 +18,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     NUMPY_ARRAY_KIND,
     STRING_KIND,
     BatchSelector,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -65,31 +65,31 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
         description="Reference to Image or SIFT descriptors from the second image to compare",
         examples=["$inputs.image2", "$steps.sift.descriptors"],
     )
-    good_matches_threshold: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
-        default=50,
-        description="Threshold for the number of good matches to consider the images as matching",
-        examples=[50, "$inputs.good_matches_threshold"],
+    good_matches_threshold: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = (
+        Field(
+            default=50,
+            description="Threshold for the number of good matches to consider the images as matching",
+            examples=[50, "$inputs.good_matches_threshold"],
+        )
     )
-    ratio_threshold: Union[
-        float, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
-        default=0.7,
-        description="Ratio threshold for the ratio test, which is used to filter out poor matches by comparing "
-        "the distance of the closest match to the distance of the second closest match. A lower "
-        "ratio indicates stricter filtering.",
-        examples=[0.7, "$inputs.ratio_threshold"],
+    ratio_threshold: Union[float, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = (
+        Field(
+            default=0.7,
+            description="Ratio threshold for the ratio test, which is used to filter out poor matches by comparing "
+            "the distance of the closest match to the distance of the second closest match. A lower "
+            "ratio indicates stricter filtering.",
+            examples=[0.7, "$inputs.ratio_threshold"],
+        )
     )
     matcher: Union[
         Literal["FlannBasedMatcher", "BFMatcher"],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        ScalarSelector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="FlannBasedMatcher",
         description="Matcher to use for comparing the SIFT descriptors",
         examples=["FlannBasedMatcher", "$inputs.matcher"],
     )
-    visualize: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
+    visualize: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         description="Whether to visualize the keypoints and matches between the two images",
         examples=[True, "$inputs.visualize"],

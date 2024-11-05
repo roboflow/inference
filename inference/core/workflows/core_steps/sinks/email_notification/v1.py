@@ -30,7 +30,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     BatchSelector,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -178,14 +178,14 @@ class BlockManifest(WorkflowBlockManifest):
             "During last 5 minutes detected \{\{ $parameters.num_instances \}\} instances"
         ],
     )
-    sender_email: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
+    sender_email: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(
         description="E-mail to be used to send the message",
         examples=["sender@gmail.com"],
     )
     receiver_email: Union[
         str,
         List[str],
-        WorkflowParameterSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
+        ScalarSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
     ] = Field(
         description="Destination e-mail address",
         examples=["receiver@gmail.com"],
@@ -194,7 +194,7 @@ class BlockManifest(WorkflowBlockManifest):
         Union[
             str,
             List[str],
-            WorkflowParameterSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
+            ScalarSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
         ]
     ] = Field(
         default=None,
@@ -205,7 +205,7 @@ class BlockManifest(WorkflowBlockManifest):
         Union[
             str,
             List[str],
-            WorkflowParameterSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
+            ScalarSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
         ]
     ] = Field(
         default=None,
@@ -214,7 +214,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     message_parameters: Dict[
         str,
-        Union[WorkflowParameterSelector(), BatchSelector(), str, int, float, bool],
+        Union[ScalarSelector(), BatchSelector(), str, int, float, bool],
     ] = Field(
         description="References data to be used to construct each and every column",
         examples=[
@@ -241,16 +241,14 @@ class BlockManifest(WorkflowBlockManifest):
         default_factory=dict,
         examples=[{"report.cvs": "$steps.csv_formatter.csv_content"}],
     )
-    smtp_server: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
+    smtp_server: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(
         description="Custom SMTP server to be used",
         examples=["$inputs.smtp_server", "smtp.google.com"],
     )
-    sender_email_password: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = (
-        Field(
-            description="Sender e-mail password be used when authenticating to SMTP server",
-            private=True,
-            examples=["$inputs.email_password"],
-        )
+    sender_email_password: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(
+        description="Sender e-mail password be used when authenticating to SMTP server",
+        private=True,
+        examples=["$inputs.email_password"],
     )
     smtp_port: int = Field(
         default=465,
@@ -260,30 +258,26 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    fire_and_forget: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
-        Field(
-            default=True,
-            description="Boolean flag dictating if sink is supposed to be executed in the background, "
-            "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-            "registration is needed, use `False` while debugging and if error handling is needed",
-            examples=["$inputs.fire_and_forget", False],
-        )
+    fire_and_forget: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Boolean flag dictating if sink is supposed to be executed in the background, "
+        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
+        "registration is needed, use `False` while debugging and if error handling is needed",
+        examples=["$inputs.fire_and_forget", False],
     )
-    disable_sink: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
+    disable_sink: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         description="boolean flag that can be also reference to input - to arbitrarily disable "
         "data collection for specific request",
         examples=[False, "$inputs.disable_email_notifications"],
     )
-    cooldown_seconds: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            default=5,
-            description="Number of seconds to wait until follow-up notification can be sent",
-            examples=["$inputs.cooldown_seconds", 3],
-            json_schema_extra={
-                "always_visible": True,
-            },
-        )
+    cooldown_seconds: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(
+        default=5,
+        description="Number of seconds to wait until follow-up notification can be sent",
+        examples=["$inputs.cooldown_seconds", 3],
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
 
     @field_validator("receiver_email")

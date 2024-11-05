@@ -15,8 +15,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     BatchSelector,
+    ScalarSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -56,14 +56,14 @@ class BlockManifest(WorkflowBlockManifest):
         description="Tracked detections",
         examples=["$steps.object_detection_model.predictions"],
     )
-    smoothing_window_size: Union[Optional[int], WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    smoothing_window_size: Union[Optional[int], ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=3,
         description="Predicted movement of detection will be smoothed based on historical measurements of velocity,"
         " this parameter controls number of historical measurements taken under account when calculating smoothed velocity."
         " Detections will be removed from generating smoothed predictions if they had been missing for longer than this number of frames.",
         examples=[5, "$inputs.smoothing_window_size"],
     )
-    bbox_smoothing_coefficient: Union[Optional[float], WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    bbox_smoothing_coefficient: Union[Optional[float], ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         default=0.2,
         description="Bounding box smoothing coefficient applied when given tracker_id is present on current frame."
         " This parameter must be initialized with value between 0 and 1",

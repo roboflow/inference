@@ -18,7 +18,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     BatchSelector,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -53,7 +53,7 @@ class PolygonManifest(ColorableVisualizationManifest):
         examples=["$steps.instance_segmentation_model.predictions"],
     )
 
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    thickness: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the outline in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],

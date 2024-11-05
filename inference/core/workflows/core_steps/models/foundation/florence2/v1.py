@@ -24,9 +24,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     BatchSelector,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -165,7 +165,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/florence_2@v1"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     model_version: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        ScalarSelector(kind=[STRING_KIND]),
         Literal["florence-2-base", "florence-2-large"],
     ] = Field(
         default="florence-2-base",
@@ -189,7 +189,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
+    prompt: Optional[Union[ScalarSelector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Text prompt to the Florence-2 model",
         examples=["my prompt", "$inputs.prompt"],
@@ -199,20 +199,20 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    classes: Optional[
-        Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]
-    ] = Field(
-        default=None,
-        description="List of classes to be used",
-        examples=[["class-a", "class-b"], "$inputs.classes"],
-        json_schema_extra={
-            "relevant_for": {
-                "task_type": {
-                    "values": TASKS_REQUIRING_CLASSES,
-                    "required": True,
+    classes: Optional[Union[ScalarSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = (
+        Field(
+            default=None,
+            description="List of classes to be used",
+            examples=[["class-a", "class-b"], "$inputs.classes"],
+            json_schema_extra={
+                "relevant_for": {
+                    "task_type": {
+                        "values": TASKS_REQUIRING_CLASSES,
+                        "required": True,
+                    },
                 },
             },
-        },
+        )
     )
     grounding_detection: Optional[
         Union[
@@ -225,7 +225,7 @@ class BlockManifest(WorkflowBlockManifest):
                     KEYPOINT_DETECTION_PREDICTION_KIND,
                 ]
             ),
-            WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
+            ScalarSelector(kind=[LIST_OF_VALUES_KIND]),
         ]
     ] = Field(
         default=None,

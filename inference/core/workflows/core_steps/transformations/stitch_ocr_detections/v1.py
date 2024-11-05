@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     BatchSelector,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -135,7 +135,7 @@ class BlockManifest(WorkflowBlockManifest):
             }
         },
     )
-    tolerance: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+    tolerance: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(
         title="Tolerance",
         description="The tolerance for grouping detections into the same line of text.",
         default=10,

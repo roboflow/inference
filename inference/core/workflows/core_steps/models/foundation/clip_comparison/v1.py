@@ -32,9 +32,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -71,12 +71,10 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/clip_comparison@v1", "ClipComparison"]
     name: str = Field(description="Unique name of step in workflows")
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    texts: Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]] = (
-        Field(
-            description="List of texts to calculate similarity against each input image",
-            examples=[["a", "b", "c"], "$inputs.texts"],
-            validation_alias=AliasChoices("texts", "text"),
-        )
+    texts: Union[ScalarSelector(kind=[LIST_OF_VALUES_KIND]), List[str]] = Field(
+        description="List of texts to calculate similarity against each input image",
+        examples=[["a", "b", "c"], "$inputs.texts"],
+        validation_alias=AliasChoices("texts", "text"),
     )
 
     @classmethod

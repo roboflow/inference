@@ -13,9 +13,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     RGB_COLOR_KIND,
     STRING_KIND,
     BatchSelector,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -47,7 +47,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("image", "images"),
     )
     target_color: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        ScalarSelector(kind=[STRING_KIND]),
         BatchSelector(kind=[RGB_COLOR_KIND]),
         str,
         Tuple[int, int, int],
@@ -57,7 +57,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
         "(like (18, 17, 67)).",
         examples=["#431112", "$inputs.target_color", (18, 17, 67)],
     )
-    tolerance: Union[WorkflowParameterSelector(kind=[INTEGER_KIND]), int] = Field(
+    tolerance: Union[ScalarSelector(kind=[INTEGER_KIND]), int] = Field(
         default=10,
         description="Tolerance for color matching.",
         examples=[10, "$inputs.tolerance"],

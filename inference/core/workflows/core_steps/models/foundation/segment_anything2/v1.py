@@ -39,9 +39,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     BatchSelector,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -96,7 +96,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={"always_visible": True},
     )
     version: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        ScalarSelector(kind=[STRING_KIND]),
         Literal["hiera_large", "hiera_small", "hiera_tiny", "hiera_b_plus"],
     ] = Field(
         default="hiera_tiny",
@@ -104,18 +104,18 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["hiera_large", "$inputs.openai_model"],
     )
     threshold: Union[
-        WorkflowParameterSelector(kind=[FLOAT_KIND]),
+        ScalarSelector(kind=[FLOAT_KIND]),
         float,
     ] = Field(
         default=0.0, description="Threshold for predicted masks scores", examples=[0.3]
     )
 
-    multimask_output: Union[
-        Optional[bool], WorkflowParameterSelector(kind=[BOOLEAN_KIND])
-    ] = Field(
-        default=True,
-        description="Flag to determine whether to use sam2 internal multimask or single mask mode. For ambiguous prompts setting to True is recomended.",
-        examples=[True, "$inputs.multimask_output"],
+    multimask_output: Union[Optional[bool], ScalarSelector(kind=[BOOLEAN_KIND])] = (
+        Field(
+            default=True,
+            description="Flag to determine whether to use sam2 internal multimask or single mask mode. For ambiguous prompts setting to True is recomended.",
+            examples=[True, "$inputs.multimask_output"],
+        )
     )
 
     @classmethod

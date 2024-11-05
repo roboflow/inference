@@ -17,9 +17,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -66,23 +66,19 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
-    slice_width: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            default=640,
-            description="Width of each slice, in pixels",
-            examples=[320, "$inputs.slice_width"],
-        )
+    slice_width: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = Field(
+        default=640,
+        description="Width of each slice, in pixels",
+        examples=[320, "$inputs.slice_width"],
     )
-    slice_height: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            default=640,
-            description="Height of each slice, in pixels",
-            examples=[320, "$inputs.slice_height"],
-        )
+    slice_height: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = Field(
+        default=640,
+        description="Height of each slice, in pixels",
+        examples=[320, "$inputs.slice_height"],
     )
     overlap_ratio_width: Union[
         Annotated[float, Field(ge=0.0, lt=1.0)],
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.2,
         description="Overlap ratio between consecutive slices in the width dimension",
@@ -90,7 +86,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     overlap_ratio_height: Union[
         Annotated[float, Field(ge=0.0, lt=1.0)],
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.2,
         description="Overlap ratio between consecutive slices in the height dimension",

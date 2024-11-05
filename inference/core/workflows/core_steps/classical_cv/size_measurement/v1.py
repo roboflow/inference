@@ -15,7 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     BatchSelector,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -77,7 +77,7 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
         str,
         Tuple[float, float],
         List[float],
-        WorkflowParameterSelector(
+        ScalarSelector(
             kind=[STRING_KIND, LIST_OF_VALUES_KIND],
         ),
     ] = Field(  # type: ignore

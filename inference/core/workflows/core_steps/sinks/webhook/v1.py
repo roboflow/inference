@@ -28,7 +28,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     TOP_CLASS_KIND,
     BatchSelector,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -164,7 +164,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/webhook_sink@v1"]
-    url: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    url: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
         description="URL of the resource to make request",
     )
     method: Literal["GET", "POST", "PUT"] = Field(
@@ -173,7 +173,7 @@ class BlockManifest(WorkflowBlockManifest):
     query_parameters: Dict[
         str,
         Union[
-            WorkflowParameterSelector(kind=QUERY_PARAMS_KIND),
+            ScalarSelector(kind=QUERY_PARAMS_KIND),
             BatchSelector(kind=QUERY_PARAMS_KIND),
             str,
             float,
@@ -189,7 +189,7 @@ class BlockManifest(WorkflowBlockManifest):
     headers: Dict[
         str,
         Union[
-            WorkflowParameterSelector(kind=HEADER_KIND),
+            ScalarSelector(kind=HEADER_KIND),
             BatchSelector(kind=HEADER_KIND),
             str,
             float,
@@ -204,7 +204,7 @@ class BlockManifest(WorkflowBlockManifest):
     json_payload: Dict[
         str,
         Union[
-            WorkflowParameterSelector(),
+            ScalarSelector(),
             BatchSelector(),
             str,
             float,
@@ -233,7 +233,7 @@ class BlockManifest(WorkflowBlockManifest):
     multi_part_encoded_files: Dict[
         str,
         Union[
-            WorkflowParameterSelector(),
+            ScalarSelector(),
             BatchSelector(),
             str,
             float,
@@ -265,7 +265,7 @@ class BlockManifest(WorkflowBlockManifest):
     form_data: Dict[
         str,
         Union[
-            WorkflowParameterSelector(),
+            ScalarSelector(),
             BatchSelector(),
             str,
             float,
@@ -291,35 +291,31 @@ class BlockManifest(WorkflowBlockManifest):
         ],
         default_factory=dict,
     )
-    request_timeout: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+    request_timeout: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(
         default=2,
         description="Number of seconds to wait for remote API response",
         examples=["$inputs.request_timeout", 10],
     )
-    fire_and_forget: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
-        Field(
-            default=True,
-            description="Boolean flag dictating if sink is supposed to be executed in the background, "
-            "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-            "registration is needed, use `False` while debugging and if error handling is needed",
-            examples=["$inputs.fire_and_forget", True],
-        )
+    fire_and_forget: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Boolean flag dictating if sink is supposed to be executed in the background, "
+        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
+        "registration is needed, use `False` while debugging and if error handling is needed",
+        examples=["$inputs.fire_and_forget", True],
     )
-    disable_sink: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
+    disable_sink: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         description="boolean flag that can be also reference to input - to arbitrarily disable "
         "data collection for specific request",
         examples=[False, "$inputs.disable_email_notifications"],
     )
-    cooldown_seconds: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            default=5,
-            description="Number of seconds to wait until follow-up notification can be sent",
-            json_schema_extra={
-                "always_visible": True,
-            },
-            examples=["$inputs.cooldown_seconds", 10],
-        )
+    cooldown_seconds: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(
+        default=5,
+        description="Number of seconds to wait until follow-up notification can be sent",
+        json_schema_extra={
+            "always_visible": True,
+        },
+        examples=["$inputs.cooldown_seconds", 10],
     )
 
     @classmethod

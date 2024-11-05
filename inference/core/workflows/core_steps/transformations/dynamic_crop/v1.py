@@ -23,9 +23,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     RGB_COLOR_KIND,
     STRING_KIND,
     BatchSelector,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -79,7 +79,7 @@ class BlockManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("predictions", "detections"),
     )
     mask_opacity: Union[
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
         float,
     ] = Field(
         default=0.0,
@@ -97,7 +97,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     background_color: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        ScalarSelector(kind=[STRING_KIND]),
         BatchSelector(kind=[RGB_COLOR_KIND]),
         str,
         Tuple[int, int, int],

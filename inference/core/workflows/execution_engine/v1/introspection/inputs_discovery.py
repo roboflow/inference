@@ -36,11 +36,21 @@ SELECTED_ELEMENT_TO_INPUT_TYPE = {
     "workflow_video_metadata": {"WorkflowVideoMetadata"},
     "workflow_image": {"WorkflowImage", "InferenceImage"},
     "workflow_parameter": {"WorkflowParameter", "InferenceParameter"},
+    "scalar": {"WorkflowParameter", "InferenceParameter"},
+    "batch": {
+        "WorkflowVideoMetadata",
+        "WorkflowImage",
+        "InferenceImage",
+        "WorkflowBatchInput",
+    },
 }
 INPUT_TYPE_TO_SELECTED_ELEMENT = {
-    input_type: selected_element
-    for selected_element, input_types in SELECTED_ELEMENT_TO_INPUT_TYPE.items()
-    for input_type in input_types
+    "WorkflowVideoMetadata": {"workflow_video_metadata", "batch"},
+    "WorkflowImage": {"workflow_image", "batch"},
+    "InferenceImage": {"workflow_image", "batch"},
+    "WorkflowParameter": {"workflow_parameter", "scalar"},
+    "InferenceParameter": {"workflow_parameter", "scalar"},
+    "WorkflowBatchInput": {"batch", "workflow_image", "workflow_video_metadata"},
 }
 
 
@@ -222,8 +232,6 @@ def grab_input_compatible_references_kinds(
 ) -> Dict[str, Set[str]]:
     matching_references = defaultdict(set)
     for reference in selector_definition.allowed_references:
-        if reference.selected_element not in SELECTED_ELEMENT_TO_INPUT_TYPE:
-            continue
         matching_references[reference.selected_element].update(
             k.name for k in reference.kind
         )
@@ -275,8 +283,11 @@ def prepare_search_results_for_detected_selectors(
                 f"which is not supported in this installation of Workflow Execution Engine.",
                 context="describing_workflow_inputs",
             )
-        selected_element = INPUT_TYPE_TO_SELECTED_ELEMENT[selector_details.type]
-        kinds_for_element = matching_references_kinds[selected_element]
+
+        selected_elements = INPUT_TYPE_TO_SELECTED_ELEMENT[selector_details.type]
+        kinds_for_element = set()
+        for selected_element in selected_elements:
+            kinds_for_element.update(matching_references_kinds[selected_element])
         if not kinds_for_element:
             raise WorkflowDefinitionError(
                 public_message=f"Workflow definition invalid - selector `{detected_input_selector}` declared for "

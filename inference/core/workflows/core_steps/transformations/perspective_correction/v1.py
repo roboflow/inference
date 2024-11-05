@@ -24,9 +24,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     BatchSelector,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -79,22 +79,22 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    perspective_polygons: Union[list, BatchSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    perspective_polygons: Union[list, BatchSelector(kind=[LIST_OF_VALUES_KIND]), ScalarSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Perspective polygons (for each batch at least one must be consisting of 4 vertices)",
         examples=["$steps.perspective_wrap.zones"],
     )
-    transformed_rect_width: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    transformed_rect_width: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Transformed rect width", default=1000, examples=[1000]
     )
-    transformed_rect_height: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    transformed_rect_height: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Transformed rect height", default=1000, examples=[1000]
     )
-    extend_perspective_polygon_by_detections_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    extend_perspective_polygon_by_detections_anchor: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(  # type: ignore
         description=f"If set, perspective polygons will be extended to contain all bounding boxes. Allowed values: {', '.join(sv.Position.list())}",
         default="",
         examples=["CENTER"],
     )
-    warp_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+    warp_image: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
         description=f"If set to True, image will be warped into transformed rect",
         default=False,
         examples=[False],

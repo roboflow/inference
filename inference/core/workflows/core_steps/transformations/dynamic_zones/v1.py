@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     BatchSelector,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -57,7 +57,7 @@ class DynamicZonesManifest(WorkflowBlockManifest):
         description="",
         examples=["$segmentation.predictions"],
     )
-    required_number_of_vertices: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    required_number_of_vertices: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Keep simplifying polygon until number of vertices matches this number",
         examples=[4, "$inputs.vertices"],
     )

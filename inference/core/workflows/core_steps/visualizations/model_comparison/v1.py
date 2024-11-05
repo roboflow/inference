@@ -21,7 +21,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     BatchSelector,
     FloatZeroToOne,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -63,7 +63,7 @@ class ModelComparisonManifest(VisualizationManifest):
         examples=["$steps.object_detection_model.predictions"],
     )
 
-    color_a: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    color_a: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the areas Model A predicted that Model B did not..",
         default="GREEN",
         examples=["GREEN", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.color_a"],
@@ -80,19 +80,19 @@ class ModelComparisonManifest(VisualizationManifest):
         examples=["$steps.object_detection_model.predictions"],
     )
 
-    color_b: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    color_b: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the areas Model B predicted that Model A did not.",
         default="RED",
         examples=["RED", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.color_b"],
     )
 
-    background_color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    background_color: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the areas neither model predicted.",
         default="BLACK",
         examples=["BLACK", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
     )
 
-    opacity: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    opacity: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the overlay.",
         default=0.7,
         examples=[0.7, "$inputs.opacity"],

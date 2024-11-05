@@ -23,9 +23,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -112,7 +112,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
+    prompt: Optional[Union[ScalarSelector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Text prompt to the OpenAI model",
         examples=["my prompt", "$inputs.prompt"],
@@ -135,35 +135,35 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    classes: Optional[
-        Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]
-    ] = Field(
-        default=None,
-        description="List of classes to be used",
-        examples=[["class-a", "class-b"], "$inputs.classes"],
-        json_schema_extra={
-            "relevant_for": {
-                "task_type": {
-                    "values": TASKS_REQUIRING_CLASSES,
-                    "required": True,
+    classes: Optional[Union[ScalarSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = (
+        Field(
+            default=None,
+            description="List of classes to be used",
+            examples=[["class-a", "class-b"], "$inputs.classes"],
+            json_schema_extra={
+                "relevant_for": {
+                    "task_type": {
+                        "values": TASKS_REQUIRING_CLASSES,
+                        "required": True,
+                    },
                 },
             },
-        },
+        )
     )
-    api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
         description="Your OpenAI API key",
         examples=["xxx-xxx", "$inputs.openai_api_key"],
         private=True,
     )
     model_version: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt-4o", "gpt-4o-mini"]
+        ScalarSelector(kind=[STRING_KIND]), Literal["gpt-4o", "gpt-4o-mini"]
     ] = Field(
         default="gpt-4o",
         description="Model to be used",
         examples=["gpt-4o", "$inputs.openai_model"],
     )
     image_detail: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["auto", "high", "low"]
+        ScalarSelector(kind=[STRING_KIND]), Literal["auto", "high", "low"]
     ] = Field(
         default="auto",
         description="Indicates the image's quality, with 'high' suggesting it is of high resolution and should be processed or displayed with high fidelity.",
@@ -173,9 +173,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=450,
         description="Maximum number of tokens the model can generate in it's response.",
     )
-    temperature: Optional[
-        Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])]
-    ] = Field(
+    temperature: Optional[Union[float, ScalarSelector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
         'random / "creative" the generations are.',

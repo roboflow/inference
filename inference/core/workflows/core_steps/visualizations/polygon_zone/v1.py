@@ -19,7 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     BatchSelector,
     FloatZeroToOne,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -45,17 +45,17 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
             "block_type": "visualization",
         }
     )
-    zone: Union[list, BatchSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    zone: Union[list, BatchSelector(kind=[LIST_OF_VALUES_KIND]), ScalarSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Polygon zones (one for each batch) in a format [[(x1, y1), (x2, y2), (x3, y3), ...], ...];"
         " each zone must consist of more than 2 points",
         examples=["$inputs.zones"],
     )
-    color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    color: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the zone.",
         default="#5bb573",
         examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
     )
-    opacity: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    opacity: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the Mask overlay.",
         default=0.3,
         examples=[0.3, "$inputs.opacity"],

@@ -29,9 +29,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     FloatZeroToOne,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -68,9 +68,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/yolo_world_model@v1", "YoloWorldModel", "YoloWorld"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    class_names: Union[
-        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]
-    ] = Field(
+    class_names: Union[ScalarSelector(kind=[LIST_OF_VALUES_KIND]), List[str]] = Field(
         description="One or more classes that you want YOLO-World to detect. The model accepts any string as an input, though does best with short descriptions of common objects.",
         examples=[["person", "car", "license plate"], "$inputs.class_names"],
     )
@@ -85,7 +83,7 @@ class BlockManifest(WorkflowBlockManifest):
             "l",
             "x",
         ],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        ScalarSelector(kind=[STRING_KIND]),
     ] = Field(
         default="v2-s",
         description="Variant of YoloWorld model",
@@ -93,7 +91,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     confidence: Union[
         Optional[FloatZeroToOne],
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.005,
         description="Confidence threshold for detections",

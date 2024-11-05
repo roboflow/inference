@@ -15,7 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
     FloatZeroToOne,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -40,13 +40,13 @@ class BoundingBoxManifest(ColorableVisualizationManifest):
         }
     )
 
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    thickness: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the bounding box in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
 
-    roundness: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    roundness: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Roundness of the corners of the bounding box.",
         default=0.0,
         examples=[0.0, "$inputs.roundness"],

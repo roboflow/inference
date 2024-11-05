@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     STRING_KIND,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -52,26 +52,26 @@ class TriangleManifest(ColorableVisualizationManifest):
             "BOTTOM_RIGHT",
             "CENTER_OF_MASS",
         ],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        ScalarSelector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="TOP_CENTER",
         description="The anchor position for placing the triangle.",
         examples=["CENTER", "$inputs.position"],
     )
 
-    base: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    base: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Base width of the triangle in pixels.",
         default=10,
         examples=[10, "$inputs.base"],
     )
 
-    height: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    height: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Height of the triangle in pixels.",
         default=10,
         examples=[10, "$inputs.height"],
     )
 
-    outline_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    outline_thickness: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the outline of the triangle in pixels.",
         default=0,
         examples=[2, "$inputs.outline_thickness"],

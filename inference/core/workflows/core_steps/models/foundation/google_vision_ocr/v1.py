@@ -22,9 +22,9 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -80,7 +80,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
         description="Your Google Vision API key",
         examples=["xxx-xxx", "$inputs.google_api_key"],
         private=True,

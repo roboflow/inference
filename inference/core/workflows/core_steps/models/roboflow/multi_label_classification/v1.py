@@ -33,9 +33,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     FloatZeroToOne,
     ImageInputField,
     RoboflowModelField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -74,26 +74,24 @@ class BlockManifest(WorkflowBlockManifest):
         "MultiLabelClassificationModel",
     ]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
+    model_id: Union[ScalarSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
         RoboflowModelField
     )
     confidence: Union[
         FloatZeroToOne,
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
         description="Confidence threshold for predictions",
         examples=[0.3, "$inputs.confidence_threshold"],
     )
-    disable_active_learning: Union[
-        bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])
-    ] = Field(
+    disable_active_learning: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="Parameter to decide if Active Learning data sampling is disabled for the model",
         examples=[True, "$inputs.disable_active_learning"],
     )
     active_learning_target_dataset: Union[
-        WorkflowParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
+        ScalarSelector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
     ] = Field(
         default=None,
         description="Target dataset for Active Learning data sampling - see Roboflow Active Learning "

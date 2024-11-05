@@ -32,9 +32,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     BatchSelector,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -105,7 +105,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     classes: Optional[
         Union[
-            WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
+            ScalarSelector(kind=[LIST_OF_VALUES_KIND]),
             BatchSelector(kind=[LIST_OF_VALUES_KIND]),
             List[str],
         ]

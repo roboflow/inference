@@ -65,9 +65,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     BatchSelector,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -119,9 +119,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference q detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    target_project: Union[
-        WorkflowParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), str
-    ] = Field(
+    target_project: Union[ScalarSelector(kind=[ROBOFLOW_PROJECT_KIND]), str] = Field(
         description="name of Roboflow dataset / project to be used as target for collected data",
         examples=["my_dataset", "$inputs.target_al_dataset"],
     )
@@ -166,34 +164,28 @@ class BlockManifest(WorkflowBlockManifest):
         description="Compression level for images registered",
         examples=[75],
     )
-    registration_tags: List[
-        Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]
-    ] = Field(
+    registration_tags: List[Union[ScalarSelector(kind=[STRING_KIND]), str]] = Field(
         default_factory=list,
         description="Tags to be attached to registered datapoints",
         examples=[["location-florida", "factory-name", "$inputs.dynamic_tag"]],
     )
-    disable_sink: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
+    disable_sink: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         description="boolean flag that can be also reference to input - to arbitrarily disable "
         "data collection for specific request",
         examples=[True, "$inputs.disable_active_learning"],
     )
-    fire_and_forget: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
-        Field(
-            default=True,
-            description="Boolean flag dictating if sink is supposed to be executed in the background, "
-            "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-            "registration is needed, use `False` while debugging and if error handling is needed",
-            examples=[True],
-        )
+    fire_and_forget: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Boolean flag dictating if sink is supposed to be executed in the background, "
+        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
+        "registration is needed, use `False` while debugging and if error handling is needed",
+        examples=[True],
     )
-    labeling_batch_prefix: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = (
-        Field(
-            default="workflows_data_collector",
-            description="Prefix of the name for labeling batches that will be registered in Roboflow app",
-            examples=["my_labeling_batch_name"],
-        )
+    labeling_batch_prefix: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(
+        default="workflows_data_collector",
+        description="Prefix of the name for labeling batches that will be registered in Roboflow app",
+        examples=["my_labeling_batch_name"],
     )
     labeling_batches_recreation_frequency: BatchCreationFrequency = Field(
         default="never",

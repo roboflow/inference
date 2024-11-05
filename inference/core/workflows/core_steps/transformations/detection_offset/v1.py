@@ -20,7 +20,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     BatchSelector,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -61,16 +61,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference to detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    offset_width: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            description="Offset for boxes width",
-            examples=[10, "$inputs.offset_x"],
-            validation_alias=AliasChoices("offset_width", "offset_x"),
-        )
+    offset_width: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = Field(
+        description="Offset for boxes width",
+        examples=[10, "$inputs.offset_x"],
+        validation_alias=AliasChoices("offset_width", "offset_x"),
     )
-    offset_height: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
+    offset_height: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = Field(
         description="Offset for boxes height",
         examples=[10, "$inputs.offset_y"],
         validation_alias=AliasChoices("offset_height", "offset_y"),

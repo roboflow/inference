@@ -27,9 +27,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     WILDCARD_KIND,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -73,19 +73,17 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/open_ai@v1", "OpenAI"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    prompt: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    prompt: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
         description="Text prompt to the OpenAI model",
         examples=["my prompt", "$inputs.prompt"],
     )
-    openai_api_key: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]
-    ] = Field(
+    openai_api_key: Union[ScalarSelector(kind=[STRING_KIND]), Optional[str]] = Field(
         description="Your OpenAI API key",
         examples=["xxx-xxx", "$inputs.openai_api_key"],
         private=True,
     )
     openai_model: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt-4o", "gpt-4o-mini"]
+        ScalarSelector(kind=[STRING_KIND]), Literal["gpt-4o", "gpt-4o-mini"]
     ] = Field(
         default="gpt-4o",
         description="Model to be used",
@@ -100,7 +98,7 @@ class BlockManifest(WorkflowBlockManifest):
         ],
     )
     image_detail: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["auto", "high", "low"]
+        ScalarSelector(kind=[STRING_KIND]), Literal["auto", "high", "low"]
     ] = Field(
         default="auto",
         description="Indicates the image's quality, with 'high' suggesting it is of high resolution and should be processed or displayed with high fidelity.",

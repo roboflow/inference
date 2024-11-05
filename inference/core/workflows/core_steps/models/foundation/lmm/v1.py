@@ -36,9 +36,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     WILDCARD_KIND,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -95,12 +95,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/lmm@v1", "LMM"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    prompt: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    prompt: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
         description="Holds unconstrained text prompt to LMM mode",
         examples=["my prompt", "$inputs.prompt"],
     )
     lmm_type: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
+        ScalarSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
     ] = Field(
         description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
     )
@@ -115,9 +115,7 @@ class BlockManifest(WorkflowBlockManifest):
             }
         ],
     )
-    remote_api_key: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]
-    ] = Field(
+    remote_api_key: Union[ScalarSelector(kind=[STRING_KIND]), Optional[str]] = Field(
         default=None,
         description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
         examples=["xxx-xxx", "$inputs.api_key"],

@@ -11,7 +11,7 @@ from inference.core.workflows.core_steps.visualizations.common.base import (
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -36,7 +36,7 @@ class PixelateManifest(PredictionsVisualizationManifest):
         }
     )
 
-    pixel_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    pixel_size: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Size of the pixelation.",
         default=20,
         examples=[20, "$inputs.pixel_size"],

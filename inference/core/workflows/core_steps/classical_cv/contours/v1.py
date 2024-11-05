@@ -16,9 +16,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
     NUMPY_ARRAY_KIND,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -52,7 +52,7 @@ class ImageContoursDetectionManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("image", "images"),
     )
 
-    line_thickness: Union[WorkflowParameterSelector(kind=[INTEGER_KIND]), int] = Field(
+    line_thickness: Union[ScalarSelector(kind=[INTEGER_KIND]), int] = Field(
         description="Line thickness for drawing contours.",
         default=3,
         examples=[3, "$inputs.line_thickness"],

@@ -21,7 +21,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     BatchSelector,
-    WorkflowParameterSelector,
+    ScalarSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -68,7 +68,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     field_value: Union[
         str,
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        ScalarSelector(kind=[STRING_KIND]),
         BatchSelector(kind=[STRING_KIND]),
     ] = Field(
         description="This is the name of the metadata field you are creating",
@@ -78,14 +78,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Name of the field to be updated in Roboflow Customer Metadata",
         examples=["The name of the value of the field"],
     )
-    fire_and_forget: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
-        Field(
-            default=True,
-            description="Boolean flag dictating if sink is supposed to be executed in the background, "
-            "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-            "registration is needed, use `False` while debugging and if error handling is needed",
-            examples=[True],
-        )
+    fire_and_forget: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Boolean flag dictating if sink is supposed to be executed in the background, "
+        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
+        "registration is needed, use `False` while debugging and if error handling is needed",
+        examples=[True],
     )
 
     @classmethod

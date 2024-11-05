@@ -25,9 +25,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     BatchSelector,
     FloatZeroToOne,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -74,7 +74,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     overlap_filtering_strategy: Union[
         Literal["none", "nms", "nmm"],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        ScalarSelector(kind=[STRING_KIND]),
     ] = Field(
         default="nms",
         description="Which strategy to employ when filtering overlapping boxes. "
@@ -83,7 +83,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     iou_threshold: Union[
         FloatZeroToOne,
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.3,
         description="Parameter of overlap filtering strategy. If box intersection over union is above this "

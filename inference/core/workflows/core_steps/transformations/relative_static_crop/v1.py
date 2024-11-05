@@ -16,9 +16,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     FloatZeroToOne,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -49,29 +49,27 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/relative_statoic_crop@v1", "RelativeStaticCrop"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    x_center: Union[
-        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
-        description="Center X of static crop (relative coordinate 0.0-1.0)",
-        examples=[0.3, "$inputs.center_x"],
+    x_center: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = (
+        Field(
+            description="Center X of static crop (relative coordinate 0.0-1.0)",
+            examples=[0.3, "$inputs.center_x"],
+        )
     )
-    y_center: Union[
-        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
-        description="Center Y of static crop (relative coordinate 0.0-1.0)",
-        examples=[0.3, "$inputs.center_y"],
+    y_center: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = (
+        Field(
+            description="Center Y of static crop (relative coordinate 0.0-1.0)",
+            examples=[0.3, "$inputs.center_y"],
+        )
     )
-    width: Union[
-        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
+    width: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
         description="Width of static crop (relative value 0.0-1.0)",
         examples=[0.3, "$inputs.width"],
     )
-    height: Union[
-        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
-        description="Height of static crop (relative value 0.0-1.0)",
-        examples=[0.3, "$inputs.height"],
+    height: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = (
+        Field(
+            description="Height of static crop (relative value 0.0-1.0)",
+            examples=[0.3, "$inputs.height"],
+        )
     )
 
     @classmethod

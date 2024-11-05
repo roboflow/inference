@@ -15,9 +15,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -48,23 +48,19 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/absolute_static_crop@v1", "AbsoluteStaticCrop"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    x_center: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            description="Center X of static crop (absolute coordinate)",
-            examples=[40, "$inputs.center_x"],
-        )
+    x_center: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = Field(
+        description="Center X of static crop (absolute coordinate)",
+        examples=[40, "$inputs.center_x"],
     )
-    y_center: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            description="Center Y of static crop (absolute coordinate)",
-            examples=[40, "$inputs.center_y"],
-        )
+    y_center: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = Field(
+        description="Center Y of static crop (absolute coordinate)",
+        examples=[40, "$inputs.center_y"],
     )
-    width: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+    width: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = Field(
         description="Width of static crop (absolute value)",
         examples=[40, "$inputs.width"],
     )
-    height: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+    height: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = Field(
         description="Height of static crop (absolute value)",
         examples=[40, "$inputs.height"],
     )

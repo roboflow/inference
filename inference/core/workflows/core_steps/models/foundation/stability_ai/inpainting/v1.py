@@ -20,9 +20,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     STRING_KIND,
     BatchSelector,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -76,7 +76,7 @@ class BlockManifest(WorkflowBlockManifest):
         )
     )
     prompt: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        ScalarSelector(kind=[STRING_KIND]),
         BatchSelector(kind=[STRING_KIND]),
         str,
     ] = Field(
@@ -85,7 +85,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     negative_prompt: Optional[
         Union[
-            WorkflowParameterSelector(kind=[STRING_KIND]),
+            ScalarSelector(kind=[STRING_KIND]),
             BatchSelector(kind=[STRING_KIND]),
             str,
         ]
@@ -94,7 +94,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Negative prompt to inpainting model (what you do not wish to see)",
         examples=["my prompt", "$inputs.prompt"],
     )
-    api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
         description="Your Stability AI API key",
         examples=["xxx-xxx", "$inputs.stability_ai_api_key"],
         private=True,

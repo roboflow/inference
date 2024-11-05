@@ -26,9 +26,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -114,7 +114,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
+    prompt: Optional[Union[ScalarSelector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Text prompt to the Claude model",
         examples=["my prompt", "$inputs.prompt"],
@@ -137,28 +137,28 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    classes: Optional[
-        Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]
-    ] = Field(
-        default=None,
-        description="List of classes to be used",
-        examples=[["class-a", "class-b"], "$inputs.classes"],
-        json_schema_extra={
-            "relevant_for": {
-                "task_type": {
-                    "values": TASKS_REQUIRING_CLASSES,
-                    "required": True,
+    classes: Optional[Union[ScalarSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = (
+        Field(
+            default=None,
+            description="List of classes to be used",
+            examples=[["class-a", "class-b"], "$inputs.classes"],
+            json_schema_extra={
+                "relevant_for": {
+                    "task_type": {
+                        "values": TASKS_REQUIRING_CLASSES,
+                        "required": True,
+                    },
                 },
             },
-        },
+        )
     )
-    api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
         description="Your Antropic API key",
         examples=["xxx-xxx", "$inputs.antropics_api_key"],
         private=True,
     )
     model_version: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        ScalarSelector(kind=[STRING_KIND]),
         Literal[
             "claude-3-5-sonnet", "claude-3-opus", "claude-3-sonnet", "claude-3-haiku"
         ],
@@ -171,16 +171,14 @@ class BlockManifest(WorkflowBlockManifest):
         default=450,
         description="Maximum number of tokens the model can generate in it's response.",
     )
-    temperature: Optional[
-        Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])]
-    ] = Field(
+    temperature: Optional[Union[float, ScalarSelector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
         'random / "creative" the generations are.',
         ge=0.0,
         le=2.0,
     )
-    max_image_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+    max_image_size: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(
         description="Maximum size of the image - if input has larger side, it will be downscaled, keeping aspect ratio",
         default=1024,
     )

@@ -30,9 +30,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     TOP_CLASS_KIND,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -70,15 +70,13 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/lmm_for_classification@v1", "LMMForClassification"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
     lmm_type: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
+        ScalarSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
     ] = Field(
         description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
     )
-    classes: Union[List[str], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = (
-        Field(
-            description="List of classes that LMM shall classify against",
-            examples=[["a", "b"], "$inputs.classes"],
-        )
+    classes: Union[List[str], ScalarSelector(kind=[LIST_OF_VALUES_KIND])] = Field(
+        description="List of classes that LMM shall classify against",
+        examples=[["a", "b"], "$inputs.classes"],
     )
     lmm_config: LMMConfig = Field(
         default_factory=lambda: LMMConfig(),
@@ -91,9 +89,7 @@ class BlockManifest(WorkflowBlockManifest):
             }
         ],
     )
-    remote_api_key: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]
-    ] = Field(
+    remote_api_key: Union[ScalarSelector(kind=[STRING_KIND]), Optional[str]] = Field(
         default=None,
         description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
         examples=["xxx-xxx", "$inputs.api_key"],

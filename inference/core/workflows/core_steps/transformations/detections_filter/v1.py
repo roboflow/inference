@@ -19,8 +19,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     BatchSelector,
+    ScalarSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -86,7 +86,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     operations_parameters: Dict[
         str,
-        Union[WorkflowImageSelector, WorkflowParameterSelector(), BatchSelector()],
+        Union[WorkflowImageSelector, ScalarSelector(), BatchSelector()],
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parametrise operations",
         examples=[

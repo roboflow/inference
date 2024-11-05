@@ -18,7 +18,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     BatchSelector,
-    WorkflowParameterSelector,
+    ScalarSelector,
     WorkflowVideoMetadataSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -62,12 +62,12 @@ class PathDeviationManifest(WorkflowBlockManifest):
         description="Predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    triggering_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
+    triggering_anchor: Union[str, ScalarSelector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
         description=f"Triggering anchor. Allowed values: {', '.join(sv.Position.list())}",
         default="CENTER",
         examples=["CENTER"],
     )
-    reference_path: Union[list, BatchSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    reference_path: Union[list, BatchSelector(kind=[LIST_OF_VALUES_KIND]), ScalarSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Reference path in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
         examples=["$inputs.expected_path"],
     )

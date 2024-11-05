@@ -27,9 +27,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     FloatZeroToOne,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -78,22 +78,20 @@ class TemplateMatchingManifest(WorkflowBlockManifest):
         examples=["$inputs.template", "$steps.cropping.template"],
         validation_alias=AliasChoices("template", "templates"),
     )
-    matching_threshold: Union[WorkflowParameterSelector(kind=[FLOAT_KIND]), float] = (
-        Field(
-            title="Matching Threshold",
-            description="The threshold value for template matching.",
-            default=0.8,
-            examples=[0.8, "$inputs.threshold"],
-        )
+    matching_threshold: Union[ScalarSelector(kind=[FLOAT_KIND]), float] = Field(
+        title="Matching Threshold",
+        description="The threshold value for template matching.",
+        default=0.8,
+        examples=[0.8, "$inputs.threshold"],
     )
-    apply_nms: Union[WorkflowParameterSelector(kind=[BOOLEAN_KIND]), bool] = Field(
+    apply_nms: Union[ScalarSelector(kind=[BOOLEAN_KIND]), bool] = Field(
         title="Apply NMS",
         description="Flag to decide if NMS should be applied at the output detections.",
         default=True,
         examples=["$inputs.apply_nms", False],
     )
     nms_threshold: Union[
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]), FloatZeroToOne
+        ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]), FloatZeroToOne
     ] = Field(
         title="NMS threshold",
         description="The threshold value NMS procedure (if to be applied).",

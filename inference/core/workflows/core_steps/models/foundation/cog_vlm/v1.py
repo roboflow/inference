@@ -30,9 +30,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     WILDCARD_KIND,
     ImageInputField,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -69,7 +69,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/cog_vlm@v1", "CogVLM"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    prompt: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    prompt: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
         description="Text prompt to the CogVLM model",
         examples=["my prompt", "$inputs.prompt"],
     )

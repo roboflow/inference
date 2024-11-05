@@ -10,9 +10,9 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     RGB_COLOR_KIND,
+    ScalarSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -53,7 +53,7 @@ class DominantColorManifest(WorkflowBlockManifest):
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
-    color_clusters: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    color_clusters: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Color Clusters",
         description="Number of dominant colors to identify. Higher values increase precision but may slow processing.",
         default=4,
@@ -61,7 +61,7 @@ class DominantColorManifest(WorkflowBlockManifest):
         gt=0,
         le=10,
     )
-    max_iterations: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    max_iterations: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Max Iterations",
         description="Max number of iterations to perform. Higher values increase precision but may slow processing.",
         default=100,
@@ -69,7 +69,7 @@ class DominantColorManifest(WorkflowBlockManifest):
         gt=0,
         le=500,
     )
-    target_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    target_size: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Target Size",
         description="Sets target for the smallest dimension of the downsampled image in pixels. Lower values increase speed but may reduce precision.",
         default=100,
