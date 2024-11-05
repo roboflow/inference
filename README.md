@@ -178,7 +178,7 @@ pip install inference
 <br />
 Apple does not yet support <a href="https://github.com/pytorch/pytorch/issues/81224">passing the Metal Performance Shader device to Docker</a> so hardware acceleration is not possible inside the container.
 <br /><br />
-We recommend starting with the CPU Docker via <code>inference server start</code> but, if you need more speed, the <code>inference</code> Python package supports hardware acceleration via the <a href="https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html">onnxruntime CoreMLExecutionProvider</a> and the <a href="https://pytorch.org/docs/stable/notes/mps.html">PyTorch `mps` device backend</a>. Y can get a big boost by running outside of Docker.
+We recommend starting with the CPU Docker via <code>inference server start</code> but, if you need more speed, the <code>inference</code> Python package supports hardware acceleration via the <a href="https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html">onnxruntime CoreMLExecutionProvider</a> and the <a href="https://pytorch.org/docs/stable/notes/mps.html">PyTorch <code>mps</code> device backend</a>. Y can get a big boost by running outside of Docker.
 <br /><br />
 To install outside of Docker, clone the repo then install the dependencies in a new virtual environment:
 
@@ -215,7 +215,9 @@ sudo docker run --gpus all --net=host -v ~/.inference/cache:/tmp/cache roboflow/
 
 Or `pip install inference-gpu` to run the python package natively.
 
-You can enable TensorRT by adding `TensorrtExecutionProvider` to the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable. Note: TensorRT is not enabled by default due to long (15+ minute) compilation times each time a new model is initialized. We cache the TensorRT engine in `/tmp/cache`, which is a Docker volume mounted from `~/.inference/cache` by default.
+You can enable TensorRT by adding `TensorrtExecutionProvider` to the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable.
+<br /><br />
+<b>⚠️ Note:</b> TensorRT is not enabled by default due to long (15+ minute) compilation times each time a new model is initialized. We cache the TensorRT engine in `/tmp/cache`, which is a Docker volume mounted from `~/.inference/cache` by default.
 
 ```
 export ONNXRUNTIME_EXECUTION_PROVIDERS="[TensorrtExecutionProvider,CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider]"
