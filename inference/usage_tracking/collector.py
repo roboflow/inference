@@ -340,6 +340,8 @@ class UsageCollector:
         inference_test_run: bool = False,
         fps: float = 0,
     ) -> DefaultDict[str, Any]:
+        if not api_key:
+            return
         if self._settings.opt_out and not api_key:
             return
         self.record_system_info()
@@ -502,12 +504,15 @@ class UsageCollector:
         usage_workflow_id: str,
         usage_workflow_preview: bool,
         usage_inference_test_run: bool,
+        usage_billable: bool,
         func: Callable[[Any], Any],
         args: List[Any],
         kwargs: Dict[str, Any],
     ) -> Dict[str, Any]:
         func_kwargs = collect_func_params(func, args, kwargs)
-        resource_details = {}
+        resource_details = {
+            "billable": usage_billable,
+        }
         resource_id = ""
         category = None
         # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
@@ -606,6 +611,7 @@ class UsageCollector:
             usage_workflow_id: str = "",
             usage_workflow_preview: bool = False,
             usage_inference_test_run: bool = False,
+            usage_billable: bool = True,
             **kwargs: P.kwargs,
         ) -> T:
             self.record_usage(
@@ -615,6 +621,7 @@ class UsageCollector:
                     usage_workflow_id=usage_workflow_id,
                     usage_workflow_preview=usage_workflow_preview,
                     usage_inference_test_run=usage_inference_test_run,
+                    usage_billable=usage_billable,
                     func=func,
                     args=args,
                     kwargs=kwargs,
@@ -630,6 +637,7 @@ class UsageCollector:
             usage_workflow_id: str = "",
             usage_workflow_preview: bool = False,
             usage_inference_test_run: bool = False,
+            usage_billable: bool = True,
             **kwargs: P.kwargs,
         ) -> T:
             await self.async_record_usage(
@@ -639,6 +647,7 @@ class UsageCollector:
                     usage_workflow_id=usage_workflow_id,
                     usage_workflow_preview=usage_workflow_preview,
                     usage_inference_test_run=usage_inference_test_run,
+                    usage_billable=usage_billable,
                     func=func,
                     args=args,
                     kwargs=kwargs,

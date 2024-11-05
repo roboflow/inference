@@ -215,6 +215,8 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
 
     # Function to convert detections to keypoints
     def convert_detections_to_keypoints(self, detections):
+        if len(detections) == 0:
+            return sv.KeyPoints.empty()
         keypoints_xy = detections.data["keypoints_xy"]
         keypoints_confidence = detections.data["keypoints_confidence"]
         keypoints_class_name = detections.data["keypoints_class_name"]
