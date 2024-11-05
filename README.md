@@ -233,7 +233,7 @@ To get GPU acceleration on Windows, you need WSL2 with NVIDIA Container Toolkit.
 <details>
 <summary><b>NVIDIA Jetson / JetPack</b></summary>
 <br />
-We have specialized containers built with support for hardware acceleration on JetPack 4, 5, and 6. `inference server start` will automatically detect your JetPack version and use the right container.
+We have specialized containers built with support for hardware acceleration on JetPack 4, 5, and 6. <code>inference server start</code> will automatically detect your JetPack version and use the right container.
 <br /><br />
 To start the server manually, use the container for your JetPack version with the nvidia runtime. For example, on JetPack 6:
 
