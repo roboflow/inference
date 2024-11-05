@@ -174,7 +174,7 @@ pip install inference
 <details>
 <summary><b>Mac / Apple Silicon (MPS)</b></summary>
 <br />
-Apple does not yet support [passing the Metal Performance Shader device to Docker](https://github.com/pytorch/pytorch/issues/81224) so hardware acceleration is not possible inside the container.
+Apple does not yet support <a href="https://github.com/pytorch/pytorch/issues/81224">passing the Metal Performance Shader device to Docker</a> so hardware acceleration is not possible inside the container.
 
 We recommend starting with the CPU Docker via `inference server start` but, if you need more speed, the `inference` Python package supports hardware acceleration via the [onnxruntime CoreMLExecutionProvider](https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html) and the [PyTorch `mps` device backend](https://pytorch.org/docs/stable/notes/mps.html). Y can get a big boost by running outside of Docker.
 
@@ -202,7 +202,7 @@ To run natively in python, `pip install inference` will automatically pull in th
 <details>
 <summary><b>NVIDIA GPU (Linux)</b></summary>
 <br />
-`inference server start` should run the right container automatically.
+By default, <code>inference server start</code> should run the right container automatically.
 
 To start the server manually, use the `roboflow/roboflow-inference-server-gpu:latest` docker container with NVIDIA Container Runtime:
 ```
@@ -221,7 +221,7 @@ export ONNXRUNTIME_EXECUTION_PROVIDERS="[TensorrtExecutionProvider,CUDAExecution
 <details>
 <summary><b>NVIDIA GPU (Windows/WSL)</b></summary>
 <br />
-To get GPU acceleration on Windows, you need WSL2 with NVIDIA Container Toolkit. [Follow the guide here](https://docs.nvidia.com/cuda/wsl-user-guide/index.html) then use the instructions for `NVIDIA GPU (Linux)` above.
+To get GPU acceleration on Windows, you need WSL2 with NVIDIA Container Toolkit. <a href="https://docs.nvidia.com/cuda/wsl-user-guide/index.html">Follow the guide here</a> then use the instructions for <code>NVIDIA GPU (Linux)</code> above.
 <br />
 </details>
 <details>
