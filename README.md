@@ -53,6 +53,8 @@ pip install inference_cli && inference server start --dev
 
 This will pull the proper image for your machine, start it in development mode, and run you through a wizard to configure the server to run inference locally.
 
+In development mode, a Jupyter notebook server with a quickstart guide runs on [`localhost:9002`](http://localhost:9002). Dive in there for a whirlwind tour of your new Inference Server's functionality!
+
 If you linked [an API key](https://app.roboflow.com/settings/api) during setup, your device will now show up in your [Roboflow](https://app.roboflow.com) account and you can [start building & deploying Workflows in the UI](https://app.roboflow.com/workflows). Otherwise, interact with the server via its API.
 
 Now you're ready to connect to your camera streams and [start building](https://inference.roboflow.com/workflows/create_and_run/).
@@ -60,8 +62,6 @@ Now you're ready to connect to your camera streams and [start building](https://
 ## 📟 connecting via api
   
 Your machine is now a fully-featured CV center. You can use its API to run models and workflows on images and video streams. By default, the server is running on [`localhost:9001`](http://localhost:9001).
-
-In development mode, it also serves a Jupyter notebook server with a quickstart guide on [`localhost:9002`](http://localhost:9002).
 
 To interface with the server via Python, use our SDK. `pip install inference_sdk` then:
 
@@ -80,7 +80,7 @@ In other languages, use the server's REST API; you can access the API docs for y
 
 Check out [the inference_sdk docs](https://inference.roboflow.com/inference_helpers/inference_sdk/) to see what else you can do with your new server.
 
-## 🎥 inference pipeline
+## 🎥 connect to video streams
 
 The inference pipeline is an efficient method for processing static video files and streams. Select a model, define the video source, and set a callback action. You can choose from predefined callbacks that allow you to [display results](https://inference.roboflow.com/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) on the screen or [save them to a file](https://inference.roboflow.com/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.VideoFileSink).
 
@@ -103,9 +103,12 @@ pipeline.join()
 
 *Coming Soon:* The server can also programmatically start and connect to a video stream (either by polling for results or streaming them over WebRTC) via the API. [Get early access](https://app.roboflow.com/request/videoSdk).
 
-## 🛠️ Workflows
+## 🛠️ build with Workflows
 
 A key component of Inference is Workflows, composable blocks of common functionality that give models a common interface to make chaining and experimentation easy.
+
+![License Plate OCR Workflow Visualization](https://github.com/user-attachments/assets/178046a2-011e-489d-bfc2-41dcfefe44a4)
+
 
 With Workflows, you can:
 * Detect, classify, and segment objects in images using state-of-the-art models.
@@ -118,13 +121,31 @@ With Workflows, you can:
 
 Workflows allow you to extend simple model predictions to build computer vision micro-services that fit into a larger application or fully self-contained visual agents that run on a video stream.
 
-To start building, start with [the Workflows docs](https://inference.roboflow.com/workflows/about/).
+[Learn more](https://roboflow.com/workflows), read [the Workflows docs](https://inference.roboflow.com/workflows/about/), or [start building](https://app.roboflow.com/workflows).
 
-## 🔑 keys
+## 🔑 connect to the cloud
 
 Without an API Key, you can access a wide range of pre-trained and foundational models and run Workflows via our JSON API.
 
-Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to the `inference_sdk` or API to access your fine-tuned models, Workflows you've built in the Roboflow UI, the thousands of models shared by the [Roboflow Universe](https://universe.roboflow.com/) community, and additional features like device management, model monitoring, and active learning.
+Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to the `inference_sdk` or API to access additional features.
+
+|                         | Open Access | With API Key |
+|-------------------------|-------------|--------------|
+| [Pre-Trained Models](https://inference.roboflow.com/quickstart/aliases/#supported-pre-trained-models) | ✅ | ✅
+| [Foundation Models](https://inference.roboflow.com/foundation/about/) | ✅ | ✅
+| [Workflows](https://inference.roboflow.com/workflows/about/) | ✅ | ✅
+| [Video Stream Management](https://inference.roboflow.com/workflows/video_processing/overview/) | ✅ | ✅
+| [Dynamic Python Blocks](https://inference.roboflow.com/workflows/custom_python_code_blocks/) | ✅ | ✅
+| [Workflow Builder UI](https://docs.roboflow.com/workflows/create-a-workflow) |  | ✅
+| [Fine-Tuned Models](https://roboflow.com/train) |  | ✅
+| [Universe Models](https://roboflow.com/universe) |  | ✅
+| [Active Learning](https://inference.roboflow.com/workflows/blocks/roboflow_dataset_upload/) |  | ✅
+| [Serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) |  | ✅
+| [Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) |  | ✅
+| [Commercial Model Licensing](https://roboflow.com/licensing) |  | Paid
+| [Device Management](https://docs.roboflow.com/roboflow-enterprise) |  | Enterprise
+| [Model Monitoring](https://docs.roboflow.com/deploy/model-monitoring) |  | Enterprise
+
 
 ## 🖥️ Hardware
 
@@ -134,35 +155,109 @@ Inference is designed to run on a wide range of hardware from beefy cloud server
 
 <details>
 <summary>CPU</summary>
-Todo
+The core docker image includes support for OpenVINO acceleration on x64 CPUs via onnxruntime. Heavy models like SAM2 and CogVLM may run too slowly (dozens of seconds per image) to be practical. The primary use-cases for CPU inference are processing still images (eg for NSFW classification of uploads or document verification) or infrequent sampling of frames on a video (eg for occupancy tracking of a parking lot).
+
+You may also want to consider using our [serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) for light or spiky load.
+
+To start the container manually, run
+```
+sudo docker run -p 9001:9001 -v ~/.inference/cache:/tmp/cache roboflow/roboflow-inference-server-cpu:latest
+```
+
+To install the python package natively, install via PyPi
+```
+pip install inference
+```
 </details>
 <details>
 <summary>Mac / Apple Silicon (MPS)</summary>
-Todo
+Apple does not yet support [passing the Metal Performance Shader device to Docker](https://github.com/pytorch/pytorch/issues/81224) so hardware acceleration is not possible inside the container.
+
+We recommend starting with the CPU Docker via `inference server start` but, if you need more speed, the `inference` Python package supports hardware acceleration via the [onnxruntime CoreMLExecutionProvider](https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html) and the [PyTorch `mps` device backend](https://pytorch.org/docs/stable/notes/mps.html). Y can get a big boost by running outside of Docker.
+
+To install outside of Docker, clone the repo then install the dependencies in a new virtual environment:
+```
+git clone https://github.com/roboflow/inference.git
+cd inference
+python3 -m venv inf
+source inf/bin/activate
+pip install .
+cp docker/config/cpu_http:app .
+```
+
+Then start the server by running `uvicorn` with the `cpu_http` module in your virtual environment:
+```
+# source inf/bin/activate
+uvicorn cpu_http:app --port 9001 --host 0.0.0.0
+```
+
+Your server is now running at [`localhost:9001`](http://localhost:9001) with MPS acceleration.
+
+To run natively in python, `pip install inference` will automatically pull in the CoreMLExecutionProvider on Mac.
 </details>
 <details>
 <summary>NVIDIA GPU (Linux)</summary>
-Todo
+`inference server start` should run the right container automatically.
+
+To start the server manually, use the `roboflow/roboflow-inference-server-gpu:latest` docker container with NVIDIA Container Runtime:
+```
+sudo docker run --gpus all --net=host -v ~/.inference/cache:/tmp/cache roboflow/roboflow-inference-server-gpu:latest
+```
+
+Or `pip install inference-gpu` to run the python package natively.
+
+You can enable TensorRT by adding `TensorrtExecutionProvider` to the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable. Note: TensorRT is not enabled by default due to long (15+ minute) compilation times each time a new model is initialized. We cache the TensorRT engine in `/tmp/cache`, which is a Docker volume mounted from `~/.inference/cache` by default.
+
+```
+export ONNXRUNTIME_EXECUTION_PROVIDERS="[TensorrtExecutionProvider,CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider]"
+```
 </details>
 <details>
 <summary>NVIDIA GPU (Windows/WSL)</summary>
-Todo
+To get GPU acceleration on Windows, you need WSL2 with NVIDIA Container Toolkit. [Follow the guide here](https://docs.nvidia.com/cuda/wsl-user-guide/index.html) then use the instructions for `NVIDIA GPU (Linux)` above.
 </details>
 <details>
-<summary>NVIDIA Jetson / Jetpack</summary>
-Todo
+<summary>NVIDIA Jetson / JetPack</summary>
+We have specialized containers built with support for hardware acceleration on JetPack 4, 5, and 6. `inference server start` will automatically detect your JetPack version and use the right container.
+
+To start the server manually, use the container for your JetPack version with the nvidia runtime. For example, on JetPack 6:
+```
+sudo docker run --runtime=nvidia --net=host -v ~/.inference/cache:/tmp/cache roboflow/roboflow-inference-server-jetson-6.0.0:latest
+```
+
+You can enable TensorRT by adding `TensorrtExecutionProvider` to the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable. Note: TensorRT is not enabled by default due to long (15+ minute) compilation times each time a new model is initialized. We cache the TensorRT engine in `/tmp/cache`, which is a Docker volume mounted from `~/.inference/cache` by default.
+
+```
+sudo docker run \
+  --runtime=nvidia \
+  --net=host \
+  -e ONNXRUNTIME_EXECUTION_PROVIDERS="[TensorrtExecutionProvider,CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider]" \
+  -v ~/.inference/cache:/tmp/cache \
+  roboflow/roboflow-inference-server-jetson-6.0.0:latest
+```
 </details>
 <details>
 <summary>Other GPUs</summary>
-Todo
+We do not currently support hardware acceleration on other GPUs besides those listed here but ONNX Runtime has [additional execution providers](https://onnxruntime.ai/docs/execution-providers/) for AMD/ROCm, Arm NN, Rockchip, and others. If you install one of these runtimes, you can enable it via the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable.
+
+For example:
+```
+export ONNXRUNTIME_EXECUTION_PROVIDERS="[ROCMExecutionProvider,OpenVINOExecutionProvider,CPUExecutionProvider]"
+```
+
+This is untested and performance improvements are not guaranteed.
 </details>
 <details>
 <summary>Raspberry Pi</summary>
-Todo
+The CPU container works on Raspberry Pi 4 Model B and Raspberry Pi 5 so long as you are using [the 64-bit version of the operating system](https://www.raspberrypi.com/software/operating-systems/#raspberry-pi-os-64-bit). Simply run `inference server start` and you'll be all set.
+
+Expect about 1fps on Pi 4 and 4fps on Pi 5 for a "Roboflow 3.0 Fast" object detection model (equivalent to a "nano" sized YOLO model).
 </details>
 <details>
 <summary>Other Edge Devices</summary>
-Todo
+Roboflow has [SDKs for running object detection natively](https://docs.roboflow.com/deploy/supported-deployment-devices) on other deployment targets like [Tensorflow.js in a web browser](https://docs.roboflow.com/deploy/sdks/web-browser), [Native Swift on iOS](https://docs.roboflow.com/deploy/sdks/mobile-ios-on-device) via CoreML, and [Luxonis OpenCV AI Kit (OAK)](https://docs.roboflow.com/deploy/sdks/luxonis-oak).
+
+Connect to an Inference Server via its API for additional functionality beyond object detection (like running Workflows).
 </details>
 
 ### ⭐️ New: Enterprise Hardware
