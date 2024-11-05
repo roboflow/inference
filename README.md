@@ -247,9 +247,16 @@ sudo docker run \
 <br />
 </details>
 <details>
+<summary><b>Raspberry Pi</b></summary>
+<br />
+The CPU container works on Raspberry Pi 4 Model B and Raspberry Pi 5 so long as you are using <a href="https://www.raspberrypi.com/software/operating-systems/#raspberry-pi-os-64-bit">the 64-bit version of the operating system</a>. Simply run <code>inference server start</code> and you'll be all set.
+
+Expect about 1fps on Pi 4 and 4fps on Pi 5 for a "Roboflow 3.0 Fast" object detection model (equivalent to a "nano" sized YOLO model).
+</details>
+<details>
 <summary><b>Other GPUs</b></summary>
 <br />
-We do not currently support hardware acceleration on other GPUs besides those listed here but ONNX Runtime has [additional execution providers](https://onnxruntime.ai/docs/execution-providers/) for AMD/ROCm, Arm NN, Rockchip, and others. If you install one of these runtimes, you can enable it via the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable.
+We do not currently support hardware acceleration on other GPUs besides those listed here but ONNX Runtime has <a href="https://onnxruntime.ai/docs/execution-providers/">additional execution providers</a> for AMD/ROCm, Arm NN, Rockchip, and others. If you install one of these runtimes, you can enable it via the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable.
 
 For example:
 ```
@@ -260,16 +267,9 @@ This is untested and performance improvements are not guaranteed.
 <br />
 </details>
 <details>
-<summary><b>Raspberry Pi</b></summary>
-<br />
-The CPU container works on Raspberry Pi 4 Model B and Raspberry Pi 5 so long as you are using [the 64-bit version of the operating system](https://www.raspberrypi.com/software/operating-systems/#raspberry-pi-os-64-bit). Simply run `inference server start` and you'll be all set.
-
-Expect about 1fps on Pi 4 and 4fps on Pi 5 for a "Roboflow 3.0 Fast" object detection model (equivalent to a "nano" sized YOLO model).
-</details>
-<details>
 <summary><b>Other Edge Devices</b></summary>
 <br />
-Roboflow has [SDKs for running object detection natively](https://docs.roboflow.com/deploy/supported-deployment-devices) on other deployment targets like [Tensorflow.js in a web browser](https://docs.roboflow.com/deploy/sdks/web-browser), [Native Swift on iOS](https://docs.roboflow.com/deploy/sdks/mobile-ios-on-device) via CoreML, and [Luxonis OpenCV AI Kit (OAK)](https://docs.roboflow.com/deploy/sdks/luxonis-oak).
+Roboflow has <a href="https://docs.roboflow.com/deploy/supported-deployment-devices">SDKs for running object detection natively</a> on other deployment targets like <a href="https://docs.roboflow.com/deploy/sdks/web-browser">Tensorflow.js in a web browser</a>, <a href="https://docs.roboflow.com/deploy/sdks/mobile-ios-on-device">Native Swift on iOS</a> via CoreML, and <a href="https://docs.roboflow.com/deploy/sdks/luxonis-oak">Luxonis OpenCV AI Kit (OAK)</a>.
 
 Connect to an Inference Server via its API for additional functionality beyond object detection (like running Workflows).
 <br />
