@@ -69,6 +69,8 @@ from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
     ImageThresholdBlockV1,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.dummy.secret_store import SecretStoreBlock
+from inference.core.workflows.core_steps.dummy.secret_store_user import SecretStoreUserBlock
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
@@ -445,6 +447,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
         WebhookSinkBlockV1,
+        SecretStoreUserBlock,
+        SecretStoreBlock
     ]
 
 

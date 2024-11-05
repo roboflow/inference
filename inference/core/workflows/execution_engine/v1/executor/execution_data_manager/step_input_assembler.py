@@ -444,8 +444,11 @@ def get_non_compound_parameter_value(
                 selector=input_parameter.selector
             )
             return runtime_parameters[parameter_name], None
-        static_input: StaticStepInputDefinition = parameter  # type: ignore
-        return static_input.value, None
+        elif parameter.points_to_step_output():
+            return execution_cache.get_non_batch_output(input_parameter.selector), None
+        else:
+            static_input: StaticStepInputDefinition = parameter  # type: ignore
+            return static_input.value, None
     dynamic_parameter: DynamicStepInputDefinition = parameter  # type: ignore
     parameter_dimensionality = dynamic_parameter.get_dimensionality()
     lineage_indices = dynamic_batches_manager.get_indices_for_data_lineage(
