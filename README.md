@@ -154,7 +154,7 @@ Inference is designed to run on a wide range of hardware from beefy cloud server
 `inference server start` attempts to automatically choose the optimal container to optimize performance on your machine, special installation notes and performance tips by device are listed below.
 
 <details>
-<summary>CPU</summary>
+<summary><b>CPU</b></summary>
 <br />
 The core docker image includes support for OpenVINO acceleration on x64 CPUs via onnxruntime. Heavy models like SAM2 and CogVLM may run too slowly (dozens of seconds per image) to be practical. The primary use-cases for CPU inference are processing still images (eg for NSFW classification of uploads or document verification) or infrequent sampling of frames on a video (eg for occupancy tracking of a parking lot).
 
@@ -172,7 +172,7 @@ pip install inference
 <br />
 </details>
 <details>
-<summary>Mac / Apple Silicon (MPS)</summary>
+<summary><b>Mac / Apple Silicon (MPS)</b></summary>
 <br />
 Apple does not yet support [passing the Metal Performance Shader device to Docker](https://github.com/pytorch/pytorch/issues/81224) so hardware acceleration is not possible inside the container.
 
@@ -200,7 +200,7 @@ To run natively in python, `pip install inference` will automatically pull in th
 <br />
 </details>
 <details>
-<summary>NVIDIA GPU (Linux)</summary>
+<summary><b>NVIDIA GPU (Linux)</b></summary>
 <br />
 `inference server start` should run the right container automatically.
 
@@ -219,13 +219,13 @@ export ONNXRUNTIME_EXECUTION_PROVIDERS="[TensorrtExecutionProvider,CUDAExecution
 <br />
 </details>
 <details>
-<summary>NVIDIA GPU (Windows/WSL)</summary>
+<summary><b>NVIDIA GPU (Windows/WSL)</b></summary>
 <br />
 To get GPU acceleration on Windows, you need WSL2 with NVIDIA Container Toolkit. [Follow the guide here](https://docs.nvidia.com/cuda/wsl-user-guide/index.html) then use the instructions for `NVIDIA GPU (Linux)` above.
 <br />
 </details>
 <details>
-<summary>NVIDIA Jetson / JetPack</summary>
+<summary><b>NVIDIA Jetson / JetPack</b></summary>
 <br />
 We have specialized containers built with support for hardware acceleration on JetPack 4, 5, and 6. `inference server start` will automatically detect your JetPack version and use the right container.
 
@@ -247,7 +247,7 @@ sudo docker run \
 <br />
 </details>
 <details>
-<summary>Other GPUs</summary>
+<summary><b>Other GPUs</b></summary>
 <br />
 We do not currently support hardware acceleration on other GPUs besides those listed here but ONNX Runtime has [additional execution providers](https://onnxruntime.ai/docs/execution-providers/) for AMD/ROCm, Arm NN, Rockchip, and others. If you install one of these runtimes, you can enable it via the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable.
 
@@ -260,14 +260,14 @@ This is untested and performance improvements are not guaranteed.
 <br />
 </details>
 <details>
-<summary>Raspberry Pi</summary>
+<summary><b>Raspberry Pi</b></summary>
 <br />
 The CPU container works on Raspberry Pi 4 Model B and Raspberry Pi 5 so long as you are using [the 64-bit version of the operating system](https://www.raspberrypi.com/software/operating-systems/#raspberry-pi-os-64-bit). Simply run `inference server start` and you'll be all set.
 
 Expect about 1fps on Pi 4 and 4fps on Pi 5 for a "Roboflow 3.0 Fast" object detection model (equivalent to a "nano" sized YOLO model).
 </details>
 <details>
-<summary>Other Edge Devices</summary>
+<summary><b>Other Edge Devices</b></summary>
 <br />
 Roboflow has [SDKs for running object detection natively](https://docs.roboflow.com/deploy/supported-deployment-devices) on other deployment targets like [Tensorflow.js in a web browser](https://docs.roboflow.com/deploy/sdks/web-browser), [Native Swift on iOS](https://docs.roboflow.com/deploy/sdks/mobile-ios-on-device) via CoreML, and [Luxonis OpenCV AI Kit (OAK)](https://docs.roboflow.com/deploy/sdks/luxonis-oak).
 
