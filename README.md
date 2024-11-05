@@ -155,6 +155,7 @@ Inference is designed to run on a wide range of hardware from beefy cloud server
 
 <details>
 <summary>CPU</summary>
+<br />
 The core docker image includes support for OpenVINO acceleration on x64 CPUs via onnxruntime. Heavy models like SAM2 and CogVLM may run too slowly (dozens of seconds per image) to be practical. The primary use-cases for CPU inference are processing still images (eg for NSFW classification of uploads or document verification) or infrequent sampling of frames on a video (eg for occupancy tracking of a parking lot).
 
 You may also want to consider using our [serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) for light or spiky load.
@@ -171,6 +172,7 @@ pip install inference
 </details>
 <details>
 <summary>Mac / Apple Silicon (MPS)</summary>
+<br />
 Apple does not yet support [passing the Metal Performance Shader device to Docker](https://github.com/pytorch/pytorch/issues/81224) so hardware acceleration is not possible inside the container.
 
 We recommend starting with the CPU Docker via `inference server start` but, if you need more speed, the `inference` Python package supports hardware acceleration via the [onnxruntime CoreMLExecutionProvider](https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html) and the [PyTorch `mps` device backend](https://pytorch.org/docs/stable/notes/mps.html). Y can get a big boost by running outside of Docker.
@@ -197,6 +199,7 @@ To run natively in python, `pip install inference` will automatically pull in th
 </details>
 <details>
 <summary>NVIDIA GPU (Linux)</summary>
+<br />
 `inference server start` should run the right container automatically.
 
 To start the server manually, use the `roboflow/roboflow-inference-server-gpu:latest` docker container with NVIDIA Container Runtime:
@@ -214,10 +217,12 @@ export ONNXRUNTIME_EXECUTION_PROVIDERS="[TensorrtExecutionProvider,CUDAExecution
 </details>
 <details>
 <summary>NVIDIA GPU (Windows/WSL)</summary>
+<br />
 To get GPU acceleration on Windows, you need WSL2 with NVIDIA Container Toolkit. [Follow the guide here](https://docs.nvidia.com/cuda/wsl-user-guide/index.html) then use the instructions for `NVIDIA GPU (Linux)` above.
 </details>
 <details>
 <summary>NVIDIA Jetson / JetPack</summary>
+<br />
 We have specialized containers built with support for hardware acceleration on JetPack 4, 5, and 6. `inference server start` will automatically detect your JetPack version and use the right container.
 
 To start the server manually, use the container for your JetPack version with the nvidia runtime. For example, on JetPack 6:
@@ -238,6 +243,7 @@ sudo docker run \
 </details>
 <details>
 <summary>Other GPUs</summary>
+<br />
 We do not currently support hardware acceleration on other GPUs besides those listed here but ONNX Runtime has [additional execution providers](https://onnxruntime.ai/docs/execution-providers/) for AMD/ROCm, Arm NN, Rockchip, and others. If you install one of these runtimes, you can enable it via the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable.
 
 For example:
@@ -249,12 +255,14 @@ This is untested and performance improvements are not guaranteed.
 </details>
 <details>
 <summary>Raspberry Pi</summary>
+<br />
 The CPU container works on Raspberry Pi 4 Model B and Raspberry Pi 5 so long as you are using [the 64-bit version of the operating system](https://www.raspberrypi.com/software/operating-systems/#raspberry-pi-os-64-bit). Simply run `inference server start` and you'll be all set.
 
 Expect about 1fps on Pi 4 and 4fps on Pi 5 for a "Roboflow 3.0 Fast" object detection model (equivalent to a "nano" sized YOLO model).
 </details>
 <details>
 <summary>Other Edge Devices</summary>
+<br />
 Roboflow has [SDKs for running object detection natively](https://docs.roboflow.com/deploy/supported-deployment-devices) on other deployment targets like [Tensorflow.js in a web browser](https://docs.roboflow.com/deploy/sdks/web-browser), [Native Swift on iOS](https://docs.roboflow.com/deploy/sdks/mobile-ios-on-device) via CoreML, and [Luxonis OpenCV AI Kit (OAK)](https://docs.roboflow.com/deploy/sdks/luxonis-oak).
 
 Connect to an Inference Server via its API for additional functionality beyond object detection (like running Workflows).
