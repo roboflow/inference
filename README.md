@@ -169,6 +169,7 @@ To install the python package natively, install via PyPi
 ```
 pip install inference
 ```
+<br />
 </details>
 <details>
 <summary>Mac / Apple Silicon (MPS)</summary>
@@ -196,6 +197,7 @@ uvicorn cpu_http:app --port 9001 --host 0.0.0.0
 Your server is now running at [`localhost:9001`](http://localhost:9001) with MPS acceleration.
 
 To run natively in python, `pip install inference` will automatically pull in the CoreMLExecutionProvider on Mac.
+<br />
 </details>
 <details>
 <summary>NVIDIA GPU (Linux)</summary>
@@ -214,11 +216,13 @@ You can enable TensorRT by adding `TensorrtExecutionProvider` to the `ONNXRUNTIM
 ```
 export ONNXRUNTIME_EXECUTION_PROVIDERS="[TensorrtExecutionProvider,CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider]"
 ```
+<br />
 </details>
 <details>
 <summary>NVIDIA GPU (Windows/WSL)</summary>
 <br />
 To get GPU acceleration on Windows, you need WSL2 with NVIDIA Container Toolkit. [Follow the guide here](https://docs.nvidia.com/cuda/wsl-user-guide/index.html) then use the instructions for `NVIDIA GPU (Linux)` above.
+<br />
 </details>
 <details>
 <summary>NVIDIA Jetson / JetPack</summary>
@@ -240,6 +244,7 @@ sudo docker run \
   -v ~/.inference/cache:/tmp/cache \
   roboflow/roboflow-inference-server-jetson-6.0.0:latest
 ```
+<br />
 </details>
 <details>
 <summary>Other GPUs</summary>
@@ -252,6 +257,7 @@ export ONNXRUNTIME_EXECUTION_PROVIDERS="[ROCMExecutionProvider,OpenVINOExecution
 ```
 
 This is untested and performance improvements are not guaranteed.
+<br />
 </details>
 <details>
 <summary>Raspberry Pi</summary>
@@ -266,6 +272,7 @@ Expect about 1fps on Pi 4 and 4fps on Pi 5 for a "Roboflow 3.0 Fast" object dete
 Roboflow has [SDKs for running object detection natively](https://docs.roboflow.com/deploy/supported-deployment-devices) on other deployment targets like [Tensorflow.js in a web browser](https://docs.roboflow.com/deploy/sdks/web-browser), [Native Swift on iOS](https://docs.roboflow.com/deploy/sdks/mobile-ios-on-device) via CoreML, and [Luxonis OpenCV AI Kit (OAK)](https://docs.roboflow.com/deploy/sdks/luxonis-oak).
 
 Connect to an Inference Server via its API for additional functionality beyond object detection (like running Workflows).
+<br />
 </details>
 
 ### ⭐️ New: Enterprise Hardware
