@@ -530,9 +530,10 @@ class UsageCollector:
                     logger.debug(
                         "Got non-dict workflow JSON, '%s'", workflow.workflow_json
                     )
-            resource_details = UsageCollector._resource_details_from_workflow_json(
+            new_resource_details = UsageCollector._resource_details_from_workflow_json(
                 workflow_json=workflow_json,
             )
+            resource_details.update(new_resource_details)
             resource_details["is_preview"] = usage_workflow_preview
             resource_id = usage_workflow_id
             if not resource_id and resource_details:
