@@ -419,11 +419,11 @@ def get_compound_parameter_value(
             result[nested_element.parameter_specification.nested_element_key] = (
                 non_compound_parameter_value
             )
-            if non_compound_indices:
+            if non_compound_indices is not None:
                 batch_indices.append(non_compound_indices)
     ensure_compound_input_indices_match(indices=batch_indices)
     result_indices = None
-    if batch_indices:
+    if len(batch_indices) > 0:
         result_indices = batch_indices[0]
     return result, result_indices
 
