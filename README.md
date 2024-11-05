@@ -161,11 +161,13 @@ The core docker image includes support for OpenVINO acceleration on x64 CPUs via
 You may also want to consider using our <a href="https://docs.roboflow.com/deploy/hosted-api">serverless Hosted API</a> for light or spiky load.
 <br /><br />
 To start the container manually, run
+
 ```
 sudo docker run -p 9001:9001 -v ~/.inference/cache:/tmp/cache roboflow/roboflow-inference-server-cpu:latest
 ```
 
 To install the python package natively, install via PyPi
+
 ```
 pip install inference
 ```
@@ -179,6 +181,7 @@ Apple does not yet support <a href="https://github.com/pytorch/pytorch/issues/81
 We recommend starting with the CPU Docker via <code>inference server start</code> but, if you need more speed, the <code>inference</code> Python package supports hardware acceleration via the <a href="https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html">onnxruntime CoreMLExecutionProvider</a> and the <a href="https://pytorch.org/docs/stable/notes/mps.html">PyTorch `mps` device backend</a>. Y can get a big boost by running outside of Docker.
 <br /><br />
 To install outside of Docker, clone the repo then install the dependencies in a new virtual environment:
+
 ```
 git clone https://github.com/roboflow/inference.git
 cd inference
