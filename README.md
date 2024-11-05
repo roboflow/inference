@@ -51,7 +51,7 @@ for GPU acceleration if applicable). Then run
 pip install inference_cli && inference server start --dev
 ```
 
-This will pull the proper image for your machine, start it in development mode, and run you through a wizard to configure the server. 
+This will pull the proper image for your machine, start it in development mode, and run you through a wizard to configure the server to run inference locally.
 
 If you linked [an API key](https://app.roboflow.com/settings/api) during setup, your device will now show up in your [Roboflow](https://app.roboflow.com) account and you can [start building & deploying Workflows in the UI](https://app.roboflow.com/workflows). Otherwise, interact with the server via its API.
 
@@ -171,7 +171,7 @@ For manufacturing and logistics use-cases Roboflow now offers [the Flowbox](http
 
 ## 🌩️ Hosted Compute
 
-If you don't want to stand up your own infrastructure, Roboflow offers a hosted Inference Server via [one-click Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) (CPU and GPU machines) billed hourly, or simple models and Workflows (CPU-only) via our [serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) billed per API-call.
+If you don't want to manage your own infrastructure for self-hosting, Roboflow offers a hosted Inference Server via [one-click Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) (CPU and GPU machines) billed hourly, or simple models and Workflows (CPU-only) via our [serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) billed per API-call.
 
 We offer a [generous free-tier](https://roboflow.com/pricing) to get started.
 
