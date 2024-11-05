@@ -235,15 +235,16 @@ can decide separately for each element in the batch which ones will proceed and 
 #### Batch-orientation compatibility
 
 As it was outlined, Workflows define batch-oriented data and parameters.
-Some blocks may require batch-oriented inputs, but that is always required. When 
+Some blocks may require batch-oriented inputs, but that is not always required. When 
 block do not require batch-oriented input, it will be fed only with parameters and
 will produce a single result. Such outputs can be used as inputs to other steps, 
 but only if block class returns `False` from `block.accepts_batch_input(...)` method. The 
-constraint is introduced to ensure stability of blocks interface **for now, and we plan to fix
-this in the future releases**.
+constraint is introduced to ensure stability of blocks interface. 
+If there is a need for such steps connection, this is usually an indicator that 
+the input parameter should not be marked with `BatchSelector(...)` type annotation, 
+but rather with `ScalarSelecector(...)` - **if this assumption is wrong, please let us 
+know in GitHub issues**.
 
-On the other hand, batch-oriented outputs are prevented to be feed into 
-inputs that do expect non-batch parameters.
 
 ## Initializing Workflow steps from blocks
 

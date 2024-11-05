@@ -396,7 +396,7 @@ batch-oriented and will affect all batch elements passed to the step.
         BatchSelector,
         IMAGE_KIND,
         FloatZeroToOne,
-        WorkflowParameterSelector,
+        ScalarSelector,
         FLOAT_ZERO_TO_ONE_KIND,
     )
     
@@ -415,7 +415,7 @@ batch-oriented and will affect all batch elements passed to the step.
         )
         similarity_threshold: Union[
             FloatZeroToOne,
-            WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+            ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
         ] = Field(
             default=0.4,
             description="Threshold to assume that images are similar",
@@ -426,7 +426,7 @@ batch-oriented and will affect all batch elements passed to the step.
     for float values in range 0.0-1.0 - this is based on native `pydantic` mechanism and
     everyone could create this type annotation locally in module hosting block
     
-    * line `10` imports function `WorkflowParameterSelector(...)` capable to dynamically create 
+    * line `10` imports function `ScalarSelector(...)` capable to dynamically create 
     `pydantic` type annotation for selector to workflow input parameter (matching format `$inputs.param_name`), 
     declaring union of kinds compatible with the field
   
@@ -435,7 +435,7 @@ batch-oriented and will affect all batch elements passed to the step.
     * in line `27` we start defining parameter called `similarity_threshold`. Manifest will accept 
     either float values (in range `[0.0-1.0]`) or selector to workflow input of `kind`
     [`float_zero_to_one`](/workflows/kinds/float_zero_to_one). Please point out on how 
-    function creating type annotation (`WorkflowParameterSelector(...)`) is used - 
+    function creating type annotation (`ScalarSelector(...)`) is used - 
     in particular, expected `kind` of data is passed as list of `kinds` - representing union
     of expected data `kinds`.
 
@@ -486,7 +486,7 @@ run the block.
         BatchSelector,
         IMAGE_KIND,
         FloatZeroToOne,
-        WorkflowParameterSelector,
+        ScalarSelector,
         FLOAT_ZERO_TO_ONE_KIND,
         BOOLEAN_KIND,
     )
@@ -503,7 +503,7 @@ run the block.
         )
         similarity_threshold: Union[
             FloatZeroToOne,
-            WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+            ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
         ] = Field(
             default=0.4,
             description="Threshold to assume that images are similar",
@@ -568,7 +568,7 @@ in their inputs
         BatchSelector,
         IMAGE_KIND,
         FloatZeroToOne,
-        WorkflowParameterSelector,
+        ScalarSelector,
         FLOAT_ZERO_TO_ONE_KIND,
         BOOLEAN_KIND,
         WILDCARD_KIND,
@@ -586,7 +586,7 @@ in their inputs
         )
         similarity_threshold: Union[
             FloatZeroToOne,
-            WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+            ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
         ] = Field(
             default=0.4,
             description="Threshold to assume that images are similar",
@@ -640,7 +640,7 @@ block.
         BatchSelector,
         IMAGE_KIND,
         FloatZeroToOne,
-        WorkflowParameterSelector,
+        ScalarSelector,
         FLOAT_ZERO_TO_ONE_KIND,
         BOOLEAN_KIND,
     )
@@ -656,7 +656,7 @@ block.
         )
         similarity_threshold: Union[
             FloatZeroToOne,
-            WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+            ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
         ] = Field(
             default=0.4,
             description="Threshold to assume that images are similar",
@@ -732,7 +732,7 @@ it can produce meaningful results.
         BatchSelector,
         IMAGE_KIND,
         FloatZeroToOne,
-        WorkflowParameterSelector,
+        ScalarSelector,
         FLOAT_ZERO_TO_ONE_KIND,
         BOOLEAN_KIND,
     )
@@ -748,7 +748,7 @@ it can produce meaningful results.
         )
         similarity_threshold: Union[
             FloatZeroToOne,
-            WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+            ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
         ] = Field(
             default=0.4,
             description="Threshold to assume that images are similar",
@@ -881,7 +881,7 @@ on how to use it for your block.
         BatchSelector,
         IMAGE_KIND,
         FloatZeroToOne,
-        WorkflowParameterSelector,
+        ScalarSelector,
         FLOAT_ZERO_TO_ONE_KIND,
         BOOLEAN_KIND,
     )
@@ -897,7 +897,7 @@ on how to use it for your block.
         )
         similarity_threshold: Union[
             FloatZeroToOne,
-            WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+            ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
         ] = Field(
             default=0.4,
             description="Threshold to assume that images are similar",
@@ -1249,7 +1249,7 @@ keys serve as names for those selectors.
     )
     from inference.core.workflows.execution_engine.entities.types import (
         BatchSelector,
-        WorkflowParameterSelector,
+        ScalarSelector,
     )
     from inference.core.workflows.prototypes.block import (
         BlockResult,
@@ -1262,7 +1262,7 @@ keys serve as names for those selectors.
     class BlockManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/named_selectors_example@v1"]
         name: str
-        data: Dict[str, BatchSelector(), WorkflowParameterSelector()] = Field(
+        data: Dict[str, BatchSelector(), ScalarSelector()] = Field(
             description="Selectors to step outputs",
             examples=[{"a": $steps.model_1.predictions", "b": "$Inputs.data"}],
         )

@@ -65,11 +65,15 @@ format introduced **at the level of Execution Engine**). As a result of the chan
     properly. This may not be the case in the future, as in most cases batch-oriented data *kind* may
     be inferred by compiler (yet this feature is not implemented for now).
 
-    * **new selector type annotation was introduced** - `BatchSelector` which is supposed to 
-    replace `StepOutputSelector`, `WorkflowImageSelector`, `StepOutputImageSelector` and `WorkflowVideoMetadataSelector` 
-    in block manifests, allowing batch-oriented data to be used as block input, regardless of whether it comes 
-    from user inputs or outputs of other blocks. Mentioned old annotation types **should be assumed deprecated**, 
-    we advise to migrate into `BatchSelector`, but that is not hard requirement.
+    * **new selector types annotation were introduced** - `BatchSelector` and `ScalarSelector`.
+    `BatchSelector` is supposed to replace `StepOutputSelector`, `WorkflowImageSelector`, `StepOutputImageSelector` 
+    and `WorkflowVideoMetadataSelector` in block manifests, allowing batch-oriented data to be used as block input, 
+    regardless of whether it comes from user inputs or outputs of other blocks. 
+    `ScalarSelector` is meant to replace `WorkflowParameterSelector`, providing a way to input 
+    non-natch oriented data into the block both from **workflow inputs** (via `WorkflowParameter` input) or 
+    from **steps outputs** - such that steps can now directly feed parameters into other steps. 
+    Mentioned old annotation types **should be assumed deprecated**, we advise to migrate into `BatchSelector`, 
+    and `ScalarSelector` but that is not hard requirement.
 
 * As a result of the changes, it is now possible to **split any arbitrary workflows into multiple ones executing 
 subsets of steps**, enabling building such tools as debuggers.
@@ -78,8 +82,8 @@ subsets of steps**, enabling building such tools as debuggers.
 
     * `WorkflowImage` and `WorkflowVideoMetadata` inputs will be removed from Workflows ecosystem.
 
-    * `StepOutputSelector, `WorkflowImageSelector`, `StepOutputImageSelector` and `WorkflowVideoMetadataSelector`
-    type annotations used in block manifests will be removed from Workflows ecosystem.
+    * `StepOutputSelector, `WorkflowImageSelector`, `StepOutputImageSelector`, `WorkflowVideoMetadataSelector`
+    and `WorkflowParameterSelector` type annotations used in block manifests will be removed from Workflows ecosystem.
 
 
 ### Migration guide
@@ -127,9 +131,11 @@ subsets of steps**, enabling building such tools as debuggers.
     from inference.core.workflows.execution_engine.entities.types import (
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         OBJECT_DETECTION_PREDICTION_KIND,
+        FLOAT_KIND,
         WorkflowImageSelector,
         StepOutputImageSelector,
         StepOutputSelector,
+        WorkflowParameterSelector,
     )
     
     
@@ -142,17 +148,20 @@ subsets of steps**, enabling building such tools as debuggers.
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
             ]
         )
+        confidence: WorkflowParameterSelector(kind=[FLOAT_KIND]) 
     ```
     
     should just be changed into:
     
-    ```{ .py linenums="1" hl_lines="5 11 12"}
+    ```{ .py linenums="1" hl_lines="7 8 13 14 20"}
     from inference.core.workflows.prototypes.block import WorkflowBlockManifest
     from inference.core.workflows.execution_engine.entities.types import (
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         OBJECT_DETECTION_PREDICTION_KIND,
-        BatchSelector,
+        FLOAT_KIND,
         IMAGE_KIND,
+        BatchSelector,
+        ScalarSelector,
     )
     
     
@@ -164,6 +173,7 @@ subsets of steps**, enabling building such tools as debuggers.
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
             ]
         )
+        confidence: ScalarSelector(kind=[FLOAT_KIND]) 
     ```
 
 

@@ -1,6 +1,7 @@
-from typing import List, Literal, Optional, Type
+from typing import Any, List, Literal, Optional, Type, Union
 from uuid import uuid4
 
+import numpy as np
 from pydantic import Field
 
 from inference.core.workflows.execution_engine.entities.base import (
@@ -10,6 +11,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
+    LIST_OF_VALUES_KIND,
     STRING_KIND,
     BatchSelector,
     ScalarSelector,
@@ -108,10 +110,6 @@ class BatchSecretStoreBlock(WorkflowBlock):
 
 class NonBatchSecretStoreUserBlockManifest(WorkflowBlockManifest):
     type: Literal["non_batch_secret_store_user"]
-    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
-        title="Input Image",
-        description="The input image for this step.",
-    )
     secret: ScalarSelector(kind=[STRING_KIND])
 
     @classmethod
@@ -131,8 +129,41 @@ class NonBatchSecretStoreUserBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return NonBatchSecretStoreUserBlockManifest
 
-    def run(self, image: WorkflowImageData, secret: str) -> BlockResult:
+    def run(self, secret: str) -> BlockResult:
         return {"output": secret}
+
+
+class BlockWithReferenceImagesManifest(WorkflowBlockManifest):
+    type: Literal["reference_images_comparison"]
+    image: BatchSelector(kind=[IMAGE_KIND])
+    reference_images: Union[ScalarSelector(kind=[LIST_OF_VALUES_KIND]), Any]
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(name="similarity", kind=[LIST_OF_VALUES_KIND]),
+        ]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+
+class BlockWithReferenceImagesBlock(WorkflowBlock):
+
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return BlockWithReferenceImagesManifest
+
+    def run(
+        self, image: WorkflowImageData, reference_images: List[np.ndarray]
+    ) -> BlockResult:
+        similarity = []
+        for ref_image in reference_images:
+            similarity.append(
+                (image.numpy_image == ref_image).sum() / image.numpy_image.size
+            )
+        return {"similarity": similarity}
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
@@ -141,4 +172,5 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SecretStoreUserBlock,
         BatchSecretStoreBlock,
         NonBatchSecretStoreUserBlock,
+        BlockWithReferenceImagesBlock,
     ]
