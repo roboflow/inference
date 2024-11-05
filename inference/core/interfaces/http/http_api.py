@@ -2239,6 +2239,10 @@ class HttpInterface(BaseInterface):
                             f"Invalid Content-Type: {request.headers['Content-Type']}"
                         )
 
+                if not countinference and service_secret != ROBOFLOW_SERVICE_SECRET:
+                    raise MissingServiceSecretError(
+                        "Service secret is required to disable inference usage tracking"
+                    )
                 if LAMBDA:
                     request_model_id = (
                         request.scope["aws.event"]["requestContext"]["authorizer"][
@@ -2301,6 +2305,7 @@ class HttpInterface(BaseInterface):
                     active_learning_target_dataset=active_learning_target_dataset,
                     source=source,
                     source_info=source_info,
+                    usage_billable=countinference,
                     **args,
                 )
 

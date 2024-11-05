@@ -171,7 +171,7 @@ def get_class_preds_from_embeds(
     survival_indices = torchvision.ops.nms(
         to_corners(pred_boxes), pred_scores, iou_threshold
     )
-    # put on numpy and filter to post-nms
+    # filter to post-nms
     pred_boxes = pred_boxes[survival_indices, :]
     pred_classes = pred_classes[survival_indices]
     pred_scores = pred_scores[survival_indices]
@@ -327,6 +327,8 @@ class OwlV2(RoboflowCoreModel):
             query_boxes_tensor = torch.tensor(
                 query_boxes, dtype=image_boxes.dtype, device=image_boxes.device
             )
+            if image_boxes.numel() == 0 or query_boxes_tensor.numel() == 0:
+                continue
             iou, _ = box_iou(
                 to_corners(image_boxes), to_corners(query_boxes_tensor)
             )  # 3000, k
@@ -368,6 +370,9 @@ class OwlV2(RoboflowCoreModel):
             all_predicted_boxes.append(boxes)
             all_predicted_classes.append(classes)
             all_predicted_scores.append(scores)
+
+        if not all_predicted_boxes:
+            return []
 
         all_predicted_boxes = torch.cat(all_predicted_boxes, dim=0)
         all_predicted_classes = torch.cat(all_predicted_classes, dim=0)
@@ -455,6 +460,9 @@ class OwlV2(RoboflowCoreModel):
             query_spec = {image_hash: coords}
             # NOTE: because we just computed the embedding for this image, this should never result in a KeyError
             embeddings = self.get_query_embedding(query_spec, iou_threshold)
+
+            if embeddings is None:
+                continue
 
             # add the embeddings to their appropriate class and positive/negative list
             for embedding, class_name, is_positive in zip(
