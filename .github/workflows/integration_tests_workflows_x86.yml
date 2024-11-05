@@ -8,7 +8,12 @@ on:
   workflow_dispatch:
 
 jobs:
+  call_is_mergeable:
+    uses: ./.github/workflows/is_mergeable.yml
+    secrets: inherit
   build-dev-test:
+    needs: call_is_mergeable
+    if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
       labels: depot-ubuntu-22.04-16
       group: public-depot
