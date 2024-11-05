@@ -65,7 +65,7 @@ docker run --gpus=all --net=host -e STREAM_ID=0 -e MODEL_ID=<> -e ROBOFLOW_API_K
   docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
   ```
 
-- Run on Nvidia Jetson with JetPack `4.x`:
+- Run on Nvidia Jetson with JetPack `4.x` (Deprecated):
 
   ```bash
   docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson:latest
@@ -75,6 +75,12 @@ docker run --gpus=all --net=host -e STREAM_ID=0 -e MODEL_ID=<> -e ROBOFLOW_API_K
 
   ```bash
   docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-5.1.1:latest
+  ```
+
+- Run on Nvidia Jetson with JetPack `6.x`:
+
+  ```bash
+  docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-6.0.0:latest
   ```
 
 ### UDP

@@ -63,14 +63,14 @@ hardware configurations.
         docker pull roboflow/roboflow-inference-server-gpu
         ```
 
-    === "Jetson 4.5.x"
+    === "Jetson 4.5.x" (Deprecated)
         Official Roboflow Inference Server Docker Image for Nvidia Jetson JetPack 4.5.x Targets.
 
         ```
         docker pull roboflow/roboflow-inference-server-jetson-4.5.0
         ```
 
-    === "Jetson 4.6.x"
+    === "Jetson 4.6.x" (Deprecated)
         Official Roboflow Inference Server Docker Image for Nvidia Jetson JetPack 4.6.x Targets.
 
         ```
@@ -82,6 +82,13 @@ hardware configurations.
 
         ```
         docker pull roboflow/roboflow-inference-server-jetson-5.1.1
+        ```
+
+    === "Jetson 6.x"
+        Official Roboflow Inference Server Docker Image for Nvidia Jetson JetPack 6.x Targets.
+
+        ```
+        docker pull roboflow/roboflow-inference-server-jetson-6.0.0
         ```
 
 ### Step #2: Run the Docker Container
