@@ -6,7 +6,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
 )
-from inference.core.workflows.execution_engine.entities.types import BatchOfDataSelector
+from inference.core.workflows.execution_engine.entities.types import BatchSelector
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
@@ -35,7 +35,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal[
         "roboflow_core/first_non_empty_or_default@v1", "FirstNonEmptyOrDefault"
     ]
-    data: List[BatchOfDataSelector()] = Field(
+    data: List[BatchSelector()] = Field(
         description="Reference data to replace empty values",
         examples=["$steps.my_step.predictions"],
         min_items=1,

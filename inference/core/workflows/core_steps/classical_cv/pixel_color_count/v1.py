@@ -12,7 +12,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     RGB_COLOR_KIND,
     STRING_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -48,7 +48,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
     )
     target_color: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]),
-        BatchOfDataSelector(kind=[RGB_COLOR_KIND]),
+        BatchSelector(kind=[RGB_COLOR_KIND]),
         str,
         Tuple[int, int, int],
     ] = Field(

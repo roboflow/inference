@@ -10,7 +10,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    BatchOfDataSelector,
+    BatchSelector,
     WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -57,7 +57,7 @@ class BlockManifest(WorkflowBlockManifest):
         "PropertyDefinition",
         "PropertyExtraction",
     ]
-    data: Union[WorkflowImageSelector, BatchOfDataSelector()] = Field(
+    data: Union[WorkflowImageSelector, BatchSelector()] = Field(
         description="Reference data to extract property from",
         examples=["$steps.my_step.predictions"],
     )

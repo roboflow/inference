@@ -19,7 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -58,7 +58,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
     metadata: WorkflowVideoMetadataSelector
-    detections: BatchOfDataSelector(
+    detections: BatchSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -67,7 +67,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         description="Predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    zone: Union[list, BatchOfDataSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    zone: Union[list, BatchSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Zones (one for each batch) in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
         examples=["$inputs.zones"],
     )

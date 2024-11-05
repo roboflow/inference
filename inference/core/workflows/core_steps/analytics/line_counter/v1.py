@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     WorkflowParameterSelector,
     WorkflowVideoMetadataSelector,
 )
@@ -50,7 +50,7 @@ class LineCounterManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/line_counter@v1"]
     metadata: WorkflowVideoMetadataSelector
-    detections: BatchOfDataSelector(
+    detections: BatchSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -60,7 +60,7 @@ class LineCounterManifest(WorkflowBlockManifest):
         examples=["$steps.object_detection_model.predictions"],
     )
 
-    line_segment: Union[list, BatchOfDataSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    line_segment: Union[list, BatchSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Line in the format [[x1, y1], [x2, y2]] consisting of exactly two points. For line [[0, 100], [100, 100]] line will count objects entering from the bottom as IN",
         examples=[[[0, 50], [500, 50]], "$inputs.zones"],
     )

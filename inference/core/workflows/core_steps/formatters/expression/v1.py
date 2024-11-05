@@ -16,7 +16,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    BatchOfDataSelector,
+    BatchSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
@@ -109,9 +109,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/expression@v1", "Expression"]
     data: Dict[
         str,
-        Union[
-            WorkflowImageSelector, WorkflowParameterSelector(), BatchOfDataSelector()
-        ],
+        Union[WorkflowImageSelector, WorkflowParameterSelector(), BatchSelector()],
     ] = Field(
         description="References data to be used to construct results",
         examples=[

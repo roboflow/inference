@@ -17,7 +17,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     WorkflowParameterSelector,
     WorkflowVideoMetadataSelector,
 )
@@ -53,7 +53,7 @@ class PathDeviationManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/path_deviation_analytics@v1"]
     metadata: WorkflowVideoMetadataSelector
-    detections: BatchOfDataSelector(
+    detections: BatchSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -67,7 +67,7 @@ class PathDeviationManifest(WorkflowBlockManifest):
         default="CENTER",
         examples=["CENTER"],
     )
-    reference_path: Union[list, BatchOfDataSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    reference_path: Union[list, BatchSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Reference path in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
         examples=["$inputs.expected_path"],
     )

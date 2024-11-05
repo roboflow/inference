@@ -12,7 +12,7 @@ from inference.core.workflows.core_steps.loader import KINDS_DESERIALIZERS
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
-    WorkflowDataBatch,
+    WorkflowBatchInput,
     WorkflowImage,
     WorkflowImageData,
     WorkflowParameter,
@@ -580,12 +580,15 @@ def test_assemble_runtime_parameters_when_parameters_at_different_dimensionality
         ],
     }
     defined_inputs = [
-        WorkflowDataBatch(type="WorkflowDataBatch", name="image1", kind=["image"]),
-        WorkflowDataBatch(
-            type="WorkflowDataBatch", name="image2", kind=[IMAGE_KIND], dimensionality=2
+        WorkflowBatchInput(type="WorkflowBatchInput", name="image1", kind=["image"]),
+        WorkflowBatchInput(
+            type="WorkflowBatchInput",
+            name="image2",
+            kind=[IMAGE_KIND],
+            dimensionality=2,
         ),
-        WorkflowDataBatch(
-            type="WorkflowDataBatch", name="image3", kind=["image"], dimensionality=3
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="image3", kind=["image"], dimensionality=3
         ),
     ]
 
@@ -637,23 +640,23 @@ def test_assemble_runtime_parameters_when_basic_types_are_passed_as_batch_orient
         "dict_param": [{"some": "dict"}, {"other": "dict"}],
     }
     defined_inputs = [
-        WorkflowDataBatch(
-            type="WorkflowDataBatch", name="string_param", kind=[STRING_KIND.name]
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="string_param", kind=[STRING_KIND.name]
         ),
-        WorkflowDataBatch(
-            type="WorkflowDataBatch", name="float_param", kind=[FLOAT_KIND.name]
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="float_param", kind=[FLOAT_KIND.name]
         ),
-        WorkflowDataBatch(
-            type="WorkflowDataBatch", name="int_param", kind=[INTEGER_KIND]
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="int_param", kind=[INTEGER_KIND]
         ),
-        WorkflowDataBatch(
-            type="WorkflowDataBatch", name="list_param", kind=[LIST_OF_VALUES_KIND]
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="list_param", kind=[LIST_OF_VALUES_KIND]
         ),
-        WorkflowDataBatch(
-            type="WorkflowDataBatch", name="boolean_param", kind=[BOOLEAN_KIND]
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="boolean_param", kind=[BOOLEAN_KIND]
         ),
-        WorkflowDataBatch(
-            type="WorkflowDataBatch", name="dict_param", kind=[DICTIONARY_KIND]
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="dict_param", kind=[DICTIONARY_KIND]
         ),
     ]
 
@@ -682,11 +685,11 @@ def test_assemble_runtime_parameters_when_input_batch_shallower_than_declared() 
         "float_param": [1.0, 2.0],
     }
     defined_inputs = [
-        WorkflowDataBatch(
-            type="WorkflowDataBatch", name="string_param", kind=[STRING_KIND.name]
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="string_param", kind=[STRING_KIND.name]
         ),
-        WorkflowDataBatch(
-            type="WorkflowDataBatch",
+        WorkflowBatchInput(
+            type="WorkflowBatchInput",
             name="float_param",
             kind=[FLOAT_KIND.name],
             dimensionality=2,
@@ -709,11 +712,11 @@ def test_assemble_runtime_parameters_when_input_batch_deeper_than_declared() -> 
         "float_param": [[1.0], [2.0]],
     }
     defined_inputs = [
-        WorkflowDataBatch(
-            type="WorkflowDataBatch", name="string_param", kind=[STRING_KIND.name]
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="string_param", kind=[STRING_KIND.name]
         ),
-        WorkflowDataBatch(
-            type="WorkflowDataBatch", name="float_param", kind=[FLOAT_KIND.name]
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="float_param", kind=[FLOAT_KIND.name]
         ),
     ]
 

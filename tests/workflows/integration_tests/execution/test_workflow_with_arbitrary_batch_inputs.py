@@ -77,7 +77,7 @@ CROP_WORKFLOW = {
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
         {
-            "type": "WorkflowDataBatch",
+            "type": "WorkflowBatchInput",
             "name": "predictions",
             "kind": ["object_detection_prediction"],
         },
@@ -103,7 +103,7 @@ CLASSIFICATION_WORKFLOW = {
     "version": "1.3.0",
     "inputs": [
         {
-            "type": "WorkflowDataBatch",
+            "type": "WorkflowBatchInput",
             "name": "crops",
             "kind": ["image"],
             "dimensionality": 2,
@@ -589,7 +589,7 @@ WORKFLOW_WITH_BATCH_ORIENTED_CONFIDENCE = {
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
         {
-            "type": "WorkflowDataBatch",
+            "type": "WorkflowBatchInput",
             "name": "confidence",
         },
     ],
@@ -929,7 +929,7 @@ WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_INTO_BATCH_ORIENTED_STEP = {
     "version": "1.3.0",
     "inputs": [
         {
-            "type": "WorkflowDataBatch",
+            "type": "WorkflowBatchInput",
             "name": "data",
         },
     ],
@@ -987,7 +987,7 @@ WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_INTO_MIXED_INPUT_STEP = {
     "version": "1.3.0",
     "inputs": [
         {
-            "type": "WorkflowDataBatch",
+            "type": "WorkflowBatchInput",
             "name": "data",
         },
     ],
@@ -1045,7 +1045,7 @@ WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_INTO_NON_BATCH_ORIENTED_STEP = {
     "version": "1.3.0",
     "inputs": [
         {
-            "type": "WorkflowDataBatch",
+            "type": "WorkflowBatchInput",
             "name": "data",
         },
     ],
@@ -1080,14 +1080,23 @@ def test_workflow_when_batch_oriented_input_feeds_non_batch_input_step(
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_INTO_NON_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
 
     # when
-    with pytest.raises(ExecutionGraphStructureError):
-        _ = ExecutionEngine.init(
-            workflow_definition=WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_INTO_NON_BATCH_ORIENTED_STEP,
-            init_parameters=workflow_init_parameters,
-            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        )
+    result = execution_engine.run(
+        runtime_parameters={
+            "data": ["some", "other"],
+        }
+    )
+
+    # then
+    assert len(result) == 2, "Expected two outputs for two input elements"
+    assert result[0]["result"] == 0.4, "Expected hardcoded value"
+    assert result[1]["result"] == 0.4, "Expected hardcoded value"
 
 
 WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP = {
@@ -1744,7 +1753,7 @@ WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP = {
     "version": "1.3.0",
     "inputs": [
         {
-            "type": "WorkflowDataBatch",
+            "type": "WorkflowBatchInput",
             "name": "data",
         },
     ],
@@ -1781,21 +1790,30 @@ def test_workflow_when_batch_oriented_input_feeds_compound_non_batch_oriented_st
         "workflows_core.api_key": None,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
 
     # when
-    with pytest.raises(ExecutionGraphStructureError):
-        _ = ExecutionEngine.init(
-            workflow_definition=WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP,
-            init_parameters=workflow_init_parameters,
-            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        )
+    result = execution_engine.run(
+        runtime_parameters={
+            "data": ["some", "other"],
+        }
+    )
+
+    # then
+    assert len(result) == 2, "Expected 2 outputs for 2 inputs"
+    assert result[0]["result"] == 0.4, "Expected hardcoded value"
+    assert result[1]["result"] == 0.4, "Expected hardcoded value"
 
 
 WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_MIXED_ORIENTED_STEP = {
     "version": "1.3.0",
     "inputs": [
         {
-            "type": "WorkflowDataBatch",
+            "type": "WorkflowBatchInput",
             "name": "data",
         },
     ],
@@ -1855,7 +1873,7 @@ WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_LOOSELY_BATCH_ORIENTED_STEP 
     "version": "1.3.0",
     "inputs": [
         {
-            "type": "WorkflowDataBatch",
+            "type": "WorkflowBatchInput",
             "name": "data",
         },
     ],
@@ -1915,7 +1933,7 @@ WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP
     "version": "1.3.0",
     "inputs": [
         {
-            "type": "WorkflowDataBatch",
+            "type": "WorkflowBatchInput",
             "name": "data",
         },
     ],

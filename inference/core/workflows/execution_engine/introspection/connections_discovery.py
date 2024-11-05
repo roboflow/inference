@@ -2,7 +2,7 @@ from collections import defaultdict
 from typing import Dict, Generator, List, Set, Tuple, Type
 
 from inference.core.workflows.execution_engine.entities.types import (
-    BATCH_OF_DATA_AS_SELECTED_ELEMENT,
+    BATCH_AS_SELECTED_ELEMENT,
     STEP_AS_SELECTED_ELEMENT,
     STEP_OUTPUT_AS_SELECTED_ELEMENT,
     WILDCARD_KIND,
@@ -43,7 +43,7 @@ def discover_blocks_connections(
     )
     compatible_elements = {
         STEP_OUTPUT_AS_SELECTED_ELEMENT,
-        BATCH_OF_DATA_AS_SELECTED_ELEMENT,
+        BATCH_AS_SELECTED_ELEMENT,
     }
     coarse_input_kind2schemas = convert_kinds_mapping_to_block_wise_format(
         detailed_input_kind2schemas=detailed_input_kind2schemas,

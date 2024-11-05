@@ -10,7 +10,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -46,7 +46,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     type: Literal["roboflow_core/distance_measurement@v1"]
 
-    predictions: BatchOfDataSelector(
+    predictions: BatchSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,

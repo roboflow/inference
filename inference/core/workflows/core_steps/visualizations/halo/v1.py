@@ -18,7 +18,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     FloatZeroToOne,
     WorkflowParameterSelector,
 )
@@ -46,7 +46,7 @@ class HaloManifest(ColorableVisualizationManifest):
         }
     )
 
-    predictions: BatchOfDataSelector(
+    predictions: BatchSelector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]

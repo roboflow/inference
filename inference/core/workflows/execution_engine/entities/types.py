@@ -1023,7 +1023,8 @@ LANGUAGE_MODEL_OUTPUT_KIND = Kind(
 
 STEP_AS_SELECTED_ELEMENT = "step"
 STEP_OUTPUT_AS_SELECTED_ELEMENT = "step_output"
-BATCH_OF_DATA_AS_SELECTED_ELEMENT = "batch_of_data"
+BATCH_AS_SELECTED_ELEMENT = "batch"
+SCALAR_AS_SELECTED_ELEMENT = "scalar"
 
 StepSelector = Annotated[
     str,
@@ -1066,14 +1067,31 @@ def StepOutputSelector(kind: Optional[List[Kind]] = None):
     ]
 
 
-def BatchOfDataSelector(kind: Optional[List[Kind]] = None):
+def BatchSelector(kind: Optional[List[Kind]] = None):
     if kind is None:
         kind = [WILDCARD_KIND]
     json_schema_extra = {
         REFERENCE_KEY: True,
-        SELECTED_ELEMENT_KEY: BATCH_OF_DATA_AS_SELECTED_ELEMENT,
+        SELECTED_ELEMENT_KEY: BATCH_AS_SELECTED_ELEMENT,
         KIND_KEY: [k.dict() for k in kind],
         SELECTOR_POINTS_TO_BATCH_KEY: True,
+    }
+    return Annotated[
+        str,
+        StringConstraints(
+            pattern=r"(^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$)|(^\$inputs.[A-Za-z_0-9\-]+$)"
+        ),
+        Field(json_schema_extra=json_schema_extra),
+    ]
+
+
+def ScalarSelector(kind: Optional[List[Kind]] = None):
+    if kind is None:
+        kind = [WILDCARD_KIND]
+    json_schema_extra = {
+        REFERENCE_KEY: True,
+        SELECTED_ELEMENT_KEY: SCALAR_AS_SELECTED_ELEMENT,
+        KIND_KEY: [k.dict() for k in kind],
     }
     return Annotated[
         str,

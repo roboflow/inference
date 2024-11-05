@@ -5,7 +5,7 @@ from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    BatchOfDataSelector,
+    BatchSelector,
     StepSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -62,7 +62,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
         ge=0.0,
     )
     depends_on: Union[
-        WorkflowImageSelector, WorkflowParameterSelector(), BatchOfDataSelector()
+        WorkflowImageSelector, WorkflowParameterSelector(), BatchSelector()
     ] = Field(
         description="Reference to any output of the the step which immediately preceeds this branch.",
         examples=["$steps.model"],

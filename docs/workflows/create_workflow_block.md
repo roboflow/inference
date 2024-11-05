@@ -320,7 +320,7 @@ we will be creating SIMD block.
         WorkflowBlockManifest,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        BatchOfDataSelector,
+        BatchSelector,
         IMAGE_KIND,
     )
     
@@ -331,10 +331,10 @@ we will be creating SIMD block.
         # all properties apart from `type` and `name` are treated as either 
         # definitions of batch-oriented data to be processed by block or its 
         # parameters that influence execution of steps created based on block
-        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_1: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_2: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
     ```
@@ -343,7 +343,7 @@ we will be creating SIMD block.
     
     * line `18` defines `image_1` parameter - as manifest is prototype for Workflow Definition, 
     the only way to tell about image to be used by step is to provide selector - we have 
-    a specialised type in core library that can be used - `BatchOfDataSelector`.
+    a specialised type in core library that can be used - `BatchSelector`.
     If you look deeper into codebase, you will discover this is type alias constructor function - telling `pydantic`
     to expect string matching `$inputs.{name}` and `$steps.{name}.*` patterns respectively, additionally providing 
     extra schema field metadata that tells Workflows ecosystem components that the `kind` of data behind selector is 
@@ -393,7 +393,7 @@ batch-oriented and will affect all batch elements passed to the step.
         WorkflowBlockManifest,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        BatchOfDataSelector,
+        BatchSelector,
         IMAGE_KIND,
         FloatZeroToOne,
         WorkflowParameterSelector,
@@ -407,10 +407,10 @@ batch-oriented and will affect all batch elements passed to the step.
         # all properties apart from `type` and `name` are treated as either 
         # definitions of batch-oriented data to be processed by block or its 
         # parameters that influence execution of steps created based on block
-        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_1: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_2: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
         similarity_threshold: Union[
@@ -483,7 +483,7 @@ run the block.
         OutputDefinition,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        BatchOfDataSelector,
+        BatchSelector,
         IMAGE_KIND,
         FloatZeroToOne,
         WorkflowParameterSelector,
@@ -495,10 +495,10 @@ run the block.
     class ImagesSimilarityManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/images_similarity@v1"] 
         name: str
-        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_1: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_2: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
         similarity_threshold: Union[
@@ -565,7 +565,7 @@ in their inputs
         OutputDefinition,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        BatchOfDataSelector,
+        BatchSelector,
         IMAGE_KIND,
         FloatZeroToOne,
         WorkflowParameterSelector,
@@ -578,10 +578,10 @@ in their inputs
     class ImagesSimilarityManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/images_similarity@v1"] 
         name: str
-        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_1: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_2: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
         similarity_threshold: Union[
@@ -637,7 +637,7 @@ block.
         WorkflowImageData,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        BatchOfDataSelector,
+        BatchSelector,
         IMAGE_KIND,
         FloatZeroToOne,
         WorkflowParameterSelector,
@@ -648,10 +648,10 @@ block.
     class ImagesSimilarityManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/images_similarity@v1"] 
         name: str
-        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_1: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_2: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
         similarity_threshold: Union[
@@ -729,7 +729,7 @@ it can produce meaningful results.
         WorkflowImageData,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        BatchOfDataSelector,
+        BatchSelector,
         IMAGE_KIND,
         FloatZeroToOne,
         WorkflowParameterSelector,
@@ -740,10 +740,10 @@ it can produce meaningful results.
     class ImagesSimilarityManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/images_similarity@v1"] 
         name: str
-        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_1: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_2: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
         similarity_threshold: Union[
@@ -878,7 +878,7 @@ on how to use it for your block.
         Batch,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        BatchOfDataSelector,
+        BatchSelector,
         IMAGE_KIND,
         FloatZeroToOne,
         WorkflowParameterSelector,
@@ -889,10 +889,10 @@ on how to use it for your block.
     class ImagesSimilarityManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/images_similarity@v1"] 
         name: str
-        image_1: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_1: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="First image to calculate similarity",
         )
-        image_2: BatchOfDataSelector(kind=[IMAGE_KIND]) = Field(
+        image_2: BatchSelector(kind=[IMAGE_KIND]) = Field(
             description="Second image to calculate similarity",
         )
         similarity_threshold: Union[
@@ -996,7 +996,7 @@ batch element (SIMD flow-control) or whole workflow execution (non-SIMD flow-con
     )
     from inference.core.workflows.execution_engine.entities.types import (
         StepSelector,
-        BatchOfDataSelector,
+        BatchSelector,
         IMAGE_KIND,
     )
     from inference.core.workflows.execution_engine.v1.entities import FlowControl
@@ -1011,7 +1011,7 @@ batch element (SIMD flow-control) or whole workflow execution (non-SIMD flow-con
     class BlockManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/random_continue@v1"]
         name: str
-        image: BatchOfDataSelector(kind=[IMAGE_KIND]) = ImageInputField
+        image: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
         probability: float
         next_steps: List[StepSelector] = Field(
             description="Reference to step which shall be executed if expression evaluates to true",
@@ -1163,7 +1163,7 @@ def run(self, predictions: List[dict]) -> BlockResult:
       OutputDefinition,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        BatchOfDataSelector,
+        BatchSelector,
         OBJECT_DETECTION_PREDICTION_KIND,
     )
     from inference.core.workflows.prototypes.block import (
@@ -1177,7 +1177,7 @@ def run(self, predictions: List[dict]) -> BlockResult:
     class BlockManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/fusion_of_predictions@v1"]
         name: str
-        predictions: List[BatchOfDataSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = Field(
+        predictions: List[BatchSelector(kind=[OBJECT_DETECTION_PREDICTION_KIND])] = Field(
             description="Selectors to step outputs",
             examples=[["$steps.model_1.predictions", "$steps.model_2.predictions"]],
         )
@@ -1248,7 +1248,7 @@ keys serve as names for those selectors.
       OutputDefinition,
     )
     from inference.core.workflows.execution_engine.entities.types import (
-        BatchOfDataSelector,
+        BatchSelector,
         WorkflowParameterSelector,
     )
     from inference.core.workflows.prototypes.block import (
@@ -1262,7 +1262,7 @@ keys serve as names for those selectors.
     class BlockManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/named_selectors_example@v1"]
         name: str
-        data: Dict[str, BatchOfDataSelector(), WorkflowParameterSelector()] = Field(
+        data: Dict[str, BatchSelector(), WorkflowParameterSelector()] = Field(
             description="Selectors to step outputs",
             examples=[{"a": $steps.model_1.predictions", "b": "$Inputs.data"}],
         )
@@ -1367,7 +1367,7 @@ the method signatures.
         from inference.core.workflows.execution_engine.entities.types import (
             IMAGE_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,
-            BatchOfDataSelector,
+            BatchSelector,
         )
         from inference.core.workflows.prototypes.block import (
             BlockResult,
@@ -1377,8 +1377,8 @@ the method signatures.
         
         class BlockManifest(WorkflowBlockManifest):
             type: Literal["my_block/dynamic_crop@v1"]
-            image: BatchOfDataSelector(kind=[IMAGE_KIND])
-            predictions: BatchOfDataSelector(
+            image: BatchSelector(kind=[IMAGE_KIND])
+            predictions: BatchSelector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND],
             )
         
@@ -1454,7 +1454,7 @@ the method signatures.
         from inference.core.workflows.execution_engine.entities.types import (
             IMAGE_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,
-            BatchOfDataSelector,
+            BatchSelector,
         )
         from inference.core.workflows.prototypes.block import (
             BlockResult,
@@ -1465,8 +1465,8 @@ the method signatures.
         
         class BlockManifest(WorkflowBlockManifest):
             type: Literal["my_plugin/tile_detections@v1"]
-            crops: BatchOfDataSelector(kind=[IMAGE_KIND])
-            crops_predictions: BatchOfDataSelector(
+            crops: BatchSelector(kind=[IMAGE_KIND])
+            crops_predictions: BatchSelector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND]
             )
         
@@ -1538,7 +1538,7 @@ the method signatures.
         )
         from inference.core.workflows.execution_engine.entities.types import (
             OBJECT_DETECTION_PREDICTION_KIND,
-            BatchOfDataSelector,
+            BatchSelector,
             IMAGE_KIND,
         )
         from inference.core.workflows.prototypes.block import (
@@ -1550,8 +1550,8 @@ the method signatures.
         
         class BlockManifest(WorkflowBlockManifest):
             type: Literal["my_plugin/stitch@v1"]
-            image: BatchOfDataSelector(kind=[IMAGE_KIND])
-            image_predictions: BatchOfDataSelector(
+            image: BatchSelector(kind=[IMAGE_KIND])
+            image_predictions: BatchSelector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND],
             )
         
@@ -1637,7 +1637,7 @@ the method signatures.
         from inference.core.workflows.execution_engine.entities.types import (
             IMAGE_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,
-            BatchOfDataSelector,
+            BatchSelector,
         )
         from inference.core.workflows.prototypes.block import (
             BlockResult,
@@ -1647,8 +1647,8 @@ the method signatures.
         
         class BlockManifest(WorkflowBlockManifest):
             type: Literal["my_block/dynamic_crop@v1"]
-            image: BatchOfDataSelector(kind=[IMAGE_KIND])
-            predictions: BatchOfDataSelector(
+            image: BatchSelector(kind=[IMAGE_KIND])
+            predictions: BatchSelector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND],
             )
 
@@ -1738,7 +1738,7 @@ the method signatures.
         from inference.core.workflows.execution_engine.entities.types import (
             IMAGE_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,
-            BatchOfDataSelector,
+            BatchSelector,
         )
         from inference.core.workflows.prototypes.block import (
             BlockResult,
@@ -1749,8 +1749,8 @@ the method signatures.
         
         class BlockManifest(WorkflowBlockManifest):
             type: Literal["my_plugin/tile_detections@v1"]
-            images_crops: BatchOfDataSelector(kind=[IMAGE_KIND])
-            crops_predictions: BatchOfDataSelector(
+            images_crops: BatchSelector(kind=[IMAGE_KIND])
+            crops_predictions: BatchSelector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND]
             )
 
@@ -1832,7 +1832,7 @@ the method signatures.
         )
         from inference.core.workflows.execution_engine.entities.types import (
             OBJECT_DETECTION_PREDICTION_KIND,
-            BatchOfDataSelector,
+            BatchSelector,
             IMAGE_KIND,
         )
         from inference.core.workflows.prototypes.block import (
@@ -1844,8 +1844,8 @@ the method signatures.
         
         class BlockManifest(WorkflowBlockManifest):
             type: Literal["my_plugin/stitch@v1"]
-            images: BatchOfDataSelector(kind=[IMAGE_KIND])
-            images_predictions: BatchOfDataSelector(
+            images: BatchSelector(kind=[IMAGE_KIND])
+            images_predictions: BatchSelector(
                 kind=[OBJECT_DETECTION_PREDICTION_KIND],
             )
 
@@ -1946,7 +1946,7 @@ that even if some elements are empty, the output lacks missing elements making i
         Batch,
         OutputDefinition,
     )
-    from inference.core.workflows.execution_engine.entities.types import BatchOfDataSelector
+    from inference.core.workflows.execution_engine.entities.types import BatchSelector
     from inference.core.workflows.prototypes.block import (
         BlockResult,
         WorkflowBlock,
@@ -1956,7 +1956,7 @@ that even if some elements are empty, the output lacks missing elements making i
 
     class BlockManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/first_non_empty_or_default@v1"]
-        data: List[BatchOfDataSelector()]
+        data: List[BatchSelector()]
         default: Any
     
         @classmethod
@@ -2029,7 +2029,7 @@ Let's see how to request init parameters while defining block.
         Batch,
         OutputDefinition,
     )
-    from inference.core.workflows.execution_engine.entities.types import BatchOfDataSelector
+    from inference.core.workflows.execution_engine.entities.types import BatchSelector
     from inference.core.workflows.prototypes.block import (
         BlockResult,
         WorkflowBlock,
@@ -2039,7 +2039,7 @@ Let's see how to request init parameters while defining block.
 
     class BlockManifest(WorkflowBlockManifest):
         type: Literal["my_plugin/example@v1"]
-        data: List[BatchOfDataSelector()]
+        data: List[BatchSelector()]
     
         @classmethod
         def describe_outputs(cls) -> List[OutputDefinition]:

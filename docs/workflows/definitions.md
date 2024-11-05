@@ -136,7 +136,7 @@ be more and more useful.
     {
       "inputs": [
         {
-          "type": "WorkflowDataBatch",
+          "type": "WorkflowBatchInput",
           "name": "image",
           "kind": ["image"]
         }
@@ -151,7 +151,7 @@ be more and more useful.
     {
       "inputs": [
         {
-          "type": "WorkflowDataBatch",
+          "type": "WorkflowBatchInput",
           "name": "image",
           "kind": ["image"],
           "dimensionality": 2

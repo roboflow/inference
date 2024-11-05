@@ -31,7 +31,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -98,7 +98,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="The image which was the base to generate VLM prediction",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    vlm_output: BatchOfDataSelector(kind=[LANGUAGE_MODEL_OUTPUT_KIND]) = Field(
+    vlm_output: BatchSelector(kind=[LANGUAGE_MODEL_OUTPUT_KIND]) = Field(
         title="VLM Output",
         description="The string with raw classification prediction to parse.",
         examples=[["$steps.lmm.output"]],
@@ -106,7 +106,7 @@ class BlockManifest(WorkflowBlockManifest):
     classes: Optional[
         Union[
             WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
-            BatchOfDataSelector(kind=[LIST_OF_VALUES_KIND]),
+            BatchSelector(kind=[LIST_OF_VALUES_KIND]),
             List[str],
         ]
     ] = Field(

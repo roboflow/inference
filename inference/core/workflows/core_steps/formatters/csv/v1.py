@@ -17,7 +17,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
@@ -140,7 +140,7 @@ class BlockManifest(WorkflowBlockManifest):
         Union[
             WorkflowImageSelector,
             WorkflowParameterSelector(),
-            BatchOfDataSelector(),
+            BatchSelector(),
             str,
             int,
             float,

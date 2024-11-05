@@ -22,7 +22,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     RGB_COLOR_KIND,
     STRING_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     StepOutputImageSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
@@ -66,7 +66,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    predictions: BatchOfDataSelector(
+    predictions: BatchSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -98,7 +98,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     background_color: Union[
         WorkflowParameterSelector(kind=[STRING_KIND]),
-        BatchOfDataSelector(kind=[RGB_COLOR_KIND]),
+        BatchSelector(kind=[RGB_COLOR_KIND]),
         str,
         Tuple[int, int, int],
     ] = Field(

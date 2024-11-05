@@ -54,8 +54,8 @@ any *kind***, contrary to versions prior `v1.3.0`, which could only take `image`
 as batch-oriented inputs (as a result of unfortunate and not-needed coupling of kind to internal data 
 format introduced **at the level of Execution Engine**). As a result of the change:
 
-    * **new input type was introduced:** `WorkflowDataBatch` should be used from now one to denote 
-    batch-oriented inputs (and clearly separate them from `WorkflowParameters`). `WorkflowDataBatch` 
+    * **new input type was introduced:** `WorkflowBatchInput` should be used from now one to denote 
+    batch-oriented inputs (and clearly separate them from `WorkflowParameters`). `WorkflowBatchInput` 
     let users define both *[kind](/workflows/kinds/)* of the data and it's 
     *[dimensionality](/workflows/workflow_execution/#steps-interactions-with-data)*.
     New input type is effectively a superset of all previous batch-oriented inputs: `WorkflowImage` and
@@ -65,11 +65,11 @@ format introduced **at the level of Execution Engine**). As a result of the chan
     properly. This may not be the case in the future, as in most cases batch-oriented data *kind* may
     be inferred by compiler (yet this feature is not implemented for now).
 
-    * **new selector type annotation was introduced** - `BatchOfDataSelector` which is supposed to 
+    * **new selector type annotation was introduced** - `BatchSelector` which is supposed to 
     replace `StepOutputSelector`, `WorkflowImageSelector`, `StepOutputImageSelector` and `WorkflowVideoMetadataSelector` 
     in block manifests, allowing batch-oriented data to be used as block input, regardless of whether it comes 
     from user inputs or outputs of other blocks. Mentioned old annotation types **should be assumed deprecated**, 
-    we advise to migrate into `BatchOfDataSelector`, but that is not hard requirement.
+    we advise to migrate into `BatchSelector`, but that is not hard requirement.
 
 * As a result of the changes, it is now possible to **split any arbitrary workflows into multiple ones executing 
 subsets of steps**, enabling building such tools as debuggers.
@@ -119,7 +119,7 @@ subsets of steps**, enabling building such tools as debuggers.
 
 ??? Hint "New type annotation for selectors"
 
-    Blocks manifest may  **optionally** be updated to use `BatchOfDataSelector` in the following way:
+    Blocks manifest may  **optionally** be updated to use `BatchSelector` in the following way:
     
     ```python
     from typing import Union
@@ -151,14 +151,14 @@ subsets of steps**, enabling building such tools as debuggers.
     from inference.core.workflows.execution_engine.entities.types import (
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         OBJECT_DETECTION_PREDICTION_KIND,
-        BatchOfDataSelector,
+        BatchSelector,
         IMAGE_KIND,
     )
     
     
     class BlockManifest(WorkflowBlockManifest):
-        reference_image: BatchOfDataSelector(kind=[IMAGE_KIND])
-        predictions: BatchOfDataSelector(
+        reference_image: BatchSelector(kind=[IMAGE_KIND])
+        predictions: BatchSelector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -170,7 +170,7 @@ subsets of steps**, enabling building such tools as debuggers.
 ??? Hint "New inputs in Workflows definitions"
 
     Anyone that used either `WorkflowImage` or `WorkflowVideoMetadata` inputs in their 
-    Workflows definition may **optionally** migrate into `WorkflowDataBatch`. The transition
+    Workflows definition may **optionally** migrate into `WorkflowBatchInput`. The transition
     is illustrated below:
     
     ```json
@@ -187,12 +187,12 @@ subsets of steps**, enabling building such tools as debuggers.
     {
       "inputs": [
         {
-          "type": "WorkflowDataBatch",
+          "type": "WorkflowBatchInput",
           "name": "image",
           "kind": ["image"]
         },
         {
-          "type": "WorkflowDataBatch",
+          "type": "WorkflowBatchInput",
           "name": "video_metadata",
           "kind": ["video_metadata"]
         }

@@ -438,14 +438,21 @@ def get_non_compound_parameter_value(
     guard_of_indices_wrapping: GuardForIndicesWrapping,
 ) -> Union[Any, Optional[List[DynamicBatchIndex]]]:
     if not parameter.is_batch_oriented():
-        input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
         if parameter.points_to_input():
+            input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
             parameter_name = get_last_chunk_of_selector(
                 selector=input_parameter.selector
             )
             return runtime_parameters[parameter_name], None
-        static_input: StaticStepInputDefinition = parameter  # type: ignore
-        return static_input.value, None
+        elif parameter.points_to_step_output():
+            input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
+            value = execution_cache.get_non_batch_output(
+                selector=input_parameter.selector
+            )
+            return value, None
+        else:
+            static_input: StaticStepInputDefinition = parameter  # type: ignore
+            return static_input.value, None
     dynamic_parameter: DynamicStepInputDefinition = parameter  # type: ignore
     parameter_dimensionality = dynamic_parameter.get_dimensionality()
     lineage_indices = dynamic_batches_manager.get_indices_for_data_lineage(

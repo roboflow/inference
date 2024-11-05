@@ -69,7 +69,7 @@ class WorkflowImage(WorkflowInput):
     type: Literal["WorkflowImage", "InferenceImage"]
     name: str
     kind: List[Union[str, Kind]] = Field(default=[IMAGE_KIND])
-    dimensionality: int = Field(default=1)
+    dimensionality: int = Field(default=1, ge=1, le=1)
 
     @classmethod
     def is_batch_oriented(cls) -> bool:
@@ -80,15 +80,15 @@ class WorkflowVideoMetadata(WorkflowInput):
     type: Literal["WorkflowVideoMetadata"]
     name: str
     kind: List[Union[str, Kind]] = Field(default=[VIDEO_METADATA_KIND])
-    dimensionality: int = Field(default=1)
+    dimensionality: int = Field(default=1, ge=1, le=1)
 
     @classmethod
     def is_batch_oriented(cls) -> bool:
         return True
 
 
-class WorkflowDataBatch(WorkflowInput):
-    type: Literal["WorkflowDataBatch"]
+class WorkflowBatchInput(WorkflowInput):
+    type: Literal["WorkflowBatchInput"]
     name: str
     kind: List[Union[str, Kind]] = Field(default_factory=lambda: [WILDCARD_KIND])
     dimensionality: int = Field(default=1)
@@ -105,11 +105,11 @@ class WorkflowParameter(WorkflowInput):
     default_value: Optional[Union[float, int, str, bool, list, set]] = Field(
         default=None
     )
-    dimensionality: int = Field(default=0)
+    dimensionality: int = Field(default=0, ge=0, le=0)
 
 
 InputType = Annotated[
-    Union[WorkflowImage, WorkflowVideoMetadata, WorkflowParameter, WorkflowDataBatch],
+    Union[WorkflowImage, WorkflowVideoMetadata, WorkflowParameter, WorkflowBatchInput],
     Field(discriminator="type"),
 ]
 

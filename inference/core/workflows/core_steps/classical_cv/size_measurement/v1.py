@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -55,7 +55,7 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
         }
     )
     type: Literal[f"roboflow_core/size_measurement@v1"]
-    reference_predictions: BatchOfDataSelector(
+    reference_predictions: BatchSelector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,
@@ -64,7 +64,7 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
         description="Predictions from the reference object model",
         examples=["$segmentation.reference_predictions"],
     )
-    object_predictions: BatchOfDataSelector(
+    object_predictions: BatchSelector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,

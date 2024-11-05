@@ -8,7 +8,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -62,7 +62,7 @@ class MixedInputWithoutBatchesBlockManifest(WorkflowBlockManifest):
     type: Literal["MixedInputWithoutBatchesBlock"]
     mixed_parameter: Union[
         WorkflowParameterSelector(),
-        BatchOfDataSelector(),
+        BatchSelector(),
         Any,
     ]
 
@@ -98,7 +98,7 @@ class MixedInputWithBatchesBlockManifest(WorkflowBlockManifest):
     type: Literal["MixedInputWithBatchesBlock"]
     mixed_parameter: Union[
         WorkflowParameterSelector(),
-        BatchOfDataSelector(),
+        BatchSelector(),
         Any,
     ]
 
@@ -138,7 +138,7 @@ class BatchInputBlockProcessingBatchesManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["BatchInputBlockProcessingBatches"]
-    batch_parameter: BatchOfDataSelector()
+    batch_parameter: BatchSelector()
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
@@ -174,7 +174,7 @@ class BatchInputBlockProcessingNotBatchesManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["BatchInputBlockNotProcessingBatches"]
-    batch_parameter: BatchOfDataSelector()
+    batch_parameter: BatchSelector()
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -239,7 +239,7 @@ class CompoundMixedInputBlockManifest(WorkflowBlockManifest):
     )
     type: Literal["CompoundMixedInputBlockManifestBlock"]
     compound_parameter: Dict[
-        str, Union[WorkflowParameterSelector(), BatchOfDataSelector(), Any]
+        str, Union[WorkflowParameterSelector(), BatchSelector(), Any]
     ]
 
     @classmethod
@@ -281,7 +281,7 @@ class CompoundStrictBatchBlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["CompoundStrictBatchBlock"]
-    compound_parameter: Dict[str, Union[BatchOfDataSelector()]]
+    compound_parameter: Dict[str, Union[BatchSelector()]]
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
@@ -320,7 +320,7 @@ class CompoundNonStrictBatchBlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["CompoundNonStrictBatchBlock"]
-    compound_parameter: Dict[str, Union[BatchOfDataSelector()]]
+    compound_parameter: Dict[str, Union[BatchSelector()]]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

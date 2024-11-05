@@ -20,7 +20,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -55,7 +55,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/roboflow_custom_metadata@v1", "RoboflowCustomMetadata"]
-    predictions: BatchOfDataSelector(
+    predictions: BatchSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -69,7 +69,7 @@ class BlockManifest(WorkflowBlockManifest):
     field_value: Union[
         str,
         WorkflowParameterSelector(kind=[STRING_KIND]),
-        BatchOfDataSelector(kind=[STRING_KIND]),
+        BatchSelector(kind=[STRING_KIND]),
     ] = Field(
         description="This is the name of the metadata field you are creating",
         examples=["toronto", "pass", "fail"],

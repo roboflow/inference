@@ -18,7 +18,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
-    BatchOfDataSelector,
+    BatchSelector,
     WorkflowImageSelector,
     WorkflowParameterSelector,
 )
@@ -194,9 +194,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/data_aggregator@v1"]
     data: Dict[
         str,
-        Union[
-            WorkflowImageSelector, WorkflowParameterSelector(), BatchOfDataSelector()
-        ],
+        Union[WorkflowImageSelector, WorkflowParameterSelector(), BatchSelector()],
     ] = Field(
         description="References data to be used to construct each and every column",
         examples=[

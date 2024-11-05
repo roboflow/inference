@@ -695,7 +695,12 @@ def denote_data_flow_for_step(
         else:
             actual_input_is_batch = {input_definition.is_batch_oriented()}
         batch_input_expected = input_property2batch_expected[property_name]
-        if batch_input_expected == {False} and True in actual_input_is_batch:
+        step_accepts_batch_input = step_node_data.step_manifest.accepts_batch_input()
+        if (
+            step_accepts_batch_input
+            and batch_input_expected == {False}
+            and True in actual_input_is_batch
+        ):
             raise ExecutionGraphStructureError(
                 public_message=f"Detected invalid reference plugged "
                 f"into property `{property_name}` of step `{node}` - the step "
@@ -705,7 +710,6 @@ def denote_data_flow_for_step(
                 f"step inputs are filled with outputs of batch-oriented steps or batch-oriented inputs.",
                 context="workflow_compilation | execution_graph_construction",
             )
-        step_accepts_batch_input = step_node_data.step_manifest.accepts_batch_input()
         if (
             step_accepts_batch_input
             and batch_input_expected == {True}
