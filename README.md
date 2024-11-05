@@ -113,7 +113,6 @@ A key component of Inference is Workflows, composable blocks of common functiona
 With Workflows, you can:
 * Detect, classify, and segment objects in images using state-of-the-art models.
 * Use Large Multimodal Models (LMMs) to make determinations at any stage in a workflow.
-* Add tracking to count, 
 * Seamlessly swap out models for a given task.
 * Chain models together.
 * Track, count, time, measure, and visualize objects.
