@@ -39,9 +39,7 @@ Inference turns any computer or edge device into a command center for your compu
 
 See [Example Workflows](https://roboflow.com/workflows/templates) for common use-cases like detecting small objects, active learning, reading license plates, blurring faces, background removal, and more.
 
-<video autoplay loop src="https://github.com/user-attachments/assets/13382c6d-cf3b-40f5-8ac7-489947099d7a">Workflows Example</video>
-
-[Workflows Example](https://github.com/user-attachments/assets/302b2d9e-b01b-4345-9d4e-7ad3367c3a3f)
+[Time In Zone Workflow Example](https://github.com/user-attachments/assets/743233d9-3460-442d-83f8-20e29e76b346)
 
 ## 🔥 quickstart
 
