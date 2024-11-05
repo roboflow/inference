@@ -22,7 +22,7 @@ from inference_sdk.http.utils.loaders import (
     load_static_inference_input,
     load_static_inference_input_async,
     load_stream_inference_input,
-    uri_is_http_link,
+    uri_is_http_link, load_nested_batches_of_inference_input,
 )
 
 
@@ -650,3 +650,63 @@ def test_load_stream_inference_input(
     get_video_frames_generator_mock.assert_called_once_with(
         source_path="/some/video.mp4"
     )
+
+
+@mock.patch.object(loaders, "load_static_inference_input")
+def test_load_nested_batches_of_inference_input_when_single_element_is_given(
+    load_static_inference_input_mock: MagicMock,
+) -> None:
+    # given
+    load_static_inference_input_mock.side_effect = [
+        ["image_1"]
+    ]
+
+    # when
+    result = load_nested_batches_of_inference_input(
+        inference_input="my_image",
+    )
+
+    # then
+    assert result == "image_1", "Expected direct result from load_static_inference_input()"
+
+
+@mock.patch.object(loaders, "load_static_inference_input")
+def test_load_nested_batches_of_inference_input_when_1d_batch_is_given(
+    load_static_inference_input_mock: MagicMock,
+) -> None:
+    # given
+    load_static_inference_input_mock.side_effect = [
+        ["image_1"],
+        ["image_2"],
+        ["image_3"]
+    ]
+
+    # when
+    result = load_nested_batches_of_inference_input(
+        inference_input=["1", "2", "3"],
+    )
+
+    # then
+    assert result == ["image_1", "image_2", "image_3"], "Expected direct result from load_static_inference_input()"
+
+
+@mock.patch.object(loaders, "load_static_inference_input")
+def test_load_nested_batches_of_inference_input_when_nested_batch_is_given(
+    load_static_inference_input_mock: MagicMock,
+) -> None:
+    # given
+    load_static_inference_input_mock.side_effect = [
+        ["image_1"],
+        ["image_2"],
+        ["image_3"],
+        ["image_4"],
+        ["image_5"],
+    ]
+
+    # when
+    result = load_nested_batches_of_inference_input(
+        inference_input=[["1", "2"], ["3"], [["4", "5"]]],
+    )
+
+    # then
+    assert result == [["image_1", "image_2"], ["image_3"], [["image_4", "image_5"]]]

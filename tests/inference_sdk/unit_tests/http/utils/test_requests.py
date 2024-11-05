@@ -5,7 +5,7 @@ from inference_sdk.http.utils.requests import (
     API_KEY_PATTERN,
     api_key_safe_raise_for_status,
     deduct_api_key,
-    inject_images_into_payload,
+    inject_images_into_payload, inject_nested_batches_of_images_into_payload,
 )
 
 
@@ -146,3 +146,49 @@ def test_inject_images_into_payload_when_payload_key_is_specified() -> None:
         "my": "payload",
         "prompt": {"type": "base64", "value": "image_payload_1"},
     }, "Payload is expected to be extended with the content of only single image under `prompt` key"
+
+
+def test_inject_nested_batches_of_images_into_payload_when_single_image_given() -> None:
+    # when
+    result = inject_nested_batches_of_images_into_payload(
+        payload={},
+        encoded_images=("img1", None),
+    )
+
+    # then
+    assert result == {"image": {"type": "base64", "value": "img1"}}
+
+
+def test_inject_nested_batches_of_images_into_payload_when_1d_batch_of_images_given() -> None:
+    # when
+    result = inject_nested_batches_of_images_into_payload(
+        payload={},
+        encoded_images=[("img1", None), ("img2", None)],
+    )
+
+    # then
+    assert result == {
+        "image": [
+            {"type": "base64", "value": "img1"},
+            {"type": "base64", "value": "img2"},
+        ]
+    }
+
+
+def test_inject_nested_batches_of_images_into_payload_when_nested_batch_of_images_given() -> None:
+    # when
+    result = inject_nested_batches_of_images_into_payload(
+        payload={},
+        encoded_images=[[("img1", None)], [("img2", None), ("img3", None)]],
+    )
+
+    # then
+    assert result == {
+        "image": [
+            [{"type": "base64", "value": "img1"}],
+            [
+                {"type": "base64", "value": "img2"},
+                {"type": "base64", "value": "img3"},
+            ],
+        ]
+    }
