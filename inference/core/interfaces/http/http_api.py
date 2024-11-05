@@ -2305,7 +2305,7 @@ class HttpInterface(BaseInterface):
                     active_learning_target_dataset=active_learning_target_dataset,
                     source=source,
                     source_info=source_info,
-                    countinference=countinference,
+                    usage_billable=countinference,
                     **args,
                 )
 
