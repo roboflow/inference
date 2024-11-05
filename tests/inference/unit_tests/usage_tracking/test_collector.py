@@ -486,9 +486,9 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id():
 def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
     dumped_usage_payloads = [
         {
-            "": {
+            "api2": {
                 "": {
-                    "api_key_hash": "",
+                    "api_key_hash": "api2",
                     "resource_id": "",
                     "timestamp_start": 1721032989934855000,
                     "is_gpu_available": False,

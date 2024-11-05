@@ -1,10 +1,11 @@
-FROM dustynv/l4t-ml:r36.2.0
+FROM roboflow/l4t-ml:r36.3.0
 
 ARG DEBIAN_FRONTEND=noninteractive
-ENV LANG=en_US.UTF-8 
+ENV LANG=en_US.UTF-8
 
-RUN ln -s /usr/bin/python3 /usr/bin/python && \
-    apt-get update -y && apt-get install -y \
+# Install dependencies
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
     lshw \
     git \
     gfortran \
@@ -13,66 +14,67 @@ RUN ln -s /usr/bin/python3 /usr/bin/python && \
     libsm6 \
     libxext6 \
     wget \
-    python3-shapely \
     gdal-bin \
-    libgdal-dev \
-    && rm -rf /var/lib/apt/lists/*
+    libgdal-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-COPY requirements/requirements.clip.txt \
-    requirements/requirements.http.txt \
-    requirements/requirements.doctr.txt \
-    requirements/requirements.groundingdino.txt \
-    requirements/requirements.sdk.http.txt \
-    requirements/requirements.yolo_world.txt \
-    requirements/_requirements.txt \
-    ./
+# Copy all requirements files
+COPY requirements/ ./requirements/
 
-RUN find . -type f -name "*requirements*.txt" -exec sed -i '/^opencv-python/d' {} \; && \
-    find . -type f -name "*requirements*.txt" -exec sed -i '/^onnxruntime/d' {} \;
+# Remove specific packages from requirements files
+RUN sed -i '/^opencv-python/d;/^onnxruntime/d;/^opencv-python-contrib/d' requirements/*.txt
 
-RUN python3 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
+# Upgrade pip and install Python packages
+RUN python3 -m pip install --upgrade pip && \
+    python3 -m pip install --upgrade \
+    -r requirements/_requirements.txt \
+    -r requirements/requirements.clip.txt \
+    -r requirements/requirements.http.txt \
+    -r requirements/requirements.doctr.txt \
+    -r requirements/requirements.groundingdino.txt \
+    -r requirements/requirements.sdk.http.txt \
+    -r requirements/requirements.yolo_world.txt \
+    -r requirements/requirements.jetson.txt
 
-RUN python3 -m pip install --upgrade pip  && python3 -m pip install \
-    git+https://github.com/pypdfium2-team/pypdfium2 \
-    -r _requirements.txt \
-    -r requirements.clip.txt \
-    -r requirements.http.txt \
-    -r requirements.doctr.txt \
-    -r requirements.groundingdino.txt \
-    -r requirements.sdk.http.txt \
-    -r requirements.yolo_world.txt \
-    jupyterlab \
-    --upgrade \
-    && rm -rf ~/.cache/pip
-
+# Build the application
 WORKDIR /build
 COPY . .
-RUN /bin/make create_wheels_for_gpu_notebook
-RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl
 
-WORKDIR /app/
-COPY inference inference
-COPY inference_sdk inference_sdk
-COPY docker/config/gpu_http.py gpu_http.py
+RUN rm -f dist/* && \
+    python3 .release/pypi/inference.core.setup.py bdist_wheel && \
+    python3 .release/pypi/inference.gpu.setup.py bdist_wheel && \
+    python3 .release/pypi/inference.sdk.setup.py bdist_wheel && \
+    python3 .release/pypi/inference.cli.setup.py bdist_wheel && \
+    python3 -m pip install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl
 
-ENV VERSION_CHECK_MODE=continuous
-ENV PROJECT=roboflow-platform
-ENV ORT_TENSORRT_FP16_ENABLE=1
-ENV ORT_TENSORRT_ENGINE_CACHE_ENABLE=1
-ENV CORE_MODEL_SAM_ENABLED=False
-ENV PROJECT=roboflow-platform
-ENV NUM_WORKERS=1
-ENV HOST=0.0.0.0
-ENV PORT=9001
-ENV OPENBLAS_CORETYPE=ARMV8 
-ENV LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1
-ENV WORKFLOWS_STEP_EXECUTION_MODE=local
-ENV WORKFLOWS_MAX_CONCURRENT_STEPS=2
-ENV API_LOGGING_ENABLED=True
-ENV CORE_MODEL_TROCR_ENABLED=false
-ENV RUNS_ON_JETSON=True
-ENV ENABLE_STREAM_API=True
-ENV ENABLE_WORKFLOWS_PROFILING=True
-ENV ENABLE_PROMETHEUS=True
+# Set up the application runtime
+WORKDIR /app
+COPY inference/ ./inference/
+COPY inference_sdk/ ./inference_sdk/
+COPY docker/config/gpu_http.py ./gpu_http.py
 
+# Set environment variables
+ENV VERSION_CHECK_MODE=continuous \
+    PROJECT=roboflow-platform \
+    ORT_TENSORRT_FP16_ENABLE=1 \
+    ORT_TENSORRT_ENGINE_CACHE_ENABLE=1 \
+    CORE_MODEL_SAM_ENABLED=False \
+    NUM_WORKERS=1 \
+    HOST=0.0.0.0 \
+    PORT=9001 \
+    OPENBLAS_CORETYPE=ARMV8 \
+    LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=2 \
+    API_LOGGING_ENABLED=True \
+    CORE_MODEL_TROCR_ENABLED=false \
+    RUNS_ON_JETSON=True \
+    ENABLE_STREAM_API=True \
+    ENABLE_WORKFLOWS_PROFILING=True \
+    ENABLE_PROMETHEUS=True
+
+# Expose the application port
+EXPOSE 9001
+
+# Set the entrypoint
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
