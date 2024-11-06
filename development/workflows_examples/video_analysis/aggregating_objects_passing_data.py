@@ -139,7 +139,7 @@ def main() -> None:
             "email": os.environ["EMAIL"],
             "email_password": os.environ["EMAIL_PASSWORD"],
         },
-        desired_source_fps=5,
+        max_fps=1,
     )
     control_thread = Thread(target=command_thread, args=(pipeline, watchdog))
     control_thread.start()

@@ -892,8 +892,8 @@ class VideoConsumer:
                 len(self._stream_consumption_pace_monitor.all_timestamps)
                 / self._stream_consumption_pace_monitor.all_timestamps.maxlen
             )
-            if fraction_of_pace_monitor_samples < 0.5:
-                actual_fps = self._desired_fps
+            if fraction_of_pace_monitor_samples < 0.9:
+                actual_fps = self._declared_source_fps
             elif hasattr(self._stream_consumption_pace_monitor, "fps"):
                 actual_fps = self._stream_consumption_pace_monitor.fps
             else:
