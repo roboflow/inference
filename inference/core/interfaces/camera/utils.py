@@ -410,6 +410,9 @@ def _establish_sources_reconnection_rules(
         if source_properties is None:
             result.append(False)
         else:
+            if source_properties.is_reconnectable is False:
+                result.append(False)
+                continue
             result.append(not source_properties.is_file and force_stream_reconnection)
     return result
 

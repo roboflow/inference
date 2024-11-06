@@ -95,7 +95,7 @@ For Jetson specific inference server images, check out the [Roboflow Inference](
 
 ## 📝 license
 
-The Roboflow Inference code is distributed under an [Apache 2.0 license](https://github.com/roboflow/inference/blob/master/LICENSE.md). The models supported by Roboflow Inference have their own licenses. View the licenses for supported models below.
+The Roboflow Inference code is distributed under an [Apache 2.0 license](https://github.com/roboflow/inference/blob/master/LICENSE.core). The models supported by Roboflow Inference have their own licenses. View the licenses for supported models below.
 
 | model                     |                                                                license                                                                |
 | :------------------------ | :-----------------------------------------------------------------------------------------------------------------------------------: |

@@ -1,6 +1,7 @@
 import os
 import uuid
 import warnings
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -263,7 +264,7 @@ NUM_WORKERS = int(os.getenv("NUM_WORKERS", 1))
 
 ONNXRUNTIME_EXECUTION_PROVIDERS = os.getenv(
     "ONNXRUNTIME_EXECUTION_PROVIDERS",
-    "[CUDAExecutionProvider,OpenVINOExecutionProvider,CPUExecutionProvider]",
+    "[CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider]",
 )
 
 # Port, default is 9001
@@ -431,6 +432,8 @@ ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
 
 RUNS_ON_JETSON = str2bool(os.getenv("RUNS_ON_JETSON", "False"))
 
+DOCKER_SOCKET_PATH: Optional[str] = os.getenv("DOCKER_SOCKET_PATH")
+
 ENABLE_WORKFLOWS_PROFILING = str2bool(os.getenv("ENABLE_WORKFLOWS_PROFILING", "False"))
 WORKFLOWS_PROFILER_BUFFER_SIZE = int(os.getenv("WORKFLOWS_PROFILER_BUFFER_SIZE", "64"))
 WORKFLOWS_DEFINITION_CACHE_EXPIRY = int(
@@ -439,3 +442,9 @@ WORKFLOWS_DEFINITION_CACHE_EXPIRY = int(
 USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS = str2bool(
     os.getenv("USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS", "True")
 )
+ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE = str2bool(
+    os.getenv("ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE", "True")
+)
+WORKFLOW_BLOCKS_WRITE_DIRECTORY = os.getenv("WORKFLOW_BLOCKS_WRITE_DIRECTORY")
+
+DEDICATED_DEPLOYMENT_ID = os.getenv("DEDICATED_DEPLOYMENT_ID")

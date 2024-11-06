@@ -2,13 +2,20 @@ name: Static code analysis
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
+  call_is_mergeable:
+    uses: ./.github/workflows/is_mergeable.yml
+    secrets: inherit
   build-dev-test:
-    runs-on: ubuntu-latest
+    needs: call_is_mergeable
+    if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
+    runs-on:
+      labels: depot-ubuntu-22.04-small
+      group: public-depot
     timeout-minutes: 5
     steps:
       - name: 🛎️ Checkout

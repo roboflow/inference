@@ -9,6 +9,9 @@ from inference.core.interfaces.camera.video_source import (
 )
 
 STATUS_KEY = "status"
+STATE_KEY = "state"
+SOURCES_METADATA_KEY = "sources_metadata"
+REPORT_KEY = "report"
 TYPE_KEY = "type"
 ERROR_TYPE_KEY = "error_type"
 REQUEST_ID_KEY = "request_id"
@@ -33,6 +36,7 @@ class ErrorType(str, Enum):
 
 class CommandType(str, Enum):
     INIT = "init"
+    WEBRTC = "webrtc"
     MUTE = "mute"
     RESUME = "resume"
     STATUS = "status"
@@ -78,7 +82,21 @@ class InitialisePipelinePayload(BaseModel):
     sink_configuration: MemorySinkConfiguration = MemorySinkConfiguration(
         type="MemorySinkConfiguration"
     )
+    consumption_timeout: Optional[float] = None
     api_key: Optional[str] = None
+
+
+class WebRTCOffer(BaseModel):
+    type: str
+    sdp: str
+
+
+class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
+    webrtc_offer: WebRTCOffer
+    stream_output: Optional[List[str]] = Field(default_factory=list)
+    data_output: Optional[List[str]] = Field(default_factory=list)
+    webrtc_peer_timeout: float = 1
+    webcam_fps: Optional[float] = None
 
 
 class ConsumeResultsPayload(BaseModel):

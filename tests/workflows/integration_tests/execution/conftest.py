@@ -1,4 +1,6 @@
 import os.path
+import tempfile
+from typing import Generator
 
 import cv2
 import numpy as np
@@ -31,6 +33,11 @@ def red_image() -> np.ndarray:
 @pytest.fixture(scope="function")
 def fruit_image() -> np.ndarray:
     return cv2.imread(os.path.join(ASSETS_DIR, "multi-fruit.jpg"))
+
+
+@pytest.fixture(scope="function")
+def multi_line_text_image() -> np.ndarray:
+    return cv2.imread(os.path.join(ASSETS_DIR, "multi_line_text.jpg"))
 
 
 @pytest.fixture(scope="function")
@@ -69,6 +76,12 @@ def left_scissors_right_scissors() -> np.ndarray:
     return cv2.imread(
         os.path.join(ROCK_PAPER_SCISSORS_ASSETS, "left_scissors_right_scissors.jpg")
     )
+
+
+@pytest.fixture(scope="function")
+def empty_directory() -> Generator[str, None, None]:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        yield tmp_dir
 
 
 def bool_env(val):

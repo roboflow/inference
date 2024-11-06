@@ -4,23 +4,29 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   id-token: write
 
 jobs:
+  call_is_mergeable:
+    uses: ./.github/workflows/is_mergeable.yml
+    secrets: inherit
   build:
+    needs: call_is_mergeable
+    if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
-      group: group8core
+      labels: depot-ubuntu-22.04-8
+      group: public-depot
     timeout-minutes: 35
     strategy:
       matrix:
         python-version: ["3.8", "3.9", "3.10", "3.11"]
     steps:
       - name: 🛎️ Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: 🐍 Set up Python 3.9 to create wheels
         uses: actions/setup-python@v2
         with:
@@ -34,6 +40,13 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python-version }}
+      - name: 📦 Cache Python packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/**') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - name: 📦 Installing `inference` package...
         run: |
           wheel_name=`ls ./dist/inference-*-py3-none-any.whl | head -n 1`

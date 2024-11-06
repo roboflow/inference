@@ -1,15 +1,32 @@
 from typing import List, Type
 
 from inference.core.cache import cache
-from inference.core.env import API_KEY, WORKFLOWS_STEP_EXECUTION_MODE
+from inference.core.env import (
+    ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
+    API_KEY,
+    WORKFLOW_BLOCKS_WRITE_DIRECTORY,
+    WORKFLOWS_STEP_EXECUTION_MODE,
+)
+from inference.core.workflows.core_steps.analytics.data_aggregator.v1 import (
+    DataAggregatorBlockV1,
+)
 from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
     LineCounterBlockV1,
+)
+from inference.core.workflows.core_steps.analytics.line_counter.v2 import (
+    LineCounterBlockV2,
 )
 from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
     PathDeviationAnalyticsBlockV1,
 )
+from inference.core.workflows.core_steps.analytics.path_deviation.v2 import (
+    PathDeviationAnalyticsBlockV2,
+)
 from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
     TimeInZoneBlockV1,
+)
+from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
+    TimeInZoneBlockV2,
 )
 from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
@@ -20,6 +37,9 @@ from inference.core.workflows.core_steps.classical_cv.contours.v1 import (
 )
 from inference.core.workflows.core_steps.classical_cv.convert_grayscale.v1 import (
     ConvertGrayscaleBlockV1,
+)
+from inference.core.workflows.core_steps.classical_cv.distance_measurement.v1 import (
+    DistanceMeasurementBlockV1,
 )
 from inference.core.workflows.core_steps.classical_cv.dominant_color.v1 import (
     DominantColorBlockV1,
@@ -53,6 +73,10 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
+from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
+    RateLimiterBlockV1,
+)
+from inference.core.workflows.core_steps.formatters.csv.v1 import CSVFormatterBlockV1
 from inference.core.workflows.core_steps.formatters.expression.v1 import (
     ExpressionBlockV1,
 )
@@ -145,6 +169,10 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
+    EmailNotificationBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -154,6 +182,7 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
     RoboflowDatasetUploadBlockV2,
 )
+from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
@@ -162,6 +191,12 @@ from inference.core.workflows.core_steps.transformations.bounding_rect.v1 import
 )
 from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
     ByteTrackerBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.byte_tracker.v2 import (
+    ByteTrackerBlockV2,
+)
+from inference.core.workflows.core_steps.transformations.byte_tracker.v3 import (
+    ByteTrackerBlockV3,
 )
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
@@ -187,8 +222,14 @@ from inference.core.workflows.core_steps.transformations.perspective_correction.
 from inference.core.workflows.core_steps.transformations.relative_static_crop.v1 import (
     RelativeStaticCropBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.stabilize_detections.v1 import (
+    StabilizeTrackedDetectionsBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.stitch_images.v1 import (
     StitchImagesBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.stitch_ocr_detections.v1 import (
+    StitchOCRDetectionsBlockV1,
 )
 
 # Visualizers
@@ -222,6 +263,9 @@ from inference.core.workflows.core_steps.visualizations.ellipse.v1 import (
 from inference.core.workflows.core_steps.visualizations.halo.v1 import (
     HaloVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.keypoint.v1 import (
+    KeypointVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.label.v1 import (
     LabelVisualizationBlockV1,
 )
@@ -230,6 +274,9 @@ from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.mask.v1 import (
     MaskVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.model_comparison.v1 import (
+    ModelComparisonVisualizationBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.pixelate.v1 import (
     PixelateVisualizationBlockV1,
@@ -240,12 +287,19 @@ from inference.core.workflows.core_steps.visualizations.polygon.v1 import (
 from inference.core.workflows.core_steps.visualizations.polygon_zone.v1 import (
     PolygonZoneVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.reference_path.v1 import (
+    ReferencePathVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.trace.v1 import (
+    TraceVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
+    BYTES_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     CONTOURS_KIND,
     DETECTION_KIND,
@@ -286,30 +340,13 @@ REGISTERED_INITIALIZERS = {
     "step_execution_mode": StepExecutionMode(WORKFLOWS_STEP_EXECUTION_MODE),
     "background_tasks": None,
     "thread_pool_executor": None,
+    "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
+    "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
 }
 
 
 def load_blocks() -> List[Type[WorkflowBlock]]:
     return [
-        TimeInZoneBlockV1,
-        VelocityBlockV1,
-        BoundingRectBlockV1,
-        SegmentAnything2BlockV1,
-        DetectionsConsensusBlockV1,
-        ClipComparisonBlockV1,
-        LMMBlockV1,
-        LMMForClassificationBlockV1,
-        OpenAIBlockV1,
-        CogVLMBlockV1,
-        OCRModelBlockV1,
-        YoloWorldModelBlockV1,
-        RoboflowInstanceSegmentationModelBlockV1,
-        RoboflowKeypointDetectionModelBlockV1,
-        RoboflowClassificationModelBlockV1,
-        RoboflowMultiLabelClassificationModelBlockV1,
-        RoboflowObjectDetectionModelBlockV1,
-        BarcodeDetectorBlockV1,
-        QRCodeDetectorBlockV1,
         AbsoluteStaticCropBlockV1,
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
@@ -319,6 +356,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DetectionsTransformationBlockV1,
         RoboflowDatasetUploadBlockV1,
         ContinueIfBlockV1,
+        RateLimiterBlockV1,
         PerspectiveCorrectionBlockV1,
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
@@ -327,52 +365,88 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PropertyDefinitionBlockV1,
         DimensionCollapseBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
+        AntropicClaudeBlockV1,
         BackgroundColorVisualizationBlockV1,
+        BarcodeDetectorBlockV1,
         BlurVisualizationBlockV1,
         BoundingBoxVisualizationBlockV1,
+        BoundingRectBlockV1,
+        ByteTrackerBlockV2,
+        CameraFocusBlockV1,
         CircleVisualizationBlockV1,
+        ClipComparisonBlockV1,
+        ClipComparisonBlockV2,
+        CogVLMBlockV1,
         ColorVisualizationBlockV1,
+        ConvertGrayscaleBlockV1,
         CornerVisualizationBlockV1,
         CropVisualizationBlockV1,
+        DetectionsConsensusBlockV1,
+        DetectionsStitchBlockV1,
+        DistanceMeasurementBlockV1,
+        DominantColorBlockV1,
         DotVisualizationBlockV1,
         EllipseVisualizationBlockV1,
-        HaloVisualizationBlockV1,
-        LabelVisualizationBlockV1,
-        MaskVisualizationBlockV1,
-        PixelateVisualizationBlockV1,
-        PolygonVisualizationBlockV1,
-        LineCounterZoneVisualizationBlockV1,
-        TriangleVisualizationBlockV1,
-        RoboflowCustomMetadataBlockV1,
-        DetectionsStitchBlockV1,
-        ImageSlicerBlockV1,
-        DominantColorBlockV1,
-        PixelationCountBlockV1,
-        SIFTComparisonBlockV1,
-        SIFTComparisonBlockV2,
-        SIFTBlockV1,
-        TemplateMatchingBlockV1,
-        ImageBlurBlockV1,
-        ConvertGrayscaleBlockV1,
-        ImageThresholdBlockV1,
-        ImageContoursDetectionBlockV1,
-        ClipComparisonBlockV2,
-        CameraFocusBlockV1,
-        RoboflowDatasetUploadBlockV2,
-        StitchImagesBlockV1,
-        OpenAIBlockV2,
-        JSONParserBlockV1,
-        VLMAsClassifierBlockV1,
+        Florence2BlockV1,
         GoogleGeminiBlockV1,
         GoogleVisionOCRBlockV1,
-        VLMAsDetectorBlockV1,
-        AntropicClaudeBlockV1,
-        LineCounterBlockV1,
-        PolygonZoneVisualizationBlockV1,
-        Florence2BlockV1,
-        StabilityAIInpaintingBlockV1,
+        HaloVisualizationBlockV1,
+        ImageBlurBlockV1,
+        ImageContoursDetectionBlockV1,
         ImagePreprocessingBlockV1,
+        ImageSlicerBlockV1,
+        ImageThresholdBlockV1,
+        JSONParserBlockV1,
+        LMMBlockV1,
+        LMMForClassificationBlockV1,
+        LabelVisualizationBlockV1,
+        LineCounterBlockV1,
+        LineCounterBlockV2,
+        LineCounterZoneVisualizationBlockV1,
+        MaskVisualizationBlockV1,
+        ModelComparisonVisualizationBlockV1,
+        OCRModelBlockV1,
+        OpenAIBlockV1,
+        OpenAIBlockV2,
         PathDeviationAnalyticsBlockV1,
+        PathDeviationAnalyticsBlockV2,
+        PixelateVisualizationBlockV1,
+        PixelationCountBlockV1,
+        PolygonVisualizationBlockV1,
+        PolygonZoneVisualizationBlockV1,
+        QRCodeDetectorBlockV1,
+        RoboflowClassificationModelBlockV1,
+        RoboflowCustomMetadataBlockV1,
+        RoboflowDatasetUploadBlockV2,
+        RoboflowInstanceSegmentationModelBlockV1,
+        RoboflowKeypointDetectionModelBlockV1,
+        RoboflowMultiLabelClassificationModelBlockV1,
+        RoboflowObjectDetectionModelBlockV1,
+        SIFTBlockV1,
+        SIFTComparisonBlockV1,
+        SIFTComparisonBlockV2,
+        SegmentAnything2BlockV1,
+        StabilityAIInpaintingBlockV1,
+        StabilizeTrackedDetectionsBlockV1,
+        StitchImagesBlockV1,
+        StitchOCRDetectionsBlockV1,
+        TemplateMatchingBlockV1,
+        TimeInZoneBlockV1,
+        TimeInZoneBlockV2,
+        TriangleVisualizationBlockV1,
+        VLMAsClassifierBlockV1,
+        VLMAsDetectorBlockV1,
+        YoloWorldModelBlockV1,
+        KeypointVisualizationBlockV1,
+        DataAggregatorBlockV1,
+        CSVFormatterBlockV1,
+        EmailNotificationBlockV1,
+        LocalFileSinkBlockV1,
+        TraceVisualizationBlockV1,
+        ReferencePathVisualizationBlockV1,
+        ByteTrackerBlockV3,
+        WebhookSinkBlockV1,
+        VelocityBlockV1,
     ]
 
 
@@ -410,4 +484,5 @@ def load_kinds() -> List[Kind]:
         PREDICTION_TYPE_KIND,
         PARENT_ID_KIND,
         IMAGE_METADATA_KIND,
+        BYTES_KIND,
     ]
