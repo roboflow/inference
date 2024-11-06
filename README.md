@@ -83,6 +83,7 @@ Workflows allow you to extend simple model predictions to build computer vision 
 <a href="https://youtu.be/VCbcC5OEGRU" title="Live Video Analytics | Build a Traffic Monitoring Application with Workflows"><strong>Live Video Analytics | Build a Traffic Monitoring Application with Workflows</strong></a>
 <div><strong>Created: 22 Oct 2024</strong></div>
 <br/>Learn how to build and deploy Workflows for common use-cases like detecting vehicles, filtering detections, calculating dwell time on a live video stream.</p>
+<br /><br />
 
 ## 📟 connecting via api
   
