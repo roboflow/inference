@@ -234,7 +234,7 @@ class UsageCollector:
     def system_info(
         ip_address: Optional[str] = None,
         hostname: Optional[str] = None,
-        dedicated_deployment_id: Optional[str] = None
+        dedicated_deployment_id: Optional[str] = None,
     ) -> SystemDetails:
         if not dedicated_deployment_id:
             dedicated_deployment_id = DEDICATED_DEPLOYMENT_ID
