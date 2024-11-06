@@ -21,6 +21,7 @@ class SequenceAggregationMode(Enum):
 class ClassificationProperty(Enum):
     TOP_CLASS = "top_class"
     TOP_CLASS_CONFIDENCE = "top_class_confidence"
+    TOP_CLASS_CONFIDENCE_SINGLE = "top_class_confidence_single"
     ALL_CLASSES = "all_classes"
     ALL_CONFIDENCES = "all_confidences"
 
