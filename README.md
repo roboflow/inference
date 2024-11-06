@@ -16,10 +16,10 @@
 
 [![version](https://badge.fury.io/py/inference.svg)](https://badge.fury.io/py/inference)
 [![downloads](https://img.shields.io/pypi/dm/inference)](https://pypistats.org/packages/inference)
-![docker pulls](https://img.shields.io/docker/pulls/roboflow/roboflow-inference-server-cpu)
+[![docker pulls](https://img.shields.io/docker/pulls/roboflow/roboflow-inference-server-cpu)](https://hub.docker.com/u/roboflow)
 [![license](https://img.shields.io/pypi/l/inference)](https://github.com/roboflow/inference/blob/main/LICENSE.core)
-[![huggingface](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/Roboflow/workflows)
 [![discord](https://img.shields.io/discord/1159501506232451173)](https://discord.gg/GbfgXGJ8Bk)
+<!-- [![huggingface](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/Roboflow/workflows) -->
 
 </div>
 
