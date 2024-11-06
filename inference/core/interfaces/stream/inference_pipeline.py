@@ -107,6 +107,7 @@ class InferencePipeline:
         active_learning_target_dataset: Optional[str] = None,
         batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
+        desired_source_fps: Optional[Union[float, int]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from Roboflow models against video stream.
@@ -156,7 +157,10 @@ class InferencePipeline:
             max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
                 dictate max FPS of processing. It can be useful if we wanted to run concurrent inference pipelines
                 on single machine making tradeoff between number of frames and number of streams handled. Disabled
-                by default.
+                by default. `max_fps` controls the processing pace from the perspective of consumer, ensuring
+                that no more than certain amount of frames will be delivered from all video sources, if you
+                want to skip frames for video source - use `desired_source_fps` which will modulate
+                the video FPS to be as you specified.
             watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
                 inference pipeline - if not given null implementation (doing nothing) will be used.
             status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
@@ -214,6 +218,8 @@ class InferencePipeline:
                 `video_frame: List[Optional[VideoFrame]]`. It is also possible to process multiple videos using
                 old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
                 prediction element.
+            desired_source_fps (Optional[Union[float, int]]): Specifies the desired frame rate of sources. Use this
+                setting if you want to reduce the frame rate of each source up to the maximum value.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -290,6 +296,7 @@ class InferencePipeline:
             video_source_properties=video_source_properties,
             batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
+            desired_source_fps=desired_source_fps,
         )
 
     @classmethod
@@ -312,6 +319,7 @@ class InferencePipeline:
         video_source_properties: Optional[Dict[str, float]] = None,
         batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
+        desired_source_fps: Optional[Union[float, int]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from YoloWorld against video stream.
@@ -332,7 +340,10 @@ class InferencePipeline:
             max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
                 dictate max FPS of processing. It can be useful if we wanted to run concurrent inference pipelines
                 on single machine making tradeoff between number of frames and number of streams handled. Disabled
-                by default.
+                by default. `max_fps` controls the processing pace from the perspective of consumer, ensuring
+                that no more than certain amount of frames will be delivered from all video sources, if you
+                want to skip frames for video source - use `desired_source_fps` which will modulate
+                the video FPS to be as you specified.
             watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
                 inference pipeline - if not given null implementation (doing nothing) will be used.
             status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
@@ -378,6 +389,9 @@ class InferencePipeline:
                 `video_frame: List[Optional[VideoFrame]]`. It is also possible to process multiple videos using
                 old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
                 prediction element.
+            desired_source_fps (Optional[Union[float, int]]): Specifies the desired frame rate of sources. Use this
+                setting if you want to reduce the frame rate of each source up to the maximum value.
+
 
 
         Other ENV variables involved in low-level configuration:
@@ -426,6 +440,7 @@ class InferencePipeline:
             video_source_properties=video_source_properties,
             batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
+            desired_source_fps=desired_source_fps,
         )
 
     @classmethod
@@ -456,6 +471,7 @@ class InferencePipeline:
         batch_collection_timeout: Optional[float] = None,
         profiling_directory: str = "./inference_profiling",
         use_workflow_definition_cache: bool = True,
+        desired_source_fps: Optional[Union[float, int]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -485,7 +501,10 @@ class InferencePipeline:
             max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
                 dictate max FPS of processing. It can be useful if we wanted to run concurrent inference pipelines
                 on single machine making tradeoff between number of frames and number of streams handled. Disabled
-                by default.
+                by default. `max_fps` controls the processing pace from the perspective of consumer, ensuring
+                that no more than certain amount of frames will be delivered from all video sources, if you
+                want to skip frames for video source - use `desired_source_fps` which will modulate
+                the video FPS to be as you specified.
             watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
                 inference pipeline - if not given null implementation (doing nothing) will be used.
             status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
@@ -525,6 +544,9 @@ class InferencePipeline:
             use_workflow_definition_cache (bool): Controls usage of cache for workflow definitions. Set this to False
                 when you frequently modify definition saved in Roboflow app and want to fetch the
                 newest version for the request. Only applies for Workflows definitions saved on Roboflow platform.
+            desired_source_fps (Optional[Union[float, int]]): Specifies the desired frame rate of sources. Use this
+                setting if you want to reduce the frame rate of each source up to the maximum value.
+
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
         * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
@@ -639,6 +661,7 @@ class InferencePipeline:
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
             batch_collection_timeout=batch_collection_timeout,
+            desired_source_fps=desired_source_fps,
         )
 
     @classmethod
@@ -657,6 +680,7 @@ class InferencePipeline:
         video_source_properties: Optional[Dict[str, float]] = None,
         batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
+        desired_source_fps: Optional[Union[float, int]] = None,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -682,7 +706,10 @@ class InferencePipeline:
             max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
                 dictate max FPS of processing. It can be useful if we wanted to run concurrent inference pipelines
                 on single machine making tradeoff between number of frames and number of streams handled. Disabled
-                by default.
+                by default. `max_fps` controls the processing pace from the perspective of consumer, ensuring
+                that no more than certain amount of frames will be delivered from all video sources, if you
+                want to skip frames for video source - use `desired_source_fps` which will modulate
+                the video FPS to be as you specified.
             watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
                 inference pipeline - if not given null implementation (doing nothing) will be used.
             status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
@@ -718,6 +745,8 @@ class InferencePipeline:
                 `video_frame: List[Optional[VideoFrame]]`. It is also possible to process multiple videos using
                 old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
                 prediction element.
+            desired_source_fps (Optional[Union[float, int]]): Specifies the desired frame rate of sources. Use this
+                setting if you want to reduce the frame rate of each source up to the maximum value.
 
 
         Other ENV variables involved in low-level configuration:
@@ -741,6 +770,7 @@ class InferencePipeline:
             status_update_handlers=status_update_handlers,
             source_buffer_filling_strategy=source_buffer_filling_strategy,
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
+            desired_source_fps=desired_source_fps,
         )
         watchdog.register_video_sources(video_sources=video_sources)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
