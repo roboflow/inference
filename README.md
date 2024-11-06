@@ -77,13 +77,13 @@ With Workflows, you can:
 Workflows allow you to extend simple model predictions to build computer vision micro-services that fit into a larger application or fully self-contained visual agents that run on a video stream.
 
 [Learn more](https://roboflow.com/workflows), read [the Workflows docs](https://inference.roboflow.com/workflows/about/), or [start building](https://app.roboflow.com/workflows).
-
+<br /><br />
 <p align="left">
 <a href="https://youtu.be/VCbcC5OEGRU" title="Live Video Analytics | Build a Traffic Monitoring Application with Workflows"><img src="https://img.youtube.com/vi/VCbcC5OEGRU/0.jpg" alt="Workflows Tutorial" width="300px" align="left" /></a>
 <a href="https://youtu.be/VCbcC5OEGRU" title="Live Video Analytics | Build a Traffic Monitoring Application with Workflows"><strong>Live Video Analytics | Build a Traffic Monitoring Application with Workflows</strong></a>
 <div><strong>Created: 22 Oct 2024</strong></div>
 <br/>Learn how to build and deploy Workflows for common use-cases like detecting vehicles, filtering detections, calculating dwell time on a live video stream.</p>
-<br /><br />
+<br />
 
 ## 📟 connecting via api
   
