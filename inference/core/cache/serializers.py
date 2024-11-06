@@ -5,11 +5,11 @@ from fastapi.encoders import jsonable_encoder
 from inference.core.devices.utils import GLOBAL_INFERENCE_SERVER_ID
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import (
-    InferenceResponse,
     ClassificationInferenceResponse,
-    MultiLabelClassificationInferenceResponse,
+    InferenceResponse,
     InstanceSegmentationInferenceResponse,
     KeypointsDetectionInferenceResponse,
+    MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
 )
 from inference.core.env import TINY_CACHE
