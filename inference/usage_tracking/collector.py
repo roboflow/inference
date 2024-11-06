@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from typing_extensions import ParamSpec
 
-from inference.core.env import API_KEY, LAMBDA, REDIS_HOST
+from inference.core.env import API_KEY, DEDICATED_DEPLOYMENT_ID, LAMBDA, REDIS_HOST
 from inference.core.logger import logger
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
@@ -136,6 +136,7 @@ class UsageCollector:
                     "timestamp_start": None,
                     "timestamp_stop": None,
                     "exec_session_id": exec_session_id,
+                    "hostname": "",
                     "ip_address_hash": "",
                     "processed_frames": 0,
                     "fps": 0,
@@ -232,13 +233,26 @@ class UsageCollector:
     @staticmethod
     def system_info(
         ip_address: Optional[str] = None,
+        hostname: Optional[str] = None,
+        dedicated_deployment_id: Optional[str] = None
     ) -> SystemDetails:
+        if not dedicated_deployment_id:
+            dedicated_deployment_id = DEDICATED_DEPLOYMENT_ID
+        if not hostname:
+            try:
+                hostname = socket.gethostname()
+            except Exception as exc:
+                logger.warning("Could not obtain hostname, %s", exc)
+                hostname = ""
+        if dedicated_deployment_id:
+            hostname = f"{dedicated_deployment_id}:{hostname}"
         if ip_address:
             ip_address_hash_hex = sha256_hash(ip_address)
         else:
             try:
                 ip_address: str = socket.gethostbyname(socket.gethostname())
-            except:
+            except Exception as exc:
+                logger.warning("Could not obtain IP address, %s", exc)
                 s = None
                 try:
                     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -253,6 +267,7 @@ class UsageCollector:
             ip_address_hash_hex = sha256_hash(ip_address)
 
         return {
+            "hostname": hostname,
             "ip_address_hash": ip_address_hash_hex,
             "is_gpu_available": False,  # TODO
         }
@@ -311,6 +326,7 @@ class UsageCollector:
         with self._system_info_lock:
             ip_address_hash = self._system_info["ip_address_hash"]
             is_gpu_available = self._system_info["is_gpu_available"]
+            hostname = self._system_info["hostname"]
         with UsageCollector._lock:
             source_usage = self._usage[api_key_hash][f"{category}:{resource_id}"]
             if not source_usage["timestamp_start"]:
@@ -325,6 +341,7 @@ class UsageCollector:
             source_usage["resource_id"] = resource_id
             source_usage["resource_details"] = json.dumps(resource_details)
             source_usage["api_key_hash"] = api_key_hash
+            source_usage["hostname"] = hostname
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
             logger.debug("Updated usage: %s", source_usage)
