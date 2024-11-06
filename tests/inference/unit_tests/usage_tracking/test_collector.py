@@ -33,6 +33,7 @@ def test_create_empty_usage_dict():
                     "timestamp_start": None,
                     "timestamp_stop": None,
                     "exec_session_id": "exec_session_id",
+                    "hostname": "",
                     "ip_address_hash": "",
                     "processed_frames": 0,
                     "fps": 0,
@@ -806,12 +807,27 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
     ]
 
 
-def test_system_info():
+def test_system_info_with_dedicated_deployment_id():
     # given
-    system_info = UsageCollector.system_info(ip_address="w.x.y.z")
+    system_info = UsageCollector.system_info(ip_address="w.x.y.z", hostname="hostname01", dedicated_deployment_id="deployment01")
 
     # then
     expected_system_info = {
+        "hostname": f"deployment01:hostname01",
+        "ip_address_hash": hashlib.sha256("w.x.y.z".encode()).hexdigest()[:5],
+        "is_gpu_available": False,
+    }
+    for k, v in expected_system_info.items():
+        assert system_info[k] == v
+
+
+def test_system_info_with_no_dedicated_deployment_id():
+    # given
+    system_info = UsageCollector.system_info(ip_address="w.x.y.z", hostname="hostname01")
+
+    # then
+    expected_system_info = {
+        "hostname": f"hostname01",
         "ip_address_hash": hashlib.sha256("w.x.y.z".encode()).hexdigest()[:5],
         "is_gpu_available": False,
     }
