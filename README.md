@@ -65,7 +65,6 @@ A key component of Inference is Workflows, composable blocks of common functiona
 
 ![License Plate OCR Workflow Visualization](https://github.com/user-attachments/assets/178046a2-011e-489d-bfc2-41dcfefe44a4)
 
-
 With Workflows, you can:
 * Detect, classify, and segment objects in images using state-of-the-art models.
 * Use Large Multimodal Models (LMMs) to make determinations at any stage in a workflow.
