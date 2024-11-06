@@ -27,8 +27,8 @@
 
 Inference turns any computer or edge device into a command center for your computer vision projects.
 
-* 🛠️ Build & deploy your own fine-tuned models
-* 🧠 Access the latest and greatest foundation models
+* 🛠️ Deploy your own fine-tuned models
+* 🧠 Access the latest and greatest foundation models (like [Florence-2](https://blog.roboflow.com/florence-2/), [CLIP](https://blog.roboflow.com/openai-clip/), and [SAM2](https://blog.roboflow.com/what-is-segment-anything-2/))
 * 🤝 Use Workflows to track, count, time, measure, and visualize
 * 👁️ Combine ML with traditional CV methods (like OCR, Barcode Reading, QR, and template matching)
 * 📈 Monitor, record, and analyze predictions
@@ -58,6 +58,27 @@ In development mode, a Jupyter notebook server with a quickstart guide runs on [
 If you linked [an API key](https://app.roboflow.com/settings/api) during setup, your device will now show up in your [Roboflow](https://app.roboflow.com) account and you can [start building & deploying Workflows in the UI](https://app.roboflow.com/workflows). Otherwise, interact with the server via its API.
 
 Now you're ready to connect to your camera streams and [start building](https://inference.roboflow.com/workflows/create_and_run/).
+
+## 🛠️ build with Workflows
+
+A key component of Inference is Workflows, composable blocks of common functionality that give models a common interface to make chaining and experimentation easy.
+
+![License Plate OCR Workflow Visualization](https://github.com/user-attachments/assets/178046a2-011e-489d-bfc2-41dcfefe44a4)
+
+
+With Workflows, you can:
+* Detect, classify, and segment objects in images using state-of-the-art models.
+* Use Large Multimodal Models (LMMs) to make determinations at any stage in a workflow.
+* Seamlessly swap out models for a given task.
+* Chain models together.
+* Track, count, time, measure, and visualize objects.
+* Add business logic and extend functionality to work with your external systems.
+
+Workflows allow you to extend simple model predictions to build computer vision micro-services that fit into a larger application or fully self-contained visual agents that run on a video stream.
+
+[Learn more](https://roboflow.com/workflows), read [the Workflows docs](https://inference.roboflow.com/workflows/about/), or [start building](https://app.roboflow.com/workflows).
+
+[![Workflows Video Tutorial](https://img.youtube.com/vi/VCbcC5OEGRU/0.jpg)](https://www.youtube.com/watch?v=VCbcC5OEGRU)
 
 ## 📟 connecting via api
   
@@ -103,25 +124,6 @@ pipeline.join()
 
 *Coming Soon:* The server can also programmatically start and connect to a video stream (either by polling for results or streaming them over WebRTC) via the API. [Get early access](https://app.roboflow.com/request/videoSdk).
 
-## 🛠️ build with Workflows
-
-A key component of Inference is Workflows, composable blocks of common functionality that give models a common interface to make chaining and experimentation easy.
-
-![License Plate OCR Workflow Visualization](https://github.com/user-attachments/assets/178046a2-011e-489d-bfc2-41dcfefe44a4)
-
-
-With Workflows, you can:
-* Detect, classify, and segment objects in images using state-of-the-art models.
-* Use Large Multimodal Models (LMMs) to make determinations at any stage in a workflow.
-* Seamlessly swap out models for a given task.
-* Chain models together.
-* Track, count, time, measure, and visualize objects.
-* Add business logic and extend functionality to work with your external systems.
-
-Workflows allow you to extend simple model predictions to build computer vision micro-services that fit into a larger application or fully self-contained visual agents that run on a video stream.
-
-[Learn more](https://roboflow.com/workflows), read [the Workflows docs](https://inference.roboflow.com/workflows/about/), or [start building](https://app.roboflow.com/workflows).
-
 ## 🔑 connect to the cloud
 
 Without an API Key, you can access a wide range of pre-trained and foundational models and run Workflows via our JSON API.
@@ -145,8 +147,13 @@ Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to th
 | [Device Management](https://docs.roboflow.com/roboflow-enterprise) |  | Enterprise
 | [Model Monitoring](https://docs.roboflow.com/deploy/model-monitoring) |  | Enterprise
 
+## 🌩️ hosted compute
 
-## 🖥️ Hardware
+If you don't want to manage your own infrastructure for self-hosting, Roboflow offers a hosted Inference Server via [one-click Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) (CPU and GPU machines) billed hourly, or simple models and Workflows via our [serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) billed per API-call.
+
+We offer a [generous free-tier](https://roboflow.com/pricing) to get started.
+
+## 🖥️ run on-prem or self-hosted
 
 Inference is designed to run on a wide range of hardware from beefy cloud servers to tiny edge devices. This lets you easily develop against your local machine or our cloud infrastructure and then seamlessly switch to another device for production deployment.
 
@@ -288,12 +295,6 @@ Connect to an Inference Server via its API for additional functionality beyond o
 ### ⭐️ New: Enterprise Hardware
 
 For manufacturing and logistics use-cases Roboflow now offers [the Flowbox](https://roboflow.com/industries/manufacturing/box), a ruggedized CV center pre-configured with Inference and optimized for running in secure networks. It has integrated support for machine vision cameras like Basler and Lucid over GigE, supports interfacing with PLCs and HMIs via OPC or MQTT, enables enterprise device management through a DMZ, and comes with the support of our team of computer vision experts to ensure your project is a success.
-
-## 🌩️ Hosted Compute
-
-If you don't want to manage your own infrastructure for self-hosting, Roboflow offers a hosted Inference Server via [one-click Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) (CPU and GPU machines) billed hourly, or simple models and Workflows (CPU-only) via our [serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) billed per API-call.
-
-We offer a [generous free-tier](https://roboflow.com/pricing) to get started.
 
 ## 📚 documentation
 
