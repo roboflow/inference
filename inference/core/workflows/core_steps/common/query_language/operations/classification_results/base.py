@@ -27,6 +27,19 @@ def extract_top_class_confidence(prediction: dict) -> Union[float, List[float]]:
     ]
 
 
+def extract_top_class_confidence_single(prediction: dict) -> Union[float, List[float]]:
+    if "confidence" in prediction:
+        return prediction["confidence"]
+    predicted_classes = prediction.get("predicted_classes", [])
+    predicted_confidences = [
+        prediction["predictions"][class_name]["confidence"]
+        for class_name in predicted_classes
+    ]
+    if not predicted_confidences:
+        return 0.0
+    return max(predicted_confidences)
+
+
 def extract_all_class_names(prediction: dict) -> List[str]:
     predictions = prediction["predictions"]
     if isinstance(predictions, list):
@@ -52,6 +65,7 @@ def extract_all_classes_confidence(prediction: dict) -> List[float]:
 CLASSIFICATION_PROPERTY_EXTRACTORS = {
     ClassificationProperty.TOP_CLASS: extract_top_class,
     ClassificationProperty.TOP_CLASS_CONFIDENCE: extract_top_class_confidence,
+    ClassificationProperty.TOP_CLASS_CONFIDENCE_SINGLE: extract_top_class_confidence_single,
     ClassificationProperty.ALL_CLASSES: extract_all_class_names,
     ClassificationProperty.ALL_CONFIDENCES: extract_all_classes_confidence,
 }
