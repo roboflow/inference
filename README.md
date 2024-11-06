@@ -177,7 +177,7 @@ pip install inference
 <br />
 Apple does not yet support <a href="https://github.com/pytorch/pytorch/issues/81224">passing the Metal Performance Shader device to Docker</a> so hardware acceleration is not possible inside the container.
 <br /><br />
-We recommend starting with the CPU Docker via <code>inference server start</code> but, if you need more speed, the <code>inference</code> Python package supports hardware acceleration via the <a href="https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html">onnxruntime CoreMLExecutionProvider</a> and the <a href="https://pytorch.org/docs/stable/notes/mps.html">PyTorch <code>mps</code> device backend</a>. Y can get a big boost by running outside of Docker.
+We recommend starting with the CPU Docker via <code>inference server start</code> but, if you need more speed, the <code>inference</code> Python package supports hardware acceleration via the <a href="https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html">onnxruntime CoreMLExecutionProvider</a> and the <a href="https://pytorch.org/docs/stable/notes/mps.html">PyTorch <code>mps</code> device backend</a>. By using these, inference gets a big boost when running outside of Docker on Apple Silicon.
 <br /><br />
 To install outside of Docker, clone the repo then install the dependencies in a new virtual environment:
 
