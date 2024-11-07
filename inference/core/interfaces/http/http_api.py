@@ -2308,7 +2308,6 @@ class HttpInterface(BaseInterface):
                     usage_billable=countinference,
                     **args,
                 )
-
                 inference_response = await self.model_manager.infer_from_request(
                     inference_request.model_id,
                     inference_request,
