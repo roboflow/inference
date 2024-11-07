@@ -1,0 +1,4 @@
+pypdfium2
+jupyterlab
+PyYAML
+onnxruntime-gpu
