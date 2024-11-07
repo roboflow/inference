@@ -67,17 +67,17 @@ class ExternalOperationDescription(BaseModel):
         nested_operation_input_kind, nested_operation_output_kind = None, None
         if operation_description.nested_operation_input_kind:
             nested_operation_input_kind = [
-                k.name for k in operation_description.nested_operation_input_kind
+                k for k in operation_description.nested_operation_input_kind
             ]
         if operation_description.nested_operation_output_kind:
             nested_operation_output_kind = [
-                k.name for k in operation_description.nested_operation_output_kind
+                k for k in operation_description.nested_operation_output_kind
             ]
         return cls(
             operation_type=operation_description.operation_type,
             compound=operation_description.compound,
-            input_kind=[k.name for k in operation_description.input_kind],
-            output_kind=[k.name for k in operation_description.output_kind],
+            input_kind=[k for k in operation_description.input_kind],
+            output_kind=[k for k in operation_description.output_kind],
             nested_operation_input_kind=nested_operation_input_kind,
             nested_operation_output_kind=nested_operation_output_kind,
             description=operation_description.description,
@@ -95,7 +95,7 @@ class ExternalOperatorDescription(BaseModel):
         cls, operator_description: OperatorDescription
     ) -> "ExternalOperatorDescription":
         operands_kinds = [
-            [k.name for k in kind] for kind in operator_description.operands_kinds
+            [k for k in kind] for kind in operator_description.operands_kinds
         ]
         return cls(
             operator_type=operator_description.operator_type,

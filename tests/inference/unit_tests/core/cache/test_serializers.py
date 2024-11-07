@@ -1,9 +1,11 @@
 import os
 from unittest.mock import MagicMock
+
 import pytest
+
 from inference.core.cache.serializers import (
-    to_cachable_inference_item,
     build_condensed_response,
+    to_cachable_inference_item,
 )
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
@@ -11,16 +13,16 @@ from inference.core.entities.requests.inference import (
 )
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
-    MultiLabelClassificationInferenceResponse,
+    ClassificationPrediction,
     InstanceSegmentationInferenceResponse,
+    InstanceSegmentationPrediction,
+    Keypoint,
     KeypointsDetectionInferenceResponse,
+    KeypointsPrediction,
+    MultiLabelClassificationInferenceResponse,
+    MultiLabelClassificationPrediction,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
-    ClassificationPrediction,
-    MultiLabelClassificationPrediction,
-    InstanceSegmentationPrediction,
-    KeypointsPrediction,
-    Keypoint,
     Point,
 )
 

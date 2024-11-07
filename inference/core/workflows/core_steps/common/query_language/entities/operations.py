@@ -46,8 +46,8 @@ class StringToLowerCase(OperationDefinition):
         json_schema_extra={
             "description": "Executes lowercase operation on input string",
             "compound": False,
-            "input_kind": [STRING_KIND],
-            "output_kind": [STRING_KIND],
+            "input_kind": [STRING_KIND.name],
+            "output_kind": [STRING_KIND.name],
         },
     )
     type: Literal["StringToLowerCase"]
@@ -58,8 +58,8 @@ class StringToUpperCase(OperationDefinition):
         json_schema_extra={
             "description": "Executes uppercase operation on input string",
             "compound": False,
-            "input_kind": [STRING_KIND],
-            "output_kind": [STRING_KIND],
+            "input_kind": [STRING_KIND.name],
+            "output_kind": [STRING_KIND.name],
         },
     )
     type: Literal["StringToUpperCase"]
@@ -70,8 +70,8 @@ class LookupTable(OperationDefinition):
         json_schema_extra={
             "description": "Changes value according to mapping stated in lookup table",
             "compound": False,
-            "input_kind": [WILDCARD_KIND],
-            "output_kind": [WILDCARD_KIND],
+            "input_kind": [WILDCARD_KIND.name],
+            "output_kind": [WILDCARD_KIND.name],
         },
     )
     type: Literal["LookupTable"]
@@ -84,13 +84,17 @@ class ToNumber(OperationDefinition):
             "description": "Changes value into number - float or int depending on configuration",
             "compound": False,
             "input_kind": [
-                STRING_KIND,
-                BOOLEAN_KIND,
-                INTEGER_KIND,
-                FLOAT_KIND,
-                FLOAT_ZERO_TO_ONE_KIND,
+                STRING_KIND.name,
+                BOOLEAN_KIND.name,
+                INTEGER_KIND.name,
+                FLOAT_KIND.name,
+                FLOAT_ZERO_TO_ONE_KIND.name,
             ],
-            "output_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+            "output_kind": [
+                INTEGER_KIND.name,
+                FLOAT_KIND.name,
+                FLOAT_ZERO_TO_ONE_KIND.name,
+            ],
         },
     )
     type: Literal["ToNumber"]
@@ -102,8 +106,16 @@ class NumberRound(OperationDefinition):
         json_schema_extra={
             "description": "Rounds the number",
             "compound": False,
-            "input_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
-            "output_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+            "input_kind": [
+                INTEGER_KIND.name,
+                FLOAT_KIND.name,
+                FLOAT_ZERO_TO_ONE_KIND.name,
+            ],
+            "output_kind": [
+                INTEGER_KIND.name,
+                FLOAT_KIND.name,
+                FLOAT_ZERO_TO_ONE_KIND.name,
+            ],
         },
     )
     type: Literal["NumberRound"]
@@ -115,10 +127,10 @@ class SequenceMap(OperationDefinition):
         json_schema_extra={
             "description": "Changes each value of sequence according to mapping stated in lookup table",
             "compound": True,
-            "input_kind": [LIST_OF_VALUES_KIND],
-            "output_kind": [LIST_OF_VALUES_KIND],
-            "nested_operation_input_kind": [WILDCARD_KIND],
-            "nested_operation_output_kind": [WILDCARD_KIND],
+            "input_kind": [LIST_OF_VALUES_KIND.name],
+            "output_kind": [LIST_OF_VALUES_KIND.name],
+            "nested_operation_input_kind": [WILDCARD_KIND.name],
+            "nested_operation_output_kind": [WILDCARD_KIND.name],
         },
     )
     type: Literal["SequenceMap"]
@@ -130,8 +142,12 @@ class NumericSequenceAggregate(OperationDefinition):
         json_schema_extra={
             "description": "Aggregates numeric sequence using aggregation function like min or max - adjusted to work on numbers",
             "compound": False,
-            "input_kind": [LIST_OF_VALUES_KIND],
-            "output_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+            "input_kind": [LIST_OF_VALUES_KIND.name],
+            "output_kind": [
+                INTEGER_KIND.name,
+                FLOAT_KIND.name,
+                FLOAT_ZERO_TO_ONE_KIND.name,
+            ],
         },
     )
     type: Literal["NumericSequenceAggregate"]
@@ -144,8 +160,8 @@ class SequenceAggregate(OperationDefinition):
         json_schema_extra={
             "description": "Aggregates sequence using generic aggregation methods - adjusted to majority data types",
             "compound": False,
-            "input_kind": [LIST_OF_VALUES_KIND],
-            "output_kind": [WILDCARD_KIND],
+            "input_kind": [LIST_OF_VALUES_KIND.name],
+            "output_kind": [WILDCARD_KIND.name],
         },
     )
     type: Literal["SequenceAggregate"]
@@ -157,8 +173,8 @@ class ToString(OperationDefinition):
         json_schema_extra={
             "description": "Stringifies data",
             "compound": False,
-            "input_kind": [WILDCARD_KIND],
-            "output_kind": [STRING_KIND],
+            "input_kind": [WILDCARD_KIND.name],
+            "output_kind": [STRING_KIND.name],
         },
     )
     type: Literal["ToString"]
@@ -169,8 +185,12 @@ class ToBoolean(OperationDefinition):
         json_schema_extra={
             "description": "Changes input data into boolean",
             "compound": False,
-            "input_kind": [FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND, INTEGER_KIND],
-            "output_kind": [BOOLEAN_KIND],
+            "input_kind": [
+                FLOAT_KIND.name,
+                FLOAT_ZERO_TO_ONE_KIND.name,
+                INTEGER_KIND.name,
+            ],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["ToBoolean"]
@@ -181,8 +201,8 @@ class StringSubSequence(OperationDefinition):
         json_schema_extra={
             "description": "Takes sub-string of the input string",
             "compound": False,
-            "input_kind": [STRING_KIND],
-            "output_kind": [STRING_KIND],
+            "input_kind": [STRING_KIND.name],
+            "output_kind": [STRING_KIND.name],
         },
     )
     type: Literal["StringSubSequence"]
@@ -197,11 +217,11 @@ class DetectionsPropertyExtract(OperationDefinition):
             "(as a list of elements - one element represents single detection)",
             "compound": False,
             "input_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
-            "output_kind": [LIST_OF_VALUES_KIND],
+            "output_kind": [LIST_OF_VALUES_KIND.name],
         },
     )
     type: Literal["DetectionsPropertyExtract"]
@@ -214,11 +234,11 @@ class DetectionsToDictionary(OperationDefinition):
             "description": "Converts detections into `inference` response format dictionary",
             "compound": False,
             "input_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
-            "output_kind": [DICTIONARY_KIND],
+            "output_kind": [DICTIONARY_KIND.name],
         },
     )
     type: Literal["DetectionsToDictionary"]
@@ -231,9 +251,13 @@ class ClassificationPropertyExtract(OperationDefinition):
             "(as a list of elements - one element represents single detection)",
             "compound": False,
             "input_kind": [
-                CLASSIFICATION_PREDICTION_KIND,
+                CLASSIFICATION_PREDICTION_KIND.name,
             ],
-            "output_kind": [STRING_KIND, LIST_OF_VALUES_KIND, FLOAT_ZERO_TO_ONE_KIND],
+            "output_kind": [
+                STRING_KIND.name,
+                LIST_OF_VALUES_KIND.name,
+                FLOAT_ZERO_TO_ONE_KIND.name,
+            ],
         },
     )
     type: Literal["ClassificationPropertyExtract"]
@@ -246,14 +270,14 @@ class DetectionsSelection(OperationDefinition):
             "description": "Selects bounding boxes based on predefined criterias",
             "compound": False,
             "input_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
             "output_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
         },
     )
@@ -266,8 +290,8 @@ class ExtractDetectionProperty(OperationDefinition):
         json_schema_extra={
             "description": "Extracts property from single detection",
             "compound": False,
-            "input_kind": [DETECTION_KIND],
-            "output_kind": [WILDCARD_KIND],
+            "input_kind": [DETECTION_KIND.name],
+            "output_kind": [WILDCARD_KIND.name],
         },
     )
     type: Literal["ExtractDetectionProperty"]
@@ -281,17 +305,17 @@ class DetectionsFilter(OperationDefinition):
             "applying filter operation in context of every single detection within prediction",
             "compound": True,
             "input_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
             "output_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
-            "nested_operation_input_kind": [DETECTION_KIND],
-            "nested_operation_output_kind": [BOOLEAN_KIND],
+            "nested_operation_input_kind": [DETECTION_KIND.name],
+            "nested_operation_output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["DetectionsFilter"]
@@ -304,14 +328,14 @@ class SortDetections(OperationDefinition):
             "description": "Changes the order of detected bounding boxes.",
             "compound": False,
             "input_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
             "output_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
         },
     )
@@ -326,14 +350,14 @@ class DetectionsOffset(OperationDefinition):
             "description": "Makes detected bounding boxes bigger by applying offset to its size",
             "compound": False,
             "input_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
             "output_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
         },
     )
@@ -348,14 +372,14 @@ class DetectionsShift(OperationDefinition):
             "description": "Shifting detected bounding boxes in assigned direction",
             "compound": False,
             "input_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
             "output_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
         },
     )
@@ -370,12 +394,12 @@ class RandomNumber(OperationDefinition):
             "description": "Special operation to let random sampling - ignoring input data and changing it "
             "into random floating point value. To be used mainly to sample predictions or images.",
             "input_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
-                WILDCARD_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
+                WILDCARD_KIND.name,
             ],
-            "output_kind": [FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+            "output_kind": [FLOAT_KIND.name, FLOAT_ZERO_TO_ONE_KIND.name],
         },
     )
     type: Literal["RandomNumber"]
@@ -387,8 +411,8 @@ class ExtractImageProperty(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
             "description": "Extracts specific property of image (like size)",
-            "input_kind": [IMAGE_KIND],
-            "output_kind": [INTEGER_KIND],
+            "input_kind": [IMAGE_KIND.name],
+            "output_kind": [INTEGER_KIND.name],
         },
     )
     type: Literal["ExtractImageProperty"]
@@ -399,8 +423,8 @@ class ConvertImageToJPEG(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
             "description": "Converts image to JPEG",
-            "input_kind": [IMAGE_KIND],
-            "output_kind": [BYTES_KIND],
+            "input_kind": [IMAGE_KIND.name],
+            "output_kind": [BYTES_KIND.name],
         },
     )
     type: Literal["ConvertImageToJPEG"]
@@ -411,8 +435,8 @@ class ConvertDictionaryToJSON(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
             "description": "Converts dictionary to serialized JSON",
-            "input_kind": [DICTIONARY_KIND],
-            "output_kind": [STRING_KIND],
+            "input_kind": [DICTIONARY_KIND.name],
+            "output_kind": [STRING_KIND.name],
         },
     )
     type: Literal["ConvertDictionaryToJSON"]
@@ -422,8 +446,8 @@ class ConvertImageToBase64(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
             "description": "Converts image to base64-encoded JPEG",
-            "input_kind": [IMAGE_KIND],
-            "output_kind": [STRING_KIND],
+            "input_kind": [IMAGE_KIND.name],
+            "output_kind": [STRING_KIND.name],
         },
     )
     type: Literal["ConvertImageToBase64"]
@@ -434,8 +458,8 @@ class StringMatches(OperationDefinition):
         json_schema_extra={
             "description": "Checks if string matches regex",
             "compound": False,
-            "input_kind": [STRING_KIND],
-            "output_kind": [BOOLEAN_KIND],
+            "input_kind": [STRING_KIND.name],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["StringMatches"]
@@ -448,13 +472,13 @@ class SequenceLength(OperationDefinition):
             "description": "Operation determines the length of input sequence",
             "compound": False,
             "input_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
-                LIST_OF_VALUES_KIND,
-                DICTIONARY_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
+                LIST_OF_VALUES_KIND.name,
+                DICTIONARY_KIND.name,
             ],
-            "output_kind": [INTEGER_KIND],
+            "output_kind": [INTEGER_KIND.name],
         },
     )
     type: Literal["SequenceLength"]
@@ -465,10 +489,10 @@ class SequenceApply(OperationDefinition):
         json_schema_extra={
             "description": "Operation applies chain of operations at every element of sequence",
             "compound": True,
-            "input_kind": [LIST_OF_VALUES_KIND],
-            "output_kind": [LIST_OF_VALUES_KIND],
-            "nested_operation_input_kind": [WILDCARD_KIND],
-            "nested_operation_output_kind": [WILDCARD_KIND],
+            "input_kind": [LIST_OF_VALUES_KIND.name],
+            "output_kind": [LIST_OF_VALUES_KIND.name],
+            "nested_operation_input_kind": [WILDCARD_KIND.name],
+            "nested_operation_output_kind": [WILDCARD_KIND.name],
         },
     )
     type: Literal["SequenceApply"]
@@ -480,8 +504,16 @@ class Multiply(OperationDefinition):
         json_schema_extra={
             "description": "Multiplication",
             "compound": False,
-            "input_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
-            "output_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+            "input_kind": [
+                INTEGER_KIND.name,
+                FLOAT_KIND.name,
+                FLOAT_ZERO_TO_ONE_KIND.name,
+            ],
+            "output_kind": [
+                INTEGER_KIND.name,
+                FLOAT_KIND.name,
+                FLOAT_ZERO_TO_ONE_KIND.name,
+            ],
         },
     )
     type: Literal["Multiply"]
@@ -493,8 +525,16 @@ class Divide(OperationDefinition):
         json_schema_extra={
             "description": "Dividing value against other",
             "compound": False,
-            "input_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
-            "output_kind": [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+            "input_kind": [
+                INTEGER_KIND.name,
+                FLOAT_KIND.name,
+                FLOAT_ZERO_TO_ONE_KIND.name,
+            ],
+            "output_kind": [
+                INTEGER_KIND.name,
+                FLOAT_KIND.name,
+                FLOAT_ZERO_TO_ONE_KIND.name,
+            ],
         },
     )
     type: Literal["Divide"]
@@ -507,14 +547,14 @@ class DetectionsRename(OperationDefinition):
             "description": "Renames classes in detections based on provided mapping",
             "compound": False,
             "input_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
             "output_kind": [
-                OBJECT_DETECTION_PREDICTION_KIND,
-                INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                KEYPOINT_DETECTION_PREDICTION_KIND,
+                OBJECT_DETECTION_PREDICTION_KIND.name,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                KEYPOINT_DETECTION_PREDICTION_KIND.name,
             ],
         },
     )
@@ -589,23 +629,23 @@ class Equals(BinaryOperator):
             "operands_number": 2,
             "operands_kinds": [
                 [
-                    INTEGER_KIND,
-                    STRING_KIND,
-                    FLOAT_KIND,
-                    FLOAT_ZERO_TO_ONE_KIND,
-                    BOOLEAN_KIND,
-                    LIST_OF_VALUES_KIND,
+                    INTEGER_KIND.name,
+                    STRING_KIND.name,
+                    FLOAT_KIND.name,
+                    FLOAT_ZERO_TO_ONE_KIND.name,
+                    BOOLEAN_KIND.name,
+                    LIST_OF_VALUES_KIND.name,
                 ],
                 [
-                    INTEGER_KIND,
-                    STRING_KIND,
-                    FLOAT_KIND,
-                    FLOAT_ZERO_TO_ONE_KIND,
-                    BOOLEAN_KIND,
-                    LIST_OF_VALUES_KIND,
+                    INTEGER_KIND.name,
+                    STRING_KIND.name,
+                    FLOAT_KIND.name,
+                    FLOAT_ZERO_TO_ONE_KIND.name,
+                    BOOLEAN_KIND.name,
+                    LIST_OF_VALUES_KIND.name,
                 ],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(Number) ==", "=="]
@@ -618,23 +658,23 @@ class NotEquals(BinaryOperator):
             "operands_number": 2,
             "operands_kinds": [
                 [
-                    INTEGER_KIND,
-                    STRING_KIND,
-                    FLOAT_KIND,
-                    FLOAT_ZERO_TO_ONE_KIND,
-                    BOOLEAN_KIND,
-                    LIST_OF_VALUES_KIND,
+                    INTEGER_KIND.name,
+                    STRING_KIND.name,
+                    FLOAT_KIND.name,
+                    FLOAT_ZERO_TO_ONE_KIND.name,
+                    BOOLEAN_KIND.name,
+                    LIST_OF_VALUES_KIND.name,
                 ],
                 [
-                    INTEGER_KIND,
-                    STRING_KIND,
-                    FLOAT_KIND,
-                    FLOAT_ZERO_TO_ONE_KIND,
-                    BOOLEAN_KIND,
-                    LIST_OF_VALUES_KIND,
+                    INTEGER_KIND.name,
+                    STRING_KIND.name,
+                    FLOAT_KIND.name,
+                    FLOAT_ZERO_TO_ONE_KIND.name,
+                    BOOLEAN_KIND.name,
+                    LIST_OF_VALUES_KIND.name,
                 ],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(Number) !=", "!="]
@@ -646,10 +686,10 @@ class NumberGreater(BinaryOperator):
             "description": "Checks if first value (number) is greater than the second value (number)",
             "operands_number": 2,
             "operands_kinds": [
-                [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
-                [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+                [INTEGER_KIND.name, FLOAT_KIND.name, FLOAT_ZERO_TO_ONE_KIND.name],
+                [INTEGER_KIND.name, FLOAT_KIND.name, FLOAT_ZERO_TO_ONE_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(Number) >"]
@@ -661,10 +701,10 @@ class NumberGreaterEqual(BinaryOperator):
             "description": "Checks if first value (number) is greater or equal than the second value (number)",
             "operands_number": 2,
             "operands_kinds": [
-                [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
-                [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+                [INTEGER_KIND.name, FLOAT_KIND.name, FLOAT_ZERO_TO_ONE_KIND.name],
+                [INTEGER_KIND.name, FLOAT_KIND.name, FLOAT_ZERO_TO_ONE_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(Number) >="]
@@ -676,10 +716,10 @@ class NumberLower(BinaryOperator):
             "description": "Checks if first value (number) is lower than the second value (number)",
             "operands_number": 2,
             "operands_kinds": [
-                [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
-                [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+                [INTEGER_KIND.name, FLOAT_KIND.name, FLOAT_ZERO_TO_ONE_KIND.name],
+                [INTEGER_KIND.name, FLOAT_KIND.name, FLOAT_ZERO_TO_ONE_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(Number) <"]
@@ -691,10 +731,10 @@ class NumberLowerEqual(BinaryOperator):
             "description": "Checks if first value (number) is lower or equal than the second value (number)",
             "operands_number": 2,
             "operands_kinds": [
-                [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
-                [INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
+                [INTEGER_KIND.name, FLOAT_KIND.name, FLOAT_ZERO_TO_ONE_KIND.name],
+                [INTEGER_KIND.name, FLOAT_KIND.name, FLOAT_ZERO_TO_ONE_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(Number) <="]
@@ -706,10 +746,10 @@ class StringStartsWith(BinaryOperator):
             "description": "Checks if string given as first value starts with string provided as second value",
             "operands_number": 2,
             "operands_kinds": [
-                [STRING_KIND],
-                [STRING_KIND],
+                [STRING_KIND.name],
+                [STRING_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(String) startsWith"]
@@ -721,10 +761,10 @@ class StringEndsWith(BinaryOperator):
             "description": "Checks if string given as first value ends with string provided as second value",
             "operands_number": 2,
             "operands_kinds": [
-                [STRING_KIND],
-                [STRING_KIND],
+                [STRING_KIND.name],
+                [STRING_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(String) endsWith"]
@@ -736,10 +776,10 @@ class StringContains(BinaryOperator):
             "description": "Checks if string given as first value contains string provided as second value",
             "operands_number": 2,
             "operands_kinds": [
-                [STRING_KIND],
-                [STRING_KIND],
+                [STRING_KIND.name],
+                [STRING_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(String) contains"]
@@ -751,10 +791,15 @@ class In(BinaryOperator):
             "description": "Checks if first value is element of second value (usually list or dictionary)",
             "operands_number": 2,
             "operands_kinds": [
-                [STRING_KIND, INTEGER_KIND, FLOAT_KIND, FLOAT_ZERO_TO_ONE_KIND],
-                [LIST_OF_VALUES_KIND, DICTIONARY_KIND],
+                [
+                    STRING_KIND.name,
+                    INTEGER_KIND.name,
+                    FLOAT_KIND.name,
+                    FLOAT_ZERO_TO_ONE_KIND.name,
+                ],
+                [LIST_OF_VALUES_KIND.name, DICTIONARY_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["in (Sequence)"]
@@ -766,10 +811,10 @@ class AllInSequence(BinaryOperator):
             "description": "Checks if all elements of first value are elements of second value (usually list)",
             "operands_number": 2,
             "operands_kinds": [
-                [LIST_OF_VALUES_KIND],
-                [LIST_OF_VALUES_KIND],
+                [LIST_OF_VALUES_KIND.name],
+                [LIST_OF_VALUES_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["all in (Sequence)"]
@@ -781,10 +826,10 @@ class AnyInSequence(BinaryOperator):
             "description": "Checks if any element of first value is element of second value (usually list)",
             "operands_number": 2,
             "operands_kinds": [
-                [LIST_OF_VALUES_KIND],
-                [LIST_OF_VALUES_KIND],
+                [LIST_OF_VALUES_KIND.name],
+                [LIST_OF_VALUES_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["any in (Sequence)"]
@@ -800,9 +845,9 @@ class Exists(UnaryOperator):
             "description": "Checks if value is given (not `None`)",
             "operands_number": 1,
             "operands_kinds": [
-                [WILDCARD_KIND],
+                [WILDCARD_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["Exists"]
@@ -814,9 +859,9 @@ class DoesNotExist(UnaryOperator):
             "description": "Checks if value is not given (`None`)",
             "operands_number": 1,
             "operands_kinds": [
-                [WILDCARD_KIND],
+                [WILDCARD_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["DoesNotExist"]
@@ -828,9 +873,9 @@ class IsTrue(UnaryOperator):
             "description": "Checks if value is `True`",
             "operands_number": 1,
             "operands_kinds": [
-                [BOOLEAN_KIND],
+                [BOOLEAN_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(Boolean) is True"]
@@ -842,9 +887,9 @@ class IsFalse(UnaryOperator):
             "description": "Checks if value is `False`",
             "operands_number": 1,
             "operands_kinds": [
-                [BOOLEAN_KIND],
+                [BOOLEAN_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(Boolean) is False"]
@@ -857,14 +902,14 @@ class IsEmpty(UnaryOperator):
             "operands_number": 1,
             "operands_kinds": [
                 [
-                    LIST_OF_VALUES_KIND,
-                    DICTIONARY_KIND,
-                    OBJECT_DETECTION_PREDICTION_KIND,
-                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                    KEYPOINT_DETECTION_PREDICTION_KIND,
+                    LIST_OF_VALUES_KIND.name,
+                    DICTIONARY_KIND.name,
+                    OBJECT_DETECTION_PREDICTION_KIND.name,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                    KEYPOINT_DETECTION_PREDICTION_KIND.name,
                 ],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(Sequence) is empty"]
@@ -877,14 +922,14 @@ class IsNotEmpty(UnaryOperator):
             "operands_number": 1,
             "operands_kinds": [
                 [
-                    LIST_OF_VALUES_KIND,
-                    DICTIONARY_KIND,
-                    OBJECT_DETECTION_PREDICTION_KIND,
-                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
-                    KEYPOINT_DETECTION_PREDICTION_KIND,
+                    LIST_OF_VALUES_KIND.name,
+                    DICTIONARY_KIND.name,
+                    OBJECT_DETECTION_PREDICTION_KIND.name,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND.name,
+                    KEYPOINT_DETECTION_PREDICTION_KIND.name,
                 ],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(Sequence) is not empty"]
@@ -896,9 +941,9 @@ class DetectionInZone(BinaryOperator):
             "description": "Checks if detection is in zone",
             "operands_number": 2,
             "operands_kinds": [
-                [DETECTION_KIND, ZONE_KIND],
+                [DETECTION_KIND.name, ZONE_KIND.name],
             ],
-            "output_kind": [BOOLEAN_KIND],
+            "output_kind": [BOOLEAN_KIND.name],
         },
     )
     type: Literal["(Detection) in zone"]

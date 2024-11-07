@@ -126,7 +126,7 @@ def get_all_inputs_kind_major(
         if allowed_reference.selected_element == STEP_AS_SELECTED_ELEMENT:
             continue
         for single_kind in allowed_reference.kind:
-            kind_major_step_inputs[single_kind.name].add(
+            kind_major_step_inputs[single_kind].add(
                 BlockPropertySelectorDefinition(
                     block_type=block_description.block_class,
                     manifest_type_identifier=block_description.manifest_type_identifier,
@@ -176,7 +176,7 @@ def discover_block_input_connections(
                 continue
             for single_kind in allowed_reference.kind:
                 blocks_matching_property.update(
-                    output_kind2schemas.get(single_kind.name, set())
+                    output_kind2schemas.get(single_kind, set())
                 )
         result[selector.property_name] = blocks_matching_property
     return result

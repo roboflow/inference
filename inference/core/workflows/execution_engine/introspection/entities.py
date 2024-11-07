@@ -17,7 +17,7 @@ KindName = str
 @dataclass(frozen=True)
 class ReferenceDefinition:
     selected_element: str
-    kind: List[Kind]
+    kind: List[str]
 
 
 @dataclass(frozen=True)
