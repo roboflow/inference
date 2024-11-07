@@ -247,9 +247,8 @@ class UsageCollector:
             hostname = f"{dedicated_deployment_id}:{hostname}"
         else:
             hostname = sha256_hash(hostname)
-        if ip_address:
-            ip_address_hash_hex = sha256_hash(ip_address)
-        else:
+
+        if not ip_address:
             try:
                 ip_address: str = socket.gethostbyname(socket.gethostname())
             except Exception as exc:
@@ -264,8 +263,7 @@ class UsageCollector:
 
                 if s:
                     s.close()
-
-            ip_address_hash_hex = sha256_hash(ip_address)
+        ip_address_hash_hex = sha256_hash(ip_address)
 
         return {
             "hostname": hostname,
