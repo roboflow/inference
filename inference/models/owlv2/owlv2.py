@@ -209,8 +209,6 @@ class LazyImageRetrievalWrapper:
     def __init__(self, image: Any):
         self.image = image
 
-        self.types_that_can_hash_raw = {ImageType.URL, ImageType.BASE64}
-
         self._image_as_numpy = None
         self._image_hash = None
 
@@ -224,13 +222,20 @@ class LazyImageRetrievalWrapper:
     def image_hash(self) -> Hash:
         if self._image_hash is None:
             image_payload, image_type = extract_image_payload_and_type(self.image)
-            if image_type in self.types_that_can_hash_raw:
-                # for these types, hashing directly is faster than loading the raw image through numpy
-                # and is safe against the pointer changing ie a filepath mapping to a different file
+            if image_type is ImageType.URL:
+                # we can use the url as the hash
+                self._image_hash = image_payload
+            elif image_type is ImageType.BASE64:
+                # this is presumably the compressed image bytes
+                # hashing this directly is faster than loading the raw image through numpy
+                # we have to make sure we're passing a buffer, so we encode to bytes if necessary
+                # see load_image_base64 in image_utils.py for more details about the base64 encoding
                 if type(image_payload) is str:
                     image_payload = image_payload.encode("utf-8")
                 self._image_hash = hash_function(image_payload)
             else:
+                # not clear that there is something safe or faster to do than just loading the numpy array
+                # and hashing that
                 self._image_hash = hash_function(self.image_as_numpy.tobytes())
         return self._image_hash
 
@@ -243,6 +248,7 @@ def hash_wrapped_training_data(wrapped_training_data: List[Dict[str, Any]]) -> H
         ]
         for d in wrapped_training_data
     ]
+    # we dump to pickle to serialize the data as a single object
     return hash_function(pickle.dumps(just_hash_relevant_data))
 
 
