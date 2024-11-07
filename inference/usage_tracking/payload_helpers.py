@@ -125,7 +125,9 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                         resource_usage_payload,
                     )
 
-    zipped_payloads = list(merged_exec_session_id_streams_usage_payloads.values()) + list(merged_exec_session_id_photos_usage_payloads.values())
+    zipped_payloads = list(
+        merged_exec_session_id_streams_usage_payloads.values()
+    ) + list(merged_exec_session_id_photos_usage_payloads.values())
     if system_info_payload:
         system_info_api_key_hash = next(iter(system_info_payload.values()))[
             "api_key_hash"
