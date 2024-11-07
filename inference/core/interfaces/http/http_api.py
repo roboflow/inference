@@ -9,6 +9,7 @@ import asgi_correlation_id
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
@@ -116,6 +117,7 @@ from inference.core.env import (
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
+    ENABLE_GZIP,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -507,6 +509,9 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
+
+        if ENABLE_GZIP:
+            app.add_middleware(GZipMiddleware, minimum_size=1024)
 
         if ENABLE_PROMETHEUS:
             InferenceInstrumentator(
