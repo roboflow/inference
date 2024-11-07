@@ -133,7 +133,7 @@ docker run -it --network=host --gpus=all roboflow/roboflow-inference-server-gpu:
 docker run -p 9001:9001 roboflow/roboflow-inference-server-arm-cpu:latest
 ```
 
-- Run on NVIDIA Jetson with JetPack `4.x`:
+- Run on NVIDIA Jetson with JetPack `4.x` (Deprecated):
 
 ```bash
 docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson:latest
@@ -143,6 +143,12 @@ docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-
 
 ```bash
 docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-5.1.1:latest
+```
+
+- Run on NVIDIA Jetson with JetPack `6.x`:
+
+```bash
+docker run --privileged --net=host --runtime=nvidia roboflow/roboflow-inference-server-jetson-6.0.0:latest
 ```
 
 </details>
