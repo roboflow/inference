@@ -849,7 +849,7 @@ def test_system_info_with_no_dedicated_deployment_id():
 
     # then
     expected_system_info = {
-        "hostname": f"hostname01",
+        "hostname": "5aacc",
         "ip_address_hash": hashlib.sha256("w.x.y.z".encode()).hexdigest()[:5],
         "is_gpu_available": False,
     }
