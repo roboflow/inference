@@ -9,8 +9,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     INTEGER_KIND,
     NUMPY_ARRAY_KIND,
-    BatchSelector,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -39,22 +38,20 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/sift_comparison@v1"]
-    descriptor_1: BatchSelector(kind=[NUMPY_ARRAY_KIND]) = Field(
+    descriptor_1: Selector(kind=[NUMPY_ARRAY_KIND]) = Field(
         description="Reference to SIFT descriptors from the first image to compare",
         examples=["$steps.sift.descriptors"],
     )
-    descriptor_2: BatchSelector(kind=[NUMPY_ARRAY_KIND]) = Field(
+    descriptor_2: Selector(kind=[NUMPY_ARRAY_KIND]) = Field(
         description="Reference to SIFT descriptors from the second image to compare",
         examples=["$steps.sift.descriptors"],
     )
-    good_matches_threshold: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            default=50,
-            description="Threshold for the number of good matches to consider the images as matching",
-            examples=[50, "$inputs.good_matches_threshold"],
-        )
+    good_matches_threshold: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
+        default=50,
+        description="Threshold for the number of good matches to consider the images as matching",
+        examples=[50, "$inputs.good_matches_threshold"],
     )
-    ratio_threshold: Union[float, ScalarSelector(kind=[INTEGER_KIND])] = Field(
+    ratio_threshold: Union[float, Selector(kind=[INTEGER_KIND])] = Field(
         default=0.7,
         description="Ratio threshold for the ratio test, which is used to filter out poor matches by comparing "
         "the distance of the closest match to the distance of the second closest match. A lower "

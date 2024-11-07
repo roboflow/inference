@@ -12,8 +12,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
     STRING_KIND,
-    BatchSelector,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -47,7 +46,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             },
         }
     )
-    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
@@ -56,7 +55,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
     task_type: Literal["resize", "rotate", "flip"] = Field(
         description="Preprocessing task to be applied to the image.",
     )
-    width: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Width",
         default=640,
         description="Width of the image to be resized to.",
@@ -71,7 +70,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             },
         },
     )
-    height: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    height: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Height",
         default=640,
         description="Height of the image to be resized to.",
@@ -86,7 +85,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             },
         },
     )
-    rotation_degrees: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    rotation_degrees: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Degrees of Rotation",
         description="Positive value to rotate clockwise, negative value to rotate counterclockwise",
         default=90,
@@ -102,7 +101,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             }
         },
     )
-    flip_type: Union[ScalarSelector(kind=[STRING_KIND]), Literal["vertical", "horizontal", "both"]] = Field(  # type: ignore
+    flip_type: Union[Selector(kind=[STRING_KIND]), Literal["vertical", "horizontal", "both"]] = Field(  # type: ignore
         title="Flip Type",
         description="Type of flip to be applied to the image.",
         default="vertical",

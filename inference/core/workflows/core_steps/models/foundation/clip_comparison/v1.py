@@ -32,9 +32,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
-    BatchSelector,
     ImageInputField,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -70,16 +69,16 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/clip_comparison@v1", "ClipComparison"]
     name: str = Field(description="Unique name of step in workflows")
-    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
-    texts: Union[ScalarSelector(kind=[LIST_OF_VALUES_KIND]), List[str]] = Field(
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    texts: Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]] = Field(
         description="List of texts to calculate similarity against each input image",
         examples=[["a", "b", "c"], "$inputs.texts"],
         validation_alias=AliasChoices("texts", "text"),
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

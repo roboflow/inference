@@ -11,10 +11,9 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
-    BatchSelector,
     FloatZeroToOne,
     ImageInputField,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -44,33 +43,27 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/relative_statoic_crop@v1", "RelativeStaticCrop"]
-    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
-    x_center: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = (
-        Field(
-            description="Center X of static crop (relative coordinate 0.0-1.0)",
-            examples=[0.3, "$inputs.center_x"],
-        )
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    x_center: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
+        description="Center X of static crop (relative coordinate 0.0-1.0)",
+        examples=[0.3, "$inputs.center_x"],
     )
-    y_center: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = (
-        Field(
-            description="Center Y of static crop (relative coordinate 0.0-1.0)",
-            examples=[0.3, "$inputs.center_y"],
-        )
+    y_center: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
+        description="Center Y of static crop (relative coordinate 0.0-1.0)",
+        examples=[0.3, "$inputs.center_y"],
     )
-    width: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
+    width: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
         description="Width of static crop (relative value 0.0-1.0)",
         examples=[0.3, "$inputs.width"],
     )
-    height: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = (
-        Field(
-            description="Height of static crop (relative value 0.0-1.0)",
-            examples=[0.3, "$inputs.height"],
-        )
+    height: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
+        description="Height of static crop (relative value 0.0-1.0)",
+        examples=[0.3, "$inputs.height"],
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

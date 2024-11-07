@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     STRING_KIND,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -54,20 +54,20 @@ class DotManifest(ColorableVisualizationManifest):
             "BOTTOM_RIGHT",
             "CENTER_OF_MASS",
         ],
-        ScalarSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="CENTER",
         description="The anchor position for placing the dot.",
         examples=["CENTER", "$inputs.position"],
     )
 
-    radius: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    radius: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Radius of the dot in pixels.",
         default=4,
         examples=[4, "$inputs.radius"],
     )
 
-    outline_thickness: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    outline_thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the outline of the dot in pixels.",
         default=0,
         examples=[2, "$inputs.outline_thickness"],

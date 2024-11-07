@@ -8,7 +8,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
-    BatchSelector,
+    Selector,
     WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -61,8 +61,7 @@ class MixedInputWithoutBatchesBlockManifest(WorkflowBlockManifest):
     )
     type: Literal["MixedInputWithoutBatchesBlock"]
     mixed_parameter: Union[
-        WorkflowParameterSelector(),
-        BatchSelector(),
+        Selector(),
         Any,
     ]
 
@@ -97,14 +96,14 @@ class MixedInputWithBatchesBlockManifest(WorkflowBlockManifest):
     )
     type: Literal["MixedInputWithBatchesBlock"]
     mixed_parameter: Union[
-        WorkflowParameterSelector(),
-        BatchSelector(),
+        Selector(points_to_batch=True),
+        Selector(points_to_batch=False),
         Any,
     ]
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["mixed_parameter"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -138,11 +137,11 @@ class BatchInputBlockProcessingBatchesManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["BatchInputBlockProcessingBatches"]
-    batch_parameter: BatchSelector()
+    batch_parameter: Selector()
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["batch_parameter"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -174,7 +173,7 @@ class BatchInputBlockProcessingNotBatchesManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["BatchInputBlockNotProcessingBatches"]
-    batch_parameter: BatchSelector()
+    batch_parameter: Selector()
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -192,7 +191,7 @@ class BatchInputNotProcessingBatchesBlock(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BatchInputBlockProcessingNotBatchesManifest
 
-    def run(self, batch_parameter: Batch[Any]) -> BlockResult:
+    def run(self, batch_parameter: Any) -> BlockResult:
         return {"float_value": 0.4}
 
 
@@ -206,7 +205,7 @@ class CompoundNonBatchInputBlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["CompoundNonBatchInputBlock"]
-    compound_parameter: Dict[str, Union[WorkflowParameterSelector(), Any]]
+    compound_parameter: Dict[str, Union[Selector(), Any]]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -239,12 +238,12 @@ class CompoundMixedInputBlockManifest(WorkflowBlockManifest):
     )
     type: Literal["CompoundMixedInputBlockManifestBlock"]
     compound_parameter: Dict[
-        str, Union[WorkflowParameterSelector(), BatchSelector(), Any]
+        str, Union[Selector(points_to_batch=True), Selector(points_to_batch=False), Any]
     ]
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["compound_parameter"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -281,11 +280,11 @@ class CompoundStrictBatchBlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["CompoundStrictBatchBlock"]
-    compound_parameter: Dict[str, Union[BatchSelector()]]
+    compound_parameter: Dict[str, Selector()]
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["compound_parameter"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -320,7 +319,7 @@ class CompoundNonStrictBatchBlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["CompoundNonStrictBatchBlock"]
-    compound_parameter: Dict[str, Union[BatchSelector()]]
+    compound_parameter: Dict[str, Union[Selector()]]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

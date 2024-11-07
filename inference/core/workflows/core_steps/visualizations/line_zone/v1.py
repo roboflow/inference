@@ -19,9 +19,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    BatchSelector,
     FloatZeroToOne,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -47,43 +46,43 @@ class LineCounterZoneVisualizationManifest(VisualizationManifest):
             "block_type": "visualization",
         }
     )
-    zone: Union[list, BatchSelector(kind=[LIST_OF_VALUES_KIND]), ScalarSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    zone: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Line in the format [[x1, y1], [x2, y2]] consisting of exactly two points.",
         examples=[[[0, 50], [500, 50]], "$inputs.zones"],
     )
-    color: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the zone.",
         default="#5bb573",
         examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
     )
-    thickness: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the lines in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
-    text_thickness: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    text_thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the text in pixels.",
         default=1,
         examples=[1, "$inputs.text_thickness"],
     )
-    text_scale: Union[float, ScalarSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+    text_scale: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         description="Scale of the text.",
         default=1.0,
         examples=[1.0, "$inputs.text_scale"],
     )
-    count_in: Union[int, ScalarSelector(kind=[INTEGER_KIND]), BatchSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    count_in: Union[int, Selector(kind=[INTEGER_KIND]), Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Reference to the number of objects that crossed into the line zone.",
         default=0,
         examples=["$steps.line_counter.count_in"],
         json_schema_extra={"always_visible": True},
     )
-    count_out: Union[int, ScalarSelector(kind=[INTEGER_KIND]), BatchSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    count_out: Union[int, Selector(kind=[INTEGER_KIND]), Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Reference to the number of objects that crossed out of the line zone.",
         default=0,
         examples=["$steps.line_counter.count_out"],
         json_schema_extra={"always_visible": True},
     )
-    opacity: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the Mask overlay.",
         default=0.3,
         examples=[0.3, "$inputs.opacity"],

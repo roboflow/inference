@@ -16,8 +16,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
     NUMPY_ARRAY_KIND,
-    BatchSelector,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -44,14 +43,14 @@ class ImageContoursDetectionManifest(WorkflowBlockManifest):
         }
     )
 
-    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
 
-    line_thickness: Union[ScalarSelector(kind=[INTEGER_KIND]), int] = Field(
+    line_thickness: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         description="Line thickness for drawing contours.",
         default=3,
         examples=[3, "$inputs.line_thickness"],

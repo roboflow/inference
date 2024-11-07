@@ -11,8 +11,7 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     STRING_KIND,
-    BatchSelector,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -77,7 +76,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/local_file_sink@v1"]
-    content: BatchSelector(kind=[STRING_KIND]) = Field(
+    content: Selector(kind=[STRING_KIND]) = Field(
         description="Content of the file to save",
         examples=["$steps.csv_formatter.csv_content"],
     )
@@ -102,11 +101,11 @@ class BlockManifest(WorkflowBlockManifest):
             }
         },
     )
-    target_directory: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
+    target_directory: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Target directory",
         examples=["some/location"],
     )
-    file_name_prefix: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
+    file_name_prefix: Union[Selector(kind=[STRING_KIND]), str] = Field(
         default="workflow_output",
         description="File name prefix",
         examples=["my_file"],
@@ -114,7 +113,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    max_entries_per_file: Union[int, ScalarSelector(kind=[STRING_KIND])] = Field(
+    max_entries_per_file: Union[int, Selector(kind=[STRING_KIND])] = Field(
         default=1024,
         description="Defines how many datapoints can be appended to a single file",
         examples=[1024],

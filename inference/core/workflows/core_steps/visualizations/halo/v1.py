@@ -18,9 +18,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
-    BatchSelector,
     FloatZeroToOne,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -46,7 +45,7 @@ class HaloManifest(ColorableVisualizationManifest):
         }
     )
 
-    predictions: BatchSelector(
+    predictions: Selector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
@@ -55,13 +54,13 @@ class HaloManifest(ColorableVisualizationManifest):
         examples=["$steps.instance_segmentation_model.predictions"],
     )
 
-    opacity: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the halo overlay.",
         default=0.8,
         examples=[0.8, "$inputs.opacity"],
     )
 
-    kernel_size: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    kernel_size: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Size of the average pooling kernel used for creating the halo.",
         default=40,
         examples=[40, "$inputs.kernel_size"],

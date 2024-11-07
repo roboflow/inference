@@ -31,11 +31,10 @@ from inference.core.workflows.execution_engine.entities.types import (
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
-    BatchSelector,
     FloatZeroToOne,
     ImageInputField,
     RoboflowModelField,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -73,25 +72,23 @@ class BlockManifest(WorkflowBlockManifest):
         "RoboflowClassificationModel",
         "ClassificationModel",
     ]
-    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
-    model_id: Union[ScalarSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
-        RoboflowModelField
-    )
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     confidence: Union[
         FloatZeroToOne,
-        ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
         description="Confidence threshold for predictions",
         examples=[0.3, "$inputs.confidence_threshold"],
     )
-    disable_active_learning: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
+    disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="Parameter to decide if Active Learning data sampling is disabled for the model",
         examples=[True, "$inputs.disable_active_learning"],
     )
     active_learning_target_dataset: Union[
-        ScalarSelector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
+        Selector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
     ] = Field(
         default=None,
         description="Target dataset for Active Learning data sampling - see Roboflow Active Learning "
@@ -100,8 +97,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

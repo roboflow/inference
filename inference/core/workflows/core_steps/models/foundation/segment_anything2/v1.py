@@ -38,9 +38,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    BatchSelector,
     ImageInputField,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -79,9 +78,9 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     type: Literal["roboflow_core/segment_anything@v1"]
-    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     boxes: Optional[
-        BatchSelector(
+        Selector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -95,7 +94,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={"always_visible": True},
     )
     version: Union[
-        ScalarSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
         Literal["hiera_large", "hiera_small", "hiera_tiny", "hiera_b_plus"],
     ] = Field(
         default="hiera_tiny",
@@ -103,23 +102,21 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["hiera_large", "$inputs.openai_model"],
     )
     threshold: Union[
-        ScalarSelector(kind=[FLOAT_KIND]),
+        Selector(kind=[FLOAT_KIND]),
         float,
     ] = Field(
         default=0.0, description="Threshold for predicted masks scores", examples=[0.3]
     )
 
-    multimask_output: Union[Optional[bool], ScalarSelector(kind=[BOOLEAN_KIND])] = (
-        Field(
-            default=True,
-            description="Flag to determine whether to use sam2 internal multimask or single mask mode. For ambiguous prompts setting to True is recomended.",
-            examples=[True, "$inputs.multimask_output"],
-        )
+    multimask_output: Union[Optional[bool], Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Flag to determine whether to use sam2 internal multimask or single mask mode. For ambiguous prompts setting to True is recomended.",
+        examples=[True, "$inputs.multimask_output"],
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images", "boxes"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

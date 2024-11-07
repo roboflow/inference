@@ -24,9 +24,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    BatchSelector,
     FloatZeroToOne,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -58,11 +57,11 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/detections_stitch@v1"]
-    reference_image: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    reference_image: Selector(kind=[IMAGE_KIND]) = Field(
         description="Image that was origin to take crops that yielded predictions.",
         examples=["$inputs.image"],
     )
-    predictions: BatchSelector(
+    predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -73,7 +72,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     overlap_filtering_strategy: Union[
         Literal["none", "nms", "nmm"],
-        ScalarSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(
         default="nms",
         description="Which strategy to employ when filtering overlapping boxes. "
@@ -82,7 +81,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     iou_threshold: Union[
         FloatZeroToOne,
-        ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.3,
         description="Parameter of overlap filtering strategy. If box intersection over union is above this "

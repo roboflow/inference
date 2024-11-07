@@ -15,8 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
     STRING_KIND,
-    BatchSelector,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -43,7 +42,7 @@ class ImageThresholdManifest(WorkflowBlockManifest):
         }
     )
 
-    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
@@ -51,7 +50,7 @@ class ImageThresholdManifest(WorkflowBlockManifest):
     )
 
     threshold_type: Union[
-        ScalarSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
         Literal[
             "binary",
             "binary_inv",
@@ -68,12 +67,12 @@ class ImageThresholdManifest(WorkflowBlockManifest):
         examples=["binary", "$inputs.threshold_type"],
     )
 
-    thresh_value: Union[ScalarSelector(kind=[INTEGER_KIND]), int] = Field(
+    thresh_value: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         description="Threshold value.",
         examples=[127, "$inputs.thresh_value"],
     )
 
-    max_value: Union[ScalarSelector(kind=[INTEGER_KIND]), int] = Field(
+    max_value: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         description="Maximum value for thresholding",
         default=255,
         examples=[255, "$inputs.max_value"],

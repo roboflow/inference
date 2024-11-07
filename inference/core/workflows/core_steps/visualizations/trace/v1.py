@@ -15,7 +15,7 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     STRING_KIND,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -51,18 +51,18 @@ class TraceManifest(ColorableVisualizationManifest):
             "BOTTOM_RIGHT",
             "CENTER_OF_MASS",
         ],
-        ScalarSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="CENTER",
         description="The anchor position for placing the label.",
         examples=["CENTER", "$inputs.text_position"],
     )
-    trace_length: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(
+    trace_length: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=30,
         description="Maximum number of historical tracked objects positions to display.",
         examples=[30, "$inputs.trace_length"],
     )
-    thickness: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the track visualization line.",
         default=1,
         examples=[1, "$inputs.track_thickness"],

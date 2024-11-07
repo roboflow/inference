@@ -23,10 +23,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    BatchSelector,
-    ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -62,7 +59,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/perspective_correction@v1", "PerspectiveCorrection"]
     predictions: Optional[
-        BatchSelector(
+        Selector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -73,36 +70,36 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         default=None,
         examples=["$steps.object_detection_model.predictions"],
     )
-    images: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    images: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image to Crop",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    perspective_polygons: Union[list, BatchSelector(kind=[LIST_OF_VALUES_KIND]), ScalarSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    perspective_polygons: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Perspective polygons (for each batch at least one must be consisting of 4 vertices)",
         examples=["$steps.perspective_wrap.zones"],
     )
-    transformed_rect_width: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    transformed_rect_width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Transformed rect width", default=1000, examples=[1000]
     )
-    transformed_rect_height: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    transformed_rect_height: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Transformed rect height", default=1000, examples=[1000]
     )
-    extend_perspective_polygon_by_detections_anchor: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    extend_perspective_polygon_by_detections_anchor: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description=f"If set, perspective polygons will be extended to contain all bounding boxes. Allowed values: {', '.join(sv.Position.list())}",
         default="",
         examples=["CENTER"],
     )
-    warp_image: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+    warp_image: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
         description=f"If set to True, image will be warped into transformed rect",
         default=False,
         examples=[False],
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images", "predictions"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

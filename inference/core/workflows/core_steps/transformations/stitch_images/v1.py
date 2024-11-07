@@ -14,8 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
-    BatchSelector,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -47,26 +46,26 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/stitch_images@v1"]
-    image1: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    image1: Selector(kind=[IMAGE_KIND]) = Field(
         title="First image to stitch",
         description="First input image for this step.",
         examples=["$inputs.image1"],
         validation_alias=AliasChoices("image1"),
     )
-    image2: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    image2: Selector(kind=[IMAGE_KIND]) = Field(
         title="Second image to stitch",
         description="Second input image for this step.",
         examples=["$inputs.image2"],
         validation_alias=AliasChoices("image2"),
     )
-    max_allowed_reprojection_error: Union[Optional[float], ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    max_allowed_reprojection_error: Union[Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         default=3,
         description="Advanced parameter overwriting cv.findHomography ransacReprojThreshold parameter."
         " Maximum allowed reprojection error to treat a point pair as an inlier."
         " Increasing value of this parameter for low details photo may yield better results.",
         examples=[3, "$inputs.min_overlap_ratio_w"],
     )
-    count_of_best_matches_per_query_descriptor: Union[Optional[int], ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    count_of_best_matches_per_query_descriptor: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=2,
         description="Advanced parameter overwriting cv.BFMatcher.knnMatch `k` parameter."
         " Count of best matches found per each query descriptor or less if a query descriptor has less than k possible matches in total.",

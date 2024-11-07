@@ -12,7 +12,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
-    BatchSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -39,7 +39,7 @@ class ConvertGrayscaleManifest(WorkflowBlockManifest):
         }
     )
 
-    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],

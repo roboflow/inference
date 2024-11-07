@@ -30,9 +30,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     PREDICTION_TYPE_KIND,
     STRING_KIND,
     TOP_CLASS_KIND,
-    BatchSelector,
     ImageInputField,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -68,13 +67,11 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/lmm_for_classification@v1", "LMMForClassification"]
-    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
-    lmm_type: Union[
-        ScalarSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
-    ] = Field(
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    lmm_type: Union[Selector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]] = Field(
         description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
     )
-    classes: Union[List[str], ScalarSelector(kind=[LIST_OF_VALUES_KIND])] = Field(
+    classes: Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])] = Field(
         description="List of classes that LMM shall classify against",
         examples=[["a", "b"], "$inputs.classes"],
     )
@@ -89,7 +86,7 @@ class BlockManifest(WorkflowBlockManifest):
             }
         ],
     )
-    remote_api_key: Union[ScalarSelector(kind=[STRING_KIND]), Optional[str]] = Field(
+    remote_api_key: Union[Selector(kind=[STRING_KIND]), Optional[str]] = Field(
         default=None,
         description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
         examples=["xxx-xxx", "$inputs.api_key"],
@@ -97,8 +94,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

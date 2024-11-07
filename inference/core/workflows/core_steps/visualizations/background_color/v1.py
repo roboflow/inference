@@ -17,7 +17,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     STRING_KIND,
     FloatZeroToOne,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -45,13 +45,13 @@ class BackgroundColorManifest(PredictionsVisualizationManifest):
         }
     )
 
-    color: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the background.",
         default="BLACK",
         examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
     )
 
-    opacity: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the Mask overlay.",
         default=0.5,
         examples=[0.5, "$inputs.opacity"],

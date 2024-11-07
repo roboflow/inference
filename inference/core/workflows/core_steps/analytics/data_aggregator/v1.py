@@ -18,9 +18,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
-    BatchSelector,
-    ScalarSelector,
-    WorkflowImageSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -192,10 +190,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/data_aggregator@v1"]
-    data: Dict[
-        str,
-        Union[WorkflowImageSelector, ScalarSelector(), BatchSelector()],
-    ] = Field(
+    data: Dict[str, Selector()] = Field(
         description="References data to be used to construct each and every column",
         examples=[
             {

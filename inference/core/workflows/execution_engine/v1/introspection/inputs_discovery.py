@@ -36,21 +36,34 @@ SELECTED_ELEMENT_TO_INPUT_TYPE = {
     "workflow_video_metadata": {"WorkflowVideoMetadata"},
     "workflow_image": {"WorkflowImage", "InferenceImage"},
     "workflow_parameter": {"WorkflowParameter", "InferenceParameter"},
-    "scalar": {"WorkflowParameter", "InferenceParameter"},
-    "batch": {
+    "any_scalar": {"WorkflowParameter", "InferenceParameter"},
+    "any_batch": {
         "WorkflowVideoMetadata",
         "WorkflowImage",
         "InferenceImage",
         "WorkflowBatchInput",
     },
+    "any": {
+        "WorkflowVideoMetadata",
+        "WorkflowImage",
+        "InferenceImage",
+        "WorkflowBatchInput",
+        "WorkflowParameter",
+        "InferenceParameter",
+    },
 }
 INPUT_TYPE_TO_SELECTED_ELEMENT = {
-    "WorkflowVideoMetadata": {"workflow_video_metadata", "batch"},
-    "WorkflowImage": {"workflow_image", "batch"},
-    "InferenceImage": {"workflow_image", "batch"},
-    "WorkflowParameter": {"workflow_parameter", "scalar"},
-    "InferenceParameter": {"workflow_parameter", "scalar"},
-    "WorkflowBatchInput": {"batch", "workflow_image", "workflow_video_metadata"},
+    "WorkflowVideoMetadata": {"workflow_video_metadata", "any_batch", "any"},
+    "WorkflowImage": {"workflow_image", "any_batch", "any"},
+    "InferenceImage": {"workflow_image", "any_batch", "any"},
+    "WorkflowParameter": {"workflow_parameter", "any_scalar", "any"},
+    "InferenceParameter": {"workflow_parameter", "any_scalar", "any"},
+    "WorkflowBatchInput": {
+        "any_batch",
+        "workflow_image",
+        "workflow_video_metadata",
+        "any",
+    },
 }
 
 

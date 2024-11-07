@@ -13,8 +13,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
-    BatchSelector,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -49,7 +48,7 @@ class DynamicZonesManifest(WorkflowBlockManifest):
         }
     )
     type: Literal[f"{TYPE}", "DynamicZone"]
-    predictions: BatchSelector(
+    predictions: Selector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
@@ -57,14 +56,14 @@ class DynamicZonesManifest(WorkflowBlockManifest):
         description="",
         examples=["$segmentation.predictions"],
     )
-    required_number_of_vertices: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    required_number_of_vertices: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Keep simplifying polygon until number of vertices matches this number",
         examples=[4, "$inputs.vertices"],
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["predictions"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

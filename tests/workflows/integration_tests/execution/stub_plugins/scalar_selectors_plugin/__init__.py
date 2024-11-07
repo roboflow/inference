@@ -13,8 +13,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    BatchSelector,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -49,15 +48,15 @@ class SecretStoreBlock(WorkflowBlock):
 
 class BlockManifest(WorkflowBlockManifest):
     type: Literal["secret_store_user"]
-    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
     )
-    secret: ScalarSelector(kind=[STRING_KIND])
+    secret: Selector(kind=[STRING_KIND])
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["image"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -82,7 +81,7 @@ class SecretStoreUserBlock(WorkflowBlock):
 
 class BatchSecretBlockManifest(WorkflowBlockManifest):
     type: Literal["batch_secret_store"]
-    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
     )
@@ -110,7 +109,7 @@ class BatchSecretStoreBlock(WorkflowBlock):
 
 class NonBatchSecretStoreUserBlockManifest(WorkflowBlockManifest):
     type: Literal["non_batch_secret_store_user"]
-    secret: ScalarSelector(kind=[STRING_KIND])
+    secret: Selector(kind=[STRING_KIND])
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -135,8 +134,8 @@ class NonBatchSecretStoreUserBlock(WorkflowBlock):
 
 class BlockWithReferenceImagesManifest(WorkflowBlockManifest):
     type: Literal["reference_images_comparison"]
-    image: BatchSelector(kind=[IMAGE_KIND])
-    reference_images: Union[ScalarSelector(kind=[LIST_OF_VALUES_KIND]), Any]
+    image: Selector(kind=[IMAGE_KIND])
+    reference_images: Union[Selector(kind=[LIST_OF_VALUES_KIND]), Any]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

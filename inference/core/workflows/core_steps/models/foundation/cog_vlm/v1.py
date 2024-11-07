@@ -26,9 +26,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     PARENT_ID_KIND,
     STRING_KIND,
     WILDCARD_KIND,
-    BatchSelector,
     ImageInputField,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -63,8 +62,8 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/cog_vlm@v1", "CogVLM"]
-    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
-    prompt: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    prompt: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Text prompt to the CogVLM model",
         examples=["my prompt", "$inputs.prompt"],
     )
@@ -78,8 +77,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

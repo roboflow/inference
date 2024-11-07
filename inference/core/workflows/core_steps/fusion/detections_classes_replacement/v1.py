@@ -19,7 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    BatchSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -54,7 +54,7 @@ class BlockManifest(WorkflowBlockManifest):
         "roboflow_core/detections_classes_replacement@v1",
         "DetectionsClassesReplacement",
     ]
-    object_detection_predictions: BatchSelector(
+    object_detection_predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -65,12 +65,10 @@ class BlockManifest(WorkflowBlockManifest):
         description="The output of a detection model describing the bounding boxes that will have classes replaced.",
         examples=["$steps.my_object_detection_model.predictions"],
     )
-    classification_predictions: BatchSelector(kind=[CLASSIFICATION_PREDICTION_KIND]) = (
-        Field(
-            title="Classification results for crops",
-            description="The output of classification model for crops taken based on RoIs pointed as the other parameter",
-            examples=["$steps.my_classification_model.predictions"],
-        )
+    classification_predictions: Selector(kind=[CLASSIFICATION_PREDICTION_KIND]) = Field(
+        title="Classification results for crops",
+        description="The output of classification model for crops taken based on RoIs pointed as the other parameter",
+        examples=["$steps.my_classification_model.predictions"],
     )
 
     @classmethod

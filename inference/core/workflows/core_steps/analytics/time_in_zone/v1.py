@@ -20,9 +20,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    BatchSelector,
-    ScalarSelector,
-    WorkflowVideoMetadataSelector,
+    VIDEO_METADATA_KIND,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -51,13 +50,13 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/time_in_zone@v1"]
-    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    metadata: WorkflowVideoMetadataSelector
-    detections: BatchSelector(
+    metadata: Selector(kind=[VIDEO_METADATA_KIND])
+    detections: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -66,21 +65,21 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         description="Predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    zone: Union[list, BatchSelector(kind=[LIST_OF_VALUES_KIND]), ScalarSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    zone: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Zones (one for each batch) in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
         examples=["$inputs.zones"],
     )
-    triggering_anchor: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    triggering_anchor: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description=f"Triggering anchor. Allowed values: {', '.join(sv.Position.list())}",
         default="CENTER",
         examples=["CENTER"],
     )
-    remove_out_of_zone_detections: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+    remove_out_of_zone_detections: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
         description=f"If true, detections found outside of zone will be filtered out",
         default=True,
         examples=[True, False],
     )
-    reset_out_of_zone_detections: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+    reset_out_of_zone_detections: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
         description=f"If true, detections found outside of zone will have time reset",
         default=True,
         examples=[True, False],

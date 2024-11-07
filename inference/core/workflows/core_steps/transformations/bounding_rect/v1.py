@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.constants import (
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BatchSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -46,8 +46,8 @@ class BoundingRectManifest(WorkflowBlockManifest):
             "block_type": "transformation",
         }
     )
-    type: Literal[f"roboflow_core/bounding_rect@v1"]
-    predictions: BatchSelector(
+    type: Literal["roboflow_core/bounding_rect@v1"]
+    predictions: Selector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
@@ -55,10 +55,6 @@ class BoundingRectManifest(WorkflowBlockManifest):
         description="",
         examples=["$segmentation.predictions"],
     )
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

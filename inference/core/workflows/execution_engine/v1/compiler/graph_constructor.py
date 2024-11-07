@@ -678,11 +678,14 @@ def denote_data_flow_for_step(
     parsed_step_input_selectors: List[ParsedSelector] = execution_graph.nodes[node][
         PARSED_NODE_INPUT_SELECTORS_PROPERTY
     ]
-    input_property2batch_expected = {}
+    input_property2batch_expected = defaultdict(set)
     for parsed_selector in parsed_step_input_selectors:
-        input_property2batch_expected[parsed_selector.definition.property_name] = {
-            ref.points_to_batch for ref in parsed_selector.definition.allowed_references
-        }
+        input_property2batch_expected[parsed_selector.definition.property_name].update(
+            {
+                ref.points_to_batch
+                for ref in parsed_selector.definition.allowed_references
+            }
+        )
     for property_name, input_definition in input_data.items():
         if property_name not in input_property2batch_expected:
             # only values plugged vi selectors are to be validated

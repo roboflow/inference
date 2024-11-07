@@ -20,8 +20,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    BatchSelector,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -55,7 +54,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/roboflow_custom_metadata@v1", "RoboflowCustomMetadata"]
-    predictions: BatchSelector(
+    predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -68,8 +67,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
     field_value: Union[
         str,
-        ScalarSelector(kind=[STRING_KIND]),
-        BatchSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(
         description="This is the name of the metadata field you are creating",
         examples=["toronto", "pass", "fail"],
@@ -78,7 +77,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Name of the field to be updated in Roboflow Customer Metadata",
         examples=["The name of the value of the field"],
     )
-    fire_and_forget: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
+    fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="Boolean flag dictating if sink is supposed to be executed in the background, "
         "not waiting on status of registration before end of workflow run. Use `True` if best-effort "

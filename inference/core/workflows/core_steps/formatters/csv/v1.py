@@ -17,9 +17,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
-    BatchSelector,
-    ScalarSelector,
-    WorkflowImageSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -138,9 +136,8 @@ class BlockManifest(WorkflowBlockManifest):
     columns_data: Dict[
         str,
         Union[
-            WorkflowImageSelector,
-            ScalarSelector(),
-            BatchSelector(),
+            Selector(points_to_batch=False),
+            Selector(points_to_batch=True),
             str,
             int,
             float,
@@ -177,8 +174,8 @@ class BlockManifest(WorkflowBlockManifest):
         return value
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["columns_data"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

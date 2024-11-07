@@ -24,8 +24,8 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     BAR_CODE_DETECTION_KIND,
     IMAGE_KIND,
-    BatchSelector,
     ImageInputField,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -56,11 +56,11 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal[
         "roboflow_core/barcode_detector@v1", "BarcodeDetector", "BarcodeDetection"
     ]
-    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

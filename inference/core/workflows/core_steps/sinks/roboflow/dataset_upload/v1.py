@@ -64,9 +64,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
-    BatchSelector,
     ImageInputField,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -103,9 +102,9 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/roboflow_dataset_upload@v1", "RoboflowDatasetUpload"]
-    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     predictions: Optional[
-        BatchSelector(
+        Selector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -118,7 +117,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference q detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    target_project: Union[ScalarSelector(kind=[ROBOFLOW_PROJECT_KIND]), str] = Field(
+    target_project: Union[Selector(kind=[ROBOFLOW_PROJECT_KIND]), str] = Field(
         description="name of Roboflow dataset / project to be used as target for collected data",
         examples=["my_dataset", "$inputs.target_al_dataset"],
     )
@@ -163,25 +162,25 @@ class BlockManifest(WorkflowBlockManifest):
         description="Compression level for images registered",
         examples=[75],
     )
-    registration_tags: List[Union[ScalarSelector(kind=[STRING_KIND]), str]] = Field(
+    registration_tags: List[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default_factory=list,
         description="Tags to be attached to registered datapoints",
         examples=[["location-florida", "factory-name", "$inputs.dynamic_tag"]],
     )
-    disable_sink: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
+    disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         description="boolean flag that can be also reference to input - to arbitrarily disable "
         "data collection for specific request",
         examples=[True, "$inputs.disable_active_learning"],
     )
-    fire_and_forget: Union[bool, ScalarSelector(kind=[BOOLEAN_KIND])] = Field(
+    fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="Boolean flag dictating if sink is supposed to be executed in the background, "
         "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
         "registration is needed, use `False` while debugging and if error handling is needed",
         examples=[True],
     )
-    labeling_batch_prefix: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(
+    labeling_batch_prefix: Union[str, Selector(kind=[STRING_KIND])] = Field(
         default="workflows_data_collector",
         description="Prefix of the name for labeling batches that will be registered in Roboflow app",
         examples=["my_labeling_batch_name"],
@@ -195,8 +194,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images", "predictions"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

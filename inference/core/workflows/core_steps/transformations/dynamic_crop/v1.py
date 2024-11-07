@@ -22,10 +22,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     RGB_COLOR_KIND,
     STRING_KIND,
-    BatchSelector,
-    ScalarSelector,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -60,13 +57,13 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/dynamic_crop@v1", "DynamicCrop", "Crop"]
-    images: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    images: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image to Crop",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    predictions: BatchSelector(
+    predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -79,7 +76,7 @@ class BlockManifest(WorkflowBlockManifest):
         validation_alias=AliasChoices("predictions", "detections"),
     )
     mask_opacity: Union[
-        ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
         float,
     ] = Field(
         default=0.0,
@@ -97,8 +94,8 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     background_color: Union[
-        ScalarSelector(kind=[STRING_KIND]),
-        BatchSelector(kind=[RGB_COLOR_KIND]),
+        Selector(kind=[STRING_KIND]),
+        Selector(kind=[RGB_COLOR_KIND]),
         str,
         Tuple[int, int, int],
     ] = Field(
@@ -110,8 +107,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images", "predictions"]
 
     @classmethod
     def get_output_dimensionality_offset(cls) -> int:

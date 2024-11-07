@@ -14,8 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    BatchSelector,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -45,18 +44,18 @@ class ReferencePathVisualizationManifest(VisualizationManifest):
     )
     reference_path: Union[
         list,
-        BatchSelector(kind=[LIST_OF_VALUES_KIND]),
-        ScalarSelector(kind=[LIST_OF_VALUES_KIND]),
+        Selector(kind=[LIST_OF_VALUES_KIND]),
+        Selector(kind=[LIST_OF_VALUES_KIND]),
     ] = Field(  # type: ignore
         description="Reference path in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
         examples=["$inputs.expected_path"],
     )
-    color: Union[str, ScalarSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the zone.",
         default="#5bb573",
         examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
     )
-    thickness: Union[int, ScalarSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the lines in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],

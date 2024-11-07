@@ -13,8 +13,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     RGB_COLOR_KIND,
     STRING_KIND,
-    BatchSelector,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -39,15 +38,15 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
             "block_type": "classical_computer_vision",
         }
     )
-    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
     target_color: Union[
-        ScalarSelector(kind=[STRING_KIND]),
-        BatchSelector(kind=[RGB_COLOR_KIND]),
+        Selector(kind=[STRING_KIND]),
+        Selector(kind=[RGB_COLOR_KIND]),
         str,
         Tuple[int, int, int],
     ] = Field(
@@ -56,7 +55,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
         "(like (18, 17, 67)).",
         examples=["#431112", "$inputs.target_color", (18, 17, 67)],
     )
-    tolerance: Union[ScalarSelector(kind=[INTEGER_KIND]), int] = Field(
+    tolerance: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=10,
         description="Tolerance for color matching.",
         examples=[10, "$inputs.tolerance"],

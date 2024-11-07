@@ -14,9 +14,8 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    BatchSelector,
     FloatZeroToOne,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -42,7 +41,7 @@ class MaskManifest(ColorableVisualizationManifest):
         }
     )
 
-    predictions: BatchSelector(
+    predictions: Selector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
@@ -51,7 +50,7 @@ class MaskManifest(ColorableVisualizationManifest):
         examples=["$steps.instance_segmentation_model.predictions"],
     )
 
-    opacity: Union[FloatZeroToOne, ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the Mask overlay.",
         default=0.5,
         examples=[0.5, "$inputs.opacity"],

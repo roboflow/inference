@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult
 
@@ -74,7 +74,7 @@ class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
             # "Matplotlib Oranges_R",
             # "Matplotlib Reds_R",
         ],
-        ScalarSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="DEFAULT",
         description="Color palette to use for annotations.",
@@ -83,14 +83,14 @@ class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
 
     palette_size: Union[
         int,
-        ScalarSelector(kind=[INTEGER_KIND]),
+        Selector(kind=[INTEGER_KIND]),
     ] = Field(  # type: ignore
         default=10,
         description="Number of colors in the color palette. Applies when using a matplotlib `color_palette`.",
         examples=[10, "$inputs.palette_size"],
     )
 
-    custom_colors: Union[List[str], ScalarSelector(kind=[LIST_OF_VALUES_KIND])] = (
+    custom_colors: Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])] = (
         Field(  # type: ignore
             default=[],
             description='List of colors to use for annotations when `color_palette` is set to "CUSTOM".',
@@ -100,7 +100,7 @@ class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
 
     color_axis: Union[
         Literal["INDEX", "CLASS", "TRACK"],
-        ScalarSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="CLASS",
         description="Strategy to use for mapping colors to annotations.",

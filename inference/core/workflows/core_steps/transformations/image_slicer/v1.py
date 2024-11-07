@@ -15,8 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
-    BatchSelector,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -57,25 +56,25 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/image_slicer@v1"]
-    image: BatchSelector(kind=[IMAGE_KIND]) = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image to slice",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
-    slice_width: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = Field(
+    slice_width: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
         default=640,
         description="Width of each slice, in pixels",
         examples=[320, "$inputs.slice_width"],
     )
-    slice_height: Union[PositiveInt, ScalarSelector(kind=[INTEGER_KIND])] = Field(
+    slice_height: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
         default=640,
         description="Height of each slice, in pixels",
         examples=[320, "$inputs.slice_height"],
     )
     overlap_ratio_width: Union[
         Annotated[float, Field(ge=0.0, lt=1.0)],
-        ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.2,
         description="Overlap ratio between consecutive slices in the width dimension",
@@ -83,7 +82,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     overlap_ratio_height: Union[
         Annotated[float, Field(ge=0.0, lt=1.0)],
-        ScalarSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.2,
         description="Overlap ratio between consecutive slices in the height dimension",

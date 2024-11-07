@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional, Union
 
 from pydantic import AliasChoices, BaseModel, Field, StringConstraints
 from typing_extensions import Annotated
@@ -1067,41 +1067,6 @@ def StepOutputSelector(kind: Optional[List[Kind]] = None):
     ]
 
 
-def BatchSelector(kind: Optional[List[Kind]] = None):
-    if kind is None:
-        kind = [WILDCARD_KIND]
-    json_schema_extra = {
-        REFERENCE_KEY: True,
-        SELECTED_ELEMENT_KEY: BATCH_AS_SELECTED_ELEMENT,
-        KIND_KEY: [k.dict() for k in kind],
-        SELECTOR_POINTS_TO_BATCH_KEY: True,
-    }
-    return Annotated[
-        str,
-        StringConstraints(
-            pattern=r"(^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$)|(^\$inputs.[A-Za-z_0-9\-]+$)"
-        ),
-        Field(json_schema_extra=json_schema_extra),
-    ]
-
-
-def ScalarSelector(kind: Optional[List[Kind]] = None):
-    if kind is None:
-        kind = [WILDCARD_KIND]
-    json_schema_extra = {
-        REFERENCE_KEY: True,
-        SELECTED_ELEMENT_KEY: SCALAR_AS_SELECTED_ELEMENT,
-        KIND_KEY: [k.dict() for k in kind],
-    }
-    return Annotated[
-        str,
-        StringConstraints(
-            pattern=r"(^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$)|(^\$inputs.[A-Za-z_0-9\-]+$)"
-        ),
-        Field(json_schema_extra=json_schema_extra),
-    ]
-
-
 def WorkflowParameterSelector(kind: Optional[List[Kind]] = None):
     if kind is None:
         kind = [WILDCARD_KIND]
@@ -1158,3 +1123,29 @@ WorkflowVideoMetadataSelector = Annotated[
         }
     ),
 ]
+
+
+def Selector(
+    kind: Optional[List[Kind]] = None,
+    points_to_batch: Union[bool, Literal["dynamic"]] = "dynamic",
+):
+    if kind is None:
+        kind = [WILDCARD_KIND]
+    selected_element_key = "any"
+    if points_to_batch is True:
+        selected_element_key = f"{selected_element_key}_batch"
+    elif points_to_batch is False:
+        selected_element_key = f"{selected_element_key}_scalar"
+    json_schema_extra = {
+        REFERENCE_KEY: True,
+        SELECTED_ELEMENT_KEY: selected_element_key,
+        KIND_KEY: [k.dict() for k in kind],
+        SELECTOR_POINTS_TO_BATCH_KEY: points_to_batch,
+    }
+    return Annotated[
+        str,
+        StringConstraints(
+            pattern=r"(^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$)|(^\$inputs.[A-Za-z_0-9\-]+$)"
+        ),
+        Field(json_schema_extra=json_schema_extra),
+    ]

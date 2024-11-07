@@ -24,9 +24,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    BatchSelector,
     ImageInputField,
-    ScalarSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -108,7 +107,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["roboflow_core/google_gemini@v1"]
-    images: BatchSelector(kind=[IMAGE_KIND]) = ImageInputField
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
         description="Task type to be performed by model. Value determines required parameters and output response.",
@@ -123,7 +122,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    prompt: Optional[Union[ScalarSelector(kind=[STRING_KIND]), str]] = Field(
+    prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Text prompt to the Gemini model",
         examples=["my prompt", "$inputs.prompt"],
@@ -146,28 +145,26 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    classes: Optional[Union[ScalarSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = (
-        Field(
-            default=None,
-            description="List of classes to be used",
-            examples=[["class-a", "class-b"], "$inputs.classes"],
-            json_schema_extra={
-                "relevant_for": {
-                    "task_type": {
-                        "values": TASKS_REQUIRING_CLASSES,
-                        "required": True,
-                    },
+    classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
+        default=None,
+        description="List of classes to be used",
+        examples=[["class-a", "class-b"], "$inputs.classes"],
+        json_schema_extra={
+            "relevant_for": {
+                "task_type": {
+                    "values": TASKS_REQUIRING_CLASSES,
+                    "required": True,
                 },
             },
-        )
+        },
     )
-    api_key: Union[ScalarSelector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Your Google AI API key",
         examples=["xxx-xxx", "$inputs.google_api_key"],
         private=True,
     )
     model_version: Union[
-        ScalarSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
         Literal["gemini-1.5-flash", "gemini-1.5-pro"],
     ] = Field(
         default="gemini-1.5-flash",
@@ -178,7 +175,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=450,
         description="Maximum number of tokens the model can generate in it's response.",
     )
-    temperature: Optional[Union[float, ScalarSelector(kind=[FLOAT_KIND])]] = Field(
+    temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
         'random / "creative" the generations are.',
@@ -212,8 +209,8 @@ class BlockManifest(WorkflowBlockManifest):
         return self
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
