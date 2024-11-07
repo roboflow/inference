@@ -622,6 +622,33 @@ def test_consumption_of_video_file_in_eager_mode_ends_successfully(
         tear_down_source(source=source)
 
 
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_consumption_of_video_file_with_desired_fps_succeeds(
+    local_video_path: str,
+) -> None:
+    # given
+    source = VideoSource.init(
+        video_reference=local_video_path,
+        desired_fps=10,
+    )
+
+    try:
+        # when
+        frames_consumed = 0
+        source.start()
+        for _ in source:
+            frames_consumed += 1
+
+        # then
+        assert frames_consumed <= 150, (
+            "Video has 431 frames at 30fps, at max we should process 144 frames, "
+            "with slight randomness possible"
+        )
+    finally:
+        tear_down_source(source=source)
+
+
 def test_drop_single_frame_from_buffer_when_buffer_is_empty() -> None:
     # given
     buffer = Queue()
