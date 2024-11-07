@@ -172,9 +172,6 @@ ENABLE_BYTE_TRACK = str2bool(os.getenv("ENABLE_BYTE_TRACK", False))
 
 ENABLE_PROMETHEUS = str2bool(os.getenv("ENABLE_PROMETHEUS", False))
 
-# Flag to enable gzip compression, default is False
-ENABLE_GZIP = str2bool(os.getenv("ENABLE_GZIP", False))
-
 # Flag to enforce FPS, default is False
 ENFORCE_FPS = str2bool(os.getenv("ENFORCE_FPS", False))
 MAX_FPS = os.getenv("MAX_FPS")

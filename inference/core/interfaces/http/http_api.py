@@ -7,9 +7,8 @@ from typing import Any, Dict, List, Optional, Union
 
 import asgi_correlation_id
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI, Path, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
@@ -114,7 +113,6 @@ from inference.core.env import (
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
     DOCKER_SOCKET_PATH,
-    ENABLE_GZIP,
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
@@ -160,6 +158,7 @@ from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
+from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
 from inference.core.interfaces.http.orjson_utils import (
     orjson_response,
     serialise_workflow_result,
@@ -509,9 +508,6 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
-
-        if ENABLE_GZIP:
-            app.add_middleware(GZipMiddleware, minimum_size=1024)
 
         if ENABLE_PROMETHEUS:
             InferenceInstrumentator(
@@ -1248,8 +1244,11 @@ class HttpInterface(BaseInterface):
                 deprecated=True,
             )
             @with_route_exceptions
-            async def describe_workflows_blocks() -> WorkflowsBlocksDescription:
-                return handle_describe_workflows_blocks_request()
+            async def describe_workflows_blocks(
+                request: Request,
+            ) -> Union[WorkflowsBlocksDescription, Response]:
+                result = handle_describe_workflows_blocks_request()
+                return gzip_response_if_requested(request=request, response=result)
 
             @app.post(
                 "/workflows/blocks/describe",
@@ -1263,20 +1262,24 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def describe_workflows_blocks(
-                request: Optional[DescribeBlocksRequest] = None,
-            ) -> WorkflowsBlocksDescription:
+                request: Request,
+                request_payload: Optional[DescribeBlocksRequest] = None,
+            ) -> Union[WorkflowsBlocksDescription, Response]:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 dynamic_blocks_definitions = None
                 requested_execution_engine_version = None
-                if request is not None:
-                    dynamic_blocks_definitions = request.dynamic_blocks_definitions
-                    requested_execution_engine_version = (
-                        request.execution_engine_version
+                if request_payload is not None:
+                    dynamic_blocks_definitions = (
+                        request_payload.dynamic_blocks_definitions
                     )
-                return handle_describe_workflows_blocks_request(
+                    requested_execution_engine_version = (
+                        request_payload.execution_engine_version
+                    )
+                result = handle_describe_workflows_blocks_request(
                     dynamic_blocks_definitions=dynamic_blocks_definitions,
                     requested_execution_engine_version=requested_execution_engine_version,
                 )
+                return gzip_response_if_requested(request=request, response=result)
 
             @app.get(
                 "/workflows/definition/schema",
