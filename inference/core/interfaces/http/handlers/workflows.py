@@ -92,6 +92,7 @@ def handle_describe_workflows_blocks_request(
     return WorkflowsBlocksDescription(
         blocks=blocks_description.blocks,
         declared_kinds=blocks_description.declared_kinds,
+        uql_defs=blocks_description.uql_defs,
         kinds_connections=kinds_connections,
         primitives_connections=primitives_connections,
         universal_query_language_description=universal_query_language_description,

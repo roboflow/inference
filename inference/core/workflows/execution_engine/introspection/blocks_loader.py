@@ -52,8 +52,33 @@ def describe_available_blocks(
         + dynamic_blocks
     )
     result = []
+    uql_defs = {}
     for block in blocks:
+        if (
+            block.identifier
+            == "inference.core.workflows.core_steps.formatters.expression.v1.ExpressionBlockV1"
+        ):
+            block_schema = block.manifest_class.model_json_schema()
+            if "$defs" in block_schema:
+                uql_defs = block_schema[
+                    "$defs"
+                ].copy()  # Make a copy to preserve the original
+
         block_schema = block.manifest_class.model_json_schema()
+        if "$defs" in block_schema:
+            del block_schema["$defs"]
+
+        def remove_docs(obj):
+            if isinstance(obj, dict):
+                if "docs" in obj:
+                    del obj["docs"]
+                for value in obj.values():
+                    remove_docs(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    remove_docs(item)
+
+        remove_docs(block_schema)
         outputs_manifest = block.manifest_class.describe_outputs()
         manifest_type_identifiers = get_manifest_type_identifiers(
             block_schema=block_schema,
@@ -81,7 +106,9 @@ def describe_available_blocks(
         )
     _validate_loaded_blocks_manifest_type_identifiers(blocks=result)
     declared_kinds = load_all_defined_kinds()
-    return BlocksDescription(blocks=result, declared_kinds=declared_kinds)
+    return BlocksDescription(
+        blocks=result, declared_kinds=declared_kinds, uql_defs=uql_defs
+    )
 
 
 def get_manifest_type_identifiers(

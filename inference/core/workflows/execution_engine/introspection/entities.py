@@ -140,3 +140,4 @@ class BlocksDescription(BaseModel):
         description="List of blocks definitions that can be used to create workflow."
     )
     declared_kinds: List[Kind]
+    uql_defs: dict = Field(description="Definitions of UQL types")
