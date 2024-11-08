@@ -36,13 +36,6 @@ SELECTED_ELEMENT_TO_INPUT_TYPE = {
     "workflow_video_metadata": {"WorkflowVideoMetadata"},
     "workflow_image": {"WorkflowImage", "InferenceImage"},
     "workflow_parameter": {"WorkflowParameter", "InferenceParameter"},
-    "any_scalar": {"WorkflowParameter", "InferenceParameter"},
-    "any_batch": {
-        "WorkflowVideoMetadata",
-        "WorkflowImage",
-        "InferenceImage",
-        "WorkflowBatchInput",
-    },
     "any": {
         "WorkflowVideoMetadata",
         "WorkflowImage",
@@ -53,13 +46,12 @@ SELECTED_ELEMENT_TO_INPUT_TYPE = {
     },
 }
 INPUT_TYPE_TO_SELECTED_ELEMENT = {
-    "WorkflowVideoMetadata": {"workflow_video_metadata", "any_batch", "any"},
-    "WorkflowImage": {"workflow_image", "any_batch", "any"},
-    "InferenceImage": {"workflow_image", "any_batch", "any"},
-    "WorkflowParameter": {"workflow_parameter", "any_scalar", "any"},
-    "InferenceParameter": {"workflow_parameter", "any_scalar", "any"},
+    "WorkflowVideoMetadata": {"workflow_video_metadata", "any"},
+    "WorkflowImage": {"workflow_image", "any"},
+    "InferenceImage": {"workflow_image", "any"},
+    "WorkflowParameter": {"workflow_parameter", "any"},
+    "InferenceParameter": {"workflow_parameter", "any"},
     "WorkflowBatchInput": {
-        "any_batch",
         "workflow_image",
         "workflow_video_metadata",
         "any",

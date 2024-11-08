@@ -18,7 +18,7 @@ KindName = str
 class ReferenceDefinition:
     selected_element: str
     kind: List[Kind]
-    points_to_batch: bool
+    points_to_batch: Set[bool]
 
 
 @dataclass(frozen=True)

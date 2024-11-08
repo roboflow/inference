@@ -8,7 +8,6 @@ from inference.core.workflows.errors import (
     StepExecutionError,
     WorkflowError,
 )
-from inference.core.workflows.execution_engine.constants import SCALAR_PARAMETERS_TO_BROADCAST_PROPERTY
 from inference.core.workflows.execution_engine.profiling.core import (
     NullWorkflowsProfiler,
     WorkflowsProfiler,
@@ -173,14 +172,10 @@ def run_simd_step(
     step_instance = workflow.steps[step_name].step
     step_manifest = workflow.steps[step_name].manifest
     if step_manifest.accepts_batch_input():
-        scalar_inputs_to_broadcast = workflow.execution_graph.nodes[step_selector].get(
-            SCALAR_PARAMETERS_TO_BROADCAST_PROPERTY, set()
-        )
         return run_simd_step_in_batch_mode(
             step_selector=step_selector,
             step_instance=step_instance,
             execution_data_manager=execution_data_manager,
-            scalar_inputs_to_broadcast=scalar_inputs_to_broadcast,
             profiler=profiler,
         )
     return run_simd_step_in_non_batch_mode(
@@ -195,7 +190,6 @@ def run_simd_step_in_batch_mode(
     step_selector: str,
     step_instance: WorkflowBlock,
     execution_data_manager: ExecutionDataManager,
-    scalar_inputs_to_broadcast: Set[str],
     profiler: Optional[WorkflowsProfiler] = None,
 ) -> None:
     with profiler.profile_execution_phase(
@@ -205,7 +199,6 @@ def run_simd_step_in_batch_mode(
     ):
         step_input = execution_data_manager.get_simd_step_input(
             step_selector=step_selector,
-            scalar_inputs_to_broadcast=scalar_inputs_to_broadcast,
         )
     with profiler.profile_execution_phase(
         name="step_code_execution",

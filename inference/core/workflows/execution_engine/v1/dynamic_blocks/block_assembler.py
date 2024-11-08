@@ -360,7 +360,7 @@ def assembly_manifest_class_methods(
     setattr(manifest_class, "describe_outputs", classmethod(describe_outputs))
     setattr(manifest_class, "get_actual_outputs", describe_outputs)
     accepts_batch_input = (
-        lambda cls: len(manifest_description.batch_oriented_parameters) > 0
+        lambda cls: len(manifest_description.batch_oriented_parameters) > 0 or len(manifest_description.mixed_parameters)
         or manifest_description.accepts_batch_input
     )
     setattr(manifest_class, "accepts_batch_input", classmethod(accepts_batch_input))
@@ -371,6 +371,12 @@ def assembly_manifest_class_methods(
         manifest_class,
         "get_parameters_accepting_batches",
         classmethod(get_parameters_accepting_batches),
+    )
+    get_parameters_accepting_mixed_input = lambda cls: manifest_description.mixed_parameters
+    setattr(
+        manifest_class,
+        "get_parameters_accepting_mixed_input",
+        classmethod(get_parameters_accepting_mixed_input),
     )
     input_dimensionality_offsets = collect_input_dimensionality_offsets(
         inputs=manifest_description.inputs

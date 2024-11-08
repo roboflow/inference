@@ -96,8 +96,7 @@ class MixedInputWithBatchesBlockManifest(WorkflowBlockManifest):
     )
     type: Literal["MixedInputWithBatchesBlock"]
     mixed_parameter: Union[
-        Selector(points_to_batch=True),
-        Selector(points_to_batch=False),
+        Selector(),
         Any,
     ]
 
@@ -240,7 +239,7 @@ class CompoundMixedInputBlockManifest(WorkflowBlockManifest):
     )
     type: Literal["CompoundMixedInputBlockManifestBlock"]
     compound_parameter: Dict[
-        str, Union[Selector(points_to_batch=True), Selector(points_to_batch=False), Any]
+        str, Union[Selector(), Any]
     ]
 
     @classmethod

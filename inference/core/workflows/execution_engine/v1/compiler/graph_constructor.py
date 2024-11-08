@@ -21,7 +21,7 @@ from inference.core.workflows.errors import (
 from inference.core.workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
     PARSED_NODE_INPUT_SELECTORS_PROPERTY,
-    WORKFLOW_INPUT_BATCH_LINEAGE_ID, SCALAR_PARAMETERS_TO_BROADCAST_PROPERTY,
+    WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     InputType,
@@ -30,7 +30,6 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     STEP_AS_SELECTED_ELEMENT,
-    WILDCARD_KIND,
     Kind,
 )
 from inference.core.workflows.execution_engine.introspection.entities import (
@@ -680,14 +679,8 @@ def denote_data_flow_for_step(
     ]
     input_property2batch_expected = defaultdict(set)
     for parsed_selector in parsed_step_input_selectors:
-        input_property2batch_expected[parsed_selector.definition.property_name].update(
-            {
-                ref.points_to_batch
-                for ref in parsed_selector.definition.allowed_references
-            }
-        )
-    if SCALAR_PARAMETERS_TO_BROADCAST_PROPERTY not in execution_graph.nodes[node]:
-        execution_graph.nodes[node][SCALAR_PARAMETERS_TO_BROADCAST_PROPERTY] = set()
+        for reference in parsed_selector.definition.allowed_references:
+            input_property2batch_expected[parsed_selector.definition.property_name].update(reference.points_to_batch)
     for property_name, input_definition in input_data.items():
         if property_name not in input_property2batch_expected:
             # only values plugged vi selectors are to be validated
@@ -720,9 +713,16 @@ def denote_data_flow_for_step(
             and batch_input_expected == {True}
             and False in actual_input_is_batch
         ):
-            execution_graph.nodes[node][
-                SCALAR_PARAMETERS_TO_BROADCAST_PROPERTY
-            ].add(property_name)
+            raise ExecutionGraphStructureError(
+                public_message=f"Detected invalid reference plugged "
+                               f"into property `{property_name}` of step `{node}` - the step "
+                               f"property strictly requires batch-oriented inputs, yet the input selector "
+                               f"holds non-batch oriented input - this indicates the "
+                               f"problem with construction of your Workflow - usually the problem occurs when "
+                               f"non-batch oriented step inputs are filled with outputs of non batch-oriented "
+                               f"steps or non batch-oriented inputs.",
+                context="workflow_compilation | execution_graph_construction",
+            )
     if not parameters_with_batch_inputs:
         data_lineage = []
     else:

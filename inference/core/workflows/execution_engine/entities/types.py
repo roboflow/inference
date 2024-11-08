@@ -1127,20 +1127,14 @@ WorkflowVideoMetadataSelector = Annotated[
 
 def Selector(
     kind: Optional[List[Kind]] = None,
-    points_to_batch: Union[bool, Literal["dynamic"]] = "dynamic",
 ):
     if kind is None:
         kind = [WILDCARD_KIND]
-    selected_element_key = "any"
-    if points_to_batch is True:
-        selected_element_key = f"{selected_element_key}_batch"
-    elif points_to_batch is False:
-        selected_element_key = f"{selected_element_key}_scalar"
     json_schema_extra = {
         REFERENCE_KEY: True,
-        SELECTED_ELEMENT_KEY: selected_element_key,
+        SELECTED_ELEMENT_KEY: "any",
         KIND_KEY: [k.dict() for k in kind],
-        SELECTOR_POINTS_TO_BATCH_KEY: points_to_batch,
+        SELECTOR_POINTS_TO_BATCH_KEY: "dynamic",
     }
     return Annotated[
         str,

@@ -136,8 +136,7 @@ class BlockManifest(WorkflowBlockManifest):
     columns_data: Dict[
         str,
         Union[
-            Selector(points_to_batch=False),
-            Selector(points_to_batch=True),
+            Selector(),
             str,
             int,
             float,
@@ -174,7 +173,7 @@ class BlockManifest(WorkflowBlockManifest):
         return value
 
     @classmethod
-    def get_parameters_accepting_batches(cls) -> List[str]:
+    def get_parameters_accepting_mixed_input(cls) -> List[str]:
         return ["columns_data"]
 
     @classmethod

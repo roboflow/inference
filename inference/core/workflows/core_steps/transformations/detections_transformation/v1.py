@@ -99,7 +99,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     operations_parameters: Dict[
         str,
-        Union[Selector(points_to_batch=True), Selector(points_to_batch=False)],
+        Selector(),
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parameterize operations",
         examples=[
@@ -112,7 +112,11 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
-        return ["predictions", "operations_parameters"]
+        return ["predictions"]
+
+    @classmethod
+    def get_parameters_accepting_mixed_input(cls) -> List[str]:
+        return ["operations_parameters"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

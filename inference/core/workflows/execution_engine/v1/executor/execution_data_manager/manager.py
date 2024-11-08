@@ -152,7 +152,6 @@ class ExecutionDataManager:
     def get_simd_step_input(
         self,
         step_selector: str,
-        scalar_inputs_to_broadcast: Set[str],
     ) -> BatchModeSIMDStepInput:
         if not self.is_step_simd(step_selector=step_selector):
             raise ExecutionEngineRuntimeError(
@@ -174,7 +173,6 @@ class ExecutionDataManager:
             execution_cache=self._execution_cache,
             dynamic_batches_manager=self._dynamic_batches_manager,
             branching_manager=self._branching_manager,
-            scalar_inputs_to_broadcast=scalar_inputs_to_broadcast,
         )
 
     def iterate_over_simd_step_input(

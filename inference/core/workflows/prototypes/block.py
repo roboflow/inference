@@ -55,10 +55,14 @@ class WorkflowBlockManifest(BaseModel, ABC):
 
     @classmethod
     def accepts_batch_input(cls) -> Union[bool, List[str]]:
-        return len(cls.get_parameters_accepting_batches()) > 0
+        return len(cls.get_parameters_accepting_batches()) > 0 or len(cls.get_parameters_accepting_mixed_input())
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
+        return []
+
+    @classmethod
+    def get_parameters_accepting_mixed_input(cls) -> List[str]:
         return []
 
     @classmethod
