@@ -95,11 +95,11 @@ for number in [1, 2, 3, 4]:
     results.append(is_even(number))
 ```
 
-In Workflows, usually you do not need to worry about broadcasting the operations into batches of data - 
-Execution Engine is doing that for you behind the scenes, but once you understand the role of *batch-oriented*
+In Workflows, usually **you do not need to worry** about broadcasting the operations into batches of data - 
+Execution Engine is doing that for you behind the scenes, but once you understood the role of *batch-oriented*
 data, let's think if all data can be represented as batches.
 
-Standard way of inferring predictions from classification model can be illustrated with the following 
+Standard way of making predictions from classification model is be illustrated with the following 
 pseudo-code:
 ```python
 images = [PIL.Image(...), PIL.Image(...), PIL.Image(...), PIL.Image(...)]
@@ -154,8 +154,7 @@ You would likely say:
 - In options B and C, the output will be a batch. In option C, the non-batch-oriented parameters will be 
 broadcast to match the batch size of the data.
 
-And you’d be correct. If you understand that, you probably only have two more concepts to understand before
-you can comfortably say you understand everything needed to successfully build and run complex Workflows.
+And you’d be correct. Knowing that, you only have two more concepts to understand to become Workflows expert.
 
 
 Let’s say you want to create a Workflow with these steps:
@@ -172,7 +171,7 @@ Here’s what happens with the data in the cropping step:
 
 2. The object detection model finds a different number of objects in each image.
 
-3. The cropping step then creates new images for each detected object, resulting in a new batch of images 
+3. The cropping step then creates new image for each detected object, resulting in a new batch of images 
 for each original image.
 
 So, you end up with a nested list of images, with sizes like `[(k[1], ), (k[2], ), ... (k[n])]`, where each `k[i]` 

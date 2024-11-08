@@ -40,7 +40,7 @@ introduced two new class methods: `WorkflowImageData.copy_and_replace(...)` and 
 For more details, refer to the updated [`WoorkflowImageData` usage guide](/workflows/internal_data_types/#workflowimagedata).
 
 
-## Execution Engine `v1.3.0` | inference `v0.26.0`
+## Execution Engine `v1.3.0` | inference `v0.27.0`
 
 * Introduced the change that let each kind have serializer and deserializer defined. The change decouples Workflows 
 plugins with Execution Engine and make it possible to integrate the ecosystem with external systems that 
@@ -65,15 +65,23 @@ format introduced **at the level of Execution Engine**). As a result of the chan
     properly. This may not be the case in the future, as in most cases batch-oriented data *kind* may
     be inferred by compiler (yet this feature is not implemented for now).
 
-    * **new selector types annotation were introduced** - `BatchSelector` and `ScalarSelector`.
-    `BatchSelector` is supposed to replace `StepOutputSelector`, `WorkflowImageSelector`, `StepOutputImageSelector` 
-    and `WorkflowVideoMetadataSelector` in block manifests, allowing batch-oriented data to be used as block input, 
-    regardless of whether it comes from user inputs or outputs of other blocks. 
-    `ScalarSelector` is meant to replace `WorkflowParameterSelector`, providing a way to input 
-    non-natch oriented data into the block both from **workflow inputs** (via `WorkflowParameter` input) or 
-    from **steps outputs** - such that steps can now directly feed parameters into other steps. 
-    Mentioned old annotation types **should be assumed deprecated**, we advise to migrate into `BatchSelector`, 
-    and `ScalarSelector` but that is not hard requirement.
+    * **new selector type annotation were introduced** - named simply `Selector(...)`.
+    `Selector(...)` is supposed to replace `StepOutputSelector`, `WorkflowImageSelector`, `StepOutputImageSelector`, 
+    `WorkflowVideoMetadataSelector` and `WorkflowParameterSelector` in block manifests, 
+    letting developers express that specific step manifest property is able to hold either selector of specific *kind*.
+    Mentioned old annotation types **should be assumed deprecated**, we advise to migrate into `Selector(...)`. 
+
+    * as a result of simplification in the selectors type annotations, the old selector will no 
+    longer be providing the information on which parameter of blocks' `run(...)` method is 
+    shipped by Execution Engine wrapped into [`Batch[X]` container](/workflows/internal_data_types/#batch).
+    Instead of old selectors type annotations and `block_manifest.accepts_batch_input()` method, 
+    we propose the switch into two methods explicitly defining the parameters that are expected to 
+    be fed with batch-oriented data (`block_manifest.get_parameters_accepting_batches()`) and 
+    parameters capable of taking both *batches* and *scalar* values 
+    (`block_manifest.get_parameters_accepting_mixed_input()`). Return value of `block_manifest.accepts_batch_input()`
+    is built upon the results of two new methods. The change is **non-breaking**, as any existing block which
+    was capable of processing batches must have implemented `block_manifest.accepts_batch_input()` method returning
+    `True` and use appropriate selector type annotation which indicated batch-oriented data.
 
 * As a result of the changes, it is now possible to **split any arbitrary workflows into multiple ones executing 
 subsets of steps**, enabling building such tools as debuggers.
@@ -121,9 +129,9 @@ subsets of steps**, enabling building such tools as debuggers.
     }
     ```
 
-??? Hint "New type annotation for selectors"
+??? Hint "New type annotation for selectors - blocks without `Batch[X]` inputs"
 
-    Blocks manifest may  **optionally** be updated to use `BatchSelector` in the following way:
+    Blocks manifest may  **optionally** be updated to use `Selector` in the following way:
     
     ```python
     from typing import Union
@@ -153,28 +161,102 @@ subsets of steps**, enabling building such tools as debuggers.
     
     should just be changed into:
     
-    ```{ .py linenums="1" hl_lines="7 8 13 14 20"}
+    ```{ .py linenums="1" hl_lines="7 12 13 19"}
     from inference.core.workflows.prototypes.block import WorkflowBlockManifest
     from inference.core.workflows.execution_engine.entities.types import (
         INSTANCE_SEGMENTATION_PREDICTION_KIND,
         OBJECT_DETECTION_PREDICTION_KIND,
         FLOAT_KIND,
         IMAGE_KIND,
-        BatchSelector,
-        ScalarSelector,
+        Selector,
     )
     
     
     class BlockManifest(WorkflowBlockManifest):
-        reference_image: BatchSelector(kind=[IMAGE_KIND])
-        predictions: BatchSelector(
+        reference_image: Selector(kind=[IMAGE_KIND])
+        predictions: Selector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
             ]
         )
-        confidence: ScalarSelector(kind=[FLOAT_KIND]) 
+        confidence: Selector(kind=[FLOAT_KIND]) 
     ```
+
+??? Hint "New type annotation for selectors - blocks with `Batch[X]` inputs"
+
+    Blocks manifest may  **optionally** be updated to use `Selector` in the following way:
+    
+    ```python
+    from typing import Union
+    from inference.core.workflows.prototypes.block import WorkflowBlockManifest
+    from inference.core.workflows.execution_engine.entities.types import (
+        INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        OBJECT_DETECTION_PREDICTION_KIND,
+        FLOAT_KIND,
+        WorkflowImageSelector,
+        StepOutputImageSelector,
+        StepOutputSelector,
+        WorkflowParameterSelector,
+    )
+    
+    
+    class BlockManifest(WorkflowBlockManifest):
+    
+        reference_image: Union[WorkflowImageSelector, StepOutputImageSelector]
+        predictions: StepOutputSelector(
+            kind=[
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            ]
+        )
+        data: Dict[str, Union[StepOutputSelector(), WorkflowParameterSelector()]]
+        confidence: WorkflowParameterSelector(kind=[FLOAT_KIND]) 
+
+        @classmethod
+        def accepts_batch_input(cls) -> bool:
+            return True
+    ```
+    
+    should be changed into:
+    
+    ```{ .py linenums="1" hl_lines="7 12 13 19 20 22-24 26-28"}
+    from inference.core.workflows.prototypes.block import WorkflowBlockManifest
+    from inference.core.workflows.execution_engine.entities.types import (
+        INSTANCE_SEGMENTATION_PREDICTION_KIND,
+        OBJECT_DETECTION_PREDICTION_KIND,
+        FLOAT_KIND,
+        IMAGE_KIND,
+        Selector,
+    )
+    
+    
+    class BlockManifest(WorkflowBlockManifest):
+        reference_image: Selector(kind=[IMAGE_KIND])
+        predictions: Selector(
+            kind=[
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            ]
+        )
+        data: Dict[str, Selector()]
+        confidence: Selector(kind=[FLOAT_KIND]) 
+
+        @classmethod
+        def get_parameters_accepting_batches(cls) -> List[str]:
+            return ["predictions"]
+    
+        @classmethod
+        def get_parameters_accepting_mixed_input(cls) -> List[str]:
+            return ["data"]
+    ```
+
+    Please point out that:
+
+    * the `data` property in the original example was able to accept both **batches** of data
+    and **scalar** values due to selector of batch-orienetd data (`StepOutputSelector`) and 
+    *scalar* data (`WorkflowParameterSelector`). Now the same is manifested by `Selector(...)` type 
+    annotation and return value from `get_parameters_accepting_mixed_input(...)` method.
 
 
 ??? Hint "New inputs in Workflows definitions"

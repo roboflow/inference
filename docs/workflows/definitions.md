@@ -121,7 +121,7 @@ More details about the nature of batch-oriented data processing in workflows can
 
 ### Generic batch-oriented inputs
 
-Since Execution Engine `v1.3.0` (inference release `v0.26.0`), Workflows support
+Since Execution Engine `v1.3.0` (inference release `v0.27.0`), Workflows support
 batch oriented inputs of any *[kind](/workflows/kinds/)* and 
 *[dimensionality](/workflows/workflow_execution/#steps-interactions-with-data)*. 
 This inputs are **not enforced for now**, but we expect that as the ecosystem grows, they will 
