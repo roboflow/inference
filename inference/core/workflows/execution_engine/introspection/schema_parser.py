@@ -60,13 +60,15 @@ def parse_block_manifest(
         manifest_type.get_dimensionality_reference_property()
     )
     inputs_accepting_batches = set(manifest_type.get_parameters_accepting_batches())
-    inputs_accepting_batches_and_scalars = set(manifest_type.get_parameters_accepting_mixed_input())
+    inputs_accepting_batches_and_scalars = set(
+        manifest_type.get_parameters_accepting_mixed_input()
+    )
     return parse_block_manifest_schema(
         schema=schema,
         inputs_dimensionality_offsets=inputs_dimensionality_offsets,
         dimensionality_reference_property=dimensionality_reference_property,
         inputs_accepting_batches=inputs_accepting_batches,
-        inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars
+        inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
     )
 
 
@@ -300,7 +302,9 @@ def retrieve_selectors_from_simple_property(
     is_dict_element: bool = False,
 ) -> Optional[SelectorDefinition]:
     if REFERENCE_KEY in property_definition:
-        declared_points_to_batch = property_definition.get(SELECTOR_POINTS_TO_BATCH_KEY, False)
+        declared_points_to_batch = property_definition.get(
+            SELECTOR_POINTS_TO_BATCH_KEY, False
+        )
         if declared_points_to_batch == "dynamic":
             if property_name in inputs_accepting_batches_and_scalars:
                 points_to_batch = {True, False}

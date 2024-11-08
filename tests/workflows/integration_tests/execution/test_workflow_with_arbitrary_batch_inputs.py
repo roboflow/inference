@@ -10,8 +10,9 @@ from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import (
+    AssumptionError,
     ExecutionGraphStructureError,
-    RuntimeInputError, AssumptionError,
+    RuntimeInputError,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from inference.core.workflows.execution_engine.introspection import blocks_loader
@@ -794,7 +795,7 @@ def test_workflow_when_non_batch_oriented_step_feeds_batch_oriented_step_operati
     }
 
     # when
-    with pytest.raises(AssumptionError):
+    with pytest.raises(ExecutionGraphStructureError):
         _ = ExecutionEngine.init(
             workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_BATCH_ORIENTED_STEP_OPERATING_BATCH_WISE,
             init_parameters=workflow_init_parameters,

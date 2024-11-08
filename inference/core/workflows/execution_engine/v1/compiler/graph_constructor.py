@@ -680,7 +680,9 @@ def denote_data_flow_for_step(
     input_property2batch_expected = defaultdict(set)
     for parsed_selector in parsed_step_input_selectors:
         for reference in parsed_selector.definition.allowed_references:
-            input_property2batch_expected[parsed_selector.definition.property_name].update(reference.points_to_batch)
+            input_property2batch_expected[
+                parsed_selector.definition.property_name
+            ].update(reference.points_to_batch)
     for property_name, input_definition in input_data.items():
         if property_name not in input_property2batch_expected:
             # only values plugged vi selectors are to be validated
@@ -715,12 +717,12 @@ def denote_data_flow_for_step(
         ):
             raise ExecutionGraphStructureError(
                 public_message=f"Detected invalid reference plugged "
-                               f"into property `{property_name}` of step `{node}` - the step "
-                               f"property strictly requires batch-oriented inputs, yet the input selector "
-                               f"holds non-batch oriented input - this indicates the "
-                               f"problem with construction of your Workflow - usually the problem occurs when "
-                               f"non-batch oriented step inputs are filled with outputs of non batch-oriented "
-                               f"steps or non batch-oriented inputs.",
+                f"into property `{property_name}` of step `{node}` - the step "
+                f"property strictly requires batch-oriented inputs, yet the input selector "
+                f"holds non-batch oriented input - this indicates the "
+                f"problem with construction of your Workflow - usually the problem occurs when "
+                f"non-batch oriented step inputs are filled with outputs of non batch-oriented "
+                f"steps or non batch-oriented inputs.",
                 context="workflow_compilation | execution_graph_construction",
             )
     if not parameters_with_batch_inputs:

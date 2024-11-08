@@ -113,8 +113,8 @@ class ManifestDescription(BaseModel):
     mixed_parameters: List[str] = Field(
         default_factory=list,
         description="List of parameters accepting both batches and scalars at the same time. "
-                    "Value will override `accepts_batch_input` if non-empty "
-                    "list is provided, `accepts_batch_input` is kept not to break backward compatibility.",
+        "Value will override `accepts_batch_input` if non-empty "
+        "list is provided, `accepts_batch_input` is kept not to break backward compatibility.",
     )
 
 

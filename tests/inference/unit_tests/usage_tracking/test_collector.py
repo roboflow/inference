@@ -809,7 +809,11 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
 
 def test_system_info_with_dedicated_deployment_id():
     # given
-    system_info = UsageCollector.system_info(ip_address="w.x.y.z", hostname="hostname01", dedicated_deployment_id="deployment01")
+    system_info = UsageCollector.system_info(
+        ip_address="w.x.y.z",
+        hostname="hostname01",
+        dedicated_deployment_id="deployment01",
+    )
 
     # then
     expected_system_info = {
@@ -823,7 +827,9 @@ def test_system_info_with_dedicated_deployment_id():
 
 def test_system_info_with_no_dedicated_deployment_id():
     # given
-    system_info = UsageCollector.system_info(ip_address="w.x.y.z", hostname="hostname01")
+    system_info = UsageCollector.system_info(
+        ip_address="w.x.y.z", hostname="hostname01"
+    )
 
     # then
     expected_system_info = {

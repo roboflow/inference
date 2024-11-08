@@ -101,7 +101,7 @@ class MixedInputWithBatchesBlockManifest(WorkflowBlockManifest):
     ]
 
     @classmethod
-    def get_parameters_accepting_batches(cls) -> List[str]:
+    def get_parameters_accepting_mixed_input(cls) -> List[str]:
         return ["mixed_parameter"]
 
     @classmethod
@@ -238,12 +238,10 @@ class CompoundMixedInputBlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["CompoundMixedInputBlockManifestBlock"]
-    compound_parameter: Dict[
-        str, Union[Selector(), Any]
-    ]
+    compound_parameter: Dict[str, Union[Selector(), Any]]
 
     @classmethod
-    def get_parameters_accepting_batches(cls) -> List[str]:
+    def get_parameters_accepting_mixed_input(cls) -> List[str]:
         return ["compound_parameter"]
 
     @classmethod

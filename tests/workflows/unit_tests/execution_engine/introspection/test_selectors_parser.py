@@ -81,7 +81,7 @@ def test_get_step_selectors_when_not_compound_selectors_defined() -> None:
                     ReferenceDefinition(
                         selected_element="workflow_image",
                         kind=[IMAGE_KIND],
-                        points_to_batch=True,
+                        points_to_batch={True},
                     )
                 ],
                 is_list_element=False,
@@ -102,7 +102,7 @@ def test_get_step_selectors_when_not_compound_selectors_defined() -> None:
                     ReferenceDefinition(
                         selected_element="workflow_parameter",
                         kind=[BOOLEAN_KIND, STRING_KIND],
-                        points_to_batch=False,
+                        points_to_batch={False},
                     )
                 ],
                 is_list_element=False,

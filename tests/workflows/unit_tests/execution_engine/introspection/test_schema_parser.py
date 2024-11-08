@@ -284,7 +284,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                     ReferenceDefinition(
                         selected_element="workflow_image",
                         kind=[IMAGE_KIND],
-                        points_to_batch=True,
+                        points_to_batch={True},
                     )
                 ],
                 is_list_element=False,
@@ -299,7 +299,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                     ReferenceDefinition(
                         selected_element="workflow_parameter",
                         kind=[BOOLEAN_KIND, STRING_KIND],
-                        points_to_batch=False,
+                        points_to_batch={False},
                     )
                 ],
                 is_list_element=False,
@@ -314,7 +314,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                     ReferenceDefinition(
                         selected_element="step_output",
                         kind=[IMAGE_KIND],
-                        points_to_batch=True,
+                        points_to_batch={True},
                     )
                 ],
                 is_list_element=False,
@@ -332,7 +332,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                             BOOLEAN_KIND,
                             OBJECT_DETECTION_PREDICTION_KIND,
                         ],
-                        points_to_batch=True,
+                        points_to_batch={True},
                     )
                 ],
                 is_list_element=False,
@@ -347,7 +347,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                     ReferenceDefinition(
                         selected_element="step",
                         kind=[],
-                        points_to_batch=False,
+                        points_to_batch={False},
                     )
                 ],
                 is_list_element=False,
@@ -397,12 +397,12 @@ def test_parse_block_manifest_when_manifest_defines_compound_selector() -> None:
                     ReferenceDefinition(
                         selected_element="workflow_image",
                         kind=[IMAGE_KIND],
-                        points_to_batch=True,
+                        points_to_batch={True},
                     ),
                     ReferenceDefinition(
                         selected_element="step_output",
                         kind=[IMAGE_KIND],
-                        points_to_batch=True,
+                        points_to_batch={True},
                     ),
                     # nested list is ignored
                 ],
@@ -456,12 +456,12 @@ def test_parse_block_manifest_when_manifest_defines_union_of_selector_and_primit
                     ReferenceDefinition(
                         selected_element="workflow_image",
                         kind=[IMAGE_KIND],
-                        points_to_batch=True,
+                        points_to_batch={True},
                     ),
                     ReferenceDefinition(
                         selected_element="step_output",
                         kind=[IMAGE_KIND],
-                        points_to_batch=True,
+                        points_to_batch={True},
                     ),
                     # nested list is ignored
                 ],
@@ -515,12 +515,12 @@ def test_parse_block_manifest_when_manifest_defines_selector_inside_dictionary()
                     ReferenceDefinition(
                         selected_element="workflow_image",
                         kind=[IMAGE_KIND],
-                        points_to_batch=True,
+                        points_to_batch={True},
                     ),
                     ReferenceDefinition(
                         selected_element="step_output",
                         kind=[IMAGE_KIND],
-                        points_to_batch=True,
+                        points_to_batch={True},
                     ),
                     # nested list is ignored
                 ],

@@ -1,4 +1,4 @@
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union, Set
+from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
 
 from networkx import DiGraph
 
