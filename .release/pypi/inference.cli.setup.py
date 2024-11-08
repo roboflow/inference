@@ -61,6 +61,9 @@ setuptools.setup(
             "inference=inference_cli.main:app",
         ],
     },
+    extras_require={
+        "cloud-deploy": read_requirements("requirements/requirements.cloud_deploy.txt"),
+    },
     package_data={"": ["configs/*.yml"]},
     install_requires=read_requirements([
         "requirements/requirements.cli.txt",
