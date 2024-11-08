@@ -284,10 +284,7 @@ def retrieve_selectors_from_simple_property(
         allowed_references = [
             ReferenceDefinition(
                 selected_element=property_definition[SELECTED_ELEMENT_KEY],
-                kind=[
-                    Kind.model_validate(k)
-                    for k in property_definition.get(KIND_KEY, [])
-                ],
+                kind=[k for k in property_definition.get(KIND_KEY, [])],
             )
         ]
         return SelectorDefinition(
