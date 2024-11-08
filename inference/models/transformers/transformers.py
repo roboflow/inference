@@ -1,5 +1,6 @@
 import os
 import re
+import subprocess
 import tarfile
 
 import numpy as np
@@ -179,6 +180,18 @@ class TransformerModel(RoboflowInferenceModel):
                 file=filename,
                 model_id=self.endpoint,
             )
+            if filename.endswith("tar.gz"):
+                subprocess.run(
+                    [
+                        "tar",
+                        "-xzf",
+                        os.path.join(self.cache_dir, filename),
+                        "-C",
+                        self.cache_dir,
+                    ],
+                    check=True,
+                )
+
             if perf_counter() - t1 > 120:
                 logger.debug(
                     "Weights download took longer than 120 seconds, refreshing API request"
@@ -234,7 +247,7 @@ class LoRATransformerModel(TransformerModel):
         )
 
         self.processor = self.processor_class.from_pretrained(
-            self.cache_dir, revision=revision
+            model_load_id, revision=revision, cache_dir=cache_dir, token=token
         )
 
     def get_lora_base_from_roboflow(self, repo, revision) -> str:
