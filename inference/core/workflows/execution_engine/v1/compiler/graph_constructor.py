@@ -21,7 +21,7 @@ from inference.core.workflows.errors import (
 from inference.core.workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
     PARSED_NODE_INPUT_SELECTORS_PROPERTY,
-    WORKFLOW_INPUT_BATCH_LINEAGE_ID,
+    WORKFLOW_INPUT_BATCH_LINEAGE_ID, SCALAR_PARAMETERS_TO_BROADCAST_PROPERTY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     InputType,
@@ -686,6 +686,8 @@ def denote_data_flow_for_step(
                 for ref in parsed_selector.definition.allowed_references
             }
         )
+    if SCALAR_PARAMETERS_TO_BROADCAST_PROPERTY not in execution_graph.nodes[node]:
+        execution_graph.nodes[node][SCALAR_PARAMETERS_TO_BROADCAST_PROPERTY] = set()
     for property_name, input_definition in input_data.items():
         if property_name not in input_property2batch_expected:
             # only values plugged vi selectors are to be validated
@@ -718,16 +720,9 @@ def denote_data_flow_for_step(
             and batch_input_expected == {True}
             and False in actual_input_is_batch
         ):
-            raise ExecutionGraphStructureError(
-                public_message=f"Detected invalid reference plugged "
-                f"into property `{property_name}` of step `{node}` - the step "
-                f"property strictly requires batch-oriented inputs, yet the input selector "
-                f"holds non-batch oriented input - this indicates the "
-                f"problem with construction of your Workflow - usually the problem occurs when "
-                f"non-batch oriented step inputs are filled with outputs of non batch-oriented "
-                f"steps or non batch-oriented inputs.",
-                context="workflow_compilation | execution_graph_construction",
-            )
+            execution_graph.nodes[node][
+                SCALAR_PARAMETERS_TO_BROADCAST_PROPERTY
+            ].add(property_name)
     if not parameters_with_batch_inputs:
         data_lineage = []
     else:

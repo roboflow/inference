@@ -217,7 +217,10 @@ def construct_simd_step_input(
     execution_cache: ExecutionCache,
     dynamic_batches_manager: DynamicBatchesManager,
     branching_manager: BranchingManager,
+    scalar_inputs_to_broadcast: Optional[Set[str]] = None
 ) -> BatchModeSIMDStepInput:
+    if scalar_inputs_to_broadcast is None:
+        scalar_inputs_to_broadcast = set()
     masks = construct_mask_for_all_inputs_dimensionalities(
         step_node=step_node,
         branching_manager=branching_manager,
@@ -228,6 +231,7 @@ def construct_simd_step_input(
         masks=masks,
         runtime_parameters=runtime_parameters,
         execution_cache=execution_cache,
+        scalar_inputs_to_broadcast=scalar_inputs_to_broadcast,
     )
 
 
@@ -322,10 +326,12 @@ def prepare_parameters(
     masks: Dict[int, Optional[Set[DynamicBatchIndex]]],
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
+    scalar_inputs_to_broadcast: Set[str],
 ) -> BatchModeSIMDStepInput:
     result = {}
     indices_for_parameter = {}
     guard_of_indices_wrapping = GuardForIndicesWrapping()
+    compound_inputs = set()
     for parameter_name, parameter_specs in step_node.input_data.items():
         if parameter_specs.is_compound_input():
             result[parameter_name], indices_for_parameter[parameter_name] = (
@@ -339,6 +345,7 @@ def prepare_parameters(
                     guard_of_indices_wrapping=guard_of_indices_wrapping,
                 )
             )
+            compound_inputs.add(parameter_name)
         else:
             result[parameter_name], indices_for_parameter[parameter_name] = (
                 get_non_compound_parameter_value(
@@ -369,6 +376,12 @@ def prepare_parameters(
         empty_indices = get_empty_batch_elements_indices(value=result)
         indices = [e for e in indices if e not in empty_indices]
         result = remove_indices(value=result, indices=empty_indices)
+    result = broadcast_scalar_inputs(
+        parameters=result,
+        indices=indices,
+        scalar_inputs_to_broadcast=scalar_inputs_to_broadcast,
+        compound_inputs=compound_inputs,
+    )
     return BatchModeSIMDStepInput(
         indices=indices,
         parameters=result,
@@ -627,6 +640,49 @@ def remove_indices(value: Any, indices: Set[DynamicBatchIndex]) -> Any:
     if isinstance(value, Batch):
         return value.remove_by_indices(indices_to_remove=indices)
     return value
+
+
+def broadcast_scalar_inputs(
+    parameters: Dict[str, Any],
+    indices: List[DynamicBatchIndex],
+    scalar_inputs_to_broadcast: Set[str],
+    compound_inputs: Set[str],
+) -> Dict[str, Any]:
+    print(f"scalar_inputs_to_broadcast: {scalar_inputs_to_broadcast}")
+    for input_name in scalar_inputs_to_broadcast:
+        parameters[input_name] = broadcast_scalar_input(
+            input_parameter=parameters[input_name],
+            indices=indices,
+            is_compound=input_name in compound_inputs,
+        )
+    return parameters
+
+
+def broadcast_scalar_input(
+    input_parameter: Any,
+    indices: List[DynamicBatchIndex],
+    is_compound: bool = False,
+) -> Any:
+    if is_compound and isinstance(input_parameter, dict):
+        return {
+            k: broadcast_scalar_input(
+                input_parameter=v,
+                indices=indices,
+            ) for k, v in input_parameter.items()
+        }
+    if is_compound and isinstance(input_parameter, list):
+        return [
+            broadcast_scalar_input(
+                input_parameter=v,
+                indices=indices,
+            ) for v in input_parameter
+        ]
+    if isinstance(input_parameter, Batch):
+        return input_parameter
+    return Batch(
+        content=[input_parameter] * len(indices),
+        indices=indices,
+    )
 
 
 def unfold_parameters(

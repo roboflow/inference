@@ -160,6 +160,8 @@ class BatchInputProcessingBatchesBlock(WorkflowBlock):
         return BatchInputBlockProcessingBatchesManifest
 
     def run(self, batch_parameter: Batch[Any]) -> BlockResult:
+        if not isinstance(batch_parameter, Batch):
+            raise ValueError("Batch[X] must be provided")
         return [{"float_value": 0.4}] * len(batch_parameter)
 
 
