@@ -28,7 +28,7 @@ request_dict = dict(
     training_data=[
         {
             "image": img,
-            "boxes": [{"x": 223, "y": 306, "w": 40, "h": 226, "cls": "post"}],
+            "boxes": [{"x": 223, "y": 306, "w": 40, "h": 226, "cls": "post", "negative": False}],
         }
     ],
     visualize_predictions=False,
