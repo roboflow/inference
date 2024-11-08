@@ -2,6 +2,7 @@ import os
 import re
 import subprocess
 import tarfile
+
 import numpy as np
 from peft import LoraConfig, get_peft_model
 from peft.peft_model import PeftModel
@@ -181,8 +182,14 @@ class TransformerModel(RoboflowInferenceModel):
             )
             if filename.endswith("tar.gz"):
                 subprocess.run(
-                    ["tar", "-xzf", os.path.join(self.cache_dir, filename), "-C", self.cache_dir],
-                    check=True
+                    [
+                        "tar",
+                        "-xzf",
+                        os.path.join(self.cache_dir, filename),
+                        "-C",
+                        self.cache_dir,
+                    ],
+                    check=True,
                 )
 
             if perf_counter() - t1 > 120:
