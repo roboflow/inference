@@ -282,7 +282,7 @@ class InferencePipeline:
             on_prediction = partial(multi_sink, sinks=[on_prediction, al_sink])
         on_pipeline_start = active_learning_middleware.start_registration_thread
         on_pipeline_end = active_learning_middleware.stop_registration_thread
-        return InferencePipeline.init_with_custom_logic(
+        return cls.init_with_custom_logic(
             video_reference=video_reference,
             on_video_frame=on_video_frame,
             on_prediction=on_prediction,
@@ -422,7 +422,7 @@ class InferencePipeline:
                 f"Could not initialise yolo_world/{model_size} due to lack of sufficient dependencies. "
                 f"Use pip install inference[yolo-world] to install missing dependencies and try again."
             ) from error
-        return InferencePipeline.init_with_custom_logic(
+        return cls.init_with_custom_logic(
             video_reference=video_reference,
             on_video_frame=on_video_frame,
             on_prediction=on_prediction,
@@ -642,7 +642,7 @@ class InferencePipeline:
             profiler=profiler,
             profiling_directory=profiling_directory,
         )
-        return InferencePipeline.init_with_custom_logic(
+        return cls.init_with_custom_logic(
             video_reference=video_reference,
             on_video_frame=on_video_frame,
             on_prediction=on_prediction,
