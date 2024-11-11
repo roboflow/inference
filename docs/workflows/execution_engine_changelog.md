@@ -78,7 +78,7 @@ format introduced **at the level of Execution Engine**). As a result of the chan
     we propose the switch into two methods explicitly defining the parameters that are expected to 
     be fed with batch-oriented data (`block_manifest.get_parameters_accepting_batches()`) and 
     parameters capable of taking both *batches* and *scalar* values 
-    (`block_manifest.get_parameters_accepting_mixed_input()`). Return value of `block_manifest.accepts_batch_input()`
+    (`block_manifest.get_parameters_accepting_batches_and_scalars()`). Return value of `block_manifest.accepts_batch_input()`
     is built upon the results of two new methods. The change is **non-breaking**, as any existing block which
     was capable of processing batches must have implemented `block_manifest.accepts_batch_input()` method returning
     `True` and use appropriate selector type annotation which indicated batch-oriented data.
@@ -247,7 +247,7 @@ subsets of steps**, enabling building such tools as debuggers.
             return ["predictions"]
     
         @classmethod
-        def get_parameters_accepting_mixed_input(cls) -> List[str]:
+        def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
             return ["data"]
     ```
 
@@ -256,7 +256,7 @@ subsets of steps**, enabling building such tools as debuggers.
     * the `data` property in the original example was able to accept both **batches** of data
     and **scalar** values due to selector of batch-orienetd data (`StepOutputSelector`) and 
     *scalar* data (`WorkflowParameterSelector`). Now the same is manifested by `Selector(...)` type 
-    annotation and return value from `get_parameters_accepting_mixed_input(...)` method.
+    annotation and return value from `get_parameters_accepting_batches_and_scalars(...)` method.
 
 
 ??? Hint "New inputs in Workflows definitions"
