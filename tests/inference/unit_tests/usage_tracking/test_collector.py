@@ -764,7 +764,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "fps": 10,
                     "exec_session_id": "session_2",
                 },
-            }
+            },
         },
         {
             "fake_api1_hash": {
