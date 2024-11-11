@@ -49,7 +49,7 @@ See [Example Workflows](https://roboflow.com/workflows/templates) for common use
 for GPU acceleration if applicable). Then run
 
 ```
-pip install inference_cli && inference server start --dev
+pip install inference-cli && inference server start --dev
 ```
 
 This will pull the proper image for your machine, start it in development mode, and run you through a wizard to configure the server to run inference locally.
