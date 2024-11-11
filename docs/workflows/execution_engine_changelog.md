@@ -243,7 +243,7 @@ subsets of steps**, enabling building such tools as debuggers.
         confidence: Selector(kind=[FLOAT_KIND]) 
 
         @classmethod
-        def get_parameters_accepting_batches(cls) -> List[str]:
+        def get_parameters_accepting_batches(cls)W -> List[str]:
             return ["predictions"]
     
         @classmethod

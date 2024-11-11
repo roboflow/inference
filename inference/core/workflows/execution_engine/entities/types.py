@@ -1025,6 +1025,7 @@ STEP_AS_SELECTED_ELEMENT = "step"
 STEP_OUTPUT_AS_SELECTED_ELEMENT = "step_output"
 BATCH_AS_SELECTED_ELEMENT = "batch"
 SCALAR_AS_SELECTED_ELEMENT = "scalar"
+ANY_DATA_AS_SELECTED_ELEMENT = "any_data"
 
 StepSelector = Annotated[
     str,
@@ -1132,7 +1133,7 @@ def Selector(
         kind = [WILDCARD_KIND]
     json_schema_extra = {
         REFERENCE_KEY: True,
-        SELECTED_ELEMENT_KEY: "any",
+        SELECTED_ELEMENT_KEY: ANY_DATA_AS_SELECTED_ELEMENT,
         KIND_KEY: [k.dict() for k in kind],
         SELECTOR_POINTS_TO_BATCH_KEY: "dynamic",
     }
