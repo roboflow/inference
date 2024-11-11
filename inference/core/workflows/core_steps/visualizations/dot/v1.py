@@ -75,7 +75,7 @@ class DotManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class DotVisualizationBlockV1(ColorableVisualizationBlock):

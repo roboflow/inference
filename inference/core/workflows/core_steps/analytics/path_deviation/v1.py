@@ -85,7 +85,7 @@ class PathDeviationManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class PathDeviationAnalyticsBlockV1(WorkflowBlock):

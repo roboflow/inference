@@ -256,6 +256,10 @@ class BlockManifest(WorkflowBlockManifest):
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images"]
 
+    @classmethod
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return ["grounding_detection"]
+
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
         if self.task_type in TASKS_REQUIRING_PROMPT and self.prompt is None:
@@ -287,7 +291,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class Florence2BlockV1(WorkflowBlock):
