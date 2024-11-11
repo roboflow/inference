@@ -159,6 +159,7 @@ from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
+from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
 from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandResponse,
@@ -1244,8 +1245,11 @@ class HttpInterface(BaseInterface):
                 deprecated=True,
             )
             @with_route_exceptions
-            async def describe_workflows_blocks() -> WorkflowsBlocksDescription:
-                return handle_describe_workflows_blocks_request()
+            async def describe_workflows_blocks(
+                request: Request,
+            ) -> Union[WorkflowsBlocksDescription, Response]:
+                result = handle_describe_workflows_blocks_request()
+                return gzip_response_if_requested(request=request, response=result)
 
             @app.post(
                 "/workflows/blocks/describe",
@@ -1259,20 +1263,24 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def describe_workflows_blocks(
-                request: Optional[DescribeBlocksRequest] = None,
-            ) -> WorkflowsBlocksDescription:
+                request: Request,
+                request_payload: Optional[DescribeBlocksRequest] = None,
+            ) -> Union[WorkflowsBlocksDescription, Response]:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 dynamic_blocks_definitions = None
                 requested_execution_engine_version = None
-                if request is not None:
-                    dynamic_blocks_definitions = request.dynamic_blocks_definitions
-                    requested_execution_engine_version = (
-                        request.execution_engine_version
+                if request_payload is not None:
+                    dynamic_blocks_definitions = (
+                        request_payload.dynamic_blocks_definitions
                     )
-                return handle_describe_workflows_blocks_request(
+                    requested_execution_engine_version = (
+                        request_payload.execution_engine_version
+                    )
+                result = handle_describe_workflows_blocks_request(
                     dynamic_blocks_definitions=dynamic_blocks_definitions,
                     requested_execution_engine_version=requested_execution_engine_version,
                 )
+                return gzip_response_if_requested(request=request, response=result)
 
             @app.get(
                 "/workflows/definition/schema",

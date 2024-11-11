@@ -103,8 +103,10 @@ def _get_jetpack_image(jetpack_version: str) -> str:
         return "roboflow/roboflow-inference-server-jetson-4.5.0:latest"
     if jetpack_version.startswith("4.6"):
         return "roboflow/roboflow-inference-server-jetson-4.6.1:latest"
-    if jetpack_version.startswith("5.1"):
+    if jetpack_version.startswith("5."):
         return "roboflow/roboflow-inference-server-jetson-5.1.1:latest"
+    if jetpack_version.startswith("6."):
+        return "roboflow/roboflow-inference-server-jetson-6.0.0:latest"
     raise RuntimeError(f"Jetpack version: {jetpack_version} not supported")
 
 

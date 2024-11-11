@@ -764,7 +764,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "fps": 10,
                     "exec_session_id": "session_2",
                 },
-            },
+            }
         },
         {
             "fake_api1_hash": {
@@ -772,9 +772,9 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "api_key_hash": "fake_api1_hash",
                     "resource_id": "resource2",
                     "timestamp_start": 1721032989934855000,
-                    "timestamp_stop": 1721032989934855004,
-                    "processed_frames": 2,
-                    "exec_session_id": "session_2",
+                    "timestamp_stop": 1721032989934855001,
+                    "processed_frames": 1,
+                    "exec_session_id": "session_1",
                 },
                 "resource3": {
                     "api_key_hash": "fake_api1_hash",
@@ -790,9 +790,9 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "api_key_hash": "fake_api2_hash",
                     "resource_id": "resource2",
                     "timestamp_start": 1721032989934856000,
-                    "timestamp_stop": 1721032989934856004,
-                    "processed_frames": 2,
-                    "exec_session_id": "session_2",
+                    "timestamp_stop": 1721032989934856001,
+                    "processed_frames": 1,
+                    "exec_session_id": "session_1",
                 },
                 "resource3": {
                     "api_key_hash": "fake_api2_hash",
@@ -801,6 +801,28 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934856004,
                     "processed_frames": 2,
                     "exec_session_id": "session_1",
+                },
+            },
+        },
+        {
+            "fake_api1_hash": {
+                "resource2": {
+                    "api_key_hash": "fake_api1_hash",
+                    "resource_id": "resource2",
+                    "timestamp_start": 1721032989934855003,
+                    "timestamp_stop": 1721032989934855004,
+                    "processed_frames": 1,
+                    "exec_session_id": "session_2",
+                },
+            },
+            "fake_api2_hash": {
+                "resource2": {
+                    "api_key_hash": "fake_api2_hash",
+                    "resource_id": "resource2",
+                    "timestamp_start": 1721032989934856003,
+                    "timestamp_stop": 1721032989934856004,
+                    "processed_frames": 1,
+                    "exec_session_id": "session_2",
                 },
             },
         },
@@ -833,7 +855,7 @@ def test_system_info_with_no_dedicated_deployment_id():
 
     # then
     expected_system_info = {
-        "hostname": f"hostname01",
+        "hostname": "5aacc",
         "ip_address_hash": hashlib.sha256("w.x.y.z".encode()).hexdigest()[:5],
         "is_gpu_available": False,
     }
