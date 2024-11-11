@@ -115,7 +115,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ["predictions"]
 
     @classmethod
-    def get_parameters_accepting_mixed_input(cls) -> List[str]:
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
         return ["operations_parameters"]
 
     @classmethod

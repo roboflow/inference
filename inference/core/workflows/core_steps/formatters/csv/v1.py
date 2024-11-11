@@ -173,7 +173,7 @@ class BlockManifest(WorkflowBlockManifest):
         return value
 
     @classmethod
-    def get_parameters_accepting_mixed_input(cls) -> List[str]:
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
         return ["columns_data"]
 
     @classmethod

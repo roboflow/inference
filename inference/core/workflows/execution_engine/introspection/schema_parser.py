@@ -61,7 +61,7 @@ def parse_block_manifest(
     )
     inputs_accepting_batches = set(manifest_type.get_parameters_accepting_batches())
     inputs_accepting_batches_and_scalars = set(
-        manifest_type.get_parameters_accepting_mixed_input()
+        manifest_type.get_parameters_accepting_batches_and_scalars()
     )
     return parse_block_manifest_schema(
         schema=schema,
