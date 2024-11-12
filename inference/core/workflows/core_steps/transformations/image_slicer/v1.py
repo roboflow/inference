@@ -119,21 +119,22 @@ class ImageSlicerBlockV1(WorkflowBlock):
         return BlockManifest
 
     def run(
-        self,
-        image: WorkflowImageData,
-        slice_width: int,
-        slice_height: int,
-        overlap_ratio_width: float,
-        overlap_ratio_height: float,
-    ) -> BlockResult:
-        image_numpy = image.numpy_image
-        resolution_wh = (image_numpy.shape[1], image_numpy.shape[0])
+    self,
+    image: WorkflowImageData,
+    slice_dims: List[Tuple[int, int]],  # lista di tuple per diverse dimensioni di slicing
+    overlap_ratios: List[Tuple[float, float]],  # lista per diversi rapporti di sovrapposizione
+) -> BlockResult:
+    slices = []
+    image_numpy = image.numpy_image
+    resolution_wh = (image_numpy.shape[1], image_numpy.shape[0])
+    
+    for (slice_width, slice_height), (overlap_ratio_width, overlap_ratio_height) in zip(slice_dims, overlap_ratios):
         offsets = generate_offsets(
             resolution_wh=resolution_wh,
             slice_wh=(slice_width, slice_height),
             overlap_ratio_wh=(overlap_ratio_width, overlap_ratio_height),
         )
-        slices = []
+        
         for offset in offsets:
             x_min, y_min, _, _ = offset
             crop_numpy = crop_image(image=image_numpy, xyxy=offset)
@@ -148,7 +149,9 @@ class ImageSlicerBlockV1(WorkflowBlock):
                 slices.append({"slices": cropped_image})
             else:
                 slices.append({"slices": None})
-        return slices
+
+    return slices
+
 
 
 def generate_offsets(
