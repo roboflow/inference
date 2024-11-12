@@ -268,6 +268,9 @@ from inference.core.workflows.core_steps.visualizations.keypoint.v1 import (
 from inference.core.workflows.core_steps.visualizations.label.v1 import (
     LabelVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.classification_label.v1 import (
+    ClassificationLabelVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
     LineCounterZoneVisualizationBlockV1,
 )
@@ -399,6 +402,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LMMBlockV1,
         LMMForClassificationBlockV1,
         LabelVisualizationBlockV1,
+        ClassificationLabelVisualizationBlockV1,
         LineCounterBlockV1,
         LineCounterBlockV2,
         LineCounterZoneVisualizationBlockV1,
