@@ -1,0 +1,78 @@
+from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
+    BaseManifest,
+    Florence2BlockV1,
+    TaskType,
+    GroundingSelectionMode,
+    LONG_DESCRIPTION,
+)
+from typing import Type, Union, Optional, List, Literal
+
+from pydantic import ConfigDict, Field
+import supervision as sv
+
+from inference.core.workflows.execution_engine.entities.types import (
+    WorkflowParameterSelector,
+)
+
+from inference.core.workflows.execution_engine.entities.types import (
+    ROBOFLOW_MODEL_ID_KIND,
+)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
+from inference.core.workflows.execution_engine.entities.base import (
+    Batch,
+    WorkflowImageData,
+)
+
+
+class V2BlockManifest(BaseManifest):
+    type: Literal["roboflow_core/florence_2@v2"]
+    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
+        Field(
+            default="florence-2-base",
+            description="Model to be used",
+            examples=["florence-2-base"],
+            json_schema_extra={"always_visible": True},
+        )
+    )
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "Florence-2 Model",
+            "version": "v2",
+            "short_description": "Run Florence-2 on an image",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
+            "block_type": "model",
+            "search_keywords": ["Florence", "Florence-2", "Microsoft"],
+            "is_vlm_block": True,
+            "task_type_property": "task_type",
+        },
+        protected_namespaces=(),
+    )
+
+
+class Florence2BlockV2(Florence2BlockV1):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return V2BlockManifest
+
+    def run(
+        self,
+        images: Batch[WorkflowImageData],
+        model_id: str,
+        task_type: TaskType,
+        prompt: Optional[str],
+        classes: Optional[List[str]],
+        grounding_detection: Optional[
+            Union[Batch[sv.Detections], List[int], List[float]]
+        ],
+        grounding_selection_mode: GroundingSelectionMode,
+    ) -> BlockResult:
+        return super().run(
+            images,
+            model_id,
+            task_type,
+            prompt,
+            classes,
+            grounding_detection,
+            grounding_selection_mode,
+        )
