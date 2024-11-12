@@ -855,3 +855,31 @@ def test_system_info_with_no_dedicated_deployment_id():
     }
     for k, v in expected_system_info.items():
         assert system_info[k] == v
+
+
+def test_record_malformed_usage():
+    # given
+    collector = UsageCollector()
+
+    # when
+    collector.record_usage(
+        source=None,
+        category="model",
+        frames=None,
+        api_key="fake",
+        resource_details=None,
+        resource_id=None,
+        inference_test_run=None,
+        fps=None,
+    )
+
+    # then
+    assert "fake" in collector._usage
+    assert "model:None" in collector._usage["fake"]
+    assert collector._usage["fake"]["model:None"]["processed_frames"] == 0
+    assert collector._usage["fake"]["model:None"]["fps"] == 0
+    assert collector._usage["fake"]["model:None"]["source_duration"] == 0
+    assert collector._usage["fake"]["model:None"]["category"] == "model"
+    assert collector._usage["fake"]["model:None"]["resource_id"] == None
+    assert collector._usage["fake"]["model:None"]["resource_details"] == "{}"
+    assert collector._usage["fake"]["model:None"]["api_key_hash"] == "fake"
