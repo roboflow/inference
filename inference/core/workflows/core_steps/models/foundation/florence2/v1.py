@@ -21,7 +21,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
     ImageInputField,
     StepOutputImageSelector,
@@ -78,7 +77,7 @@ SUPPORTED_TASK_TYPES_LIST = [
     },
     {"task_type": "detection-grounded-ocr", "florence_task": "<REGION_TO_OCR>"},
     {"task_type": "region-proposal", "florence_task": "<REGION_PROPOSAL>"},
-    {"task_type": "unstructured", "florence_task": ""}
+    {"task_type": "unstructured", "florence_task": ""},
 ]
 TASK_TYPE_TO_FLORENCE_TASK = {
     task["task_type"]: task["florence_task"] for task in SUPPORTED_TASK_TYPES_LIST
@@ -150,29 +149,8 @@ TASKS_TO_EXTRACT_LABELS_AS_CLASSES = {
 }
 
 
-class BlockManifest(WorkflowBlockManifest):
-    model_config = ConfigDict(
-        json_schema_extra={
-            "name": "Florence-2 Model",
-            "version": "v1",
-            "short_description": "Run Florence-2 on an image",
-            "long_description": LONG_DESCRIPTION,
-            "license": "Apache-2.0",
-            "block_type": "model",
-            "search_keywords": ["Florence", "Florence-2", "Microsoft"],
-            "is_vlm_block": True,
-            "task_type_property": "task_type",
-        },
-        protected_namespaces=(),
-    )
-    type: Literal["roboflow_core/florence_2@v1"]
+class BaseManifest(WorkflowBlockManifest):
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default="florence-2-base",
-        description="Model to be used",
-        examples=["florence-2-base"],
-        json_schema_extra={"always_visible": True},
-    )
     task_type: TaskType = Field(
         default="open-vocabulary-object-detection",
         description="Task type to be performed by model. "
@@ -294,6 +272,31 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
 
+class BlockManifest(BaseManifest):
+    type: Literal["roboflow_core/florence_2@v1"]
+    model_version: Union[
+        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Literal["florence-2-base", "florence-2-large"],
+    ] = Field(
+        default="florence-2-base",
+        description="Model to be used",
+        examples=["florence-2-base"],
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "Florence-2 Model",
+            "version": "v1",
+            "short_description": "Run Florence-2 on an image",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
+            "block_type": "model",
+            "search_keywords": ["Florence", "Florence-2", "Microsoft"],
+            "is_vlm_block": True,
+            "task_type_property": "task_type",
+        },
+        protected_namespaces=(),
+    )
 
 class Florence2BlockV1(WorkflowBlock):
 
@@ -318,7 +321,7 @@ class Florence2BlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        model_id: str,
+        model_version: str,
         task_type: TaskType,
         prompt: Optional[str],
         classes: Optional[List[str]],
@@ -331,7 +334,7 @@ class Florence2BlockV1(WorkflowBlock):
             return self.run_locally(
                 images=images,
                 task_type=task_type,
-                model_id=model_id,
+                model_version=model_version,
                 prompt=prompt,
                 classes=classes,
                 grounding_detection=grounding_detection,
@@ -349,7 +352,7 @@ class Florence2BlockV1(WorkflowBlock):
     def run_locally(
         self,
         images: Batch[WorkflowImageData],
-        model_id: str,
+        model_version: str,
         task_type: TaskType,
         prompt: Optional[str],
         classes: Optional[List[str]],
@@ -375,7 +378,7 @@ class Florence2BlockV1(WorkflowBlock):
                 grounding_selection_mode=grounding_selection_mode,
             )
         self._model_manager.add_model(
-            model_id=model_id,
+            model_id=model_version,
             api_key=self._api_key,
         )
         predictions = []
@@ -388,13 +391,13 @@ class Florence2BlockV1(WorkflowBlock):
                 continue
             request = LMMInferenceRequest(
                 api_key=self._api_key,
-                model_id=model_id,
+                model_id=model_version,
                 image=image,
                 source="workflow-execution",
                 prompt=task_type + (single_prompt or ""),
             )
             prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_id, request=request
+                model_id=model_version, request=request
             )
             if task_type == "":
                 prediction_data = prediction.response[list(prediction.response.keys())[0]]
