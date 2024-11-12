@@ -8,7 +8,7 @@ from pydantic import ConfigDict, Field, model_validator
 from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
+from inference.core.workflows.core_steps.common.vlms import FLORENCE_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -21,6 +21,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
     ImageInputField,
     StepOutputImageSelector,
@@ -77,12 +78,13 @@ SUPPORTED_TASK_TYPES_LIST = [
     },
     {"task_type": "detection-grounded-ocr", "florence_task": "<REGION_TO_OCR>"},
     {"task_type": "region-proposal", "florence_task": "<REGION_PROPOSAL>"},
+    {"task_type": "unstructured", "florence_task": ""}
 ]
 TASK_TYPE_TO_FLORENCE_TASK = {
     task["task_type"]: task["florence_task"] for task in SUPPORTED_TASK_TYPES_LIST
 }
 RELEVANT_TASKS_METADATA = {
-    k: v for k, v in VLM_TASKS_METADATA.items() if k in TASK_TYPE_TO_FLORENCE_TASK
+    k: v for k, v in FLORENCE_TASKS_METADATA.items() if k in TASK_TYPE_TO_FLORENCE_TASK
 }
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
@@ -127,6 +129,7 @@ GroundingSelectionMode = Literal[
 TASKS_REQUIRING_PROMPT = {
     "phrase-grounded-object-detection",
     "phrase-grounded-instance-segmentation",
+    "unstructured",
 }
 TASKS_REQUIRING_CLASSES = {
     "open-vocabulary-object-detection",
@@ -164,13 +167,11 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/florence_2@v1"]
     images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    model_version: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
-        Literal["florence-2-base", "florence-2-large"],
-    ] = Field(
+    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default="florence-2-base",
         description="Model to be used",
         examples=["florence-2-base"],
+        json_schema_extra={"always_visible": True},
     )
     task_type: TaskType = Field(
         default="open-vocabulary-object-detection",
@@ -317,7 +318,7 @@ class Florence2BlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        model_version: str,
+        model_id: str,
         task_type: TaskType,
         prompt: Optional[str],
         classes: Optional[List[str]],
@@ -330,7 +331,7 @@ class Florence2BlockV1(WorkflowBlock):
             return self.run_locally(
                 images=images,
                 task_type=task_type,
-                model_version=model_version,
+                model_id=model_id,
                 prompt=prompt,
                 classes=classes,
                 grounding_detection=grounding_detection,
@@ -348,7 +349,7 @@ class Florence2BlockV1(WorkflowBlock):
     def run_locally(
         self,
         images: Batch[WorkflowImageData],
-        model_version: str,
+        model_id: str,
         task_type: TaskType,
         prompt: Optional[str],
         classes: Optional[List[str]],
@@ -374,7 +375,7 @@ class Florence2BlockV1(WorkflowBlock):
                 grounding_selection_mode=grounding_selection_mode,
             )
         self._model_manager.add_model(
-            model_id=model_version,
+            model_id=model_id,
             api_key=self._api_key,
         )
         predictions = []
@@ -387,15 +388,18 @@ class Florence2BlockV1(WorkflowBlock):
                 continue
             request = LMMInferenceRequest(
                 api_key=self._api_key,
-                model_id=model_version,
+                model_id=model_id,
                 image=image,
                 source="workflow-execution",
                 prompt=task_type + (single_prompt or ""),
             )
             prediction = self._model_manager.infer_from_request_sync(
-                model_id=model_version, request=request
+                model_id=model_id, request=request
             )
-            prediction_data = prediction.response[task_type]
+            if task_type == "":
+                prediction_data = prediction.response[list(prediction.response.keys())[0]]
+            else:
+                prediction_data = prediction.response[task_type]
             if task_type in TASKS_TO_EXTRACT_LABELS_AS_CLASSES:
                 classes = prediction_data.get("labels", [])
             predictions.append(

@@ -126,10 +126,12 @@ class TransformerModel(RoboflowInferenceModel):
                 max_new_tokens=1000,
                 do_sample=False,
                 early_stopping=False,
+                no_repeat_ngram_size=0,
             )
             generation = generation[0]
             if self.generation_includes_input:
                 generation = generation[input_len:]
+
             decoded = self.processor.decode(
                 generation, skip_special_tokens=self.skip_special_tokens
             )
@@ -151,7 +153,6 @@ class TransformerModel(RoboflowInferenceModel):
             "config.json",
             "special_tokens_map.json",
             "generation_config.json",
-            "model.safetensors.index.json",
             "tokenizer.json",
             re.compile(r"model-\d{5}-of-\d{5}\.safetensors"),
             "preprocessor_config.json",
@@ -286,7 +287,6 @@ class LoRATransformerModel(TransformerModel):
             "adapter_config.json",
             "special_tokens_map.json",
             "tokenizer.json",
-            "tokenizer.model",
             "adapter_model.safetensors",
             "preprocessor_config.json",
             "tokenizer_config.json",
