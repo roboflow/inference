@@ -26,6 +26,8 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_KEY_COUNT_IN: str = "count_in"
 OUTPUT_KEY_COUNT_OUT: str = "count_out"
+OUTPUT_KEY_DETECTIONS_IN: str = "detections_in"
+OUTPUT_KEY_DETECTIONS_OUT: str = "detections_out"
 IN: str = "in"
 OUT: str = "out"
 DETECTIONS_IN_OUT_PARAM: str = "in_out"
@@ -136,9 +138,13 @@ class LineCounterBlockV2(WorkflowBlock):
             )
         line_zone = self._batch_of_line_zones[metadata.video_identifier]
 
-        line_zone.trigger(detections=detections)
+        mask_in, mask_out = line_zone.trigger(detections=detections)
+        detections_in = detections[mask_in]
+        detections_out = detections[mask_out]
 
         return {
             OUTPUT_KEY_COUNT_IN: line_zone.in_count,
             OUTPUT_KEY_COUNT_OUT: line_zone.out_count,
+            OUTPUT_KEY_DETECTIONS_IN: detections_in,
+            OUTPUT_KEY_DETECTIONS_OUT: detections_out,
         }
