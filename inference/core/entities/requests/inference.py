@@ -22,6 +22,7 @@ class BaseRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
     id: str
     api_key: Optional[str] = ApiKey
+    usage_billable: bool = True
     start: Optional[float] = None
     source: Optional[str] = None
     source_info: Optional[str] = None
