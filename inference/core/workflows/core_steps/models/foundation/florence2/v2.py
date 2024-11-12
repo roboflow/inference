@@ -1,27 +1,24 @@
+from typing import List, Literal, Optional, Type, Union
+
+import supervision as sv
+from pydantic import ConfigDict, Field
+
 from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
+    LONG_DESCRIPTION,
     BaseManifest,
     Florence2BlockV1,
-    TaskType,
     GroundingSelectionMode,
-    LONG_DESCRIPTION,
+    TaskType,
 )
-from typing import Type, Union, Optional, List, Literal
-
-from pydantic import ConfigDict, Field
-import supervision as sv
-
-from inference.core.workflows.execution_engine.entities.types import (
-    WorkflowParameterSelector,
-)
-
-from inference.core.workflows.execution_engine.entities.types import (
-    ROBOFLOW_MODEL_ID_KIND,
-)
-from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     WorkflowImageData,
 )
+from inference.core.workflows.execution_engine.entities.types import (
+    ROBOFLOW_MODEL_ID_KIND,
+    WorkflowParameterSelector,
+)
+from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 
 class V2BlockManifest(BaseManifest):

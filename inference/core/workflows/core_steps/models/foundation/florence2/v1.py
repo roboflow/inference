@@ -272,6 +272,7 @@ class BaseManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
 
+
 class BlockManifest(BaseManifest):
     type: Literal["roboflow_core/florence_2@v1"]
     model_version: Union[
@@ -297,6 +298,7 @@ class BlockManifest(BaseManifest):
         },
         protected_namespaces=(),
     )
+
 
 class Florence2BlockV1(WorkflowBlock):
 
@@ -400,7 +402,9 @@ class Florence2BlockV1(WorkflowBlock):
                 model_id=model_version, request=request
             )
             if task_type == "":
-                prediction_data = prediction.response[list(prediction.response.keys())[0]]
+                prediction_data = prediction.response[
+                    list(prediction.response.keys())[0]
+                ]
             else:
                 prediction_data = prediction.response[task_type]
             if task_type in TASKS_TO_EXTRACT_LABELS_AS_CLASSES:
