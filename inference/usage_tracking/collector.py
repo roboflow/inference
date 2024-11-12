@@ -616,7 +616,7 @@ class UsageCollector:
             "resource_details": resource_details,
             "resource_id": resource_id,
             "inference_test_run": usage_inference_test_run,
-            "fps": usage_fps,
+            "fps": 0 if usage_fps is None else usage_fps,
         }
 
     def __call__(self, func: Callable[P, T]) -> Callable[P, T]:
