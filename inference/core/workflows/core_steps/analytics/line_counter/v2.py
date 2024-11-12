@@ -88,6 +88,20 @@ class LineCounterManifest(WorkflowBlockManifest):
                 name=OUTPUT_KEY_COUNT_OUT,
                 kind=[INTEGER_KIND],
             ),
+            OutputDefinition(
+                name=OUTPUT_KEY_DETECTIONS_IN,
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
+            ),
+            OutputDefinition(
+                name=OUTPUT_KEY_DETECTIONS_OUT,
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
+            ),
         ]
 
     @classmethod
