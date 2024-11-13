@@ -1,7 +1,8 @@
 import itertools
 from collections import defaultdict
-from copy import copy
+from copy import copy, deepcopy
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from uuid import uuid4
 
 import networkx as nx
 from networkx import DiGraph
@@ -19,6 +20,7 @@ from inference.core.workflows.errors import (
 )
 from inference.core.workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
+    PARSED_NODE_INPUT_SELECTORS_PROPERTY,
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -145,11 +147,20 @@ def add_input_nodes_for_graph(
 ) -> DiGraph:
     for input_spec in inputs:
         input_selector = construct_input_selector(input_name=input_spec.name)
-        data_lineage = (
-            []
-            if not input_spec.is_batch_oriented()
-            else [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
-        )
+        if input_spec.is_batch_oriented():
+            if input_spec.dimensionality < 1:
+                raise ExecutionGraphStructureError(
+                    public_message=f"Detected batch oriented input `{input_spec.name}` with "
+                    f"declared dimensionality `{input_spec.dimensionality}` which is below "
+                    f"one (one is minimum dimensionality of the batch). Fix input definition in"
+                    f"your Workflow.",
+                    context="workflow_compilation | execution_graph_construction",
+                )
+            data_lineage = [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
+            for _ in range(input_spec.dimensionality - 1):
+                data_lineage.append(f"{uuid4()}")
+        else:
+            data_lineage = []
         compilation_output = InputNode(
             node_category=NodeCategory.INPUT_NODE,
             name=input_spec.name,
@@ -215,10 +226,14 @@ def add_steps_edges(
     execution_graph: DiGraph,
 ) -> DiGraph:
     for step in workflow_definition.steps:
+        source_step_selector = construct_step_selector(step_name=step.name)
         step_selectors = get_step_selectors(step_manifest=step)
+        execution_graph.nodes[source_step_selector][
+            PARSED_NODE_INPUT_SELECTORS_PROPERTY
+        ] = step_selectors
         execution_graph = add_edges_for_step(
             execution_graph=execution_graph,
-            step_name=step.name,
+            source_step_selector=source_step_selector,
             target_step_parsed_selectors=step_selectors,
         )
     return execution_graph
@@ -226,10 +241,9 @@ def add_steps_edges(
 
 def add_edges_for_step(
     execution_graph: DiGraph,
-    step_name: str,
+    source_step_selector: str,
     target_step_parsed_selectors: List[ParsedSelector],
 ) -> DiGraph:
-    source_step_selector = construct_step_selector(step_name=step_name)
     for target_step_parsed_selector in target_step_parsed_selectors:
         execution_graph = add_edge_for_step(
             execution_graph=execution_graph,
@@ -287,7 +301,8 @@ def add_edge_for_step(
         f"Failed to validate reference provided for step: {source_step_selector} regarding property: "
         f"{target_step_parsed_selector.definition.property_name} with value: {target_step_parsed_selector.value}. "
         f"Allowed kinds of references for this property: {list(set(e.name for e in expected_input_kind))}. "
-        f"Types of output for referred property: {list(set(a.name for a in actual_input_kind))}"
+        f"Types of output for referred property: "
+        f"{list(set(a.name if isinstance(a, Kind) else a for a in actual_input_kind))}"
     )
     validate_reference_kinds(
         expected=expected_input_kind,
@@ -428,22 +443,35 @@ def add_edges_for_outputs(
             node_selector = get_step_selector_from_its_output(
                 step_output_selector=node_selector
             )
-        output_name = construct_output_selector(name=output.name)
+        output_selector = construct_output_selector(name=output.name)
         verify_edge_is_created_between_existing_nodes(
             execution_graph=execution_graph,
             start=node_selector,
-            end=output_name,
+            end=output_selector,
+        )
+        output_node_manifest = node_as(
+            execution_graph=execution_graph,
+            node=output_selector,
+            expected_type=OutputNode,
         )
         if is_step_output_selector(selector_or_value=output.selector):
             step_manifest = execution_graph.nodes[node_selector][
                 NODE_COMPILATION_OUTPUT_PROPERTY
             ].step_manifest
             step_outputs = step_manifest.get_actual_outputs()
-            verify_output_selector_points_to_valid_output(
+            denote_output_node_kind_based_on_step_outputs(
                 output_selector=output.selector,
                 step_outputs=step_outputs,
+                output_node_manifest=output_node_manifest,
             )
-        execution_graph.add_edge(node_selector, output_name)
+        else:
+            input_manifest = node_as(
+                execution_graph=execution_graph,
+                node=node_selector,
+                expected_type=InputNode,
+            ).input_manifest
+            output_node_manifest.kind = copy(input_manifest.kind)
+        execution_graph.add_edge(node_selector, output_selector)
     return execution_graph
 
 
@@ -464,20 +492,24 @@ def verify_edge_is_created_between_existing_nodes(
         )
 
 
-def verify_output_selector_points_to_valid_output(
+def denote_output_node_kind_based_on_step_outputs(
     output_selector: str,
     step_outputs: List[OutputDefinition],
+    output_node_manifest: OutputNode,
 ) -> None:
     selected_output_name = get_last_chunk_of_selector(selector=output_selector)
+    kinds_for_outputs = {output.name: output.kind for output in step_outputs}
     if selected_output_name == "*":
+        output_node_manifest.kind = deepcopy(kinds_for_outputs)
         return None
-    defined_output_names = {output.name for output in step_outputs}
-    if selected_output_name not in defined_output_names:
+    if selected_output_name not in kinds_for_outputs:
         raise InvalidReferenceTargetError(
             public_message=f"Graph definition contains selector {output_selector} that points to output of step "
             f"that is not defined in workflow block used to create step.",
             context="workflow_compilation | execution_graph_construction",
         )
+    output_node_manifest.kind = copy(kinds_for_outputs[selected_output_name])
+    return None
 
 
 def denote_data_flow_in_workflow(
@@ -642,6 +674,57 @@ def denote_data_flow_for_step(
             output_dimensionality_offset=output_dimensionality_offset,
         )
     )
+    parsed_step_input_selectors: List[ParsedSelector] = execution_graph.nodes[node][
+        PARSED_NODE_INPUT_SELECTORS_PROPERTY
+    ]
+    input_property2batch_expected = defaultdict(set)
+    for parsed_selector in parsed_step_input_selectors:
+        for reference in parsed_selector.definition.allowed_references:
+            input_property2batch_expected[
+                parsed_selector.definition.property_name
+            ].update(reference.points_to_batch)
+    for property_name, input_definition in input_data.items():
+        if property_name not in input_property2batch_expected:
+            # only values plugged vi selectors are to be validated
+            continue
+        if input_definition.is_compound_input():
+            actual_input_is_batch = {
+                element.is_batch_oriented()
+                for element in input_definition.iterate_through_definitions()
+            }
+        else:
+            actual_input_is_batch = {input_definition.is_batch_oriented()}
+        batch_input_expected = input_property2batch_expected[property_name]
+        step_accepts_batch_input = step_node_data.step_manifest.accepts_batch_input()
+        if (
+            step_accepts_batch_input
+            and batch_input_expected == {False}
+            and True in actual_input_is_batch
+        ):
+            raise ExecutionGraphStructureError(
+                public_message=f"Detected invalid reference plugged "
+                f"into property `{property_name}` of step `{node}` - the step "
+                f"property do not accept batch-oriented inputs, yet the input selector "
+                f"holds one - this indicates the problem with "
+                f"construction of your Workflow - usually the problem occurs when non-batch oriented "
+                f"step inputs are filled with outputs of batch-oriented steps or batch-oriented inputs.",
+                context="workflow_compilation | execution_graph_construction",
+            )
+        if (
+            step_accepts_batch_input
+            and batch_input_expected == {True}
+            and False in actual_input_is_batch
+        ):
+            raise ExecutionGraphStructureError(
+                public_message=f"Detected invalid reference plugged "
+                f"into property `{property_name}` of step `{node}` - the step "
+                f"property strictly requires batch-oriented inputs, yet the input selector "
+                f"holds non-batch oriented input - this indicates the "
+                f"problem with construction of your Workflow - usually the problem occurs when "
+                f"non-batch oriented step inputs are filled with outputs of non batch-oriented "
+                f"steps or non batch-oriented inputs.",
+                context="workflow_compilation | execution_graph_construction",
+            )
     if not parameters_with_batch_inputs:
         data_lineage = []
     else:

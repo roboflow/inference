@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import supervision as sv
@@ -7,7 +7,7 @@ from networkx import DiGraph
 from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
-from inference.core.workflows.errors import ExecutionEngineRuntimeError
+from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.constants import (
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
@@ -15,6 +15,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     CoordinatesSystem,
     JsonField,
 )
+from inference.core.workflows.execution_engine.entities.types import WILDCARD_KIND, Kind
 from inference.core.workflows.execution_engine.v1.compiler.entities import OutputNode
 from inference.core.workflows.execution_engine.v1.compiler.utils import (
     construct_output_selector,
@@ -32,6 +33,8 @@ def construct_workflow_output(
     workflow_outputs: List[JsonField],
     execution_graph: DiGraph,
     execution_data_manager: ExecutionDataManager,
+    serialize_results: bool,
+    kinds_serializers: Dict[str, Callable[[Any], Any]],
 ) -> List[Dict[str, Any]]:
     # Maybe we should make blocks to change coordinates systems:
     # https://github.com/roboflow/inference/issues/440
@@ -56,6 +59,14 @@ def construct_workflow_output(
             node=construct_output_selector(name=output.name),
             expected_type=OutputNode,
         ).dimensionality
+        for output in workflow_outputs
+    }
+    kinds_of_output_nodes = {
+        output.name: node_as(
+            execution_graph=execution_graph,
+            node=construct_output_selector(name=output.name),
+            expected_type=OutputNode,
+        ).kind
         for output in workflow_outputs
     }
     outputs_arrays: Dict[str, Optional[list]] = {
@@ -87,6 +98,14 @@ def construct_workflow_output(
                 and data_contains_sv_detections(data=data_piece)
             ):
                 data_piece = convert_sv_detections_coordinates(data=data_piece)
+            if serialize_results:
+                output_kind = kinds_of_output_nodes[name]
+                data_piece = serialize_data_piece(
+                    output_name=name,
+                    data_piece=data_piece,
+                    kind=output_kind,
+                    kinds_serializers=kinds_serializers,
+                )
             try:
                 place_data_in_array(
                     array=array,
@@ -150,6 +169,68 @@ def create_empty_index_array(level: int, accumulator: list) -> list:
     if level <= 1:
         return accumulator
     return create_empty_index_array(level - 1, [accumulator])
+
+
+def serialize_data_piece(
+    output_name: str,
+    data_piece: Any,
+    kind: Union[List[Union[Kind, str]], Dict[str, List[Union[Kind, str]]]],
+    kinds_serializers: Dict[str, Callable[[Any], Any]],
+) -> Any:
+    if isinstance(kind, dict):
+        if not isinstance(data_piece, dict):
+            raise AssumptionError(
+                public_message=f"Could not serialize Workflow output `{output_name}` - expected the "
+                f"output to be dictionary containing all outputs of the step, which is not the case."
+                f"This is most likely a bug. Contact Roboflow team through github issues "
+                f"(https://github.com/roboflow/inference/issues) providing full context of"
+                f"the problem - including workflow definition you use.",
+                context="workflow_execution | output_construction",
+            )
+        return {
+            name: serialize_single_workflow_result_field(
+                output_name=f"{output_name}['{name}']",
+                value=value,
+                kind=kind.get(name, [WILDCARD_KIND]),
+                kinds_serializers=kinds_serializers,
+            )
+            for name, value in data_piece.items()
+        }
+    return serialize_single_workflow_result_field(
+        output_name=output_name,
+        value=data_piece,
+        kind=kind,
+        kinds_serializers=kinds_serializers,
+    )
+
+
+def serialize_single_workflow_result_field(
+    output_name: str,
+    value: Any,
+    kind: List[Union[Kind, str]],
+    kinds_serializers: Dict[str, Callable[[Any], Any]],
+) -> Any:
+    kinds_without_serializer = set()
+    for single_kind in kind:
+        kind_name = single_kind.name if isinstance(single_kind, Kind) else kind
+        serializer = kinds_serializers.get(kind_name)
+        if serializer is None:
+            kinds_without_serializer.add(kind_name)
+            continue
+        try:
+            return serializer(value)
+        except Exception:
+            # silent exception passing, as it is enough for one serializer to be applied
+            # for union of kinds
+            pass
+    if not kinds_without_serializer:
+        raise ExecutionEngineRuntimeError(
+            public_message=f"Requested Workflow output serialization, but for output `{output_name}` which "
+            f"evaluates into Python type: {type(value)} cannot successfully apply any of "
+            f"registered serializers.",
+            context="workflow_execution | output_construction",
+        )
+    return value
 
 
 def place_data_in_array(array: list, index: DynamicBatchIndex, data: Any) -> None:

@@ -5,11 +5,7 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
-from inference.core.env import (
-    LOCAL_INFERENCE_API_URL,
-    WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-)
+from inference.core.env import LOCAL_INFERENCE_API_URL, WORKFLOWS_REMOTE_API_TARGET
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -25,14 +21,13 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
+    IMAGE_KIND,
     IMAGE_METADATA_KIND,
     PARENT_ID_KIND,
     STRING_KIND,
     WILDCARD_KIND,
     ImageInputField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -40,7 +35,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 from inference_sdk import InferenceHTTPClient
-from inference_sdk.http.utils.iterables import make_batches
 
 NOT_DETECTED_VALUE = "not_detected"
 
@@ -68,8 +62,8 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/cog_vlm@v1", "CogVLM"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    prompt: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    prompt: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Text prompt to the CogVLM model",
         examples=["my prompt", "$inputs.prompt"],
     )
@@ -83,8 +77,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -113,7 +107,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class CogVLMBlockV1(WorkflowBlock):

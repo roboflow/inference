@@ -12,9 +12,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -48,7 +46,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             },
         }
     )
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
@@ -57,7 +55,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
     task_type: Literal["resize", "rotate", "flip"] = Field(
         description="Preprocessing task to be applied to the image.",
     )
-    width: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Width",
         default=640,
         description="Width of the image to be resized to.",
@@ -72,7 +70,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             },
         },
     )
-    height: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    height: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Height",
         default=640,
         description="Height of the image to be resized to.",
@@ -87,7 +85,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             },
         },
     )
-    rotation_degrees: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    rotation_degrees: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Degrees of Rotation",
         description="Positive value to rotate clockwise, negative value to rotate counterclockwise",
         default=90,
@@ -103,7 +101,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
             }
         },
     )
-    flip_type: Union[WorkflowParameterSelector(kind=[STRING_KIND]), Literal["vertical", "horizontal", "both"]] = Field(  # type: ignore
+    flip_type: Union[Selector(kind=[STRING_KIND]), Literal["vertical", "horizontal", "both"]] = Field(  # type: ignore
         title="Flip Type",
         description="Type of flip to be applied to the image.",
         default="vertical",
@@ -126,7 +124,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class ImagePreprocessingBlockV1(WorkflowBlock):

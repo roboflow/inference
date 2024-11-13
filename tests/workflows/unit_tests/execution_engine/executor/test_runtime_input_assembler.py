@@ -7,15 +7,25 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from inference.core.workflows.core_steps.common import deserializers
+from inference.core.workflows.core_steps.loader import KINDS_DESERIALIZERS
 from inference.core.workflows.errors import RuntimeInputError
 from inference.core.workflows.execution_engine.entities.base import (
     VideoMetadata,
+    WorkflowBatchInput,
     WorkflowImage,
+    WorkflowImageData,
     WorkflowParameter,
     WorkflowVideoMetadata,
 )
-from inference.core.workflows.execution_engine.v1.executor import (
-    runtime_input_assembler,
+from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
+    DICTIONARY_KIND,
+    FLOAT_KIND,
+    IMAGE_KIND,
+    INTEGER_KIND,
+    LIST_OF_VALUES_KIND,
+    STRING_KIND,
 )
 from inference.core.workflows.execution_engine.v1.executor.runtime_input_assembler import (
     assemble_runtime_parameters,
@@ -32,10 +42,11 @@ def test_assemble_runtime_parameters_when_image_is_not_provided() -> None:
         _ = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
         )
 
 
-@mock.patch.object(runtime_input_assembler, "load_image_from_url")
+@mock.patch.object(deserializers, "load_image_from_url")
 def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_dict(
     load_image_from_url_mock: MagicMock,
 ) -> None:
@@ -53,6 +64,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_di
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -83,6 +95,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_di
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -115,6 +128,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_di
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
             prevent_local_images_loading=True,
+            kinds_deserializers=KINDS_DESERIALIZERS,
         )
 
 
@@ -129,6 +143,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_as_single_element_np
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -153,6 +168,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_as_unknown_element()
         _ = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
         )
 
 
@@ -173,6 +189,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_in_batch() -> None:
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -225,6 +242,7 @@ def test_assemble_runtime_parameters_when_image_is_provided_with_video_metadata(
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -253,6 +271,7 @@ def test_assemble_runtime_parameters_when_parameter_not_provided() -> None:
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -268,6 +287,7 @@ def test_assemble_runtime_parameters_when_parameter_provided() -> None:
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -287,16 +307,19 @@ def test_assemble_runtime_parameters_when_images_with_different_matching_batch_s
             },
         ],
         "image2": np.zeros((192, 168, 3), dtype=np.uint8),
+        "image3": [np.zeros((192, 168, 3), dtype=np.uint8)],
     }
     defined_inputs = [
         WorkflowImage(type="WorkflowImage", name="image1"),
         WorkflowImage(type="WorkflowImage", name="image2"),
+        WorkflowImage(type="WorkflowImage", name="image3"),
     ]
 
     # when
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -311,6 +334,12 @@ def test_assemble_runtime_parameters_when_images_with_different_matching_batch_s
     ), "Empty image expected"
     assert np.allclose(
         result["image2"][1].numpy_image, np.zeros((192, 168, 3), dtype=np.uint8)
+    ), "Empty image expected"
+    assert np.allclose(
+        result["image3"][0].numpy_image, np.zeros((192, 168, 3), dtype=np.uint8)
+    ), "Empty image expected"
+    assert np.allclose(
+        result["image3"][1].numpy_image, np.zeros((192, 168, 3), dtype=np.uint8)
     ), "Empty image expected"
 
 
@@ -338,6 +367,7 @@ def test_assemble_runtime_parameters_when_images_with_different_and_not_matching
         _ = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
         )
 
 
@@ -379,6 +409,7 @@ def test_assemble_runtime_parameters_when_video_metadata_with_different_matching
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -405,6 +436,7 @@ def test_assemble_runtime_parameters_when_video_metadata_declared_but_not_provid
         _ = assemble_runtime_parameters(
             runtime_parameters={},
             defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
         )
 
 
@@ -430,6 +462,7 @@ def test_assemble_runtime_parameters_when_video_metadata_declared_and_provided_a
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -456,6 +489,7 @@ def test_assemble_runtime_parameters_when_video_metadata_declared_and_provided_a
     result = assemble_runtime_parameters(
         runtime_parameters=runtime_parameters,
         defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
     )
 
     # then
@@ -505,4 +539,191 @@ def test_assemble_runtime_parameters_when_video_metadata_with_different_and_not_
         _ = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
+        )
+
+
+def test_assemble_runtime_parameters_when_parameters_at_different_dimensionality_depth_emerge() -> (
+    None
+):
+    # given
+    runtime_parameters = {
+        "image1": [
+            np.zeros((192, 168, 3), dtype=np.uint8),
+            np.zeros((192, 168, 3), dtype=np.uint8),
+        ],
+        "image2": [
+            [
+                np.zeros((192, 168, 3), dtype=np.uint8),
+                np.zeros((192, 168, 3), dtype=np.uint8),
+            ],
+            [
+                np.zeros((192, 168, 3), dtype=np.uint8),
+            ],
+        ],
+        "image3": [
+            [
+                [np.zeros((192, 168, 3), dtype=np.uint8)],
+                [
+                    np.zeros((192, 168, 3), dtype=np.uint8),
+                    np.zeros((192, 168, 3), dtype=np.uint8),
+                ],
+            ],
+            [
+                [np.zeros((192, 168, 3), dtype=np.uint8)],
+                [
+                    np.zeros((192, 168, 3), dtype=np.uint8),
+                    np.zeros((192, 168, 3), dtype=np.uint8),
+                ],
+                [np.zeros((192, 168, 3), dtype=np.uint8)],
+            ],
+        ],
+    }
+    defined_inputs = [
+        WorkflowBatchInput(type="WorkflowBatchInput", name="image1", kind=["image"]),
+        WorkflowBatchInput(
+            type="WorkflowBatchInput",
+            name="image2",
+            kind=[IMAGE_KIND],
+            dimensionality=2,
+        ),
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="image3", kind=["image"], dimensionality=3
+        ),
+    ]
+
+    # when
+    result = assemble_runtime_parameters(
+        runtime_parameters=runtime_parameters,
+        defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
+    )
+
+    # then
+    assert len(result["image1"]) == 2, "image1 is 1D batch of size (2, )"
+    assert all(
+        isinstance(e, WorkflowImageData) for e in result["image1"]
+    ), "Expected deserialized image data at the bottom level of batch"
+    # then
+    sizes_of_image2 = [len(e) for e in result["image2"]]
+    assert sizes_of_image2 == [2, 1], "image1 is 2D batch of size [(2, ), (1, )]"
+    assert all(
+        isinstance(e, WorkflowImageData)
+        for nested_batch in result["image2"]
+        for e in nested_batch
+    ), "Expected deserialized image data at the bottom level of batch"
+    sizes_of_image3 = [
+        [len(e) for e in inner_batch] for inner_batch in result["image3"]
+    ]
+    assert sizes_of_image3 == [
+        [1, 2],
+        [1, 2, 1],
+    ], "image1 is 3D batch of size [[(1, ), (2, )], [(1, ), (2, ), (1, )]]"
+    assert all(
+        isinstance(e, WorkflowImageData)
+        for nested_batch in result["image3"]
+        for inner_batch in nested_batch
+        for e in inner_batch
+    ), "Expected deserialized image data at the bottom level of batch"
+
+
+def test_assemble_runtime_parameters_when_basic_types_are_passed_as_batch_oriented_inputs() -> (
+    None
+):
+    # given
+    runtime_parameters = {
+        "string_param": ["a", "b"],
+        "float_param": [1.0, 2.0],
+        "int_param": [3, 4],
+        "list_param": [["some", "list"], ["other", "list"]],
+        "boolean_param": [False, True],
+        "dict_param": [{"some": "dict"}, {"other": "dict"}],
+    }
+    defined_inputs = [
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="string_param", kind=[STRING_KIND.name]
+        ),
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="float_param", kind=[FLOAT_KIND.name]
+        ),
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="int_param", kind=[INTEGER_KIND]
+        ),
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="list_param", kind=[LIST_OF_VALUES_KIND]
+        ),
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="boolean_param", kind=[BOOLEAN_KIND]
+        ),
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="dict_param", kind=[DICTIONARY_KIND]
+        ),
+    ]
+
+    # when
+    result = assemble_runtime_parameters(
+        runtime_parameters=runtime_parameters,
+        defined_inputs=defined_inputs,
+        kinds_deserializers=KINDS_DESERIALIZERS,
+    )
+
+    # then
+    assert result == {
+        "string_param": ["a", "b"],
+        "float_param": [1.0, 2.0],
+        "int_param": [3, 4],
+        "list_param": [["some", "list"], ["other", "list"]],
+        "boolean_param": [False, True],
+        "dict_param": [{"some": "dict"}, {"other": "dict"}],
+    }, "Expected values not to be changed"
+
+
+def test_assemble_runtime_parameters_when_input_batch_shallower_than_declared() -> None:
+    # given
+    runtime_parameters = {
+        "string_param": ["a", "b"],
+        "float_param": [1.0, 2.0],
+    }
+    defined_inputs = [
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="string_param", kind=[STRING_KIND.name]
+        ),
+        WorkflowBatchInput(
+            type="WorkflowBatchInput",
+            name="float_param",
+            kind=[FLOAT_KIND.name],
+            dimensionality=2,
+        ),
+    ]
+
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = assemble_runtime_parameters(
+            runtime_parameters=runtime_parameters,
+            defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
+        )
+
+
+def test_assemble_runtime_parameters_when_input_batch_deeper_than_declared() -> None:
+    # given
+    runtime_parameters = {
+        "string_param": ["a", "b"],
+        "float_param": [[1.0], [2.0]],
+    }
+    defined_inputs = [
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="string_param", kind=[STRING_KIND.name]
+        ),
+        WorkflowBatchInput(
+            type="WorkflowBatchInput", name="float_param", kind=[FLOAT_KIND.name]
+        ),
+    ]
+
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = assemble_runtime_parameters(
+            runtime_parameters=runtime_parameters,
+            defined_inputs=defined_inputs,
+            kinds_deserializers=KINDS_DESERIALIZERS,
         )
