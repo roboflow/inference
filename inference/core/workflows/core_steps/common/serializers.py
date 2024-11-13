@@ -158,15 +158,15 @@ def serialize_wildcard_kind(value: Any) -> Any:
     if isinstance(value, WorkflowImageData):
         value = serialise_image(image=value)
     elif isinstance(value, dict):
-        value = serialise_dict(elements=value)
+        value = serialize_dict(elements=value)
     elif isinstance(value, list):
-        value = serialise_list(elements=value)
+        value = serialize_list(elements=value)
     elif isinstance(value, sv.Detections):
         value = serialise_sv_detections(detections=value)
     return value
 
 
-def serialise_list(elements: List[Any]) -> List[Any]:
+def serialize_list(elements: List[Any]) -> List[Any]:
     result = []
     for element in elements:
         element = serialize_wildcard_kind(value=element)
@@ -174,9 +174,9 @@ def serialise_list(elements: List[Any]) -> List[Any]:
     return result
 
 
-def serialise_dict(elements: Dict[str, Any]) -> Dict[str, Any]:
-    serialised_result = {}
+def serialize_dict(elements: Dict[str, Any]) -> Dict[str, Any]:
+    serialized_result = {}
     for key, value in elements.items():
         value = serialize_wildcard_kind(value=value)
-        serialised_result[key] = value
-    return serialised_result
+        serialized_result[key] = value
+    return serialized_result

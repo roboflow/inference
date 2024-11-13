@@ -250,8 +250,8 @@ in such case. Execution Engine simply unpacks scalars from batches and pass them
 The process may complicate when block accepts batch input. You will learn the 
 details in [blocks development guide](/workflows/create_workflow_block/), but 
 block is required to denote each input that must be provided *batch-wise* and all inputs
-which can be feed with both batch-oriented data and scalars at the same time (which is much 
-less common case). In such cases, *lineage* is used to deduce if the actual data feed into 
+which can be fed with both batch-oriented data and scalars at the same time (which is much 
+less common case). In such cases, *lineage* is used to deduce if the actual data fed into 
 every step input is *batch* or *scalar*. When violation is detected (for instance *scalar* is provided for input 
 that requires batches or vice versa) - the error is raised.
 

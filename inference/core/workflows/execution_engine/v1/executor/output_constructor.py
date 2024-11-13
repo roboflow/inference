@@ -4,10 +4,6 @@ import numpy as np
 import supervision as sv
 from networkx import DiGraph
 
-from inference.core.workflows.core_steps.common.serializers import (
-    serialise_image,
-    serialise_sv_detections,
-)
 from inference.core.workflows.core_steps.common.utils import (
     sv_detections_to_root_coordinates,
 )
@@ -18,7 +14,6 @@ from inference.core.workflows.execution_engine.constants import (
 from inference.core.workflows.execution_engine.entities.base import (
     CoordinatesSystem,
     JsonField,
-    WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import WILDCARD_KIND, Kind
 from inference.core.workflows.execution_engine.v1.compiler.entities import OutputNode
