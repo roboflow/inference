@@ -54,7 +54,7 @@ any *kind***, contrary to versions prior `v1.3.0`, which could only take `image`
 as batch-oriented inputs (as a result of unfortunate and not-needed coupling of kind to internal data 
 format introduced **at the level of Execution Engine**). As a result of the change:
 
-    * **new input type was introduced:** `WorkflowBatchInput` should be used from now one to denote 
+    * **new input type was introduced:** `WorkflowBatchInput` should be used from now on to denote 
     batch-oriented inputs (and clearly separate them from `WorkflowParameters`). `WorkflowBatchInput` 
     let users define both *[kind](/workflows/kinds/)* of the data and it's 
     *[dimensionality](/workflows/workflow_execution/#steps-interactions-with-data)*.
