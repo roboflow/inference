@@ -65,7 +65,7 @@ format introduced **at the level of Execution Engine**). As a result of the chan
     properly. This may not be the case in the future, as in most cases batch-oriented data *kind* may
     be inferred by compiler (yet this feature is not implemented for now).
 
-    * **new selector type annotation were introduced** - named simply `Selector(...)`.
+    * **new selector type annotation was introduced** - named simply `Selector(...)`.
     `Selector(...)` is supposed to replace `StepOutputSelector`, `WorkflowImageSelector`, `StepOutputImageSelector`, 
     `WorkflowVideoMetadataSelector` and `WorkflowParameterSelector` in block manifests, 
     letting developers express that specific step manifest property is able to hold either selector of specific *kind*.
