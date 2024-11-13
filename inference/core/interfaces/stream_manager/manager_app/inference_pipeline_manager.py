@@ -242,6 +242,7 @@ class InferencePipelineManager(Process):
             t.start()
 
             webrtc_offer = parsed_payload.webrtc_offer
+            webrtc_turn_config = parsed_payload.webrtc_turn_config
             webcam_fps = parsed_payload.webcam_fps
             to_inference_queue = SyncAsyncQueue(loop=loop)
             from_inference_queue = SyncAsyncQueue(loop=loop)
@@ -251,6 +252,7 @@ class InferencePipelineManager(Process):
             future = asyncio.run_coroutine_threadsafe(
                 init_rtc_peer_connection(
                     webrtc_offer=webrtc_offer,
+                    webrtc_turn_config=webrtc_turn_config,
                     to_inference_queue=to_inference_queue,
                     from_inference_queue=from_inference_queue,
                     webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,

@@ -16,7 +16,7 @@ pybase64<2.0.0
 scikit-image>=0.19.0
 requests-toolbelt>=1.0.0
 wheel>=0.38.1
-setuptools>=70.0.0,<=72.1.0
+setuptools>=70.0.0
 pytest-asyncio<=0.21.1
 networkx>=3.1
 pydantic~=2.6
