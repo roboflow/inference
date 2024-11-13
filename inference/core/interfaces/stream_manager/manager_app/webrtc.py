@@ -18,16 +18,14 @@ from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
 
 from inference.core import logger
-from inference.core.env import (
-    WEBRTC_TURN_IP,
-    WEBRTC_TURN_SHARED_SECRET,
-    WEBRTC_TURN_USERNAME,
-)
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
     VideoFrameProducer,
 )
-from inference.core.interfaces.stream_manager.manager_app.entities import WebRTCOffer
+from inference.core.interfaces.stream_manager.manager_app.entities import (
+    WebRTCOffer,
+    WebRTCTURNConfig,
+)
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.utils.function import experimental
 
@@ -214,6 +212,7 @@ class RTCPeerConnectionWithFPS(RTCPeerConnection):
 
 async def init_rtc_peer_connection(
     webrtc_offer: WebRTCOffer,
+    webrtc_turn_config: WebRTCTURNConfig,
     to_inference_queue: "SyncAsyncQueue[VideoFrame]",
     from_inference_queue: "SyncAsyncQueue[np.ndarray]",
     webrtc_peer_timeout: float,
@@ -230,9 +229,9 @@ async def init_rtc_peer_connection(
     )
 
     turn_server = RTCIceServer(
-        urls=[f"turn:{WEBRTC_TURN_IP}:3478"],
-        username=WEBRTC_TURN_USERNAME,
-        credential=WEBRTC_TURN_SHARED_SECRET,
+        urls=[webrtc_turn_config.urls],
+        username=webrtc_turn_config.username,
+        credential=webrtc_turn_config.credential,
     )
     peer_connection = RTCPeerConnectionWithFPS(
         video_transform_track=video_transform_track,
