@@ -2270,6 +2270,7 @@ class HttpInterface(BaseInterface):
                             raise MissingServiceSecretError(
                                 "Service secret is required to disable inference usage tracking"
                             )
+                        logger.info("Not counting inference for usage")
                 else:
                     request_model_id = model_id
                 logger.debug(
