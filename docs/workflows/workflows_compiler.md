@@ -245,7 +245,7 @@ have two almost equivalent ways of running:
 
 Since the default way for Workflow blocks to deal with the batches is to consume them element-by-element, 
 **there is no real difference** between **batch-oriented data** and **scalars** 
-in such case. Execution Engine simply unpack scalars from batches and pass them to each step.
+in such case. Execution Engine simply unpacks scalars from batches and pass them to each step.
 
 The process may complicate when block accepts batch input. You will learn the 
 details in [blocks development guide](/workflows/create_workflow_block/), but 
