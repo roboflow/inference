@@ -5,13 +5,24 @@ from threading import Event
 from typing import Dict, Optional, Tuple
 
 import numpy as np
-from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
+from aiortc import (
+    RTCConfiguration,
+    RTCIceServer,
+    RTCPeerConnection,
+    RTCSessionDescription,
+    VideoStreamTrack,
+)
 from aiortc.contrib.media import MediaRelay
 from aiortc.mediastreams import MediaStreamError
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
 
 from inference.core import logger
+from inference.core.env import (
+    WEBRTC_TURN_IP,
+    WEBRTC_TURN_SHARED_SECRET,
+    WEBRTC_TURN_USERNAME,
+)
 from inference.core.interfaces.camera.entities import (
     SourceProperties,
     VideoFrameProducer,
@@ -218,8 +229,14 @@ async def init_rtc_peer_connection(
         webcam_fps=webcam_fps,
     )
 
+    turn_server = RTCIceServer(
+        urls=[f"turn:{WEBRTC_TURN_IP}:3478"],
+        username=WEBRTC_TURN_USERNAME,
+        credential=WEBRTC_TURN_SHARED_SECRET,
+    )
     peer_connection = RTCPeerConnectionWithFPS(
-        video_transform_track=video_transform_track
+        video_transform_track=video_transform_track,
+        configuration=RTCConfiguration(iceServers=[turn_server]),
     )
     relay = MediaRelay()
 
