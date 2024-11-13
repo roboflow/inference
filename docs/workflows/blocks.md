@@ -95,6 +95,7 @@ hide:
 <p class="card block-card" data-url="vl_mas_classifier" data-name="VLM as Classifier" data-desc="Parses raw string into classification prediction." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="vl_mas_detector" data-name="VLM as Detector" data-desc="Parses raw string into object-detection prediction." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="yolo_world_model" data-name="YOLO-World Model" data-desc="Run a zero-shot object detection model." data-labels="MODEL, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="keypoint_visualization" data-name="Keypoint Visualization" data-desc="Draws keypoints on detected objects in an image." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="data_aggregator" data-name="Data Aggregator" data-desc="Aggregates workflow data to produce time-based statistics" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="csv_formatter" data-name="CSV Formatter" data-desc="Creates CSV files with specified columns." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="email_notification" data-name="Email Notification" data-desc="Send notification via E-Mail" data-labels="SINK, APACHE-2.0" data-author="dummy"></p>

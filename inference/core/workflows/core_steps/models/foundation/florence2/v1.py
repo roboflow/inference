@@ -16,6 +16,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
@@ -23,10 +24,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     ImageInputField,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -158,7 +156,7 @@ TASKS_TO_EXTRACT_LABELS_AS_CLASSES = {
 
 
 class BaseManifest(WorkflowBlockManifest):
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="open-vocabulary-object-detection",
         description="Task type to be performed by model. "
@@ -176,7 +174,7 @@ class BaseManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
+    prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Text prompt to the Florence-2 model",
         examples=["my prompt", "$inputs.prompt"],
@@ -186,9 +184,7 @@ class BaseManifest(WorkflowBlockManifest):
             },
         },
     )
-    classes: Optional[
-        Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]
-    ] = Field(
+    classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
         default=None,
         description="List of classes to be used",
         examples=[["class-a", "class-b"], "$inputs.classes"],
@@ -205,14 +201,14 @@ class BaseManifest(WorkflowBlockManifest):
         Union[
             List[int],
             List[float],
-            StepOutputSelector(
+            Selector(
                 kind=[
                     OBJECT_DETECTION_PREDICTION_KIND,
                     INSTANCE_SEGMENTATION_PREDICTION_KIND,
                     KEYPOINT_DETECTION_PREDICTION_KIND,
                 ]
             ),
-            WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
+            Selector(kind=[LIST_OF_VALUES_KIND]),
         ]
     ] = Field(
         default=None,
@@ -244,8 +240,12 @@ class BaseManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
+
+    @classmethod
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return ["grounding_detection"]
 
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
@@ -278,20 +278,10 @@ class BaseManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class BlockManifest(BaseManifest):
-    type: Literal["roboflow_core/florence_2@v1"]
-    model_version: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
-        Literal["florence-2-base", "florence-2-large"],
-    ] = Field(
-        default="florence-2-base",
-        description="Model to be used",
-        examples=["florence-2-base"],
-    )
-
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Florence-2 Model",
@@ -305,6 +295,15 @@ class BlockManifest(BaseManifest):
             "task_type_property": "task_type",
         },
         protected_namespaces=(),
+    )
+    type: Literal["roboflow_core/florence_2@v1"]
+    model_version: Union[
+        Selector(kind=[STRING_KIND]),
+        Literal["florence-2-base", "florence-2-large"],
+    ] = Field(
+        default="florence-2-base",
+        description="Model to be used",
+        examples=["florence-2-base"],
     )
 
 

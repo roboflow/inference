@@ -15,15 +15,13 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
-    WorkflowVideoMetadataSelector,
+    VIDEO_METADATA_KIND,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -52,13 +50,13 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/time_in_zone@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    metadata: WorkflowVideoMetadataSelector
-    detections: StepOutputSelector(
+    metadata: Selector(kind=[VIDEO_METADATA_KIND])
+    detections: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -67,21 +65,21 @@ class TimeInZoneManifest(WorkflowBlockManifest):
         description="Predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    zone: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    zone: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Zones (one for each batch) in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
         examples=["$inputs.zones"],
     )
-    triggering_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    triggering_anchor: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description=f"Triggering anchor. Allowed values: {', '.join(sv.Position.list())}",
         default="CENTER",
         examples=["CENTER"],
     )
-    remove_out_of_zone_detections: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+    remove_out_of_zone_detections: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
         description=f"If true, detections found outside of zone will be filtered out",
         default=True,
         examples=[True, False],
     )
-    reset_out_of_zone_detections: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+    reset_out_of_zone_detections: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
         description=f"If true, detections found outside of zone will have time reset",
         default=True,
         examples=[True, False],
@@ -101,7 +99,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class TimeInZoneBlockV1(WorkflowBlock):

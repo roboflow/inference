@@ -20,11 +20,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -61,7 +60,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["roboflow_core/google_vision_ocr@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         description="Image to run OCR",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
@@ -80,7 +79,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Your Google Vision API key",
         examples=["xxx-xxx", "$inputs.google_api_key"],
         private=True,
@@ -98,7 +97,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class GoogleVisionOCRBlockV1(WorkflowBlock):

@@ -13,6 +13,7 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.entities.types import (
     WILDCARD_KIND,
     Kind,
+    Selector,
     StepOutputImageSelector,
     StepOutputSelector,
     WorkflowImageSelector,
@@ -249,6 +250,8 @@ def collect_python_types_for_selectors(
             result.append(WorkflowParameterSelector(kind=selector_kind))
         elif selector_type is SelectorType.STEP_OUTPUT:
             result.append(StepOutputSelector(kind=selector_kind))
+        elif selector_type is SelectorType.GENERIC:
+            result.append(Selector(kind=selector_kind))
         else:
             raise DynamicBlockError(
                 public_message=f"Could not recognise selector type `{selector_type}` declared for input `{input_name}` "
@@ -356,8 +359,28 @@ def assembly_manifest_class_methods(
     describe_outputs = lambda cls: outputs_definitions
     setattr(manifest_class, "describe_outputs", classmethod(describe_outputs))
     setattr(manifest_class, "get_actual_outputs", describe_outputs)
-    accepts_batch_input = lambda cls: manifest_description.accepts_batch_input
+    accepts_batch_input = (
+        lambda cls: len(manifest_description.batch_oriented_parameters) > 0
+        or len(manifest_description.parameters_with_scalars_and_batches)
+        or manifest_description.accepts_batch_input
+    )
     setattr(manifest_class, "accepts_batch_input", classmethod(accepts_batch_input))
+    get_parameters_accepting_batches = (
+        lambda cls: manifest_description.batch_oriented_parameters
+    )
+    setattr(
+        manifest_class,
+        "get_parameters_accepting_batches",
+        classmethod(get_parameters_accepting_batches),
+    )
+    get_parameters_accepting_batches_and_scalars = (
+        lambda cls: manifest_description.parameters_with_scalars_and_batches
+    )
+    setattr(
+        manifest_class,
+        "get_parameters_accepting_batches_and_scalars",
+        classmethod(get_parameters_accepting_batches_and_scalars),
+    )
     input_dimensionality_offsets = collect_input_dimensionality_offsets(
         inputs=manifest_description.inputs
     )

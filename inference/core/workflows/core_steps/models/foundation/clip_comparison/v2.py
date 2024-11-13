@@ -29,13 +29,12 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
     LIST_OF_VALUES_KIND,
     PARENT_ID_KIND,
     STRING_KIND,
     ImageInputField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -69,13 +68,11 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/clip_comparison@v2"]
     name: str = Field(description="Unique name of step in workflows")
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    classes: Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]] = (
-        Field(
-            description="List of classes to calculate similarity against each input image",
-            examples=[["a", "b", "c"], "$inputs.texts"],
-            min_items=1,
-        )
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    classes: Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]] = Field(
+        description="List of classes to calculate similarity against each input image",
+        examples=[["a", "b", "c"], "$inputs.texts"],
+        min_items=1,
     )
     version: Union[
         Literal[
@@ -89,7 +86,7 @@ class BlockManifest(WorkflowBlockManifest):
             "ViT-L-14-336px",
             "ViT-L-14",
         ],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(
         default="ViT-B-16",
         description="Variant of CLIP model",
@@ -97,8 +94,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -118,7 +115,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class ClipComparisonBlockV2(WorkflowBlock):

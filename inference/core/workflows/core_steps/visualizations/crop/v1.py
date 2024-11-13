@@ -15,7 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     INTEGER_KIND,
     STRING_KIND,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -53,20 +53,20 @@ class CropManifest(ColorableVisualizationManifest):
             "BOTTOM_RIGHT",
             "CENTER_OF_MASS",
         ],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="TOP_CENTER",
         description="The anchor position for placing the crop.",
         examples=["CENTER", "$inputs.position"],
     )
 
-    scale_factor: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+    scale_factor: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         description="The factor by which to scale the cropped image part. A factor of 2, for example, would double the size of the cropped area, allowing for a closer view of the detection.",
         default=2.0,
         examples=[2.0, "$inputs.scale_factor"],
     )
 
-    border_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    border_thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the outline in pixels.",
         default=2,
         examples=[2, "$inputs.border_thickness"],
@@ -74,7 +74,7 @@ class CropManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class CropVisualizationBlockV1(ColorableVisualizationBlock):

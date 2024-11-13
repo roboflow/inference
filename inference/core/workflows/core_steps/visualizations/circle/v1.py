@@ -13,7 +13,7 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -38,7 +38,7 @@ class CircleManifest(ColorableVisualizationManifest):
         }
     )
 
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the lines in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],
@@ -46,7 +46,7 @@ class CircleManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class CircleVisualizationBlockV1(ColorableVisualizationBlock):

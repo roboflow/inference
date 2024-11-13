@@ -83,13 +83,17 @@ run: |
 """,
 }
 
+
 def check_sky_installed():
     try:
         global sky
         import sky
     except ImportError as e:
-        print("Please install cloud deploy dependencies with 'pip install inference[cloud-deploy]'")
+        print(
+            "Please install cloud deploy dependencies with 'pip install inference[cloud-deploy]'"
+        )
         raise e
+
 
 def _random_char(y):
     return "".join(random.choice(string.ascii_lowercase) for x in range(y))

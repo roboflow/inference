@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import numpy as np
 import supervision as sv
@@ -35,7 +35,10 @@ from inference.core.workflows.execution_engine.constants import (
     X_KEY,
     Y_KEY,
 )
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
+from inference.core.workflows.execution_engine.entities.base import (
+    VideoMetadata,
+    WorkflowImageData,
+)
 
 
 def serialise_sv_detections(detections: sv.Detections) -> dict:
@@ -143,4 +146,37 @@ def serialise_image(image: WorkflowImageData) -> Dict[str, Any]:
     return {
         "type": "base64",
         "value": image.base64_image,
+        "video_metadata": image.video_metadata.dict(),
     }
+
+
+def serialize_video_metadata_kind(video_metadata: VideoMetadata) -> dict:
+    return video_metadata.dict()
+
+
+def serialize_wildcard_kind(value: Any) -> Any:
+    if isinstance(value, WorkflowImageData):
+        value = serialise_image(image=value)
+    elif isinstance(value, dict):
+        value = serialize_dict(elements=value)
+    elif isinstance(value, list):
+        value = serialize_list(elements=value)
+    elif isinstance(value, sv.Detections):
+        value = serialise_sv_detections(detections=value)
+    return value
+
+
+def serialize_list(elements: List[Any]) -> List[Any]:
+    result = []
+    for element in elements:
+        element = serialize_wildcard_kind(value=element)
+        result.append(element)
+    return result
+
+
+def serialize_dict(elements: Dict[str, Any]) -> Dict[str, Any]:
+    serialized_result = {}
+    for key, value in elements.items():
+        value = serialize_wildcard_kind(value=value)
+        serialized_result[key] = value
+    return serialized_result

@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type
 from uuid import uuid4
 
 import cv2
@@ -22,10 +22,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     QR_CODE_DETECTION_KIND,
     ImageInputField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -56,11 +56,11 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal[
         "roboflow_core/qr_code_detector@v1", "QRCodeDetector", "QRCodeDetection"
     ]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -70,7 +70,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class QRCodeDetectorBlockV1(WorkflowBlock):
