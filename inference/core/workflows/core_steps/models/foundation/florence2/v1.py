@@ -134,7 +134,7 @@ GroundingSelectionMode = Literal[
 TASKS_REQUIRING_PROMPT = {
     "phrase-grounded-object-detection",
     "phrase-grounded-instance-segmentation",
-    "unstructured",
+    "custom",
 }
 TASKS_REQUIRING_CLASSES = {
     "open-vocabulary-object-detection",
