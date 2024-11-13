@@ -65,11 +65,11 @@ class Florence2BlockV2(Florence2BlockV1):
         grounding_selection_mode: GroundingSelectionMode,
     ) -> BlockResult:
         return super().run(
-            images,
-            model_id,
-            task_type,
-            prompt,
-            classes,
-            grounding_detection,
-            grounding_selection_mode,
+            images=images,
+            model_version=model_id,
+            task_type=task_type,
+            prompt=prompt,
+            classes=classes,
+            grounding_detection=grounding_detection,
+            grounding_selection_mode=grounding_selection_mode,
         )

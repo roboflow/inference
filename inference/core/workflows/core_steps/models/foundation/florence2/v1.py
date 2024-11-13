@@ -8,7 +8,7 @@ from pydantic import ConfigDict, Field, model_validator
 from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.vlms import FLORENCE_TASKS_METADATA
+from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -36,6 +36,14 @@ from inference.core.workflows.prototypes.block import (
 
 T = TypeVar("T")
 K = TypeVar("K")
+
+FLORENCE_TASKS_METADATA = {
+    "custom": {
+        "name": "Custom Prompt",
+        "description": "Use free-form prompt to generate a response. Useful with finetuned models.",
+    },
+    **VLM_TASKS_METADATA,
+}
 
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
@@ -77,7 +85,7 @@ SUPPORTED_TASK_TYPES_LIST = [
     },
     {"task_type": "detection-grounded-ocr", "florence_task": "<REGION_TO_OCR>"},
     {"task_type": "region-proposal", "florence_task": "<REGION_PROPOSAL>"},
-    {"task_type": "unstructured", "florence_task": ""},
+    {"task_type": "custom", "florence_task": None},
 ]
 TASK_TYPE_TO_FLORENCE_TASK = {
     task["task_type"]: task["florence_task"] for task in SUPPORTED_TASK_TYPES_LIST
@@ -364,6 +372,8 @@ class Florence2BlockV1(WorkflowBlock):
         grounding_selection_mode: GroundingSelectionMode,
     ) -> BlockResult:
         requires_detection_grounding = task_type in TASKS_REQUIRING_DETECTION_GROUNDING
+
+        is_not_florence_task = task_type == "custom"
         task_type = TASK_TYPE_TO_FLORENCE_TASK[task_type]
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
@@ -391,17 +401,22 @@ class Florence2BlockV1(WorkflowBlock):
                     {"raw_output": None, "parsed_output": None, "classes": None}
                 )
                 continue
+            if is_not_florence_task:
+                prompt = single_prompt or ""
+            else:
+                prompt = task_type + (single_prompt or "")
+
             request = LMMInferenceRequest(
                 api_key=self._api_key,
                 model_id=model_version,
                 image=image,
                 source="workflow-execution",
-                prompt=task_type + (single_prompt or ""),
+                prompt=prompt,
             )
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
-            if task_type == "":
+            if is_not_florence_task:
                 prediction_data = prediction.response[
                     list(prediction.response.keys())[0]
                 ]

@@ -80,12 +80,3 @@ VLM_TASKS_METADATA = {
         "description": "Model returns a JSON response with the specified fields",
     },
 }
-
-
-FLORENCE_TASKS_METADATA = {
-    "unstructured": {
-        "name": "Unstructured Prompt",
-        "description": "Use free-form prompt to generate a response. Useful with finetuned models.",
-    },
-    **VLM_TASKS_METADATA,
-}
