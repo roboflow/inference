@@ -129,11 +129,6 @@ class ClassificationLabelManifest(ColorableVisualizationManifest):
         examples=["$steps.classification_model.predictions"],
     )
 
-    task_type: Literal["single-label", "multi-label"] = Field(
-        description="The type of task to visualize.",
-    )
-
-
     text_color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the text.",
         default="WHITE",
@@ -166,7 +161,7 @@ class ClassificationLabelManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 
@@ -230,8 +225,7 @@ class ClassificationLabelVisualizationBlockV1(ColorableVisualizationBlock):
     def run(
         self,
         image: WorkflowImageData,
-        predictions: sv.Classifications,
-        task_type: str,
+        predictions: dict,
         copy_image: bool,
         color_palette: Optional[str],
         palette_size: Optional[int],
@@ -246,10 +240,10 @@ class ClassificationLabelVisualizationBlockV1(ColorableVisualizationBlock):
         border_radius: Optional[int],
     ) -> BlockResult:
         try:
-            # Validate prediction format matches task type
-            validate_prediction_format(predictions, task_type)
+            # Detect task type from predictions
+            task_type = detect_prediction_type(predictions)
             
-            # Get sorted predictions based on validated task type
+            # Get sorted predictions based on detected task type
             if task_type == "single-label":
                 sorted_predictions = sorted(predictions['predictions'], 
                                          key=lambda x: x['confidence'], 
@@ -445,16 +439,10 @@ def detect_prediction_type(predictions: dict) -> str:
         
     Returns:
         str: 'single-label' or 'multi-label'
-        
-    Raises:
-        ValueError: If prediction format is unknown
     """
     if isinstance(predictions.get('predictions'), list):
         return 'single-label'
-    elif isinstance(predictions.get('predictions'), dict) and 'predicted_classes' in predictions:
-        return 'multi-label'
-    else:
-        raise ValueError("Unknown prediction format")
+    return 'multi-label'
 
 def validate_prediction_format(predictions: dict, task_type: str) -> None:
     """

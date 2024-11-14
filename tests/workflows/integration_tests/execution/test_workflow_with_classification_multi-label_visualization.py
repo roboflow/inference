@@ -34,7 +34,6 @@ WORKFLOW_DEFINITION = {
       "name": "classification_label_visualization",
       "image": "$inputs.image",
       "predictions": "$steps.model.predictions",
-      "task_type": "multi-label",
       "text": "Class and Confidence",
       "text_position": "CENTER"
     }
@@ -55,8 +54,9 @@ WORKFLOW_DEFINITION = {
 }
 
 @add_to_workflows_gallery(
-    category="Workflows with multi-label classification",
+    category="Workflows with visualization blocks",
     use_case_title="Workflow with multi-label classification label visualization",
+    workflow_name_in_app="multi-label-classification-visualization",
     use_case_description="""
 This workflow demonstrates how to visualize the predictions of a multi-label classification model. 
 It is compatable with single-label and multi-label classification tasks. It is also 

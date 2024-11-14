@@ -38,7 +38,6 @@ WORKFLOW_DEFINITION = {
       "text_scale": 1,
       "text_color": "BLACK",
       "text_padding": 28,
-      "task_type": "single-label",
     }
   ],
   "outputs": [
@@ -57,8 +56,9 @@ WORKFLOW_DEFINITION = {
 }
 
 @add_to_workflows_gallery(
-    category="Workflows with single-label classification",
+    category="Workflows with visualization blocks",
     use_case_title="Workflow with single-label classification label visualization",
+    workflow_name_in_app="single-label-classification-visualization",
     use_case_description="""
 This workflow demonstrates how to visualize the predictions of a single-label classification model. 
 It is compatable with single-label and multi-label classification tasks. It is also 
