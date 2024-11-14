@@ -21,6 +21,7 @@ from inference.core.env import (
     MAX_DETECTIONS,
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
+    OWLV2_VERSION_ID,
 )
 from inference.core.models.roboflow import (
     DEFAULT_COLOR_PALETTE,
@@ -261,7 +262,7 @@ class OwlV2(RoboflowCoreModel):
     task_type = "object-detection"
     box_format = "xywh"
 
-    def __init__(self, *args, model_id="owlv2/owlv2-large-patch14-ensemble", **kwargs):
+    def __init__(self, *args, model_id=f"owlv2/{OWLV2_VERSION_ID}", **kwargs):
         super().__init__(*args, model_id=model_id, **kwargs)
         hf_id = os.path.join("google", self.version_id)
         processor = Owlv2Processor.from_pretrained(hf_id)
