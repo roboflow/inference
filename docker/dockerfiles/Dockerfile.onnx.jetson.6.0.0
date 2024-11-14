@@ -34,7 +34,8 @@ RUN python3 -m pip install --upgrade pip && \
     -r requirements/requirements.groundingdino.txt \
     -r requirements/requirements.sdk.http.txt \
     -r requirements/requirements.yolo_world.txt \
-    -r requirements/requirements.jetson.txt
+    -r requirements/requirements.jetson.txt \
+    setuptools<=75.5.0
 
 # Build the application
 WORKDIR /build
@@ -45,7 +46,7 @@ RUN rm -f dist/* && \
     python3 .release/pypi/inference.gpu.setup.py bdist_wheel && \
     python3 .release/pypi/inference.sdk.setup.py bdist_wheel && \
     python3 .release/pypi/inference.cli.setup.py bdist_wheel && \
-    python3 -m pip install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl
+    python3 -m pip install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl setuptools<=75.5.0
 
 # Set up the application runtime
 WORKDIR /app

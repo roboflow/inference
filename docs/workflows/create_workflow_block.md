@@ -1579,7 +1579,7 @@ the method signatures.
                 crops: Batch[WorkflowImageData],
                 crops_predictions: Batch[sv.Detections],
             ) -> BlockResult:
-                annotator = sv.BoundingBoxAnnotator()
+                annotator = sv.BoxAnnotator()
                 visualisations = []
                 for image, prediction in zip(crops, crops_predictions):
                     annotated_image = annotator.annotate(
@@ -1867,7 +1867,7 @@ the method signatures.
                 images_crops: Batch[Batch[WorkflowImageData]],
                 crops_predictions: Batch[Batch[sv.Detections]],
             ) -> BlockResult:
-                annotator = sv.BoundingBoxAnnotator()
+                annotator = sv.BoxAnnotator()
                 visualisations = []
                 for image_crops, crop_predictions in zip(images_crops, crops_predictions):
                     visualisations_batch_element = []
