@@ -598,3 +598,19 @@ def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     ]
     parameters_string = "&".join(params_chunks)
     return f"{url}?{parameters_string}"
+
+
+@wrap_roboflow_api_errors()
+def report_inference_to_model_monitoring(
+    api_key: str,
+    inference_data: dict,
+):
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/inference-stats",
+        params=[("api_key", api_key)],
+    )
+    response = requests.post(
+        url=api_url,
+        json=inference_data,
+    )
+    api_key_safe_raise_for_status(response=response)

@@ -181,6 +181,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
     RoboflowDatasetUploadBlockV2,
 )
+from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring.v1 import (
+    RoboflowModelMonitoringReportingBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
@@ -416,6 +419,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         QRCodeDetectorBlockV1,
         RoboflowClassificationModelBlockV1,
         RoboflowCustomMetadataBlockV1,
+        RoboflowModelMonitoringReportingBlockV1,
         RoboflowDatasetUploadBlockV2,
         RoboflowInstanceSegmentationModelBlockV1,
         RoboflowKeypointDetectionModelBlockV1,
