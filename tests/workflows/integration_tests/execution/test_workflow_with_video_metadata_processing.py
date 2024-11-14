@@ -214,10 +214,7 @@ def test_workflow_with_tracker(
         first_crowd_frame_tracker_ids == second_crowd_frame_tracker_ids
     ), "The same image, expected no tracker IDs change"
     assert first_license_plate_frame_tracker_ids == [
-        1,
-        2,
-        3,
-    ], (
-        "Since `supervision>=0.25.0` tracker IDs are unique for each new tracker instance - and we "
-        "expect new tracker for `metadata_license_plate_image` to be created - hence fresh tracker ids"
-    )
+        15,
+        16,
+        17,
+    ], "External IDs for all trackers are global, hence we offset by numer of all ever generated tracker IDs"
