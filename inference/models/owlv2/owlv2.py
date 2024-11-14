@@ -118,7 +118,8 @@ def filter_tensors_by_objectness(
     logit_scale: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     objectness = objectness.squeeze(0)
-    objectness, objectness_indices = torch.topk(objectness, MAX_DETECTIONS, dim=0)
+    max_detections = min(MAX_DETECTIONS, int(0.05 * objectness.numel()))
+    objectness, objectness_indices = torch.topk(objectness, max_detections, dim=0)
     boxes = boxes.squeeze(0)
     image_class_embeds = image_class_embeds.squeeze(0)
     logit_shift = logit_shift.squeeze(0).squeeze(1)
@@ -138,6 +139,9 @@ def get_class_preds_from_embeds(
     class_map: Dict[Tuple[str, str], int],
     class_name: str,
     iou_threshold: float,
+    objectness: torch.Tensor,
+    logit_shift: torch.Tensor,
+    logit_scale: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     predicted_boxes_per_class = []
     predicted_class_indices_per_class = []
@@ -148,7 +152,10 @@ def get_class_preds_from_embeds(
             continue
         pred_logits = torch.einsum("sd,nd->ns", image_class_embeds, embedding)
         prediction_scores = pred_logits.max(dim=0)[0]
+        # prediction_scores = (prediction_scores + logit_shift) * logit_scale
+        # prediction_scores = prediction_scores.sigmoid()
         prediction_scores = (prediction_scores + 1) / 2
+        prediction_scores = prediction_scores * objectness
         score_mask = prediction_scores > confidence
         predicted_boxes_per_class.append(image_boxes[score_mask])
         scores = prediction_scores[score_mask]
@@ -418,6 +425,9 @@ class OwlV2(RoboflowCoreModel):
             if not indices.numel() > 0:
                 continue
 
+            # if _objectness[indices].max() < 0.9:
+            #     continue
+
             embeds = image_class_embeds[indices]
             query_embeds.append(embeds)
         if not query_embeds:
@@ -432,7 +442,7 @@ class OwlV2(RoboflowCoreModel):
         confidence: float,
         iou_threshold: float,
     ) -> List[Dict]:
-        _, image_boxes, image_class_embeds, _, _ = self.image_embed_cache[image_hash]
+        objectness, image_boxes, image_class_embeds, logit_shift, logit_scale = self.image_embed_cache[image_hash]
         class_map, class_names = make_class_map(query_embeddings)
         all_predicted_boxes, all_predicted_classes, all_predicted_scores = [], [], []
         for class_name, pos_neg_embedding_dict in query_embeddings.items():
@@ -444,6 +454,9 @@ class OwlV2(RoboflowCoreModel):
                 class_map,
                 class_name,
                 iou_threshold,
+                objectness,
+                logit_shift,
+                logit_scale,
             )
 
             all_predicted_boxes.append(boxes)
@@ -483,18 +496,16 @@ class OwlV2(RoboflowCoreModel):
                 all_predicted_classes, all_predicted_boxes, all_predicted_scores
             )
         ]
-
-    def infer(
+    
+    def infer_from_training_data_hash(
         self,
         image: Any,
-        training_data: Dict,
-        confidence=0.99,
-        iou_threshold=0.3,
+        training_data_hash: Hash,
+        confidence: float,
+        iou_threshold: float,
         **kwargs,
     ):
-        class_embeddings_dict = self.make_class_embeddings_dict(
-            training_data, iou_threshold
-        )
+        class_embeddings_dict = self.class_embeddings_cache[training_data_hash]
 
         if not isinstance(image, list):
             images = [image]
@@ -519,9 +530,28 @@ class OwlV2(RoboflowCoreModel):
             results, image_sizes, sorted(list(class_embeddings_dict.keys()))
         )
 
+    def infer(
+        self,
+        image: Any,
+        training_data: Dict,
+        confidence=0.99,
+        iou_threshold=0.3,
+        **kwargs,
+    ):
+        training_data_hash = self.embed_training_data(training_data, iou_threshold)
+        return self.infer_from_training_data_hash(image, training_data_hash, confidence, iou_threshold)
+
     def make_class_embeddings_dict(
         self, training_data: List[Any], iou_threshold: float
     ) -> Dict[str, PosNegDictType]:
+        wrapped_training_data_hash = self.embed_training_data(
+            training_data, iou_threshold
+        )
+        return self.class_embeddings_cache[wrapped_training_data_hash]
+
+    def embed_training_data(
+        self, training_data: List[Any], iou_threshold: float
+    ) -> Hash:
         wrapped_training_data = [
             {
                 "image": LazyImageRetrievalWrapper(train_image["image"]),
@@ -530,13 +560,16 @@ class OwlV2(RoboflowCoreModel):
             for train_image in training_data
         ]
 
+        # NOTE: this should take into account the order of the training data
         wrapped_training_data_hash = hash_wrapped_training_data(wrapped_training_data)
+        # make sure we include the iou threshold in the hash since different thresholds yield different embeddings
+        wrapped_training_data_hash += f"-{iou_threshold}"
         if (
             class_embeddings_dict := self.class_embeddings_cache.get(
                 wrapped_training_data_hash
             )
         ) is not None:
-            return class_embeddings_dict
+            return wrapped_training_data_hash
 
         class_embeddings_dict = defaultdict(lambda: {"positive": [], "negative": []})
 
@@ -548,7 +581,6 @@ class OwlV2(RoboflowCoreModel):
             # grab and normalize box prompts for this image
             image_size = self.compute_image_size(train_image["image"])
             boxes = train_image["boxes"]
-            print(f"boxes: {boxes}")
             coords = [[box["x"], box["y"], box["w"], box["h"]] for box in boxes]
             coords = [tuple([c / max(image_size) for c in coord]) for coord in coords]
             classes = [box["cls"] for box in boxes]
@@ -582,7 +614,7 @@ class OwlV2(RoboflowCoreModel):
 
         self.class_embeddings_cache[wrapped_training_data_hash] = class_embeddings_dict
 
-        return class_embeddings_dict
+        return wrapped_training_data_hash
 
     def make_response(self, predictions, image_sizes, class_names):
         responses = [
