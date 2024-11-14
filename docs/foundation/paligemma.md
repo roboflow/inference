@@ -122,7 +122,7 @@ print(response)
 
 detections = from_pali_gemma(response=response, resolution_wh=image.size, class_list=['person', 'car', 'backpack'])
 
-bounding_box_annotator = sv.BoundingBoxAnnotator()
+bounding_box_annotator = sv.BoxAnnotator()
 label_annotator = sv.LabelAnnotator()
 
 annotatrd_image = bounding_box_annotator.annotate(image, detections)

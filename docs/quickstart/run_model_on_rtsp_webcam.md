@@ -126,7 +126,7 @@ import supervision as sv
 
 # create a bounding box annotator and label annotator to use in our custom sink
 label_annotator = sv.LabelAnnotator()
-box_annotator = sv.BoundingBoxAnnotator()
+box_annotator = sv.BoxAnnotator()
 
 def my_custom_sink(predictions: dict, video_frame: VideoFrame):
     # get the text labels for each prediction

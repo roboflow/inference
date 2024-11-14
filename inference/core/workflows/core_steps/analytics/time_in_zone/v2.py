@@ -148,7 +148,6 @@ class TimeInZoneBlockV2(WorkflowBlock):
                 )
             self._batch_of_polygon_zones[metadata.video_identifier] = sv.PolygonZone(
                 polygon=np.array(zone),
-                frame_resolution_wh=image.numpy_image.shape[:-1],
                 triggering_anchors=(sv.Position(triggering_anchor),),
             )
         polygon_zone = self._batch_of_polygon_zones[metadata.video_identifier]

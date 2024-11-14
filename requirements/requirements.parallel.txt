@@ -1,2 +1,2 @@
-celery
-gunicorn
+celery~=5.0.0
+gunicorn~=23.0.0
