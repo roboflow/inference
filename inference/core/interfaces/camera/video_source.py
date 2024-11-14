@@ -862,11 +862,19 @@ class VideoConsumer:
             },
             status_update_handlers=self._status_update_handlers,
         )
+        measured_source_fps = declared_source_fps
+        if not is_source_video_file:
+            if hasattr(self._stream_consumption_pace_monitor, "fps"):
+                measured_source_fps = self._stream_consumption_pace_monitor.fps
+            else:
+                measured_source_fps = self._stream_consumption_pace_monitor()
+
         if self._video_fps_should_be_sub_sampled():
             return True
         return self._consume_stream_frame(
             video=video,
             declared_source_fps=declared_source_fps,
+            measured_source_fps=measured_source_fps,
             is_source_video_file=is_source_video_file,
             frame_timestamp=frame_timestamp,
             buffer=buffer,
@@ -912,6 +920,7 @@ class VideoConsumer:
         self,
         video: VideoFrameProducer,
         declared_source_fps: Optional[float],
+        measured_source_fps: Optional[float],
         is_source_video_file: Optional[bool],
         frame_timestamp: datetime,
         buffer: Queue,
@@ -954,7 +963,9 @@ class VideoConsumer:
                 buffer=buffer,
                 decoding_pace_monitor=self._decoding_pace_monitor,
                 source_id=source_id,
-                fps=declared_source_fps,
+                fps=(
+                    declared_source_fps if is_source_video_file else measured_source_fps
+                ),
                 comes_from_video_file=is_source_video_file,
             )
         if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
