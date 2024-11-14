@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type, TypeVar, Union
+from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
@@ -19,8 +19,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
-
-T = TypeVar("T")
 
 
 TYPE: str = "roboflow_core/label_visualization@v1"
