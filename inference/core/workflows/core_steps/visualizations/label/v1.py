@@ -20,7 +20,6 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-
 TYPE: str = "roboflow_core/label_visualization@v1"
 SHORT_DESCRIPTION = (
     "Draws labels on an image at specific coordinates based on provided detections."
