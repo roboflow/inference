@@ -74,10 +74,18 @@ CLIP_MODEL_ID = f"clip/{CLIP_VERSION_ID}"
 
 # Gaze version ID, default is "L2CS"
 GAZE_VERSION_ID = os.getenv("GAZE_VERSION_ID", "L2CS")
-OWLV2_VERSION_ID = os.getenv("OWLV2_VERSION_ID", "owlv2-base-patch16-ensemble")
 
 # Gaze model ID
 GAZE_MODEL_ID = f"gaze/{CLIP_VERSION_ID}"
+
+# OWLv2 version ID, default is "owlv2-large-patch14-ensemble"
+OWLV2_VERSION_ID = os.getenv("OWLV2_VERSION_ID", "owlv2-large-patch14-ensemble")
+
+# OWLv2 image cache size, default is 1000
+OWLV2_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_IMAGE_CACHE_SIZE", 1000))
+
+# OWLv2 model cache size, default is 100
+OWLV2_MODEL_CACHE_SIZE = int(os.getenv("OWLV2_MODEL_CACHE_SIZE", 10))
 
 # Maximum batch size for GAZE, default is 8
 GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))

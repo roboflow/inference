@@ -16,7 +16,12 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import DEVICE, MAX_DETECTIONS
+from inference.core.env import (
+    DEVICE,
+    MAX_DETECTIONS,
+    OWLV2_IMAGE_CACHE_SIZE,
+    OWLV2_MODEL_CACHE_SIZE,
+)
 from inference.core.models.roboflow import (
     DEFAULT_COLOR_PALETTE,
     RoboflowCoreModel,
@@ -281,11 +286,11 @@ class OwlV2(RoboflowCoreModel):
 
     def reset_cache(self):
         # each entry should be on the order of 300*4KB, so 1000 is 400MB of CUDA memory
-        self.image_embed_cache = LimitedSizeDict(size_limit=1000)
+        self.image_embed_cache = LimitedSizeDict(size_limit=OWLV2_IMAGE_CACHE_SIZE)
         # each entry should be on the order of 10 bytes, so 1000 is 10KB
-        self.image_size_cache = LimitedSizeDict(size_limit=1000)
-        # entry size will vary depending on the number of samples, but 100 should be safe
-        self.class_embeddings_cache = LimitedSizeDict(size_limit=100)
+        self.image_size_cache = LimitedSizeDict(size_limit=OWLV2_IMAGE_CACHE_SIZE)
+        # entry size will vary depending on the number of samples, but 10 should be safe
+        self.class_embeddings_cache = LimitedSizeDict(size_limit=OWLV2_MODEL_CACHE_SIZE)
 
     def draw_predictions(
         self,
