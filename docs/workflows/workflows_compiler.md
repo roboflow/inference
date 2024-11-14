@@ -232,6 +232,37 @@ is a batch of data - all batch elements are affected.
 * **The flow-control step operates on batch-oriented inputs with compatible lineage** - here, the flow-control step 
 can decide separately for each element in the batch which ones will proceed and which ones will be stopped.
 
+#### Batch-orientation compatibility
+
+As it was outlined, Workflows define **batch-oriented data** and **scalars**.
+From [the description of the nature of data in Workflows](/workflows/workflow_execution/#what-is-the-data), 
+you can also conclude that operations which are executed against batch-oriented data
+have two almost equivalent ways of running:
+
+* **all-at-once:** taking whole batches of data and processing them
+
+* **one-by-one:** looping over batch elements and getting results sequentially
+
+Since the default way for Workflow blocks to deal with the batches is to consume them element-by-element, 
+**there is no real difference** between **batch-oriented data** and **scalars** 
+in such case. Execution Engine simply unpacks scalars from batches and pass them to each step.
+
+The process may complicate when block accepts batch input. You will learn the 
+details in [blocks development guide](/workflows/create_workflow_block/), but 
+block is required to denote each input that must be provided *batch-wise* and all inputs
+which can be fed with both batch-oriented data and scalars at the same time (which is much 
+less common case). In such cases, *lineage* is used to deduce if the actual data fed into 
+every step input is *batch* or *scalar*. When violation is detected (for instance *scalar* is provided for input 
+that requires batches or vice versa) - the error is raised.
+
+
+!!! Note "Potential future improvements"
+
+    At this moment, we are not sure if the behaviour described above is limiting the potential of
+    Workflows ecosystem. If you see that your Workflows cannot run due to the errors 
+    being result of described mechanism - please let us know in 
+    [GitHub issues](https://github.com/roboflow/inference/issues). 
+
 
 ## Initializing Workflow steps from blocks
 

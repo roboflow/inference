@@ -1,11 +1,12 @@
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Generator, List, Optional, Set, Type, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Set, Type, Union
 
 import networkx as nx
 
 from inference.core.workflows.execution_engine.entities.base import InputType, JsonField
+from inference.core.workflows.execution_engine.entities.types import WILDCARD_KIND, Kind
 from inference.core.workflows.execution_engine.introspection.entities import (
     ParsedSelector,
 )
@@ -53,6 +54,12 @@ class CompiledWorkflow:
     input_substitutions: List[InputSubstitution]
     workflow_json: Dict[str, Any]
     init_parameters: Dict[str, Any]
+    kinds_serializers: Dict[str, Callable[[str, Any], Any]] = field(
+        default_factory=dict
+    )
+    kinds_deserializers: Dict[str, Callable[[str, Any], Any]] = field(
+        default_factory=dict
+    )
 
 
 class NodeCategory(Enum):
@@ -84,6 +91,9 @@ class InputNode(ExecutionGraphNode):
 @dataclass
 class OutputNode(ExecutionGraphNode):
     output_manifest: JsonField
+    kind: Union[List[Union[Kind, str]], Dict[str, List[Union[Kind, str]]]] = field(
+        default_factory=lambda: [WILDCARD_KIND]
+    )
 
     @property
     def dimensionality(self) -> int:

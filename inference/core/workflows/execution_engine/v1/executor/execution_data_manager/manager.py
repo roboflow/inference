@@ -1,4 +1,4 @@
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+from typing import Any, Dict, Generator, List, Optional, Set, Tuple, Union
 
 from networkx import DiGraph
 
@@ -149,7 +149,10 @@ class ExecutionDataManager:
             outputs=output,
         )
 
-    def get_simd_step_input(self, step_selector: str) -> BatchModeSIMDStepInput:
+    def get_simd_step_input(
+        self,
+        step_selector: str,
+    ) -> BatchModeSIMDStepInput:
         if not self.is_step_simd(step_selector=step_selector):
             raise ExecutionEngineRuntimeError(
                 public_message=f"Error in execution engine. In context of non-SIMD step: {step_selector} attempts to "

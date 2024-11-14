@@ -9,13 +9,11 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     INTEGER_KIND,
     RGB_COLOR_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -40,15 +38,15 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
             "block_type": "classical_computer_vision",
         }
     )
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
     target_color: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
-        StepOutputSelector(kind=[RGB_COLOR_KIND]),
+        Selector(kind=[STRING_KIND]),
+        Selector(kind=[RGB_COLOR_KIND]),
         str,
         Tuple[int, int, int],
     ] = Field(
@@ -57,7 +55,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
         "(like (18, 17, 67)).",
         examples=["#431112", "$inputs.target_color", (18, 17, 67)],
     )
-    tolerance: Union[WorkflowParameterSelector(kind=[INTEGER_KIND]), int] = Field(
+    tolerance: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=10,
         description="Tolerance for color matching.",
         examples=[10, "$inputs.tolerance"],
@@ -65,7 +63,7 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

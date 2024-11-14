@@ -16,7 +16,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     INTEGER_KIND,
     STRING_KIND,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -54,7 +54,7 @@ class LabelManifest(ColorableVisualizationManifest):
             "Tracker Id",
             "Time In Zone",
         ],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="Class",
         description="The type of text to display.",
@@ -74,38 +74,38 @@ class LabelManifest(ColorableVisualizationManifest):
             "BOTTOM_RIGHT",
             "CENTER_OF_MASS",
         ],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="TOP_LEFT",
         description="The anchor position for placing the label.",
         examples=["CENTER", "$inputs.text_position"],
     )
 
-    text_color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    text_color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the text.",
         default="WHITE",
         examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.text_color"],
     )
 
-    text_scale: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+    text_scale: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         description="Scale of the text.",
         default=1.0,
         examples=[1.0, "$inputs.text_scale"],
     )
 
-    text_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    text_thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the text characters.",
         default=1,
         examples=[1, "$inputs.text_thickness"],
     )
 
-    text_padding: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    text_padding: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Padding around the text in pixels.",
         default=10,
         examples=[10, "$inputs.text_padding"],
     )
 
-    border_radius: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    border_radius: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Radius of the label in pixels.",
         default=0,
         examples=[0, "$inputs.border_radius"],
@@ -113,7 +113,7 @@ class LabelManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class LabelVisualizationBlockV1(ColorableVisualizationBlock):
@@ -206,7 +206,12 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         if text == "Class":
             labels = predictions["class_name"]
         elif text == "Tracker Id":
-            labels = [str(t) if t else "" for t in predictions.tracker_id]
+            if predictions.tracker_id is not None:
+                labels = [
+                    str(t) if t else "No Tracker ID" for t in predictions.tracker_id
+                ]
+            else:
+                labels = ["No Tracker ID"] * len(predictions)
         elif text == "Time In Zone":
             if "time_in_zone" in predictions.data:
                 labels = [
@@ -241,7 +246,6 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
                 labels = [str(d) if d else "" for d in predictions[text]]
             except Exception:
                 raise ValueError(f"Invalid text type: {text}")
-
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
             detections=predictions,

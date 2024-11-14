@@ -172,7 +172,7 @@ def test_workflow_with_tracker(
         "fps": 50,
         "comes_from_video_file": True,
     }
-    metadata_license_plare_image = {
+    metadata_license_plate_image = {
         "video_identifier": "c",
         "frame_number": 1,
         "frame_timestamp": datetime.now().isoformat(),
@@ -197,7 +197,7 @@ def test_workflow_with_tracker(
     result_3 = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, license_plate_image],
-            "video_metadata": [metadata_dogs_image, metadata_license_plare_image],
+            "video_metadata": [metadata_dogs_image, metadata_license_plate_image],
         }
     )
     first_dogs_frame_tracker_ids = result_1[0]["tracker_id"]

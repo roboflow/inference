@@ -2,6 +2,7 @@ import asyncio
 import atexit
 import json
 import mimetypes
+import numbers
 import socket
 import sys
 import time
@@ -315,6 +316,7 @@ class UsageCollector:
         fps: float = 0,
     ):
         source = str(source) if source else ""
+        frames = frames if isinstance(frames, numbers.Number) else 0
         api_key_hash = self._calculate_api_key_hash(api_key=api_key)
         if not resource_id and resource_details:
             resource_id = UsageCollector._calculate_resource_hash(resource_details)
@@ -332,7 +334,9 @@ class UsageCollector:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
             source_usage["processed_frames"] += frames if not inference_test_run else 0
-            source_usage["fps"] = round(fps, 2)
+            source_usage["fps"] = (
+                round(fps, 2) if isinstance(fps, numbers.Number) else 0
+            )
             source_usage["source_duration"] += (
                 frames / fps if fps and not inference_test_run else 0
             )
@@ -355,7 +359,7 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
-    ) -> DefaultDict[str, Any]:
+    ):
         if not api_key:
             return
         if self._settings.opt_out and not api_key:
@@ -388,7 +392,7 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
-    ) -> DefaultDict[str, Any]:
+    ):
         if self._async_lock:
             async with self._async_lock:
                 self.record_usage(

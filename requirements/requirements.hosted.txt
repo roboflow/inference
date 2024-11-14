@@ -1,3 +1,2 @@
-pymemcache<=4.0.0
-elasticache_auto_discovery<=1.0.0
-prometheus-fastapi-instrumentator<=6.0.0
+pymemcache~=4.0.0
+elasticache_auto_discovery~=1.0.0

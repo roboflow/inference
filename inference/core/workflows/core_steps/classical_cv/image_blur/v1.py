@@ -15,9 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -45,7 +43,7 @@ class ImageBlurManifest(WorkflowBlockManifest):
         }
     )
 
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
@@ -53,7 +51,7 @@ class ImageBlurManifest(WorkflowBlockManifest):
     )
 
     blur_type: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
         Literal["average", "gaussian", "median", "bilateral"],
     ] = Field(
         default="gaussian",
@@ -61,7 +59,7 @@ class ImageBlurManifest(WorkflowBlockManifest):
         examples=["average", "$inputs.blur_type"],
     )
 
-    kernel_size: Union[WorkflowParameterSelector(kind=[INTEGER_KIND]), int] = Field(
+    kernel_size: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=5,
         description="Size of the average pooling kernel used for blurring.",
         examples=[5, "$inputs.kernel_size"],
@@ -80,7 +78,7 @@ class ImageBlurManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class ImageBlurBlockV1(WorkflowBlock):

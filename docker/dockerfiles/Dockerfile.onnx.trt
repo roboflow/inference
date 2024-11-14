@@ -33,6 +33,7 @@ RUN pip install --upgrade pip  && pip install \
     -r requirements.doctr.txt \
     -r requirements.groundingdino.txt \
     -r requirements.sdk.http.txt \
+    "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
 

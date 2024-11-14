@@ -2,6 +2,8 @@ from collections import defaultdict
 from typing import Dict, Generator, List, Set, Tuple, Type
 
 from inference.core.workflows.execution_engine.entities.types import (
+    ANY_DATA_AS_SELECTED_ELEMENT,
+    BATCH_AS_SELECTED_ELEMENT,
     STEP_AS_SELECTED_ELEMENT,
     STEP_OUTPUT_AS_SELECTED_ELEMENT,
     WILDCARD_KIND,
@@ -40,9 +42,14 @@ def discover_blocks_connections(
         blocks_description=blocks_description,
         all_schemas=all_schemas,
     )
+    compatible_elements = {
+        STEP_OUTPUT_AS_SELECTED_ELEMENT,
+        BATCH_AS_SELECTED_ELEMENT,
+        ANY_DATA_AS_SELECTED_ELEMENT,
+    }
     coarse_input_kind2schemas = convert_kinds_mapping_to_block_wise_format(
         detailed_input_kind2schemas=detailed_input_kind2schemas,
-        compatible_elements={STEP_OUTPUT_AS_SELECTED_ELEMENT},
+        compatible_elements=compatible_elements,
     )
     input_property_wise_connections = {}
     output_property_wise_connections = {}
@@ -51,6 +58,7 @@ def discover_blocks_connections(
             starting_block=block_type,
             all_schemas=all_schemas,
             output_kind2schemas=output_kind2schemas,
+            compatible_elements=compatible_elements,
         )
         manifest_type = block_type2manifest_type[block_type]
         output_property_wise_connections[block_type] = (
@@ -167,12 +175,13 @@ def discover_block_input_connections(
     starting_block: Type[WorkflowBlock],
     all_schemas: Dict[Type[WorkflowBlock], BlockManifestMetadata],
     output_kind2schemas: Dict[str, Set[Type[WorkflowBlock]]],
+    compatible_elements: Set[str],
 ) -> Dict[str, Set[Type[WorkflowBlock]]]:
     result = {}
     for selector in all_schemas[starting_block].selectors.values():
         blocks_matching_property = set()
         for allowed_reference in selector.allowed_references:
-            if allowed_reference.selected_element != STEP_OUTPUT_AS_SELECTED_ELEMENT:
+            if allowed_reference.selected_element not in compatible_elements:
                 continue
             for single_kind in allowed_reference.kind:
                 blocks_matching_property.update(

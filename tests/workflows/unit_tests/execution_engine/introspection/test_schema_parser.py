@@ -282,7 +282,9 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="workflow_image", kind=[IMAGE_KIND]
+                        selected_element="workflow_image",
+                        kind=[IMAGE_KIND],
+                        points_to_batch={True},
                     )
                 ],
                 is_list_element=False,
@@ -297,6 +299,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                     ReferenceDefinition(
                         selected_element="workflow_parameter",
                         kind=[BOOLEAN_KIND, STRING_KIND],
+                        points_to_batch={False},
                     )
                 ],
                 is_list_element=False,
@@ -309,7 +312,9 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="step_output", kind=[IMAGE_KIND]
+                        selected_element="step_output",
+                        kind=[IMAGE_KIND],
+                        points_to_batch={True},
                     )
                 ],
                 is_list_element=False,
@@ -327,6 +332,7 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                             BOOLEAN_KIND,
                             OBJECT_DETECTION_PREDICTION_KIND,
                         ],
+                        points_to_batch={True},
                     )
                 ],
                 is_list_element=False,
@@ -338,7 +344,11 @@ def test_parse_block_manifest_when_manifest_defines_selectors_without_nesting() 
                 property_name="step",
                 property_description="not available",
                 allowed_references=[
-                    ReferenceDefinition(selected_element="step", kind=[])
+                    ReferenceDefinition(
+                        selected_element="step",
+                        kind=[],
+                        points_to_batch={False},
+                    )
                 ],
                 is_list_element=False,
                 is_dict_element=False,
@@ -385,10 +395,14 @@ def test_parse_block_manifest_when_manifest_defines_compound_selector() -> None:
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="workflow_image", kind=[IMAGE_KIND]
+                        selected_element="workflow_image",
+                        kind=[IMAGE_KIND],
+                        points_to_batch={True},
                     ),
                     ReferenceDefinition(
-                        selected_element="step_output", kind=[IMAGE_KIND]
+                        selected_element="step_output",
+                        kind=[IMAGE_KIND],
+                        points_to_batch={True},
                     ),
                     # nested list is ignored
                 ],
@@ -440,10 +454,14 @@ def test_parse_block_manifest_when_manifest_defines_union_of_selector_and_primit
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="workflow_image", kind=[IMAGE_KIND]
+                        selected_element="workflow_image",
+                        kind=[IMAGE_KIND],
+                        points_to_batch={True},
                     ),
                     ReferenceDefinition(
-                        selected_element="step_output", kind=[IMAGE_KIND]
+                        selected_element="step_output",
+                        kind=[IMAGE_KIND],
+                        points_to_batch={True},
                     ),
                     # nested list is ignored
                 ],
@@ -495,10 +513,14 @@ def test_parse_block_manifest_when_manifest_defines_selector_inside_dictionary()
                 property_description="not available",
                 allowed_references=[
                     ReferenceDefinition(
-                        selected_element="workflow_image", kind=[IMAGE_KIND]
+                        selected_element="workflow_image",
+                        kind=[IMAGE_KIND],
+                        points_to_batch={True},
                     ),
                     ReferenceDefinition(
-                        selected_element="step_output", kind=[IMAGE_KIND]
+                        selected_element="step_output",
+                        kind=[IMAGE_KIND],
+                        points_to_batch={True},
                     ),
                     # nested list is ignored
                 ],

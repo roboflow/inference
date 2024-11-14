@@ -13,7 +13,7 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -38,13 +38,13 @@ class CornerManifest(ColorableVisualizationManifest):
         }
     )
 
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the lines in pixels.",
         default=4,
         examples=[4, "$inputs.thickness"],
     )
 
-    corner_length: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    corner_length: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Length of the corner lines in pixels.",
         default=15,
         examples=[15, "$inputs.corner_length"],
@@ -52,7 +52,7 @@ class CornerManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class CornerVisualizationBlockV1(ColorableVisualizationBlock):
