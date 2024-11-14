@@ -284,6 +284,9 @@ def inspect_vide_metadata(video_metadata: VideoMetadata) -> None:
     # Field represents FPS value (if possible to be retrieved) (optional)
     print(video_metadata.fps)
     
+    # Field represents measured FPS of live stream (optional)
+    print(video_metadata.measured_fps)
+    
     # Field is a flag telling if frame comes from video file or stream.
     # If not possible to be determined - None
     print(video_metadata.comes_from_video_file)
