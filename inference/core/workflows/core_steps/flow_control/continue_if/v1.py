@@ -10,10 +10,8 @@ from inference.core.workflows.core_steps.common.query_language.evaluation_engine
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    StepOutputSelector,
+    Selector,
     StepSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
@@ -63,7 +61,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     evaluation_parameters: Dict[
         str,
-        Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
+        Selector(),
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parametrise operations",
         examples=[{"left": "$inputs.some"}],
@@ -80,7 +78,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class ContinueIfBlockV1(WorkflowBlock):

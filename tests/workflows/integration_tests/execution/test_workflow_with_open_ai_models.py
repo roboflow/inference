@@ -303,7 +303,7 @@ def test_workflow_with_captioning_prompt(
     ), "Expected non-empty string generated"
 
 
-CLASSIFICATION_WORKFLOW = {
+CLASSIFICATION_WORKFLOW_WITH_LEGACY_PARSER = {
     "version": "1.0",
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
@@ -355,12 +355,105 @@ CLASSIFICATION_WORKFLOW = {
 }
 
 
+@pytest.mark.skipif(
+    condition=OPEN_AI_API_KEY is None, reason="OpenAI API key not provided"
+)
+def test_workflow_with_multi_class_classifier_prompt_and_legacy_parser(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=CLASSIFICATION_WORKFLOW_WITH_LEGACY_PARSER,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image],
+            "api_key": OPEN_AI_API_KEY,
+            "classes": ["cat", "dog"],
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "gpt_result",
+        "top_class",
+        "parsed_prediction",
+    }, "Expected all outputs to be delivered"
+    assert (
+        isinstance(result[0]["gpt_result"], str) and len(result[0]["gpt_result"]) > 0
+    ), "Expected non-empty string generated"
+    assert result[0]["top_class"] == "dog"
+    assert result[0]["parsed_prediction"]["error_status"] is False
+
+
+CLASSIFICATION_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "classes"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/open_ai@v2",
+            "name": "gpt",
+            "images": "$inputs.image",
+            "task_type": "classification",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/vlm_as_classifier@v2",
+            "name": "parser",
+            "image": "$inputs.image",
+            "vlm_output": "$steps.gpt.output",
+            "classes": "$steps.gpt.classes",
+        },
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "top_class",
+            "operations": [
+                {"type": "ClassificationPropertyExtract", "property_name": "top_class"}
+            ],
+            "data": "$steps.parser.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "gpt_result",
+            "selector": "$steps.gpt.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "top_class",
+            "selector": "$steps.top_class.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "parsed_prediction",
+            "selector": "$steps.parser.*",
+        },
+    ],
+}
+
+
 @add_to_workflows_gallery(
     category="Workflows with Visual Language Models",
     use_case_title="Using GPT as multi-class classifier",
     use_case_description="""
 In this example, GPT model is used as classifier. Output from the model is parsed by
-special `roboflow_core/vlm_as_classifier@v1` block which turns GPT output text into
+special `roboflow_core/vlm_as_classifier@v2` block which turns GPT output text into
 full-blown prediction, which can later be used by other blocks compatible with 
 classification predictions - in this case we extract top-class property.
     """,
@@ -425,7 +518,7 @@ MULTI_LABEL_CLASSIFICATION_WORKFLOW = {
             "api_key": "$inputs.api_key",
         },
         {
-            "type": "roboflow_core/vlm_as_classifier@v1",
+            "type": "roboflow_core/vlm_as_classifier@v2",
             "name": "parser",
             "image": "$inputs.image",
             "vlm_output": "$steps.gpt.output",
@@ -627,7 +720,7 @@ VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
             "api_key": "$inputs.api_key",
         },
         {
-            "type": "roboflow_core/vlm_as_classifier@v1",
+            "type": "roboflow_core/vlm_as_classifier@v2",
             "name": "parser",
             "image": "$steps.cropping.crops",
             "vlm_output": "$steps.gpt.output",

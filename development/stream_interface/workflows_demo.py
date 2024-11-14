@@ -11,7 +11,7 @@ from inference.core.interfaces.stream.watchdog import PipelineWatchDog, BasePipe
 from inference.core.utils.drawing import create_tiles
 
 STOP = False
-ANNOTATOR = sv.BoundingBoxAnnotator()
+ANNOTATOR = sv.BoxAnnotator()
 fps_monitor = sv.FPSMonitor()
 
 

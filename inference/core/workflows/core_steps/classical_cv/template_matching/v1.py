@@ -24,12 +24,11 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
     INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     FloatZeroToOne,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -66,44 +65,42 @@ class TemplateMatchingManifest(WorkflowBlockManifest):
             "block_type": "classical_computer_vision",
         }
     )
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
-    template: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    template: Selector(kind=[IMAGE_KIND]) = Field(
         title="Template Image",
         description="The template image for this step.",
         examples=["$inputs.template", "$steps.cropping.template"],
         validation_alias=AliasChoices("template", "templates"),
     )
-    matching_threshold: Union[WorkflowParameterSelector(kind=[FLOAT_KIND]), float] = (
-        Field(
-            title="Matching Threshold",
-            description="The threshold value for template matching.",
-            default=0.8,
-            examples=[0.8, "$inputs.threshold"],
-        )
+    matching_threshold: Union[Selector(kind=[FLOAT_KIND]), float] = Field(
+        title="Matching Threshold",
+        description="The threshold value for template matching.",
+        default=0.8,
+        examples=[0.8, "$inputs.threshold"],
     )
-    apply_nms: Union[WorkflowParameterSelector(kind=[BOOLEAN_KIND]), bool] = Field(
+    apply_nms: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(
         title="Apply NMS",
         description="Flag to decide if NMS should be applied at the output detections.",
         default=True,
         examples=["$inputs.apply_nms", False],
     )
-    nms_threshold: Union[
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]), FloatZeroToOne
-    ] = Field(
-        title="NMS threshold",
-        description="The threshold value NMS procedure (if to be applied).",
-        default=0.5,
-        examples=["$inputs.nms_threshold", 0.3],
+    nms_threshold: Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), FloatZeroToOne] = (
+        Field(
+            title="NMS threshold",
+            description="The threshold value NMS procedure (if to be applied).",
+            default=0.5,
+            examples=["$inputs.nms_threshold", 0.3],
+        )
     )
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

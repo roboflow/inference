@@ -764,7 +764,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "fps": 10,
                     "exec_session_id": "session_2",
                 },
-            }
+            },
         },
         {
             "fake_api1_hash": {
@@ -831,7 +831,11 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
 
 def test_system_info_with_dedicated_deployment_id():
     # given
-    system_info = UsageCollector.system_info(ip_address="w.x.y.z", hostname="hostname01", dedicated_deployment_id="deployment01")
+    system_info = UsageCollector.system_info(
+        ip_address="w.x.y.z",
+        hostname="hostname01",
+        dedicated_deployment_id="deployment01",
+    )
 
     # then
     expected_system_info = {
@@ -845,7 +849,9 @@ def test_system_info_with_dedicated_deployment_id():
 
 def test_system_info_with_no_dedicated_deployment_id():
     # given
-    system_info = UsageCollector.system_info(ip_address="w.x.y.z", hostname="hostname01")
+    system_info = UsageCollector.system_info(
+        ip_address="w.x.y.z", hostname="hostname01"
+    )
 
     # then
     expected_system_info = {
@@ -855,3 +861,31 @@ def test_system_info_with_no_dedicated_deployment_id():
     }
     for k, v in expected_system_info.items():
         assert system_info[k] == v
+
+
+def test_record_malformed_usage():
+    # given
+    collector = UsageCollector()
+
+    # when
+    collector.record_usage(
+        source=None,
+        category="model",
+        frames=None,
+        api_key="fake",
+        resource_details=None,
+        resource_id=None,
+        inference_test_run=None,
+        fps=None,
+    )
+
+    # then
+    assert "fake" in collector._usage
+    assert "model:None" in collector._usage["fake"]
+    assert collector._usage["fake"]["model:None"]["processed_frames"] == 0
+    assert collector._usage["fake"]["model:None"]["fps"] == 0
+    assert collector._usage["fake"]["model:None"]["source_duration"] == 0
+    assert collector._usage["fake"]["model:None"]["category"] == "model"
+    assert collector._usage["fake"]["model:None"]["resource_id"] == None
+    assert collector._usage["fake"]["model:None"]["resource_details"] == "{}"
+    assert collector._usage["fake"]["model:None"]["api_key_hash"] == "fake"

@@ -19,6 +19,8 @@ from inference.core.workflows.execution_engine.introspection.blocks_loader impor
     load_blocks_from_plugin,
     load_initializers,
     load_initializers_from_plugin,
+    load_kinds_deserializers,
+    load_kinds_serializers,
     load_workflow_blocks,
 )
 from tests.workflows.unit_tests.execution_engine.introspection import (
@@ -426,3 +428,47 @@ def test_is_block_compatible_with_execution_engine_when_block_execution_engine_c
             block_source="workflows_core",
             block_identifier="some",
         )
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_load_kinds_serializers(
+    get_plugin_modules_mock: MagicMock,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_kinds_serializers"
+    ]
+
+    # when
+    result = load_kinds_serializers()
+
+    # then
+    assert len(result) > 0
+    assert result["1"]("some") == "1", "Expected hardcoded value from serializer"
+    assert result["2"]("some") == "2", "Expected hardcoded value from serializer"
+    assert result["3"]("some") == "3", "Expected hardcoded value from serializer"
+
+
+@mock.patch.object(blocks_loader, "get_plugin_modules")
+def test_load_kinds_deserializers(
+    get_plugin_modules_mock: MagicMock,
+) -> None:
+    # given
+    get_plugin_modules_mock.return_value = [
+        "tests.workflows.unit_tests.execution_engine.introspection.plugin_with_kinds_serializers"
+    ]
+
+    # when
+    result = load_kinds_deserializers()
+
+    # then
+    assert len(result) > 0
+    assert (
+        result["1"]("some", "value") == "1"
+    ), "Expected hardcoded value from deserializer"
+    assert (
+        result["2"]("some", "value") == "2"
+    ), "Expected hardcoded value from deserializer"
+    assert (
+        result["3"]("some", "value") == "3"
+    ), "Expected hardcoded value from deserializer"

@@ -91,8 +91,15 @@ class WebRTCOffer(BaseModel):
     sdp: str
 
 
+class WebRTCTURNConfig(BaseModel):
+    urls: str
+    username: str
+    credential: str
+
+
 class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
     webrtc_offer: WebRTCOffer
+    webrtc_turn_config: WebRTCTURNConfig
     stream_output: Optional[List[str]] = Field(default_factory=list)
     data_output: Optional[List[str]] = Field(default_factory=list)
     webrtc_peer_timeout: float = 1

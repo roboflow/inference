@@ -2,7 +2,7 @@ from typing import Any, Dict, List
 
 from networkx import DiGraph
 
-from inference.core.workflows.errors import ExecutionEngineRuntimeError
+from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     ExecutionGraphNode,
     InputNode,
@@ -83,7 +83,38 @@ def assembly_root_batch_indices(
                 expected_type=InputNode,
             )
             input_parameter_name = input_node_data.input_manifest.name
-            dimension_value = len(runtime_parameters[input_parameter_name])
-            lineage_id = identify_lineage(lineage=node_data.data_lineage)
-            result[lineage_id] = [(i,) for i in range(dimension_value)]
+            root_lineage_id = identify_lineage(lineage=node_data.data_lineage[:1])
+            result[root_lineage_id] = [
+                (i,) for i in range(len(runtime_parameters[input_parameter_name]))
+            ]
+            if input_node_data.input_manifest.dimensionality > 1:
+                lineage_id = identify_lineage(lineage=node_data.data_lineage)
+                result[lineage_id] = generate_indices_for_input_node(
+                    dimensionality=input_node_data.input_manifest.dimensionality,
+                    dimension_value=runtime_parameters[input_parameter_name],
+                )
+    return result
+
+
+def generate_indices_for_input_node(
+    dimensionality: int, dimension_value: list, indices_prefix: DynamicBatchIndex = ()
+) -> List[DynamicBatchIndex]:
+    if not isinstance(dimension_value, list):
+        raise AssumptionError(
+            public_message=f"Could not establish input data batch indices. This is most likely the bug. Contact "
+            f"Roboflow team through github issues (https://github.com/roboflow/inference/issues) "
+            f"providing full context of the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
+    if dimensionality == len(indices_prefix) + 1:
+        return [indices_prefix + (i,) for i in range(len(dimension_value))]
+    result = []
+    for i, value_element in enumerate(dimension_value):
+        result.extend(
+            generate_indices_for_input_node(
+                dimensionality=dimensionality,
+                dimension_value=value_element,
+                indices_prefix=indices_prefix + (i,),
+            )
+        )
     return result

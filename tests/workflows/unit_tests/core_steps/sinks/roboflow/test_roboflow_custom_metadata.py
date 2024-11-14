@@ -220,6 +220,79 @@ def test_run_when_fire_and_forget_with_background_tasks(
 @patch(
     "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
 )
+def test_run_with_classification_results(
+    add_custom_metadata_request_mock: MagicMock,
+) -> None:
+    # given
+    background_tasks = BackgroundTasks()
+    block = RoboflowCustomMetadataBlockV1(
+        cache=MemoryCache(),
+        api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
+    )
+    add_custom_metadata_request_mock.return_value = (
+        False,
+        "Custom metadata upload was successful",
+    )
+    predictions = {"inference_id": "some-id"}
+
+    # when
+    result = block.run(
+        fire_and_forget=True,
+        field_name="location",
+        field_value="toronto",
+        predictions=predictions,
+    )
+
+    # then
+    assert result == {
+        "error_status": False,
+        "message": "Registration happens in the background task",
+    }, "Expected success message"
+    assert len(background_tasks.tasks) == 1, "Expected background task to be added"
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
+)
+def test_run_with_classification_results_when_inference_id_is_not_given(
+    add_custom_metadata_request_mock: MagicMock,
+) -> None:
+    # given
+    background_tasks = BackgroundTasks()
+    block = RoboflowCustomMetadataBlockV1(
+        cache=MemoryCache(),
+        api_key="my_api_key",
+        background_tasks=background_tasks,
+        thread_pool_executor=None,
+    )
+    add_custom_metadata_request_mock.return_value = (
+        False,
+        "Custom metadata upload was successful",
+    )
+    predictions = {"predictions": ["a", "b", "c"]}
+
+    # when
+    result = block.run(
+        fire_and_forget=True,
+        field_name="location",
+        field_value="toronto",
+        predictions=predictions,
+    )
+
+    # then
+    assert result == {
+        "error_status": True,
+        "message": "Custom metadata upload failed because no inference_ids were received. This is known bug "
+        "(https://github.com/roboflow/inference/issues/567). Please provide a report for the "
+        "problem under mentioned issue.",
+    }, "Expected failure due to no inference_ids"
+
+
+@patch(
+    "inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1.add_custom_metadata_request"
+)
 def test_run_when_fire_and_forget_with_thread_pool(
     add_custom_metadata_request_mock: MagicMock,
 ) -> None:

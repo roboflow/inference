@@ -42,6 +42,7 @@ from inference_sdk.http.utils.executors import (
 )
 from inference_sdk.http.utils.iterables import unwrap_single_element_list
 from inference_sdk.http.utils.loaders import (
+    load_nested_batches_of_inference_input,
     load_static_inference_input,
     load_static_inference_input_async,
     load_stream_inference_input,
@@ -65,6 +66,7 @@ from inference_sdk.http.utils.requests import (
     api_key_safe_raise_for_status,
     deduct_api_key_from_string,
     inject_images_into_payload,
+    inject_nested_batches_of_images_into_payload,
 )
 from inference_sdk.utils.decorators import deprecated, experimental
 
@@ -1156,10 +1158,10 @@ class InferenceHTTPClient:
         }
         inputs = {}
         for image_name, image in images.items():
-            loaded_image = load_static_inference_input(
+            loaded_image = load_nested_batches_of_inference_input(
                 inference_input=image,
             )
-            inject_images_into_payload(
+            inject_nested_batches_of_images_into_payload(
                 payload=inputs,
                 encoded_images=loaded_image,
                 key=image_name,

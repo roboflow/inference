@@ -11,12 +11,11 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -46,8 +45,8 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/stabilize_detections@v1"]
-    image: WorkflowImageSelector
-    detections: StepOutputSelector(
+    image: Selector(kind=[IMAGE_KIND])
+    detections: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -56,14 +55,14 @@ class BlockManifest(WorkflowBlockManifest):
         description="Tracked detections",
         examples=["$steps.object_detection_model.predictions"],
     )
-    smoothing_window_size: Union[Optional[int], WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    smoothing_window_size: Union[Optional[int], Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         default=3,
         description="Predicted movement of detection will be smoothed based on historical measurements of velocity,"
         " this parameter controls number of historical measurements taken under account when calculating smoothed velocity."
         " Detections will be removed from generating smoothed predictions if they had been missing for longer than this number of frames.",
         examples=[5, "$inputs.smoothing_window_size"],
     )
-    bbox_smoothing_coefficient: Union[Optional[float], WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    bbox_smoothing_coefficient: Union[Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         default=0.2,
         description="Bounding box smoothing coefficient applied when given tracker_id is present on current frame."
         " This parameter must be initialized with value between 0 and 1",
@@ -84,7 +83,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class StabilizeTrackedDetectionsBlockV1(WorkflowBlock):

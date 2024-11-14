@@ -19,10 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -64,20 +61,18 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/stability_ai_inpainting@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         description="The image which was the base to generate VLM prediction",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    segmentation_mask: StepOutputSelector(
-        kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
-    ) = Field(
+    segmentation_mask: Selector(kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]) = Field(
         name="Segmentation Mask",
         description="Segmentation masks",
         examples=["$steps.model.predictions"],
     )
     prompt: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
-        StepOutputSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
         str,
     ] = Field(
         description="Prompt to inpainting model (what you wish to see)",
@@ -85,8 +80,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
     negative_prompt: Optional[
         Union[
-            WorkflowParameterSelector(kind=[STRING_KIND]),
-            StepOutputSelector(kind=[STRING_KIND]),
+            Selector(kind=[STRING_KIND]),
+            Selector(kind=[STRING_KIND]),
             str,
         ]
     ] = Field(
@@ -94,7 +89,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Negative prompt to inpainting model (what you do not wish to see)",
         examples=["my prompt", "$inputs.prompt"],
     )
-    api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Your Stability AI API key",
         examples=["xxx-xxx", "$inputs.stability_ai_api_key"],
         private=True,
@@ -108,7 +103,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class StabilityAIInpaintingBlockV1(WorkflowBlock):

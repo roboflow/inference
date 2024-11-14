@@ -1,4 +1,3 @@
-from dataclasses import replace
 from typing import List, Literal, Optional, Type, Union
 from uuid import uuid4
 
@@ -6,8 +5,6 @@ from pydantic import ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
-    ImageParentMetadata,
-    OriginCoordinatesSystem,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -15,9 +12,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
     ImageInputField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -47,31 +42,27 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/absolute_static_crop@v1", "AbsoluteStaticCrop"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    x_center: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            description="Center X of static crop (absolute coordinate)",
-            examples=[40, "$inputs.center_x"],
-        )
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    x_center: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
+        description="Center X of static crop (absolute coordinate)",
+        examples=[40, "$inputs.center_x"],
     )
-    y_center: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            description="Center Y of static crop (absolute coordinate)",
-            examples=[40, "$inputs.center_y"],
-        )
+    y_center: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
+        description="Center Y of static crop (absolute coordinate)",
+        examples=[40, "$inputs.center_y"],
     )
-    width: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+    width: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
         description="Width of static crop (absolute value)",
         examples=[40, "$inputs.width"],
     )
-    height: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+    height: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
         description="Height of static crop (absolute value)",
         examples=[40, "$inputs.height"],
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -81,7 +72,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class AbsoluteStaticCropBlockV1(WorkflowBlock):

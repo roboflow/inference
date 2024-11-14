@@ -234,8 +234,8 @@ inference infer -i {path_to_your_video_file} -m {your_project}/{version} -o {pat
 #### Configuration of visualisation
 Option `-c` can be provided with a path to `*.yml` file configuring `supervision` visualisation.
 There are few pre-defined configs:
-- `bounding_boxes` - with `BoundingBoxAnnotator` and `LabelAnnotator` annotators
-- `bounding_boxes_tracing` - with `ByteTracker` and annotators (`BoundingBoxAnnotator`, `LabelAnnotator`)
+- `bounding_boxes` - with `BoxAnnotator` and `LabelAnnotator` annotators
+- `bounding_boxes_tracing` - with `ByteTracker` and annotators (`BoxAnnotator`, `LabelAnnotator`)
 - `masks` - with `MaskAnnotator` and `LabelAnnotator` annotators
 - `polygons` - with `PolygonAnnotator` and `LabelAnnotator` annotators
 
@@ -255,9 +255,9 @@ annotators:
       trace_length: 60
       thickness: 2
 tracking:
-  track_thresh: 0.25
-  track_buffer: 30
-  match_thresh: 0.8
+  track_activation_threshold: 0.25
+  lost_track_buffer: 30
+  minimum_matching_threshold: 0.8
   frame_rate: 30
 ```
 `annotators` field is a list of dictionaries with two keys: `type` and `param`. `type` points to 
@@ -265,7 +265,8 @@ name of annotator class:
 ```python
 from supervision import *
 ANNOTATOR_TYPE2CLASS = {
-    "bounding_box": BoundingBoxAnnotator,
+    "bounding_box": BoxAnnotator,
+    "box": BoxAnnotator,
     "mask": MaskAnnotator,
     "polygon": PolygonAnnotator,
     "color": ColorAnnotator,

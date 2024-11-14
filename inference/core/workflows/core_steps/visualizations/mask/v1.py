@@ -15,8 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     FloatZeroToOne,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -42,7 +41,7 @@ class MaskManifest(ColorableVisualizationManifest):
         }
     )
 
-    predictions: StepOutputSelector(
+    predictions: Selector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
@@ -51,7 +50,7 @@ class MaskManifest(ColorableVisualizationManifest):
         examples=["$steps.instance_segmentation_model.predictions"],
     )
 
-    opacity: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the Mask overlay.",
         default=0.5,
         examples=[0.5, "$inputs.opacity"],
@@ -59,7 +58,7 @@ class MaskManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class MaskVisualizationBlockV1(ColorableVisualizationBlock):

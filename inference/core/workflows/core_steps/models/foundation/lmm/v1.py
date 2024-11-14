@@ -31,14 +31,13 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
+    IMAGE_KIND,
     IMAGE_METADATA_KIND,
     PARENT_ID_KIND,
     STRING_KIND,
     WILDCARD_KIND,
     ImageInputField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -94,14 +93,12 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/lmm@v1", "LMM"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    prompt: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    prompt: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Holds unconstrained text prompt to LMM mode",
         examples=["my prompt", "$inputs.prompt"],
     )
-    lmm_type: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
-    ] = Field(
+    lmm_type: Union[Selector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]] = Field(
         description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
     )
     lmm_config: LMMConfig = Field(
@@ -115,9 +112,7 @@ class BlockManifest(WorkflowBlockManifest):
             }
         ],
     )
-    remote_api_key: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]
-    ] = Field(
+    remote_api_key: Union[Selector(kind=[STRING_KIND]), Optional[str]] = Field(
         default=None,
         description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
         examples=["xxx-xxx", "$inputs.api_key"],
@@ -130,8 +125,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -160,7 +155,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class LMMBlockV1(WorkflowBlock):
