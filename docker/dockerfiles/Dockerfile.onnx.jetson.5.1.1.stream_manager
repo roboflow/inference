@@ -6,6 +6,8 @@ ENV LANG en_US.UTF-8
 RUN apt-get update -y && apt-get install -y \
     lshw \
     git \
+    python3.9 \
+    python3.9-dev \
     python3-pip \
     python3-matplotlib \
     gfortran \
@@ -24,19 +26,19 @@ COPY requirements/requirements.clip.txt \
     requirements/_requirements.txt \
     ./
 
-RUN pip3 install --ignore-installed PyYAML && rm -rf ~/.cache/pip
+RUN python3.9 -m pip install --ignore-installed PyYAML && rm -rf ~/.cache/pip
 
 # We needed to take statically compiled library for last known stable build and put it into hosting
 # That was due to faulty builds started 26.06.2024, probably due to release of new version
 # of pybind11, which gets automatically pulled while build of zxing_cpp library making
 # cmake to fail
-RUN wget https://storage.googleapis.com/roboflow-tests-assets/zxing_cpp_library_compiled_for_inference_v0.12.1_python_3.8.tar.gz \
-    && tar -xvzf zxing_cpp_library_compiled_for_inference_v0.12.1_python_3.8.tar.gz \
-    && mv zxing_cpp-2.2.0.dist-info /usr/local/lib/python3.8/dist-packages/zxing_cpp-2.2.0.dist-info \
-    && mv zxingcpp.cpython-38-aarch64-linux-gnu.so /usr/local/lib/python3.8/dist-packages/ \
-    && rm zxing_cpp_library_compiled_for_inference_v0.12.1_python_3.8.tar.gz
+RUN wget https://storage.googleapis.com/roboflow-tests-assets/zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz \
+    && tar -xvzf zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz \
+    && mv zxing_cpp-2.2.0.dist-info /usr/local/lib/python3.9/dist-packages/zxing_cpp-2.2.0.dist-info \
+    && mv zxingcpp.cpython-39-aarch64-linux-gnu.so /usr/local/lib/python3.9/dist-packages/ \
+    && rm zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz
 
-RUN pip3 install --upgrade pip  && pip3 install \
+RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
     -r _requirements.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
@@ -44,11 +46,11 @@ RUN pip3 install --upgrade pip  && pip3 install \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-RUN pip3 uninstall --yes onnxruntime
-RUN wget https://nvidia.box.com/shared/static/iizg3ggrtdkqawkmebbfixo7sce6j365.whl -O onnxruntime_gpu-1.16.0-cp38-cp38-linux_aarch64.whl
-RUN pip3 install onnxruntime_gpu-1.16.0-cp38-cp38-linux_aarch64.whl "opencv-python-headless<4.3" \
+RUN python3.9 -m pip uninstall --yes onnxruntime
+RUN wget https://nvidia.box.com/shared/static/67zek28z497hs9aev7xg2c1wngdeyv4h.whl -O onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
+RUN python3.9 -m pip install onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl "opencv-python-headless>4" \
     && rm -rf ~/.cache/pip \
-    && rm onnxruntime_gpu-1.16.0-cp38-cp38-linux_aarch64.whl
+    && rm onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
 
 WORKDIR /app/
 COPY inference inference
@@ -66,4 +68,4 @@ ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=1
 ENV SUPERVISON_DEPRECATION_WARNING=0
 
-ENTRYPOINT ["python3", "-m", "inference.enterprise.stream_management.manager.app"]
+ENTRYPOINT ["python3.9", "-m", "inference.enterprise.stream_management.manager.app"]
