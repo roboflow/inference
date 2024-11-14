@@ -160,6 +160,7 @@ class TransformerModel(RoboflowInferenceModel):
         ]
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
+        logger.info(f"Downloading model artifacts from Roboflow API for model {self.endpoint}")
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,
