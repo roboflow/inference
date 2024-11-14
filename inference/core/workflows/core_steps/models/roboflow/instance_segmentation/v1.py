@@ -328,7 +328,7 @@ class RoboflowInstanceSegmentationModelBlockV1(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        inference_images = [i.numpy_image for i in images]
+        inference_images = [i.base64_image for i in images]
         predictions = client.infer(
             inference_input=inference_images,
             model_id=model_id,

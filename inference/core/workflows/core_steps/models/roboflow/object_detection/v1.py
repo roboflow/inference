@@ -295,7 +295,7 @@ class RoboflowObjectDetectionModelBlockV1(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        non_empty_inference_images = [i.numpy_image for i in images]
+        non_empty_inference_images = [i.base64_image for i in images]
         predictions = client.infer(
             inference_input=non_empty_inference_images,
             model_id=model_id,
