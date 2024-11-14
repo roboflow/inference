@@ -204,7 +204,7 @@ class ClipComparisonBlockV2(WorkflowBlock):
         tasks = [
             partial(
                 client.clip_compare,
-                subject=single_image.numpy_image,
+                subject=single_image.base64_image,
                 prompt=classes,
                 clip_version=version,
             )

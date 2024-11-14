@@ -169,7 +169,7 @@ class OCRModelBlockV1(WorkflowBlock):
             max_concurrent_requests=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )
         client.configure(configuration)
-        non_empty_inference_images = [i.numpy_image for i in images]
+        non_empty_inference_images = [i.base64_image for i in images]
         predictions = client.ocr_image(
             inference_input=non_empty_inference_images,
         )
