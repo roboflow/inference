@@ -78,6 +78,7 @@ provided in a form of dictionary presented below, if `video_metadata` is intende
         "video_identifier": "rtsp://some.com/stream1",
         "comes_from_video_file": False,
         "fps": 23.99,
+        "measured_fps": 20.05,
         "frame_number": 24,
         "frame_timestamp": "2024-08-21T11:13:44.313999", 
     }  
@@ -116,6 +117,7 @@ The kind has different internal end external representation. As input we support
     "video_identifier": "rtsp://some.com/stream1",
     "comes_from_video_file": False,
     "fps": 23.99,
+    "measured_fps": 20.05,
     "frame_number": 24,
     "frame_timestamp": "2024-08-21T11:13:44.313999", 
 }   
@@ -1016,6 +1018,24 @@ LANGUAGE_MODEL_OUTPUT_KIND = Kind(
     name="language_model_output",
     description="LLM / VLM output",
     docs=LANGUAGE_MODEL_OUTPUT_KIND_DOCS,
+    serialised_data_type="str",
+    internal_data_type="str",
+)
+
+INFERENCE_ID_KIND_DOCS = """
+This kind represents identifier of inference process, which is usually opaque string used as correlation
+identifier for external systems (like Roboflow Model Monitoring).
+
+Examples:
+```
+b1851e3d-a145-4540-a39e-875f21f6cd84
+```
+"""
+
+INFERENCE_ID_KIND = Kind(
+    name="inference_id",
+    description="Inference identifier",
+    docs=INFERENCE_ID_KIND_DOCS,
     serialised_data_type="str",
     internal_data_type="str",
 )

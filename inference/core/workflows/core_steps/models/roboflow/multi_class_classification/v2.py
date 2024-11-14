@@ -28,9 +28,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
+    INFERENCE_ID_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
-    STRING_KIND,
     FloatZeroToOne,
     ImageInputField,
     RoboflowModelField,
@@ -59,7 +59,7 @@ class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Single-Label Classification Model",
-            "version": "v1",
+            "version": "v2",
             "short_description": "Apply a single tag to an image.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -67,11 +67,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
         protected_namespaces=(),
     )
-    type: Literal[
-        "roboflow_core/roboflow_classification_model@v1",
-        "RoboflowClassificationModel",
-        "ClassificationModel",
-    ]
+    type: Literal["roboflow_core/roboflow_classification_model@v2"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     confidence: Union[
@@ -104,7 +100,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
-            OutputDefinition(name=INFERENCE_ID_KEY, kind=[STRING_KIND]),
+            OutputDefinition(name=INFERENCE_ID_KEY, kind=[INFERENCE_ID_KIND]),
         ]
 
     @classmethod
@@ -112,7 +108,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class RoboflowClassificationModelBlockV1(WorkflowBlock):
+class RoboflowClassificationModelBlockV2(WorkflowBlock):
 
     def __init__(
         self,
