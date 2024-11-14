@@ -14,10 +14,10 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     IMAGE_KIND,
+    INFERENCE_ID_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
     Selector,
-    INFERENCE_ID_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,

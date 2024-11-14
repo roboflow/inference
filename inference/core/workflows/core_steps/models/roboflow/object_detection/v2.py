@@ -28,6 +28,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
+    INFERENCE_ID_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
@@ -37,7 +38,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     ImageInputField,
     RoboflowModelField,
     Selector,
-    INFERENCE_ID_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -143,7 +143,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class RoboflowObjectDetectionModelBlockV1(WorkflowBlock):
+class RoboflowObjectDetectionModelBlockV2(WorkflowBlock):
 
     def __init__(
         self,

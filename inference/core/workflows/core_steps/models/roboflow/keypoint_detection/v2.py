@@ -31,6 +31,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
+    INFERENCE_ID_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
@@ -40,7 +41,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     ImageInputField,
     RoboflowModelField,
     Selector,
-    INFERENCE_ID_KIND,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
