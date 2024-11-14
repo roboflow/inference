@@ -39,8 +39,6 @@ WORKFLOW_DEFINITION = {
       "text_color": "BLACK",
       "text_padding": 28,
       "task_type": "single-label",
-      "single_labels_show": "all",
-      "single_labels_num_show": 3
     }
   ],
   "outputs": [

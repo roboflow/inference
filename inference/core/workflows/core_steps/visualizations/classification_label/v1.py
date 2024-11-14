@@ -23,22 +23,64 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-TYPE: str = "roboflow_core/classification_label_visualization@v1"
-SHORT_DESCRIPTION = (
-    "Visualizes classification predictions as stacked labels with confidence scores."
-)
+
+SHORT_DESCRIPTION = "Visualizes both single-label and multi-label classification predictions with customizable display options."
 
 LONG_DESCRIPTION = """
-The `ClassificationLabelVisualization` block displays classification predictions as stacked labels
-with confidence scores. Labels can be positioned at the top, bottom, or center of the image,
-with customizable alignment (left, center, right). Each label shows the class name and 
-confidence score, ordered by confidence. The visualization uses Supervision's `sv.LabelAnnotator` 
-and `sv.BoxAnnotator` for rendering, with support for customizable text properties including 
-padding, scale, and color.
+Visualizes classification predictions with customizable labels and positioning options. 
+Perfect for creating clear, informative displays of model predictions!
+
+#### How It Works
+
+This visualization processes classification predictions by:
+
+1. 🎯 **Analyzing** predictions based on task type (single-label or multi-label)
+
+2. 📊 **Organizing** results by confidence score
+
+3. 🎨 **Rendering** labels with customizable positioning and styling
+#### Parameters
+
+- **`task_type`**: Specifies how to handle predictions. Available options:
+  
+    * **"single-label"**: Shows only the highest confidence prediction
+  
+    * **"multi-label"**: Displays all predictions above threshold
+
+- **`text_position`**: Controls label placement with 9 options:
+  
+    * **Top**: LEFT, CENTER, RIGHT
+    * **Center**: LEFT, CENTER, RIGHT
+    * **Bottom**: LEFT, CENTER, RIGHT
+
+- **`text`**: Determines what information to display:
+  
+    * **"Class"**: Only show class names
+    * **"Confidence"**: Only show confidence scores
+    * **"Class and Confidence"**: Show both
+
+- **`text_padding`**: Controls spacing between labels and from image edges
+
+#### Why Use This Visualization?
+
+This is especially useful for:
+
+- 🏷️ Creating clear, professional-looking prediction displays
+
+- 📱 Supporting different UI layouts with flexible positioning
+
+- 🎨 Customizing appearance for different use cases
+
+- 📊 Showing prediction confidence in an intuitive way
+
+#### Example Usage
+
+Use this visualization after any classification model to display predictions in a clean, 
+organized format. Perfect for both single predictions and multiple class probabilities.
 """
 
 class ClassificationLabelManifest(ColorableVisualizationManifest):
-    type: Literal[f"{TYPE}", "ClassificationLabelVisualization"]
+    type: Literal["roboflow_core/classification_label_visualization@v1"]
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Classification Label Visualization",
@@ -90,38 +132,6 @@ class ClassificationLabelManifest(ColorableVisualizationManifest):
     task_type: Literal["single-label", "multi-label"] = Field(
         description="The type of task to visualize.",
     )
-    single_labels_show: Literal["top", "all"] = Field(
-        title="Single Labels To Show",
-        description="Whether to show all single labels or just the top one.",
-        default="top",
-        examples=["top", "$inputs.single_labels_show"],
-        json_schema_extra={
-            "relevant_for": {
-                "task_type": {
-                    "values": ["single-label"],
-                    "required": True,
-                },
-            },
-        },
-    )
-    single_labels_num_show: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        title="Number of Single Labels to Show",
-        description="The number of single labels to show.",
-        default=5,
-        examples=[5, "$inputs.single_labels_num_show"],
-        json_schema_extra={
-            "relevant_for": {
-                "task_type": {
-                    "values": ["single-label"],
-                    "required": True,
-                },
-                "single_labels_show": {
-                    "values": ["all"],
-                    "required": True,
-                },
-            },
-        },
-    )
 
 
     text_color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
@@ -157,6 +167,7 @@ class ClassificationLabelManifest(ColorableVisualizationManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.2.0,<2.0.0"
+
 
 
 class ClassificationLabelVisualizationBlockV1(ColorableVisualizationBlock):
@@ -216,177 +227,12 @@ class ClassificationLabelVisualizationBlockV1(ColorableVisualizationBlock):
 
         return self.annotatorCache[key]
 
-    def _handle_bottom_position(
-        self,
-        sorted_predictions: List[dict],
-        text: str,
-        w: int,
-        h: int,
-        initial_offset: float,
-        total_spacing: float,
-    ) -> tuple[np.ndarray, List[str], List[dict]]:
-        """Handle visualization layout for bottom positions."""
-        reversed_predictions = sorted_predictions[::-1]
-        xyxy = np.array([
-            [0, 0, w, h - (initial_offset + i*total_spacing)] 
-            for i in range(len(reversed_predictions))
-        ])
-        labels = format_labels(reversed_predictions, text)
-        return xyxy, labels, reversed_predictions
-
-    def _handle_center_position(
-        self,
-        sorted_predictions: List[dict],
-        text: str,
-        text_position: str,
-        w: int,
-        h: int,
-        total_spacing: float,
-        text_scale: float,
-        text_padding: int,
-    ) -> tuple[np.ndarray, List[str], List[dict]]:
-        """Handle visualization layout for center positions."""
-        labels = format_labels(sorted_predictions, text)
-        n_predictions = len(sorted_predictions)
-        total_height = total_spacing * n_predictions
-        start_y = max(0, min((h - total_height) / 2, h - total_height))
-        
-        max_label_length = max(len(label) for label in labels)
-        char_width = 15
-        label_width = (max_label_length * char_width * text_scale) + (text_padding * 2)
-        extra_padding = 20 + max(0, 10 - text_padding) * 3
-        
-        if text_position == 'CENTER_LEFT':
-            x_start = label_width + extra_padding
-            xyxy = np.array([
-                [x_start, start_y + i*total_spacing, w, start_y + (i+1)*total_spacing] 
-                for i in range(n_predictions)
-            ])
-        elif text_position == 'CENTER_RIGHT':
-            x_end = w - (label_width + extra_padding)
-            xyxy = np.array([
-                [0, start_y + i*total_spacing, x_end, start_y + (i+1)*total_spacing] 
-                for i in range(n_predictions)
-            ])
-        else:  # CENTER
-            xyxy = np.array([
-                [0, start_y + i*total_spacing, w, start_y + (i+1)*total_spacing] 
-                for i in range(n_predictions)
-            ])
-        
-        return xyxy, labels, sorted_predictions
-
-    def _handle_top_position(
-        self,
-        sorted_predictions: List[dict],
-        text: str,
-        w: int,
-        h: int,
-        initial_offset: float,
-        total_spacing: float,
-    ) -> tuple[np.ndarray, List[str], List[dict]]:
-        """Handle visualization layout for top positions."""
-        xyxy = np.array([
-            [0, initial_offset + i*total_spacing, w, h] 
-            for i in range(len(sorted_predictions))
-        ])
-        labels = format_labels(sorted_predictions, text)
-        return xyxy, labels, sorted_predictions
-
-    def _create_label_visualization(
-        self,
-        sorted_predictions: List[dict],
-        text_position: str,
-        text: str,
-        w: int,
-        h: int,
-        initial_offset: float,
-        total_spacing: float,
-        text_scale: float,
-        text_padding: int,
-    ) -> tuple[np.ndarray, List[str], List[dict]]:
-        """Create visualization layout for classification labels.
-        
-        Args:
-            sorted_predictions: List of prediction dictionaries sorted by confidence (descending).
-                Each prediction should have the structure:
-                {
-                    'class': str,           # The class name
-                    'class_id': int,        # The numeric class ID
-                    'confidence': float,    # Confidence score between 0 and 1
-                }
-            text_position: Position of the text labels
-            text: Type of text to display
-            w: Image width
-            h: Image height
-            initial_offset: Initial vertical offset
-            total_spacing: Total spacing between labels
-            text_scale: Scale of the text
-            text_padding: Padding around text
-            
-        Returns:
-            tuple containing:
-            - xyxy: numpy array of bounding box coordinates
-            - labels: list of formatted label strings
-            - predictions_to_use: list of predictions in correct order
-        """
-        if text_position in ['BOTTOM_LEFT', 'BOTTOM_CENTER', 'BOTTOM_RIGHT']:
-            return self._handle_bottom_position(
-                sorted_predictions, text, w, h, initial_offset, total_spacing
-            )
-        elif text_position in ['CENTER', 'CENTER_LEFT', 'CENTER_RIGHT']:
-            return self._handle_center_position(
-                sorted_predictions, text, text_position, w, h, 
-                total_spacing, text_scale, text_padding
-            )
-        else:  # Top positions
-            return self._handle_top_position(
-                sorted_predictions, text, w, h, initial_offset, total_spacing
-            )
-
-    def _format_multi_label_predictions(
-        self, 
-        predictions: dict
-    ) -> List[dict]:
-        """Transform multi-label predictions from predicted_classes into standard format.
-        
-        Args:
-            predictions: Prediction dictionary containing 'predicted_classes' and 'predictions' fields.
-                Example:
-                {
-                    'predicted_classes': ['class1', 'class2'],
-                    'predictions': {
-                        'class1': {'confidence': 0.9, 'class_id': 0},
-                        'class2': {'confidence': 0.8, 'class_id': 1},
-                        ...
-                    }
-                }
-            
-        Returns:
-            List of prediction dictionaries in format:
-            [
-                {'class': str, 'class_id': int, 'confidence': float},
-                ...
-            ]
-        """
-        formatted_predictions = []
-        for class_name in predictions['predicted_classes']:
-            pred_info = predictions['predictions'][class_name]
-            formatted_predictions.append({
-                'class': class_name,
-                'class_id': pred_info['class_id'],
-                'confidence': pred_info['confidence']
-            })
-        return formatted_predictions
-
     def run(
         self,
         image: WorkflowImageData,
         predictions: sv.Classifications,
         task_type: str,
         copy_image: bool,
-        single_labels_show: Optional[str],
-        single_labels_num_show: Optional[int],
         color_palette: Optional[str],
         palette_size: Optional[int],
         custom_colors: Optional[List[str]],
@@ -399,86 +245,255 @@ class ClassificationLabelVisualizationBlockV1(ColorableVisualizationBlock):
         text_padding: Optional[int],
         border_radius: Optional[int],
     ) -> BlockResult:
-        annotator = self.getAnnotator(
-            color_palette,
-            palette_size,
-            custom_colors,
-            color_axis,
-            text_position,
-            text_color,
-            text_scale,
-            text_thickness,
-            text_padding,
-            border_radius,
-        )
-        # Calculate spacing based on all relevant parameters
-        base_text_height = 20  # OpenCV's base text height in pixels
-        scaled_text_height = base_text_height * text_scale
-        padding_space = text_padding * 2  # multiply by 2 since padding is applied top and bottom
-        thickness_space = text_thickness * 2  # account for text thickness
-        total_spacing = scaled_text_height + padding_space + thickness_space + 5  # added small buffer
-        initial_offset = total_spacing
-        w = predictions['image']['width']
-        h = predictions['image']['height']
-
-        
-
-        if task_type == "single-label":
-            if single_labels_show == "top":
-                n = 1
-            else:
-                n = single_labels_num_show
+        try:
+            # Validate prediction format matches task type
+            validate_prediction_format(predictions, task_type)
             
-            sorted_predictions = sorted(predictions['predictions'], 
-                                     key=lambda x: x['confidence'], 
-                                     reverse=True)[:n]
-        else:  # multi-label
-            # Only use the predicted classes
-            formatted_predictions = self._format_multi_label_predictions(predictions)
-            sorted_predictions = sorted(formatted_predictions,
-                                     key=lambda x: x['confidence'],
-                                     reverse=True)
-        
-        # Both single and multi-label use the same visualization creation
-        xyxy, labels, predictions_to_use = self._create_label_visualization(
-            sorted_predictions=sorted_predictions,
-            text_position=text_position,
-            text=text,
-            w=w,
-            h=h,
-            initial_offset=initial_offset,
-            total_spacing=total_spacing,
-            text_scale=text_scale,
-            text_padding=text_padding,
-        )
+            # Get sorted predictions based on validated task type
+            if task_type == "single-label":
+                sorted_predictions = sorted(predictions['predictions'], 
+                                         key=lambda x: x['confidence'], 
+                                         reverse=True)[:1]
+            else:  # multi-label
+                formatted_predictions = format_multi_label_predictions(predictions)
+                sorted_predictions = sorted(formatted_predictions,
+                                         key=lambda x: x['confidence'],
+                                         reverse=True)
+                
+            # Early return if no predictions
+            if not sorted_predictions:
+                return {
+                    OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
+                        origin_image_data=image, 
+                        numpy_image=image.numpy_image.copy() if copy_image else image.numpy_image
+                    )
+                }
 
-        if not predictions_to_use:
-            # If no predictions, return the original image
+            annotator = self.getAnnotator(
+                color_palette,
+                palette_size,
+                custom_colors,
+                color_axis,
+                text_position,
+                text_color,
+                text_scale,
+                text_thickness,
+                text_padding,
+                border_radius,
+            )
+            
+            # Calculate spacing based on all relevant parameters
+            base_text_height = 20  # OpenCV's base text height in pixels
+            scaled_text_height = base_text_height * text_scale
+            padding_space = text_padding * 2  # multiply by 2 since padding is applied top and bottom
+            thickness_space = text_thickness * 2  # account for text thickness
+            total_spacing = scaled_text_height + padding_space + thickness_space + 5  # added small buffer
+            initial_offset = total_spacing
+            w = predictions['image']['width']
+            h = predictions['image']['height']
+
+            # Both single and multi-label use the same visualization creation
+            xyxy, labels, predictions_to_use = create_label_visualization(
+                sorted_predictions=sorted_predictions,
+                text_position=text_position,
+                text=text,
+                w=w,
+                h=h,
+                initial_offset=initial_offset,
+                total_spacing=total_spacing,
+                text_scale=text_scale,
+                text_padding=text_padding,
+            )
+
+            if not predictions_to_use:
+                # If no predictions, return the original image
+                return {
+                    OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
+                        origin_image_data=image, 
+                        numpy_image=image.numpy_image.copy() if copy_image else image.numpy_image
+                    )
+                }
+
+            pseudo_detections = sv.Detections(
+                xyxy=xyxy,
+                class_id=np.array([p['class_id'] for p in predictions_to_use]),
+                confidence=np.array([p['confidence'] for p in predictions_to_use]),
+                tracker_id=np.array([0 for _ in predictions_to_use]),
+            )
+
+            annotated_image = annotator.annotate(
+                scene=image.numpy_image.copy() if copy_image else image.numpy_image,
+                detections=pseudo_detections,
+                labels=labels,
+            )
+
             return {
                 OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
-                    origin_image_data=image, 
-                    numpy_image=image.numpy_image.copy() if copy_image else image.numpy_image
+                    origin_image_data=image, numpy_image=annotated_image
                 )
             }
+            
+        except ValueError as e:
+            raise ValueError(f"Invalid prediction format: {str(e)}. Please check if the task_type matches your model's output format.") from e
+    
+def handle_bottom_position(
+    sorted_predictions: List[dict],
+    text: str,
+    w: int,
+    h: int,
+    initial_offset: float,
+    total_spacing: float,
+) -> tuple[np.ndarray, List[str], List[dict]]:
+    """Handle visualization layout for bottom positions."""
+    reversed_predictions = sorted_predictions[::-1]
+    xyxy = np.array([
+        [0, 0, w, h - (initial_offset + i*total_spacing)] 
+        for i in range(len(reversed_predictions))
+    ])
+    labels = format_labels(reversed_predictions, text)
+    return xyxy, labels, reversed_predictions
 
-        pseudo_detections = sv.Detections(
-            xyxy=xyxy,
-            class_id=np.array([p['class_id'] for p in predictions_to_use]),
-            confidence=np.array([p['confidence'] for p in predictions_to_use]),
-            tracker_id=np.array([0 for _ in predictions_to_use]),
+def handle_center_position(
+    sorted_predictions: List[dict],
+    text: str,
+    text_position: str,
+    w: int,
+    h: int,
+    total_spacing: float,
+    text_scale: float,
+    text_padding: int,
+) -> tuple[np.ndarray, List[str], List[dict]]:
+    """Handle visualization layout for center positions."""
+    labels = format_labels(sorted_predictions, text)
+    n_predictions = len(sorted_predictions)
+    total_height = total_spacing * n_predictions
+    start_y = max(0, min((h - total_height) / 2, h - total_height))
+    
+    max_label_length = max(len(label) for label in labels)
+    char_width = 15
+    label_width = (max_label_length * char_width * text_scale) + (text_padding * 2)
+    extra_padding = 20 + max(0, 10 - text_padding) * 3
+    
+    if text_position == 'CENTER_LEFT':
+        x_start = label_width + extra_padding
+        xyxy = np.array([
+            [x_start, start_y + i*total_spacing, w, start_y + (i+1)*total_spacing] 
+            for i in range(n_predictions)
+        ])
+    elif text_position == 'CENTER_RIGHT':
+        x_end = w - (label_width + extra_padding)
+        xyxy = np.array([
+            [0, start_y + i*total_spacing, x_end, start_y + (i+1)*total_spacing] 
+            for i in range(n_predictions)
+        ])
+    else:  # CENTER
+        xyxy = np.array([
+            [0, start_y + i*total_spacing, w, start_y + (i+1)*total_spacing] 
+            for i in range(n_predictions)
+        ])
+    
+    return xyxy, labels, sorted_predictions
+
+def handle_top_position(
+    sorted_predictions: List[dict],
+    text: str,
+    w: int,
+    h: int,
+    initial_offset: float,
+    total_spacing: float,
+) -> tuple[np.ndarray, List[str], List[dict]]:
+    """Handle visualization layout for top positions."""
+    xyxy = np.array([
+        [0, initial_offset + i*total_spacing, w, h] 
+        for i in range(len(sorted_predictions))
+    ])
+    labels = format_labels(sorted_predictions, text)
+    return xyxy, labels, sorted_predictions
+
+def create_label_visualization(
+    sorted_predictions: List[dict],
+    text_position: str,
+    text: str,
+    w: int,
+    h: int,
+    initial_offset: float,
+    total_spacing: float,
+    text_scale: float,
+    text_padding: int,
+) -> tuple[np.ndarray, List[str], List[dict]]:
+    """Create visualization layout for classification labels."""
+    if text_position in ['BOTTOM_LEFT', 'BOTTOM_CENTER', 'BOTTOM_RIGHT']:
+        return handle_bottom_position(
+            sorted_predictions, text, w, h, initial_offset, total_spacing
+        )
+    elif text_position in ['CENTER', 'CENTER_LEFT', 'CENTER_RIGHT']:
+        return handle_center_position(
+            sorted_predictions, text, text_position, w, h, 
+            total_spacing, text_scale, text_padding
+        )
+    else:  # Top positions
+        return handle_top_position(
+            sorted_predictions, text, w, h, initial_offset, total_spacing
         )
 
-        annotated_image = annotator.annotate(
-            scene=image.numpy_image.copy() if copy_image else image.numpy_image,
-            detections=pseudo_detections,
-            labels=labels,
-        )
+def detect_prediction_type(predictions: dict) -> str:
+    """
+    Detect whether predictions are single-label or multi-label based on structure.
+    
+    Args:
+        predictions (dict): The predictions dictionary
+        
+    Returns:
+        str: 'single-label' or 'multi-label'
+        
+    Raises:
+        ValueError: If prediction format is unknown
+    """
+    if isinstance(predictions.get('predictions'), list):
+        return 'single-label'
+    elif isinstance(predictions.get('predictions'), dict) and 'predicted_classes' in predictions:
+        return 'multi-label'
+    else:
+        raise ValueError("Unknown prediction format")
 
-        return {
-            OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
-                origin_image_data=image, numpy_image=annotated_image
-            )
-        }
+def validate_prediction_format(predictions: dict, task_type: str) -> None:
+    """
+    Validate that the predictions format matches the specified task type.
+    
+    Args:
+        predictions (dict): The predictions dictionary
+        task_type (str): The specified task type ('single-label' or 'multi-label')
+        
+    Raises:
+        ValueError: If prediction format doesn't match task type
+    """
+    actual_type = detect_prediction_type(predictions)
+    
+    if actual_type != task_type:
+        if actual_type == 'single-label':
+            raise ValueError("Received single-label predictions but task_type is set to 'multi-label'. Please correct the task_type setting.")
+        else:
+            raise ValueError("Received multi-label predictions but task_type is set to 'single-label'. Please correct the task_type setting.")
+
+def format_multi_label_predictions(predictions: dict) -> List[dict]:
+    """
+    Transform multi-label predictions from predicted_classes into standard format.
+    
+    Args:
+        predictions (dict): The predictions dictionary
+        
+    Returns:
+        List[dict]: Formatted predictions list
+    """
+    formatted_predictions = []
+    for class_name in predictions['predicted_classes']:
+        pred_info = predictions['predictions'][class_name]
+        formatted_predictions.append({
+            'class': class_name,
+            'class_id': pred_info['class_id'],
+            'confidence': pred_info['confidence']
+        })
+    return formatted_predictions
 
 
 def format_labels(predictions, text="Class and Confidence"):
