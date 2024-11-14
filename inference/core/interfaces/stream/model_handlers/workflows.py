@@ -19,6 +19,8 @@ class WorkflowRunner:
             workflows_parameters = {}
         # TODO: pass fps reflecting each stream to workflows_parameters
         fps = video_frames[0].fps
+        if video_frames[0].measured_fps:
+            fps = video_frames[0].measured_fps
         if fps is None:
             # for FPS reporting we expect 0 when FPS cannot be determined
             fps = 0
@@ -32,6 +34,7 @@ class WorkflowRunner:
                 frame_number=video_frame.frame_id,
                 frame_timestamp=video_frame.frame_timestamp,
                 fps=video_frame.fps,
+                measured_fps=video_frame.measured_fps,
                 comes_from_video_file=video_frame.comes_from_video_file,
             )
             for video_frame in video_frames
