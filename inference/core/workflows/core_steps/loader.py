@@ -357,7 +357,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     VIDEO_METADATA_KIND,
     WILDCARD_KIND,
     ZONE_KIND,
-    Kind,
+    Kind, INFERENCE_ID_KIND,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
@@ -409,6 +409,7 @@ KINDS_DESERIALIZERS = {
     PREDICTION_TYPE_KIND.name: deserialize_string_kind,
     PARENT_ID_KIND.name: deserialize_string_kind,
     BYTES_KIND.name: deserialize_bytes_kind,
+    INFERENCE_ID_KIND.name: deserialize_string_kind,
 }
 
 
@@ -552,4 +553,5 @@ def load_kinds() -> List[Kind]:
         PARENT_ID_KIND,
         IMAGE_METADATA_KIND,
         BYTES_KIND,
+        INFERENCE_ID_KIND,
     ]
