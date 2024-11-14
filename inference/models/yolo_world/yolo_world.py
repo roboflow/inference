@@ -31,7 +31,6 @@ EMBEDDINGS_EXPIRE_TIMEOUT = 1800  # 30 min
 
 
 settings.update({"sync": False})
-settings.reset()
 
 
 class YOLOWorld(RoboflowCoreModel):
