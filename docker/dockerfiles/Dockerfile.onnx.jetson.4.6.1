@@ -57,7 +57,7 @@ RUN python3.9 -m pip install --upgrade pip "h5py<=3.10.0" && python3.9 -m pip in
     -r requirements.sdk.http.txt \
     -r requirements.yolo_world.txt \
     jupyterlab \
-    setuptools<=75.5.0 \
+    "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
 

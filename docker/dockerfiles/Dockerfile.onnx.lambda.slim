@@ -35,7 +35,7 @@ RUN pip3 install \
     -r requirements.hosted.txt \
     -r requirements.sdk.http.txt \
     mangum \
-    setuptools<=75.5.0 \
+    "setuptools<=75.5.0" \
     --upgrade \
     --target "${LAMBDA_TASK_ROOT}" \
     && rm -rf ~/.cache/pip
