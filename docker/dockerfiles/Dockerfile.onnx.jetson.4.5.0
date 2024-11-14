@@ -42,6 +42,7 @@ RUN python3.8 -m pip install --upgrade pip wheel Cython && python3.8 -m pip inst
     -r requirements.sdk.http.txt \
     -r requirements.yolo_world.txt \
     jupyterlab \
+    setuptools<=75.5.0 \
     --upgrade \
     && rm -rf ~/.cache/pip
 
