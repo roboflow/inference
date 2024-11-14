@@ -246,6 +246,9 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
                 image.workflow_root_ancestor_metadata.parent_id
             )
         return [
-            {"inference_id": inference_id, "predictions": prediction}
+            {
+                "inference_id": prediction.get(INFERENCE_ID_KEY),
+                "predictions": prediction,
+            }
             for prediction in predictions
         ]

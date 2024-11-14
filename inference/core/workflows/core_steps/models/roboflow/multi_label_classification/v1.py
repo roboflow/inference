@@ -239,7 +239,6 @@ class RoboflowMultiLabelClassificationModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         predictions: List[dict],
     ) -> List[dict]:
-        inference_id = predictions[0].get(INFERENCE_ID_KEY, None)
         predictions = attach_prediction_type_info(
             predictions=predictions,
             prediction_type="classification",
@@ -250,6 +249,9 @@ class RoboflowMultiLabelClassificationModelBlockV1(WorkflowBlock):
                 image.workflow_root_ancestor_metadata.parent_id
             )
         return [
-            {"inference_id": inference_id, "predictions": prediction}
+            {
+                "inference_id": prediction.get(INFERENCE_ID_KEY),
+                "predictions": prediction,
+            }
             for prediction in predictions
         ]
