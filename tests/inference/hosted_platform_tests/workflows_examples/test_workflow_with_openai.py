@@ -114,7 +114,7 @@ CLASSIFICATION_WORKFLOW = {
             "api_key": "$inputs.api_key",
         },
         {
-            "type": "roboflow_core/vlm_as_classifier@v1",
+            "type": "roboflow_core/vlm_as_classifier@v2",
             "name": "parser",
             "image": "$inputs.image",
             "vlm_output": "$steps.gpt.output",
@@ -294,7 +294,7 @@ VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
             "api_key": "$inputs.api_key",
         },
         {
-            "type": "roboflow_core/vlm_as_classifier@v1",
+            "type": "roboflow_core/vlm_as_classifier@v2",
             "name": "parser",
             "image": "$steps.cropping.crops",
             "vlm_output": "$steps.gpt.output",
