@@ -116,8 +116,14 @@ from inference.core.workflows.core_steps.formatters.property_definition.v1 impor
 from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1 import (
     VLMAsClassifierBlockV1,
 )
+from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v2 import (
+    VLMAsClassifierBlockV2,
+)
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1 import (
     VLMAsDetectorBlockV1,
+)
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
+    VLMAsDetectorBlockV2,
 )
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
     DetectionsClassesReplacementBlockV1,
@@ -178,17 +184,32 @@ from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import 
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
     RoboflowInstanceSegmentationModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2 import (
+    RoboflowInstanceSegmentationModelBlockV2,
+)
 from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
     RoboflowKeypointDetectionModelBlockV1,
+)
+from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2 import (
+    RoboflowKeypointDetectionModelBlockV2,
 )
 from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1 import (
     RoboflowClassificationModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v2 import (
+    RoboflowClassificationModelBlockV2,
+)
 from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
     RoboflowMultiLabelClassificationModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2 import (
+    RoboflowMultiLabelClassificationModelBlockV2,
+)
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 import (
     RoboflowObjectDetectionModelBlockV1,
+)
+from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 import (
+    RoboflowObjectDetectionModelBlockV2,
 )
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
@@ -336,6 +357,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KEYPOINTS_KIND,
     IMAGE_KIND,
     IMAGE_METADATA_KIND,
+    INFERENCE_ID_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
@@ -409,6 +431,7 @@ KINDS_DESERIALIZERS = {
     PREDICTION_TYPE_KIND.name: deserialize_string_kind,
     PARENT_ID_KIND.name: deserialize_string_kind,
     BYTES_KIND.name: deserialize_bytes_kind,
+    INFERENCE_ID_KIND.name: deserialize_string_kind,
 }
 
 
@@ -514,6 +537,13 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
         WebhookSinkBlockV1,
+        RoboflowInstanceSegmentationModelBlockV2,
+        RoboflowKeypointDetectionModelBlockV2,
+        RoboflowClassificationModelBlockV2,
+        RoboflowMultiLabelClassificationModelBlockV2,
+        RoboflowObjectDetectionModelBlockV2,
+        VLMAsClassifierBlockV2,
+        VLMAsDetectorBlockV2,
     ]
 
 
@@ -552,4 +582,5 @@ def load_kinds() -> List[Kind]:
         PARENT_ID_KIND,
         IMAGE_METADATA_KIND,
         BYTES_KIND,
+        INFERENCE_ID_KIND,
     ]

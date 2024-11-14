@@ -24,7 +24,7 @@ SAHI_WORKFLOW = {
             "image": "$inputs.image",
         },
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "detection",
             "image": "$steps.image_slicer.slices",
             "model_id": "yolov8n-640",
@@ -395,7 +395,7 @@ SAHI_WORKFLOW_FOR_SEGMENTATION = {
             "image": "$inputs.image",
         },
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "detection",
             "image": "$steps.image_slicer.slices",
             "model_id": "yolov8n-seg-640",

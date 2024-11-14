@@ -28,9 +28,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
+    INFERENCE_ID_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
-    STRING_KIND,
     FloatZeroToOne,
     ImageInputField,
     RoboflowModelField,
@@ -44,7 +44,7 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 
 LONG_DESCRIPTION = """
-Run inference on a multi-class classification model hosted on or uploaded to Roboflow.
+Run inference on a multi-label classification model hosted on or uploaded to Roboflow.
 
 You can query any model that is private to your account, or any public model available 
 on [Roboflow Universe](https://universe.roboflow.com).
@@ -58,20 +58,16 @@ documentation](https://inference.roboflow.com/quickstart/configure_api_key/).
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Single-Label Classification Model",
-            "version": "v1",
-            "short_description": "Apply a single tag to an image.",
+            "name": "Multi-Label Classification Model",
+            "version": "v2",
+            "short_description": "Apply multiple tags to an image.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
         },
         protected_namespaces=(),
     )
-    type: Literal[
-        "roboflow_core/roboflow_classification_model@v1",
-        "RoboflowClassificationModel",
-        "ClassificationModel",
-    ]
+    type: Literal["roboflow_core/roboflow_multi_label_classification_model@v2"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     confidence: Union[
@@ -104,7 +100,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
-            OutputDefinition(name=INFERENCE_ID_KEY, kind=[STRING_KIND]),
+            OutputDefinition(name=INFERENCE_ID_KEY, kind=[INFERENCE_ID_KIND]),
         ]
 
     @classmethod
@@ -112,7 +108,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class RoboflowClassificationModelBlockV1(WorkflowBlock):
+class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
 
     def __init__(
         self,
@@ -188,10 +184,10 @@ class RoboflowClassificationModelBlockV1(WorkflowBlock):
         )
         if isinstance(predictions, list):
             predictions = [
-                e.model_dump(by_alias=True, exclude_none=True) for e in predictions
+                e.dict(by_alias=True, exclude_none=True) for e in predictions
             ]
         else:
-            predictions = [predictions.model_dump(by_alias=True, exclude_none=True)]
+            predictions = [predictions.dict(by_alias=True, exclude_none=True)]
         return self._post_process_result(
             predictions=predictions,
             images=images,
@@ -232,16 +228,14 @@ class RoboflowClassificationModelBlockV1(WorkflowBlock):
         )
         if not isinstance(predictions, list):
             predictions = [predictions]
-        return self._post_process_result(
-            predictions=predictions,
-            images=images,
-        )
+        return self._post_process_result(images=images, predictions=predictions)
 
     def _post_process_result(
         self,
         images: Batch[WorkflowImageData],
         predictions: List[dict],
-    ) -> BlockResult:
+    ) -> List[dict]:
+        inference_id = predictions[0].get(INFERENCE_ID_KEY, None)
         predictions = attach_prediction_type_info(
             predictions=predictions,
             prediction_type="classification",
