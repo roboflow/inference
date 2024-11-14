@@ -124,7 +124,7 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
         fire_and_forget: bool,
         field_name: str,
         field_value: str,
-        predictions: sv.Detections,
+        predictions: Union[sv.Detections, dict],
     ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
@@ -133,7 +133,11 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
                 "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
                 "retrieve one."
             )
-        inference_ids: List[str] = predictions.data.get(INFERENCE_ID_KEY, [])
+        inference_ids: List[str] = []
+        if isinstance(predictions, sv.Detections):
+            inference_ids = predictions.data.get(INFERENCE_ID_KEY, [])
+        elif INFERENCE_ID_KEY in predictions:
+            inference_ids: List[str] = [predictions[INFERENCE_ID_KEY]]
         if len(inference_ids) == 0:
             return {
                 "error_status": True,

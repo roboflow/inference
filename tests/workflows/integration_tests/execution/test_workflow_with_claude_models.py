@@ -302,6 +302,100 @@ def test_workflow_with_captioning_prompt(
     ), "Expected non-empty string generated"
 
 
+CLASSIFICATION_WORKFLOW_WITH_LEGACY_PARSER = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "classes"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/anthropic_claude@v1",
+            "name": "claude",
+            "images": "$inputs.image",
+            "task_type": "classification",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/vlm_as_classifier@v2",
+            "name": "parser",
+            "image": "$inputs.image",
+            "vlm_output": "$steps.claude.output",
+            "classes": "$steps.claude.classes",
+        },
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "top_class",
+            "operations": [
+                {"type": "ClassificationPropertyExtract", "property_name": "top_class"}
+            ],
+            "data": "$steps.parser.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "claude_result",
+            "selector": "$steps.claude.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "top_class",
+            "selector": "$steps.top_class.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "parsed_prediction",
+            "selector": "$steps.parser.*",
+        },
+    ],
+}
+
+
+@pytest.mark.skipif(
+    condition=ANTHROPIC_API_KEY is None, reason="Anthropic API key not provided"
+)
+def test_workflow_with_multi_class_classifier_prompt_with_legacy_parser(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=CLASSIFICATION_WORKFLOW_WITH_LEGACY_PARSER,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image],
+            "api_key": ANTHROPIC_API_KEY,
+            "classes": ["cat", "dog"],
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "claude_result",
+        "top_class",
+        "parsed_prediction",
+    }, "Expected all outputs to be delivered"
+    assert (
+        isinstance(result[0]["claude_result"], str)
+        and len(result[0]["claude_result"]) > 0
+    ), "Expected non-empty string generated"
+    assert result[0]["top_class"] == "dog"
+    assert result[0]["parsed_prediction"]["error_status"] is False
+
+
 CLASSIFICATION_WORKFLOW = {
     "version": "1.0",
     "inputs": [
@@ -319,7 +413,7 @@ CLASSIFICATION_WORKFLOW = {
             "api_key": "$inputs.api_key",
         },
         {
-            "type": "roboflow_core/vlm_as_classifier@v1",
+            "type": "roboflow_core/vlm_as_classifier@v2",
             "name": "parser",
             "image": "$inputs.image",
             "vlm_output": "$steps.claude.output",
@@ -359,7 +453,7 @@ CLASSIFICATION_WORKFLOW = {
     use_case_title="Using Anthropic Claude as multi-class classifier",
     use_case_description="""
 In this example, Anthropic Claude model is used as classifier. Output from the model is parsed by
-special `roboflow_core/vlm_as_classifier@v1` block which turns model output text into
+special `roboflow_core/vlm_as_classifier@v2` block which turns model output text into
 full-blown prediction, which can later be used by other blocks compatible with 
 classification predictions - in this case we extract top-class property.
     """,
@@ -425,7 +519,7 @@ MULTI_LABEL_CLASSIFICATION_WORKFLOW = {
             "api_key": "$inputs.api_key",
         },
         {
-            "type": "roboflow_core/vlm_as_classifier@v1",
+            "type": "roboflow_core/vlm_as_classifier@v2",
             "name": "parser",
             "image": "$inputs.image",  # requires image input to construct valid output compatible with "inference"
             "vlm_output": "$steps.claude.output",
@@ -460,7 +554,7 @@ MULTI_LABEL_CLASSIFICATION_WORKFLOW = {
     use_case_title="Using Anthropic Claude as multi-label classifier",
     use_case_description="""
 In this example, Anthropic Claude model is used as multi-label classifier. Output from the model is parsed by
-special `roboflow_core/vlm_as_classifier@v1` block which turns model output text into
+special `roboflow_core/vlm_as_classifier@v2` block which turns model output text into
 full-blown prediction, which can later be used by other blocks compatible with 
 classification predictions - in this case we extract top-class property.
     """,
@@ -589,7 +683,7 @@ def test_workflow_with_structured_prompt(
     assert result[0]["result"] == "2"
 
 
-OBJECT_DETECTION_WORKFLOW = {
+OBJECT_DETECTION_WORKFLOW_LEGACY_PARSER = {
     "version": "1.0",
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
@@ -607,6 +701,86 @@ OBJECT_DETECTION_WORKFLOW = {
         },
         {
             "type": "roboflow_core/vlm_as_detector@v1",
+            "name": "parser",
+            "vlm_output": "$steps.claude.output",
+            "image": "$inputs.image",
+            "classes": "$steps.claude.classes",
+            "model_type": "anthropic-claude",
+            "task_type": "object-detection",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "claude_result",
+            "selector": "$steps.claude.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "parsed_prediction",
+            "selector": "$steps.parser.predictions",
+        },
+    ],
+}
+
+
+@pytest.mark.skipif(
+    condition=ANTHROPIC_API_KEY is None, reason="Anthropic API key not provided"
+)
+def test_workflow_with_object_detection_prompt_when_legacy_parser_in_use(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW_LEGACY_PARSER,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [dogs_image],
+            "api_key": ANTHROPIC_API_KEY,
+            "classes": ["cat", "dog"],
+        }
+    )
+
+    # then
+    assert len(result) == 1, "Single image given, expected single output"
+    assert set(result[0].keys()) == {
+        "claude_result",
+        "parsed_prediction",
+    }, "Expected all outputs to be delivered"
+    assert result[0]["parsed_prediction"].data["class_name"].tolist() == [
+        "dog",
+        "dog",
+    ], "Expected 2 dogs to be detected"
+
+
+OBJECT_DETECTION_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "classes"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/anthropic_claude@v1",
+            "name": "claude",
+            "images": "$inputs.image",
+            "task_type": "object-detection",
+            "classes": "$inputs.classes",
+            "api_key": "$inputs.api_key",
+        },
+        {
+            "type": "roboflow_core/vlm_as_detector@v2",
             "name": "parser",
             "vlm_output": "$steps.claude.output",
             "image": "$inputs.image",
@@ -718,7 +892,7 @@ VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
             "api_key": "$inputs.api_key",
         },
         {
-            "type": "roboflow_core/vlm_as_classifier@v1",
+            "type": "roboflow_core/vlm_as_classifier@v2",
             "name": "parser",
             "image": "$steps.cropping.crops",
             "vlm_output": "$steps.claude.output",

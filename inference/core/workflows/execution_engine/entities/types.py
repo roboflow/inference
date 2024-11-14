@@ -1020,6 +1020,24 @@ LANGUAGE_MODEL_OUTPUT_KIND = Kind(
     internal_data_type="str",
 )
 
+INFERENCE_ID_KIND_DOCS = """
+This kind represents identifier of inference process, which is usually opaque string used as correlation
+identifier for external systems (like Roboflow Model Monitoring).
+
+Examples:
+```
+b1851e3d-a145-4540-a39e-875f21f6cd84
+```
+"""
+
+INFERENCE_ID_KIND = Kind(
+    name="inference_id",
+    description="Inference identifier",
+    docs=INFERENCE_ID_KIND_DOCS,
+    serialised_data_type="str",
+    internal_data_type="str",
+)
+
 
 STEP_AS_SELECTED_ELEMENT = "step"
 STEP_OUTPUT_AS_SELECTED_ELEMENT = "step_output"
