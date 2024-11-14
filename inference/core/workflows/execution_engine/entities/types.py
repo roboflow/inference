@@ -78,6 +78,7 @@ provided in a form of dictionary presented below, if `video_metadata` is intende
         "video_identifier": "rtsp://some.com/stream1",
         "comes_from_video_file": False,
         "fps": 23.99,
+        "measured_fps": 20.05,
         "frame_number": 24,
         "frame_timestamp": "2024-08-21T11:13:44.313999", 
     }  
@@ -116,6 +117,7 @@ The kind has different internal end external representation. As input we support
     "video_identifier": "rtsp://some.com/stream1",
     "comes_from_video_file": False,
     "fps": 23.99,
+    "measured_fps": 20.05,
     "frame_number": 24,
     "frame_timestamp": "2024-08-21T11:13:44.313999", 
 }   

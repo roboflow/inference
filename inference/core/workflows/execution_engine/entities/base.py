@@ -200,6 +200,10 @@ class VideoMetadata(BaseModel):
         description="Field represents FPS value (if possible to be retrieved)",
         default=None,
     )
+    measured_fps: Optional[float] = Field(
+        description="Field represents measured FPS of live stream",
+        default=None,
+    )
     comes_from_video_file: Optional[bool] = Field(
         description="Field is a flag telling if frame comes from video file or stream - "
         "if not possible to be determined - pass None",
