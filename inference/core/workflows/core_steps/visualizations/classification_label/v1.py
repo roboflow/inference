@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type, Union, Tuple
 
 import supervision as sv
 import numpy as np
@@ -337,7 +337,7 @@ def handle_bottom_position(
     h: int,
     initial_offset: float,
     total_spacing: float,
-) -> tuple[np.ndarray, List[str], List[dict]]:
+) -> Tuple[np.ndarray, List[str], List[dict]]:
     """Handle visualization layout for bottom positions."""
     reversed_predictions = sorted_predictions[::-1]
     xyxy = np.array([
@@ -356,7 +356,7 @@ def handle_center_position(
     total_spacing: float,
     text_scale: float,
     text_padding: int,
-) -> tuple[np.ndarray, List[str], List[dict]]:
+) -> Tuple[np.ndarray, List[str], List[dict]]:
     """Handle visualization layout for center positions."""
     labels = format_labels(sorted_predictions, text)
     n_predictions = len(sorted_predictions)
@@ -395,7 +395,7 @@ def handle_top_position(
     h: int,
     initial_offset: float,
     total_spacing: float,
-) -> tuple[np.ndarray, List[str], List[dict]]:
+) -> Tuple[np.ndarray, List[str], List[dict]]:
     """Handle visualization layout for top positions."""
     xyxy = np.array([
         [0, initial_offset + i*total_spacing, w, h] 
@@ -414,7 +414,7 @@ def create_label_visualization(
     total_spacing: float,
     text_scale: float,
     text_padding: int,
-) -> tuple[np.ndarray, List[str], List[dict]]:
+) -> Tuple[np.ndarray, List[str], List[dict]]:
     """Create visualization layout for classification labels."""
     if text_position in ['BOTTOM_LEFT', 'BOTTOM_CENTER', 'BOTTOM_RIGHT']:
         return handle_bottom_position(
