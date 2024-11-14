@@ -52,6 +52,29 @@ def load_directory_inference_input(
         yield path, cv2.imread(path)
 
 
+def load_nested_batches_of_inference_input(
+    inference_input: Union[list, ImagesReference],
+    max_height: Optional[int] = None,
+    max_width: Optional[int] = None,
+) -> Union[Tuple[str, Optional[float]], list]:
+    if not isinstance(inference_input, list):
+        return load_static_inference_input(
+            inference_input=inference_input,
+            max_height=max_height,
+            max_width=max_width,
+        )[0]
+    result = []
+    for element in inference_input:
+        result.append(
+            load_nested_batches_of_inference_input(
+                inference_input=element,
+                max_height=max_height,
+                max_width=max_width,
+            )
+        )
+    return result
+
+
 def load_static_inference_input(
     inference_input: Union[ImagesReference, List[ImagesReference]],
     max_height: Optional[int] = None,

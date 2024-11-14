@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import asgi_correlation_id
 import uvicorn
-from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request
+from fastapi import BackgroundTasks, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -155,14 +155,12 @@ from inference.core.exceptions import (
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.handlers.workflows import (
+    filter_out_unwanted_workflow_outputs,
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
-from inference.core.interfaces.http.orjson_utils import (
-    orjson_response,
-    serialise_workflow_result,
-)
+from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandResponse,
     ConsumePipelineResponse,
@@ -723,13 +721,16 @@ class HttpInterface(BaseInterface):
                 prevent_local_images_loading=True,
                 profiler=profiler,
             )
-            result = execution_engine.run(runtime_parameters=workflow_request.inputs)
+            workflow_results = execution_engine.run(
+                runtime_parameters=workflow_request.inputs,
+                serialize_results=True,
+            )
             with profiler.profile_execution_phase(
-                name="workflow_results_serialisation",
+                name="workflow_results_filtering",
                 categories=["inference_package_operation"],
             ):
-                outputs = serialise_workflow_result(
-                    result=result,
+                outputs = filter_out_unwanted_workflow_outputs(
+                    workflow_results=workflow_results,
                     excluded_fields=workflow_request.excluded_fields,
                 )
             profiler_trace = profiler.export_trace()

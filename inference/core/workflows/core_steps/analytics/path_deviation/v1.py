@@ -17,9 +17,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
-    WorkflowVideoMetadataSelector,
+    VIDEO_METADATA_KIND,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -52,8 +51,8 @@ class PathDeviationManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/path_deviation_analytics@v1"]
-    metadata: WorkflowVideoMetadataSelector
-    detections: StepOutputSelector(
+    metadata: Selector(kind=[VIDEO_METADATA_KIND])
+    detections: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -62,12 +61,12 @@ class PathDeviationManifest(WorkflowBlockManifest):
         description="Predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    triggering_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
+    triggering_anchor: Union[str, Selector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
         description=f"Triggering anchor. Allowed values: {', '.join(sv.Position.list())}",
         default="CENTER",
         examples=["CENTER"],
     )
-    reference_path: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    reference_path: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Reference path in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
         examples=["$inputs.expected_path"],
     )
@@ -86,7 +85,7 @@ class PathDeviationManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class PathDeviationAnalyticsBlockV1(WorkflowBlock):

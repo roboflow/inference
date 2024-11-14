@@ -27,14 +27,12 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -90,22 +88,23 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "formatter",
-        }
+        },
+        protected_namespaces=(),
     )
     type: Literal["roboflow_core/vlm_as_detector@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         description="The image which was the base to generate VLM prediction",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    vlm_output: StepOutputSelector(kind=[LANGUAGE_MODEL_OUTPUT_KIND]) = Field(
+    vlm_output: Selector(kind=[LANGUAGE_MODEL_OUTPUT_KIND]) = Field(
         title="VLM Output",
         description="The string with raw classification prediction to parse.",
         examples=[["$steps.lmm.output"]],
     )
     classes: Optional[
         Union[
-            WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
-            StepOutputSelector(kind=[LIST_OF_VALUES_KIND]),
+            Selector(kind=[LIST_OF_VALUES_KIND]),
+            Selector(kind=[LIST_OF_VALUES_KIND]),
             List[str],
         ]
     ] = Field(
@@ -157,7 +156,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class VLMAsDetectorBlockV1(WorkflowBlock):

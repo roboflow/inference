@@ -19,7 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -54,7 +54,7 @@ class BlockManifest(WorkflowBlockManifest):
         "roboflow_core/detections_classes_replacement@v1",
         "DetectionsClassesReplacement",
     ]
-    object_detection_predictions: StepOutputSelector(
+    object_detection_predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -65,9 +65,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="The output of a detection model describing the bounding boxes that will have classes replaced.",
         examples=["$steps.my_object_detection_model.predictions"],
     )
-    classification_predictions: StepOutputSelector(
-        kind=[CLASSIFICATION_PREDICTION_KIND]
-    ) = Field(
+    classification_predictions: Selector(kind=[CLASSIFICATION_PREDICTION_KIND]) = Field(
         title="Classification results for crops",
         description="The output of classification model for crops taken based on RoIs pointed as the other parameter",
         examples=["$steps.my_classification_model.predictions"],
@@ -103,7 +101,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class DetectionsClassesReplacementBlockV1(WorkflowBlock):

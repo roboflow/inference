@@ -55,14 +55,17 @@ class VideoFrame:
         frame_timestamp (FrameTimestamp): The timestamp when the frame was captured.
         source_id (int): The index of the video_reference element which was passed to InferencePipeline for this frame
             (useful when multiple streams are passed to InferencePipeline).
-        fps (Optional[float]): FPS of source (if possible to be acquired)
+        fps (Optional[float]): declared FPS of source (if possible to be acquired)
+        measured_fps (Optional[float]): measured FPS of live stream
         comes_from_video_file (Optional[bool]): flag to determine if frame comes from video file
     """
 
     image: np.ndarray
     frame_id: FrameID
     frame_timestamp: FrameTimestamp
+    # TODO: in next major version of inference replace `fps` with `declared_fps`
     fps: Optional[float] = None
+    measured_fps: Optional[float] = None
     source_id: Optional[int] = None
     comes_from_video_file: Optional[bool] = None
 

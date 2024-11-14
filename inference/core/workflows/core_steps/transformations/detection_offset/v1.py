@@ -19,8 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -51,7 +50,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/detection_offset@v1", "DetectionOffset"]
-    predictions: StepOutputSelector(
+    predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -61,24 +60,20 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference to detection-like predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    offset_width: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            description="Offset for boxes width",
-            examples=[10, "$inputs.offset_x"],
-            validation_alias=AliasChoices("offset_width", "offset_x"),
-        )
+    offset_width: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
+        description="Offset for boxes width",
+        examples=[10, "$inputs.offset_x"],
+        validation_alias=AliasChoices("offset_width", "offset_x"),
     )
-    offset_height: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
+    offset_height: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
         description="Offset for boxes height",
         examples=[10, "$inputs.offset_y"],
         validation_alias=AliasChoices("offset_height", "offset_y"),
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["predictions"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -95,7 +90,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class DetectionOffsetBlockV1(WorkflowBlock):

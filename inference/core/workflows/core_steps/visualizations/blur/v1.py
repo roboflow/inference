@@ -11,7 +11,7 @@ from inference.core.workflows.core_steps.visualizations.common.base import (
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -36,7 +36,7 @@ class BlurManifest(PredictionsVisualizationManifest):
         }
     )
 
-    kernel_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    kernel_size: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Size of the average pooling kernel used for blurring.",
         default=15,
         examples=[15, "$inputs.kernel_size"],
@@ -44,7 +44,7 @@ class BlurManifest(PredictionsVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class BlurVisualizationBlockV1(PredictionsVisualizationBlock):

@@ -5,7 +5,7 @@ from typing import Any, List, Optional
 import clip
 import numpy as np
 import torch
-from ultralytics import YOLO
+from ultralytics import YOLO, settings
 
 from inference.core import logger
 from inference.core.cache import cache
@@ -28,6 +28,9 @@ from inference.core.utils.image_utils import load_image_rgb
 from inference.models import Clip
 
 EMBEDDINGS_EXPIRE_TIMEOUT = 1800  # 30 min
+
+
+settings.update({"sync": False})
 
 
 class YOLOWorld(RoboflowCoreModel):

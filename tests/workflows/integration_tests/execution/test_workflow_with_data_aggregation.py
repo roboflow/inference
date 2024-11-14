@@ -20,7 +20,7 @@ WORKFLOW_WITH_DATA_AGGREGATION = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "model",
             "images": "$inputs.image",
             "model_id": "$inputs.model_id",
