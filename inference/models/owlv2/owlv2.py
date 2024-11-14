@@ -261,7 +261,7 @@ class OwlV2(RoboflowCoreModel):
     task_type = "object-detection"
     box_format = "xywh"
 
-    def __init__(self, *args, model_id="owlv2/owlv2-base-patch16-ensemble", **kwargs):
+    def __init__(self, *args, model_id="owlv2/owlv2-large-patch14-ensemble", **kwargs):
         super().__init__(*args, model_id=model_id, **kwargs)
         hf_id = os.path.join("google", self.version_id)
         processor = Owlv2Processor.from_pretrained(hf_id)
