@@ -62,7 +62,9 @@ class VideoFrame:
     image: np.ndarray
     frame_id: FrameID
     frame_timestamp: FrameTimestamp
+    # TODO: in next major version of inference replace `fps` with `declared_fps`
     fps: Optional[float] = None
+    measured_fps: Optional[float] = None
     source_id: Optional[int] = None
     comes_from_video_file: Optional[bool] = None
 

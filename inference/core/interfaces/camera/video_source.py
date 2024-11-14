@@ -963,9 +963,8 @@ class VideoConsumer:
                 buffer=buffer,
                 decoding_pace_monitor=self._decoding_pace_monitor,
                 source_id=source_id,
-                fps=(
-                    declared_source_fps if is_source_video_file else measured_source_fps
-                ),
+                declared_source_fps=declared_source_fps,
+                measured_source_fps=measured_source_fps,
                 comes_from_video_file=is_source_video_file,
             )
         if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
@@ -1164,7 +1163,8 @@ def decode_video_frame_to_buffer(
     buffer: Queue,
     decoding_pace_monitor: sv.FPSMonitor,
     source_id: Optional[int],
-    fps: Optional[float] = None,
+    declared_source_fps: Optional[float] = None,
+    measured_source_fps: Optional[float] = None,
     comes_from_video_file: Optional[bool] = None,
 ) -> bool:
     success, image = video.retrieve()
@@ -1175,7 +1175,8 @@ def decode_video_frame_to_buffer(
         image=image,
         frame_id=frame_id,
         frame_timestamp=frame_timestamp,
-        fps=fps,
+        fps=declared_source_fps,
+        measured_fps=measured_source_fps,
         source_id=source_id,
         comes_from_video_file=comes_from_video_file,
     )
