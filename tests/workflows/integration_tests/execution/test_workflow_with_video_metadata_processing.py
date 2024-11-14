@@ -172,7 +172,7 @@ def test_workflow_with_tracker(
         "fps": 50,
         "comes_from_video_file": True,
     }
-    metadata_license_plare_image = {
+    metadata_license_plate_image = {
         "video_identifier": "c",
         "frame_number": 1,
         "frame_timestamp": datetime.now().isoformat(),
@@ -197,7 +197,7 @@ def test_workflow_with_tracker(
     result_3 = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, license_plate_image],
-            "video_metadata": [metadata_dogs_image, metadata_license_plare_image],
+            "video_metadata": [metadata_dogs_image, metadata_license_plate_image],
         }
     )
     first_dogs_frame_tracker_ids = result_1[0]["tracker_id"]
@@ -214,7 +214,10 @@ def test_workflow_with_tracker(
         first_crowd_frame_tracker_ids == second_crowd_frame_tracker_ids
     ), "The same image, expected no tracker IDs change"
     assert first_license_plate_frame_tracker_ids == [
-        15,
-        16,
-        17,
-    ], "External IDs for all trackers are global, hence we offset by numer of all ever generated tracker IDs"
+        1,
+        2,
+        3,
+    ], (
+        "Since `supervision>=0.25.0` tracker IDs are unique for each new tracker instance - and we "
+        "expect new tracker for `metadata_license_plate_image` to be created - hence fresh tracker ids"
+    )
