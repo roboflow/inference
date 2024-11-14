@@ -154,13 +154,12 @@ class TransformerModel(RoboflowInferenceModel):
             "special_tokens_map.json",
             "generation_config.json",
             "tokenizer.json",
-            re.compile(r"model-\d{5}-of-\d{5}\.safetensors"),
+            re.compile(r"model.*\.safetensors"),
             "preprocessor_config.json",
             "tokenizer_config.json",
         ]
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
-        logger.info(f"Downloading model artifacts from Roboflow API for model {self.endpoint}")
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,
@@ -183,16 +182,21 @@ class TransformerModel(RoboflowInferenceModel):
                 model_id=self.endpoint,
             )
             if filename.endswith("tar.gz"):
-                subprocess.run(
-                    [
-                        "tar",
-                        "-xzf",
-                        os.path.join(self.cache_dir, filename),
-                        "-C",
-                        self.cache_dir,
-                    ],
-                    check=True,
-                )
+                try:
+                    subprocess.run(
+                        [
+                            "tar",
+                            "-xzf",
+                            os.path.join(self.cache_dir, filename),
+                            "-C",
+                            self.cache_dir,
+                        ],
+                        check=True,
+                    )
+                except subprocess.CalledProcessError as e:
+                    raise ModelArtefactError(
+                        f"Failed to extract model archive {filename}. Error: {str(e)}"
+                    ) from e
 
             if perf_counter() - t1 > 120:
                 logger.debug(
