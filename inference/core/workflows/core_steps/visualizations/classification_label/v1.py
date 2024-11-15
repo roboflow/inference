@@ -79,6 +79,7 @@ Use this visualization after any classification model to display predictions in 
 organized format. Perfect for both single predictions and multiple class probabilities.
 """
 
+
 class ClassificationLabelManifest(ColorableVisualizationManifest):
     type: Literal["roboflow_core/classification_label_visualization@v1"]
     model_config = ConfigDict(
@@ -93,11 +94,7 @@ class ClassificationLabelManifest(ColorableVisualizationManifest):
     )
 
     text: Union[
-        Literal[
-            "Class",
-            "Confidence",
-            "Class and Confidence"
-        ],
+        Literal["Class", "Confidence", "Class and Confidence"],
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="Class",
@@ -162,7 +159,6 @@ class ClassificationLabelManifest(ColorableVisualizationManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
-
 
 
 class ClassificationLabelVisualizationBlockV1(ColorableVisualizationBlock):
@@ -242,24 +238,30 @@ class ClassificationLabelVisualizationBlockV1(ColorableVisualizationBlock):
         try:
             # Detect task type from predictions
             task_type = detect_prediction_type(predictions)
-            
+
             # Get sorted predictions based on detected task type
             if task_type == "single-label":
-                sorted_predictions = sorted(predictions['predictions'], 
-                                         key=lambda x: x['confidence'], 
-                                         reverse=True)[:1]
+                sorted_predictions = sorted(
+                    predictions["predictions"],
+                    key=lambda x: x["confidence"],
+                    reverse=True,
+                )[:1]
             else:  # multi-label
                 formatted_predictions = format_multi_label_predictions(predictions)
-                sorted_predictions = sorted(formatted_predictions,
-                                         key=lambda x: x['confidence'],
-                                         reverse=True)
-                
+                sorted_predictions = sorted(
+                    formatted_predictions, key=lambda x: x["confidence"], reverse=True
+                )
+
             # Early return if no predictions
             if not sorted_predictions:
                 return {
                     OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
-                        origin_image_data=image, 
-                        numpy_image=image.numpy_image.copy() if copy_image else image.numpy_image
+                        origin_image_data=image,
+                        numpy_image=(
+                            image.numpy_image.copy()
+                            if copy_image
+                            else image.numpy_image
+                        ),
                     )
                 }
 
@@ -275,16 +277,20 @@ class ClassificationLabelVisualizationBlockV1(ColorableVisualizationBlock):
                 text_padding,
                 border_radius,
             )
-            
+
             # Calculate spacing based on all relevant parameters
             base_text_height = 20  # OpenCV's base text height in pixels
             scaled_text_height = base_text_height * text_scale
-            padding_space = text_padding * 2  # multiply by 2 since padding is applied top and bottom
+            padding_space = (
+                text_padding * 2
+            )  # multiply by 2 since padding is applied top and bottom
             thickness_space = text_thickness * 2  # account for text thickness
-            total_spacing = scaled_text_height + padding_space + thickness_space + 5  # added small buffer
+            total_spacing = (
+                scaled_text_height + padding_space + thickness_space + 5
+            )  # added small buffer
             initial_offset = total_spacing
-            w = predictions['image']['width']
-            h = predictions['image']['height']
+            w = predictions["image"]["width"]
+            h = predictions["image"]["height"]
 
             # Both single and multi-label use the same visualization creation
             xyxy, labels, predictions_to_use = create_label_visualization(
@@ -303,15 +309,19 @@ class ClassificationLabelVisualizationBlockV1(ColorableVisualizationBlock):
                 # If no predictions, return the original image
                 return {
                     OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
-                        origin_image_data=image, 
-                        numpy_image=image.numpy_image.copy() if copy_image else image.numpy_image
+                        origin_image_data=image,
+                        numpy_image=(
+                            image.numpy_image.copy()
+                            if copy_image
+                            else image.numpy_image
+                        ),
                     )
                 }
 
             pseudo_detections = sv.Detections(
                 xyxy=xyxy,
-                class_id=np.array([p['class_id'] for p in predictions_to_use]),
-                confidence=np.array([p['confidence'] for p in predictions_to_use]),
+                class_id=np.array([p["class_id"] for p in predictions_to_use]),
+                confidence=np.array([p["confidence"] for p in predictions_to_use]),
                 tracker_id=np.array([0 for _ in predictions_to_use]),
             )
 
@@ -326,10 +336,13 @@ class ClassificationLabelVisualizationBlockV1(ColorableVisualizationBlock):
                     origin_image_data=image, numpy_image=annotated_image
                 )
             }
-            
+
         except ValueError as e:
-            raise ValueError(f"Invalid prediction format: {str(e)}. Please check if the task_type matches your model's output format.") from e
-    
+            raise ValueError(
+                f"Invalid prediction format: {str(e)}. Please check if the task_type matches your model's output format."
+            ) from e
+
+
 def handle_bottom_position(
     sorted_predictions: List[dict],
     text: str,
@@ -340,12 +353,15 @@ def handle_bottom_position(
 ) -> Tuple[np.ndarray, List[str], List[dict]]:
     """Handle visualization layout for bottom positions."""
     reversed_predictions = sorted_predictions[::-1]
-    xyxy = np.array([
-        [0, 0, w, h - (initial_offset + i*total_spacing)] 
-        for i in range(len(reversed_predictions))
-    ])
+    xyxy = np.array(
+        [
+            [0, 0, w, h - (initial_offset + i * total_spacing)]
+            for i in range(len(reversed_predictions))
+        ]
+    )
     labels = format_labels(reversed_predictions, text)
     return xyxy, labels, reversed_predictions
+
 
 def handle_center_position(
     sorted_predictions: List[dict],
@@ -362,31 +378,48 @@ def handle_center_position(
     n_predictions = len(sorted_predictions)
     total_height = total_spacing * n_predictions
     start_y = max(0, min((h - total_height) / 2, h - total_height))
-    
+
     max_label_length = max(len(label) for label in labels)
     char_width = 15
     label_width = (max_label_length * char_width * text_scale) + (text_padding * 2)
     extra_padding = 20 + max(0, 10 - text_padding) * 3
-    
-    if text_position == 'CENTER_LEFT':
+
+    if text_position == "CENTER_LEFT":
         x_start = label_width + extra_padding
-        xyxy = np.array([
-            [x_start, start_y + i*total_spacing, w, start_y + (i+1)*total_spacing] 
-            for i in range(n_predictions)
-        ])
-    elif text_position == 'CENTER_RIGHT':
+        xyxy = np.array(
+            [
+                [
+                    x_start,
+                    start_y + i * total_spacing,
+                    w,
+                    start_y + (i + 1) * total_spacing,
+                ]
+                for i in range(n_predictions)
+            ]
+        )
+    elif text_position == "CENTER_RIGHT":
         x_end = w - (label_width + extra_padding)
-        xyxy = np.array([
-            [0, start_y + i*total_spacing, x_end, start_y + (i+1)*total_spacing] 
-            for i in range(n_predictions)
-        ])
+        xyxy = np.array(
+            [
+                [
+                    0,
+                    start_y + i * total_spacing,
+                    x_end,
+                    start_y + (i + 1) * total_spacing,
+                ]
+                for i in range(n_predictions)
+            ]
+        )
     else:  # CENTER
-        xyxy = np.array([
-            [0, start_y + i*total_spacing, w, start_y + (i+1)*total_spacing] 
-            for i in range(n_predictions)
-        ])
-    
+        xyxy = np.array(
+            [
+                [0, start_y + i * total_spacing, w, start_y + (i + 1) * total_spacing]
+                for i in range(n_predictions)
+            ]
+        )
+
     return xyxy, labels, sorted_predictions
+
 
 def handle_top_position(
     sorted_predictions: List[dict],
@@ -397,12 +430,15 @@ def handle_top_position(
     total_spacing: float,
 ) -> Tuple[np.ndarray, List[str], List[dict]]:
     """Handle visualization layout for top positions."""
-    xyxy = np.array([
-        [0, initial_offset + i*total_spacing, w, h] 
-        for i in range(len(sorted_predictions))
-    ])
+    xyxy = np.array(
+        [
+            [0, initial_offset + i * total_spacing, w, h]
+            for i in range(len(sorted_predictions))
+        ]
+    )
     labels = format_labels(sorted_predictions, text)
     return xyxy, labels, sorted_predictions
+
 
 def create_label_visualization(
     sorted_predictions: List[dict],
@@ -416,98 +452,109 @@ def create_label_visualization(
     text_padding: int,
 ) -> Tuple[np.ndarray, List[str], List[dict]]:
     """Create visualization layout for classification labels."""
-    if text_position in ['BOTTOM_LEFT', 'BOTTOM_CENTER', 'BOTTOM_RIGHT']:
+    if text_position in ["BOTTOM_LEFT", "BOTTOM_CENTER", "BOTTOM_RIGHT"]:
         return handle_bottom_position(
             sorted_predictions, text, w, h, initial_offset, total_spacing
         )
-    elif text_position in ['CENTER', 'CENTER_LEFT', 'CENTER_RIGHT']:
+    elif text_position in ["CENTER", "CENTER_LEFT", "CENTER_RIGHT"]:
         return handle_center_position(
-            sorted_predictions, text, text_position, w, h, 
-            total_spacing, text_scale, text_padding
+            sorted_predictions,
+            text,
+            text_position,
+            w,
+            h,
+            total_spacing,
+            text_scale,
+            text_padding,
         )
     else:  # Top positions
         return handle_top_position(
             sorted_predictions, text, w, h, initial_offset, total_spacing
         )
 
+
 def detect_prediction_type(predictions: dict) -> str:
     """
     Detect whether predictions are single-label or multi-label based on structure.
-    
+
     Args:
         predictions (dict): The predictions dictionary
-        
+
     Returns:
         str: 'single-label' or 'multi-label'
     """
-    if isinstance(predictions.get('predictions'), list):
-        return 'single-label'
-    return 'multi-label'
+    if isinstance(predictions.get("predictions"), list):
+        return "single-label"
+    return "multi-label"
+
 
 def validate_prediction_format(predictions: dict, task_type: str) -> None:
     """
     Validate that the predictions format matches the specified task type.
-    
+
     Args:
         predictions (dict): The predictions dictionary
         task_type (str): The specified task type ('single-label' or 'multi-label')
-        
+
     Raises:
         ValueError: If prediction format doesn't match task type
     """
     actual_type = detect_prediction_type(predictions)
-    
+
     if actual_type != task_type:
-        if actual_type == 'single-label':
-            raise ValueError("Received single-label predictions but task_type is set to 'multi-label'. Please correct the task_type setting.")
+        if actual_type == "single-label":
+            raise ValueError(
+                "Received single-label predictions but task_type is set to 'multi-label'. Please correct the task_type setting."
+            )
         else:
-            raise ValueError("Received multi-label predictions but task_type is set to 'single-label'. Please correct the task_type setting.")
+            raise ValueError(
+                "Received multi-label predictions but task_type is set to 'single-label'. Please correct the task_type setting."
+            )
+
 
 def format_multi_label_predictions(predictions: dict) -> List[dict]:
     """
     Transform multi-label predictions from predicted_classes into standard format.
-    
+
     Args:
         predictions (dict): The predictions dictionary
-        
+
     Returns:
         List[dict]: Formatted predictions list
     """
     formatted_predictions = []
-    for class_name in predictions['predicted_classes']:
-        pred_info = predictions['predictions'][class_name]
-        formatted_predictions.append({
-            'class': class_name,
-            'class_id': pred_info['class_id'],
-            'confidence': pred_info['confidence']
-        })
+    for class_name in predictions["predicted_classes"]:
+        pred_info = predictions["predictions"][class_name]
+        formatted_predictions.append(
+            {
+                "class": class_name,
+                "class_id": pred_info["class_id"],
+                "confidence": pred_info["confidence"],
+            }
+        )
     return formatted_predictions
 
 
 def format_labels(predictions, text="Class and Confidence"):
     """
     Format labels based on specified text option.
-    
+
     Args:
         predictions (list): List of prediction dictionaries containing 'class' and 'confidence'
         text (str): One of "class", "confidence", or "class and confidence"
-    
+
     Returns:
         list: Formatted label strings
     """
     if text == "Class":
-        labels = [
-            f"{p['class']}" for p in predictions
-        ]
+        labels = [f"{p['class']}" for p in predictions]
     elif text == "Confidence":
-        labels = [
-            f"{p['confidence']:.2f}" for p in predictions
-        ]
+        labels = [f"{p['confidence']:.2f}" for p in predictions]
     elif text == "Class and Confidence":
-        labels = [
-            f"{p['class']} {p['confidence']:.2f}" for p in predictions
-        ]
+        labels = [f"{p['class']} {p['confidence']:.2f}" for p in predictions]
     else:
-        raise ValueError("text must be one of: 'class', 'confidence', or 'class and confidence'")
-    
+        raise ValueError(
+            "text must be one of: 'class', 'confidence', or 'class and confidence'"
+        )
+
     return labels

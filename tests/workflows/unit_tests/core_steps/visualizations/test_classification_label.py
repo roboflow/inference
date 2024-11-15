@@ -7,12 +7,12 @@ from inference.core.workflows.core_steps.visualizations.classification_label.v1 
     ClassificationLabelManifest,
     ClassificationLabelVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.common.base import (
+    OUTPUT_IMAGE_KEY,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
-)
-from inference.core.workflows.core_steps.visualizations.common.base import (
-    OUTPUT_IMAGE_KEY,
 )
 
 
@@ -81,14 +81,14 @@ def test_label_validation_when_invalid_image_is_given() -> None:
 def test_classification_label_visualization_block_single_label() -> None:
     # given
     block = ClassificationLabelVisualizationBlockV1()
-    
+
     # Single-label predictions format
     predictions = {
-        'image': {'width': 1000, 'height': 1000},
-        'predictions': [
-            {'class': 'cat', 'class_id': 0, 'confidence': 0.95},
-            {'class': 'dog', 'class_id': 1, 'confidence': 0.85},
-        ]
+        "image": {"width": 1000, "height": 1000},
+        "predictions": [
+            {"class": "cat", "class_id": 0, "confidence": 0.95},
+            {"class": "dog", "class_id": 1, "confidence": 0.85},
+        ],
     }
 
     output = block.run(
@@ -129,25 +129,23 @@ def test_classification_label_visualization_different_prediction_formats():
         parent_metadata=ImageParentMetadata(parent_id="some"),
         numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
     )
-    
+
     # Multi-label format
     multi_label_predictions = {
-        'image': {'width': 1000, 'height': 1000},
-        'predicted_classes': ['cat', 'dog'],
-        'predictions': {
-            'cat': {'class_id': 0, 'confidence': 0.95},
-            'dog': {'class_id': 1, 'confidence': 0.85}
-        }
+        "image": {"width": 1000, "height": 1000},
+        "predicted_classes": ["cat", "dog"],
+        "predictions": {
+            "cat": {"class_id": 0, "confidence": 0.95},
+            "dog": {"class_id": 1, "confidence": 0.85},
+        },
     }
-    
+
     # Single-label format
     single_label_predictions = {
-        'image': {'width': 1000, 'height': 1000},
-        'predictions': [
-            {'class': 'cat', 'class_id': 0, 'confidence': 0.95}
-        ]
+        "image": {"width": 1000, "height": 1000},
+        "predictions": [{"class": "cat", "class_id": 0, "confidence": 0.95}],
     }
-    
+
     # Test both formats work without specifying task_type
     for predictions in [multi_label_predictions, single_label_predictions]:
         output = block.run(
@@ -166,7 +164,7 @@ def test_classification_label_visualization_different_prediction_formats():
             text_padding=10,
             border_radius=0,
         )
-        
+
         assert output is not None
         assert "image" in output
         assert not np.array_equal(
@@ -180,14 +178,14 @@ def test_classification_label_visualization_empty_predictions():
         parent_metadata=ImageParentMetadata(parent_id="some"),
         numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
     )
-    
+
     # Empty multi-label predictions
     empty_multi_predictions = {
-        'image': {'width': 1000, 'height': 1000},
-        'predicted_classes': [],
-        'predictions': {}
+        "image": {"width": 1000, "height": 1000},
+        "predicted_classes": [],
+        "predictions": {},
     }
-    
+
     output = block.run(
         image=base_image,
         predictions=empty_multi_predictions,
@@ -204,7 +202,7 @@ def test_classification_label_visualization_empty_predictions():
         text_padding=10,
         border_radius=0,
     )
-    
+
     assert output is not None
     assert "image" in output
     assert hasattr(output.get("image"), "numpy_image")
@@ -223,16 +221,14 @@ def test_classification_label_visualization_block_multi_label():
         parent_metadata=ImageParentMetadata(parent_id="some"),
         numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
     )
-    
+
     # Multi-label with single prediction
     single_multi_predictions = {
-        'image': {'width': 1000, 'height': 1000},
-        'predicted_classes': ['cat'],
-        'predictions': {
-            'cat': {'class_id': 0, 'confidence': 0.95}
-        }
+        "image": {"width": 1000, "height": 1000},
+        "predicted_classes": ["cat"],
+        "predictions": {"cat": {"class_id": 0, "confidence": 0.95}},
     }
-    
+
     output = block.run(
         image=base_image,
         predictions=single_multi_predictions,
@@ -261,13 +257,13 @@ def test_classification_label_visualization_invalid_predictions():
         parent_metadata=ImageParentMetadata(parent_id="some"),
         numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
     )
-    
+
     # Invalid prediction format
     invalid_predictions = {
-        'image': {'width': 1000, 'height': 1000},
-        'predictions': "invalid"  # Neither list nor dict
+        "image": {"width": 1000, "height": 1000},
+        "predictions": "invalid",  # Neither list nor dict
     }
-    
+
     with pytest.raises(KeyError):
         block.run(
             image=base_image,
@@ -286,28 +282,34 @@ def test_classification_label_visualization_invalid_predictions():
             border_radius=0,
         )
 
-@pytest.mark.parametrize("text_position,text_padding", [
-    ("TOP_LEFT", 1),
-    ("TOP_LEFT", 10),
-    ("BOTTOM_RIGHT", 1),
-    ("BOTTOM_RIGHT", 10),
-    ("CENTER", 1),
-    ("CENTER", 10),
-])
-def test_classification_label_visualization_position_combinations(text_position, text_padding):
+
+@pytest.mark.parametrize(
+    "text_position,text_padding",
+    [
+        ("TOP_LEFT", 1),
+        ("TOP_LEFT", 10),
+        ("BOTTOM_RIGHT", 1),
+        ("BOTTOM_RIGHT", 10),
+        ("CENTER", 1),
+        ("CENTER", 10),
+    ],
+)
+def test_classification_label_visualization_position_combinations(
+    text_position, text_padding
+):
     block = ClassificationLabelVisualizationBlockV1()
     base_image = WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id="some"),
         numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
     )
-    
+
     predictions = {
-        'image': {'width': 1000, 'height': 1000},
-        'predictions': [
-            {'class': 'cat', 'class_id': 0, 'confidence': 0.95},
-        ]
+        "image": {"width": 1000, "height": 1000},
+        "predictions": [
+            {"class": "cat", "class_id": 0, "confidence": 0.95},
+        ],
     }
-    
+
     output = block.run(
         image=base_image,
         predictions=predictions,
@@ -324,7 +326,7 @@ def test_classification_label_visualization_position_combinations(text_position,
         text_padding=text_padding,
         border_radius=0,
     )
-    
+
     assert output is not None
     assert "image" in output
     assert hasattr(output.get("image"), "numpy_image")
@@ -335,6 +337,3 @@ def test_classification_label_visualization_position_combinations(text_position,
     assert not np.array_equal(
         output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
     )
-
-
-

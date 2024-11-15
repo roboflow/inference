@@ -8,50 +8,47 @@ from tests.workflows.integration_tests.execution.workflows_gallery_collector.dec
     add_to_workflows_gallery,
 )
 
-
 WORKFLOW_DEFINITION = {
-  "version": "1.0",
-  "inputs": [
-    {
-      "type": "WorkflowImage",
-      "name": "image"
-    },
-    {
-        "type": "WorkflowParameter",
-        "name": "model_id",
-        "default_value": "deepfashion2-1000-items/1"
-    }
-  ],
-  "steps": [
-    {
-      "type": "roboflow_core/roboflow_multi_label_classification_model@v1",
-      "name": "model",
-      "images": "$inputs.image",
-      "model_id": "$inputs.model_id",
-    },
-    {
-      "type": "roboflow_core/classification_label_visualization@v1",
-      "name": "classification_label_visualization",
-      "image": "$inputs.image",
-      "predictions": "$steps.model.predictions",
-      "text": "Class and Confidence",
-      "text_position": "CENTER"
-    }
-  ],
-  "outputs": [
-    {
-      "type": "JsonField",
-      "name": "model_predictions",
-      "coordinates_system": "own",
-      "selector": "$steps.model.*"
-    },
-    {
-      "type": "JsonField",
-      "name": "classification_label_visualization",
-      "selector": "$steps.classification_label_visualization.image"
-    }
-  ]
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {
+            "type": "WorkflowParameter",
+            "name": "model_id",
+            "default_value": "deepfashion2-1000-items/1",
+        },
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/roboflow_multi_label_classification_model@v1",
+            "name": "model",
+            "images": "$inputs.image",
+            "model_id": "$inputs.model_id",
+        },
+        {
+            "type": "roboflow_core/classification_label_visualization@v1",
+            "name": "classification_label_visualization",
+            "image": "$inputs.image",
+            "predictions": "$steps.model.predictions",
+            "text": "Class and Confidence",
+            "text_position": "CENTER",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "model_predictions",
+            "coordinates_system": "own",
+            "selector": "$steps.model.*",
+        },
+        {
+            "type": "JsonField",
+            "name": "classification_label_visualization",
+            "selector": "$steps.classification_label_visualization.image",
+        },
+    ],
 }
+
 
 @add_to_workflows_gallery(
     category="Workflows with visualization blocks",
@@ -82,11 +79,7 @@ def test_classification_multi_label_visualization_workflow_when_valid_input_prov
     )
 
     # when
-    result = execution_engine.run(
-        runtime_parameters={
-            "image": dogs_image
-            }
-    )
+    result = execution_engine.run(runtime_parameters={"image": dogs_image})
 
     assert isinstance(result, list), "Expected list to be delivered"
     assert len(result) == 1, "Expected 1 element in the output for one input image"

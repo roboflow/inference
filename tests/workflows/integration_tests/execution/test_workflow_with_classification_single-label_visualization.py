@@ -8,52 +8,52 @@ from tests.workflows.integration_tests.execution.workflows_gallery_collector.dec
     add_to_workflows_gallery,
 )
 
-
 WORKFLOW_DEFINITION = {
-  "version": "1.0",
-  "inputs": [
-    {"type": "WorkflowImage","name": "image"},
-    {
-        "type": "WorkflowParameter",
-        "name": "model_id",
-        "default_value": "fruit-ee3k2/1"
-    }
-  ],
-  "steps": [
-    {
-      "type": "roboflow_core/roboflow_classification_model@v1",
-      "name": "model",
-      "images": "$inputs.image",
-      "model_id": "$inputs.model_id"
-    },
-    {
-      "type": "roboflow_core/classification_label_visualization@v1",
-      "name": "classification_label_visualization",
-      "image": "$inputs.image",
-      "predictions": "$steps.model.predictions",
-      "num_classifications": "$inputs.num_classifications",
-      "text": "Class and Confidence",
-      "color_axis": "INDEX",
-      "color_palette": "ROBOFLOW",
-      "text_scale": 1,
-      "text_color": "BLACK",
-      "text_padding": 28,
-    }
-  ],
-  "outputs": [
-    {
-      "type": "JsonField",
-      "name": "model_predictions",
-      "coordinates_system": "own",
-      "selector": "$steps.model.predictions"
-    },
-    {
-      "type": "JsonField",
-      "name": "classification_label_visualization",
-      "selector": "$steps.classification_label_visualization.image"
-    }
-  ]
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {
+            "type": "WorkflowParameter",
+            "name": "model_id",
+            "default_value": "fruit-ee3k2/1",
+        },
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/roboflow_classification_model@v1",
+            "name": "model",
+            "images": "$inputs.image",
+            "model_id": "$inputs.model_id",
+        },
+        {
+            "type": "roboflow_core/classification_label_visualization@v1",
+            "name": "classification_label_visualization",
+            "image": "$inputs.image",
+            "predictions": "$steps.model.predictions",
+            "num_classifications": "$inputs.num_classifications",
+            "text": "Class and Confidence",
+            "color_axis": "INDEX",
+            "color_palette": "ROBOFLOW",
+            "text_scale": 1,
+            "text_color": "BLACK",
+            "text_padding": 28,
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "model_predictions",
+            "coordinates_system": "own",
+            "selector": "$steps.model.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "classification_label_visualization",
+            "selector": "$steps.classification_label_visualization.image",
+        },
+    ],
 }
+
 
 @add_to_workflows_gallery(
     category="Workflows with visualization blocks",
@@ -84,9 +84,7 @@ def test_classification_label_visualization_workflow_when_valid_input_provided(
     )
 
     # when
-    result = execution_engine.run(
-        runtime_parameters={"image": fruit_image}
-    )
+    result = execution_engine.run(runtime_parameters={"image": fruit_image})
 
     assert isinstance(result, list), "Expected list to be delivered"
     assert len(result) == 1, "Expected 1 element in the output for one input image"
