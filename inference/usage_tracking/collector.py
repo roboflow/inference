@@ -144,7 +144,7 @@ class UsageCollector:
                     "category": "",
                     "resource_id": "",
                     "resource_details": "{}",
-                    "hosted": LAMBDA,
+                    "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID),
                     "api_key_hash": "",
                     "is_gpu_available": False,
                     "python_version": sys.version.split()[0],
@@ -508,14 +508,12 @@ class UsageCollector:
     @staticmethod
     def _resource_details_from_workflow_json(
         workflow_json: Dict[str, Any]
-    ) -> ResourceDetails:
-        return {
-            "steps": [
-                f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"
-                for step in workflow_json.get("steps", [])
-                if isinstance(step, dict)
-            ]
-        }
+    ) -> List[str]:
+        return [
+            f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"
+            for step in workflow_json.get("steps", [])
+            if isinstance(step, dict)
+        ]
 
     @staticmethod
     def _extract_usage_params_from_func_kwargs(
@@ -533,6 +531,8 @@ class UsageCollector:
         resource_details = {
             "billable": usage_billable,
         }
+        if DEDICATED_DEPLOYMENT_ID:
+            resource_details["dedicated_deployment_id"] = DEDICATED_DEPLOYMENT_ID
         resource_id = ""
         category = None
         # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
@@ -550,10 +550,11 @@ class UsageCollector:
                     logger.debug(
                         "Got non-dict workflow JSON, '%s'", workflow.workflow_json
                     )
-            new_resource_details = UsageCollector._resource_details_from_workflow_json(
-                workflow_json=workflow_json,
+            resource_details["steps"] = (
+                UsageCollector._resource_details_from_workflow_json(
+                    workflow_json=workflow_json,
+                )
             )
-            resource_details.update(new_resource_details)
             resource_details["is_preview"] = usage_workflow_preview
             resource_id = usage_workflow_id
             if not resource_id and resource_details:
