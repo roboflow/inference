@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
@@ -15,6 +16,7 @@ VISUALIZATION_WORKFLOW = {
             "default_value": "yolov8n-640",
         },
         {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.3},
+        {"type": "WorkflowParameter", "name": "label", "default_value": "Tracker Id"},
     ],
     "steps": [
         {
@@ -25,11 +27,19 @@ VISUALIZATION_WORKFLOW = {
             "confidence": "$inputs.confidence",
         },
         {
+            "type": "roboflow_core/detections_consensus@v1",
+            "name": "detections_consensus",
+            "predictions_batches": [
+                "$steps.detection.predictions",
+            ],
+            "required_votes": 1,
+        },
+        {
             "type": "roboflow_core/label_visualization@v1",
             "name": "label_visualization",
-            "predictions": "$steps.detection.predictions",
+            "predictions": "$steps.detections_consensus.predictions",
             "image": "$inputs.image",
-            "text": "Tracker Id",
+            "text": "$inputs.label",
         },
     ],
     "outputs": [
@@ -43,9 +53,23 @@ VISUALIZATION_WORKFLOW = {
 }
 
 
+@pytest.mark.parametrize(
+    "label",
+    [
+        "Tracker Id",
+        "Class",
+        "Confidence",
+        "Class and Confidence",
+        "Index",
+        "Dimensions",
+        "Area",
+        "Time In Zone",
+    ]
+)
 def test_workflow_when_detections_are_not_present(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
+    label: str,
 ) -> None:
     """This test covers bug in label annotator block."""
     # given
@@ -62,7 +86,11 @@ def test_workflow_when_detections_are_not_present(
 
     # when
     result = execution_engine.run(
-        runtime_parameters={"image": crowd_image, "confidence": 0.99999}
+        runtime_parameters={
+            "image": crowd_image,
+            "confidence": 0.99999,
+            "label": label,
+        }
     )
 
     # then

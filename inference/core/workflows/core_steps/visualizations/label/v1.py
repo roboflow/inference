@@ -202,6 +202,7 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
             text_padding,
             border_radius,
         )
+        print(predictions)
 
         if text == "Class":
             labels = predictions["class_name"]
