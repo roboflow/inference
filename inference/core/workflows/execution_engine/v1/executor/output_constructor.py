@@ -177,6 +177,8 @@ def serialize_data_piece(
     kind: Union[List[Union[Kind, str]], Dict[str, List[Union[Kind, str]]]],
     kinds_serializers: Dict[str, Callable[[Any], Any]],
 ) -> Any:
+    if data_piece is None:
+        return None
     if isinstance(kind, dict):
         if not isinstance(data_piece, dict):
             raise AssumptionError(
@@ -210,6 +212,8 @@ def serialize_single_workflow_result_field(
     kind: List[Union[Kind, str]],
     kinds_serializers: Dict[str, Callable[[Any], Any]],
 ) -> Any:
+    if value is None:
+        return None
     kinds_without_serializer = set()
     for single_kind in kind:
         kind_name = single_kind.name if isinstance(single_kind, Kind) else kind
