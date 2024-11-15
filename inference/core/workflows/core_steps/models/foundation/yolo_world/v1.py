@@ -214,7 +214,7 @@ class YoloWorldModelBlockV1(WorkflowBlock):
         client.configure(inference_configuration=configuration)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
-        inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
+        inference_images = [i.to_inference_format() for i in images]
         image_sub_batches = list(
             make_batches(
                 iterable=inference_images,

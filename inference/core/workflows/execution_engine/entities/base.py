@@ -397,7 +397,7 @@ class WorkflowImageData:
             return self._base64_image
         numpy_image = self.numpy_image
         self._base64_image = base64.b64encode(
-            encode_image_to_jpeg_bytes(numpy_image)
+            encode_image_to_jpeg_bytes(numpy_image, jpeg_quality=95)
         ).decode("ascii")
         return self._base64_image
 

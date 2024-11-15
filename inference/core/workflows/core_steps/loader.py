@@ -296,6 +296,9 @@ from inference.core.workflows.core_steps.visualizations.bounding_box.v1 import (
 from inference.core.workflows.core_steps.visualizations.circle.v1 import (
     CircleVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.classification_label.v1 import (
+    ClassificationLabelVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.color.v1 import (
     ColorVisualizationBlockV1,
 )
@@ -494,6 +497,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LMMBlockV1,
         LMMForClassificationBlockV1,
         LabelVisualizationBlockV1,
+        ClassificationLabelVisualizationBlockV1,
         LineCounterBlockV1,
         LineCounterBlockV2,
         LineCounterZoneVisualizationBlockV1,

@@ -190,6 +190,15 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         text_padding: Optional[int],
         border_radius: Optional[int],
     ) -> BlockResult:
+        if len(predictions) == 0:
+            return {
+                OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
+                    origin_image_data=image,
+                    numpy_image=(
+                        image.numpy_image.copy() if copy_image else image.numpy_image
+                    ),
+                )
+            }
         annotator = self.getAnnotator(
             color_palette,
             palette_size,
@@ -202,11 +211,15 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
             text_padding,
             border_radius,
         )
-
         if text == "Class":
             labels = predictions["class_name"]
         elif text == "Tracker Id":
-            labels = [str(t) if t else "" for t in predictions.tracker_id]
+            if predictions.tracker_id is not None:
+                labels = [
+                    str(t) if t else "No Tracker ID" for t in predictions.tracker_id
+                ]
+            else:
+                labels = ["No Tracker ID"] * len(predictions)
         elif text == "Time In Zone":
             if "time_in_zone" in predictions.data:
                 labels = [
@@ -241,7 +254,6 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
                 labels = [str(d) if d else "" for d in predictions[text]]
             except Exception:
                 raise ValueError(f"Invalid text type: {text}")
-
         annotated_image = annotator.annotate(
             scene=image.numpy_image.copy() if copy_image else image.numpy_image,
             detections=predictions,
