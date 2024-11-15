@@ -200,9 +200,7 @@ def test_object_detection_workflow_when_batch_input_provided_and_serialization_r
     assert isinstance(result, list), "Expected result to be list"
     assert len(result) == 2, "Two images provided - two outputs expected"
     detections_1 = sv.Detections.from_inference(result[0]["result"]["predictions"])
-    detections_2 = sv.Detections = sv.Detections.from_inference(
-        result[1]["result"]["predictions"]
-    )
+    detections_2 = sv.Detections.from_inference(result[1]["result"]["predictions"])
     assert np.allclose(
         detections_1.xyxy,
         EXPECTED_OBJECT_DETECTION_BBOXES,
