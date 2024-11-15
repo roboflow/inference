@@ -1,20 +1,21 @@
 import hashlib
-from datetime import datetime
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from functools import partial
 from typing import List, Literal, Optional, Tuple, Type, Union
-from inference.core.managers.metrics import get_system_info
+
 import supervision as sv
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
 from inference.core.cache.base import BaseCache
+from inference.core.env import DEVICE_ID
+from inference.core.managers.metrics import get_system_info
 from inference.core.roboflow_api import (
     export_inference_to_model_monitoring,
     get_roboflow_workspace,
 )
-from inference.core.env import DEVICE_ID
 from inference.core.workflows.execution_engine.constants import INFERENCE_ID_KEY
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
@@ -32,7 +33,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
 
 LAST_REPORT_TIME_CACHE_KEY = "roboflow_model_monitoring_last_report_time"
 WORKSPACE_NAME_CACHE_EXPIRE = 900  # 15 min
