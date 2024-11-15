@@ -601,12 +601,13 @@ def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
 
 
 @wrap_roboflow_api_errors()
-def report_inference_to_model_monitoring(
+def export_inference_to_model_monitoring(
     api_key: str,
+    workspace_id: WorkspaceID,
     inference_data: dict,
 ):
     api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/inference-stats",
+        url=f"{API_BASE_URL}/{workspace_id}/inference-stats",
         params=[("api_key", api_key)],
     )
     response = requests.post(
