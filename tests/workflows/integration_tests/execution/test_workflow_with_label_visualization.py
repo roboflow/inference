@@ -64,7 +64,7 @@ VISUALIZATION_WORKFLOW = {
         "Dimensions",
         "Area",
         "Time In Zone",
-    ]
+    ],
 )
 def test_workflow_when_detections_are_not_present(
     model_manager: ModelManager,

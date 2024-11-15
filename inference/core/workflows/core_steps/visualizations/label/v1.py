@@ -194,7 +194,9 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
             return {
                 OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
                     origin_image_data=image,
-                    numpy_image=image.numpy_image.copy() if copy_image else image.numpy_image,
+                    numpy_image=(
+                        image.numpy_image.copy() if copy_image else image.numpy_image
+                    ),
                 )
             }
         annotator = self.getAnnotator(
