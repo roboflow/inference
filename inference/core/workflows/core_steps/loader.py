@@ -293,6 +293,9 @@ from inference.core.workflows.core_steps.visualizations.bounding_box.v1 import (
 from inference.core.workflows.core_steps.visualizations.circle.v1 import (
     CircleVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.classification_label.v1 import (
+    ClassificationLabelVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.color.v1 import (
     ColorVisualizationBlockV1,
 )
@@ -316,9 +319,6 @@ from inference.core.workflows.core_steps.visualizations.keypoint.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.label.v1 import (
     LabelVisualizationBlockV1,
-)
-from inference.core.workflows.core_steps.visualizations.classification_label.v1 import (
-    ClassificationLabelVisualizationBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.line_zone.v1 import (
     LineCounterZoneVisualizationBlockV1,

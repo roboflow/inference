@@ -1,7 +1,7 @@
-from typing import List, Literal, Optional, Type, Union, Tuple
+from typing import List, Literal, Optional, Tuple, Type, Union
 
-import supervision as sv
 import numpy as np
+import supervision as sv
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
@@ -14,15 +14,14 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
+    CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
     INTEGER_KIND,
     STRING_KIND,
-    CLASSIFICATION_PREDICTION_KIND,
-    WorkflowParameterSelector,
     StepOutputSelector,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
-
 
 SHORT_DESCRIPTION = "Visualizes both single-label and multi-label classification predictions with customizable display options."
 
