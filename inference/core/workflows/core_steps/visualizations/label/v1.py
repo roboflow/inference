@@ -190,6 +190,13 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
         text_padding: Optional[int],
         border_radius: Optional[int],
     ) -> BlockResult:
+        if len(predictions) == 0:
+            return {
+                OUTPUT_IMAGE_KEY: WorkflowImageData.copy_and_replace(
+                    origin_image_data=image,
+                    numpy_image=image.numpy_image.copy() if copy_image else image.numpy_image,
+                )
+            }
         annotator = self.getAnnotator(
             color_palette,
             palette_size,
@@ -202,8 +209,6 @@ class LabelVisualizationBlockV1(ColorableVisualizationBlock):
             text_padding,
             border_radius,
         )
-        print(predictions)
-
         if text == "Class":
             labels = predictions["class_name"]
         elif text == "Tracker Id":
