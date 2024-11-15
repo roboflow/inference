@@ -73,5 +73,7 @@ jobs:
       - name: 🧹 Cleanup Test Docker - SAM2
         run: make stop_test_docker
       - name: 🚨 Show server logs on error
-        run: docker logs inference-test
+        run: |
+          docker logs inference-test
+          make stop_test_docker
         if: failure()
