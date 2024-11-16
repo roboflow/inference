@@ -243,6 +243,7 @@ import time
 from inference.core.version import __version__
 
 
+# Backwards compatibility to make the transition easier
 def with_route_exceptions(route):
     """
     A decorator that wraps a FastAPI route to handle specific exceptions. If an exception
@@ -254,204 +255,225 @@ def with_route_exceptions(route):
     Returns:
         Callable: The wrapped route.
     """
+    return with_async_route_exceptions(route)
 
+def handle_common_exceptions(error: Exception) -> JSONResponse:
+    """
+    Common exception handling logic used by route decorators. Processes exceptions and
+    returns appropriate JSON responses with error messages.
+
+    Args:
+        error (Exception): The exception that was caught.
+
+    Returns:
+        JSONResponse: A formatted JSON response containing the error message and appropriate status code.
+    """
+    if isinstance(error, ContentTypeInvalid):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Invalid Content-Type header provided with request."
+            },
+        )
+    elif isinstance(error, ContentTypeMissing):
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Content-Type header not provided with request."},
+        )
+    elif isinstance(error, InputImageLoadError):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": f"Could not load input image. Cause: {error.get_public_error_details()}"
+            },
+        )
+    elif isinstance(error, InvalidModelIDError):
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Invalid Model ID sent in request."},
+        )
+    elif isinstance(error, InvalidMaskDecodeArgument):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Invalid mask decode argument sent. tradeoff_factor must be in [0.0, 1.0], "
+                "mask_decode_mode: must be one of ['accurate', 'fast', 'tradeoff']"
+            },
+        )
+    elif isinstance(error, MissingApiKeyError):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Required Roboflow API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+                "to learn how to retrieve one."
+            },
+        )
+    elif isinstance(error, (
+        WorkflowDefinitionError,
+        ExecutionGraphStructureError,
+        ReferenceTypeError,
+        InvalidReferenceTargetError,
+        RuntimeInputError,
+        InvalidInputTypeError,
+        OperationTypeNotRecognisedError,
+        DynamicBlockError,
+        WorkflowExecutionEngineVersionError,
+        NotSupportedExecutionEngineError,
+    )):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": error.public_message,
+                "error_type": error.__class__.__name__,
+                "context": error.context,
+                "inner_error_type": error.inner_error_type,
+                "inner_error_message": str(error.inner_error),
+            },
+        )
+    elif isinstance(error, (
+        ProcessesManagerInvalidPayload,
+        MalformedPayloadError,
+        MessageToBigError,
+    )):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": error.public_message,
+                "error_type": error.__class__.__name__,
+                "inner_error_type": error.inner_error_type,
+            },
+        )
+    elif isinstance(error, (RoboflowAPINotAuthorizedError, ProcessesManagerAuthorisationError)):
+        return JSONResponse(
+            status_code=401,
+            content={
+                "message": "Unauthorized access to roboflow API - check API key and make sure the key is valid for "
+                "workspace you use. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
+                "to learn how to retrieve one."
+            },
+        )
+    elif isinstance(error, (RoboflowAPINotNotFoundError, InferenceModelNotFound)):
+        return JSONResponse(
+            status_code=404,
+            content={
+                "message": "Requested Roboflow resource not found. Make sure that workspace, project or model "
+                "you referred in request exists."
+            },
+        )
+    elif isinstance(error, ProcessesManagerNotFoundError):
+        return JSONResponse(
+            status_code=404,
+            content={
+                "message": error.public_message,
+                "error_type": error.__class__.__name__,
+                "inner_error_type": error.inner_error_type,
+            },
+        )
+    elif isinstance(error, (
+        InvalidEnvironmentVariableError,
+        MissingServiceSecretError,
+        ServiceConfigurationError,
+    )):
+        return JSONResponse(
+            status_code=500, content={"message": "Service misconfiguration."}
+        )
+    elif isinstance(error, (PreProcessingError, PostProcessingError)):
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": "Model configuration related to pre- or post-processing is invalid."
+            },
+        )
+    elif isinstance(error, ModelArtefactError):
+        return JSONResponse(
+            status_code=500, content={"message": "Model package is broken."}
+        )
+    elif isinstance(error, OnnxProviderNotAvailable):
+        return JSONResponse(
+            status_code=501,
+            content={
+                "message": "Could not find requested ONNX Runtime Provider. Check that you are using "
+                "the correct docker image on a supported device."
+            },
+        )
+    elif isinstance(error, (
+        MalformedRoboflowAPIResponseError,
+        RoboflowAPIUnsuccessfulRequestError,
+        WorkspaceLoadError,
+        MalformedWorkflowResponseError,
+    )):
+        return JSONResponse(
+            status_code=502,
+            content={"message": "Internal error. Request to Roboflow API failed."},
+        )
+    elif isinstance(error, RoboflowAPIConnectionError):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "message": "Internal error. Could not connect to Roboflow API."
+            },
+        )
+    elif isinstance(error, WorkflowError):
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": error.public_message,
+                "error_type": error.__class__.__name__,
+                "context": error.context,
+                "inner_error_type": error.inner_error_type,
+                "inner_error_message": str(error.inner_error),
+            },
+        )
+    elif isinstance(error, (ProcessesManagerClientError, CommunicationProtocolError)):
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": error.public_message,
+                "error_type": error.__class__.__name__,
+                "inner_error_type": error.inner_error_type,
+            },
+        )
+    else:
+        return JSONResponse(status_code=500, content={"message": "Internal error."})
+
+def with_sync_route_exceptions(route):
+    """
+    A decorator that wraps a synchronous FastAPI route to handle specific exceptions. If an exception
+    is caught, it returns a JSON response with the error message.
+
+    Args:
+        route (Callable): The FastAPI route to be wrapped.
+
+    Returns:
+        Callable: The wrapped route.
+    """
+    @wraps(route)
+    def wrapped_route(*args, **kwargs):
+        try:
+            return route(*args, **kwargs)
+        except Exception as error:
+            traceback.print_exc()
+            return handle_common_exceptions(error)
+    return wrapped_route
+
+def with_async_route_exceptions(route):
+    """
+    A decorator that wraps an asynchronous FastAPI route to handle specific exceptions. If an exception
+    is caught, it returns a JSON response with the error message.
+
+    Args:
+        route (Callable): The FastAPI route to be wrapped.
+
+    Returns:
+        Callable: The wrapped route.
+    """
     @wraps(route)
     async def wrapped_route(*args, **kwargs):
         try:
             return await route(*args, **kwargs)
-        except ContentTypeInvalid:
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": "Invalid Content-Type header provided with request."
-                },
-            )
+        except Exception as error:
             traceback.print_exc()
-        except ContentTypeMissing:
-            resp = JSONResponse(
-                status_code=400,
-                content={"message": "Content-Type header not provided with request."},
-            )
-            traceback.print_exc()
-        except InputImageLoadError as e:
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": f"Could not load input image. Cause: {e.get_public_error_details()}"
-                },
-            )
-            traceback.print_exc()
-        except InvalidModelIDError:
-            resp = JSONResponse(
-                status_code=400,
-                content={"message": "Invalid Model ID sent in request."},
-            )
-            traceback.print_exc()
-        except InvalidMaskDecodeArgument:
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": "Invalid mask decode argument sent. tradeoff_factor must be in [0.0, 1.0], "
-                    "mask_decode_mode: must be one of ['accurate', 'fast', 'tradeoff']"
-                },
-            )
-            traceback.print_exc()
-        except MissingApiKeyError:
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": "Required Roboflow API key is missing. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
-                    "to learn how to retrieve one."
-                },
-            )
-            traceback.print_exc()
-        except (
-            WorkflowDefinitionError,
-            ExecutionGraphStructureError,
-            ReferenceTypeError,
-            InvalidReferenceTargetError,
-            RuntimeInputError,
-            InvalidInputTypeError,
-            OperationTypeNotRecognisedError,
-            DynamicBlockError,
-            WorkflowExecutionEngineVersionError,
-            NotSupportedExecutionEngineError,
-        ) as error:
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "context": error.context,
-                    "inner_error_type": error.inner_error_type,
-                    "inner_error_message": str(error.inner_error),
-                },
-            )
-        except (
-            ProcessesManagerInvalidPayload,
-            MalformedPayloadError,
-            MessageToBigError,
-        ) as error:
-            resp = JSONResponse(
-                status_code=400,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "inner_error_type": error.inner_error_type,
-                },
-            )
-        except (RoboflowAPINotAuthorizedError, ProcessesManagerAuthorisationError):
-            resp = JSONResponse(
-                status_code=401,
-                content={
-                    "message": "Unauthorized access to roboflow API - check API key and make sure the key is valid for "
-                    "workspace you use. Visit https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key "
-                    "to learn how to retrieve one."
-                },
-            )
-            traceback.print_exc()
-        except (RoboflowAPINotNotFoundError, InferenceModelNotFound):
-            resp = JSONResponse(
-                status_code=404,
-                content={
-                    "message": "Requested Roboflow resource not found. Make sure that workspace, project or model "
-                    "you referred in request exists."
-                },
-            )
-            traceback.print_exc()
-        except ProcessesManagerNotFoundError as error:
-            resp = JSONResponse(
-                status_code=404,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "inner_error_type": error.inner_error_type,
-                },
-            )
-            traceback.print_exc()
-        except (
-            InvalidEnvironmentVariableError,
-            MissingServiceSecretError,
-            ServiceConfigurationError,
-        ):
-            resp = JSONResponse(
-                status_code=500, content={"message": "Service misconfiguration."}
-            )
-            traceback.print_exc()
-        except (
-            PreProcessingError,
-            PostProcessingError,
-        ):
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": "Model configuration related to pre- or post-processing is invalid."
-                },
-            )
-            traceback.print_exc()
-        except ModelArtefactError:
-            resp = JSONResponse(
-                status_code=500, content={"message": "Model package is broken."}
-            )
-            traceback.print_exc()
-        except OnnxProviderNotAvailable:
-            resp = JSONResponse(
-                status_code=501,
-                content={
-                    "message": "Could not find requested ONNX Runtime Provider. Check that you are using "
-                    "the correct docker image on a supported device."
-                },
-            )
-            traceback.print_exc()
-        except (
-            MalformedRoboflowAPIResponseError,
-            RoboflowAPIUnsuccessfulRequestError,
-            WorkspaceLoadError,
-            MalformedWorkflowResponseError,
-        ):
-            resp = JSONResponse(
-                status_code=502,
-                content={"message": "Internal error. Request to Roboflow API failed."},
-            )
-            traceback.print_exc()
-        except RoboflowAPIConnectionError:
-            resp = JSONResponse(
-                status_code=503,
-                content={
-                    "message": "Internal error. Could not connect to Roboflow API."
-                },
-            )
-            traceback.print_exc()
-        except WorkflowError as error:
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "context": error.context,
-                    "inner_error_type": error.inner_error_type,
-                    "inner_error_message": str(error.inner_error),
-                },
-            )
-            traceback.print_exc()
-        except (
-            ProcessesManagerClientError,
-            CommunicationProtocolError,
-        ) as error:
-            resp = JSONResponse(
-                status_code=500,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "inner_error_type": error.inner_error_type,
-                },
-            )
-            traceback.print_exc()
-        except Exception:
-            resp = JSONResponse(status_code=500, content={"message": "Internal error."})
-            traceback.print_exc()
-        return resp
-
+            return handle_common_exceptions(error)
     return wrapped_route
 
 
@@ -561,7 +583,8 @@ class HttpInterface(BaseInterface):
         if not LAMBDA:
 
             @app.get("/device/stats")
-            async def device_stats():
+            @with_sync_route_exceptions
+            def device_stats():
                 not_configured_error_message = {
                     "error": "Device statistics endpoint is not enabled.",
                     "hint": "Mount the Docker socket and point its location when running the docker "
@@ -862,7 +885,8 @@ class HttpInterface(BaseInterface):
             summary="Info",
             description="Get the server name and version number",
         )
-        async def root():
+        @with_sync_route_exceptions
+        def root():
             """Endpoint to get the server name and version number.
 
             Returns:
@@ -883,7 +907,8 @@ class HttpInterface(BaseInterface):
                 summary="Get model keys",
                 description="Get the ID of each loaded model",
             )
-            async def registry():
+            @with_sync_route_exceptions
+            def registry():
                 """Get the ID of each loaded model in the registry.
 
                 Returns:
