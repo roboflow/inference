@@ -181,6 +181,9 @@ from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainti
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.roboflow.detection_and_classification.v1 import (
+    DetectionAndClassificationBlockV1,
+)
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
     RoboflowInstanceSegmentationModelBlockV1,
 )
@@ -548,6 +551,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowObjectDetectionModelBlockV2,
         VLMAsClassifierBlockV2,
         VLMAsDetectorBlockV2,
+        DetectionAndClassificationBlockV1,
     ]
 
 
