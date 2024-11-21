@@ -37,11 +37,11 @@ from inference.core.workflows.prototypes.block import (
 SHORT_DESCRIPTION = "Periodically report an aggregated sample of inference results to Roboflow Model Monitoring"
 
 LONG_DESCRIPTION = """
-This block periodically samples and reports an aggregated sample of inference results to Roboflow Model Monitoring.
+This block periodically reports an aggregated sample of inference results to Roboflow Model Monitoring.
 
-It aggregates predictions in memory between reports and sends a representative sample based on the specified `frequency` parameter.
+It aggregates predictions in memory between reports and then sends a representative sample of predictions at a regular interval specified by the `frequency` parameter.
 
-This is particularly useful when using InferencePipeline, which doesn't automatically report results.
+This is particularly useful when using InferencePipeline, which doesn't automatically report results to Model Monitoring.
 
 For more details on Model Monitoring at Roboflow, visit: https://docs.roboflow.com/deploy/model-monitoring.
 """
@@ -190,13 +190,6 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
                 "error_status": False,
                 "message": "Not in reporting range, skipping report. (Ok)",
             }
-        if self._api_key is None:
-            raise ValueError(
-                "ModelMonitoringInferenceAggregator block cannot run without Roboflow API key. "
-                "If you do not know how to get API key - visit "
-                "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
-                "retrieve one."
-            )
         preds = self._predictions_aggregator.get_and_flush()
         registration_task = partial(
             send_to_model_monitoring_request,
