@@ -601,7 +601,7 @@ def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
 
 
 @wrap_roboflow_api_errors()
-def export_inference_to_model_monitoring(
+def send_inference_results_to_model_monitoring(
     api_key: str,
     workspace_id: WorkspaceID,
     inference_data: dict,
