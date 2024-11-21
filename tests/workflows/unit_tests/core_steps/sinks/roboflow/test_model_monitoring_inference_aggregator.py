@@ -135,20 +135,23 @@ def test_run_in_reporting_range_success_with_object_detection(
             "timestamp": ANY,
             "source": "workflow",
             "source_info": "ModelMonitoringInferenceAggregatorBlockV1",
-            "inference_results": [
-                {
-                    "class_name": "Hardhat",
-                    "confidence": 0.9,
-                    "inference_id": "id1",
-                    "model_type": "object-detection",
-                },
-                {
-                    "class_name": "Person",
-                    "confidence": 0.8,
-                    "inference_id": "id2",
-                    "model_type": "object-detection",
-                },
-            ],
+            "inference_results": sorted(
+                [
+                    {
+                        "class_name": "Hardhat",
+                        "confidence": 0.9,
+                        "inference_id": "id1",
+                        "model_type": "object-detection",
+                    },
+                    {
+                        "class_name": "Person",
+                        "confidence": 0.8,
+                        "inference_id": "id2",
+                        "model_type": "object-detection",
+                    },
+                ],
+                key=lambda x: x["inference_id"],
+            ),
             "device_id": ANY,
             "platform": ANY,
             "platform_release": ANY,
@@ -311,20 +314,23 @@ def test_run_in_reporting_range_success_with_multi_label_classification(
             "timestamp": ANY,
             "source": "workflow",
             "source_info": "ModelMonitoringInferenceAggregatorBlockV1",
-            "inference_results": [
-                {
-                    "class_name": "cat",
-                    "confidence": 0.5594449043273926,
-                    "inference_id": "5a1fc086-c2eb-43b4-9f75-e71ec67c91e8",
-                    "model_type": "classification",
-                },
-                {
-                    "class_name": "dog",
-                    "confidence": 0.4901779294013977,
-                    "inference_id": "5a1fc086-c2eb-43b4-9f75-e71ec67c91e8",
-                    "model_type": "classification",
-                },
-            ],
+            "inference_results": sorted(
+                [
+                    {
+                        "class_name": "cat",
+                        "confidence": 0.5594449043273926,
+                        "inference_id": "5a1fc086-c2eb-43b4-9f75-e71ec67c91e8",
+                        "model_type": "classification",
+                    },
+                    {
+                        "class_name": "dog",
+                        "confidence": 0.4901779294013977,
+                        "inference_id": "5a1fc086-c2eb-43b4-9f75-e71ec67c91e8",
+                        "model_type": "classification",
+                    },
+                ],
+                key=lambda x: x["inference_id"],
+            ),
             "device_id": ANY,
             "platform": ANY,
             "platform_release": ANY,
