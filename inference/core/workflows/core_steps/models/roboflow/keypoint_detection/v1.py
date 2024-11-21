@@ -332,7 +332,7 @@ class RoboflowKeypointDetectionModelBlockV1(WorkflowBlock):
         predictions: List[dict],
         class_filter: Optional[List[str]],
     ) -> BlockResult:
-        inference_id = predictions[0].get(INFERENCE_ID_KEY, None)
+        inference_ids = [p.get(INFERENCE_ID_KEY, None) for p in predictions]
         detections = convert_inference_detections_batch_to_sv_detections(predictions)
         for prediction, image_detections in zip(predictions, detections):
             add_inference_keypoints_to_sv_detections(
@@ -353,5 +353,5 @@ class RoboflowKeypointDetectionModelBlockV1(WorkflowBlock):
         )
         return [
             {"inference_id": inference_id, "predictions": image_detections}
-            for image_detections in detections
+            for inference_id, image_detections in zip(inference_ids, detections)
         ]
