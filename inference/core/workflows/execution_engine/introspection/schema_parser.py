@@ -40,6 +40,7 @@ STR_TYPE_NAME = "str"
 
 ITEMS_KEY = "items"
 UNIQUE_ITEMS_KEY = "uniqueItems"
+TUPLE_ITEMS_KEY = "prefixItems"
 TYPE_KEY = "type"
 REF_KEY = "$ref"
 ADDITIONAL_PROPERTIES_KEY = "additionalProperties"
@@ -133,6 +134,21 @@ def retrieve_primitive_type_from_property(
         )
         return replace(
             result, type_annotation=f"{high_level_type}[{result.type_annotation}]"
+        )
+    if TUPLE_ITEMS_KEY in property_definition:
+        nested_annotations = [
+            retrieve_primitive_type_from_property(
+                property_name=property_name,
+                property_description=property_description,
+                property_definition=nested_definition,
+            )
+            for nested_definition in property_definition[TUPLE_ITEMS_KEY]
+        ]
+        inner_types = ", ".join(a.type_annotation for a in nested_annotations)
+        return PrimitiveTypeDefinition(
+            property_name=property_name,
+            property_description=property_description,
+            type_annotation=f"Tuple[{inner_types}]",
         )
     if property_definition.get(TYPE_KEY) in TYPE_MAPPING:
         type_name = TYPE_MAPPING[property_definition[TYPE_KEY]]
