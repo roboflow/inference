@@ -12,19 +12,21 @@ from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inferen
 )
 
 
+@patch("inference.core.roboflow_api.send_inference_results_to_model_monitoring")
 @patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
+    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
 )
 def test_run_not_in_reporting_range_success(
+    get_roboflow_workspace_mock: MagicMock,
     send_inference_results_to_model_monitoring_mock: MagicMock,
 ) -> None:
     # given
-    send_inference_results_to_model_monitoring_mock.return_value = (
-        False,
-        "Not in reporting range, skipping report. (Ok)",
-    )
+    get_roboflow_workspace_mock.return_value = "my_workspace"
+    send_inference_results_to_model_monitoring_mock.return_value = 200
+    unique_aggregator_key = "session-test_run_not_in_reporting_range_success"
     cache = MemoryCache()
-    api_key = "my_api_key"
+    cache_key = f"workflows:steps_cache:roboflow_core/model_monitoring_inference_aggregator@v1:{unique_aggregator_key}:last_report_time"
+    cache.set(cache_key, (datetime.now() + timedelta(days=1)).isoformat())
     predictions = sv.Detections(
         xyxy=np.array(
             [
@@ -49,14 +51,15 @@ def test_run_not_in_reporting_range_success(
     # when
     block = ModelMonitoringInferenceAggregatorBlockV1(
         cache=cache,
-        api_key=api_key,
+        api_key="my_api_key",
         background_tasks=None,
         thread_pool_executor=None,
     )
     result = block.run(
         fire_and_forget=True,
-        frequency=1,
+        frequency=10,
         predictions=predictions,
+        unique_aggregator_key=unique_aggregator_key,
     )
 
     # then
@@ -64,7 +67,7 @@ def test_run_not_in_reporting_range_success(
         "error_status": False,
         "message": "Not in reporting range, skipping report. (Ok)",
     }, "Expected successful upload"
-    assert cache.get("roboflow_model_monitoring_last_report_time") is not None
+    assert cache.get(cache_key) is not None
 
 
 @patch(
@@ -78,16 +81,17 @@ def test_run_in_reporting_range_success_with_object_detection(
     send_inference_results_to_model_monitoring_mock: MagicMock,
 ) -> None:
     # given
+    unique_aggregator_key = (
+        "session-test_run_in_reporting_range_success_with_object_detection"
+    )
     send_inference_results_to_model_monitoring_mock.return_value = (
         False,
         "Data sent successfully",
     )
     get_roboflow_workspace_mock.return_value = "workspace-name"
+    cache_key = f"workflows:steps_cache:roboflow_core/model_monitoring_inference_aggregator@v1:{unique_aggregator_key}:last_report_time"
     cache = MemoryCache()
-    cache.set(
-        "roboflow_model_monitoring_last_report_time",
-        datetime(2024, 11, 10, 12, 0, 0).isoformat(),
-    )
+    cache.set(cache_key, datetime(2024, 11, 10, 12, 0, 0).isoformat())
     api_key = "my_api_key"
     predictions = sv.Detections(
         xyxy=np.array(
@@ -121,6 +125,7 @@ def test_run_in_reporting_range_success_with_object_detection(
         fire_and_forget=False,
         frequency=10,
         predictions=predictions,
+        unique_aggregator_key=unique_aggregator_key,
     )
 
     # then
@@ -163,10 +168,7 @@ def test_run_in_reporting_range_success_with_object_detection(
             "processor": ANY,
         },
     )
-    assert (
-        cache.get("roboflow_model_monitoring_last_report_time")
-        != datetime(2024, 11, 10, 12, 0, 0).isoformat()
-    )
+    assert cache.get(cache_key) != datetime(2024, 11, 10, 12, 0, 0).isoformat()
 
 
 @patch(
@@ -180,16 +182,17 @@ def test_run_in_reporting_range_success_with_single_label_classification(
     send_inference_results_to_model_monitoring_mock: MagicMock,
 ) -> None:
     # given
+    unique_aggregator_key = (
+        "session-test_run_in_reporting_range_success_with_single_label_classification"
+    )
     send_inference_results_to_model_monitoring_mock.return_value = (
         False,
         "Data sent successfully",
     )
     get_roboflow_workspace_mock.return_value = "workspace-name"
+    cache_key = f"workflows:steps_cache:roboflow_core/model_monitoring_inference_aggregator@v1:{unique_aggregator_key}:last_report_time"
     cache = MemoryCache()
-    cache.set(
-        "roboflow_model_monitoring_last_report_time",
-        datetime(2024, 11, 10, 12, 0, 0).isoformat(),
-    )
+    cache.set(cache_key, datetime(2024, 11, 10, 12, 0, 0).isoformat())
     api_key = "my_api_key"
     predictions = {
         "inference_id": "491d086d-4c6d-41b1-8915-a36ee2af5f6f",
@@ -214,6 +217,7 @@ def test_run_in_reporting_range_success_with_single_label_classification(
         fire_and_forget=False,
         frequency=10,
         predictions=predictions,
+        unique_aggregator_key=unique_aggregator_key,
     )
 
     # then
@@ -247,10 +251,7 @@ def test_run_in_reporting_range_success_with_single_label_classification(
             "processor": ANY,
         },
     )
-    assert (
-        cache.get("roboflow_model_monitoring_last_report_time")
-        != datetime(2024, 11, 10, 12, 0, 0).isoformat()
-    )
+    assert cache.get(cache_key) != datetime(2024, 11, 10, 12, 0, 0).isoformat()
 
 
 @patch(
@@ -269,11 +270,12 @@ def test_run_in_reporting_range_success_with_multi_label_classification(
         "Data sent successfully",
     )
     get_roboflow_workspace_mock.return_value = "workspace-name"
-    cache = MemoryCache()
-    cache.set(
-        "roboflow_model_monitoring_last_report_time",
-        datetime(2024, 11, 10, 12, 0, 0).isoformat(),
+    unique_aggregator_key = (
+        "session-test_run_in_reporting_range_success_with_multi_label_classification"
     )
+    cache_key = f"workflows:steps_cache:roboflow_core/model_monitoring_inference_aggregator@v1:{unique_aggregator_key}:last_report_time"
+    cache = MemoryCache()
+    cache.set(cache_key, datetime(2024, 11, 10, 12, 0, 0).isoformat())
     api_key = "my_api_key"
     predictions = {
         "inference_id": "5a1fc086-c2eb-43b4-9f75-e71ec67c91e8",
@@ -300,6 +302,7 @@ def test_run_in_reporting_range_success_with_multi_label_classification(
         fire_and_forget=False,
         frequency=10,
         predictions=predictions,
+        unique_aggregator_key=unique_aggregator_key,
     )
 
     # then
@@ -342,10 +345,7 @@ def test_run_in_reporting_range_success_with_multi_label_classification(
             "processor": ANY,
         },
     )
-    assert (
-        cache.get("roboflow_model_monitoring_last_report_time")
-        != datetime(2024, 11, 10, 12, 0, 0).isoformat()
-    )
+    assert cache.get(cache_key) != datetime(2024, 11, 10, 12, 0, 0).isoformat()
 
 
 @patch(
@@ -361,11 +361,12 @@ def test_send_inference_results_to_model_monitoring_failure(
     # given
     send_inference_results_to_model_monitoring_mock.side_effect = Exception("API error")
     get_roboflow_workspace_mock.return_value = "workspace-name"
-    cache = MemoryCache()
-    cache.set(
-        "roboflow_model_monitoring_last_report_time",
-        datetime(2024, 11, 10, 12, 0, 0).isoformat(),
+    unique_aggregator_key = (
+        "session-test_send_inference_results_to_model_monitoring_failure"
     )
+    cache_key = f"workflows:steps_cache:roboflow_core/model_monitoring_inference_aggregator@v1:{unique_aggregator_key}:last_report_time"
+    cache = MemoryCache()
+    cache.set(cache_key, datetime(2024, 11, 10, 12, 0, 0).isoformat())
     api_key = "my_api_key"
     predictions = sv.Detections(
         xyxy=np.array(
@@ -399,6 +400,7 @@ def test_send_inference_results_to_model_monitoring_failure(
         fire_and_forget=False,
         frequency=1,
         predictions=predictions,
+        unique_aggregator_key=unique_aggregator_key,
     )
 
     # then
@@ -407,15 +409,13 @@ def test_send_inference_results_to_model_monitoring_failure(
     assert (
         "Error while uploading inference data" in result["message"]
     ), "Expected error message in result"
-    assert cache.get("roboflow_model_monitoring_last_report_time") is not None
+    assert cache.get(cache_key) is not None
 
 
 @patch(
     "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
 )
-@patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
-)
+@patch("inference.core.roboflow_api.send_inference_results_to_model_monitoring")
 def test_run_when_not_in_reporting_range(
     send_inference_results_to_model_monitoring_mock: MagicMock,
     get_roboflow_workspace_mock: MagicMock,
@@ -426,11 +426,10 @@ def test_run_when_not_in_reporting_range(
         "Not in reporting range, skipping report. (Ok)",
     )
     get_roboflow_workspace_mock.return_value = "workspace-name"
+    unique_aggregator_key = "session-test_run_not_in_reporting_range_success"
+    cache_key = f"workflows:steps_cache:roboflow_core/model_monitoring_inference_aggregator@v1:{unique_aggregator_key}:last_report_time"
     cache = MemoryCache()
-    cache.set(
-        "roboflow_model_monitoring_last_report_time",
-        datetime(2034, 11, 10, 12, 0, 0).isoformat(),
-    )
+    cache.set(cache_key, datetime(2034, 11, 10, 12, 0, 0).isoformat())
     api_key = "my_api_key"
     predictions = sv.Detections(
         xyxy=np.array(
@@ -464,6 +463,7 @@ def test_run_when_not_in_reporting_range(
         fire_and_forget=False,
         frequency=10,
         predictions=predictions,
+        unique_aggregator_key=unique_aggregator_key,
     )
 
     # then
@@ -471,31 +471,30 @@ def test_run_when_not_in_reporting_range(
         "error_status": False,
         "message": "Not in reporting range, skipping report. (Ok)",
     }, "Expected skipping report due to frequency"
-    assert cache.get("roboflow_model_monitoring_last_report_time") is not None
+    assert cache.get(cache_key) is not None
 
 
 @patch(
     "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
 )
-@patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
-)
+@patch("inference.core.roboflow_api.send_inference_results_to_model_monitoring")
 def test_run_when_fire_and_forget_with_background_tasks(
     send_inference_results_to_model_monitoring_mock: MagicMock,
     get_roboflow_workspace_mock: MagicMock,
 ) -> None:
     # given
     background_tasks = BackgroundTasks()
+    unique_aggregator_key = (
+        "session-test_run_when_fire_and_forget_with_background_tasks"
+    )
+    cache_key = f"workflows:steps_cache:roboflow_core/model_monitoring_inference_aggregator@v1:{unique_aggregator_key}:last_report_time"
     send_inference_results_to_model_monitoring_mock.return_value = (
         False,
         "Inference data upload was successful",
     )
     get_roboflow_workspace_mock.return_value = "workspace-name"
     cache = MemoryCache()
-    cache.set(
-        "roboflow_model_monitoring_last_report_time",
-        datetime(2024, 11, 10, 12, 0, 0).isoformat(),
-    )
+    cache.set(cache_key, datetime(2024, 11, 10, 12, 0, 0).isoformat())
     api_key = "my_api_key"
     predictions = sv.Detections(
         xyxy=np.array(
@@ -529,6 +528,7 @@ def test_run_when_fire_and_forget_with_background_tasks(
         fire_and_forget=True,
         frequency=10,
         predictions=predictions,
+        unique_aggregator_key=unique_aggregator_key,
     )
 
     # then
@@ -542,9 +542,7 @@ def test_run_when_fire_and_forget_with_background_tasks(
 @patch(
     "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.get_roboflow_workspace"
 )
-@patch(
-    "inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1.send_inference_results_to_model_monitoring"
-)
+@patch("inference.core.roboflow_api.send_inference_results_to_model_monitoring")
 def test_run_when_fire_and_forget_with_thread_pool(
     send_inference_results_to_model_monitoring_mock: MagicMock,
     get_roboflow_workspace_mock: MagicMock,
@@ -557,10 +555,9 @@ def test_run_when_fire_and_forget_with_thread_pool(
         )
         get_roboflow_workspace_mock.return_value = "workspace-name"
         cache = MemoryCache()
-        cache.set(
-            "roboflow_model_monitoring_last_report_time",
-            datetime(2024, 11, 10, 12, 0, 0).isoformat(),
-        )
+        unique_aggregator_key = "session-test_run_when_fire_and_forget_with_thread_pool"
+        cache_key = f"workflows:steps_cache:roboflow_core/model_monitoring_inference_aggregator@v1:{unique_aggregator_key}:last_report_time"
+        cache.set(cache_key, datetime(2024, 11, 10, 12, 0, 0).isoformat())
         api_key = "my_api_key"
         predictions = sv.Detections(
             xyxy=np.array(
@@ -594,6 +591,7 @@ def test_run_when_fire_and_forget_with_thread_pool(
             fire_and_forget=True,
             frequency=10,
             predictions=predictions,
+            unique_aggregator_key=unique_aggregator_key,
         )
 
         # then
