@@ -156,8 +156,9 @@ class UsageCollector:
             "inference_version": inference_version,
             "enterprise": False,
         }
-        if ROBOFLOW_INTERNAL_SERVICE_SECRET and ROBOFLOW_INTERNAL_SERVICE_NAME:
+        if ROBOFLOW_INTERNAL_SERVICE_SECRET:
             usage_dict["roboflow_internal_secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
+        if ROBOFLOW_INTERNAL_SERVICE_NAME:
             usage_dict["roboflow_service_name"] = ROBOFLOW_INTERNAL_SERVICE_NAME
 
         return defaultdict(  # api_key_hash
