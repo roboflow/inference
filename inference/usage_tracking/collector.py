@@ -15,7 +15,14 @@ from uuid import uuid4
 
 from typing_extensions import ParamSpec
 
-from inference.core.env import API_KEY, DEDICATED_DEPLOYMENT_ID, LAMBDA, REDIS_HOST
+from inference.core.env import (
+    API_KEY,
+    DEDICATED_DEPLOYMENT_ID,
+    LAMBDA,
+    REDIS_HOST,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+)
 from inference.core.logger import logger
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
@@ -130,28 +137,31 @@ class UsageCollector:
 
     @staticmethod
     def empty_usage_dict(exec_session_id: str) -> APIKeyUsage:
+        usage_dict = {
+            "timestamp_start": None,
+            "timestamp_stop": None,
+            "exec_session_id": exec_session_id,
+            "hostname": "",
+            "ip_address_hash": "",
+            "processed_frames": 0,
+            "fps": 0,
+            "source_duration": 0,
+            "category": "",
+            "resource_id": "",
+            "resource_details": "{}",
+            "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID),
+            "api_key_hash": "",
+            "is_gpu_available": False,
+            "python_version": sys.version.split()[0],
+            "inference_version": inference_version,
+            "enterprise": False,
+        }
+        if ROBOFLOW_INTERNAL_SERVICE_SECRET and ROBOFLOW_INTERNAL_SERVICE_NAME:
+            usage_dict["roboflow_internal_secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
+            usage_dict["roboflow_service_name"] = ROBOFLOW_INTERNAL_SERVICE_NAME
+
         return defaultdict(  # api_key_hash
-            lambda: defaultdict(  # category:resource_id
-                lambda: {
-                    "timestamp_start": None,
-                    "timestamp_stop": None,
-                    "exec_session_id": exec_session_id,
-                    "hostname": "",
-                    "ip_address_hash": "",
-                    "processed_frames": 0,
-                    "fps": 0,
-                    "source_duration": 0,
-                    "category": "",
-                    "resource_id": "",
-                    "resource_details": "{}",
-                    "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID),
-                    "api_key_hash": "",
-                    "is_gpu_available": False,
-                    "python_version": sys.version.split()[0],
-                    "inference_version": inference_version,
-                    "enterprise": False,
-                }
-            )
+            lambda: defaultdict(lambda: usage_dict)  # category:resource_id
         )
 
     def _dump_usage_queue_no_lock(self) -> List[APIKeyUsage]:
