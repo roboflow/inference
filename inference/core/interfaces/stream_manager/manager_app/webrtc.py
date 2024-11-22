@@ -228,15 +228,20 @@ async def init_rtc_peer_connection(
         webcam_fps=webcam_fps,
     )
 
-    turn_server = RTCIceServer(
-        urls=[webrtc_turn_config.urls],
-        username=webrtc_turn_config.username,
-        credential=webrtc_turn_config.credential,
-    )
-    peer_connection = RTCPeerConnectionWithFPS(
-        video_transform_track=video_transform_track,
-        configuration=RTCConfiguration(iceServers=[turn_server]),
-    )
+    if webrtc_turn_config:
+        turn_server = RTCIceServer(
+            urls=[webrtc_turn_config.urls],
+            username=webrtc_turn_config.username,
+            credential=webrtc_turn_config.credential,
+        )
+        peer_connection = RTCPeerConnectionWithFPS(
+            video_transform_track=video_transform_track,
+            configuration=RTCConfiguration(iceServers=[turn_server]),
+        )
+    else:
+        peer_connection = RTCPeerConnectionWithFPS(
+            video_transform_track=video_transform_track,
+        )
     relay = MediaRelay()
 
     @peer_connection.on("track")
