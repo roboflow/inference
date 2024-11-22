@@ -1,0 +1,48 @@
+name: "Determine Image Tags"
+description: "Determine Docker image tags based on inputs, version, branch, and base image name"
+inputs:
+  custom_tag:
+    description: "Custom tag to use for the image (overrides VERSION)"
+    required: false
+    default: ""
+  version:
+    description: "Version of the image"
+    required: true
+  base_image:
+    description: "Base image name for the Docker tags (e.g., 'roboflow/roboflow-inference-server-gpu')"
+    required: true
+outputs:
+  image_tags:
+    description: "Comma-separated list of Docker image tags"
+    value: ${{ steps.image_tags.outputs.image_tags }}
+runs:
+  using: "composite"
+  steps:
+    - name: Determine Image Tags
+      shell: bash
+      id: image_tags
+      run: |
+        # Capture inputs
+        CUSTOM_TAG="${{ inputs.custom_tag }}"
+        VERSION="${{ inputs.version }}"
+        BASE_IMAGE="${{ inputs.base_image }}"
+        BRANCH="${{ github.ref_name }}"
+
+        # Determine the tags
+        if [ -n "$CUSTOM_TAG" ]; then
+          IMAGE_TAGS="$BASE_IMAGE:$CUSTOM_TAG"
+        else
+          VERSION_TAG="$BASE_IMAGE:$VERSION"
+          if [ "$BRANCH" == "main" ]; then
+            LATEST_TAG="$BASE_IMAGE:latest"
+            IMAGE_TAGS="$VERSION_TAG,$LATEST_TAG"
+          else
+            IMAGE_TAGS="$VERSION_TAG"
+          fi
+        fi
+
+        # Echo the computed tags
+        echo "Computed image tags: $IMAGE_TAGS"
+
+        # Export the tags to outputs
+        echo "image_tags=$IMAGE_TAGS" >> $GITHUB_OUTPUT

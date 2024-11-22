@@ -4,51 +4,55 @@ on:
   release:
     types: [created]
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
     inputs:
       force_push:
         type: boolean
         description: "Do you want to push image after build?"
         default: false
+      custom_tag:
+        type: string
+        description: "Custom tag to use for the image (overrides VERSION)"
+        default: ""
+
 env:
-  VERSION: '0.0.0' # Default version, will be overwritten
+  VERSION: "0.0.0" # Default version, will be overwritten
+  BASE_IMAGE: "roboflow/roboflow-inference-server-gpu"
+  DOCKERFILE: "./docker/dockerfiles/Dockerfile.onnx.gpu"
 
 jobs:
   docker:
     runs-on:
-      group: group8core
+      labels: ubuntu-latest
     timeout-minutes: 120
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - name: Remove unnecessary files
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-      -
-        name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-      -
-        name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-      -
-        name: Login to Docker Hub
-        uses: docker/login-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - 
-        name: 🛎️ Checkout
-        uses: actions/checkout@v3
-      -
-        name: Read version from file
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v4
+      - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
-      -
-        name: Build and Push
-        uses: docker/build-push-action@v4
+      - name: Determine Image Tags
+        id: tags
+        uses: ./.github/actions/determine-tags
         with:
-          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
-          tags: roboflow/roboflow-inference-server-gpu:latest,roboflow/roboflow-inference-server-gpu:${{env.VERSION}}
-          cache-from: type=registry,ref=roboflow/roboflow-inference-server-gpu:cache
-          cache-to: type=registry,ref=roboflow/roboflow-inference-server-gpu:cache,mode=max
+          custom_tag: ${{ github.event.inputs.custom_tag }}
+          version: ${{ env.VERSION }}
+          base_image: ${{ env.BASE_IMAGE }}
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+      - name: Build and Push
+        uses: depot/build-push-action@v1
+        with:
+          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
+          project: grl7ffzxd7
+          tags: ${{ steps.tags.outputs.image_tags }}
           platforms: linux/amd64
-          file: ./docker/dockerfiles/Dockerfile.onnx.gpu
+          file: ${{ env.DOCKERFILE }}
