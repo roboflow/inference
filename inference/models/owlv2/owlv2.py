@@ -554,7 +554,6 @@ class OwlV2(RoboflowCoreModel):
             # grab and normalize box prompts for this image
             image_size = self.compute_image_size(train_image["image"])
             boxes = train_image["boxes"]
-            print(f"boxes: {boxes}")
             coords = [[box["x"], box["y"], box["w"], box["h"]] for box in boxes]
             coords = [tuple([c / max(image_size) for c in coord]) for coord in coords]
             classes = [box["cls"] for box in boxes]
