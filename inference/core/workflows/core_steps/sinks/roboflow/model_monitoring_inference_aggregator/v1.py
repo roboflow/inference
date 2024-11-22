@@ -4,7 +4,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
-from typing import Any, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
 import supervision as sv
 from fastapi import BackgroundTasks
@@ -41,14 +41,44 @@ from inference.core.workflows.prototypes.block import (
 SHORT_DESCRIPTION = "Periodically report an aggregated sample of inference results to Roboflow Model Monitoring"
 
 LONG_DESCRIPTION = """
-This block periodically reports an aggregated sample of inference results to Roboflow Model Monitoring.
+This block 📊 **transforms inference data reporting** to a whole new level by 
+periodically aggregating and sending a curated sample of predictions to 
+**[Roboflow Model Monitoring](https://docs.roboflow.com/deploy/model-monitoring)**.
 
-It aggregates predictions in memory between reports and then sends a representative sample of predictions at a regular interval specified by the `frequency` parameter. It
-creates a representative sample by selecting the prediction with the highest confidence for each class predicted.
+#### ✨ Key Features
+* **Effortless Aggregation:** Collects and organizes predictions in-memory, ensuring only the most relevant 
+and confident predictions are reported.
 
-This is particularly useful when using InferencePipeline, which doesn't automatically report results to Model Monitoring.
+* **Customizable Reporting Intervals:** Choose how frequently (in seconds) data should be sent—ensuring 
+optimal balance between granularity and resource efficiency.
 
-For more details on Model Monitoring at Roboflow, visit: https://docs.roboflow.com/deploy/model-monitoring.
+* **Debug-Friendly Mode:** Fine-tune operations by enabling or disabling asynchronous background execution.
+
+#### 🔍 Why Use This Block?
+
+This block is a game-changer for projects relying on video processing in Workflows. 
+With its aggregation process, it identifies the most confident predictions across classes and sends 
+them at regular intervals in small messages to Roboflow backend - ensuring that video processing 
+performance is impacted to the least extent.
+
+Perfect for:
+
+* Monitoring production line performance in real-time 🏭.
+
+* Debugging and validating your model’s performance over time ⏱️.
+
+* Providing actionable insights from inference workflows with minimal overhead 🔧.
+
+
+#### 🚨 Limitations
+
+* The block is should not be relied on when running Workflow in `inference` server or via HTTP request to Roboflow 
+hosted platform, as the internal state is not persisted in a memory that would be accessible for all requests to
+the server, causing aggregation to **only have a scope of single request**. We will solve that problem in future 
+releases if proven to be serious limitation for clients.
+
+* This block do not have ability to separate aggregations for multiple videos processed by `InferencePipeline` - 
+effectively aggregating data for **all video feeds connected to single process running `InferencePipeline`**. 
 """
 
 
@@ -63,7 +93,7 @@ class BlockManifest(WorkflowBlockManifest):
             "block_type": "sink",
         }
     )
-    type: Literal["roboflow_core/model_monitoring_inference_aggregator@v1",]
+    type: Literal["roboflow_core/model_monitoring_inference_aggregator@v1"]
     predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
@@ -76,15 +106,17 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$steps.my_step.predictions"],
     )
     frequency: Union[
-        str,
+        int,
         Selector(kind=[STRING_KIND]),
     ] = Field(
         default=5,
-        description="Frequency of reporting (in seconds). For example, if 5 is provided, the block will report an aggregated sample of predictions every 5 seconds.",
+        description="Frequency of reporting (in seconds). For example, if 5 is provided, the "
+        "block will report an aggregated sample of predictions every 5 seconds.",
         examples=["3", "5"],
     )
     unique_aggregator_key: str = Field(
-        description="Unique key used internally to track the session of inference results reporting.",
+        description="Unique key used internally to track the session of inference results reporting. "
+        "Must be unique for each step in your Workflow.",
         examples=["session-1v73kdhfse"],
         json_schema_extra={"hidden": True},
     )
@@ -123,35 +155,33 @@ class ParsedPrediction(BaseModel):
 
 
 class PredictionsAggregator(object):
-    _raw_predictions: List[Union[sv.Detections, dict]]
 
     def __init__(self):
-        self._raw_predictions = []
+        self._raw_predictions: List[Union[sv.Detections, dict]] = []
 
     def collect(self, value: Union[sv.Detections, dict]) -> None:
+        # TODO: push into global state, otherwise for HTTP server use,
+        #   state would at most have 1 prediction!!!
         self._raw_predictions.append(value)
-
-    def _consolidate(self) -> List[ParsedPrediction]:
-        formatted_predictions = []
-        for p in self._raw_predictions:
-            formatted_predictions.extend(format_predictions_for_model_monitoring(p))
-
-        class_groups = defaultdict(list)
-        for prediction in formatted_predictions:
-            class_name = prediction["class_name"]
-            class_groups[class_name].append(prediction)
-
-        representative_predictions = []
-        for class_name, predictions in class_groups.items():
-            predictions.sort(key=lambda x: x["confidence"], reverse=True)
-            representative_predictions.append(ParsedPrediction(**predictions[0]))
-
-        return representative_predictions
 
     def get_and_flush(self) -> List[ParsedPrediction]:
         predictions = self._consolidate()
         self._raw_predictions = []
         return predictions
+
+    def _consolidate(self) -> List[ParsedPrediction]:
+        formatted_predictions = []
+        for p in self._raw_predictions:
+            formatted_predictions.extend(format_predictions_for_model_monitoring(p))
+        class_groups: Dict[str, List[ParsedPrediction]] = defaultdict(list)
+        for prediction in formatted_predictions:
+            class_name = prediction.class_name
+            class_groups[class_name].append(prediction)
+        representative_predictions = []
+        for class_name, predictions in class_groups.items():
+            predictions.sort(key=lambda x: x.confidence, reverse=True)
+            representative_predictions.append(predictions[0])
+        return representative_predictions
 
 
 class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
@@ -231,7 +261,6 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
         else:
             last_report_time = datetime.fromisoformat(last_report_time_str)
         time_elapsed = int((now - last_report_time).total_seconds())
-
         return time_elapsed >= int(frequency)
 
 
@@ -263,9 +292,8 @@ def send_to_model_monitoring_request(
             "source": "workflow",
             "source_info": "ModelMonitoringInferenceAggregatorBlockV1",
             "inference_results": [],
+            "device_id": DEVICE_ID,
         }
-        if DEVICE_ID:
-            inference_data["device_id"] = DEVICE_ID
         system_info = get_system_info()
         if system_info:
             for key, value in system_info.items():
@@ -300,7 +328,7 @@ def format_predictions_for_model_monitoring(
                 inference_id=data.get(INFERENCE_ID_KEY, ""),
                 model_type=data.get(PREDICTION_TYPE_KEY, ""),
             )
-            results.append(prediction.__dict__)
+            results.append(prediction)
     elif isinstance(predictions, dict):
         detections = predictions.get("predictions", [])
         prediction_type = predictions.get(PREDICTION_TYPE_KEY, "")
@@ -313,7 +341,7 @@ def format_predictions_for_model_monitoring(
                     inference_id=inference_id,
                     model_type=prediction_type,
                 )
-                results.append(pred_instance.__dict__)
+                results.append(pred_instance)
         elif isinstance(detections, dict):
             for class_name, details in detections.items():
                 pred_instance = ParsedPrediction(
@@ -322,5 +350,5 @@ def format_predictions_for_model_monitoring(
                     inference_id=inference_id,
                     model_type=prediction_type,
                 )
-                results.append(pred_instance.__dict__)
+                results.append(pred_instance)
     return results
