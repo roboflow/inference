@@ -314,6 +314,9 @@ def check_process_health() -> None:
                 process.join()
                 del PROCESSES_TABLE[pipeline_id]
                 continue
+            if managed_pipeline.is_idle:
+                # skipping idle pipelines in status probing
+                continue
             command = {
                 TYPE_KEY: CommandType.STATUS,
                 PIPELINE_ID_KEY: pipeline_id,

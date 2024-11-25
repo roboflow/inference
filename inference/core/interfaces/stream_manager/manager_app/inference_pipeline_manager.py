@@ -99,7 +99,6 @@ class InferencePipelineManager(Process):
             if command is None:
                 break
             request_id, payload = command
-            print(f"request_id={request_id}, payload={payload}", flush=True)
             self._handle_command(request_id=request_id, payload=payload)
 
     def _check_pipeline_timeout(self) -> None:
@@ -433,7 +432,8 @@ class InferencePipelineManager(Process):
             return self._handle_error(
                 request_id=request_id,
                 error_type=ErrorType.OPERATION_ERROR,
-                public_error_message="Cannot retrieve InferencePipeline status. Internal Error. Service misconfigured.",
+                public_error_message="Cannot retrieve InferencePipeline status. "
+                "Try again later - Inference Pipeline not initialised.",
             )
         try:
             report = self._watchdog.get_report()
