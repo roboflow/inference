@@ -436,7 +436,13 @@ def start(expected_warmed_up_pipelines: int = 0) -> None:
     Thread(target=check_process_health, daemon=True).start()
 
     # keep expected number of processes ready for processing
-    Thread(target=ensure_idle_pipelines_warmed_up, daemon=True).start()
+    Thread(
+        target=partial(
+            ensure_idle_pipelines_warmed_up,
+            expected_warmed_up_pipelines=expected_warmed_up_pipelines,
+        ),
+        daemon=True,
+    ).start()
 
     with RoboflowTCPServer(
         server_address=(HOST, PORT),
