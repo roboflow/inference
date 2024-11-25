@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 import signal
 import socket
@@ -386,4 +387,5 @@ def start() -> None:
 
 
 if __name__ == "__main__":
+    multiprocessing.set_start_method('spawn')
     start()
