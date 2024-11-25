@@ -363,6 +363,7 @@ def check_process_health() -> None:
 
 
 def start() -> None:
+    multiprocessing.set_start_method("spawn")
     signal.signal(
         signal.SIGINT, partial(execute_termination, processes_table=PROCESSES_TABLE)
     )
@@ -387,5 +388,4 @@ def start() -> None:
 
 
 if __name__ == "__main__":
-    multiprocessing.set_start_method("spawn")
     start()

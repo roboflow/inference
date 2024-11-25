@@ -1,4 +1,4 @@
-from multiprocessing import Process
+import multiprocessing
 
 from inference.core.cache import cache
 from inference.core.env import (
@@ -22,7 +22,8 @@ from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 
 if ENABLE_STREAM_API:
-    stream_manager_process = Process(
+    multiprocessing_context = multiprocessing.get_context(method="spawn")
+    stream_manager_process = multiprocessing_context.Process(
         target=start,
     )
     stream_manager_process.start()
