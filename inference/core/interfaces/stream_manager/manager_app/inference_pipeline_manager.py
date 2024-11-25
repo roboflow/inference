@@ -99,6 +99,7 @@ class InferencePipelineManager(Process):
             if command is None:
                 break
             request_id, payload = command
+            print(f"request_id={request_id}, payload={payload}", flush=True)
             self._handle_command(request_id=request_id, payload=payload)
 
     def _check_pipeline_timeout(self) -> None:
