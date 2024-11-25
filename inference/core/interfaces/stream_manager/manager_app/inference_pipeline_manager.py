@@ -514,7 +514,8 @@ class InferencePipelineManager(Process):
         error_type: ErrorType = ErrorType.INTERNAL_ERROR,
     ):
         logger.exception(
-            f"Could not handle Command. request_id={request_id}, error={error}, error_type={error_type}"
+            f"Could not handle Command. request_id={request_id}, "
+            f"error={error}, error_type={error_type}, public_error_message={public_error_message}"
         )
         response_payload = describe_error(
             error, error_type=error_type, public_error_message=public_error_message
