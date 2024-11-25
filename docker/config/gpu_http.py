@@ -6,7 +6,8 @@ from inference.core.env import (
     MAX_ACTIVE_MODELS,
     ACTIVE_LEARNING_ENABLED,
     LAMBDA,
-    ENABLE_STREAM_API, STREAM_API_PRELOADED_PROCESSES,
+    ENABLE_STREAM_API,
+    STREAM_API_PRELOADED_PROCESSES,
 )
 from inference.core.interfaces.http.http_api import HttpInterface
 from inference.core.interfaces.stream_manager.manager_app.app import start
