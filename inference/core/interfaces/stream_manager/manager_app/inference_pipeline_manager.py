@@ -432,7 +432,8 @@ class InferencePipelineManager(Process):
             return self._handle_error(
                 request_id=request_id,
                 error_type=ErrorType.OPERATION_ERROR,
-                public_error_message="Cannot retrieve InferencePipeline status. Internal Error. Service misconfigured.",
+                public_error_message="Cannot retrieve InferencePipeline status. "
+                "Try again later - Inference Pipeline not initialised.",
             )
         try:
             report = self._watchdog.get_report()
@@ -514,7 +515,8 @@ class InferencePipelineManager(Process):
         error_type: ErrorType = ErrorType.INTERNAL_ERROR,
     ):
         logger.exception(
-            f"Could not handle Command. request_id={request_id}, error={error}, error_type={error_type}"
+            f"Could not handle Command. request_id={request_id}, "
+            f"error={error}, error_type={error_type}, public_error_message={public_error_message}"
         )
         response_payload = describe_error(
             error, error_type=error_type, public_error_message=public_error_message
