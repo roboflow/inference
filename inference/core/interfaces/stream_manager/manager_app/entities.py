@@ -1,7 +1,4 @@
-from dataclasses import dataclass
 from enum import Enum
-from multiprocessing import Queue
-from threading import Lock
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
@@ -9,9 +6,6 @@ from pydantic import BaseModel, Field
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
-)
-from inference.core.interfaces.stream_manager.manager_app.inference_pipeline_manager import (
-    InferencePipelineManager,
 )
 
 STATUS_KEY = "status"
@@ -117,13 +111,3 @@ class ConsumeResultsPayload(BaseModel):
         default_factory=list,
         description="List of workflow output fields to be filtered out from response",
     )
-
-
-@dataclass
-class ManagedInferencePipeline:
-    pipeline_id: str
-    pipeline_manager: InferencePipelineManager
-    command_queue: Queue
-    responses_queue: Queue
-    operation_lock: Lock
-    is_idle: bool

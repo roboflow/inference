@@ -4,6 +4,7 @@ import socket
 import sys
 import time
 import uuid
+from dataclasses import dataclass
 from functools import partial
 from multiprocessing import Process, Queue
 from socketserver import BaseRequestHandler, BaseServer
@@ -27,7 +28,6 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     TYPE_KEY,
     CommandType,
     ErrorType,
-    ManagedInferencePipeline,
     OperationStatus,
 )
 from inference.core.interfaces.stream_manager.manager_app.errors import (
@@ -44,6 +44,17 @@ from inference.core.interfaces.stream_manager.manager_app.serialisation import (
 from inference.core.interfaces.stream_manager.manager_app.tcp_server import (
     RoboflowTCPServer,
 )
+
+
+@dataclass
+class ManagedInferencePipeline:
+    pipeline_id: str
+    pipeline_manager: InferencePipelineManager
+    command_queue: Queue
+    responses_queue: Queue
+    operation_lock: Lock
+    is_idle: bool
+
 
 PROCESSES_TABLE: Dict[str, ManagedInferencePipeline] = {}
 PROCESSES_TABLE_LOCK = Lock()
