@@ -1,12 +1,40 @@
 import json
 import os.path
+import subprocess
 from typing import Dict, List, Optional, Union
 
 from supervision.utils.file import read_yaml_file
 
 from inference_cli.lib.env import ROBOFLOW_API_KEY
+from inference_cli.lib.exceptions import InferencePackageMissingError
 from inference_cli.lib.logger import CLI_LOGGER
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+
+def ensure_inference_is_installed() -> None:
+    try:
+        from inference import get_model
+    except Exception as error:
+        print(
+            "You need to have `inference` package installed. Do you want the package to be installed? [YES/no]"
+        )
+        user_choice = input()
+        if user_choice.lower() != "yes":
+            raise InferencePackageMissingError(
+                "You need to install `inference` package to use this feature. Run `pip install inference`"
+            ) from error
+        try:
+            subprocess.run("pip install inference".split(), check=True)
+            import inference
+        except Exception as inner_error:
+            raise InferencePackageMissingError(
+                f"Installation of package failed. Cause: {inner_error}"
+            ) from inner_error
+
+
+def read_json(path: str) -> dict:
+    with open(path) as f:
+        return json.load(f)
 
 
 def read_env_file(path: str) -> Dict[str, str]:

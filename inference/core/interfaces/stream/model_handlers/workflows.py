@@ -14,6 +14,7 @@ class WorkflowRunner:
         execution_engine: ExecutionEngine,
         image_input_name: str,
         video_metadata_input_name: str,
+        serialize_results: bool = False,
     ) -> List[dict]:
         if workflows_parameters is None:
             workflows_parameters = {}
@@ -53,4 +54,5 @@ class WorkflowRunner:
         return execution_engine.run(
             runtime_parameters=workflows_parameters,
             fps=fps,
+            serialize_results=serialize_results,
         )

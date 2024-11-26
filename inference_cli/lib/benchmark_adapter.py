@@ -15,7 +15,11 @@ from inference_cli.lib.benchmark.results_gathering import (
     InferenceStatistics,
     ResultsCollector,
 )
-from inference_cli.lib.utils import dump_json, initialise_client
+from inference_cli.lib.utils import (
+    dump_json,
+    ensure_inference_is_installed,
+    initialise_client,
+)
 
 
 def run_infer_api_speed_benchmark(
@@ -149,6 +153,8 @@ def run_python_package_speed_benchmark(
     model_configuration: Optional[str] = None,
     output_location: Optional[str] = None,
 ) -> None:
+    ensure_inference_is_installed()
+
     # importing here not to affect other entrypoints by missing `inference` core library
     from inference_cli.lib.benchmark.python_package_speed import (
         run_python_package_speed_benchmark,

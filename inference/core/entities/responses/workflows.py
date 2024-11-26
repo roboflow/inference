@@ -160,7 +160,9 @@ class ExecutionEngineVersions(BaseModel):
 
 
 class WorkflowsBlocksSchemaDescription(BaseModel):
-    schema: dict = Field(description="Schema for validating block definitions")
+    blocks_schema: dict = Field(
+        description="Schema for validating block definitions", alias="schema"
+    )
 
 
 class DescribeInterfaceResponse(BaseModel):
