@@ -1,13 +1,12 @@
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from multiprocessing.pool import ThreadPool
 from threading import Lock
 from typing import Any, Callable, Dict, List, Optional, TextIO, Tuple
 
 import backoff
-from rich.progress import Progress
+from rich.progress import Progress, TaskID
 
 from inference_cli.lib.logger import CLI_LOGGER
 from inference_cli.lib.workflows.common import (
@@ -19,7 +18,6 @@ from inference_cli.lib.workflows.common import (
     report_failed_files,
 )
 from inference_cli.lib.workflows.entities import OutputFileType
-from inference_cli.lib.workflows.local_image_adapter import _on_failure, _on_success
 from inference_sdk import (
     InferenceConfiguration,
     InferenceHTTPClient,
@@ -196,6 +194,25 @@ def _process_images_within_directory_with_api(
                 files_to_process,
             )
     return failed_files
+
+
+def _on_success(
+    path: str,
+    progress_bar: Progress,
+    task_id: TaskID,
+) -> None:
+    progress_bar.update(task_id, advance=1)
+
+
+def _on_failure(
+    path: str,
+    cause: str,
+    failed_files: List[Tuple[str, str]],
+    progress_bar: Progress,
+    task_id: TaskID,
+) -> None:
+    failed_files.append((path, cause))
+    progress_bar.update(task_id, advance=1)
 
 
 def _process_single_image_from_directory(
