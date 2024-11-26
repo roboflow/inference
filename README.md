@@ -139,10 +139,10 @@ Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to th
 |-------------------------|-------------|--------------|
 | [Pre-Trained Models](https://inference.roboflow.com/quickstart/aliases/#supported-pre-trained-models) | ✅ | ✅
 | [Foundation Models](https://inference.roboflow.com/foundation/about/) | ✅ | ✅
-| [Workflows](https://inference.roboflow.com/workflows/about/) | ✅ | ✅
 | [Video Stream Management](https://inference.roboflow.com/workflows/video_processing/overview/) | ✅ | ✅
 | [Dynamic Python Blocks](https://inference.roboflow.com/workflows/custom_python_code_blocks/) | ✅ | ✅
-| [Workflow Builder UI](https://docs.roboflow.com/workflows/create-a-workflow) |  | ✅
+| [Public Workflows](https://inference.roboflow.com/workflows/about/) | ✅ | ✅
+| [Private Workflows](https://docs.roboflow.com/workflows/create-a-workflow) |  | ✅
 | [Fine-Tuned Models](https://roboflow.com/train) |  | ✅
 | [Universe Models](https://roboflow.com/universe) |  | ✅
 | [Active Learning](https://inference.roboflow.com/workflows/blocks/roboflow_dataset_upload/) |  | ✅
