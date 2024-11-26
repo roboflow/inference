@@ -79,19 +79,29 @@ The Roboflow Inference CLI assumes the corresponding cloud CLI is configured for
 
 Roboflow Inference cloud deploy is powered by the popular [Skypilot project](https://github.com/skypilot-org/skypilot).
 
+### Important: Cloud Deploy Installation
+
+Before using cloud deploy, optional dependencies must be installed:
+
+```bash
+# Install dependencies required for cloud deploy
+pip install inference[cloud-deploy]
+```
+
+
 ### Cloud Deploy Examples
 
 We illustrate Inference cloud deploy with some examples, below.
 
 *Deploy GPU or CPU inference to AWS or GCP*
 
-```
+```bash
 # Deploy the roboflow Inference GPU container into a GPU-enabled VM in AWS
 
 inference cloud deploy --provider aws --compute-type gpu
 ```
 
-```
+```bash
 # Deploy the roboflow Inference CPU container into a CPU-only VM in GCP
 
 inference cloud deploy --provider gcp --compute-type cpu
@@ -107,13 +117,13 @@ Note that the port 9001 is automatically opened - check with your security admin
 
 ### View status of deployments
 
-```
+```bash
 inference cloud status
 ```
 
 ### Stop and start deployments
 
-```
+```bash
 # Stop the VM, you only pay for disk storage while the VM is stopped
 inference cloud stop <deployment_handle>
 
@@ -121,20 +131,20 @@ inference cloud stop <deployment_handle>
 
 ### Restart deployments
 
-```
+```bash
 inference cloud start <deployment_handle>
 ```
 
 ### Undeploy (delete) the cloud deployment
 
-```
+```bash
 inference cloud undeploy <deployment_handle>
 ```
 
 ### SSH into the cloud deployment
 
 You can SSH into your cloud deployment with the following command:
-```
+```bash
 ssh <deployment_handle>
 ```
 
@@ -146,13 +156,13 @@ Roboflow Inference cloud deploy will create VMs based on internally tested templ
 
 For advanced usecases and to customize the template, you can use your [sky yaml](https://skypilot.readthedocs.io/en/latest/reference/yaml-spec.html) template on the command-line, like so:
 
-```
+```bash
 inference cloud deploy --custom /path/to/sky-template.yaml
 ```
 
 If you want you can download the standard template stored in the roboflow cli and the modify it for your needs, this command will do that.
 
-```
+```bash
 # This command will print out the standard gcp/cpu sky template.
 inference cloud deploy --dry-run --provider gcp --compute-type cpu
 ```
@@ -224,8 +234,8 @@ inference infer -i {path_to_your_video_file} -m {your_project}/{version} -o {pat
 #### Configuration of visualisation
 Option `-c` can be provided with a path to `*.yml` file configuring `supervision` visualisation.
 There are few pre-defined configs:
-- `bounding_boxes` - with `BoundingBoxAnnotator` and `LabelAnnotator` annotators
-- `bounding_boxes_tracing` - with `ByteTracker` and annotators (`BoundingBoxAnnotator`, `LabelAnnotator`)
+- `bounding_boxes` - with `BoxAnnotator` and `LabelAnnotator` annotators
+- `bounding_boxes_tracing` - with `ByteTracker` and annotators (`BoxAnnotator`, `LabelAnnotator`)
 - `masks` - with `MaskAnnotator` and `LabelAnnotator` annotators
 - `polygons` - with `PolygonAnnotator` and `LabelAnnotator` annotators
 
@@ -245,9 +255,9 @@ annotators:
       trace_length: 60
       thickness: 2
 tracking:
-  track_thresh: 0.25
-  track_buffer: 30
-  match_thresh: 0.8
+  track_activation_threshold: 0.25
+  lost_track_buffer: 30
+  minimum_matching_threshold: 0.8
   frame_rate: 30
 ```
 `annotators` field is a list of dictionaries with two keys: `type` and `param`. `type` points to 
@@ -255,7 +265,8 @@ name of annotator class:
 ```python
 from supervision import *
 ANNOTATOR_TYPE2CLASS = {
-    "bounding_box": BoundingBoxAnnotator,
+    "bounding_box": BoxAnnotator,
+    "box": BoxAnnotator,
     "mask": MaskAnnotator,
     "polygon": PolygonAnnotator,
     "color": ColorAnnotator,

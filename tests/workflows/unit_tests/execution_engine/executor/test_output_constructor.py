@@ -6,7 +6,14 @@ import pytest
 import supervision as sv
 from networkx import DiGraph
 
+from inference.core.workflows.core_steps.loader import KINDS_SERIALIZERS
+from inference.core.workflows.errors import AssumptionError, ExecutionEngineRuntimeError
 from inference.core.workflows.execution_engine.entities.base import JsonField
+from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
+    INTEGER_KIND,
+    STRING_KIND,
+)
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
     NodeCategory,
     OutputNode,
@@ -17,6 +24,7 @@ from inference.core.workflows.execution_engine.v1.executor.output_constructor im
     create_array,
     data_contains_sv_detections,
     place_data_in_array,
+    serialize_data_piece,
 )
 
 
@@ -413,6 +421,8 @@ def test_construct_workflow_output_when_no_batch_outputs_present() -> None:
         workflow_outputs=workflow_outputs,
         execution_graph=execution_graph,
         execution_data_manager=execution_data_manager,
+        serialize_results=True,
+        kinds_serializers=KINDS_SERIALIZERS,
     )
 
     # then
@@ -529,6 +539,8 @@ def test_construct_workflow_output_when_batch_outputs_present() -> None:
         workflow_outputs=workflow_outputs,
         execution_graph=execution_graph,
         execution_data_manager=execution_data_manager,
+        serialize_results=True,
+        kinds_serializers=KINDS_SERIALIZERS,
     )
 
     # then
@@ -556,3 +568,190 @@ def test_construct_workflow_output_when_batch_outputs_present() -> None:
         "b_empty": None,
         "b_empty_nested": [[]],
     }
+
+
+def test_serialize_data_piece_for_wildcard_output_when_serializer_not_found() -> None:
+    # when
+    result = serialize_data_piece(
+        output_name="my_output",
+        data_piece={"some": "data", "other": "another"},
+        kind={"some": [STRING_KIND], "other": [STRING_KIND]},
+        kinds_serializers={},
+    )
+
+    # then
+    assert result == {"some": "data", "other": "another"}, "Expected data not t0 change"
+
+
+def test_serialize_data_piece_for_wildcard_output_when_missmatch_in_input_detected() -> (
+    None
+):
+    # when
+    with pytest.raises(AssumptionError):
+        _ = serialize_data_piece(
+            output_name="my_output",
+            data_piece="not a dict",
+            kind={"some": [STRING_KIND], "other": [STRING_KIND]},
+            kinds_serializers={},
+        )
+
+
+def test_serialize_data_piece_for_wildcard_output_when_serializers_found_but_all_failing() -> (
+    None
+):
+    # given
+    def _faulty_serializer(value: Any) -> Any:
+        raise Exception()
+
+    # when
+    with pytest.raises(ExecutionEngineRuntimeError):
+        _ = serialize_data_piece(
+            output_name="my_output",
+            data_piece={"some": "data", "other": "another"},
+            kind={"some": [STRING_KIND, INTEGER_KIND], "other": STRING_KIND},
+            kinds_serializers={
+                STRING_KIND.name: _faulty_serializer,
+                INTEGER_KIND.name: _faulty_serializer,
+            },
+        )
+
+
+def test_serialize_data_piece_for_wildcard_output_when_serializers_found_with_one_failing_and_one_successful() -> (
+    None
+):
+    # given
+    faulty_calls = []
+
+    def _faulty_serializer(value: Any) -> Any:
+        faulty_calls.append(1)
+        raise Exception()
+
+    def _valid_serializer(value: Any) -> Any:
+        return "serialized", value
+
+    # when
+    result = serialize_data_piece(
+        output_name="my_output",
+        data_piece={"some": "data", "other": "another"},
+        kind={"some": [INTEGER_KIND, STRING_KIND], "other": [STRING_KIND]},
+        kinds_serializers={
+            STRING_KIND.name: _valid_serializer,
+            INTEGER_KIND.name: _faulty_serializer,
+        },
+    )
+
+    # then
+    assert len(faulty_calls) == 1, "Expected faulty serializer attempted"
+    assert result == {
+        "some": ("serialized", "data"),
+        "other": ("serialized", "another"),
+    }
+
+
+def test_serialize_data_piece_for_wildcard_output_when_serializers_found_and_successful() -> (
+    None
+):
+    # given
+    def _valid_serializer(value: Any) -> Any:
+        return "serialized", value
+
+    # when
+    result = serialize_data_piece(
+        output_name="my_output",
+        data_piece={"some": "data", "other": "another"},
+        kind={"some": [INTEGER_KIND, STRING_KIND], "other": [STRING_KIND]},
+        kinds_serializers={
+            STRING_KIND.name: _valid_serializer,
+            INTEGER_KIND.name: _valid_serializer,
+        },
+    )
+
+    # then
+    assert result == {
+        "some": ("serialized", "data"),
+        "other": ("serialized", "another"),
+    }
+
+
+def test_serialize_data_piece_for_specific_output_when_serializer_not_found() -> None:
+    # when
+    result = serialize_data_piece(
+        output_name="my_output",
+        data_piece="data",
+        kind=[STRING_KIND],
+        kinds_serializers={},
+    )
+
+    # then
+    assert result == "data", "Expected data not to change"
+
+
+def test_serialize_data_piece_for_specific_output_when_serializers_found_but_all_failing() -> (
+    None
+):
+    # given
+    def _faulty_serializer(value: Any) -> Any:
+        raise Exception()
+
+    # when
+    with pytest.raises(ExecutionEngineRuntimeError):
+        _ = serialize_data_piece(
+            output_name="my_output",
+            data_piece="data",
+            kind=[STRING_KIND, INTEGER_KIND],
+            kinds_serializers={
+                STRING_KIND.name: _faulty_serializer,
+                INTEGER_KIND.name: _faulty_serializer,
+            },
+        )
+
+
+def test_serialize_data_piece_for_specific_output_when_serializers_found_with_one_failing_and_one_successful() -> (
+    None
+):
+    # given
+    faulty_calls = []
+
+    def _faulty_serializer(value: Any) -> Any:
+        faulty_calls.append(1)
+        raise Exception()
+
+    def _valid_serializer(value: Any) -> Any:
+        return "serialized", value
+
+    # when
+    result = serialize_data_piece(
+        output_name="my_output",
+        data_piece="data",
+        kind=[INTEGER_KIND, STRING_KIND],
+        kinds_serializers={
+            STRING_KIND.name: _valid_serializer,
+            INTEGER_KIND.name: _faulty_serializer,
+        },
+    )
+
+    # then
+    assert len(faulty_calls) == 1, "Expected faulty serializer attempted"
+    assert result == ("serialized", "data")
+
+
+def test_serialize_data_piece_for_specific_output_when_serializers_found_and_successful() -> (
+    None
+):
+    # given
+    def _valid_serializer(value: Any) -> Any:
+        return "serialized", value
+
+    # when
+    result = serialize_data_piece(
+        output_name="my_output",
+        data_piece="data",
+        kind=[INTEGER_KIND, STRING_KIND],
+        kinds_serializers={
+            STRING_KIND.name: _valid_serializer,
+            INTEGER_KIND.name: _valid_serializer,
+        },
+    )
+
+    # then
+    assert result == ("serialized", "data")

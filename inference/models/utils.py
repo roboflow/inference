@@ -267,12 +267,22 @@ try:
             "object-detection",
             "florence-2-base-peft",
         ): LoRAFlorence2,  # TODO: change when we have a new project type
+        (
+            "text-image-pairs",
+            "florence-2-base",
+        ): Florence2,  # TODO: change when we have a new project type
+        ("text-image-pairs", "florence-2-large"): Florence2,
         ("object-detection", "florence-2-large-peft"): LoRAFlorence2,
         (
             "instance-segmentation",
             "florence-2-base-peft",
         ): LoRAFlorence2,  # TODO: change when we have a new project type
         ("instance-segmentation", "florence-2-large-peft"): LoRAFlorence2,
+        (
+            "text-image-pairs",
+            "florence-2-base-peft",
+        ): LoRAFlorence2,
+        ("text-image-pairs", "florence-2-large-peft"): LoRAFlorence2,
     }
     ROBOFLOW_MODEL_TYPES.update(florence2_models)
 except:

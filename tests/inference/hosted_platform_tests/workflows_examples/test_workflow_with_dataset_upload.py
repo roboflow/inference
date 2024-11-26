@@ -109,7 +109,7 @@ def test_detection_plus_classification_workflow(
         p["confidence"] for p in result[0]["detection_predictions"]["predictions"]
     ]
     assert np.allclose(
-        detection_confidences, [0.857235848903656, 0.5132315158843994], atol=1e-4
+        detection_confidences, [0.856178879737854, 0.5191817283630371], atol=1e-4
     ), "Expected predictions to match what was observed while test creation"
     assert result[0]["error"] is False, "Expected no error"
     assert (

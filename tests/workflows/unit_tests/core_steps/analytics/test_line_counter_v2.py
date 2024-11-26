@@ -63,8 +63,18 @@ def test_line_counter() -> None:
     )
 
     # then
-    assert frame1_result == {"count_in": 0, "count_out": 0}
-    assert frame2_result == {"count_in": 1, "count_out": 1}
+    assert frame1_result == {
+        "count_in": 0,
+        "count_out": 0,
+        "detections_in": frame1_detections[[False, False, False, False]],
+        "detections_out": frame1_detections[[False, False, False, False]],
+    }
+    assert frame2_result == {
+        "count_in": 1,
+        "count_out": 1,
+        "detections_in": frame2_detections[[True, False, False, False]],
+        "detections_out": frame2_detections[[False, True, False, False]],
+    }
 
 
 def test_line_counter_no_trackers() -> None:

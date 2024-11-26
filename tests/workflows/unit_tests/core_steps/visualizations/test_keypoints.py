@@ -359,6 +359,7 @@ def test_keypoint_visualization_block_nocopy() -> None:
         == start_image.__array_interface__["data"][0]
     )
 
+
 def test_keypoint_visualization_block_no_predictions() -> None:
     # given
     block = KeypointVisualizationBlockV1()
@@ -374,7 +375,7 @@ def test_keypoint_visualization_block_no_predictions() -> None:
         predictions=empty_predictions,
         copy_image=True,
         annotator_type="edge",
-        color="#A351FB", 
+        color="#A351FB",
         text_color="black",
         text_scale=0.5,
         text_thickness=1,
@@ -389,7 +390,7 @@ def test_keypoint_visualization_block_no_predictions() -> None:
 
     # dimensions of output match input
     assert output.get("image").numpy_image.shape == (1000, 1000, 3)
-    
+
     # check if the image is unchanged since there were no predictions
     assert np.array_equal(
         output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)

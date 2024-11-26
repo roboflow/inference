@@ -15,7 +15,7 @@ WORKFLOW_WITH_DYNAMIC_CROP_AND_STITCH = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "car_detection",
             "image": "$inputs.image",
             "model_id": "yolov8n-640",
@@ -28,7 +28,7 @@ WORKFLOW_WITH_DYNAMIC_CROP_AND_STITCH = {
             "predictions": "$steps.car_detection.predictions",
         },
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "plates_detection",
             "image": "$steps.cropping.crops",
             "model_id": "vehicle-registration-plates-trudk/2",

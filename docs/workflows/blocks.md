@@ -64,6 +64,7 @@ hide:
 <p class="card block-card" data-url="lmm" data-name="LMM" data-desc="Run a large multimodal model such as ChatGPT-4v or CogVLM." data-labels="MODEL, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="lmm_for_classification" data-name="LMM For Classification" data-desc="Run a large multimodal model such as ChatGPT-4v or CogVLM for classification." data-labels="MODEL, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="label_visualization" data-name="Label Visualization" data-desc="Draws labels on an image at specific coordinates based on provided detections." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="classification_label_visualization" data-name="Classification Label Visualization" data-desc="Visualizes both single-label and multi-label classification predictions with customizable display options." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="line_counter" data-name="Line Counter" data-desc="Count detections passing line" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="line_counter_visualization" data-name="Line Counter Visualization" data-desc="Paints a mask over line zone in an image." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="mask_visualization" data-name="Mask Visualization" data-desc="Paints a mask over detected objects in an image." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
@@ -95,6 +96,7 @@ hide:
 <p class="card block-card" data-url="vl_mas_classifier" data-name="VLM as Classifier" data-desc="Parses raw string into classification prediction." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="vl_mas_detector" data-name="VLM as Detector" data-desc="Parses raw string into object-detection prediction." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="yolo_world_model" data-name="YOLO-World Model" data-desc="Run a zero-shot object detection model." data-labels="MODEL, APACHE-2.0" data-author="dummy"></p>
+<p class="card block-card" data-url="keypoint_visualization" data-name="Keypoint Visualization" data-desc="Draws keypoints on detected objects in an image." data-labels="VISUALIZATION, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="data_aggregator" data-name="Data Aggregator" data-desc="Aggregates workflow data to produce time-based statistics" data-labels="ANALYTICS, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="csv_formatter" data-name="CSV Formatter" data-desc="Creates CSV files with specified columns." data-labels="FORMATTER, APACHE-2.0" data-author="dummy"></p>
 <p class="card block-card" data-url="email_notification" data-name="Email Notification" data-desc="Send notification via E-Mail" data-labels="SINK, APACHE-2.0" data-author="dummy"></p>

@@ -1,3 +1,6 @@
+import base64
+
+import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import supervision as sv
@@ -24,7 +27,7 @@ SAHI_WORKFLOW = {
             "image": "$inputs.image",
         },
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "detection",
             "image": "$steps.image_slicer.slices",
             "model_id": "yolov8n-640",
@@ -307,6 +310,45 @@ def test_sahi_workflow_with_nmm_as_filtering_strategy(
     ), "Expected boxes for second image to be exactly as measured during test creation"
 
 
+def test_sahi_workflow_with_serialization(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=SAHI_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [license_plate_image, crowd_image],
+            "overlap_filtering_strategy": "nms",
+        },
+        serialize_results=True,
+    )
+
+    # then
+    result_1 = sv.Detections.from_inference(result[0]["predictions"])
+    result_2 = sv.Detections.from_inference(result[1]["predictions"])
+    assert len(result_1) == 11, "Expected to deserialize 1st image detections properly"
+    assert len(result_2) == 12, "Expected to deserialize 2nd image detections properly"
+    decoded_image_bytes = base64.b64decode(result[0]["visualisation"]["value"])
+    decoded_image = cv2.imdecode(
+        np.frombuffer(decoded_image_bytes, np.uint8), cv2.IMREAD_COLOR
+    )
+    assert (
+        decoded_image.shape == license_plate_image.shape
+    ), "Expected to deserialize result image properly"
+
+
 def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -395,7 +437,7 @@ SAHI_WORKFLOW_FOR_SEGMENTATION = {
             "image": "$inputs.image",
         },
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "detection",
             "image": "$steps.image_slicer.slices",
             "model_id": "yolov8n-seg-640",

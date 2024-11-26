@@ -22,7 +22,7 @@ WORKFLOW_STITCHING_OCR_DETECTIONS = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "ocr_detection",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",

@@ -13,7 +13,7 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
@@ -38,19 +38,19 @@ class EllipseManifest(ColorableVisualizationManifest):
         }
     )
 
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the lines in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
 
-    start_angle: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    start_angle: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Starting angle of the ellipse in degrees.",
         default=-45,
         examples=[-45, "$inputs.start_angle"],
     )
 
-    end_angle: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    end_angle: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Ending angle of the ellipse in degrees.",
         default=235,
         examples=[235, "$inputs.end_angle"],
@@ -58,7 +58,7 @@ class EllipseManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class EllipseVisualizationBlockV1(ColorableVisualizationBlock):

@@ -21,7 +21,7 @@ from inference.core.workflows.execution_engine.v1.executor.runtime_input_validat
     validate_runtime_input,
 )
 
-EXECUTION_ENGINE_V1_VERSION = Version("1.2.0")
+EXECUTION_ENGINE_V1_VERSION = Version("1.3.0")
 
 
 class ExecutionEngineV1(BaseExecutionEngine):
@@ -73,11 +73,13 @@ class ExecutionEngineV1(BaseExecutionEngine):
         runtime_parameters: Dict[str, Any],
         fps: float = 0,
         _is_preview: bool = False,
+        serialize_results: bool = False,
     ) -> List[Dict[str, Any]]:
         self._profiler.start_workflow_run()
         runtime_parameters = assemble_runtime_parameters(
             runtime_parameters=runtime_parameters,
             defined_inputs=self._compiled_workflow.workflow_definition.inputs,
+            kinds_deserializers=self._compiled_workflow.kinds_deserializers,
             prevent_local_images_loading=self._prevent_local_images_loading,
             profiler=self._profiler,
         )
@@ -93,6 +95,8 @@ class ExecutionEngineV1(BaseExecutionEngine):
             usage_fps=fps,
             usage_workflow_id=self._workflow_id,
             usage_workflow_preview=_is_preview,
+            kinds_serializers=self._compiled_workflow.kinds_serializers,
+            serialize_results=serialize_results,
             profiler=self._profiler,
         )
         self._profiler.end_workflow_run()

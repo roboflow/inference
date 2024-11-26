@@ -11,8 +11,7 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     STRING_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -77,7 +76,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/local_file_sink@v1"]
-    content: StepOutputSelector(kind=[STRING_KIND]) = Field(
+    content: Selector(kind=[STRING_KIND]) = Field(
         description="Content of the file to save",
         examples=["$steps.csv_formatter.csv_content"],
     )
@@ -102,11 +101,11 @@ class BlockManifest(WorkflowBlockManifest):
             }
         },
     )
-    target_directory: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    target_directory: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Target directory",
         examples=["some/location"],
     )
-    file_name_prefix: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    file_name_prefix: Union[Selector(kind=[STRING_KIND]), str] = Field(
         default="workflow_output",
         description="File name prefix",
         examples=["my_file"],
@@ -114,20 +113,18 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    max_entries_per_file: Union[int, WorkflowParameterSelector(kind=[STRING_KIND])] = (
-        Field(
-            default=1024,
-            description="Defines how many datapoints can be appended to a single file",
-            examples=[1024],
-            json_schema_extra={
-                "relevant_for": {
-                    "output_mode": {
-                        "values": ["append_log"],
-                        "required": True,
-                    },
-                }
-            },
-        )
+    max_entries_per_file: Union[int, Selector(kind=[STRING_KIND])] = Field(
+        default=1024,
+        description="Defines how many datapoints can be appended to a single file",
+        examples=[1024],
+        json_schema_extra={
+            "relevant_for": {
+                "output_mode": {
+                    "values": ["append_log"],
+                    "required": True,
+                },
+            }
+        },
     )
 
     @field_validator("max_entries_per_file")
@@ -146,7 +143,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class LocalFileSinkBlockV1(WorkflowBlock):

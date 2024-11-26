@@ -18,9 +18,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -192,10 +190,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/data_aggregator@v1"]
-    data: Dict[
-        str,
-        Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
-    ] = Field(
+    data: Dict[str, Selector()] = Field(
         description="References data to be used to construct each and every column",
         examples=[
             {
@@ -326,7 +321,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 INTERVAL_UNIT_TO_SECONDS = {

@@ -285,5 +285,62 @@ def test_owlv2_multiple_training_images():
     assert len(response.predictions) == 5
 
 
+@pytest.mark.slow
+def test_owlv2_multiple_training_images_repeated_inference():
+    image = {
+        "type": "url",
+        "value": "https://media.roboflow.com/inference/seawithdock.jpeg",
+    }
+    second_image = {
+        "type": "url",
+        "value": "https://media.roboflow.com/inference/dock2.jpg",
+    }
+
+    request = OwlV2InferenceRequest(
+        image=image,
+        training_data=[
+            {
+                "image": image,
+                "boxes": [
+                    {
+                        "x": 223,
+                        "y": 306,
+                        "w": 40,
+                        "h": 226,
+                        "cls": "post",
+                        "negative": False,
+                    }
+                ],
+            },
+            {
+                "image": second_image,
+                "boxes": [
+                    {
+                        "x": 3009,
+                        "y": 1873,
+                        "w": 289,
+                        "h": 811,
+                        "cls": "post",
+                        "negative": True,
+                    }
+                ],
+            },
+        ],
+        visualize_predictions=True,
+        confidence=0.9,
+    )
+
+    model = OwlV2()
+    first_response = model.infer_from_request(request)
+    second_response = model.infer_from_request(request)
+    for p1, p2 in zip(first_response.predictions, second_response.predictions):
+        assert p1.class_name == p2.class_name
+        assert p1.x == p2.x
+        assert p1.y == p2.y
+        assert p1.width == p2.width
+        assert p1.height == p2.height
+        assert p1.confidence == p2.confidence
+
+
 if __name__ == "__main__":
     test_owlv2()

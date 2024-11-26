@@ -5,10 +5,8 @@ from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    StepOutputSelector,
+    Selector,
     StepSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
 )
 from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
@@ -61,9 +59,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
         default=1.0,
         ge=0.0,
     )
-    depends_on: Union[
-        WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()
-    ] = Field(
+    depends_on: Selector() = Field(
         description="Reference to any output of the the step which immediately preceeds this branch.",
         examples=["$steps.model"],
     )
@@ -78,7 +74,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class RateLimiterBlockV1(WorkflowBlock):

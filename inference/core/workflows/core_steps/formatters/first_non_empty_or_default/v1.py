@@ -6,7 +6,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
 )
-from inference.core.workflows.execution_engine.entities.types import StepOutputSelector
+from inference.core.workflows.execution_engine.entities.types import Selector
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
@@ -35,7 +35,7 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal[
         "roboflow_core/first_non_empty_or_default@v1", "FirstNonEmptyOrDefault"
     ]
-    data: List[StepOutputSelector()] = Field(
+    data: List[Selector()] = Field(
         description="Reference data to replace empty values",
         examples=["$steps.my_step.predictions"],
         min_items=1,
@@ -56,7 +56,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class FirstNonEmptyOrDefaultBlockV1(WorkflowBlock):

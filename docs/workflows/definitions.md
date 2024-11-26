@@ -14,7 +14,7 @@ analyse it step by step.
       "version": "1.0",
       "inputs": [
         {
-          "type": "InferenceImage",
+          "type": "WorkflowImage",
           "name": "image"
         },
         {
@@ -96,7 +96,7 @@ Our example workflow specifies two inputs:
 ```json
 [
     {
-      "type": "InferenceImage", "name": "image"
+      "type": "WorkflowImage", "name": "image"
     },
     {
       "type": "WorkflowParameter", "name": "model", "default_value": "yolov8n-640"
@@ -105,9 +105,9 @@ Our example workflow specifies two inputs:
 ```
 This entry in definition creates two placeholders that can be filled with data while running workflow. 
 
-The first placeholder is named `image` and is of type `InferenceImage`. This special input type is batch-oriented, 
+The first placeholder is named `image` and is of type `WorkflowImage`. This special input type is batch-oriented, 
 meaning it can accept one or more images at runtime to be processed as a single batch. You can add multiple inputs 
-of the type `InferenceImage`, and it is expected that the data provided to these placeholders will contain 
+of the type `WorkflowImage`, and it is expected that the data provided to these placeholders will contain 
 the same number of elements. Alternatively, you can mix inputs of sizes `N` and 1, where `N` represents the number 
 of elements in the batch.
 
@@ -118,6 +118,51 @@ elements, rather than batch of elements, each to be processed individually.
 
 More details about the nature of batch-oriented data processing in workflows can be found 
 [here](/workflows/workflow_execution).
+
+### Generic batch-oriented inputs
+
+Since Execution Engine `v1.3.0` (inference release `v0.27.0`), Workflows support
+batch oriented inputs of any *[kind](/workflows/kinds/)* and 
+*[dimensionality](/workflows/workflow_execution/#steps-interactions-with-data)*. 
+This inputs are **not enforced for now**, but we expect that as the ecosystem grows, they will 
+be more and more useful.
+
+??? Tip "Defining generic batch-oriented inputs"
+
+    If you wanted to replace the `WorkflowImage` input with generic batch-oriented input,
+    use the following construction:
+    
+    ```json
+    {
+      "inputs": [
+        {
+          "type": "WorkflowBatchInput",
+          "name": "image",
+          "kind": ["image"]
+        }
+      ]
+    }
+    ```
+    
+    Additionally, if your image is supposed to sit at higher *dimensionality level*, 
+    add `dimensionality` property:
+
+    ```{ .json linenums="1" hl_lines="7" }
+    {
+      "inputs": [
+        {
+          "type": "WorkflowBatchInput",
+          "name": "image",
+          "kind": ["image"],
+          "dimensionality": 2
+        }
+      ]
+    }
+    ```
+    
+    This will alter the expected format of `image` data in Workflow run -
+    `dimensionality=2` enforces `image` to be nested batch of images - namely list 
+    of list of images.
 
 
 ## Steps

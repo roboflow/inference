@@ -46,6 +46,10 @@ results = client.infer(image_url, model_id=model_id)
 ### Visualize Results
 
 ```python
+import os
+
+import cv2
+import supervision as sv
 from inference_sdk import InferenceHTTPClient, InferenceConfiguration
 
 model_id = "soccer-players-5fuqs/1"
@@ -66,7 +70,7 @@ result = client.infer(image, model_id=model_id)
 detections = sv.Detections.from_inference(result)
 
 #Create Supervision annotators
-bounding_box_annotator = sv.BoundingBoxAnnotator()
+bounding_box_annotator = sv.BoxAnnotator()
 label_annotator = sv.LabelAnnotator()
 
 #Extract labels array from inference results

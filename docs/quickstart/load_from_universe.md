@@ -50,7 +50,7 @@ results = model.infer(image)
 detections = sv.Detections.from_inference(results[0].dict(by_alias=True, exclude_none=True))
 
 # create supervision annotators
-bounding_box_annotator = sv.BoundingBoxAnnotator()
+bounding_box_annotator = sv.BoxAnnotator()
 label_annotator = sv.LabelAnnotator()
 
 # annotate the image with our inference results

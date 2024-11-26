@@ -197,6 +197,58 @@ def test_classification_result_extraction_of_top_class_confidence_for_multi_labe
     assert result == [0.4]
 
 
+def test_classification_result_extraction_of_top_class_confidence_single_for_multi_label_classification_result_when_class_detected() -> (
+    None
+):
+    # given
+    operations = [
+        {
+            "type": "ClassificationPropertyExtract",
+            "property_name": "top_class_confidence_single",
+        }
+    ]
+    data = MultiLabelClassificationInferenceResponse(
+        image=InferenceResponseImage(width=128, height=256),
+        predictions={
+            "cat": MultiLabelClassificationPrediction(class_id=0, confidence=0.6),
+            "dog": MultiLabelClassificationPrediction(class_id=1, confidence=0.4),
+        },
+        predicted_classes=["cat", "dog"],
+    ).dict(by_alias=True, exclude_none=True)
+
+    # when
+    result = execute_operations(value=data, operations=operations)
+
+    # then
+    assert result == 0.6
+
+
+def test_classification_result_extraction_of_top_class_confidence_single_for_multi_label_classification_result_when_no_classes_detected() -> (
+    None
+):
+    # given
+    operations = [
+        {
+            "type": "ClassificationPropertyExtract",
+            "property_name": "top_class_confidence_single",
+        }
+    ]
+    data = MultiLabelClassificationInferenceResponse(
+        image=InferenceResponseImage(width=128, height=256),
+        predictions={
+            "cat": MultiLabelClassificationPrediction(class_id=0, confidence=0.6),
+            "dog": MultiLabelClassificationPrediction(class_id=1, confidence=0.4),
+        },
+        predicted_classes=[],
+    ).dict(by_alias=True, exclude_none=True)
+
+    # when
+    result = execute_operations(value=data, operations=operations)
+
+    # then
+    assert result == 0.0
+
+
 def test_classification_result_extraction_of_all_classes_for_multi_class_classification_result() -> (
     None
 ):

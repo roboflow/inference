@@ -68,7 +68,32 @@ from inference.core.workflows.core_steps.classical_cv.template_matching.v1 impor
 from inference.core.workflows.core_steps.classical_cv.threshold.v1 import (
     ImageThresholdBlockV1,
 )
+from inference.core.workflows.core_steps.common.deserializers import (
+    deserialize_boolean_kind,
+    deserialize_bytes_kind,
+    deserialize_classification_prediction_kind,
+    deserialize_detections_kind,
+    deserialize_dictionary_kind,
+    deserialize_float_kind,
+    deserialize_float_zero_to_one_kind,
+    deserialize_image_kind,
+    deserialize_integer_kind,
+    deserialize_list_of_values_kind,
+    deserialize_numpy_array,
+    deserialize_optional_string_kind,
+    deserialize_point_kind,
+    deserialize_rgb_color_kind,
+    deserialize_string_kind,
+    deserialize_video_metadata_kind,
+    deserialize_zone_kind,
+)
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.serializers import (
+    serialise_image,
+    serialise_sv_detections,
+    serialize_video_metadata_kind,
+    serialize_wildcard_kind,
+)
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
@@ -91,8 +116,14 @@ from inference.core.workflows.core_steps.formatters.property_definition.v1 impor
 from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v1 import (
     VLMAsClassifierBlockV1,
 )
+from inference.core.workflows.core_steps.formatters.vlm_as_classifier.v2 import (
+    VLMAsClassifierBlockV2,
+)
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1 import (
     VLMAsDetectorBlockV1,
+)
+from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
+    VLMAsDetectorBlockV2,
 )
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
     DetectionsClassesReplacementBlockV1,
@@ -120,6 +151,9 @@ from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
 )
 from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
     Florence2BlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
+    Florence2BlockV2,
 )
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
@@ -150,17 +184,32 @@ from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import 
 from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v1 import (
     RoboflowInstanceSegmentationModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.roboflow.instance_segmentation.v2 import (
+    RoboflowInstanceSegmentationModelBlockV2,
+)
 from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v1 import (
     RoboflowKeypointDetectionModelBlockV1,
+)
+from inference.core.workflows.core_steps.models.roboflow.keypoint_detection.v2 import (
+    RoboflowKeypointDetectionModelBlockV2,
 )
 from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v1 import (
     RoboflowClassificationModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.roboflow.multi_class_classification.v2 import (
+    RoboflowClassificationModelBlockV2,
+)
 from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v1 import (
     RoboflowMultiLabelClassificationModelBlockV1,
 )
+from inference.core.workflows.core_steps.models.roboflow.multi_label_classification.v2 import (
+    RoboflowMultiLabelClassificationModelBlockV2,
+)
 from inference.core.workflows.core_steps.models.roboflow.object_detection.v1 import (
     RoboflowObjectDetectionModelBlockV1,
+)
+from inference.core.workflows.core_steps.models.roboflow.object_detection.v2 import (
+    RoboflowObjectDetectionModelBlockV2,
 )
 from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1 import (
     BarcodeDetectorBlockV1,
@@ -180,6 +229,9 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v1 import
 )
 from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import (
     RoboflowDatasetUploadBlockV2,
+)
+from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
+    ModelMonitoringInferenceAggregatorBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
@@ -243,6 +295,9 @@ from inference.core.workflows.core_steps.visualizations.bounding_box.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.circle.v1 import (
     CircleVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.classification_label.v1 import (
+    ClassificationLabelVisualizationBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.color.v1 import (
     ColorVisualizationBlockV1,
@@ -308,6 +363,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KEYPOINTS_KIND,
     IMAGE_KIND,
     IMAGE_METADATA_KIND,
+    INFERENCE_ID_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
@@ -341,6 +397,47 @@ REGISTERED_INITIALIZERS = {
     "thread_pool_executor": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
+}
+
+KINDS_SERIALIZERS = {
+    IMAGE_KIND.name: serialise_image,
+    VIDEO_METADATA_KIND.name: serialize_video_metadata_kind,
+    OBJECT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND.name: serialise_sv_detections,
+    KEYPOINT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
+    QR_CODE_DETECTION_KIND.name: serialise_sv_detections,
+    BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
+    WILDCARD_KIND.name: serialize_wildcard_kind,
+}
+KINDS_DESERIALIZERS = {
+    IMAGE_KIND.name: deserialize_image_kind,
+    VIDEO_METADATA_KIND.name: deserialize_video_metadata_kind,
+    OBJECT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
+    INSTANCE_SEGMENTATION_PREDICTION_KIND.name: deserialize_detections_kind,
+    KEYPOINT_DETECTION_PREDICTION_KIND.name: deserialize_detections_kind,
+    QR_CODE_DETECTION_KIND.name: deserialize_detections_kind,
+    BAR_CODE_DETECTION_KIND.name: deserialize_detections_kind,
+    NUMPY_ARRAY_KIND.name: deserialize_numpy_array,
+    ROBOFLOW_MODEL_ID_KIND.name: deserialize_string_kind,
+    ROBOFLOW_PROJECT_KIND.name: deserialize_string_kind,
+    ROBOFLOW_API_KEY_KIND.name: deserialize_optional_string_kind,
+    FLOAT_ZERO_TO_ONE_KIND.name: deserialize_float_zero_to_one_kind,
+    LIST_OF_VALUES_KIND.name: deserialize_list_of_values_kind,
+    BOOLEAN_KIND.name: deserialize_boolean_kind,
+    INTEGER_KIND.name: deserialize_integer_kind,
+    STRING_KIND.name: deserialize_string_kind,
+    TOP_CLASS_KIND.name: deserialize_string_kind,
+    FLOAT_KIND.name: deserialize_float_kind,
+    DICTIONARY_KIND.name: deserialize_dictionary_kind,
+    CLASSIFICATION_PREDICTION_KIND.name: deserialize_classification_prediction_kind,
+    POINT_KIND.name: deserialize_point_kind,
+    ZONE_KIND.name: deserialize_zone_kind,
+    RGB_COLOR_KIND.name: deserialize_rgb_color_kind,
+    LANGUAGE_MODEL_OUTPUT_KIND.name: deserialize_string_kind,
+    PREDICTION_TYPE_KIND.name: deserialize_string_kind,
+    PARENT_ID_KIND.name: deserialize_string_kind,
+    BYTES_KIND.name: deserialize_bytes_kind,
+    INFERENCE_ID_KIND.name: deserialize_string_kind,
 }
 
 
@@ -387,6 +484,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DotVisualizationBlockV1,
         EllipseVisualizationBlockV1,
         Florence2BlockV1,
+        Florence2BlockV2,
         GoogleGeminiBlockV1,
         GoogleVisionOCRBlockV1,
         HaloVisualizationBlockV1,
@@ -399,6 +497,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LMMBlockV1,
         LMMForClassificationBlockV1,
         LabelVisualizationBlockV1,
+        ClassificationLabelVisualizationBlockV1,
         LineCounterBlockV1,
         LineCounterBlockV2,
         LineCounterZoneVisualizationBlockV1,
@@ -416,6 +515,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         QRCodeDetectorBlockV1,
         RoboflowClassificationModelBlockV1,
         RoboflowCustomMetadataBlockV1,
+        ModelMonitoringInferenceAggregatorBlockV1,
         RoboflowDatasetUploadBlockV2,
         RoboflowInstanceSegmentationModelBlockV1,
         RoboflowKeypointDetectionModelBlockV1,
@@ -445,6 +545,13 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
         WebhookSinkBlockV1,
+        RoboflowInstanceSegmentationModelBlockV2,
+        RoboflowKeypointDetectionModelBlockV2,
+        RoboflowClassificationModelBlockV2,
+        RoboflowMultiLabelClassificationModelBlockV2,
+        RoboflowObjectDetectionModelBlockV2,
+        VLMAsClassifierBlockV2,
+        VLMAsDetectorBlockV2,
     ]
 
 
@@ -483,4 +590,5 @@ def load_kinds() -> List[Kind]:
         PARENT_ID_KIND,
         IMAGE_METADATA_KIND,
         BYTES_KIND,
+        INFERENCE_ID_KIND,
     ]

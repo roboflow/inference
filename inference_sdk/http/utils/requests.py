@@ -1,5 +1,5 @@
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from requests import Response
 
@@ -44,3 +44,30 @@ def inject_images_into_payload(
     else:
         payload[key] = {"type": "base64", "value": encoded_images[0][0]}
     return payload
+
+
+def inject_nested_batches_of_images_into_payload(
+    payload: dict,
+    encoded_images: Union[list, Tuple[str, Optional[float]]],
+    key: str = "image",
+) -> dict:
+    payload_value = _batch_of_images_into_inference_format(
+        encoded_images=encoded_images,
+    )
+    payload[key] = payload_value
+    return payload
+
+
+def _batch_of_images_into_inference_format(
+    encoded_images: Union[list, Tuple[str, Optional[float]]],
+) -> Union[dict, list]:
+    if not isinstance(encoded_images, list):
+        return {"type": "base64", "value": encoded_images[0]}
+    result = []
+    for element in encoded_images:
+        result.append(
+            _batch_of_images_into_inference_format(
+                encoded_images=element,
+            )
+        )
+    return result

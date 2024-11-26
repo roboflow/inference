@@ -326,6 +326,7 @@ def prepare_parameters(
     result = {}
     indices_for_parameter = {}
     guard_of_indices_wrapping = GuardForIndicesWrapping()
+    compound_inputs = set()
     for parameter_name, parameter_specs in step_node.input_data.items():
         if parameter_specs.is_compound_input():
             result[parameter_name], indices_for_parameter[parameter_name] = (
@@ -339,6 +340,7 @@ def prepare_parameters(
                     guard_of_indices_wrapping=guard_of_indices_wrapping,
                 )
             )
+            compound_inputs.add(parameter_name)
         else:
             result[parameter_name], indices_for_parameter[parameter_name] = (
                 get_non_compound_parameter_value(
@@ -419,11 +421,11 @@ def get_compound_parameter_value(
             result[nested_element.parameter_specification.nested_element_key] = (
                 non_compound_parameter_value
             )
-            if non_compound_indices:
+            if non_compound_indices is not None:
                 batch_indices.append(non_compound_indices)
     ensure_compound_input_indices_match(indices=batch_indices)
     result_indices = None
-    if batch_indices:
+    if len(batch_indices) > 0:
         result_indices = batch_indices[0]
     return result, result_indices
 
@@ -438,14 +440,21 @@ def get_non_compound_parameter_value(
     guard_of_indices_wrapping: GuardForIndicesWrapping,
 ) -> Union[Any, Optional[List[DynamicBatchIndex]]]:
     if not parameter.is_batch_oriented():
-        input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
         if parameter.points_to_input():
+            input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
             parameter_name = get_last_chunk_of_selector(
                 selector=input_parameter.selector
             )
             return runtime_parameters[parameter_name], None
-        static_input: StaticStepInputDefinition = parameter  # type: ignore
-        return static_input.value, None
+        elif parameter.points_to_step_output():
+            input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
+            value = execution_cache.get_non_batch_output(
+                selector=input_parameter.selector
+            )
+            return value, None
+        else:
+            static_input: StaticStepInputDefinition = parameter  # type: ignore
+            return static_input.value, None
     dynamic_parameter: DynamicStepInputDefinition = parameter  # type: ignore
     parameter_dimensionality = dynamic_parameter.get_dimensionality()
     lineage_indices = dynamic_batches_manager.get_indices_for_data_lineage(
@@ -454,7 +463,10 @@ def get_non_compound_parameter_value(
     mask_for_dimension = masks[parameter_dimensionality]
     if dynamic_parameter.points_to_input():
         input_name = get_last_chunk_of_selector(selector=dynamic_parameter.selector)
-        batch_input = runtime_parameters[input_name]
+        batch_input = _flatten_batch_oriented_inputs(
+            runtime_parameters[input_name],
+            dimensionality=parameter_dimensionality,
+        )
         if mask_for_dimension is not None:
             if len(lineage_indices) != len(batch_input):
                 raise ExecutionEngineRuntimeError(
@@ -514,6 +526,29 @@ def get_non_compound_parameter_value(
         guard_of_indices_wrapping=guard_of_indices_wrapping,
     )
     return result, result.indices
+
+
+def _flatten_batch_oriented_inputs(
+    inputs: list,
+    dimensionality: int,
+) -> List[Any]:
+    if dimensionality == 0 or not isinstance(inputs, list):
+        raise AssumptionError(
+            public_message=f"Could not prepare batch-oriented input data. This is most likely the bug. Contact "
+            f"Roboflow team through github issues (https://github.com/roboflow/inference/issues) "
+            f"providing full context of the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
+    if dimensionality == 1:
+        return inputs
+    result = []
+    for element in inputs:
+        result.extend(
+            _flatten_batch_oriented_inputs(
+                inputs=element, dimensionality=dimensionality - 1
+            )
+        )
+    return result
 
 
 def reduce_batch_dimensionality(

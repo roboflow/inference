@@ -27,6 +27,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
@@ -36,9 +37,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FloatZeroToOne,
     ImageInputField,
     RoboflowModelField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -76,27 +75,23 @@ class BlockManifest(WorkflowBlockManifest):
         "RoboflowObjectDetectionModel",
         "ObjectDetectionModel",
     ]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
-        RoboflowModelField
-    )
-    class_agnostic_nms: Union[
-        Optional[bool], WorkflowParameterSelector(kind=[BOOLEAN_KIND])
-    ] = Field(
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
+    class_agnostic_nms: Union[Optional[bool], Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         description="Value to decide if NMS is to be used in class-agnostic mode.",
         examples=[True, "$inputs.class_agnostic_nms"],
     )
-    class_filter: Union[
-        Optional[List[str]], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])
-    ] = Field(
-        default=None,
-        description="List of classes to retrieve from predictions (to define subset of those which was used while model training)",
-        examples=[["a", "b", "c"], "$inputs.class_filter"],
+    class_filter: Union[Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])] = (
+        Field(
+            default=None,
+            description="List of classes to retrieve from predictions (to define subset of those which was used while model training)",
+            examples=[["a", "b", "c"], "$inputs.class_filter"],
+        )
     )
     confidence: Union[
         FloatZeroToOne,
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
         description="Confidence threshold for predictions",
@@ -104,35 +99,29 @@ class BlockManifest(WorkflowBlockManifest):
     )
     iou_threshold: Union[
         FloatZeroToOne,
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.3,
         description="Parameter of NMS, to decide on minimum box intersection over union to merge boxes",
         examples=[0.4, "$inputs.iou_threshold"],
     )
-    max_detections: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
+    max_detections: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
         default=300,
         description="Maximum number of detections to return",
         examples=[300, "$inputs.max_detections"],
     )
-    max_candidates: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
+    max_candidates: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
         default=3000,
         description="Maximum number of candidates as NMS input to be taken into account.",
         examples=[3000, "$inputs.max_candidates"],
     )
-    disable_active_learning: Union[
-        bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])
-    ] = Field(
+    disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="Parameter to decide if Active Learning data sampling is disabled for the model",
         examples=[True, "$inputs.disable_active_learning"],
     )
     active_learning_target_dataset: Union[
-        WorkflowParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
+        Selector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
     ] = Field(
         default=None,
         description="Target dataset for Active Learning data sampling - see Roboflow Active Learning "
@@ -141,8 +130,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -155,7 +144,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class RoboflowObjectDetectionModelBlockV1(WorkflowBlock):
@@ -306,7 +295,7 @@ class RoboflowObjectDetectionModelBlockV1(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        non_empty_inference_images = [i.numpy_image for i in images]
+        non_empty_inference_images = [i.base64_image for i in images]
         predictions = client.infer(
             inference_input=non_empty_inference_images,
             model_id=model_id,
@@ -325,7 +314,7 @@ class RoboflowObjectDetectionModelBlockV1(WorkflowBlock):
         predictions: List[dict],
         class_filter: Optional[List[str]],
     ) -> BlockResult:
-        inference_id = predictions[0].get(INFERENCE_ID_KEY, None)
+        inference_ids = [p.get(INFERENCE_ID_KEY, None) for p in predictions]
         predictions = convert_inference_detections_batch_to_sv_detections(predictions)
         predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,
@@ -341,5 +330,5 @@ class RoboflowObjectDetectionModelBlockV1(WorkflowBlock):
         )
         return [
             {"inference_id": inference_id, "predictions": prediction}
-            for prediction in predictions
+            for inference_id, prediction in zip(inference_ids, predictions)
         ]

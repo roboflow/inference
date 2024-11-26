@@ -16,12 +16,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    BOOLEAN_KIND,
-    INTEGER_KIND,
     STRING_KIND,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -140,9 +136,7 @@ class BlockManifest(WorkflowBlockManifest):
     columns_data: Dict[
         str,
         Union[
-            WorkflowImageSelector,
-            WorkflowParameterSelector(),
-            StepOutputSelector(),
+            Selector(),
             str,
             int,
             float,
@@ -179,8 +173,8 @@ class BlockManifest(WorkflowBlockManifest):
         return value
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return ["columns_data"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -190,7 +184,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class CSVFormatterBlockV1(WorkflowBlock):

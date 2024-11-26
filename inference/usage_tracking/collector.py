@@ -1,8 +1,8 @@
 import asyncio
 import atexit
-import datetime
 import json
 import mimetypes
+import numbers
 import socket
 import sys
 import time
@@ -15,7 +15,14 @@ from uuid import uuid4
 
 from typing_extensions import ParamSpec
 
-from inference.core.env import API_KEY, LAMBDA, REDIS_HOST
+from inference.core.env import (
+    API_KEY,
+    DEDICATED_DEPLOYMENT_ID,
+    LAMBDA,
+    REDIS_HOST,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+)
 from inference.core.logger import logger
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
@@ -130,27 +137,32 @@ class UsageCollector:
 
     @staticmethod
     def empty_usage_dict(exec_session_id: str) -> APIKeyUsage:
+        usage_dict = {
+            "timestamp_start": None,
+            "timestamp_stop": None,
+            "exec_session_id": exec_session_id,
+            "hostname": "",
+            "ip_address_hash": "",
+            "processed_frames": 0,
+            "fps": 0,
+            "source_duration": 0,
+            "category": "",
+            "resource_id": "",
+            "resource_details": "{}",
+            "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID),
+            "api_key_hash": "",
+            "is_gpu_available": False,
+            "python_version": sys.version.split()[0],
+            "inference_version": inference_version,
+            "enterprise": False,
+        }
+        if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+            usage_dict["roboflow_internal_secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
+        if ROBOFLOW_INTERNAL_SERVICE_NAME:
+            usage_dict["roboflow_service_name"] = ROBOFLOW_INTERNAL_SERVICE_NAME
+
         return defaultdict(  # api_key_hash
-            lambda: defaultdict(  # category:resource_id
-                lambda: {
-                    "timestamp_start": None,
-                    "timestamp_stop": None,
-                    "exec_session_id": exec_session_id,
-                    "ip_address_hash": "",
-                    "processed_frames": 0,
-                    "fps": 0,
-                    "source_duration": 0,
-                    "category": "",
-                    "resource_id": "",
-                    "resource_details": "{}",
-                    "hosted": LAMBDA,
-                    "api_key_hash": "",
-                    "is_gpu_available": False,
-                    "python_version": sys.version.split()[0],
-                    "inference_version": inference_version,
-                    "enterprise": False,
-                }
-            )
+            lambda: defaultdict(lambda: usage_dict)  # category:resource_id
         )
 
     def _dump_usage_queue_no_lock(self) -> List[APIKeyUsage]:
@@ -232,13 +244,27 @@ class UsageCollector:
     @staticmethod
     def system_info(
         ip_address: Optional[str] = None,
+        hostname: Optional[str] = None,
+        dedicated_deployment_id: Optional[str] = None,
     ) -> SystemDetails:
-        if ip_address:
-            ip_address_hash_hex = sha256_hash(ip_address)
+        if not dedicated_deployment_id:
+            dedicated_deployment_id = DEDICATED_DEPLOYMENT_ID
+        if not hostname:
+            try:
+                hostname = socket.gethostname()
+            except Exception as exc:
+                logger.warning("Could not obtain hostname, %s", exc)
+                hostname = ""
+        if dedicated_deployment_id:
+            hostname = f"{dedicated_deployment_id}:{hostname}"
         else:
+            hostname = sha256_hash(hostname)
+
+        if not ip_address:
             try:
                 ip_address: str = socket.gethostbyname(socket.gethostname())
-            except:
+            except Exception as exc:
+                logger.warning("Could not obtain IP address, %s", exc)
                 s = None
                 try:
                     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -249,10 +275,10 @@ class UsageCollector:
 
                 if s:
                     s.close()
-
-            ip_address_hash_hex = sha256_hash(ip_address)
+        ip_address_hash_hex = sha256_hash(ip_address)
 
         return {
+            "hostname": hostname,
             "ip_address_hash": ip_address_hash_hex,
             "is_gpu_available": False,  # TODO
         }
@@ -301,6 +327,7 @@ class UsageCollector:
         fps: float = 0,
     ):
         source = str(source) if source else ""
+        frames = frames if isinstance(frames, numbers.Number) else 0
         api_key_hash = self._calculate_api_key_hash(api_key=api_key)
         if not resource_id and resource_details:
             resource_id = UsageCollector._calculate_resource_hash(resource_details)
@@ -311,13 +338,16 @@ class UsageCollector:
         with self._system_info_lock:
             ip_address_hash = self._system_info["ip_address_hash"]
             is_gpu_available = self._system_info["is_gpu_available"]
+            hostname = self._system_info["hostname"]
         with UsageCollector._lock:
             source_usage = self._usage[api_key_hash][f"{category}:{resource_id}"]
             if not source_usage["timestamp_start"]:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
             source_usage["processed_frames"] += frames if not inference_test_run else 0
-            source_usage["fps"] = round(fps, 2)
+            source_usage["fps"] = (
+                round(fps, 2) if isinstance(fps, numbers.Number) else 0
+            )
             source_usage["source_duration"] += (
                 frames / fps if fps and not inference_test_run else 0
             )
@@ -325,6 +355,7 @@ class UsageCollector:
             source_usage["resource_id"] = resource_id
             source_usage["resource_details"] = json.dumps(resource_details)
             source_usage["api_key_hash"] = api_key_hash
+            source_usage["hostname"] = hostname
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
             logger.debug("Updated usage: %s", source_usage)
@@ -339,7 +370,7 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
-    ) -> DefaultDict[str, Any]:
+    ):
         if not api_key:
             return
         if self._settings.opt_out and not api_key:
@@ -372,7 +403,7 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
-    ) -> DefaultDict[str, Any]:
+    ):
         if self._async_lock:
             async with self._async_lock:
                 self.record_usage(
@@ -488,14 +519,12 @@ class UsageCollector:
     @staticmethod
     def _resource_details_from_workflow_json(
         workflow_json: Dict[str, Any]
-    ) -> ResourceDetails:
-        return {
-            "steps": [
-                f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"
-                for step in workflow_json.get("steps", [])
-                if isinstance(step, dict)
-            ]
-        }
+    ) -> List[str]:
+        return [
+            f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"
+            for step in workflow_json.get("steps", [])
+            if isinstance(step, dict)
+        ]
 
     @staticmethod
     def _extract_usage_params_from_func_kwargs(
@@ -513,6 +542,8 @@ class UsageCollector:
         resource_details = {
             "billable": usage_billable,
         }
+        if DEDICATED_DEPLOYMENT_ID:
+            resource_details["dedicated_deployment_id"] = DEDICATED_DEPLOYMENT_ID
         resource_id = ""
         category = None
         # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
@@ -530,10 +561,11 @@ class UsageCollector:
                     logger.debug(
                         "Got non-dict workflow JSON, '%s'", workflow.workflow_json
                     )
-            new_resource_details = UsageCollector._resource_details_from_workflow_json(
-                workflow_json=workflow_json,
+            resource_details["steps"] = (
+                UsageCollector._resource_details_from_workflow_json(
+                    workflow_json=workflow_json,
+                )
             )
-            resource_details.update(new_resource_details)
             resource_details["is_preview"] = usage_workflow_preview
             resource_id = usage_workflow_id
             if not resource_id and resource_details:

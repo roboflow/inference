@@ -43,7 +43,7 @@ YOLO World is faster than many other zero-shot object detection models like YOLO
 
     detections = sv.Detections.from_inference(results)
 
-    bounding_box_annotator = sv.BoundingBoxAnnotator()
+    bounding_box_annotator = sv.BoxAnnotator()
     label_annotator = sv.LabelAnnotator()
 
     labels = [classes[class_id] for class_id in detections.class_id]
@@ -98,7 +98,7 @@ YOLO World is faster than many other zero-shot object detection models like YOLO
 
     detections = sv.Detections.from_inference(results)
 
-    bounding_box_annotator = sv.BoundingBoxAnnotator()
+    bounding_box_annotator = sv.BoxAnnotator()
     label_annotator = sv.LabelAnnotator()
 
     labels = [classes[class_id] for class_id in detections.class_id]

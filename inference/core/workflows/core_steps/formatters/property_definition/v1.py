@@ -9,10 +9,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
     build_operations_chain,
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
-from inference.core.workflows.execution_engine.entities.types import (
-    StepOutputSelector,
-    WorkflowImageSelector,
-)
+from inference.core.workflows.execution_engine.entities.types import Selector
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
@@ -57,7 +54,7 @@ class BlockManifest(WorkflowBlockManifest):
         "PropertyDefinition",
         "PropertyExtraction",
     ]
-    data: Union[WorkflowImageSelector, StepOutputSelector()] = Field(
+    data: Selector() = Field(
         description="Reference data to extract property from",
         examples=["$steps.my_step.predictions"],
     )
@@ -74,7 +71,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class PropertyDefinitionBlockV1(WorkflowBlock):

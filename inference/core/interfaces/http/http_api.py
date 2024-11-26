@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 import traceback
@@ -7,11 +8,12 @@ from typing import Any, Dict, List, Optional, Union
 
 import asgi_correlation_id
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI, Path, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
+from pydantic import BaseModel
 from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -99,6 +101,7 @@ from inference.core.entities.responses.workflows import (
 )
 from inference.core.env import (
     ALLOW_ORIGINS,
+    API_KEY,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_COGVLM_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
@@ -124,6 +127,7 @@ from inference.core.env import (
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
+    PRELOAD_MODELS,
     PROFILE,
     ROBOFLOW_SERVICE_SECRET,
     WORKFLOWS_MAX_CONCURRENT_STEPS,
@@ -155,13 +159,12 @@ from inference.core.exceptions import (
 )
 from inference.core.interfaces.base import BaseInterface
 from inference.core.interfaces.http.handlers.workflows import (
+    filter_out_unwanted_workflow_outputs,
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
-from inference.core.interfaces.http.orjson_utils import (
-    orjson_response,
-    serialise_workflow_result,
-)
+from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
+from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.interfaces.stream_manager.api.entities import (
     CommandResponse,
     ConsumePipelineResponse,
@@ -722,13 +725,16 @@ class HttpInterface(BaseInterface):
                 prevent_local_images_loading=True,
                 profiler=profiler,
             )
-            result = execution_engine.run(runtime_parameters=workflow_request.inputs)
+            workflow_results = execution_engine.run(
+                runtime_parameters=workflow_request.inputs,
+                serialize_results=True,
+            )
             with profiler.profile_execution_phase(
-                name="workflow_results_serialisation",
+                name="workflow_results_filtering",
                 categories=["inference_package_operation"],
             ):
-                outputs = serialise_workflow_result(
-                    result=result,
+                outputs = filter_out_unwanted_workflow_outputs(
+                    workflow_results=workflow_results,
                     excluded_fields=workflow_request.excluded_fields,
                 )
             profiler_trace = profiler.export_trace()
@@ -913,6 +919,7 @@ class HttpInterface(BaseInterface):
                 de_aliased_model_id = resolve_roboflow_model_alias(
                     model_id=request.model_id
                 )
+                logger.info(f"Loading model: {de_aliased_model_id}")
                 self.model_manager.add_model(de_aliased_model_id, request.api_key)
                 models_descriptions = self.model_manager.describe_models()
                 return ModelsDescriptions.from_models_descriptions(
@@ -1243,8 +1250,11 @@ class HttpInterface(BaseInterface):
                 deprecated=True,
             )
             @with_route_exceptions
-            async def describe_workflows_blocks() -> WorkflowsBlocksDescription:
-                return handle_describe_workflows_blocks_request()
+            async def describe_workflows_blocks(
+                request: Request,
+            ) -> Union[WorkflowsBlocksDescription, Response]:
+                result = handle_describe_workflows_blocks_request()
+                return gzip_response_if_requested(request=request, response=result)
 
             @app.post(
                 "/workflows/blocks/describe",
@@ -1258,20 +1268,24 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def describe_workflows_blocks(
-                request: Optional[DescribeBlocksRequest] = None,
-            ) -> WorkflowsBlocksDescription:
+                request: Request,
+                request_payload: Optional[DescribeBlocksRequest] = None,
+            ) -> Union[WorkflowsBlocksDescription, Response]:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 dynamic_blocks_definitions = None
                 requested_execution_engine_version = None
-                if request is not None:
-                    dynamic_blocks_definitions = request.dynamic_blocks_definitions
-                    requested_execution_engine_version = (
-                        request.execution_engine_version
+                if request_payload is not None:
+                    dynamic_blocks_definitions = (
+                        request_payload.dynamic_blocks_definitions
                     )
-                return handle_describe_workflows_blocks_request(
+                    requested_execution_engine_version = (
+                        request_payload.execution_engine_version
+                    )
+                result = handle_describe_workflows_blocks_request(
                     dynamic_blocks_definitions=dynamic_blocks_definitions,
                     requested_execution_engine_version=requested_execution_engine_version,
                 )
+                return gzip_response_if_requested(request=request, response=result)
 
             @app.get(
                 "/workflows/definition/schema",
@@ -1442,6 +1456,84 @@ class HttpInterface(BaseInterface):
                     pipeline_id=pipeline_id,
                     excluded_fields=request.excluded_fields,
                 )
+
+        # Enable preloading models at startup
+        if PRELOAD_MODELS and API_KEY and not LAMBDA:
+
+            class ModelInitState:
+                """Class to track model initialization state."""
+
+                def __init__(self):
+                    self.is_ready = False
+                    self.lock = asyncio.Lock()  # For thread-safe updates
+                    self.initialization_errors = []  # Track errors per model
+
+            model_init_state = ModelInitState()
+
+            async def initialize_models(state: ModelInitState):
+                """Perform asynchronous initialization tasks to load models."""
+                # Limit the number of concurrent tasks to prevent resource exhaustion
+                semaphore = asyncio.Semaphore(2)  # Adjust the limit as needed
+
+                async def load_model(model_id):
+                    try:
+                        async with semaphore:
+                            # Add a timeout to prevent indefinite hanging
+                            await asyncio.wait_for(
+                                model_add(
+                                    AddModelRequest(
+                                        model_id=model_id,
+                                        model_type=None,
+                                        api_key=API_KEY,
+                                    )
+                                ),
+                                timeout=300,  # Timeout after 5 minutes
+                            )
+                            logger.info(f"Model {model_id} loaded successfully.")
+                    except asyncio.TimeoutError:
+                        error_msg = f"Timeout while loading model {model_id}"
+                        logger.error(error_msg)
+                        async with state.lock:
+                            state.initialization_errors.append((model_id, error_msg))
+                    except Exception as e:
+                        error_msg = f"Error loading model {model_id}: {e}"
+                        logger.error(error_msg)
+                        async with state.lock:
+                            state.initialization_errors.append((model_id, str(e)))
+
+                # Create tasks for each model to be loaded
+                tasks = [load_model(model_id) for model_id in PRELOAD_MODELS]
+
+                # Wait for all tasks to complete, collecting exceptions
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Update the readiness state in a thread-safe manner
+                async with state.lock:
+                    state.is_ready = True
+
+            @app.on_event("startup")
+            async def startup_model_init():
+                """Initialize the models on startup."""
+                asyncio.create_task(initialize_models(model_init_state))
+                logger.info("Model initialization started in the background.")
+
+            @app.get("/readiness", status_code=200)
+            async def readiness(
+                state: ModelInitState = Depends(lambda: model_init_state),
+            ):
+                """Readiness endpoint for Kubernetes readiness probe."""
+                async with state.lock:
+                    if state.is_ready:
+                        return {"status": "ready"}
+                    else:
+                        return JSONResponse(
+                            content={"status": "not ready"}, status_code=503
+                        )
+
+            @app.get("/healthz", status_code=200)
+            async def healthz():
+                """Health endpoint for Kubernetes liveness probe."""
+                return {"status": "healthy"}
 
         if CORE_MODELS_ENABLED:
             if CORE_MODEL_CLIP_ENABLED:
@@ -2262,6 +2354,7 @@ class HttpInterface(BaseInterface):
                             raise MissingServiceSecretError(
                                 "Service secret is required to disable inference usage tracking"
                             )
+                        logger.info("Not counting inference for usage")
                 else:
                     request_model_id = model_id
                 logger.debug(
@@ -2308,7 +2401,6 @@ class HttpInterface(BaseInterface):
                     usage_billable=countinference,
                     **args,
                 )
-
                 inference_response = await self.model_manager.infer_from_request(
                     inference_request.model_id,
                     inference_request,
@@ -2342,7 +2434,9 @@ class HttpInterface(BaseInterface):
 
             # Legacy add model endpoint for backwards compatability
             @app.get("/start/{dataset_id}/{version_id}")
-            async def model_add(dataset_id: str, version_id: str, api_key: str = None):
+            async def model_add_legacy(
+                dataset_id: str, version_id: str, api_key: str = None
+            ):
                 """
                 Starts a model inference session.
 

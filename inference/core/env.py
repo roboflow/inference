@@ -74,10 +74,18 @@ CLIP_MODEL_ID = f"clip/{CLIP_VERSION_ID}"
 
 # Gaze version ID, default is "L2CS"
 GAZE_VERSION_ID = os.getenv("GAZE_VERSION_ID", "L2CS")
-OWLV2_VERSION_ID = os.getenv("OWLV2_VERSION_ID", "owlv2-base-patch16-ensemble")
 
 # Gaze model ID
 GAZE_MODEL_ID = f"gaze/{CLIP_VERSION_ID}"
+
+# OWLv2 version ID, default is "owlv2-large-patch14-ensemble"
+OWLV2_VERSION_ID = os.getenv("OWLV2_VERSION_ID", "owlv2-large-patch14-ensemble")
+
+# OWLv2 image cache size, default is 1000 since each image has max <MAX_DETECTIONS> boxes at ~4kb each
+OWLV2_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_IMAGE_CACHE_SIZE", 1000))
+
+# OWLv2 model cache size, default is 100 as memory is num_prompts * ~4kb and num_prompts is rarely above 1000 (but could be much higher)
+OWLV2_MODEL_CACHE_SIZE = int(os.getenv("OWLV2_MODEL_CACHE_SIZE", 100))
 
 # Maximum batch size for GAZE, default is 8
 GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
@@ -372,6 +380,10 @@ DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW = int(
     os.getenv("VIDEO_SOURCE_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW", "16")
 )
 
+ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING = str2bool(
+    os.getenv("ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING", "False")
+)
+
 NUM_CELERY_WORKERS = os.getenv("NUM_CELERY_WORKERS", 4)
 CELERY_LOG_LEVEL = os.getenv("CELERY_LOG_LEVEL", "WARNING")
 
@@ -429,6 +441,7 @@ DEDICATED_DEPLOYMENT_WORKSPACE_URL = os.environ.get(
 )
 
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
+STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES", "0"))
 
 RUNS_ON_JETSON = str2bool(os.getenv("RUNS_ON_JETSON", "False"))
 
@@ -446,3 +459,13 @@ ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE = str2bool(
     os.getenv("ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE", "True")
 )
 WORKFLOW_BLOCKS_WRITE_DIRECTORY = os.getenv("WORKFLOW_BLOCKS_WRITE_DIRECTORY")
+
+DEDICATED_DEPLOYMENT_ID = os.getenv("DEDICATED_DEPLOYMENT_ID")
+
+ROBOFLOW_INTERNAL_SERVICE_SECRET = os.getenv("ROBOFLOW_INTERNAL_SERVICE_SECRET")
+ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv("ROBOFLOW_INTERNAL_SERVICE_NAME")
+
+# Preload Models
+PRELOAD_MODELS = (
+    os.getenv("PRELOAD_MODELS").split(",") if os.getenv("PRELOAD_MODELS") else None
+)

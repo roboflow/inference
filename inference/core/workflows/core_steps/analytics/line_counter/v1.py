@@ -14,9 +14,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
-    WorkflowVideoMetadataSelector,
+    VIDEO_METADATA_KIND,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -49,8 +48,8 @@ class LineCounterManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/line_counter@v1"]
-    metadata: WorkflowVideoMetadataSelector
-    detections: StepOutputSelector(
+    metadata: Selector(kind=[VIDEO_METADATA_KIND])
+    detections: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -60,11 +59,11 @@ class LineCounterManifest(WorkflowBlockManifest):
         examples=["$steps.object_detection_model.predictions"],
     )
 
-    line_segment: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    line_segment: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Line in the format [[x1, y1], [x2, y2]] consisting of exactly two points. For line [[0, 100], [100, 100]] line will count objects entering from the bottom as IN",
         examples=[[[0, 50], [500, 50]], "$inputs.zones"],
     )
-    triggering_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
+    triggering_anchor: Union[str, Selector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
         description=f"Point from the detection for triggering line crossing.",
         default="CENTER",
         examples=["CENTER"],
@@ -85,7 +84,7 @@ class LineCounterManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class LineCounterBlockV1(WorkflowBlock):

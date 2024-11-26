@@ -14,8 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -55,7 +54,7 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
         }
     )
     type: Literal[f"roboflow_core/size_measurement@v1"]
-    reference_predictions: StepOutputSelector(
+    reference_predictions: Selector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,
@@ -64,7 +63,7 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
         description="Predictions from the reference object model",
         examples=["$segmentation.reference_predictions"],
     )
-    object_predictions: StepOutputSelector(
+    object_predictions: Selector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             OBJECT_DETECTION_PREDICTION_KIND,
@@ -77,7 +76,7 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
         str,
         Tuple[float, float],
         List[float],
-        WorkflowParameterSelector(
+        Selector(
             kind=[STRING_KIND, LIST_OF_VALUES_KIND],
         ),
     ] = Field(  # type: ignore
@@ -93,7 +92,7 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 def get_detection_dimensions(

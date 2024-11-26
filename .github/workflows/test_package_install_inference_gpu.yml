@@ -25,11 +25,6 @@ jobs:
       matrix:
         python-version: ["3.8", "3.9", "3.10", "3.11"]
     steps:
-      - name: test
-        env:
-          - mergeable_state: ${{needs.is_mergeable.outputs.mergeable_state}}
-        run: |
-          echo "$mergeable_state"
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
       - name: 🐍 Set up Python 3.9 to create wheels

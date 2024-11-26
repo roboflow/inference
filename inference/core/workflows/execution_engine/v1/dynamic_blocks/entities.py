@@ -9,6 +9,7 @@ class SelectorType(Enum):
     STEP_OUTPUT_IMAGE = "step_output_image"
     INPUT_PARAMETER = "input_parameter"
     STEP_OUTPUT = "step_output"
+    GENERIC = "generic"
 
 
 class ValueType(Enum):
@@ -103,6 +104,17 @@ class ManifestDescription(BaseModel):
     accepts_empty_values: bool = Field(
         default=False,
         description="Flag to decide if empty (optional) values will be shipped as run() function parameters",
+    )
+    batch_oriented_parameters: List[str] = Field(
+        default_factory=list,
+        description="List of batch-oriented parameters. Value will override `accepts_batch_input` if non-empty "
+        "list is provided, `accepts_batch_input` is  kept not to break backward compatibility.",
+    )
+    parameters_with_scalars_and_batches: List[str] = Field(
+        default_factory=list,
+        description="List of parameters accepting both batches and scalars at the same time. "
+        "Value will override `accepts_batch_input` if non-empty "
+        "list is provided, `accepts_batch_input` is kept not to break backward compatibility.",
     )
 
 

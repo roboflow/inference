@@ -13,8 +13,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -96,7 +95,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/stitch_ocr_detections@v1"]
-    predictions: StepOutputSelector(
+    predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
         ]
@@ -135,7 +134,7 @@ class BlockManifest(WorkflowBlockManifest):
             }
         },
     )
-    tolerance: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+    tolerance: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         title="Tolerance",
         description="The tolerance for grouping detections into the same line of text.",
         default=10,
@@ -154,8 +153,8 @@ class BlockManifest(WorkflowBlockManifest):
         return value
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["predictions"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
