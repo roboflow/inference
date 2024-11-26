@@ -1,7 +1,7 @@
 import json
 import os.path
 import subprocess
-from typing import Dict, List, Optional, Union
+from typing import Dict, Iterable, List, Optional, Union
 
 from supervision.utils.file import read_yaml_file
 
@@ -62,6 +62,14 @@ def dump_json(path: str, content: Union[dict, list]) -> None:
     os.makedirs(parent_dir, exist_ok=True)
     with open(path, "w") as f:
         json.dump(content, f)
+
+
+def dump_jsonl(path: str, content: Iterable[dict]) -> None:
+    parent_dir = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent_dir, exist_ok=True)
+    with open(path, "w") as f:
+        for line in content:
+            f.write(f"{json.dumps(line)}\n")
 
 
 def initialise_client(

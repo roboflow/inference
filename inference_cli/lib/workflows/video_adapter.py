@@ -1,4 +1,3 @@
-import json
 import os.path
 from collections import defaultdict
 from functools import partial
@@ -15,6 +14,8 @@ from inference import InferencePipeline
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.sinks import multi_sink
 from inference.core.utils.image_utils import load_image_bgr
+from inference_cli.lib.utils import dump_jsonl
+from inference_cli.lib.workflows.common import deduct_images, dump_objects_to_json
 from inference_cli.lib.workflows.entities import OutputFileType
 
 
@@ -26,6 +27,7 @@ def process_video_with_workflow(
     workspace_name: Optional[str] = None,
     workflow_id: Optional[str] = None,
     workflow_parameters: Optional[Dict[str, Any]] = None,
+    image_input_name: str = "image",
     max_fps: Optional[float] = None,
     save_image_outputs_as_video: bool = True,
     api_key: Optional[str] = None,
@@ -52,6 +54,7 @@ def process_video_with_workflow(
         on_prediction=partial(multi_sink, sinks=sinks),
         workflows_parameters=workflow_parameters,
         serialize_results=True,
+        image_input_name=image_input_name,
         max_fps=max_fps,
     )
     progress_sink.start()
@@ -109,33 +112,11 @@ class WorkflowsStructuredDataSink:
             data_frame = pd.DataFrame(content)
             data_frame.to_csv(file_path, index=False)
         else:
-            dump_to_jsonl(path=file_path, content=content)
+            dump_jsonl(path=file_path, content=content)
         self._structured_results_buffer[stream_idx] = []
 
     def __del__(self):
         self.flush()
-
-
-def deduct_images(result: Any) -> Any:
-    if isinstance(result, list):
-        return [deduct_images(result=e) for e in result]
-    if isinstance(result, set):
-        return {deduct_images(result=e) for e in result}
-    if (
-        isinstance(result, dict)
-        and result.get("type") == "base64"
-        and "value" in result
-    ):
-        return "<deducted_image>"
-    if isinstance(result, dict):
-        return {k: deduct_images(result=v) for k, v in result.items()}
-    return result
-
-
-def dump_objects_to_json(value: Any) -> Any:
-    if isinstance(value, list) or isinstance(value, dict) or isinstance(value, set):
-        return json.dumps(value)
-    return value
 
 
 def generate_results_chunk_file_name(
@@ -155,12 +136,6 @@ def generate_results_chunk_file_name(
         output_directory,
         f"workflow_results_source_{stream_id}_part_{chunk_id}.{results_log_type.value}",
     )
-
-
-def dump_to_jsonl(path: str, content: list) -> None:
-    with open(path, "w") as f:
-        for line in content:
-            f.write(f"{json.dumps(line)}\n")
 
 
 class WorkflowsVideoSink:
@@ -242,7 +217,7 @@ class ProgressSink:
     def start(self) -> None:
         self._progress_bar.start()
         self._task = self._progress_bar.add_task(
-            "Processing video...",
+            description="Processing video...",
             total=self._total_frames,
         )
 
