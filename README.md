@@ -89,7 +89,7 @@ Workflows allow you to extend simple model predictions to build computer vision 
   
 Your machine is now a fully-featured CV center. You can use its API to run models and workflows on images and video streams. By default, the server is running on [`localhost:9001`](http://localhost:9001).
 
-To interface with the server via Python, use our SDK. `pip install inference_sdk` then:
+To interface with the server via Python, use our SDK. `pip install inference-sdk` then:
 
   ```python
   from inference_sdk import InferenceHTTPClient
