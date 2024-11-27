@@ -2,6 +2,7 @@ import json
 import os.path
 import re
 from datetime import datetime
+from functools import lru_cache
 from threading import Lock
 from typing import Any, Dict, List, Optional, Set, TextIO, Tuple
 
@@ -16,6 +17,11 @@ from inference_cli.lib.utils import dump_json, dump_jsonl, read_json
 from inference_cli.lib.workflows.entities import OutputFileType
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
+
+TYPE_KEY = "type"
+BASE_64_TYPE = "base64"
+VALUE_KEY = "value"
+DEDUCTED_IMAGE = "<deducted_image>"
 
 IMAGES_EXTENSIONS = [
     "bmp",
@@ -115,12 +121,12 @@ def deduct_images(result: Any) -> Any:
         return {deduct_images(result=e) for e in result}
     if (
         isinstance(result, dict)
-        and result.get("type") == "base64"
-        and "value" in result
+        and result.get(TYPE_KEY) == BASE_64_TYPE
+        and VALUE_KEY in result
     ):
-        return "<deducted_image>"
+        return DEDUCTED_IMAGE
     if isinstance(result, np.ndarray):
-        return "<deducted_image>"
+        return DEDUCTED_IMAGE
     if isinstance(result, dict):
         return {k: deduct_images(result=v) for k, v in result.items()}
     return result
@@ -131,10 +137,10 @@ def extract_images_from_result(
 ) -> List[Tuple[str, np.ndarray]]:
     if (
         isinstance(result, dict)
-        and result.get("type") == "base64"
-        and "value" in result
+        and result.get(TYPE_KEY) == BASE_64_TYPE
+        and VALUE_KEY in result
     ):
-        loaded_image = decode_base64_image(result["value"])
+        loaded_image = decode_base64_image(result[VALUE_KEY])
         return [(key_prefix, loaded_image)]
     if isinstance(result, np.ndarray):
         return [(key_prefix, result)]
@@ -167,26 +173,32 @@ def decode_base64_image(payload: str) -> np.ndarray:
 
 
 def get_all_images_in_directory(input_directory: str) -> List[str]:
-    if os.name == "nt":
-        # Windows paths are case-insensitive, hence deduplication
-        # is needed, as IMAGES_EXTENSIONS contains extensions
-        # in lower- and upper- cases version.
-        return list(
-            {
-                path.as_posix().lower()
-                for path in sv.list_files_with_extensions(
-                    directory=input_directory,
-                    extensions=IMAGES_EXTENSIONS,
-                )
-            }
-        )
-    return [
-        path.as_posix()
-        for path in sv.list_files_with_extensions(
-            directory=input_directory,
-            extensions=IMAGES_EXTENSIONS,
-        )
-    ]
+    file_system_is_case_sensitive = _is_file_system_case_sensitive()
+    if file_system_is_case_sensitive:
+        return [
+            path.as_posix()
+            for path in sv.list_files_with_extensions(
+                directory=input_directory,
+                extensions=IMAGES_EXTENSIONS,
+            )
+        ]
+    return list(
+        {
+            path.as_posix().lower()
+            for path in sv.list_files_with_extensions(
+                directory=input_directory,
+                extensions=IMAGES_EXTENSIONS,
+            )
+        }
+    )
+
+
+@lru_cache()
+def _is_file_system_case_sensitive() -> bool:
+    fs_is_case_insensitive = os.path.exists(__file__.upper()) and os.path.exists(
+        __file__.lower()
+    )
+    return not fs_is_case_insensitive
 
 
 def report_failed_files(

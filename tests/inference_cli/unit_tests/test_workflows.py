@@ -9,10 +9,10 @@ from typing_extensions import Annotated
 
 from inference_cli.workflows import prepare_workflow_parameters
 
-test_app = typer.Typer(help="This is test app to verify kwargs parsing")
+dummy_app = typer.Typer(help="This is test app to verify kwargs parsing")
 
 
-@test_app.command(
+@dummy_app.command(
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )
 def verify_workflow_parameters_parsing(
@@ -92,7 +92,7 @@ def test_command_parsing_workflows_parameters_when_no_additional_params_passed_a
 
     # when
     result = runner.invoke(
-        test_app,
+        dummy_app,
         "verify_workflow_parameters_parsing "
         "--string_param value "
         "--int_param 2137 "
@@ -125,7 +125,7 @@ def test_command_parsing_workflows_parameters_when_additional_params_passed_and_
 
     # when
     result = runner.invoke(
-        test_app,
+        dummy_app,
         "verify_workflow_parameters_parsing "
         "--string_param value "
         "--int_param 2137 "
@@ -169,7 +169,7 @@ def test_command_parsing_workflows_parameters_when_no_additional_params_passed_a
 
     # when
     result = runner.invoke(
-        test_app,
+        dummy_app,
         "verify_workflow_parameters_parsing "
         "-sp value "
         "-ip 2137 "
@@ -203,7 +203,7 @@ def test_command_parsing_workflows_parameters_when_additional_params_passed_and_
 
     # when
     result = runner.invoke(
-        test_app,
+        dummy_app,
         "verify_workflow_parameters_parsing "
         "-sp value "
         "-ip 2137 "
@@ -247,7 +247,7 @@ def test_command_parsing_workflows_parameters_when_no_additional_params_passed_a
 
     # when
     result = runner.invoke(
-        test_app,
+        dummy_app,
         "verify_workflow_parameters_parsing "
         "--string_param value "
         "-ip 2137 "
@@ -281,7 +281,7 @@ def test_command_parsing_workflows_parameters_when_additional_params_passed_and_
 
     # when
     result = runner.invoke(
-        test_app,
+        dummy_app,
         "verify_workflow_parameters_parsing "
         "--string_param value "
         "-ip 2137 "
@@ -317,7 +317,9 @@ def test_command_parsing_workflows_parameters_when_additional_params_passed_and_
     }
 
 
-def test_prepare_workflow_parameters_when_neither_file_nor_additional_args_are_used() -> None:
+def test_prepare_workflow_parameters_when_neither_file_nor_additional_args_are_used() -> (
+    None
+):
     # when
     result = prepare_workflow_parameters(
         context=typer.Context(command=MagicMock()),
@@ -347,7 +349,9 @@ def test_prepare_workflow_parameters_when_only_args_are_provided() -> None:
     }
 
 
-def test_prepare_workflow_parameters_when_only_file_provided(empty_directory: str) -> None:
+def test_prepare_workflow_parameters_when_only_file_provided(
+    empty_directory: str,
+) -> None:
     # given
     workflows_parameters_path = os.path.join(empty_directory, "config.json")
     with open(workflows_parameters_path, "w") as f:
@@ -366,7 +370,9 @@ def test_prepare_workflow_parameters_when_only_file_provided(empty_directory: st
     }
 
 
-def test_prepare_workflow_parameters_when_file_and_args_provided(empty_directory: str) -> None:
+def test_prepare_workflow_parameters_when_file_and_args_provided(
+    empty_directory: str,
+) -> None:
     # given
     workflows_parameters_path = os.path.join(empty_directory, "config.json")
     with open(workflows_parameters_path, "w") as f:
