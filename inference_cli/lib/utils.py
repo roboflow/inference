@@ -88,3 +88,22 @@ def initialise_client(
     config = InferenceConfiguration(**raw_configuration)
     client.configure(inference_configuration=config)
     return client
+
+
+def ensure_target_directory_is_empty(
+    output_directory: str, allow_override: bool, only_files: bool = True
+) -> None:
+    if allow_override:
+        return None
+    if not os.path.exists(output_directory):
+        return None
+    files_in_directory = [
+        f
+        for f in os.listdir(output_directory)
+        if not only_files or os.path.isfile(os.path.join(output_directory, f))
+    ]
+    if files_in_directory:
+        raise RuntimeError(
+            f"Detected content in output directory: {output_directory}. "
+            f"Command cannot run, as content override is forbidden. Use `--allow_override` to proceed."
+        )

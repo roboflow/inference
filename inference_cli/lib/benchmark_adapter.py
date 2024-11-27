@@ -35,6 +35,7 @@ def run_infer_api_speed_benchmark(
     model_configuration: Optional[str] = None,
     output_location: Optional[str] = None,
     enforce_legacy_endpoints: bool = False,
+    max_error_rate: Optional[float] = None,
 ) -> None:
     dataset_images = load_dataset_images(
         dataset_reference=dataset_reference,
@@ -61,6 +62,10 @@ def run_infer_api_speed_benchmark(
         requests_per_second=requests_per_second,
     )
     if output_location is None:
+        ensure_error_rate_is_below_threshold(
+            error_rate=benchmark_results.error_rate,
+            threshold=max_error_rate,
+        )
         return None
     benchmark_parameters = {
         "datetime": datetime.now().isoformat(),
@@ -77,6 +82,10 @@ def run_infer_api_speed_benchmark(
         output_location=output_location,
         benchmark_parameters=benchmark_parameters,
         benchmark_results=benchmark_results,
+    )
+    ensure_error_rate_is_below_threshold(
+        error_rate=benchmark_results.error_rate,
+        threshold=max_error_rate,
     )
 
 
@@ -95,6 +104,7 @@ def run_workflow_api_speed_benchmark(
     api_key: Optional[str] = None,
     model_configuration: Optional[str] = None,
     output_location: Optional[str] = None,
+    max_error_rate: Optional[float] = None,
 ) -> None:
     dataset_images = load_dataset_images(
         dataset_reference=dataset_reference,
@@ -120,6 +130,10 @@ def run_workflow_api_speed_benchmark(
         requests_per_second=requests_per_second,
     )
     if output_location is None:
+        ensure_error_rate_is_below_threshold(
+            error_rate=benchmark_results.error_rate,
+            threshold=max_error_rate,
+        )
         return None
     benchmark_parameters = {
         "datetime": datetime.now().isoformat(),
@@ -140,6 +154,10 @@ def run_workflow_api_speed_benchmark(
         output_location=output_location,
         benchmark_parameters=benchmark_parameters,
         benchmark_results=benchmark_results,
+    )
+    ensure_error_rate_is_below_threshold(
+        error_rate=benchmark_results.error_rate,
+        threshold=max_error_rate,
     )
 
 
@@ -218,3 +236,11 @@ def dump_benchmark_results(
         "platform": platform_specifics,
     }
     dump_json(path=target_path, content=results)
+
+
+def ensure_error_rate_is_below_threshold(error_rate: float, threshold: Optional[float]) -> None:
+    if threshold is None:
+        return None
+    if error_rate <= threshold:
+        return None
+    raise RuntimeError(f"Benchmark error rate: {error_rate}% is higher than threshold ({threshold}%)")
