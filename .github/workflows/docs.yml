@@ -24,7 +24,7 @@ jobs:
           token: ${{ secrets.GH_TOKEN_FOR_WORKFLOWS_ENTERPRISE }}
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.13"
           check-latest: true
       - run: pip install mkdocs-material
       - run: pip install "mkdocstrings[python]"
