@@ -42,6 +42,10 @@ BLOCK_TYPE = "roboflow_core/opc_writer_sink@v1"
 LONG_DESCRIPTION = """
 The **OPC Writer** block enables sending a data from Workflow into OPC server
 by setting value of OPC object under OPC namespace.
+
+This block is making use of [asyncua](https://github.com/FreeOpcUa/opcua-asyncio) in order to
+perform communication with OPC servers.
+
 Block will attempt to send:
 
 * numbers (integers, floats)
