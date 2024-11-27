@@ -3,7 +3,12 @@ import os.path
 
 import pytest
 
-from inference_cli.lib.utils import dump_json, read_env_file, read_file_lines, ensure_target_directory_is_empty
+from inference_cli.lib.utils import (
+    dump_json,
+    ensure_target_directory_is_empty,
+    read_env_file,
+    read_file_lines,
+)
 
 
 def test_read_file_lines(text_file_path: str) -> None:

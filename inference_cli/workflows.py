@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 import typer
 from typing_extensions import Annotated
 
-from inference_cli.lib.utils import read_json, ensure_target_directory_is_empty
+from inference_cli.lib.utils import ensure_target_directory_is_empty, read_json
 from inference_cli.lib.workflows.core import (
     process_image_with_workflow,
     process_images_directory_with_workflow,

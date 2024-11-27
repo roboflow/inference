@@ -19,15 +19,22 @@ BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
 
 IMAGES_EXTENSIONS = [
     "bmp",
+    "BMP",
     "dib",
+    "DIB",
     "jpeg",
+    "JPEG",
     "jpg",
+    "JPG",
     "jpe",
+    "JPE",
     "jp2",
+    "JP2",
     "png",
+    "PNG",
     "webp",
+    "WEBP",
 ]
-IMAGES_EXTENSIONS += [e.upper() for e in IMAGES_EXTENSIONS]
 
 
 def open_progress_log(output_directory: str) -> Tuple[TextIO, Set[str]]:
@@ -190,10 +197,10 @@ def report_failed_files(
     os.makedirs(output_directory, exist_ok=True)
     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
     failed_files_path = os.path.abspath(
-        os.path.join(output_directory, f"failed_files_processing_{timestamp}.json")
+        os.path.join(output_directory, f"failed_files_processing_{timestamp}.jsonl")
     )
     content = [{"file_path": e[0], "cause": e[1]} for e in failed_files]
-    dump_json(path=failed_files_path, content=content)
+    dump_jsonl(path=failed_files_path, content=content)
     print(
         f"Detected {len(failed_files)} processing failures. Details saved under: {failed_files_path}"
     )
@@ -239,6 +246,8 @@ def aggregate_batch_processing_results(
 
 
 def dump_objects_to_json(value: Any) -> Any:
+    if isinstance(value, set):
+        value = list(value)
     if isinstance(value, list) or isinstance(value, dict) or isinstance(value, set):
         return json.dumps(value)
     return value

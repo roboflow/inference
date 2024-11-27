@@ -141,7 +141,7 @@ def api_speed(
         typer.Option(
             "--max_error_rate",
             help="Max error rate for API speed benchmark - if given and the error rate is higher - command will "
-                 "return non-success error code. Expected percentage values in range 0.0-100.0",
+            "return non-success error code. Expected percentage values in range 0.0-100.0",
         ),
     ] = None,
 ):

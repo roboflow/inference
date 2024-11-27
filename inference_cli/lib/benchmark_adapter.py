@@ -238,9 +238,13 @@ def dump_benchmark_results(
     dump_json(path=target_path, content=results)
 
 
-def ensure_error_rate_is_below_threshold(error_rate: float, threshold: Optional[float]) -> None:
+def ensure_error_rate_is_below_threshold(
+    error_rate: float, threshold: Optional[float]
+) -> None:
     if threshold is None:
         return None
     if error_rate <= threshold:
         return None
-    raise RuntimeError(f"Benchmark error rate: {error_rate}% is higher than threshold ({threshold}%)")
+    raise RuntimeError(
+        f"Benchmark error rate: {error_rate}% is higher than threshold ({threshold}%)"
+    )
