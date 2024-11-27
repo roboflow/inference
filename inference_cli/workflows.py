@@ -276,7 +276,25 @@ def process_image(
             help="Flag enabling errors stack traces to be displayed (helpful for debugging)",
         ),
     ] = False,
-):
+    proceed_automatically: Annotated[
+        bool,
+        typer.Option(
+            "--yes/--no",
+            "-y/-n",
+            help="Boolean flag to decide on auto `yes` answer given on user input required.",
+        ),
+    ] = False,
+) -> None:
+    if (
+        processing_target is ProcessingTarget.API
+        and "roboflow.com" in api_url
+        and not proceed_automatically
+    ):
+        proceed = input(
+            "This action may easily exceed your Roboflow inference credits. Are you sure? [y/N] "
+        )
+        if proceed.lower() != "y":
+            return None
     try:
         ensure_target_directory_is_empty(
             output_directory=output_directory,
@@ -456,7 +474,25 @@ def process_images_directory(
             help="Flag enabling errors stack traces to be displayed (helpful for debugging)",
         ),
     ] = False,
-):
+    proceed_automatically: Annotated[
+        bool,
+        typer.Option(
+            "--yes/--no",
+            "-y/-n",
+            help="Boolean flag to decide on auto `yes` answer given on user input required.",
+        ),
+    ] = False,
+) -> None:
+    if (
+        processing_target is ProcessingTarget.API
+        and "roboflow.com" in api_url
+        and not proceed_automatically
+    ):
+        proceed = input(
+            "This action may easily exceed your Roboflow inference credits. Are you sure? [y/N] "
+        )
+        if proceed.lower() != "y":
+            return None
     try:
         ensure_target_directory_is_empty(
             output_directory=output_directory,

@@ -33,7 +33,8 @@ def test_processing_image_with_hosted_api(
         f"--workspace_name paul-guerrie-tang1 "
         f"--workflow_id prod-test-workflow "
         f"--api-key {INFERENCE_CLI_TESTS_API_KEY} "
-        f"--model_id yolov8n-640"
+        f"--model_id yolov8n-640 "
+        f"--yes"
     ).split()
     new_process_env = deepcopy(os.environ)
     new_process_env["ALLOW_INTERACTIVE_INFERENCE_INSTALLATION"] = "False"
@@ -75,6 +76,7 @@ def test_processing_images_directory_with_hosted_api(
         f"--workflow_id prod-test-workflow "
         f"--api-key {INFERENCE_CLI_TESTS_API_KEY} "
         f"--model_id yolov8n-640 "
+        f"--yes"
     ).split()
     new_process_env = deepcopy(os.environ)
     new_process_env["ALLOW_INTERACTIVE_INFERENCE_INSTALLATION"] = "False"
@@ -87,7 +89,7 @@ def test_processing_images_directory_with_hosted_api(
     assert (
         len(os.listdir(empty_directory)) == 5
     ), "Expected 3 images dirs, log file and aggregated results"
-    for i in range(8):
+    for i in range(3):
         image_results_dir = os.path.join(empty_directory, f"{i}.jpg")
         image_results_dir_content = set(os.listdir(image_results_dir))
         assert image_results_dir_content == {
@@ -228,7 +230,7 @@ def test_processing_images_directory_with_inference_package(
     assert (
         len(os.listdir(empty_directory)) == 5
     ), "Expected 3 images dirs, log file and aggregated results"
-    for i in range(8):
+    for i in range(3):
         image_results_dir = os.path.join(empty_directory, f"{i}.jpg")
         image_results_dir_content = set(os.listdir(image_results_dir))
         assert image_results_dir_content == {
