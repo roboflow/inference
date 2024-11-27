@@ -15,6 +15,13 @@ def ensure_inference_is_installed() -> None:
     try:
         from inference import get_model
     except Exception as error:
+        if (
+            os.getenv("ALLOW_INTERACTIVE_INFERENCE_INSTALLATION", "True").lower()
+            == "false"
+        ):
+            raise InferencePackageMissingError(
+                "You need to install `inference` package to use this feature. Run `pip install inference`"
+            ) from error
         print(
             "You need to have `inference` package installed. Do you want the package to be installed? [YES/no]"
         )

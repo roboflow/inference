@@ -102,7 +102,7 @@ class WorkflowsStructuredDataSink:
         content = self._structured_results_buffer[stream_idx]
         if len(content) == 0:
             return None
-        file_path = generate_results_chunk_file_name(
+        file_path = generate_results_file_name(
             output_directory=self._output_directory,
             results_log_type=self._output_file_type,
             stream_id=stream_idx,
@@ -119,22 +119,15 @@ class WorkflowsStructuredDataSink:
         self.flush()
 
 
-def generate_results_chunk_file_name(
+def generate_results_file_name(
     output_directory: str,
     results_log_type: OutputFileType,
     stream_id: int,
 ) -> str:
     output_directory = os.path.abspath(output_directory)
-    chunks = glob(
-        os.path.join(
-            output_directory,
-            f"workflow_results_source_{stream_id}_part_*.{results_log_type.value}",
-        )
-    )
-    chunk_id = len(chunks)
     return os.path.join(
         output_directory,
-        f"workflow_results_source_{stream_id}_part_{chunk_id}.{results_log_type.value}",
+        f"workflow_results_source_{stream_id}.{results_log_type.value}",
     )
 
 
