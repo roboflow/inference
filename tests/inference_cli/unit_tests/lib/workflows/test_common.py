@@ -91,8 +91,8 @@ def test_aggregate_batch_processing_results_when_json_output_is_expected_and_res
             {
                 "some": "value",
                 "other": 3.0,
-                "list": [1, 2, 3],
-                "object": {"nested": "value"},
+                "list_field": [1, 2, 3],
+                "object_field": {"nested": "value"},
             }
         ]
         * 2
@@ -142,12 +142,12 @@ def test_aggregate_batch_processing_results_when_csv_output_is_expected_and_resu
     assert len(df) == 2, "Expected 2 records"
     assert df.iloc[0].some == "value"
     assert df.iloc[0].other == 3.0
-    assert json.loads(df.iloc[0].list) == [1, 2, 3]
-    assert json.loads(df.iloc[0].object) == {"nested": "value"}
+    assert json.loads(df.iloc[0].list_field) == [1, 2, 3]
+    assert json.loads(df.iloc[0].object_field) == {"nested": "value"}
     assert df.iloc[1].some == "value"
     assert df.iloc[1].other == 3.0
-    assert json.loads(df.iloc[1].list) == [1, 2, 3]
-    assert json.loads(df.iloc[1].object) == {"nested": "value"}
+    assert json.loads(df.iloc[1].list_field) == [1, 2, 3]
+    assert json.loads(df.iloc[1].object_field) == {"nested": "value"}
 
 
 def test_aggregate_batch_processing_results_when_csv_output_is_expected_and_results_present_but_with_inconsistent_schema(
@@ -177,12 +177,12 @@ def test_aggregate_batch_processing_results_when_csv_output_is_expected_and_resu
     assert len(df) == 2, "Expected 2 records"
     assert df.iloc[0].some == "value"
     assert df.iloc[0].other == 3.0
-    assert json.loads(df.iloc[0].list) == [1, 2, 3]
-    assert json.loads(df.iloc[0].object) == {"nested": "value"}
+    assert json.loads(df.iloc[0].list_field) == [1, 2, 3]
+    assert json.loads(df.iloc[0].object_field) == {"nested": "value"}
     assert df.iloc[1].some == "value"
     assert df.iloc[1].other == 3.0
-    assert json.loads(df.iloc[1].list) == [1, 2, 3]
-    assert json.loads(df.iloc[1].object) == {"nested": "value"}
+    assert json.loads(df.iloc[1].list_field) == [1, 2, 3]
+    assert json.loads(df.iloc[1].object_field) == {"nested": "value"}
     assert (
         df.iloc[1].extra == "column"
         or df.iloc[0].extra == "column"
@@ -217,8 +217,8 @@ def _prepare_dummy_results(
     results = {
         "some": "value",
         "other": 3.0,
-        "list": [1, 2, 3],
-        "object": {"nested": "value"},
+        "list_field": [1, 2, 3],
+        "object_field": {"nested": "value"},
     }
     results.update(extra_data)
     results_path = os.path.join(sub_dir_path, "results.json")

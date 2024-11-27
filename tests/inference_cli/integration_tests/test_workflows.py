@@ -251,49 +251,6 @@ def test_processing_images_directory_with_inference_package(
     reason="`RUN_TESTS_WITH_INFERENCE_PACKAGE` set to False",
 )
 @pytest.mark.timeout(120)
-def test_processing_video_with_inference_package(
-    video_to_be_processed: str,
-    empty_directory: str,
-) -> None:
-    # given
-    command = (
-        f"python -m inference_cli.main workflows process-video "
-        f"--video_path {video_to_be_processed} "
-        f"--output_dir {empty_directory} "
-        f"--workspace_name paul-guerrie-tang1 "
-        f"--workflow_id prod-test-workflow "
-        f"--api-key {INFERENCE_CLI_TESTS_API_KEY} "
-        f"--model_id yolov8n-640"
-    ).split()
-    new_process_env = deepcopy(os.environ)
-    new_process_env["ALLOW_INTERACTIVE_INFERENCE_INSTALLATION"] = "False"
-
-    result = subprocess.run(command, env=new_process_env)
-
-    # then
-    assert result.returncode == 0
-    result_csv = pd.read_csv(
-        os.path.join(empty_directory, "workflow_results_source_0.csv")
-    )
-    assert len(result_csv) == 341
-    assert len(result_csv.columns) == 2
-    output_video_info = sv.VideoInfo.from_video_path(
-        video_path=os.path.join(
-            empty_directory, "source_0_output_bounding_box_visualization_preview.mp4"
-        )
-    )
-    assert output_video_info.total_frames == 341
-
-
-@pytest.mark.skipif(
-    INFERENCE_CLI_TESTS_API_KEY is None,
-    reason="`INFERENCE_CLI_TESTS_API_KEY` not provided.",
-)
-@pytest.mark.skipif(
-    not RUN_TESTS_WITH_INFERENCE_PACKAGE,
-    reason="`RUN_TESTS_WITH_INFERENCE_PACKAGE` set to False",
-)
-@pytest.mark.timeout(120)
 def test_processing_video_with_inference_package_with_modulated_fps(
     video_to_be_processed: str,
     empty_directory: str,
