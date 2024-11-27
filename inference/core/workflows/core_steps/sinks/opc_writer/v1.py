@@ -5,12 +5,11 @@ from datetime import datetime
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
 
-from pydantic import ConfigDict, Field
-
 from asyncua.client import Client as AsyncClient
 from asyncua.sync import Client, sync_async_client_method
-from asyncua.ua.uaerrors import BadUserAccessDenied, BadNoMatch, BadTypeMismatch
+from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 from fastapi import BackgroundTasks
+from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.query_language.entities.operations import (
     AllOperationsType,
@@ -115,33 +114,45 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal[BLOCK_TYPE]
     url: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="URL of OPC server where data should be pushed to",
-        examples=[{"url": "$inputs.opc_url"}, {"url": "opc.tcp://localhost:4840/freeopcua/server/"}]
+        examples=[
+            {"url": "$inputs.opc_url"},
+            {"url": "opc.tcp://localhost:4840/freeopcua/server/"},
+        ],
     )
     namespace: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="OPC namespace",
-        examples=[{"namespace": "$inputs.opc_namespace"}, {"namespace": "http://examples.freeopcua.github.io"}]
+        examples=[
+            {"namespace": "$inputs.opc_namespace"},
+            {"namespace": "http://examples.freeopcua.github.io"},
+        ],
     )
     object_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Name of object to be searched in namespace",
-        examples=[{"object_name": "$inputs.opc_object_name"}, {"object_name": "Line1"}]
+        examples=[{"object_name": "$inputs.opc_object_name"}, {"object_name": "Line1"}],
     )
     user_name: Union[Selector(kind=[STRING_KIND]), Optional[str]] = Field(
         default=None,
         description="Optional user name to be used for authentication when connecting to OPC server",
-        examples=[{"user_name": "$inputs.opc_user_name"}, {"user_name": "John"}]
+        examples=[{"user_name": "$inputs.opc_user_name"}, {"user_name": "John"}],
     )
     password: Union[Selector(kind=[STRING_KIND]), Optional[str]] = Field(
         default=None,
         description="Optional password to be used for authentication when connecting to OPC server",
-        examples=[{"password": "$inputs.opc_password"}, {"password": "secret"}]
+        examples=[{"password": "$inputs.opc_password"}, {"password": "secret"}],
     )
     variable_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Name of variable to be set under found object",
-        examples=[{"variable_name": "$inputs.opc_variable_name"}, {"variable_name": "InspectionSuccess"}]
+        examples=[
+            {"variable_name": "$inputs.opc_variable_name"},
+            {"variable_name": "InspectionSuccess"},
+        ],
     )
-    value: Union[Selector(kind=Union[BOOLEAN_KIND, FLOAT_KIND, INTEGER_KIND, STRING_KIND]), Union[bool, float, int, str]] = Field(
+    value: Union[
+        Selector(kind=Union[BOOLEAN_KIND, FLOAT_KIND, INTEGER_KIND, STRING_KIND]),
+        Union[bool, float, int, str],
+    ] = Field(
         description="value to be written into variable",
-        examples=[{"value": "$other_block.result"}, {"value": "running"}]
+        examples=[{"value": "$other_block.result"}, {"value": "running"}],
     )
     timeout: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=2,
@@ -297,7 +308,10 @@ def opc_connect_and_write_value(
         )
         return False, "Value set successfully"
     except Exception as exc:
-        return True, f"Failed to write {value} to {object_name}:{variable_name} in {url}. Internal error details: {exc}."
+        return (
+            True,
+            f"Failed to write {value} to {object_name}:{variable_name} in {url}. Internal error details: {exc}.",
+        )
 
 
 def _opc_connect_and_write_value(
@@ -325,7 +339,9 @@ def _opc_connect_and_write_value(
     except Exception as exc:
         client.disconnect()
         raise Exception(f"UNHANDLED ERROR: {type(exc)} {exc}")
-    get_namespace_index = sync_async_client_method(AsyncClient.get_namespace_index)(client)
+    get_namespace_index = sync_async_client_method(AsyncClient.get_namespace_index)(
+        client
+    )
 
     # Find the namespace index
     try:
@@ -338,7 +354,9 @@ def _opc_connect_and_write_value(
         raise Exception(f"UNHANDLED ERROR: {type(exc)} {exc}")
 
     try:
-        var = client.nodes.root.get_child(f"0:Objects/{nsidx}:{object_name}/{nsidx}:{variable_name}")
+        var = client.nodes.root.get_child(
+            f"0:Objects/{nsidx}:{object_name}/{nsidx}:{variable_name}"
+        )
     except BadNoMatch as exc:
         client.disconnect()
         raise Exception(f"WRONG OBJECT OR PROPERTY ERROR: {exc}")
