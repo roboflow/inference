@@ -1,5 +1,7 @@
 import json
+import os.path
 from typing import List, Tuple
+from unittest.mock import MagicMock
 
 import typer
 from typer.testing import CliRunner
@@ -313,3 +315,73 @@ def test_command_parsing_workflows_parameters_when_additional_params_passed_and_
             "additional_list": [1, 2.0, "some"],
         },
     }
+
+
+def test_prepare_workflow_parameters_when_neither_file_nor_additional_args_are_used() -> None:
+    # when
+    result = prepare_workflow_parameters(
+        context=typer.Context(command=MagicMock()),
+        workflows_parameters_path=None,
+    )
+
+    # then
+    assert result is None
+
+
+def test_prepare_workflow_parameters_when_only_args_are_provided() -> None:
+    # given
+    context = typer.Context(command=MagicMock())
+    context.args = ["--some", "value", "--list", "1", "2.9", "other", "--flag", "true"]
+
+    # when
+    result = prepare_workflow_parameters(
+        context=context,
+        workflows_parameters_path=None,
+    )
+
+    # then
+    assert result == {
+        "some": "value",
+        "list": [1, 2.9, "other"],
+        "flag": True,
+    }
+
+
+def test_prepare_workflow_parameters_when_only_file_provided(empty_directory: str) -> None:
+    # given
+    workflows_parameters_path = os.path.join(empty_directory, "config.json")
+    with open(workflows_parameters_path, "w") as f:
+        json.dump({"some": "value", "flag": True}, f)
+
+    # when
+    result = prepare_workflow_parameters(
+        context=typer.Context(command=MagicMock()),
+        workflows_parameters_path=workflows_parameters_path,
+    )
+
+    # then
+    assert result == {
+        "some": "value",
+        "flag": True,
+    }
+
+
+def test_prepare_workflow_parameters_when_file_and_args_provided(empty_directory: str) -> None:
+    # given
+    workflows_parameters_path = os.path.join(empty_directory, "config.json")
+    with open(workflows_parameters_path, "w") as f:
+        json.dump({"some": "value", "flag": True}, f)
+    context = typer.Context(command=MagicMock())
+    context.args = ["--flag", "false"]
+
+    # when
+    result = prepare_workflow_parameters(
+        context=context,
+        workflows_parameters_path=workflows_parameters_path,
+    )
+
+    # then
+    assert result == {
+        "some": "value",
+        "flag": False,
+    }, "Expected explicit arg to override config value and other config values to be remained"
