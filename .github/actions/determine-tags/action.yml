@@ -27,17 +27,19 @@ runs:
         VERSION="${{ inputs.version }}"
         BASE_IMAGE="${{ inputs.base_image }}"
         BRANCH="${{ github.ref_name }}"
+        EVENT_NAME="${{ github.event_name }}"
 
         # Determine the tags
         if [ -n "$CUSTOM_TAG" ]; then
           IMAGE_TAGS="$BASE_IMAGE:$CUSTOM_TAG"
         else
           VERSION_TAG="$BASE_IMAGE:$VERSION"
-          if [ "$BRANCH" == "main" ]; then
+          IMAGE_TAGS="$VERSION_TAG"
+
+          # Add latest tag if it's a release event and the branch is main
+          if [ "$EVENT_NAME" == "release" ] && [ "$BRANCH" == "main" ]; then
             LATEST_TAG="$BASE_IMAGE:latest"
             IMAGE_TAGS="$VERSION_TAG,$LATEST_TAG"
-          else
-            IMAGE_TAGS="$VERSION_TAG"
           fi
         fi
 
