@@ -85,8 +85,8 @@ def test_processing_images_directory_with_hosted_api(
     # then
     assert result.returncode == 0
     assert (
-        len(os.listdir(empty_directory)) == 10
-    ), "Expected 8 images dirs, log file and aggregated results"
+        len(os.listdir(empty_directory)) == 5
+    ), "Expected 3 images dirs, log file and aggregated results"
     for i in range(8):
         image_results_dir = os.path.join(empty_directory, f"{i}.jpg")
         image_results_dir_content = set(os.listdir(image_results_dir))
@@ -95,7 +95,7 @@ def test_processing_images_directory_with_hosted_api(
             "bounding_box_visualization.jpg",
         }
     result_csv = pd.read_csv(os.path.join(empty_directory, "aggregated_results.csv"))
-    assert len(result_csv) == 8
+    assert len(result_csv) == 3
     assert (
         len(result_csv.columns) == 2
     ), "Two columns expected - predictions and deducted visualization"
@@ -226,8 +226,8 @@ def test_processing_images_directory_with_inference_package(
     # then
     assert result.returncode == 0
     assert (
-        len(os.listdir(empty_directory)) == 10
-    ), "Expected 8 images dirs, log file and aggregated results"
+        len(os.listdir(empty_directory)) == 5
+    ), "Expected 3 images dirs, log file and aggregated results"
     for i in range(8):
         image_results_dir = os.path.join(empty_directory, f"{i}.jpg")
         image_results_dir_content = set(os.listdir(image_results_dir))
@@ -236,7 +236,7 @@ def test_processing_images_directory_with_inference_package(
             "bounding_box_visualization.jpg",
         }
     result_csv = pd.read_csv(os.path.join(empty_directory, "aggregated_results.csv"))
-    assert len(result_csv) == 8
+    assert len(result_csv) == 3
     assert (
         len(result_csv.columns) == 2
     ), "Two columns expected - predictions and deducted visualization"

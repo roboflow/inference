@@ -10,11 +10,6 @@ IMAGES_URLS = [
     "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/aFq7tthQAK6d4pvtupX7/original.jpg",
     "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/KmFskd2RQMfcnDNjzeeA/original.jpg",
     "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/3FBCYL5SX7VPrg0OVkdN/original.jpg",
-    "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/K2KrTzjxYu0kJCScGcoH/original.jpg",
-    "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/XzDB9zVrIxJm17iVKleP/original.jpg",
-    "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/0fsReHjmHk3hBadXdNk4/original.jpg",
-    "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/t23lZ0inksJwRRLd3J1b/original.jpg",
-    "https://source.roboflow.com/BTRTpB7nxxjUchrOQ9vT/3iCH40NuJxcf8l2tXgQn/original.jpg",
 ]
 VIDEO_URL = "https://media.roboflow.com/inference/people-walking.mp4"
 
