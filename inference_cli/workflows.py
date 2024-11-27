@@ -580,11 +580,11 @@ def _calculate_spans_between_indices(indices: List[int], list_length: int) -> Li
 
 def _parse_value(value: str) -> Any:
     try:
-        return float(value)
+        return int(value)
     except ValueError:
         pass
     try:
-        return int(value)
+        return float(value)
     except ValueError:
         pass
     if value.lower() in {"y", "yes", "true"}:
