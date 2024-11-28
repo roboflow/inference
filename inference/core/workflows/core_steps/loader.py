@@ -221,7 +221,6 @@ from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     EmailNotificationBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.local_file.v1 import LocalFileSinkBlockV1
-from inference.core.workflows.core_steps.sinks.opc_writer.v1 import OPCWriterSinkBlockV1
 from inference.core.workflows.core_steps.sinks.roboflow.custom_metadata.v1 import (
     RoboflowCustomMetadataBlockV1,
 )
@@ -541,7 +540,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DataAggregatorBlockV1,
         CSVFormatterBlockV1,
         EmailNotificationBlockV1,
-        OPCWriterSinkBlockV1,
         LocalFileSinkBlockV1,
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,

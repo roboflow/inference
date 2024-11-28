@@ -30,7 +30,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-BLOCK_TYPE = "roboflow_core/opc_writer_sink@v1"
+BLOCK_TYPE = "roboflow_enterprise/opc_writer_sink@v1"
 LONG_DESCRIPTION = """
 The **OPC Writer** block enables sending a data from Workflow into OPC server
 by setting value of OPC object under OPC namespace.
@@ -66,6 +66,11 @@ debugging purposes**.
 Sometimes it would be convenient to manually disable the **OPC Writer** block. This can be achieved by
 setting `disable_sink` flag to hold reference to Workflow input. With such setup, caller cat disable the sink
 by sending agreed input parameter.
+
+!!! warning "Cooldown limitations"
+    Current implementation of cooldown is limited to video processing - using this block in context of a 
+    Workflow that is run behind HTTP service (Roboflow Hosted API, Dedicated Deployment or self-hosted 
+    `inference` server) will have no effect with regards to cooldown timer.
 """
 
 QUERY_PARAMS_KIND = [

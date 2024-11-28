@@ -9,12 +9,16 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
+from inference.core.env import LAMBDA
 from inference.core.workflows.core_steps.loader import (
     KINDS_DESERIALIZERS,
     KINDS_SERIALIZERS,
     REGISTERED_INITIALIZERS,
     load_blocks,
     load_kinds,
+)
+from inference.enterprise.workflows.enterprise_steps.loader import (
+    load_enterprise_blocks,
 )
 from inference.core.workflows.errors import (
     PluginInterfaceError,
@@ -150,6 +154,8 @@ def load_workflow_blocks(
 @lru_cache()
 def load_core_workflow_blocks() -> List[BlockSpecification]:
     core_blocks = load_blocks()
+    if not LAMBDA:
+        core_blocks.extend(load_enterprise_blocks())
     already_spotted_blocks = set()
     result = []
     for block in core_blocks:

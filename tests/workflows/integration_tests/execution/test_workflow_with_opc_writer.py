@@ -28,7 +28,7 @@ WORKFLOW_OPC_WRITER = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/opc_writer_sink@v1",
+            "type": "roboflow_enterprise/opc_writer_sink@v1",
             "name": "opc_writer",
             "url": "$inputs.opc_url",
             "namespace": "$inputs.opc_namespace",
@@ -169,7 +169,7 @@ allowing factory automation engineers to take advantage of machine vision when b
     workflow_definition=WORKFLOW_OPC_WRITER,
     workflow_name_in_app="opc_writer",
 )
-def test_workflow_with_classical_pattern_matching() -> None:
+def test_workflow_with_opc_writer_sink() -> None:
     # given
     loop = asyncio.new_event_loop()
     t = threading.Thread(target=start_loop, args=(loop,), daemon=True)
