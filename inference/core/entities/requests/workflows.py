@@ -8,8 +8,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
 
 
 class WorkflowInferenceRequest(BaseModel):
-    api_key: Optional[str] = Field(
-        default=None,
+    api_key: str = Field(
         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
     )
     inputs: Dict[str, Any] = Field(
