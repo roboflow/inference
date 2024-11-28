@@ -34,7 +34,6 @@ def test_processing_image_with_hosted_api(
         f"--workflow_id prod-test-workflow "
         f"--api-key {INFERENCE_CLI_TESTS_API_KEY} "
         f"--model_id yolov8n-640 "
-        f"--yes"
     ).split()
     new_process_env = deepcopy(os.environ)
     new_process_env["ALLOW_INTERACTIVE_INFERENCE_INSTALLATION"] = "False"
@@ -76,7 +75,6 @@ def test_processing_images_directory_with_hosted_api(
         f"--workflow_id prod-test-workflow "
         f"--api-key {INFERENCE_CLI_TESTS_API_KEY} "
         f"--model_id yolov8n-640 "
-        f"--yes"
     ).split()
     new_process_env = deepcopy(os.environ)
     new_process_env["ALLOW_INTERACTIVE_INFERENCE_INSTALLATION"] = "False"
