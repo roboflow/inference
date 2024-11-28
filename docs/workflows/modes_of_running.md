@@ -221,6 +221,42 @@ Explore the example below to see how to combine `InferencePipeline` with Workflo
         
         Make sure you have `inference` or `inference-gpu` package installed in your Python environment
 
+## Batch processing using `inference-cli`
+
+[`inference-cli`](/inference_helpers/inference_cli/) is command-line wrapper library around `inference`. You can use it
+to process your data using Workflows without writing a single line of code. You simply point the data to be processed,
+select your Workflow and specify where results should be saved. Thanks to `inference-cli` you can process:
+
+* individual images
+
+* directories of images
+
+* video files
+
+!!! example "Processing directory of images"
+
+    You can start the processing using the following command:
+
+    ```bash
+    inference workflows process-images-directory \
+        -i {your_input_directory} \
+        -o {your_output_directory} \[workflows.py](..%2F..%2Finference_cli%2Fworkflows.py)
+        --workspace_name {your-roboflow-workspace-url} \
+        --workflow_id {your-workflow-id} \
+        --api-key {your_roboflow_api_key}
+    ```
+
+    As a result, in the directory specified in `-o` option you should be able to find:
+
+    * sub-directories named after files in your original directory with `results.json` file that contain Worklfow 
+    results and optionally additional `*.jpg` files with images created during Workflow execution
+
+    * `aggregated_results.csv` file that contain concatenated results of Workflow execution for all input image file
+
+    !!! note
+        
+        Make sure you have `inference` or `inference-cli` package installed in your Python environment
+
 
 ## Workflows in Python package
 

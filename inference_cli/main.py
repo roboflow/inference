@@ -7,11 +7,13 @@ import inference_cli.lib
 from inference_cli.benchmark import benchmark_app
 from inference_cli.cloud import cloud_app
 from inference_cli.server import server_app
+from inference_cli.workflows import workflows_app
 
 app = typer.Typer()
 app.add_typer(server_app, name="server")
 app.add_typer(cloud_app, name="cloud")
 app.add_typer(benchmark_app, name="benchmark")
+app.add_typer(workflows_app, name="workflows")
 
 
 def version_callback(value: bool):

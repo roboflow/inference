@@ -170,6 +170,6 @@ docs/workflows/gallery/*
 !tests/workflows/integration_tests/execution/assets/rock_paper_scissors/*.jpg
 !tests/workflows/unit_tests/core_steps/models/third_party/assets/*.png
 !tests/workflows/integration_tests/execution/assets/*.png
-
+tests/inference_cli/integration_tests/assets/test_images/
 inference_profiling
 tests/inference_sdk/unit_tests/http/inference_profiling

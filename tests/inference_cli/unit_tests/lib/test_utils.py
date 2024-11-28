@@ -1,7 +1,14 @@
 import json
 import os.path
 
-from inference_cli.lib.utils import dump_json, read_env_file, read_file_lines
+import pytest
+
+from inference_cli.lib.utils import (
+    dump_json,
+    ensure_target_directory_is_empty,
+    read_env_file,
+    read_file_lines,
+)
 
 
 def test_read_file_lines(text_file_path: str) -> None:
@@ -39,3 +46,70 @@ def test_dump_json(empty_directory: str) -> None:
     with open(target_path, "r") as f:
         result = json.load(f)
     assert result == {"some": "content"}
+
+
+@pytest.mark.parametrize("allow_override", [True, False])
+@pytest.mark.parametrize("only_files", [True, False])
+def test_ensure_target_directory_is_empty_when_empty_directory_given(
+    empty_directory: str,
+    allow_override: bool,
+    only_files: bool,
+) -> None:
+    # when
+    ensure_target_directory_is_empty(
+        output_directory=empty_directory,
+        allow_override=allow_override,
+        only_files=only_files,
+    )
+
+    # then - no errors
+
+
+def test_ensure_target_directory_is_empty_when_directory_with_sub_dir_provided_but_only_files_matter(
+    empty_directory: str,
+) -> None:
+    # given
+    sub_dir_path = os.path.join(empty_directory, "sub_dir")
+    os.makedirs(sub_dir_path, exist_ok=True)
+
+    # when
+    ensure_target_directory_is_empty(
+        output_directory=empty_directory,
+        allow_override=False,
+        only_files=True,
+    )
+
+    # then - no errors
+
+
+def test_ensure_target_directory_is_empty_when_directory_with_sub_dir_provided_but_not_only_files_matter(
+    empty_directory: str,
+) -> None:
+    # given
+    sub_dir_path = os.path.join(empty_directory, "sub_dir")
+    os.makedirs(sub_dir_path, exist_ok=True)
+
+    # when
+    with pytest.raises(RuntimeError):
+        ensure_target_directory_is_empty(
+            output_directory=empty_directory,
+            allow_override=False,
+            only_files=False,
+        )
+
+
+def test_ensure_target_directory_is_empty_when_directory_with_sub_dir_provided_but_not_only_files_matter_and_override_allowed(
+    empty_directory: str,
+) -> None:
+    # given
+    sub_dir_path = os.path.join(empty_directory, "sub_dir")
+    os.makedirs(sub_dir_path, exist_ok=True)
+
+    # when
+    ensure_target_directory_is_empty(
+        output_directory=empty_directory,
+        allow_override=True,
+        only_files=False,
+    )
+
+    # then - no errors

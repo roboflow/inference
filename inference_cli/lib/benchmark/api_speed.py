@@ -25,7 +25,11 @@ def run_api_warm_up(
     for _ in tqdm(
         range(warm_up_requests), desc="Warming up API...", total=warm_up_requests
     ):
-        _ = client.infer(inference_input=image)
+        try:
+            _ = client.infer(inference_input=image)
+        except Exception:
+            # ignoring errors, without slight API instability may terminate benchmark
+            pass
 
 
 def coordinate_infer_api_speed_benchmark(
