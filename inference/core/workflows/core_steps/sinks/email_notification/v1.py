@@ -28,6 +28,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     BYTES_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
+    SECRET_KIND,
     STRING_KIND,
     Selector,
 )
@@ -123,6 +124,12 @@ notifications. Please adjust it according to your needs, setting `0` indicate no
 
 During cooldown period, consecutive runs of the step will cause `throttling_status` output to be set `True`
 and no notification will be sent.
+
+!!! warning "Cooldown limitations"
+
+    Current implementation of cooldown is limited to video processing - using this block in context of a 
+    Workflow that is run behind HTTP service (Roboflow Hosted API, Dedicated Deployment or self-hosted 
+    `inference` server) will have no effect for processing HTTP requests.  
 
 
 ### Attachments
@@ -244,10 +251,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Custom SMTP server to be used",
         examples=["$inputs.smtp_server", "smtp.google.com"],
     )
-    sender_email_password: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        description="Sender e-mail password be used when authenticating to SMTP server",
-        private=True,
-        examples=["$inputs.email_password"],
+    sender_email_password: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = (
+        Field(
+            description="Sender e-mail password be used when authenticating to SMTP server",
+            private=True,
+            examples=["$inputs.email_password"],
+        )
     )
     smtp_port: int = Field(
         default=465,
@@ -298,7 +307,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class EmailNotificationBlockV1(WorkflowBlock):
