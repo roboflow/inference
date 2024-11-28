@@ -237,6 +237,12 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import
 from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
     ModelMonitoringInferenceAggregatorBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
+    SlackNotificationBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.twilio.sms.v1 import (
+    TwilioSMSNotificationBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
@@ -560,6 +566,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         VLMAsClassifierBlockV2,
         VLMAsDetectorBlockV2,
         EnvironmentSecretsStoreBlockV1,
+        SlackNotificationBlockV1,
+        TwilioSMSNotificationBlockV1,
     ]
 
 
