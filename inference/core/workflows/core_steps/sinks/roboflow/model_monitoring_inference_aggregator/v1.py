@@ -148,6 +148,10 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class ParsedPrediction(BaseModel):
+    model_config = ConfigDict(
+        protected_namespaces=(),
+    )
+
     class_name: str
     confidence: float
     inference_id: str

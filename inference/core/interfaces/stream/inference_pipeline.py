@@ -466,6 +466,7 @@ class InferencePipeline:
         batch_collection_timeout: Optional[float] = None,
         profiling_directory: str = "./inference_profiling",
         use_workflow_definition_cache: bool = True,
+        serialize_results: bool = False,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -540,6 +541,8 @@ class InferencePipeline:
             use_workflow_definition_cache (bool): Controls usage of cache for workflow definitions. Set this to False
                 when you frequently modify definition saved in Roboflow app and want to fetch the
                 newest version for the request. Only applies for Workflows definitions saved on Roboflow platform.
+            serialize_results (bool): Boolean flag to decide if ExecutionEngine run should serialize workflow
+                results for each frame. If that is set true, sinks will receive serialized workflow responses.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -604,8 +607,6 @@ class InferencePipeline:
                 model_manager,
                 max_size=MAX_ACTIVE_MODELS,
             )
-            if api_key is None:
-                api_key = API_KEY
             if workflow_init_parameters is None:
                 workflow_init_parameters = {}
             thread_pool_executor = ThreadPoolExecutor(
@@ -629,6 +630,7 @@ class InferencePipeline:
                 execution_engine=execution_engine,
                 image_input_name=image_input_name,
                 video_metadata_input_name=video_metadata_input_name,
+                serialize_results=serialize_results,
             )
         except ImportError as error:
             raise CannotInitialiseModelError(
