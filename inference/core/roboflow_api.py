@@ -397,7 +397,9 @@ def get_workflow_cache_file(
 ) -> str:
     sanitized_workspace_id = sanitize_path_segment(workspace_id)
     sanitized_workflow_id = sanitize_path_segment(workflow_id)
-    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest() if api_key else "None"
+    api_key_hash = (
+        hashlib.md5(api_key.encode("utf-8")).hexdigest() if api_key else "None"
+    )
     prefix = os.path.abspath(os.path.join(MODEL_CACHE_DIR, "workflow"))
     result = os.path.abspath(
         os.path.join(
@@ -570,7 +572,9 @@ def _prepare_workflow_response_cache_key(
     workspace_id: WorkspaceID,
     workflow_id: str,
 ) -> str:
-    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest() if api_key else "None"
+    api_key_hash = (
+        hashlib.md5(api_key.encode("utf-8")).hexdigest() if api_key else "None"
+    )
     return f"workflow_definition:{workspace_id}:{workflow_id}:{api_key_hash}"
 
 
