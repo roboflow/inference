@@ -2,13 +2,13 @@ name: INTEGRATION TESTS - workflows
 
 on:
   workflow_run:
-    workflows: ["Check if PR is mergeable"]
+    workflows: ["mergeable"]
     types:
       - completed
   workflow_dispatch:
 
 jobs:
-  build-dev-test:
+  integration-tests-workflows:
     if: ${{ github.event.workflow_run.conclusion == "success" }}
     runs-on:
       labels: depot-ubuntu-22.04-16

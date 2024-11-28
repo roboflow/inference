@@ -1,4 +1,4 @@
-name: Check if PR is mergeable
+name: mergeable
 
 on:
   pull_request:
@@ -36,5 +36,5 @@ jobs:
             exit 0;
           else
             echo "Branch needs to be updated";
-            exmit 1;
+            exit 1;
           fi

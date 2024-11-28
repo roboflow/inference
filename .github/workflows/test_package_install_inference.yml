@@ -2,7 +2,7 @@ name: Test package install - inference
 
 on:
   workflow_run:
-    workflows: ["Check if PR is mergeable"]
+    workflows: ["mergeable"]
     types:
       - completed
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 jobs:
-  build:
+  test-package-install-inference:
     if: ${{ github.event.workflow_run.conclusion == "success" }}
     runs-on:
       labels: depot-ubuntu-22.04-8

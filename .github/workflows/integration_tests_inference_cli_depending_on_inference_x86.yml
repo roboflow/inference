@@ -2,13 +2,13 @@ name: INTEGRATION TESTS - inference CLI + inference CORE
 
 on:
   workflow_run:
-    workflows: ["Check if PR is mergeable"]
+    workflows: ["mergeable"]
     types:
       - completed
   workflow_dispatch:
 
 jobs:
-  build-dev-test:
+  integration-tests-cli-and-inference-core:
     if: ${{ github.event.workflow_run.conclusion == "success" }}
     runs-on:
       labels: depot-ubuntu-22.04-small
