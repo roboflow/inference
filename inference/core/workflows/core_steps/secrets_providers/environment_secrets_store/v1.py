@@ -36,7 +36,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     def get_actual_outputs(self) -> List[OutputDefinition]:
         return [
-            OutputDefinition(name=variable_name.lower(), kind=SECRET_KIND)
+            OutputDefinition(name=variable_name.lower(), kind=[SECRET_KIND])
             for variable_name in self.variables_storing_secrets
         ]
 
