@@ -5,7 +5,7 @@ from typing import Optional, Union
 
 from asyncua import Server
 from asyncua.client import Client as AsyncClient
-from asyncua.server.users import UserRole, User
+from asyncua.server.users import User, UserRole
 from asyncua.sync import Client, sync_async_client_method
 from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 
@@ -37,7 +37,7 @@ WORKFLOW_OPC_WRITER = {
             "object_name": "$inputs.opc_object_name",
             "variable_name": "$inputs.opc_variable_name",
             "value": "$inputs.opc_value",
-            "fire_and_forget": False
+            "fire_and_forget": False,
         }
     ],
     "outputs": [

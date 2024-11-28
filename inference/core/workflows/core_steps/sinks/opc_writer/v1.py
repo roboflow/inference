@@ -107,37 +107,31 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal[BLOCK_TYPE]
     url: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="URL of OPC server where data should be pushed to",
-        examples=[
-            {"url": "$inputs.opc_url"},
-            {"url": "opc.tcp://localhost:4840/freeopcua/server/"},
-        ],
+        examples=["$inputs.opc_url", "opc.tcp://localhost:4840/freeopcua/server/"],
     )
     namespace: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="OPC namespace",
-        examples=[
-            {"namespace": "$inputs.opc_namespace"},
-            {"namespace": "http://examples.freeopcua.github.io"},
-        ],
+        examples=["$inputs.opc_namespace", "http://examples.freeopcua.github.io"],
     )
     user_name: Union[Selector(kind=[STRING_KIND]), Optional[str]] = Field(
         default=None,
         description="Optional user name to be used for authentication when connecting to OPC server",
-        examples=[{"user_name": "$inputs.opc_user_name"}, {"user_name": "John"}],
+        examples=["$inputs.opc_user_name", "John"],
     )
     password: Union[Selector(kind=[STRING_KIND]), Optional[str]] = Field(
         default=None,
         description="Optional password to be used for authentication when connecting to OPC server",
-        examples=[{"password": "$inputs.opc_password"}, {"password": "secret"}],
+        examples=["$inputs.opc_password", "secret"],
     )
     object_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Name of object to be searched in namespace",
-        examples=[{"object_name": "$inputs.opc_object_name"}, {"object_name": "Line1"}],
+        examples=["$inputs.opc_object_name", "Line1"],
     )
     variable_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Name of variable to be set under found object",
         examples=[
-            {"variable_name": "$inputs.opc_variable_name"},
-            {"variable_name": "InspectionSuccess"},
+            "$inputs.opc_variable_name",
+            "InspectionSuccess",
         ],
     )
     value: Union[
@@ -145,7 +139,7 @@ class BlockManifest(WorkflowBlockManifest):
         Union[bool, float, int, str],
     ] = Field(
         description="value to be written into variable",
-        examples=[{"value": "$other_block.result"}, {"value": "running"}],
+        examples=["$other_block.result", "running"],
     )
     timeout: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=2,
