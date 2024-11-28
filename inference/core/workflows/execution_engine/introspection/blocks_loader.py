@@ -17,9 +17,6 @@ from inference.core.workflows.core_steps.loader import (
     load_blocks,
     load_kinds,
 )
-from inference.enterprise.workflows.enterprise_steps.loader import (
-    load_enterprise_blocks,
-)
 from inference.core.workflows.errors import (
     PluginInterfaceError,
     PluginLoadingError,
@@ -45,6 +42,9 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
     BLOCK_SOURCE,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.enterprise.workflows.enterprise_steps.loader import (
+    load_enterprise_blocks,
+)
 
 WORKFLOWS_PLUGINS_ENV = "WORKFLOWS_PLUGINS"
 WORKFLOWS_CORE_PLUGIN_NAME = "workflows_core"
