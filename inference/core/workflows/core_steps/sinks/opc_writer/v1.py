@@ -1,9 +1,8 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from copy import copy
 from datetime import datetime
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 from asyncua.client import Client as AsyncClient
 from asyncua.sync import Client, sync_async_client_method
@@ -11,12 +10,6 @@ from asyncua.ua.uaerrors import BadNoMatch, BadTypeMismatch, BadUserAccessDenied
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.core_steps.common.query_language.entities.operations import (
-    AllOperationsType,
-)
-from inference.core.workflows.core_steps.common.query_language.operations.core import (
-    build_operations_chain,
-)
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -105,7 +98,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "OPC Writer Sink",
             "version": "v1",
-            "short_description": "Pushes data to OPC server",
+            "short_description": "Pushes data to OPC server, this block is making use of [asyncua](https://github.com/FreeOpcUa/opcua-asyncio)",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
@@ -126,10 +119,6 @@ class BlockManifest(WorkflowBlockManifest):
             {"namespace": "http://examples.freeopcua.github.io"},
         ],
     )
-    object_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Name of object to be searched in namespace",
-        examples=[{"object_name": "$inputs.opc_object_name"}, {"object_name": "Line1"}],
-    )
     user_name: Union[Selector(kind=[STRING_KIND]), Optional[str]] = Field(
         default=None,
         description="Optional user name to be used for authentication when connecting to OPC server",
@@ -140,6 +129,10 @@ class BlockManifest(WorkflowBlockManifest):
         description="Optional password to be used for authentication when connecting to OPC server",
         examples=[{"password": "$inputs.opc_password"}, {"password": "secret"}],
     )
+    object_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
+        description="Name of object to be searched in namespace",
+        examples=[{"object_name": "$inputs.opc_object_name"}, {"object_name": "Line1"}],
+    )
     variable_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Name of variable to be set under found object",
         examples=[
@@ -148,7 +141,7 @@ class BlockManifest(WorkflowBlockManifest):
         ],
     )
     value: Union[
-        Selector(kind=Union[BOOLEAN_KIND, FLOAT_KIND, INTEGER_KIND, STRING_KIND]),
+        Selector(kind=[BOOLEAN_KIND, FLOAT_KIND, INTEGER_KIND, STRING_KIND]),
         Union[bool, float, int, str],
     ] = Field(
         description="value to be written into variable",
@@ -296,7 +289,7 @@ def opc_connect_and_write_value(
     timeout: int,
 ) -> Tuple[bool, str]:
     try:
-        success = _opc_connect_and_write_value(
+        _opc_connect_and_write_value(
             url=url,
             namespace=namespace,
             user_name=user_name,
@@ -343,7 +336,6 @@ def _opc_connect_and_write_value(
         client
     )
 
-    # Find the namespace index
     try:
         nsidx = get_namespace_index(namespace)
     except ValueError as exc:
