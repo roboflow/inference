@@ -69,12 +69,12 @@ WORKFLOW_SENDING_PREDICTION_SUMMARY = {
 
 @add_to_workflows_gallery(
     category="Integration with external apps",
-    use_case_title="Workflow sending notification to Slack",
+    use_case_title="Workflow sending SMS notification with Twilio",
     use_case_description="""
-This Workflow illustrates how to send notification to Slack.
+This Workflow illustrates how to send SMS notification with Twilio.
     """,
     workflow_definition=WORKFLOW_SENDING_PREDICTION_SUMMARY,
-    workflow_name_in_app="basic-slack-notification",
+    workflow_name_in_app="basic-twilio-sms-notification",
 )
 @pytest.mark.skipif(
     WORKFLOWS_TWILIO_ACCOUNT_SID is None,
