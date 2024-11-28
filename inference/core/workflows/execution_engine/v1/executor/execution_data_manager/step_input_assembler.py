@@ -39,6 +39,10 @@ class NonBatchModeSIMDStepInput:
     parameters: Dict[str, Any]
 
 
+class EmptyStepOutputError(Exception):
+    pass
+
+
 def construct_non_simd_step_input(
     step_node: StepNode,
     runtime_parameters: Dict[str, Any],
@@ -77,22 +81,25 @@ def construct_non_simd_step_input(
     if False in masks:
         return None
     result = {}
-    for parameter_name, parameter_spec in step_node.input_data.items():
-        if parameter_spec.is_compound_input():
-            result[parameter_name] = construct_non_simd_step_compound_input(
-                step_node=step_node,
-                parameter_spec=parameter_spec,
-                runtime_parameters=runtime_parameters,
-                execution_cache=execution_cache,
-            )
-        else:
-            result[parameter_name] = construct_non_simd_step_non_compound_input(
-                step_node=step_node,
-                parameter_spec=parameter_spec,
-                runtime_parameters=runtime_parameters,
-                execution_cache=execution_cache,
-            )
-    return result
+    try:
+        for parameter_name, parameter_spec in step_node.input_data.items():
+            if parameter_spec.is_compound_input():
+                result[parameter_name] = construct_non_simd_step_compound_input(
+                    step_node=step_node,
+                    parameter_spec=parameter_spec,
+                    runtime_parameters=runtime_parameters,
+                    execution_cache=execution_cache,
+                )
+            else:
+                result[parameter_name] = construct_non_simd_step_non_compound_input(
+                    step_node=step_node,
+                    parameter_spec=parameter_spec,
+                    runtime_parameters=runtime_parameters,
+                    execution_cache=execution_cache,
+                )
+        return result
+    except EmptyStepOutputError:
+        return None
 
 
 def construct_non_simd_step_compound_input(
@@ -182,7 +189,14 @@ def construct_non_simd_step_non_compound_input(
         return runtime_parameters[input_name]
     if parameter_spec.points_to_step_output():
         parameter_spec: DynamicStepInputDefinition = parameter_spec  # type: ignore
-        return execution_cache.get_non_batch_output(selector=parameter_spec.selector)
+        step_output = execution_cache.get_non_batch_output(
+            selector=parameter_spec.selector
+        )
+        if step_output is None:
+            raise EmptyStepOutputError(
+                f"Encountered empty step output under: {parameter_spec.selector}"
+            )
+        return step_output
     parameter_spec: StaticStepInputDefinition = parameter_spec  # type: ignore
     return parameter_spec.value
 

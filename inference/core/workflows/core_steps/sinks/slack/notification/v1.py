@@ -184,7 +184,6 @@ class SlackNotificationBlockV1(WorkflowBlock):
         cooldown_seconds: int,
         cooldown_session_key: str,
     ) -> BlockResult:
-        print("slack_token", slack_token)
         if disable_sink:
             return {
                 "error_status": False,

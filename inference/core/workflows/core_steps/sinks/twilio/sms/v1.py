@@ -233,8 +233,8 @@ class TwilioSMSNotificationBlockV1(WorkflowBlock):
             }
         if credentials_hash not in self._clients:
             self._clients[credentials_hash] = Client(
-                account_sid=twilio_account_sid,
-                password=twilio_auth_token,
+                twilio_account_sid,
+                twilio_auth_token,
             )
         client = self._clients[credentials_hash]
         message = format_message(
