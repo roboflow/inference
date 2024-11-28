@@ -1,22 +1,18 @@
 name: Test package install - inference-gpu
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["Check if PR is mergeable"]
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
   id-token: write
 
 jobs:
-  call_is_mergeable:
-    uses: ./.github/workflows/is_mergeable.yml
-    secrets: inherit
   build:
-    needs: call_is_mergeable
-    if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
+    if: ${{ github.event.workflow_run.conclusion == "success" }}
     runs-on:
       labels: depot-ubuntu-22.04-8
       group: public-depot

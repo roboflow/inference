@@ -1,16 +1,13 @@
 name: Check if PR is mergeable
 
 on:
-  workflow_call:
-    outputs:
-      mergeable_state:
-        description: "Set to 'clean' if branch is mergeable, otherwise set to 'not_clean'"
-        value: ${{ jobs.is_mergeable.outputs.mergeable_state }}
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
 
 jobs:
   is_mergeable:
-    outputs:
-      mergeable_state: ${{ steps.mergeable_check.outputs.mergeable_state }}
     runs-on:
       labels: depot-ubuntu-22.04-8
       group: public-depot
@@ -36,8 +33,8 @@ jobs:
           echo "Check if main is ancestor of ${{ github.event.pull_request.head.sha }} (branch HEAD)";
           if $(git merge-base --is-ancestor ${{ env.main_sha }} ${{ github.event.pull_request.head.sha }}); then
             echo "Branch is mergeable";
-            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT";
+            exit 0;
           else
             echo "Branch needs to be updated";
-            echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT";
+            exmit 1;
           fi
