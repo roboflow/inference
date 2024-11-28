@@ -2,9 +2,8 @@ name: Test package install - inference-gpu[extras]
 
 on:
   workflow_run:
-    workflows: ["mergeable"]
-    types:
-      - completed
+    workflows: [mergeable]
+    types: [completed]
   workflow_dispatch:
 
 permissions:

@@ -2,9 +2,8 @@ name: INTEGRATION TESTS - workflows
 
 on:
   workflow_run:
-    workflows: ["mergeable"]
-    types:
-      - completed
+    workflows: [mergeable]
+    types: [completed]
   workflow_dispatch:
 
 jobs:
