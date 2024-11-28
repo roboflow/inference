@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.query_language.entities.introspection import (
     OperationDescription,
@@ -160,9 +160,8 @@ class ExecutionEngineVersions(BaseModel):
 
 
 class WorkflowsBlocksSchemaDescription(BaseModel):
-    blocks_schema: dict = Field(
-        description="Schema for validating block definitions", alias="schema"
-    )
+    model_config = ConfigDict(protected_namespaces=())
+    schema: dict = Field(description="Schema for validating block definitions")
 
 
 class DescribeInterfaceResponse(BaseModel):

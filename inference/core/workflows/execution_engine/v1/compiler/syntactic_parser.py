@@ -97,4 +97,4 @@ def get_workflow_schema_description() -> WorkflowsBlocksSchemaDescription:
         available_blocks=available_blocks
     )
     schema = workflow_definition_class.model_json_schema()
-    return WorkflowsBlocksSchemaDescription(blocks_schema=schema)
+    return WorkflowsBlocksSchemaDescription(schema=schema)
