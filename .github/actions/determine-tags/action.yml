@@ -6,11 +6,18 @@ inputs:
     required: false
     default: ""
   version:
-    description: "Version of the image"
+    description: "Version of the image (e.g., 0.0.1, without the 'v')"
     required: true
   base_image:
     description: "Base image name for the Docker tags (e.g., 'roboflow/roboflow-inference-server-gpu')"
     required: true
+  token:
+    description: "GitHub token for accessing repository data"
+    required: true
+  force_push:
+    description: "Force push the release tag (only outputs the version tag)"
+    required: false
+    default: "false"
 outputs:
   image_tags:
     description: "Comma-separated list of Docker image tags"
@@ -26,23 +33,73 @@ runs:
         CUSTOM_TAG="${{ inputs.custom_tag }}"
         VERSION="${{ inputs.version }}"
         BASE_IMAGE="${{ inputs.base_image }}"
+        TOKEN="${{ inputs.token }}"
+        FORCE_PUSH="${{ inputs.force_push }}"
         BRANCH="${{ github.ref_name }}"
+        EVENT_NAME="${{ github.event_name }}"
+        TARGET_BRANCH="${{ github.event.release.target_commitish }}"
 
-        # Determine the tags
-        if [ -n "$CUSTOM_TAG" ]; then
-          IMAGE_TAGS="$BASE_IMAGE:$CUSTOM_TAG"
-        else
-          VERSION_TAG="$BASE_IMAGE:$VERSION"
-          if [ "$BRANCH" == "main" ]; then
-            LATEST_TAG="$BASE_IMAGE:latest"
-            IMAGE_TAGS="$VERSION_TAG,$LATEST_TAG"
+        # Initialize the tags
+        IMAGE_TAGS=""
+
+        # Workflow Dispatch Logic
+        if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
+          echo "Triggered manually via workflow_dispatch"
+          if [ -n "$CUSTOM_TAG" ]; then
+            echo "Custom tag set, force push ignored."
+            CUSTOM_TAG="$VERSION-$CUSTOM_TAG"
+            IMAGE_TAGS="$BASE_IMAGE:$CUSTOM_TAG"
           else
-            IMAGE_TAGS="$VERSION_TAG"
+            echo "Force push set or defaulting to version tag."
+            IMAGE_TAGS="$BASE_IMAGE:$VERSION"
+          fi
+
+        # Automatic Trigger Logic
+        else
+          echo "Triggered automatically via $EVENT_NAME"
+          # Fetch the latest release tag for release events
+          if [ "$EVENT_NAME" == "release" ]; then
+            RELEASE=$BRANCH
+            NORMALIZED_RELEASE=$(if echo "$RELEASE" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]$'; then echo "$RELEASE" | sed 's/^v//'; else echo "$RELEASE"; fi)
+            echo "Normalized release: $NORMALIZED_RELEASE"
+
+            LATEST_RELEASE=$(curl -s -H "Authorization: Bearer $TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/latest" | jq -r '.tag_name')
+            echo "Fetched latest release: $LATEST_RELEASE"
+
+            # Normalize versions: remove 'v' from the latest release tag
+            NORMALIZED_LATEST_RELEASE=$(echo "$LATEST_RELEASE" | sed 's/^v//')
+            echo "Normalized latest release: $NORMALIZED_LATEST_RELEASE"
+          else
+            LATEST_RELEASE=""
+            NORMALIZED_RELEASE=""
+            NORMALIZED_LATEST_RELEASE=""
+          fi
+
+          # Logic for push events to main
+          if [ "$EVENT_NAME" == "push" ] && [ "$BRANCH" == "main" ]; then
+            IMAGE_TAGS="$BASE_IMAGE:main"
+          fi
+
+          # Logic for release events
+          if [ "$EVENT_NAME" == "release" ]; then
+            IMAGE_TAGS="$BASE_IMAGE:$NORMALIZED_RELEASE"
+            if [ "$VERSION" == "$NORMALIZED_RELEASE" ] && [ "$NORMALIZED_RELEASE" == "$NORMALIZED_LATEST_RELEASE" ]; then
+              IMAGE_TAGS="$IMAGE_TAGS,$BASE_IMAGE:latest"
+            fi
           fi
         fi
 
+        # Clean up leading/trailing commas
+        IMAGE_TAGS=$(echo "$IMAGE_TAGS" | sed 's/^,//;s/,$//')
+
         # Echo the computed tags
         echo "Computed image tags: $IMAGE_TAGS"
+
+        if [ -z $IMAGE_TAGS ]; then
+          echo "No valid image tags found."
+          exit 1
+        fi
 
         # Export the tags to outputs
         echo "image_tags=$IMAGE_TAGS" >> $GITHUB_OUTPUT
