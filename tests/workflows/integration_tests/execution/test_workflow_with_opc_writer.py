@@ -1,9 +1,9 @@
 import asyncio
-import pytest
 import threading
 import time
 from typing import Optional, Union
 
+import pytest
 from asyncua import Server
 from asyncua.client import Client as AsyncClient
 from asyncua.server.users import User, UserRole
