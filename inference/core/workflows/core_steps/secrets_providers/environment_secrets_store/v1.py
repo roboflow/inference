@@ -12,7 +12,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-The **Environment Secrets Store* block is a secure and flexible solution for fetching secrets stored as 
+The **Environment Secrets Store** block is a secure and flexible solution for fetching secrets stored as 
 **environmental variables**. It is designed to enable Workflows to access sensitive information, 
 such as API keys or service credentials, without embedding them directly into the Workflow definitions. 
 
@@ -25,6 +25,10 @@ use secrets fetched from environment (which can be set by system administrator t
     It is strongly advised to use secrets providers (available when running self-hosted `inference` server)
     or workflows parameters to pass credentials. **Do not hardcode secrets in Workflows definitions.**
     
+!!! Important "Blocks limitations"
+
+    This block can only run on self-hosted `inference` server, we Roboflow does not allow exporting env
+    variables from Hosted Platform due to security concerns. 
 
 #### 🛠️ Block configuration
 

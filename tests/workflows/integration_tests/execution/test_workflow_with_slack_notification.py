@@ -229,7 +229,7 @@ WORKFLOW_SENDING_PREDICTION_SUMMARY_AND_FILES = {
 This Workflow illustrates how to send notification with attachments to Slack.
     """,
     workflow_definition=WORKFLOW_SENDING_PREDICTION_SUMMARY_AND_FILES,
-    workflow_name_in_app="basic-slack-notification",
+    workflow_name_in_app="advanced-slack-notification",
 )
 @pytest.mark.skipif(SLACK_TOKEN is None, reason="`SLACK_TOKEN` variable not exported")
 @pytest.mark.skipif(
