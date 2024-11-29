@@ -37,6 +37,25 @@ from inference.core.workflows.prototypes.block import (
 CACHE_EXPIRE_TIME = 15 * 60
 
 LONG_DESCRIPTION = """
+The **Slack Notification** block 📩 enables sending notifications via Slack, with customizable messages, attachments, 
+and cooldown mechanisms.
+
+The block requires Slack setup - 
+[this article](https://www.datacamp.com/tutorial/how-to-send-slack-messages-with-python) may help you 
+configuring everything properly.
+
+
+#### ✨ Key Features
+
+* 📢 **Send Messages:** Deliver notifications to specified Slack channels.
+
+* 🔗 **Dynamic Content:** Craft notifications based on outputs from other Workflow steps.
+
+* 📎 **Attach Files:** Share reports, predictions or visualizations.
+
+* 🕒 **Cooldown Control:** Prevent duplicate notifications within a set time frame.
+
+* ⚙️ **Flexible Execution:** Execute in the background or block Workflow execution for debugging.
 """
 
 PARAMETER_REGEX = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
