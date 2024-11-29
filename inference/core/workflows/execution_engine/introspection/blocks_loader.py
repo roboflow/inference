@@ -42,7 +42,7 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
     BLOCK_SOURCE,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
-from inference.enterprise.workflows.enterprise_steps.loader import (
+from inference.enterprise.workflows.enterprise_blocks.loader import (
     load_enterprise_blocks,
 )
 
