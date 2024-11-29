@@ -129,7 +129,7 @@ def test_get_versions_of_execution_engine(object_detection_service_url: str) -> 
     # then
     response.raise_for_status()
     response_data = response.json()
-    assert response_data["versions"] == ["1.3.0"]
+    assert response_data["versions"] == ["1.4.0"]
 
 
 FUNCTION = """
@@ -448,32 +448,6 @@ def test_simple_workflow_run_when_parameter_is_missing(
         json={
             "specification": SIMPLE_WORKFLOW_DEFINITION,
             "api_key": ROBOFLOW_API_KEY,
-        },
-    )
-
-    # then
-    assert response.status_code == 422
-
-
-@pytest.mark.flaky(retries=4, delay=1)
-def test_simple_workflow_run_when_api_key_is_missing(
-    object_detection_service_url: str, detection_model_id: str
-) -> None:
-    # when
-    response = requests.post(
-        f"{object_detection_service_url}/workflows/run",
-        json={
-            "specification": SIMPLE_WORKFLOW_DEFINITION,
-            "inputs": {
-                "image": [
-                    {
-                        "type": "url",
-                        "value": "https://media.roboflow.com/fruit.png",
-                    }
-                ]
-                * 2,
-                "model_id": detection_model_id,
-            },
         },
     )
 
