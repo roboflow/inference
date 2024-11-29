@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  unit-tests-inference-cli:
+  build-dev-test:
     if: ${{ github.event.workflow_run.conclusion == "success" }}
     runs-on:
       labels: depot-ubuntu-22.04-4

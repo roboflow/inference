@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  static-code-analysis:
+  build-dev-test:
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
