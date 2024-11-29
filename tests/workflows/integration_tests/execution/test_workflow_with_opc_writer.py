@@ -1,10 +1,5 @@
-import os
-
-import pytest
-
-os.environ["LOAD_ENTERPRISE_BLOCKS"] = "TRUE"
-
 import asyncio
+import pytest
 import threading
 import time
 from typing import Optional, Union
