@@ -3,7 +3,7 @@ docker>=7.0.0,<8.0.0
 typer>=0.9.0,<=0.12.5
 rich~=13.0.0
 PyYAML~=6.0.0
-supervision>=0.21.0,<=0.22.0
+supervision>=0.25.0
 opencv-python>=4.8.1.78,<=4.10.0.84
 tqdm>=4.0.0,<5.0.0
 GPUtil~=1.4.0
