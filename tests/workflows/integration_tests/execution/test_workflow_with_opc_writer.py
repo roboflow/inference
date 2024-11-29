@@ -1,3 +1,7 @@
+import os
+
+os.environ["LOAD_ENTERPRISE_BLOCKS"] = "TRUE"
+
 import asyncio
 import threading
 import time
