@@ -107,7 +107,7 @@ class BlockManifest(WorkflowBlockManifest):
             "version": "v1",
             "short_description": "Pushes data to OPC server, this block is making use of [asyncua](https://github.com/FreeOpcUa/opcua-asyncio)",
             "long_description": LONG_DESCRIPTION,
-            "license": "Apache-2.0",
+            "license": "Roboflow Enterprise License",
             "block_type": "sink",
         }
     )

@@ -38,6 +38,14 @@ If you want to throttle the *Step 2* execution rate - you should apply rate limi
 
 * adjust `cooldown_seconds` to specify what is the number of seconds that must be awaited before next time
 when `step_2` is fired 
+
+
+!!! warning "Cooldown limitations"
+
+    Current implementation of cooldown is limited to video processing - using this block in context of a 
+    Workflow that is run behind HTTP service (Roboflow Hosted API, Dedicated Deployment or self-hosted 
+    `inference` server) will have no effect for processing HTTP requests.  
+    
 """
 
 

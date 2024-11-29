@@ -1040,6 +1040,14 @@ INFERENCE_ID_KIND = Kind(
     internal_data_type="str",
 )
 
+SECRET_KIND = Kind(
+    name="secret",
+    description="Secret value",
+    docs="This kind represents a secret - password or other credential that should remain confidential.",
+    serialised_data_type="str",
+    internal_data_type="str",
+)
+
 
 STEP_AS_SELECTED_ELEMENT = "step"
 STEP_OUTPUT_AS_SELECTED_ELEMENT = "step_output"

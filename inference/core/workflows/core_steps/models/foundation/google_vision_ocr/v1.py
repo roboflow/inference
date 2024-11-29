@@ -22,6 +22,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    SECRET_KIND,
     STRING_KIND,
     Selector,
 )
@@ -79,7 +80,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[Selector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
         description="Your Google Vision API key",
         examples=["xxx-xxx", "$inputs.google_api_key"],
         private=True,
@@ -97,7 +98,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class GoogleVisionOCRBlockV1(WorkflowBlock):
