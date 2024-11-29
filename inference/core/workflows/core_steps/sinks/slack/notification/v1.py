@@ -51,12 +51,16 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "notifications",
+                "icon": "far fa-brands fa-slack",
+            },
         }
     )
     type: Literal["roboflow_core/slack_notification@v1"]
     slack_token: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = Field(
         description="Slack Token. Visit "
-        "<a href='https://api.slack.com/tutorials/tracks/getting-a-token'>Slack docks</a> "
+        "https://api.slack.com/tutorials/tracks/getting-a-token "
         "to find out how to generate the token.",
         private=True,
         examples=["$inputs.slack_token"],

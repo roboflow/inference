@@ -21,6 +21,10 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": "TODO",
             "license": "Apache-2.0",
             "block_type": "secrets_provider",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "far fa-key",
+            },
         }
     )
     type: Literal["roboflow_core/environment_secrets_store@v1"]

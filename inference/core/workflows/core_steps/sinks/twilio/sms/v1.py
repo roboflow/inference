@@ -50,13 +50,17 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "notifications",
+                "icon": "far fa-comment-sms",
+            },
         }
     )
     type: Literal["roboflow_core/twilio_sms_notification@v1"]
     twilio_account_sid: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = Field(
         title="Twilio Account SID",
         description="Twilio Account SID. Visit "
-        "<a href='https://twilio.com/console'>Twilio Console</a> "
+        "https://twilio.com/console "
         "to set up SMS service and fetch the value.",
         private=True,
         examples=["$inputs.twilio_account_sid"],
