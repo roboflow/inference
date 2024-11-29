@@ -120,12 +120,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="OPC namespace",
         examples=["$inputs.opc_namespace", "http://examples.freeopcua.github.io"],
     )
-    user_name: Union[Selector(kind=[STRING_KIND]), Optional[str]] = Field(
+    user_name: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
         default=None,
         description="Optional user name to be used for authentication when connecting to OPC server",
         examples=["$inputs.opc_user_name", "John"],
     )
-    password: Union[Selector(kind=[STRING_KIND]), Optional[str]] = Field(
+    password: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
         default=None,
         description="Optional password to be used for authentication when connecting to OPC server",
         examples=["$inputs.opc_password", "secret"],
