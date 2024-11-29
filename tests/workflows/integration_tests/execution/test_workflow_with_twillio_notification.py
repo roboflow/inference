@@ -33,7 +33,7 @@ WORKFLOW_SENDING_PREDICTION_SUMMARY = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_keypoint_detection_model@v2",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "detection",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
