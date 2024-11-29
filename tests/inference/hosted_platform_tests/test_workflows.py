@@ -979,3 +979,46 @@ def test_discovering_interface_of_invalid_workflow_from_payload(
 
     # then
     assert response.status_code == 400
+
+
+WORKFLOW_WITH_ENV_SECRET_STORE = {
+    "version": "1.4.0",
+    "inputs": [],
+    "steps": [
+        {
+            "type": "roboflow_core/environment_secrets_store@v1",
+            "name": "vault",
+            "variables_storing_secrets": ["SOME_TOKEN"],
+        }
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "status",
+            "selector": "$steps.vault.some_token",
+        },
+    ],
+}
+
+
+@pytest.mark.flaky(retries=4, delay=1)
+def test_extracting_secrets_from_env_based_secret_store(
+    object_detection_service_url: str,
+) -> None:
+    # when
+    response = requests.post(
+        f"{object_detection_service_url}/workflows/run",
+        json={
+            "specification": WORKFLOW_WITH_ENV_SECRET_STORE,
+            "api_key": ROBOFLOW_API_KEY,
+            "inputs": {},
+        },
+    )
+
+    # then
+    assert response.status_code == 500
+    response_data = response.json()
+    assert (
+        "`roboflow_core/environment_secrets_store@v1` block cannot run in this environment" in response_data["message"]
+    ), "Expected execution to be prevented"
+
