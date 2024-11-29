@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
-from inference.core.env import LAMBDA, LOAD_ENTERPRISE_BLOCKS
+from inference.core.env import LOAD_ENTERPRISE_BLOCKS
 from inference.core.workflows.core_steps.loader import (
     KINDS_DESERIALIZERS,
     KINDS_SERIALIZERS,

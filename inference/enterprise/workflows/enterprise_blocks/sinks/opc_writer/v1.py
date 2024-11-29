@@ -41,7 +41,9 @@ perform communication with OPC servers.
 Block will attempt to send:
 
 * numbers (integers, floats)
+
 * booleans
+
 * strings
 
 Type of sent data must match type of OPC object.

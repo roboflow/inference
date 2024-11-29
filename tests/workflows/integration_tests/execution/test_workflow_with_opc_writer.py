@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 os.environ["LOAD_ENTERPRISE_BLOCKS"] = "TRUE"
 
 import asyncio
@@ -95,7 +97,7 @@ async def start_test_opc_server(
     OPC_SERVER_STARTED = True
     async with server:
         while not STOP_OPC_SERVER:
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)
 
 
 def _opc_connect_and_read_value(
@@ -173,6 +175,7 @@ allowing factory automation engineers to take advantage of machine vision when b
     workflow_definition=WORKFLOW_OPC_WRITER,
     workflow_name_in_app="opc_writer",
 )
+@pytest.mark.timeout(5)
 def test_workflow_with_opc_writer_sink() -> None:
     # given
     loop = asyncio.new_event_loop()
