@@ -309,11 +309,14 @@ def send_slack_notification(
         logging.warning(f"Could not send Slack notification. Error: {error_details}")
         return (
             True,
-            f"Failed to Slack notification. Internal error details: {error_details}",
+            f"Failed to send Slack notification. Internal error details: {error_details}",
         )
     except Exception as error:
         logging.warning(f"Could not send Slack notification. Error: {str(error)}")
-        return True, f"Failed to Slack notification. Internal error details: {error}"
+        return (
+            True,
+            f"Failed to send Slack notification. Internal error details: {error}",
+        )
 
 
 def _send_slack_notification(

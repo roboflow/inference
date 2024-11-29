@@ -152,6 +152,13 @@ class BlockManifest(WorkflowBlockManifest):
             )
         return value
 
+    @field_validator("length_limit")
+    @classmethod
+    def ensure_length_limit_within_bounds(cls, value: Any) -> dict:
+        if isinstance(value, int) and value <= 0:
+            raise ValueError(f"Length limit for SMS must be greater than 0")
+        return value
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -340,5 +347,8 @@ def send_sms_notification(
         )
         return False, "Notification sent successfully"
     except Exception as error:
-        logging.warning(f"Could not send Slack notification. Error: {str(error)}")
-        return True, f"Failed to Slack notification. Internal error details: {error}"
+        logging.warning(f"Could not send Twilio SMS notification. Error: {str(error)}")
+        return (
+            True,
+            f"Failed to send Twilio SMS notification. Internal error details: {error}",
+        )

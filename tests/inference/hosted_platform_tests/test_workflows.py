@@ -1019,6 +1019,6 @@ def test_extracting_secrets_from_env_based_secret_store(
     assert response.status_code == 500
     response_data = response.json()
     assert (
-        "`roboflow_core/environment_secrets_store@v1` block cannot run in this environment" in response_data["message"]
+        "`roboflow_core/environment_secrets_store@v1` block cannot run in this environment"
+        in response_data["message"]
     ), "Expected execution to be prevented"
-

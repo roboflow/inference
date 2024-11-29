@@ -631,9 +631,6 @@ def test_feeding_existing_env_variable_into_simd_step_accepting_empty_batches_ne
     assert result[1]["output"] == ["empty"] * 12
 
 
-# ################################
-
-
 WORKFLOW_EXPOSING_NON_EXISTING_ENV_VARIABLE_TO_SIMD_STEP_NOT_ACCEPTING_BATCHES = {
     "version": "1.4.0",
     "inputs": [{"type": "WorkflowImage", "name": "image"}],
