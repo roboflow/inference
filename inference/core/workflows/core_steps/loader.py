@@ -91,6 +91,7 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
     serialise_sv_detections,
+    serialize_secret,
     serialize_video_metadata_kind,
     serialize_wildcard_kind,
 )
@@ -217,6 +218,9 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
 )
+from inference.core.workflows.core_steps.secrets_providers.environment_secrets_store.v1 import (
+    EnvironmentSecretsStoreBlockV1,
+)
 from inference.core.workflows.core_steps.sinks.email_notification.v1 import (
     EmailNotificationBlockV1,
 )
@@ -232,6 +236,12 @@ from inference.core.workflows.core_steps.sinks.roboflow.dataset_upload.v2 import
 )
 from inference.core.workflows.core_steps.sinks.roboflow.model_monitoring_inference_aggregator.v1 import (
     ModelMonitoringInferenceAggregatorBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.slack.notification.v1 import (
+    SlackNotificationBlockV1,
+)
+from inference.core.workflows.core_steps.sinks.twilio.sms.v1 import (
+    TwilioSMSNotificationBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
@@ -379,6 +389,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ROBOFLOW_API_KEY_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
+    SECRET_KIND,
     SERIALISED_PAYLOADS_KIND,
     STRING_KIND,
     TOP_CLASS_KIND,
@@ -397,6 +408,7 @@ REGISTERED_INITIALIZERS = {
     "thread_pool_executor": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
+    "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
 }
 
 KINDS_SERIALIZERS = {
@@ -407,6 +419,7 @@ KINDS_SERIALIZERS = {
     KEYPOINT_DETECTION_PREDICTION_KIND.name: serialise_sv_detections,
     QR_CODE_DETECTION_KIND.name: serialise_sv_detections,
     BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
+    SECRET_KIND.name: serialize_secret,
     WILDCARD_KIND.name: serialize_wildcard_kind,
 }
 KINDS_DESERIALIZERS = {
@@ -552,6 +565,9 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowObjectDetectionModelBlockV2,
         VLMAsClassifierBlockV2,
         VLMAsDetectorBlockV2,
+        EnvironmentSecretsStoreBlockV1,
+        SlackNotificationBlockV1,
+        TwilioSMSNotificationBlockV1,
     ]
 
 
@@ -591,4 +607,5 @@ def load_kinds() -> List[Kind]:
         IMAGE_METADATA_KIND,
         BYTES_KIND,
         INFERENCE_ID_KIND,
+        SECRET_KIND,
     ]

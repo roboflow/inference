@@ -279,7 +279,7 @@ def run_non_simd_step(
             step_selector=step_selector
         )
     if step_input is None:
-        # discarded by conditional execution
+        # discarded by conditional execution or empty value from upstream step
         return None
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step

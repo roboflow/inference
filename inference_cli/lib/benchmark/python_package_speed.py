@@ -1,5 +1,4 @@
 import random
-import subprocess
 import time
 from typing import Any, Dict, List, Optional
 
@@ -7,29 +6,10 @@ import numpy as np
 from supervision.utils.file import read_yaml_file
 from tqdm import tqdm
 
+from inference import get_model
+from inference.core.models.base import Model
+from inference.core.registries.roboflow import get_model_type
 from inference_cli.lib.benchmark.results_gathering import ResultsCollector
-from inference_cli.lib.exceptions import InferencePackageMissingError
-
-try:
-    from inference import get_model
-    from inference.core.models.base import Model
-    from inference.core.registries.roboflow import get_model_type
-except Exception as error:
-    print(
-        "You need to have `inference` package installed. Do you want the package to be installed? [YES/no]"
-    )
-    user_choice = input()
-    if user_choice.lower() != "yes":
-        raise InferencePackageMissingError(
-            "You need to install `inference` package to use this feature. Run `pip install inference`"
-        ) from error
-    try:
-        subprocess.run("pip install inference".split(), check=True)
-        import inference
-    except Exception as inner_error:
-        raise InferencePackageMissingError(
-            f"Installation of package failed. Cause: {inner_error}"
-        ) from inner_error
 
 
 def run_python_package_speed_benchmark(

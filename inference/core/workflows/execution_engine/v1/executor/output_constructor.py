@@ -46,11 +46,28 @@ def construct_workflow_output(
     batch_oriented_outputs = {
         output for output, indices in output_name2indices.items() if indices is not None
     }
-    non_batch_outputs = {
-        output.name: execution_data_manager.get_non_batch_data(selector=output.selector)
+    kinds_of_output_nodes = {
+        output.name: node_as(
+            execution_graph=execution_graph,
+            node=construct_output_selector(name=output.name),
+            expected_type=OutputNode,
+        ).kind
         for output in workflow_outputs
-        if output.name not in batch_oriented_outputs
     }
+    non_batch_outputs = {}
+    for output in workflow_outputs:
+        if output.name in batch_oriented_outputs:
+            continue
+        data_piece = execution_data_manager.get_non_batch_data(selector=output.selector)
+        if serialize_results:
+            output_kind = kinds_of_output_nodes[output.name]
+            data_piece = serialize_data_piece(
+                output_name=output.name,
+                data_piece=data_piece,
+                kind=output_kind,
+                kinds_serializers=kinds_serializers,
+            )
+        non_batch_outputs[output.name] = data_piece
     if not batch_oriented_outputs:
         return [non_batch_outputs]
     dimensionality_for_output_nodes = {
@@ -59,14 +76,6 @@ def construct_workflow_output(
             node=construct_output_selector(name=output.name),
             expected_type=OutputNode,
         ).dimensionality
-        for output in workflow_outputs
-    }
-    kinds_of_output_nodes = {
-        output.name: node_as(
-            execution_graph=execution_graph,
-            node=construct_output_selector(name=output.name),
-            expected_type=OutputNode,
-        ).kind
         for output in workflow_outputs
     }
     outputs_arrays: Dict[str, Optional[list]] = {

@@ -25,6 +25,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     IMAGE_METADATA_KIND,
     PARENT_ID_KIND,
+    SECRET_KIND,
     STRING_KIND,
     WILDCARD_KIND,
     ImageInputField,
@@ -75,10 +76,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Text prompt to the OpenAI model",
         examples=["my prompt", "$inputs.prompt"],
     )
-    openai_api_key: Union[Selector(kind=[STRING_KIND]), Optional[str]] = Field(
-        description="Your OpenAI API key",
-        examples=["xxx-xxx", "$inputs.openai_api_key"],
-        private=True,
+    openai_api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), Optional[str]] = (
+        Field(
+            description="Your OpenAI API key",
+            examples=["xxx-xxx", "$inputs.openai_api_key"],
+            private=True,
+        )
     )
     openai_model: Union[
         Selector(kind=[STRING_KIND]), Literal["gpt-4o", "gpt-4o-mini"]
@@ -139,7 +142,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class OpenAIBlockV1(WorkflowBlock):

@@ -51,35 +51,36 @@ jobs:
       - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 | object-detection 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'object-detection' }}
         run: |
-          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m coco/16 -d coco -rps 5 -br 500 -h https://detect.roboflow.com --yes --output_location test_results.json
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m coco/16 -d coco -rps 5 -br 500 -h https://detect.roboflow.com --yes --output_location test_results.json --max_error_rate 5.0
       - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 | instance-segmentation 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'instance-segmentation' }}
         run: |
-          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m asl-poly-instance-seg/53 -d coco -rps 5 -br 500 -h https://outline.roboflow.com --yes --output_location test_results.json
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m asl-poly-instance-seg/53 -d coco -rps 5 -br 500 -h https://outline.roboflow.com --yes --output_location test_results.json --max_error_rate 5.0
       - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 | classification 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'classification' }}
         run: |
-          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m vehicle-classification-eapcd/2 -d coco -rps 5 -br 500 -h https://classify.roboflow.com --yes --output_location test_results.json
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m vehicle-classification-eapcd/2 -d coco -rps 5 -br 500 -h https://classify.roboflow.com --yes --output_location test_results.json --max_error_rate 5.0
       - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 | workflows 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'workflows' }}
         run: |
-          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -wid workflows-production-test -wn paul-guerrie-tang1 -d coco -rps 5 -br 500 -h https://classify.roboflow.com --yes --output_location test_results.json
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -wid workflows-production-test -wn paul-guerrie-tang1 -d coco -rps 5 -br 500 -h https://classify.roboflow.com --yes --output_location test_results.json --max_error_rate 5.0
 
       - name: 🏋️‍♂️ Load test 😎 STAGING 😎 | object-detection 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'object-detection' }}
         run: |
-          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m eye-detection/35  -d coco -rps 5 -br 500 -h https://lambda-object-detection.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m eye-detection/35  -d coco -rps 5 -br 500 -h https://lambda-object-detection.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
       - name: 🏋️‍♂️ Load test 😎 STAGING 😎 | instance-segmentation 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'instance-segmentation' }}
         run: |
-          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m asl-instance-seg/116 -d coco -rps 5 -br 500 -h https://lambda-instance-segmentation.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m asl-instance-seg/116 -d coco -rps 5 -br 500 -h https://lambda-instance-segmentation.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
       - name: 🏋️‍♂️ Load test 😎 STAGING 😎 | classification 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'classification' }}
         run: |
-          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m catdog/28 -d coco -rps 5 -br 500 -h https://lambda-classification.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m catdog/28 -d coco -rps 5 -br 500 -h https://lambda-classification.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
       - name: 🏋️‍♂️ Load test 😎 STAGING 😎 | workflows 🔥🔥🔥🔥
         if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'workflows' }}
         run: |
-          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -wid workflows-staging-test -wn paul-guerrie -d coco -rps 5 -br 500 -h https://lambda-classification.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -wid workflows-staging-test -wn paul-guerrie -d coco -rps 5 -br 500 -h https://lambda-classification.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
       - name: 📈 RESULTS
         run: cat test_results.json | jq
+        if: always()
