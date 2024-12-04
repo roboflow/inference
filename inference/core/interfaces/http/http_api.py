@@ -630,8 +630,10 @@ class HttpInterface(BaseInterface):
                 api_key = req_params.get("api_key", None) or json_params.get(
                     "api_key", None
                 )
+                cached_api_key, cached_workspace_url = cached_api_keys.get(
+                    api_key, (0, None))
 
-                if cached_api_keys.get(api_key, 0) < time.time():
+                if cached_api_key < time.time():
                     try:
                         workspace_url = (
                             get_roboflow_workspace(api_key)
@@ -644,8 +646,11 @@ class HttpInterface(BaseInterface):
 
                         cached_api_keys[api_key] = (
                             time.time() + 3600
-                        )  # expired after 1 hour
+                        , workspace_url)  # expired after 1 hour
                     except RoboflowAPINotAuthorizedError as e:
+                        return _unauthorized_response("Unauthorized api_key")
+                else:
+                    if cached_workspace_url != DEDICATED_DEPLOYMENT_WORKSPACE_URL:
                         return _unauthorized_response("Unauthorized api_key")
 
                 # check project_url
