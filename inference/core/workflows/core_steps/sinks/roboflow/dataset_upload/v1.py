@@ -73,7 +73,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Save images and predictions in your Roboflow Dataset"
+SHORT_DESCRIPTION = "Save images and predictions in your Roboflow Dataset."
 
 LONG_DESCRIPTION = """
 Block let users save their images and predictions into Roboflow Dataset. Persisting data from

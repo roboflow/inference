@@ -88,7 +88,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Anthropic Claude",
             "version": "v1",
-            "short_description": "Run Anthropic Claude model with vision capabilities",
+            "short_description": "Run Anthropic Claude model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",

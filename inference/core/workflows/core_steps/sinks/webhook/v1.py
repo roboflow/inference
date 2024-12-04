@@ -163,7 +163,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Webhook Sink",
             "version": "v1",
-            "short_description": "Sends the request to remote API with results of Workflow results",
+            "short_description": "Sends the request to remote API with results of Workflow results.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",

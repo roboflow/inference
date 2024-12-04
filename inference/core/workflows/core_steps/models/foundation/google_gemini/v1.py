@@ -96,7 +96,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Google Gemini",
             "version": "v1",
-            "short_description": "Run Google's Gemini model with vision capabilities",
+            "short_description": "Run Google's Gemini model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
