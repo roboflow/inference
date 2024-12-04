@@ -19,7 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/color_visualization@v1"
-SHORT_DESCRIPTION = "Paints a solid color on detected objects in an image."
+SHORT_DESCRIPTION = "Paint a solid color on detected objects in an image."
 LONG_DESCRIPTION = """
 The `ColorVisualization` block paints a solid color on detected
 objects in an image using Supervision's `sv.ColorAnnotator`.

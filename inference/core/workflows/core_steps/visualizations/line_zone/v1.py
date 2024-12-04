@@ -25,7 +25,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/line_counter_visualization@v1"
-SHORT_DESCRIPTION = "Paints a mask over line zone in an image."
+SHORT_DESCRIPTION = "Paint a mask over a line zone in an image."
 LONG_DESCRIPTION = """
 The `LineCounterZoneVisualization` block draws line
 in an image with a specified color and opacity.

@@ -36,7 +36,7 @@ OUTPUT_IMAGE_KEY: str = "warped_image"
 TYPE: str = "PerspectiveCorrection"
 SHORT_DESCRIPTION = (
     "Correct coordinates of detections from plane defined by given polygon "
-    "to straight rectangular plane of given width and height"
+    "to straight rectangular plane of given width and height."
 )
 LONG_DESCRIPTION = """
 The `PerspectiveCorrectionBlock` is a transformer block designed to correct
