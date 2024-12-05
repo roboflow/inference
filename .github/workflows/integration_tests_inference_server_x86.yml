@@ -7,7 +7,8 @@ on:
   # TODO: remove below, testing
   workflow_run:
     workflows: [mergeable]
-    types: [completed]
+    types:
+      - completed
 
 jobs:
   build:

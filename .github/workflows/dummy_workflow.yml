@@ -3,7 +3,8 @@ name: Test Dummy
 on:
   workflow_run:
     workflows: [mergeable]
-    types: [completed]
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
