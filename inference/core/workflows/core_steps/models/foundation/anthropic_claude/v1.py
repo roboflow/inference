@@ -25,6 +25,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
+    SECRET_KIND,
     STRING_KIND,
     ImageInputField,
     Selector,
@@ -149,7 +150,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[Selector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
         description="Your Antropic API key",
         examples=["xxx-xxx", "$inputs.antropics_api_key"],
         private=True,
@@ -220,7 +221,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class AntropicClaudeBlockV1(WorkflowBlock):

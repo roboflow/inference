@@ -301,3 +301,20 @@ subsets of steps**, enabling building such tools as debuggers.
         feel free to alter the serialization methods for *kinds*, simply registering
         the function in your plugin and loading it to the Execution Engine - the 
         serializer/deserializer defined as the last one will be in use.
+
+
+## Execution Engine `v1.4.0` | inference `v0.29.0`
+
+* Added new kind - [`secret`](/workflows/kinds/secret/) to represent credentials. **No action needed** for existing 
+blocks, yet it is expected that over time blocks developers should use this kind, whenever block is to accept secret 
+value as parameter.
+
+* Fixed issue with results serialization introduced in `v1.3.0` - by mistake, Execution Engine was not serializing 
+non-batch oriented outputs.
+
+* Fixed Execution Engine bug with preparing inputs for steps. For non-SIMD steps before, while collecting inputs 
+in runtime, `WorkflowBlockManifest.accepts_empty_input()` method result was being ignored - causing the bug when
+one non-SIMD step was feeding empty values to downstream blocks. Additionally, in the light of changes made in `v1.3.0`,
+thanks to which non-SIMD blocks can easily feed inputs for downstream SIMD steps - it is needed to check if 
+upstream non-SIMD block yielded non-empty results (as SIMD block may not accept empty results). This check was added.
+**No action needed** for existing blocks, but this fix may fix previously broken Workflows.
