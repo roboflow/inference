@@ -1,0 +1,22 @@
+name: Test Dummy
+
+on:
+  workflow_run:
+    workflows: [mergeable]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+
+jobs:
+  dummy:
+    if: ${{ github.event.workflow_run.conclusion == "success" }}
+    runs-on:
+      labels: depot-ubuntu-22.04-8
+      group: public-depot
+    timeout-minutes: 10
+    steps:
+      - name: do something
+        run: |
+          echo "I'm alive!"
