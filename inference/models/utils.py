@@ -295,6 +295,7 @@ except:
     pass
 try:
     from inference.models import SegmentAnything
+
     ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
 except:
     pass
