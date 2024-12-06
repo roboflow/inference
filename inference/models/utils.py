@@ -244,6 +244,12 @@ try:
         ): LoRAPaliGemma,  # TODO: change when we have a new project type
         ("instance-segmentation", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
         ("instance-segmentation", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-224"): PaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-448"): PaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-896"): PaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-224-peft"): LoRAPaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-448-peft"): LoRAPaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-896-peft"): LoRAPaliGemma,
     }
     ROBOFLOW_MODEL_TYPES.update(paligemma_models)
 except:
@@ -289,7 +295,6 @@ except:
     pass
 try:
     from inference.models import SegmentAnything
-
     ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
 except:
     pass
