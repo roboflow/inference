@@ -30,7 +30,7 @@ OUTPUT_KEY_DETECTIONS_OUT: str = "detections_out"
 IN: str = "in"
 OUT: str = "out"
 DETECTIONS_IN_OUT_PARAM: str = "in_out"
-SHORT_DESCRIPTION = "Count detections passing line"
+SHORT_DESCRIPTION = "Count detections passing a line."
 LONG_DESCRIPTION = """
 The `LineCounter` is an analytics block designed to count objects passing the line.
 The block requires detections to be tracked (i.e. each object must have unique tracker_id assigned,

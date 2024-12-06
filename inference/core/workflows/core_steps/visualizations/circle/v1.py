@@ -18,7 +18,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/circle_visualization@v1"
-SHORT_DESCRIPTION = "Draws a circle around detected objects in an image."
+SHORT_DESCRIPTION = "Draw a circle around detected objects in an image."
 LONG_DESCRIPTION = """
 The `CircleVisualization` block draws a circle around detected
 objects in an image using Supervision's `sv.CircleAnnotator`.

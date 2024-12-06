@@ -66,7 +66,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Slack Notification",
             "version": "v1",
-            "short_description": "Send notification via Slack",
+            "short_description": "Send notification via Slack.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",

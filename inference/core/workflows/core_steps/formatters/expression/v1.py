@@ -31,7 +31,7 @@ save it as variables and evaluate switch-case like statements to get the final r
 """
 
 SHORT_DESCRIPTION = (
-    "Creates specific output based on defined input variables and configured rules."
+    "Create a specific output based on defined input variables and configured rules."
 )
 
 

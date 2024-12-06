@@ -18,7 +18,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/ellipse_visualization@v1"
-SHORT_DESCRIPTION = "Draws ellipses that highlight detected objects in an image."
+SHORT_DESCRIPTION = "Draw ellipses that highlight detected objects in an image."
 LONG_DESCRIPTION = """
 The `EllipseVisualization` block draws ellipses that highlight detected
 objects in an image using Supervision's `sv.EllipseAnnotator`.

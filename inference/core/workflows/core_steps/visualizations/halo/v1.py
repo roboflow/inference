@@ -24,7 +24,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/halo_visualization@v1"
-SHORT_DESCRIPTION = "Paints a halo around detected objects in an image."
+SHORT_DESCRIPTION = "Paint a halo around detected objects in an image."
 LONG_DESCRIPTION = """
 The `HaloVisualization` block uses a detected polygon
 from an instance segmentation to draw a halo using

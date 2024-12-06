@@ -20,7 +20,7 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 
 TYPE: str = "roboflow_core/dot_visualization@v1"
 SHORT_DESCRIPTION = (
-    "Draws dots on an image at specific coordinates based on provided detections."
+    "Draw dots on an image at specific coordinates based on provided detections."
 )
 LONG_DESCRIPTION = """
 The `DotVisualization` block draws dots on an image at specific coordinates
