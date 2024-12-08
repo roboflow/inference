@@ -32,6 +32,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+MODEL_NAME_MAPPING = {
+    "Llama-Vision-11B": "meta-llama/llama-3.2-11b-vision-instruct:free",
+}
+
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
     "ocr",
@@ -171,20 +175,27 @@ class BlockManifest(WorkflowBlockManifest):
     model_version: Union[
         Selector(kind=[STRING_KIND]), Literal["vision-11B"]
     ] = Field(
-        default="vision-11B",
+        default="Llama-Vision-11B",
         description="Model to be used",
-        examples=["vision-11B", "$inputs.llama_model"],
+        examples=["Llama-Vision-11B", "$inputs.llama_model"],
     )
     max_tokens: int = Field(
-        default=450,
+        default=300,
         description="Maximum number of tokens the model can generate in it's response.",
     )
     temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
-        default=None,
+        default=1,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
         'random / "creative" the generations are.',
         ge=0.0,
-        le=2.0,
+        le=1.0,
+    )
+
+    top_p: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
+        default=1,
+        description="Top-p to sample from the model - value in range 0.0-1.0, the higher - the more diverse and creative the generations are",
+        ge=0.7,
+        le=1.0,
     )
     max_concurrent_requests: Optional[int] = Field(
         default=None,
@@ -262,7 +273,8 @@ class LlamaVisionBlockV1(WorkflowBlock):
         api_key: str,
         model_version: str,
         max_tokens: int,
-        temperature: Optional[float],
+        temperature: float,
+        top_p : Optional[float],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
@@ -276,6 +288,7 @@ class LlamaVisionBlockV1(WorkflowBlock):
             llama_model_version=model_version,
             max_tokens=max_tokens,
             temperature=temperature,
+            top_p = top_p,
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
@@ -292,7 +305,8 @@ def run_llama_vision_32_llm_prompting(
     llama_api_key: Optional[str],
     llama_model_version: str,
     max_tokens: int,
-    temperature: Optional[int],
+    temperature: float,
+    top_p : Optional[float],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
@@ -316,6 +330,7 @@ def run_llama_vision_32_llm_prompting(
         llama_model_version=llama_model_version,
         max_tokens=max_tokens,
         temperature=temperature,
+        top_p =  top_p,
         max_concurrent_requests=max_concurrent_requests,
     )
 
@@ -325,10 +340,17 @@ def execute_llama_vision_32_requests(
     llama_prompts: List[List[dict]],
     llama_model_version: str,
     max_tokens: int,
-    temperature: Optional[float],
+    temperature: float,
+    top_p : Optional[float],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
-    client = OpenAI(api_key=llama_api_key)
+    llama_model_version = MODEL_NAME_MAPPING.get(llama_model_version)
+    if not llama_model_version:
+        raise ValueError(
+            f"Invalid model name: '{llama_model_version}'. Please use one of {list(MODEL_NAME_MAPPING.keys())}."
+        )
+    client = OpenAI(base_url="https://openrouter.ai/api/v1",
+                    api_key=llama_api_key)
     tasks = [
         partial(
             execute_llama_vision_32_request,
@@ -337,6 +359,7 @@ def execute_llama_vision_32_requests(
             llama_model_version=llama_model_version,
             max_tokens=max_tokens,
             temperature=temperature,
+            top_p = top_p,
         )
         for prompt in llama_prompts
     ]
@@ -354,15 +377,17 @@ def execute_llama_vision_32_request(
     prompt: List[dict],
     llama_model_version: str,
     max_tokens: int,
-    temperature: Optional[float],
+    temperature: float,
+    top_p : Optional[float],
 ) -> str:
     if temperature is None:
-        temperature = NOT_GIVEN
+        temperature = 1
     response = client.chat.completions.create(
         model=llama_model_version,
         messages=prompt,
         max_tokens=max_tokens,
         temperature=temperature,
+        top_p = top_p,
     )
     return response.choices[0].message.content
 
