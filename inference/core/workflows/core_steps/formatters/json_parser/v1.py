@@ -39,7 +39,7 @@ Accepted formats:
 `error_status` will remain `False`
 """
 
-SHORT_DESCRIPTION = "Parses raw string into JSON."
+SHORT_DESCRIPTION = "Parse raw string into JSON."
 
 
 def validate_reserved_fields(expected_fields: List[str]) -> List[str]:

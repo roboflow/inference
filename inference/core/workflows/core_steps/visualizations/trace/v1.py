@@ -19,7 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-SHORT_DESCRIPTION = "Draws traces based on detections tracking results."
+SHORT_DESCRIPTION = "Draw traces based on detections tracking results."
 LONG_DESCRIPTION = """
 The `TraceVisualization` block draws tracker results on an image using Supervision's `sv.TraceAnnotator`.
 """

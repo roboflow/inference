@@ -20,7 +20,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/crop_visualization@v1"
-SHORT_DESCRIPTION = "Draws scaled up crops of detections on the scene."
+SHORT_DESCRIPTION = "Draw scaled up crops of detections on the scene."
 LONG_DESCRIPTION = """
 The `CropVisualization` block draws scaled up crops of detections
 on the scene using Supervision's `sv.CropAnnotator`.

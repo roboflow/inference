@@ -37,7 +37,7 @@ from inference.core.workflows.prototypes.block import (
 
 FloatZeroToHundred = Annotated[float, Field(ge=0.0, le=100.0)]
 
-SHORT_DESCRIPTION = "Save images and predictions in your Roboflow Dataset"
+SHORT_DESCRIPTION = "Save images and predictions in your Roboflow Dataset."
 
 LONG_DESCRIPTION = """
 Block let users save their images and predictions into Roboflow Dataset. Persisting data from

@@ -167,7 +167,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Email Notification",
             "version": "v1",
-            "short_description": "Send notification via E-Mail",
+            "short_description": "Send notification via e-mail.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",

@@ -16,7 +16,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/blur_visualization@v1"
-SHORT_DESCRIPTION = "Blurs detected objects in an image."
+SHORT_DESCRIPTION = "Blur detected objects in an image."
 LONG_DESCRIPTION = """
 The `BlurVisualization` block blurs detected
 objects in an image using Supervision's `sv.BlurAnnotator`.

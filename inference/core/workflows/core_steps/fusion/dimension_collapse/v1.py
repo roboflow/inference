@@ -26,7 +26,7 @@ Useful in scenarios like:
 """
 
 SHORT_DESCRIPTION = (
-    "Collapses dimensionality level by aggregation of nested data into list"
+    "Collapse dimensionality level by aggregation of nested data into list."
 )
 
 

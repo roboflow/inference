@@ -20,7 +20,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/bounding_box_visualization@v1"
-SHORT_DESCRIPTION = "Draws a box around detected objects in an image."
+SHORT_DESCRIPTION = "Draw a box around detected objects in an image."
 LONG_DESCRIPTION = """
 The `BoundingBoxVisualization` block draws a box around detected
 objects in an image using Supervision's `sv.RoundBoxAnnotator`.
