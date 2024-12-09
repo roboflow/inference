@@ -156,6 +156,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="predictions",
                 kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
             ),
+            OutputDefinition(name="model_id", kind=[ROBOFLOW_MODEL_ID_KIND]),
         ]
 
     @classmethod
@@ -281,6 +282,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             images=images,
             predictions=predictions,
             class_filter=class_filter,
+            model_id=model_id,
         )
 
     def run_remotely(
@@ -336,6 +338,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             images=images,
             predictions=predictions,
             class_filter=class_filter,
+            model_id=model_id,
         )
 
     def _post_process_result(
@@ -343,6 +346,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         images: Batch[WorkflowImageData],
         predictions: List[dict],
         class_filter: Optional[List[str]],
+        model_id: str,
     ) -> BlockResult:
         inference_ids = [p.get(INFERENCE_ID_KEY, None) for p in predictions]
         predictions = convert_inference_detections_batch_to_sv_detections(predictions)
@@ -359,6 +363,10 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             predictions=predictions,
         )
         return [
-            {"inference_id": inference_id, "predictions": prediction}
+            {
+                "inference_id": inference_id,
+                "predictions": prediction,
+                "model_id": model_id,
+            }
             for inference_id, prediction in zip(inference_ids, predictions)
         ]
