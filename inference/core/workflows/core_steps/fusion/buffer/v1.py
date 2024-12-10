@@ -7,6 +7,8 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
+    WILDCARD_KIND,
+    IMAGE_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -40,7 +42,9 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/buffer@v1", "Buffer"]
-    data: Selector() = Field(
+    data: Selector(
+        kind=[WILDCARD_KIND, LIST_OF_VALUES_KIND, IMAGE_KIND],
+    ) = Field(
         description="Reference to step outputs at depth level n to be concatenated and moved into level n-1.",
         examples=["$steps.visualization"],
     )
