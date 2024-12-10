@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        python-version: [3.9]
+        python-version: ["3.12"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
