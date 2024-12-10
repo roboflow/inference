@@ -123,7 +123,7 @@ class GridVisualizationBlockV1(WorkflowBlock):
         return {OUTPUT_IMAGE_KEY: output}
 
 def getImageFor(images: List[WorkflowImageData], width: int, height: int) -> WorkflowImageData:
-    if len(images) == 0:
+    if images is None or len(images) == 0:
         return getEmptyImage(width, height)
     else:
         np_image = createGrid(images, width, height)

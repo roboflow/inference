@@ -77,10 +77,10 @@ class BufferBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    def run(self, data: any, length: int, pad: bool) -> BlockResult:
+    def run(self, data: Any, length: int, pad: bool) -> BlockResult:
         self.buffer.insert(0, data)
         if len(self.buffer) > length:
-            self.buffer.pop()
+            self.buffer = self.buffer[:length]
         
         if pad:
             while len(self.buffer) < length:
