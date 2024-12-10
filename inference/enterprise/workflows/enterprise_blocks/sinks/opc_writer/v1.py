@@ -250,7 +250,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
                 "error_status": False,
                 "message": "Sink cooldown applies",
             }
-        
+
         value_str = str(value)
         try:
             if value_type in [BOOLEAN_KIND, "Boolean"]:
