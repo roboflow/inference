@@ -20,7 +20,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/mask_visualization@v1"
-SHORT_DESCRIPTION = "Paint a mask over detected objects in an image."
+SHORT_DESCRIPTION = "Apply a mask over detected objects in an image."
 LONG_DESCRIPTION = """
 The `MaskVisualization` block uses a detected polygon
 from an instance segmentation to draw a mask using
