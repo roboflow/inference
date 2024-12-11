@@ -101,6 +101,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
             OutputDefinition(name=INFERENCE_ID_KEY, kind=[INFERENCE_ID_KIND]),
+            OutputDefinition(name="model_id", kind=[ROBOFLOW_MODEL_ID_KIND]),
         ]
 
     @classmethod
@@ -191,6 +192,7 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
         return self._post_process_result(
             predictions=predictions,
             images=images,
+            model_id=model_id,
         )
 
     def run_remotely(
@@ -228,12 +230,15 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
         )
         if not isinstance(predictions, list):
             predictions = [predictions]
-        return self._post_process_result(images=images, predictions=predictions)
+        return self._post_process_result(
+            images=images, predictions=predictions, model_id=model_id
+        )
 
     def _post_process_result(
         self,
         images: Batch[WorkflowImageData],
         predictions: List[dict],
+        model_id: str,
     ) -> List[dict]:
         predictions = attach_prediction_type_info(
             predictions=predictions,
@@ -248,6 +253,7 @@ class RoboflowMultiLabelClassificationModelBlockV2(WorkflowBlock):
             {
                 "inference_id": prediction.get(INFERENCE_ID_KEY),
                 "predictions": prediction,
+                "model_id": model_id,
             }
             for prediction in predictions
         ]
