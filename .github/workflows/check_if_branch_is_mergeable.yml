@@ -26,11 +26,11 @@ jobs:
 
           status=$(echo "$response" | jq -r '.status')
 
-          if [ "$status" = "ahead" ]
+          if [ "$status" = "ahead" ]; then
             echo "[OK] Selected branch is ahead of main and can be merged"
-            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT";
+            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
           else
             echo "[FAIL] Selected branch does NOT meet the criteria."
             echo "Status: $status"
-            echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT";
+            echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
           fi
