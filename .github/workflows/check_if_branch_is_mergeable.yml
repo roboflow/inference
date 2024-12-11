@@ -16,7 +16,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "main" -eq "${{ github.head_ref || github.ref_name }}" ]; then
+          if [ "main" = "${{ github.head_ref || github.ref_name }}" ]; then
             echo "[OK] Merging to main";
             exit 0;
           fi
