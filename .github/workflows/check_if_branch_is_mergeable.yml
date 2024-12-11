@@ -1,16 +1,18 @@
 name: mergeable
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_call:
+    outputs:
+      mergeable_state:
+        description: "Set to 'clean' if branch is mergeable, otherwise set to 'not_clean'"
+        value: ${{ jobs.is_mergeable.outputs.mergeable_state }}
 
 jobs:
-  check_if_branch_is_ahead_of_main:
-    name: Check if branch is ahead of main
+  check_if_branch_is_mergeable:
+    name: Check if branch is mergeable
     runs-on: ubuntu-latest
+    outputs:
+      mergeable_state: ${{ steps.mergeable_check.outputs.mergeable_state }}
     steps:
       - name: Check if branch contains all commits from main via GitHub CLI
         env:
@@ -22,14 +24,13 @@ jobs:
           fi
           response=$(gh api /repos/${{ github.repository }}/compare/main...${{ github.head_ref || github.ref_name }} )
 
-          behind_by=$(echo "$response" | jq '.behind_by')
           status=$(echo "$response" | jq -r '.status')
 
-          if [ "$behind_by" -eq 0 ] && [ "$status" = "ahead" ]; then
-            echo "[OK] Selected branch is ahead of main and contains all commits."
+          elif [ "$status" = "ahead" ]
+            echo "[OK] Selected branch is ahead of main and can be merged"
+            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT";
           else
             echo "[FAIL] Selected branch does NOT meet the criteria."
-            echo "Behind by: $behind_by"
             echo "Status: $status"
-            exit 1
+            echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT";
           fi

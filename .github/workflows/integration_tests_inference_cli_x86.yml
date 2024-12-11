@@ -1,14 +1,19 @@
 name: INTEGRATION TESTS - inference CLI
 
 on:
-  workflow_run:
-    workflows: [mergeable]
-    types: [completed]
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
+  call_is_mergeable:
+    uses: ./.github/workflows/check_if_branch_is_mergeable.yml
+    secrets: inherit
   build-dev-test:
-    if: ${{ github.event.workflow_run.conclusion == "success" }}
+    needs: call_is_mergeable
+    if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
