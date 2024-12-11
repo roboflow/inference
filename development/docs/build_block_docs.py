@@ -133,6 +133,9 @@ Type: `{internal_data_type}`
 {details}
 """
 
+INLINE_UQL_PARAMETER_PATTERN = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
+
+
 
 def main() -> None:
     os.makedirs(BLOCK_DOCUMENTATION_DIRECTORY, exist_ok=True)
@@ -251,7 +254,7 @@ def main() -> None:
                     ],
                     block_type2manifest_type_identifier=block_type2manifest_type_identifier,
                 ),
-                example="\n\t".join(json.dumps(example_definition, indent=4).split("\n")),
+                example=_dump_step_example_definition(example_definition=example_definition),
             )
             versions_content.append(version_content)
         all_versions_compact = "\n\n".join(versions_content)
@@ -277,6 +280,16 @@ def main() -> None:
         allow_override=True,
         lines_connector="",
     )
+
+
+def _dump_step_example_definition(example_definition: dict) -> str:
+    definition_stringified = "\n\t".join(json.dumps(example_definition, indent=4).split("\n"))
+    return INLINE_UQL_PARAMETER_PATTERN.sub(_escape_uql_brackets, definition_stringified)
+
+
+def _escape_uql_brackets(match: re.Match) -> str:
+    content = match.group(0)
+    return "{{ '{{' }}" + content[2:-2] + "{{ '}}' }}"
 
 
 def get_auto_generation_markers(

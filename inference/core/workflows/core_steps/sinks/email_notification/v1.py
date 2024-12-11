@@ -60,7 +60,7 @@ Content of the message can be parametrised with Workflow execution outcomes. Tak
 message using dynamic parameters:
 
 ```
-message = "This is example notification. Predicted classes: \{\{ $parameters.predicted_classes \}\}"
+message = "This is example notification. Predicted classes: {{ '{{' }} $parameters.predicted_classes {{ '}}' }}"
 ```
 
 Message parameters are delivered by Workflows Execution Engine by setting proper data selectors in
@@ -181,7 +181,7 @@ class BlockManifest(WorkflowBlockManifest):
     message: str = Field(
         description="Content of the message to be send",
         examples=[
-            "During last 5 minutes detected \{\{ $parameters.num_instances \}\} instances"
+            "During last 5 minutes detected {{ $parameters.num_instances }} instances"
         ],
     )
     sender_email: Union[str, Selector(kind=[STRING_KIND])] = Field(

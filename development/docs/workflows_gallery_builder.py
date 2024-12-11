@@ -16,8 +16,7 @@ API_URL = "https://api.roboflow.com"
 API_KEY_PATTERN = re.compile(r"api_key=(.[^&]*)")
 KEY_VALUE_GROUP = 1
 MIN_KEY_LENGTH_TO_REVEAL_PREFIX = 8
-
-
+INLINE_UQL_PARAMETER_PATTERN = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
 INTEGRATION_TESTS_DIRECTORY = os.path.abspath(os.path.join(
     os.path.dirname(__file__),
     "..",
@@ -120,12 +119,23 @@ def generate_gallery_entry_docs(entry: WorkflowGalleryEntry) -> str:
             workflow_name_in_app=entry.workflow_name_in_app,
             workflow_definition=entry.workflow_definition,
         )
+    workflow_definition = _dump_workflow_definition(workflow_definition=entry.workflow_definition)
     return GALLERY_ENTRY_TEMPLATE.format(
         title=entry.use_case_title,
         description=entry.use_case_description,
         preview_iframe=preview_iframe,
-        workflow_definition="\n\t".join(json.dumps(entry.workflow_definition, indent=4).split("\n")),
+        workflow_definition=workflow_definition,
     )
+
+
+def _dump_workflow_definition(workflow_definition: dict) -> str:
+    definition_stringified = "\n\t".join(json.dumps(workflow_definition, indent=4).split("\n"))
+    return INLINE_UQL_PARAMETER_PATTERN.sub(_escape_uql_brackets, definition_stringified)
+
+
+def _escape_uql_brackets(match: re.Match) -> str:
+    content = match.group(0)
+    return "{{ '{{' }}" + content[2:-2] + "{{ '}}' }}"
 
 
 def generate_preview_iframe(workflow_name_in_app: str, workflow_definition: dict) -> str:

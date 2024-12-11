@@ -94,7 +94,7 @@ class BlockManifest(WorkflowBlockManifest):
     message: str = Field(
         description="Content of the message to be send",
         examples=[
-            "During last 5 minutes detected \{\{ $parameters.num_instances \}\} instances"
+            "During last 5 minutes detected {{ $parameters.num_instances }} instances"
         ],
     )
     sender_number: Union[str, Selector(kind=[STRING_KIND])] = Field(
