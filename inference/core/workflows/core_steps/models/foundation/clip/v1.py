@@ -62,7 +62,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/clip@v1"]
     name: str = Field(description="Unique name of step in workflows")
-    data: Selector(kind=[IMAGE_KIND, STRING_KIND]) = Field(
+    data: Union[Selector(kind=[IMAGE_KIND, STRING_KIND]), str] = Field(
         title="Data",
         description="The string or image to generate an embedding for.",
         examples=["$inputs.image", "$steps.cropping.crops"]
@@ -141,10 +141,14 @@ class ClipModelBlockV1(WorkflowBlock):
         data: Batch[Union[WorkflowImageData, str]],
         version: str,
     ) -> BlockResult:
-        predictions = []
-        if len(data) == 0:
-            return []
+        # if not array, wrap
+        convert_to_singleton = False
+        if not isinstance(data, Batch):
+            data = [data]
+            convert_to_singleton = True
         
+        print("CONVERT TO SINGLETON", convert_to_singleton, type(data), data)
+
         if isinstance(data[0], str):
             inference_request = ClipTextEmbeddingRequest(
                 clip_version_id=version,
@@ -161,6 +165,9 @@ class ClipModelBlockV1(WorkflowBlock):
             predictions = self._model_manager.infer_from_request_sync(
                 clip_model_id, inference_request
             )
+
+            if convert_to_singleton:
+                return {"embedding": predictions.embeddings[0]}
             
             return [ {"embedding": p} for p in predictions.embeddings ]
         else:
@@ -179,6 +186,9 @@ class ClipModelBlockV1(WorkflowBlock):
             predictions = self._model_manager.infer_from_request_sync(
                 clip_model_id, inference_request
             )
+
+            if convert_to_singleton:
+                return {"embedding": predictions.embeddings[0]}
 
             return [ {"embedding": p} for p in predictions.embeddings ]
 
