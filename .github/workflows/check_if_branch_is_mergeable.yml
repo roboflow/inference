@@ -5,40 +5,31 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  is_mergeable:
-    runs-on:
-      labels: depot-ubuntu-22.04-8
-      group: public-depot
-    timeout-minutes: 15
+  check_if_branch_is_ahead_of_main:
+    name: Check if branch is ahead of main
+    runs-on: ubuntu-latest
     steps:
-      - name: 🛎️ Checkout main
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: ${{ env.FETCH_DEPTH }}
-          ref: main
-      - name : Store main sha in context
-        run: echo "main_sha=$(git rev-parse main)" >> "${GITHUB_ENV}"
-      - name: Calculate depth
-        run: echo "FETCH_DEPTH=$(( ${{ github.event.pull_request.commits }} + 1 ))" >> "${GITHUB_ENV}"
-      - name: 🛎️ Checkout branch with all history
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: ${{ env.FETCH_DEPTH }}
-          ref: ${{ github.event.pull_request.head.sha }}
-      - name: Check and store mergable state
-        id: mergeable_check
+      - name: Check if branch contains all commits from main via GitHub CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "${{ github.event.pull_request.head.sha }}" ]; then
-            echo "Merging to main";
+          if [ "main" -eq "${{ github.head_ref || github.ref_name }}" ]; then
+            echo "[OK] Merging to main";
             exit 0;
           fi
-          echo "Check if main is ancestor of ${{ github.event.pull_request.head.sha }} (branch HEAD)";
-          if $(git merge-base --is-ancestor ${{ env.main_sha }} ${{ github.event.pull_request.head.sha }}); then
-            echo "Branch is mergeable";
-            exit 0;
+          response=$(gh api /repos/${{ github.repository }}/compare/main...${{ github.head_ref || github.ref_name }} )
+
+          behind_by=$(echo "$response" | jq '.behind_by')
+          status=$(echo "$response" | jq -r '.status')
+
+          if [ "$behind_by" -eq 0 ] && [ "$status" = "ahead" ]; then
+            echo "[OK] Selected branch is ahead of main and contains all commits."
           else
-            echo "Branch needs to be updated";
-            exit 1;
+            echo "[FAIL] Selected branch does NOT meet the criteria."
+            echo "Behind by: $behind_by"
+            echo "Status: $status"
+            exit 1
           fi
