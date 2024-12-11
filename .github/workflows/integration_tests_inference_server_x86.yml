@@ -4,11 +4,6 @@ on:
   push:
     branches: [ main ]
   workflow_dispatch:
-  # TODO: remove below, testing
-  workflow_run:
-    workflows: [mergeable]
-    types:
-      - completed
 
 jobs:
   build:
