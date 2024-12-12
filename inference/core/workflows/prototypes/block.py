@@ -24,7 +24,7 @@ class WorkflowBlockManifest(BaseModel, ABC):
     )
 
     type: str
-    name: str = Field(title="Step Name", description="The unique name of this step.")
+    name: str = Field(title="Step Name", description="Enter a unique identifier for this step.")
 
     @classmethod
     @abstractmethod

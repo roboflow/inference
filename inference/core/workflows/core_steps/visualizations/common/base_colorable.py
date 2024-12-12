@@ -77,7 +77,7 @@ class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
         Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="DEFAULT",
-        description="Color palette to use for annotations.",
+        description="Select a color palette for the bounding boxes.",
         examples=["DEFAULT", "$inputs.color_palette"],
     )
 
@@ -86,14 +86,14 @@ class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
         Selector(kind=[INTEGER_KIND]),
     ] = Field(  # type: ignore
         default=10,
-        description="Number of colors in the color palette. Applies when using a matplotlib `color_palette`.",
+        description="Specify the number of colors in the palette. This applies when using custom or Matplotlib palettes.",
         examples=[10, "$inputs.palette_size"],
     )
 
     custom_colors: Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])] = (
         Field(  # type: ignore
             default=[],
-            description='List of colors to use for annotations when `color_palette` is set to "CUSTOM".',
+            description='Define a list of custom colors for bounding boxes in HEX format.',
             examples=[["#FF0000", "#00FF00", "#0000FF"], "$inputs.custom_colors"],
         )
     )
@@ -103,7 +103,7 @@ class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
         Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="CLASS",
-        description="Strategy to use for mapping colors to annotations.",
+        description="Choose how bounding box colors are assigned.",
         examples=["CLASS", "$inputs.color_axis"],
     )
 

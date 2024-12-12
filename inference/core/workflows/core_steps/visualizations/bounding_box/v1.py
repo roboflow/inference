@@ -41,13 +41,13 @@ class BoundingBoxManifest(ColorableVisualizationManifest):
     )
 
     thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Thickness of the bounding box in pixels.",
+        description="Set the thickness of the bounding box edges.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
 
     roundness: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
-        description="Roundness of the corners of the bounding box.",
+        description="Define the roundness of the bounding box corners.",
         default=0.0,
         examples=[0.0, "$inputs.roundness"],
     )
