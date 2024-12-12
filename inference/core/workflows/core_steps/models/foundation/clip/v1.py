@@ -147,8 +147,6 @@ class ClipModelBlockV1(WorkflowBlock):
             data = [data]
             convert_to_singleton = True
 
-        print("CONVERT TO SINGLETON", convert_to_singleton, type(data), data)
-
         if isinstance(data[0], str):
             inference_request = ClipTextEmbeddingRequest(
                 clip_version_id=version,
