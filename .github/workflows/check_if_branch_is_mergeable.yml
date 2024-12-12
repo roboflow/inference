@@ -5,7 +5,7 @@ on:
     outputs:
       mergeable_state:
         description: "Set to 'clean' if branch is mergeable, otherwise set to 'not_clean'"
-        value: ${{ jobs.is_mergeable.outputs.mergeable_state }}
+        value: ${{ jobs.check_if_branch_is_mergeable.outputs.mergeable_state }}
 
 jobs:
   check_if_branch_is_mergeable:
@@ -15,6 +15,7 @@ jobs:
       mergeable_state: ${{ steps.mergeable_check.outputs.mergeable_state }}
     steps:
       - name: Check if branch contains all commits from main via GitHub CLI
+        id: mergeable_check
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
