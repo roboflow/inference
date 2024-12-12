@@ -2,9 +2,8 @@ from typing import List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.execution_engine.entities.base import (
-    OutputDefinition,
-)
+from inference.core.utils.postprocess import cosine_similarity
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     EMBEDDING_KIND,
     FLOAT_KIND,
@@ -15,7 +14,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference.core.utils.postprocess import cosine_similarity
 
 LONG_DESCRIPTION = """
 Calculate the cosine similarity between two embeddings.
@@ -34,7 +32,12 @@ class BlockManifest(WorkflowBlockManifest):
             "short_description": "Calculate the cosine similarity between two embeddings.",
             "long_description": LONG_DESCRIPTION,
             "license": "MIT",
-            "block_type": "model",
+            "block_type": "math",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "far fa-calculator-simple",
+                "blockPriority": 3,
+            },
         }
     )
     type: Literal["roboflow_core/cosine_similarity@v1"]
@@ -62,10 +65,6 @@ class CosineSimilarityBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    def run(
-        self,
-        embedding_1: List[float],
-        embedding_2: List[float]
-    ) -> BlockResult:
+    def run(self, embedding_1: List[float], embedding_2: List[float]) -> BlockResult:
         similarity = cosine_similarity(embedding_1, embedding_2)
-        return { "similarity": similarity }
+        return {"similarity": similarity}

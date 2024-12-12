@@ -55,6 +55,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "MIT",
             "block_type": "model",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-paperclip",
+                "blockPriority": 2,
+            },
         }
     )
     type: Literal["roboflow_core/clip@v1"]
