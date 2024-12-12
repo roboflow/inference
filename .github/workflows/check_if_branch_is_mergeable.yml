@@ -19,8 +19,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "main" = "${{ github.head_ref || github.ref_name }}" ]; then
-            echo "[OK] Merging to main";
-            exit 0;
+            echo "[OK] Merging to main"
+            exit 0
           fi
           response=$(gh api /repos/${{ github.repository }}/compare/main...${{ github.head_ref || github.ref_name }} )
 
