@@ -26,6 +26,7 @@ WORKFLOW_OPC_WRITER = {
         {"type": "InferenceParameter", "name": "opc_object_name"},
         {"type": "InferenceParameter", "name": "opc_variable_name"},
         {"type": "InferenceParameter", "name": "opc_value"},
+        {"type": "InferenceParameter", "name": "opc_value_type"},
     ],
     "steps": [
         {
@@ -38,6 +39,7 @@ WORKFLOW_OPC_WRITER = {
             "object_name": "$inputs.opc_object_name",
             "variable_name": "$inputs.opc_variable_name",
             "value": "$inputs.opc_value",
+            "value_type": "$inputs.opc_value_type",
             "fire_and_forget": False,
         }
     ],
@@ -124,7 +126,10 @@ def _opc_connect_and_read_value(
     )
 
     try:
-        nsidx = get_namespace_index(namespace)
+        if namespace.isdigit():
+            nsidx = int(namespace)
+        else:
+            nsidx = get_namespace_index(namespace)
     except ValueError as exc:
         client.disconnect()
         raise Exception(f"WRONG NAMESPACE ERROR: {exc}")
@@ -215,6 +220,7 @@ def test_workflow_with_opc_writer_sink() -> None:
             "opc_object_name": opc_object_name,
             "opc_variable_name": opc_variable_name,
             "opc_value": 41,
+            "opc_value_type": "Integer",
         }
     )
 
