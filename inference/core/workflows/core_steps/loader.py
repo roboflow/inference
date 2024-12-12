@@ -141,6 +141,9 @@ from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
     AntropicClaudeBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
+    ClipModelBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
     ClipComparisonBlockV1,
 )
@@ -485,6 +488,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CircleVisualizationBlockV1,
         ClipComparisonBlockV1,
         ClipComparisonBlockV2,
+        ClipModelBlockV1,
         CogVLMBlockV1,
         ColorVisualizationBlockV1,
         ConvertGrayscaleBlockV1,

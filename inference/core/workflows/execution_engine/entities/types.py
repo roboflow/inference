@@ -210,6 +210,22 @@ LIST_OF_VALUES_KIND = Kind(
     internal_data_type="List[Any]",
 )
 
+EMBEDDING_KIND_DOCS = """
+This kind represents a vector embedding. It is a list of floating point numbers.
+
+Embeddings are used in various machine learning tasks like clustering, classification,
+and similarity search. They are used to represent data in a continuous, low-dimensional space.
+
+Typically, vectors that are close to each other in the embedding space are considered similar.
+"""
+EMBEDDING_KIND = Kind(
+    name="embedding",
+    description="A list of floating point numbers representing a vector embedding.",
+    docs=EMBEDDING_KIND_DOCS,
+    serialised_data_type="List[float]",
+    internal_data_type="List[float]",
+)
+
 RGB_COLOR_KIND_DOCS = """
 This kind represents RGB color as a tuple (R, G, B).
 
