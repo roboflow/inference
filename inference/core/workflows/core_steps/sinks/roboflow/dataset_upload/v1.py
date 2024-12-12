@@ -552,7 +552,7 @@ def is_prediction_registration_forbidden(
         return True
     if isinstance(prediction, sv.Detections) and len(prediction) == 0:
         return True
-    if isinstance(prediction, dict) and "top" not in prediction:
+    if isinstance(prediction, dict) and all(k not in prediction for k in ["top", "predicted_classes"]):
         return True
     return False
 
@@ -561,6 +561,8 @@ def encode_prediction(
     prediction: Union[sv.Detections, dict],
 ) -> Tuple[str, str]:
     if isinstance(prediction, dict):
+        if "predicted_classes" in prediction:
+            return ",".join(prediction["predicted_classes"]), "txt"
         return prediction["top"], "txt"
     detections_in_inference_format = serialise_sv_detections(detections=prediction)
     return json.dumps(detections_in_inference_format), "json"
