@@ -151,8 +151,8 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
-        description="Your Antropic API key",
-        examples=["xxx-xxx", "$inputs.antropics_api_key"],
+        description="Your Anthropic API key",
+        examples=["xxx-xxx", "$inputs.anthropics_api_key"],
         private=True,
     )
     model_version: Union[
@@ -184,7 +184,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="Number of concurrent requests that can be executed by block when batch of input images provided. "
         "If not given - block defaults to value configured globally in Workflows Execution Engine. "
-        "Please restrict if you hit ANtropic API limits.",
+        "Please restrict if you hit Anthropic API limits.",
     )
 
     @model_validator(mode="after")
@@ -224,7 +224,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.4.0,<2.0.0"
 
 
-class AntropicClaudeBlockV1(WorkflowBlock):
+class AnthropicClaudeBlockV1(WorkflowBlock):
 
     def __init__(
         self,
