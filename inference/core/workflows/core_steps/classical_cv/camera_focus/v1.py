@@ -22,7 +22,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION: str = "Helps focus a camera by providing a focus measure."
+SHORT_DESCRIPTION: str = "Focus a camera by providing a focus measure."
 LONG_DESCRIPTION: str = """
 This block calculate the Brenner function score which is a measure of the texture in the image. 
 An in-focus image has a high Brenner function score, and contains texture at a smaller scale than

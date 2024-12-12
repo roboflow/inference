@@ -22,7 +22,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/polygon_visualization@v1"
-SHORT_DESCRIPTION = "Draws a polygon around detected objects in an image."
+SHORT_DESCRIPTION = "Draw a polygon around detected objects in an image."
 LONG_DESCRIPTION = """
 The `PolygonVisualization` block uses a detections from an
 instance segmentation to draw polygons around objects using

@@ -126,7 +126,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "CSV Formatter",
             "version": "v1",
-            "short_description": "Creates CSV files with specified columns.",
+            "short_description": "Create CSV files with specified columns.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "formatter",

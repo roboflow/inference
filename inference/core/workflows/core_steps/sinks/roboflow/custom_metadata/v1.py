@@ -28,7 +28,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Add custom metadata to Roboflow Model Monitoring dashboard"
+SHORT_DESCRIPTION = "Add custom metadata to the Roboflow Model Monitoring dashboard."
 
 LONG_DESCRIPTION = """
 Block allows users to add custom metadata to each inference result in Roboflow Model Monitoring dashboard.

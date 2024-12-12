@@ -18,10 +18,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Measure the distance between two bounding boxes on a 2D plane using a perpendicular camera and either a reference object or a pixel-to-centimeter ratio for scaling."
+SHORT_DESCRIPTION = "Calculate the distance between two bounding boxes on a 2D plane."
 
 LONG_DESCRIPTION = """
-Measure the distance between two bounding boxes on a 2D plane using a camera positioned perpendicular to the plane. This method requires footage from this specific perspective, along with either a reference object of known dimensions placed in the same plane as the bounding boxes or a pixel-to-centimeter ratio that defines how many pixels correspond to one centimeter."""
+Calculate the distance between two bounding boxes on a 2D plane, leveraging a perpendicular camera view and either a reference object or a pixel-to-unit scaling ratio for precise measurements."""
 
 OUTPUT_KEY_CENTIMETER = "distance_cm"
 OUTPUT_KEY_PIXEL = "distance_pixel"

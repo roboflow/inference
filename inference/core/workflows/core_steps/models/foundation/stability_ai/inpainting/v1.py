@@ -34,7 +34,7 @@ The block wraps
 let users use instance segmentation results to change the content of images in a creative way.
 """
 
-SHORT_DESCRIPTION = "Uses segmentation masks to inpaint objects into image"
+SHORT_DESCRIPTION = "Use segmentation masks to inpaint objects within an image."
 
 API_HOST = "https://api.stability.ai"
 ENDPOINT = "/v2beta/stable-image/edit/inpaint"

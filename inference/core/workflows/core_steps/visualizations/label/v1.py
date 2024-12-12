@@ -22,7 +22,7 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 
 TYPE: str = "roboflow_core/label_visualization@v1"
 SHORT_DESCRIPTION = (
-    "Draws labels on an image at specific coordinates based on provided detections."
+    "Draw labels on an image at specific coordinates based on provided detections."
 )
 LONG_DESCRIPTION = """
 The `LabelVisualization` block draws labels on an image at specific coordinates

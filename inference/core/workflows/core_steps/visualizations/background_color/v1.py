@@ -23,7 +23,7 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 
 TYPE: str = "roboflow_core/background_color_visualization@v1"
 SHORT_DESCRIPTION = (
-    "Paints a mask over all areas outside of detected regions in an image."
+    "Apply a mask to cover all areas outside the detected regions in an image."
 )
 LONG_DESCRIPTION = """
 The `BackgroundColorVisualization` block draws all areas
