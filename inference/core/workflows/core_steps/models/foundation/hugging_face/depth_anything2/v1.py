@@ -2,7 +2,7 @@
 Credits to: https://github.com/Fafruch for origin idea
 """
 
-from typing import List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type
 
 import numpy as np
 from PIL import Image
@@ -83,18 +83,60 @@ COLORMAP_DOCS_DESCRIPTION = "\n\n".join(
     for k, v in COLORMAP_METADATA.items()
 )
 
-LONG_DESCRIPTION = f"""
-The block wraps Huggingface depth anything v2 pipeline API and lets users generate depth maps from images.
+LONG_DESCRIPTION = """
+Transform your 2D images into stunning depth maps with Depth Anything v2! 
+This powerful tool helps you understand the 3D structure of any image by predicting how far each pixel is from the camera.
 
-Available model sizes:
+#### 🎯 How It Works
+
+This block processes images by:
+
+1. 📸 Taking your input image
+2. 🤖 Running it through a state-of-the-art depth estimation model
+3. 🎨 Creating beautiful depth visualizations using customizable colormaps
+4. 📊 Providing normalized depth values for further processing
+
+#### 🚀 Available Models
+
+Choose the model that best fits your needs:
 
 {MODEL_SIZES_DOCS_DESCRIPTION}
 
-Available colormaps:
+#### 🎨 Visualization Options
+
+Make your depth maps pop with these colormap options:
 
 {COLORMAP_DOCS_DESCRIPTION}
 
-This block also allows users to specify minimum and maximum depth values for scaling the normalized depth, which can be particularly useful for 3D reconstruction applications.
+#### 💡 Why Use Depth Anything v2?
+
+This block is perfect for:
+
+- 🏗️ 3D reconstruction projects
+- 🤖 Robotics applications needing depth perception
+- 🔍 Scene understanding tasks
+- 📏 Distance estimation applications
+
+#### 🛠️ Output Format
+
+The block provides two outputs:
+1. A colored visualization of the depth map using your chosen colormap
+2. A normalized depth array (0-1 range) for technical applications
+
+#### 💪 Key Features
+
+- 🎯 State-of-the-art depth estimation
+- 🎨 Multiple colormap options for different visualization needs
+- ⚡ Flexible model sizes for speed/accuracy tradeoffs
+- 📊 Normalized depth values for technical applications
+- 🔧 Easy integration with other workflow blocks
+
+#### 🎯 Perfect For
+
+- 👨‍💻 Developers working on 3D reconstruction
+- 🎨 Artists creating depth-based effects
+- 🤖 Robotics engineers building perception systems
+- 📸 Photographers exploring depth visualization
 """
 
 SHORT_DESCRIPTION = "Predicts depth maps from images"
