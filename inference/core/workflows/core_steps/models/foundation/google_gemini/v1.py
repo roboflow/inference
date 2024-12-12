@@ -166,11 +166,11 @@ class BlockManifest(WorkflowBlockManifest):
     )
     model_version: Union[
         Selector(kind=[STRING_KIND]),
-        Literal["gemini-1.5-flash", "gemini-1.5-pro"],
+        Literal["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro"],
     ] = Field(
         default="gemini-1.5-flash",
         description="Model to be used",
-        examples=["gemini-1.5-flash", "$inputs.gemini_model"],
+        examples=["gemini-2.0-flash-exp", "$inputs.gemini_model"],
     )
     max_tokens: int = Field(
         default=450,
@@ -543,7 +543,10 @@ def prepare_ocr_prompt(
                         "mime_type": "image/jpeg",
                         "data": base64_image,
                     }
-                }
+                },
+                {
+                    "text": f"Read the text",
+                },
             ],
             "role": "user",
         },
@@ -581,7 +584,10 @@ def prepare_caption_prompt(
                         "mime_type": "image/jpeg",
                         "data": base64_image,
                     }
-                }
+                },
+                {
+                    "text": f"Caption the image",
+                },
             ],
             "role": "user",
         },
