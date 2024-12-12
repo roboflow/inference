@@ -1,7 +1,6 @@
 from functools import partial
 from typing import List, Literal, Optional, Type, Union
 
-import numpy as np
 from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.clip import (
@@ -20,10 +19,6 @@ from inference.core.workflows.core_steps.common.utils import (
     load_core_model,
     run_in_parallel,
 )
-from inference.core.workflows.execution_engine.constants import (
-    PARENT_ID_KEY,
-    ROOT_PARENT_ID_KEY,
-)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -33,7 +28,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     EMBEDDING_KIND,
     IMAGE_KIND,
     STRING_KIND,
-    ImageInputField,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
