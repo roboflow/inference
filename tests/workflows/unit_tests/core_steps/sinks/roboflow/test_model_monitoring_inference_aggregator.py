@@ -54,13 +54,13 @@ def test_run_not_in_reporting_range_success(
         api_key="my_api_key",
         background_tasks=None,
         thread_pool_executor=None,
-        model_id="my_model_id",
     )
     result = block.run(
         fire_and_forget=True,
         frequency=10,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="my_model_id",
     )
 
     # then
@@ -121,13 +121,13 @@ def test_run_in_reporting_range_success_with_object_detection(
         api_key=api_key,
         background_tasks=None,
         thread_pool_executor=None,
-        model_id="construction-safety/10",
     )
     result = block.run(
         fire_and_forget=False,
         frequency=10,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="construction-safety/10",
     )
 
     # then
@@ -217,13 +217,13 @@ def test_run_in_reporting_range_success_with_single_label_classification(
         api_key=api_key,
         background_tasks=None,
         thread_pool_executor=None,
-        model_id="pills-classification/1",
     )
     result = block.run(
         fire_and_forget=False,
         frequency=10,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="pills-classification/1",
     )
 
     # then
@@ -313,13 +313,13 @@ def test_run_in_reporting_range_success_with_multi_label_classification(
         api_key=api_key,
         background_tasks=None,
         thread_pool_executor=None,
-        model_id="animals/32",
     )
     result = block.run(
         fire_and_forget=False,
         frequency=10,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="animals/32",
     )
 
     # then
@@ -415,13 +415,13 @@ def test_send_inference_results_to_model_monitoring_failure(
         api_key=api_key,
         background_tasks=None,
         thread_pool_executor=None,
-        model_id="my_model_id",
     )
     result = block.run(
         fire_and_forget=False,
         frequency=1,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="my_model_id",
     )
 
     # then
@@ -479,13 +479,13 @@ def test_run_when_not_in_reporting_range(
         api_key=api_key,
         background_tasks=None,
         thread_pool_executor=None,
-        model_id="my_model_id",
     )
     result = block.run(
         fire_and_forget=False,
         frequency=10,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="my_model_id",
     )
 
     # then
@@ -545,13 +545,13 @@ def test_run_when_fire_and_forget_with_background_tasks(
         api_key=api_key,
         background_tasks=background_tasks,
         thread_pool_executor=None,
-        model_id="my_model_id",
     )
     result = block.run(
         fire_and_forget=True,
         frequency=10,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="my_model_id",
     )
 
     # then
@@ -609,13 +609,13 @@ def test_run_when_fire_and_forget_with_thread_pool(
             api_key=api_key,
             background_tasks=None,
             thread_pool_executor=thread_pool_executor,
-            model_id="my_model_id",
         )
         result = block.run(
             fire_and_forget=True,
             frequency=10,
             predictions=predictions,
             unique_aggregator_key=unique_aggregator_key,
+            model_id="my_model_id",
         )
 
         # then
