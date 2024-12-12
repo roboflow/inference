@@ -4,7 +4,10 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.clip import ClipImageEmbeddingRequest, ClipTextEmbeddingRequest
+from inference.core.entities.requests.clip import (
+    ClipImageEmbeddingRequest,
+    ClipTextEmbeddingRequest,
+)
 from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
@@ -65,9 +68,9 @@ class BlockManifest(WorkflowBlockManifest):
     data: Union[Selector(kind=[IMAGE_KIND, STRING_KIND]), str] = Field(
         title="Data",
         description="The string or image to generate an embedding for.",
-        examples=["$inputs.image", "$steps.cropping.crops"]
+        examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    
+
     version: Union[
         Literal[
             "RN101",
@@ -93,9 +96,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(name="embedding", kind=[EMBEDDING_KIND])
-        ]
+        return [OutputDefinition(name="embedding", kind=[EMBEDDING_KIND])]
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -146,7 +147,7 @@ class ClipModelBlockV1(WorkflowBlock):
         if not isinstance(data, Batch):
             data = [data]
             convert_to_singleton = True
-        
+
         print("CONVERT TO SINGLETON", convert_to_singleton, type(data), data)
 
         if isinstance(data[0], str):
@@ -155,25 +156,28 @@ class ClipModelBlockV1(WorkflowBlock):
                 text=data,
                 api_key=self._api_key,
             )
-            
+
             clip_model_id = load_core_model(
                 model_manager=self._model_manager,
                 inference_request=inference_request,
                 core_model="clip",
             )
-            
+
             predictions = self._model_manager.infer_from_request_sync(
                 clip_model_id, inference_request
             )
 
             if convert_to_singleton:
                 return {"embedding": predictions.embeddings[0]}
-            
-            return [ {"embedding": p} for p in predictions.embeddings ]
+
+            return [{"embedding": p} for p in predictions.embeddings]
         else:
             inference_request = ClipImageEmbeddingRequest(
                 clip_version_id=version,
-                image=[single_image.to_inference_format(numpy_preferred=True) for single_image in data],
+                image=[
+                    single_image.to_inference_format(numpy_preferred=True)
+                    for single_image in data
+                ],
                 api_key=self._api_key,
             )
 
@@ -190,7 +194,7 @@ class ClipModelBlockV1(WorkflowBlock):
             if convert_to_singleton:
                 return {"embedding": predictions.embeddings[0]}
 
-            return [ {"embedding": p} for p in predictions.embeddings ]
+            return [{"embedding": p} for p in predictions.embeddings]
 
     def run_remotely(
         self,
@@ -227,11 +231,10 @@ class ClipModelBlockV1(WorkflowBlock):
                         clip_version=version,
                     )
                 )
-        
+
         predictions = run_in_parallel(
             tasks=tasks,
             max_workers=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
         )
 
-        return [ {"embedding": p} for p in predictions ]
-        
+        return [{"embedding": p} for p in predictions]
