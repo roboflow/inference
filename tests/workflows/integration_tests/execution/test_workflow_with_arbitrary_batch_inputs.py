@@ -794,13 +794,12 @@ def test_workflow_when_non_batch_oriented_step_feeds_batch_oriented_step_operati
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
-    # when
-    with pytest.raises(ExecutionGraphStructureError):
-        _ = ExecutionEngine.init(
-            workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_BATCH_ORIENTED_STEP_OPERATING_BATCH_WISE,
-            init_parameters=workflow_init_parameters,
-            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        )
+    # should not throw an exception
+    _ = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_BATCH_ORIENTED_STEP_OPERATING_BATCH_WISE,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
 
 
 WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_MIXED_INPUT_STEP = {
@@ -1327,13 +1326,12 @@ def test_workflow_when_non_batch_oriented_step_feeds_compound_strictly_batch_ori
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
-    # then
-    with pytest.raises(ExecutionGraphStructureError):
-        _ = ExecutionEngine.init(
-            workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP,
-            init_parameters=workflow_init_parameters,
-            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        )
+    # should not throw an exception
+    _ = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
 
 
 WORKFLOW_WITH_BATCH_ORIENTED_STEP_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP = {
@@ -1741,13 +1739,12 @@ def test_workflow_when_non_batch_oriented_input_feeds_compound_strictly_batch_or
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
     }
 
-    # then
-    with pytest.raises(ExecutionGraphStructureError):
-        _ = ExecutionEngine.init(
-            workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP,
-            init_parameters=workflow_init_parameters,
-            max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
-        )
+    # should not throw an exception
+    _ = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_NON_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_STRICTLY_BATCH_ORIENTED_STEP,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
 
 
 WORKFLOW_WITH_BATCH_ORIENTED_INPUT_FEEDING_COMPOUND_NON_BATCH_ORIENTED_STEP = {
