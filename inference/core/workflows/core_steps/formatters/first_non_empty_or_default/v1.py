@@ -18,7 +18,9 @@ Takes input data which may not be present due to filtering or conditional execut
 fills with default value to make it compliant with further processing.
 """
 
-SHORT_DESCRIPTION = "Take the first non-empty data element or the configured default value."
+SHORT_DESCRIPTION = (
+    "Take the first non-empty data element or the configured default value."
+)
 
 
 class BlockManifest(WorkflowBlockManifest):
