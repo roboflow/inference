@@ -49,7 +49,7 @@ Example:
 - in case of multiple markdown blocks with raw JSON content - only first will be parsed
 """
 
-SHORT_DESCRIPTION = "Parses raw string into classification prediction."
+SHORT_DESCRIPTION = "Parse a raw string into a classification prediction."
 
 
 class BlockManifest(WorkflowBlockManifest):

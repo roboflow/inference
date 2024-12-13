@@ -1,5 +1,10 @@
 from cpuinfo import get_cpu_info
-from pynvml import nvmlInit, nvmlDeviceGetCount, nvmlDeviceGetHandleByIndex, nvmlDeviceGetName
+from pynvml import (
+    nvmlDeviceGetCount,
+    nvmlDeviceGetHandleByIndex,
+    nvmlDeviceGetName,
+    nvmlInit,
+)
 
 
 def retrieve_platform_specifics() -> dict:

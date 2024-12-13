@@ -21,7 +21,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/keypoint_visualization@v1"
-SHORT_DESCRIPTION = "Draws keypoints on detected objects in an image."
+SHORT_DESCRIPTION = "Draw keypoints on detected objects in an image."
 LONG_DESCRIPTION = """
 The `KeypointVisualization` block uses a detections from an
 keypoint detection model to draw keypoints on objects using
