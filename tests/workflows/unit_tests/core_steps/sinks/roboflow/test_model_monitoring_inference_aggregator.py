@@ -60,6 +60,7 @@ def test_run_not_in_reporting_range_success(
         frequency=10,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="my_model_id",
     )
 
     # then
@@ -126,6 +127,7 @@ def test_run_in_reporting_range_success_with_object_detection(
         frequency=10,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="construction-safety/10",
     )
 
     # then
@@ -147,12 +149,14 @@ def test_run_in_reporting_range_success_with_object_detection(
                         "confidence": 0.9,
                         "inference_id": "id1",
                         "model_type": "object-detection",
+                        "model_id": "construction-safety/10",
                     },
                     {
                         "class_name": "Person",
                         "confidence": 0.8,
                         "inference_id": "id2",
                         "model_type": "object-detection",
+                        "model_id": "construction-safety/10",
                     },
                 ],
                 key=lambda x: x["inference_id"],
@@ -166,6 +170,7 @@ def test_run_in_reporting_range_success_with_object_detection(
             "ip_address": ANY,
             "mac_address": ANY,
             "processor": ANY,
+            "inference_server_version": ANY,
         },
     )
     assert cache.get(cache_key) != datetime(2024, 11, 10, 12, 0, 0).isoformat()
@@ -218,6 +223,7 @@ def test_run_in_reporting_range_success_with_single_label_classification(
         frequency=10,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="pills-classification/1",
     )
 
     # then
@@ -238,6 +244,7 @@ def test_run_in_reporting_range_success_with_single_label_classification(
                     "confidence": 1.0,
                     "inference_id": "491d086d-4c6d-41b1-8915-a36ee2af5f6f",
                     "model_type": "classification",
+                    "model_id": "pills-classification/1",
                 }
             ],
             "device_id": ANY,
@@ -249,6 +256,7 @@ def test_run_in_reporting_range_success_with_single_label_classification(
             "ip_address": ANY,
             "mac_address": ANY,
             "processor": ANY,
+            "inference_server_version": ANY,
         },
     )
     assert cache.get(cache_key) != datetime(2024, 11, 10, 12, 0, 0).isoformat()
@@ -282,8 +290,16 @@ def test_run_in_reporting_range_success_with_multi_label_classification(
         "time": 0.29568295809440315,
         "image": {"width": 355, "height": 474},
         "predictions": {
-            "cat": {"confidence": 0.5594449043273926, "class_id": 0},
-            "dog": {"confidence": 0.4901779294013977, "class_id": 1},
+            "cat": {
+                "confidence": 0.5594449043273926,
+                "class_id": 0,
+                "model_id": "animals/3",
+            },
+            "dog": {
+                "confidence": 0.4901779294013977,
+                "class_id": 1,
+                "model_id": "animals/3",
+            },
         },
         "predicted_classes": ["cat"],
         "prediction_type": "classification",
@@ -303,6 +319,7 @@ def test_run_in_reporting_range_success_with_multi_label_classification(
         frequency=10,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="animals/32",
     )
 
     # then
@@ -320,12 +337,14 @@ def test_run_in_reporting_range_success_with_multi_label_classification(
             "inference_results": sorted(
                 [
                     {
+                        "model_id": "animals/32",
                         "class_name": "cat",
                         "confidence": 0.5594449043273926,
                         "inference_id": "5a1fc086-c2eb-43b4-9f75-e71ec67c91e8",
                         "model_type": "classification",
                     },
                     {
+                        "model_id": "animals/32",
                         "class_name": "dog",
                         "confidence": 0.4901779294013977,
                         "inference_id": "5a1fc086-c2eb-43b4-9f75-e71ec67c91e8",
@@ -343,6 +362,7 @@ def test_run_in_reporting_range_success_with_multi_label_classification(
             "ip_address": ANY,
             "mac_address": ANY,
             "processor": ANY,
+            "inference_server_version": ANY,
         },
     )
     assert cache.get(cache_key) != datetime(2024, 11, 10, 12, 0, 0).isoformat()
@@ -401,6 +421,7 @@ def test_send_inference_results_to_model_monitoring_failure(
         frequency=1,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="my_model_id",
     )
 
     # then
@@ -464,6 +485,7 @@ def test_run_when_not_in_reporting_range(
         frequency=10,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="my_model_id",
     )
 
     # then
@@ -529,6 +551,7 @@ def test_run_when_fire_and_forget_with_background_tasks(
         frequency=10,
         predictions=predictions,
         unique_aggregator_key=unique_aggregator_key,
+        model_id="my_model_id",
     )
 
     # then
@@ -592,6 +615,7 @@ def test_run_when_fire_and_forget_with_thread_pool(
             frequency=10,
             predictions=predictions,
             unique_aggregator_key=unique_aggregator_key,
+            model_id="my_model_id",
         )
 
         # then
