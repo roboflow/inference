@@ -138,7 +138,13 @@ class BlockManifest(WorkflowBlockManifest):
             "$inputs.opc_variable_name",
         ],
     )
-    value: Union[Selector(kind=[BOOLEAN_KIND, FLOAT_KIND, INTEGER_KIND, STRING_KIND]), str, bool, float, int] = Field(
+    value: Union[
+        Selector(kind=[BOOLEAN_KIND, FLOAT_KIND, INTEGER_KIND, STRING_KIND]),
+        str,
+        bool,
+        float,
+        int,
+    ] = Field(
         description="The value to be written to the target variable on the OPC UA server.",
         examples=["running", "$other_block.result"],
     )
