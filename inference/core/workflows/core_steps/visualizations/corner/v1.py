@@ -18,7 +18,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/corner_visualization@v1"
-SHORT_DESCRIPTION = "Draws the corners of detected objects in an image."
+SHORT_DESCRIPTION = "Draw the corners of detected objects in an image."
 LONG_DESCRIPTION = """
 The `CornerVisualization` block draws the corners of detected
 objects in an image using Supervision's `sv.BoxCornerAnnotator`.
