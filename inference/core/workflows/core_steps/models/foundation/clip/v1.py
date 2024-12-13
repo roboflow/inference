@@ -90,10 +90,6 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def get_parameters_accepting_batches(cls) -> List[str]:
-        return ["data"]
-
-    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [OutputDefinition(name="embedding", kind=[EMBEDDING_KIND])]
 
@@ -124,7 +120,7 @@ class ClipModelBlockV1(WorkflowBlock):
 
     def run(
         self,
-        data: Batch[Union[WorkflowImageData, str]],
+        data: Union[WorkflowImageData, str],
         version: str,
     ) -> BlockResult:
         if self._step_execution_mode is StepExecutionMode.LOCAL:
@@ -138,64 +134,43 @@ class ClipModelBlockV1(WorkflowBlock):
 
     def run_locally(
         self,
-        data: Batch[Union[WorkflowImageData, str]],
+        data: Union[WorkflowImageData, str],
         version: str,
     ) -> BlockResult:
-        # if not array, wrap
-        convert_to_singleton = False
-        if not isinstance(data, Batch):
-            data = [data]
-            convert_to_singleton = True
-
-        if isinstance(data[0], str):
+        if isinstance(data, str):
             inference_request = ClipTextEmbeddingRequest(
                 clip_version_id=version,
-                text=data,
+                text=[data],
                 api_key=self._api_key,
             )
-
             clip_model_id = load_core_model(
                 model_manager=self._model_manager,
                 inference_request=inference_request,
                 core_model="clip",
             )
-
             predictions = self._model_manager.infer_from_request_sync(
                 clip_model_id, inference_request
             )
-
-            if convert_to_singleton:
-                return {"embedding": predictions.embeddings[0]}
-
-            return [{"embedding": p} for p in predictions.embeddings]
+            return {"embedding": predictions.embeddings[0]}
         else:
             inference_request = ClipImageEmbeddingRequest(
                 clip_version_id=version,
-                image=[
-                    single_image.to_inference_format(numpy_preferred=True)
-                    for single_image in data
-                ],
+                image=[data.to_inference_format(numpy_preferred=True)],
                 api_key=self._api_key,
             )
-
             clip_model_id = load_core_model(
                 model_manager=self._model_manager,
                 inference_request=inference_request,
                 core_model="clip",
             )
-
             predictions = self._model_manager.infer_from_request_sync(
                 clip_model_id, inference_request
             )
-
-            if convert_to_singleton:
-                return {"embedding": predictions.embeddings[0]}
-
-            return [{"embedding": p} for p in predictions.embeddings]
+            return {"embedding": predictions.embeddings[0]}
 
     def run_remotely(
         self,
-        data: Batch[Union[WorkflowImageData, str]],
+        data: Union[WorkflowImageData, str],
         version: str,
     ) -> BlockResult:
         api_url = (
@@ -210,28 +185,15 @@ class ClipModelBlockV1(WorkflowBlock):
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
 
-        tasks = []
-        for d in data:
-            if isinstance(d, str):
-                tasks.append(
-                    partial(
-                        client.get_clip_text_embeddings,
-                        text=d,
-                        clip_version=version,
-                    )
-                )
-            else:
-                tasks.append(
-                    partial(
-                        client.get_clip_image_embeddings,
-                        image=d.base64_image,
-                        clip_version=version,
-                    )
-                )
+        if isinstance(data, str):
+            result = client.get_clip_text_embeddings(
+                text=data,
+                clip_version=version,
+            )
+        else:
+            result = client.get_clip_image_embeddings(
+                inference_input=data.base64_image,
+                clip_version=version,
+            )
 
-        predictions = run_in_parallel(
-            tasks=tasks,
-            max_workers=WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
-        )
-
-        return [{"embedding": p} for p in predictions]
+        return {"embedding": result["embeddings"][0]}

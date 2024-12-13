@@ -66,5 +66,10 @@ class CosineSimilarityBlockV1(WorkflowBlock):
         return BlockManifest
 
     def run(self, embedding_1: List[float], embedding_2: List[float]) -> BlockResult:
+        if len(embedding_1) != len(embedding_2):
+            raise RuntimeError(
+                f"roboflow_core/cosine_similarity@v1 block feed with different shape of embeddings. "
+                f"`embedding_1`: (N, {len(embedding_1)}), `embedding_2`: (N, {len(embedding_2)})"
+            )
         similarity = cosine_similarity(embedding_1, embedding_2)
         return {"similarity": similarity}

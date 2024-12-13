@@ -108,7 +108,9 @@ def test_run_locally_with_image(mock_model_manager, mock_workflow_image_data):
 def test_run_remotely_with_text(mock_client_cls, mock_model_manager):
     # Mock the remote client and its return value
     mock_client = MagicMock()
-    mock_client.get_clip_text_embeddings.return_value = [0.1, 0.2, 0.3]
+    mock_client.get_clip_text_embeddings.return_value = {
+        "embeddings": [[0.1, 0.2, 0.3]]
+    }
     mock_client_cls.return_value = mock_client
 
     block = ClipModelBlockV1(
@@ -117,11 +119,9 @@ def test_run_remotely_with_text(mock_client_cls, mock_model_manager):
         step_execution_mode=StepExecutionMode.REMOTE,
     )
 
-    result = block.run(data=["Hello world"], version="RN50")
+    result = block.run(data="Hello world", version="RN50")
 
-    assert isinstance(result, list)
-    assert len(result) == 1
-    assert result[0]["embedding"] == [0.1, 0.2, 0.3]
+    assert result["embedding"] == [0.1, 0.2, 0.3]
     mock_client.get_clip_text_embeddings.assert_called_once()
 
 
@@ -132,7 +132,9 @@ def test_run_remotely_with_image(
     mock_client_cls, mock_model_manager, mock_workflow_image_data
 ):
     mock_client = MagicMock()
-    mock_client.get_clip_image_embeddings.return_value = [0.1, 0.2, 0.3]
+    mock_client.get_clip_image_embeddings.return_value = {
+        "embeddings": [[0.1, 0.2, 0.3]]
+    }
     mock_client_cls.return_value = mock_client
 
     block = ClipModelBlockV1(
@@ -141,9 +143,7 @@ def test_run_remotely_with_image(
         step_execution_mode=StepExecutionMode.REMOTE,
     )
 
-    result = block.run(data=[mock_workflow_image_data], version="RN50")
+    result = block.run(data=mock_workflow_image_data, version="RN50")
 
-    assert isinstance(result, list)
-    assert len(result) == 1
-    assert result[0]["embedding"] == [0.1, 0.2, 0.3]
+    assert result["embedding"] == [0.1, 0.2, 0.3]
     mock_client.get_clip_image_embeddings.assert_called_once()

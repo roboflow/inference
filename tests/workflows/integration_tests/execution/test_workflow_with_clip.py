@@ -4,7 +4,7 @@ import pytest
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.errors import RuntimeInputError
+from inference.core.workflows.errors import RuntimeInputError, StepExecutionError
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
     add_to_workflows_gallery,
@@ -98,6 +98,175 @@ def test_clip_embedding_model(
     assert (
         len(result[0]["image_embeddings"]) == 1024
     ), "Expected image embedding to be of dimension 1024 for RN50 model"
+
+
+CLIP_WORKFLOW_COSINE_SIMILARITY_CROSS_DATA_TYPE = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "InferenceImage", "name": "image_1"},
+        {"type": "WorkflowParameter", "name": "reference"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/clip@v1",
+            "name": "embedding_1",
+            "data": "$inputs.image_1",
+            "version": "RN50",
+        },
+        {
+            "type": "roboflow_core/clip@v1",
+            "name": "embedding_2",
+            "data": "$inputs.reference",
+            "version": "RN50",
+        },
+        {
+            "type": "roboflow_core/cosine_similarity@v1",
+            "name": "cosine_similarity",
+            "embedding_1": "$steps.embedding_1.embedding",
+            "embedding_2": "$steps.embedding_2.embedding",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "similarity",
+            "coordinates_system": "own",
+            "selector": "$steps.cosine_similarity.similarity",
+        },
+        {
+            "type": "JsonField",
+            "name": "image_embeddings",
+            "coordinates_system": "own",
+            "selector": "$steps.embedding_1.embedding",
+        },
+    ],
+}
+
+
+def test_clip_embedding_model_on_batches_of_cross_type_data(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=CLIP_WORKFLOW_COSINE_SIMILARITY_CROSS_DATA_TYPE,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image_1": [license_plate_image, crowd_image],
+            "reference": "people",
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 2, "Expected 2 elements in the output"
+    assert set(result[0].keys()) == {
+        "similarity",
+        "image_embeddings",
+    }, "Expected all declared outputs to be delivered"
+    assert set(result[1].keys()) == {
+        "similarity",
+        "image_embeddings",
+    }, "Expected all declared outputs to be delivered"
+    assert (
+        abs(result[0]["similarity"] - 0.13) < 0.02
+    ), "Expected similarity to be approximately the defined value"
+    assert (
+        len(result[0]["image_embeddings"]) == 1024
+    ), "Expected image embedding to be of dimension 1024 for RN50 model"
+    assert (
+        abs(result[1]["similarity"] - 0.15) < 0.02
+    ), "Expected similarity to be approximately the defined value"
+    assert (
+        len(result[1]["image_embeddings"]) == 1024
+    ), "Expected image embedding to be of dimension 1024 for RN50 model"
+
+
+CLIP_WORKFLOW_COSINE_SIMILARITY_CROSS_DATA_TYPE_WITH_INVALID_LENGTH_OF_EMBEDDINGS = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "InferenceImage", "name": "image_1"},
+        {"type": "WorkflowParameter", "name": "reference"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/clip@v1",
+            "name": "embedding_1",
+            "data": "$inputs.image_1",
+            "version": "RN50",
+        },
+        {
+            "type": "roboflow_core/clip@v1",
+            "name": "embedding_2",
+            "data": "$inputs.reference",
+            "version": "RN50x4",
+        },
+        {
+            "type": "roboflow_core/cosine_similarity@v1",
+            "name": "cosine_similarity",
+            "embedding_1": "$steps.embedding_1.embedding",
+            "embedding_2": "$steps.embedding_2.embedding",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "similarity",
+            "coordinates_system": "own",
+            "selector": "$steps.cosine_similarity.similarity",
+        },
+        {
+            "type": "JsonField",
+            "name": "image_embeddings",
+            "coordinates_system": "own",
+            "selector": "$steps.embedding_1.embedding",
+        },
+    ],
+}
+
+
+def test_clip_embedding_model_on_batches_of_cross_type_data_with_different_embeddings_length(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=CLIP_WORKFLOW_COSINE_SIMILARITY_CROSS_DATA_TYPE_WITH_INVALID_LENGTH_OF_EMBEDDINGS,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    with pytest.raises(StepExecutionError) as error:
+        _ = execution_engine.run(
+            runtime_parameters={
+                "image_1": [license_plate_image, crowd_image],
+                "reference": "people",
+            }
+        )
+
+    # then
+    assert (
+        "roboflow_core/cosine_similarity@v1 block feed with different shape of embeddings"
+        in str(error.value)
+    )
 
 
 CLIP_TEXT_WORKFLOW = {
