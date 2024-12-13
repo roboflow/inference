@@ -162,6 +162,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             disable_preproc_grayscale=disable_preproc_grayscale,
             disable_preproc_static_crop=disable_preproc_static_crop,
             return_image_dims=return_image_dims,
+            **kwargs,
         )
 
     def postprocess(
