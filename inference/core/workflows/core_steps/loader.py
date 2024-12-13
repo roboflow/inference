@@ -98,6 +98,9 @@ from inference.core.workflows.core_steps.common.serializers import (
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
+from inference.core.workflows.core_steps.flow_control.delta_filter.v1 import (
+    DeltaFilterBlockV1,
+)
 from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
     RateLimiterBlockV1,
 )
@@ -467,6 +470,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ContinueIfBlockV1,
         RateLimiterBlockV1,
         PerspectiveCorrectionBlockV1,
+        DeltaFilterBlockV1,
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         DetectionsClassesReplacementBlockV1,
