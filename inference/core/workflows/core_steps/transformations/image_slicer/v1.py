@@ -49,7 +49,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Image Slicer",
             "version": "v1",
-            "short_description": "Consolidate detections from multiple sections of an input image into a single detection.",
+            "short_description": "Tile the input image into a list of smaller images to perform small object detection.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
