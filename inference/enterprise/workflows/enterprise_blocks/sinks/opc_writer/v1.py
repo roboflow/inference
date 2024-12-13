@@ -138,12 +138,12 @@ class BlockManifest(WorkflowBlockManifest):
             "$inputs.opc_variable_name",
         ],
     )
-    value: Union[str, bool, float, int] = Field(
+    value: Union[Selector(kind=[BOOLEAN_KIND, FLOAT_KIND, INTEGER_KIND, STRING_KIND]), str, bool, float, int] = Field(
         description="The value to be written to the target variable on the OPC UA server.",
         examples=["running", "$other_block.result"],
     )
     value_type: Union[
-        Selector(kind=[BOOLEAN_KIND, FLOAT_KIND, INTEGER_KIND, STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
         Literal["Boolean", "Float", "Integer", "String"],
     ] = Field(
         default="String",
@@ -221,10 +221,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
         object_name: str,
         variable_name: str,
         value: Union[str, bool, float, int],
-        value_type: Union[
-            Selector(kind=[BOOLEAN_KIND, FLOAT_KIND, INTEGER_KIND, STRING_KIND]),
-            Literal["Boolean", "Float", "Integer", "String"],
-        ] = "String",
+        value_type: Literal["Boolean", "Float", "Integer", "String"] = "String",
         timeout: int = 2,
         fire_and_forget: bool = True,
         disable_sink: bool = False,
@@ -254,7 +251,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
         value_str = str(value)
         try:
             if value_type in [BOOLEAN_KIND, "Boolean"]:
-                decoded_value = value_str.lower() in ("true", "1")
+                decoded_value = value_str.strip().lower() in ("true", "1")
             elif value_type in [FLOAT_KIND, "Float"]:
                 decoded_value = float(value_str)
             elif value_type in [INTEGER_KIND, "Integer"]:
