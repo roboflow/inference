@@ -131,7 +131,21 @@ def select_rightmost_detection(detections: sv.Detections) -> sv.Detections:
     return detections[index]
 
 
+def select_first_detection(detections: sv.Detections) -> sv.Detections:
+    if len(detections) == 0:
+        return deepcopy(detections)
+    return detections[0]
+
+
+def select_last_detection(detections: sv.Detections) -> sv.Detections:
+    if len(detections) == 0:
+        return deepcopy(detections)
+    return detections[-1]
+
+
 DETECTIONS_SELECTORS = {
+    DetectionsSelectionMode.FIRST: select_first_detection,
+    DetectionsSelectionMode.LAST: select_last_detection,
     DetectionsSelectionMode.LEFT_MOST: select_leftmost_detection,
     DetectionsSelectionMode.RIGHT_MOST: select_rightmost_detection,
     DetectionsSelectionMode.TOP_CONFIDENCE: select_top_confidence_detection,
