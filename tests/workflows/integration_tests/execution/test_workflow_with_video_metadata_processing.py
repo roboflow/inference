@@ -214,7 +214,7 @@ def test_workflow_with_tracker(
         first_crowd_frame_tracker_ids == second_crowd_frame_tracker_ids
     ), "The same image, expected no tracker IDs change"
     assert first_license_plate_frame_tracker_ids == [
-        15,
-        16,
-        17,
-    ], "External IDs for all trackers are global, hence we offset by numer of all ever generated tracker IDs"
+        1,
+        2,
+        3,
+    ], "Expected tracker IDs to be generated sequentially, independent of other trackers"
