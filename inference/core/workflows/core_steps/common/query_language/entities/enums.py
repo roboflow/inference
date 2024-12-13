@@ -68,3 +68,5 @@ class DetectionsSelectionMode(Enum):
     LEFT_MOST = "left_most"
     RIGHT_MOST = "right_most"
     TOP_CONFIDENCE = "top_confidence"
+    FIRST = "first"
+    LAST = "last"
