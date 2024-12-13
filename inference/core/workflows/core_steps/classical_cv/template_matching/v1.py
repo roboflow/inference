@@ -36,7 +36,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION: str = "Looks for instances of template in specific image"
+SHORT_DESCRIPTION: str = (
+    "Locate instances of a given template within a specified image."
+)
 LONG_DESCRIPTION: str = """
 Apply Template Matching to an image. Block is based on OpenCV library function called `cv2.matchTemplate(...)`
 that searches for a template image within a larger image. This is often used in computer vision tasks where 
