@@ -711,18 +711,18 @@ def denote_data_flow_for_step(
                 context="workflow_compilation | execution_graph_construction",
             )
         if (
-                step_accepts_batch_input
-                and batch_input_expected == {True}
-                and False in actual_input_is_batch
+            step_accepts_batch_input
+            and batch_input_expected == {True}
+            and False in actual_input_is_batch
         ):
             raise ExecutionGraphStructureError(
                 public_message=f"Detected invalid reference plugged "
-                               f"into property `{property_name}` of step `{node}` - the step "
-                               f"property strictly requires batch-oriented inputs, yet the input selector "
-                               f"holds non-batch oriented input - this indicates the "
-                               f"problem with construction of your Workflow - usually the problem occurs when "
-                               f"non-batch oriented step inputs are filled with outputs of non batch-oriented "
-                               f"steps or non batch-oriented inputs.",
+                f"into property `{property_name}` of step `{node}` - the step "
+                f"property strictly requires batch-oriented inputs, yet the input selector "
+                f"holds non-batch oriented input - this indicates the "
+                f"problem with construction of your Workflow - usually the problem occurs when "
+                f"non-batch oriented step inputs are filled with outputs of non batch-oriented "
+                f"steps or non batch-oriented inputs.",
                 context="workflow_compilation | execution_graph_construction",
             )
     if not parameters_with_batch_inputs:
