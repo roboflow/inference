@@ -141,8 +141,14 @@ from inference.core.workflows.core_steps.fusion.detections_stitch.v1 import (
 from inference.core.workflows.core_steps.fusion.dimension_collapse.v1 import (
     DimensionCollapseBlockV1,
 )
+from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
+    CosineSimilarityBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
     AnthropicClaudeBlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
+    ClipModelBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 import (
     ClipComparisonBlockV1,
@@ -479,6 +485,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DimensionCollapseBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
         AnthropicClaudeBlockV1,
+        CosineSimilarityBlockV1,
         BackgroundColorVisualizationBlockV1,
         BarcodeDetectorBlockV1,
         BlurVisualizationBlockV1,
@@ -489,6 +496,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CircleVisualizationBlockV1,
         ClipComparisonBlockV1,
         ClipComparisonBlockV2,
+        ClipModelBlockV1,
         CogVLMBlockV1,
         ColorVisualizationBlockV1,
         ConvertGrayscaleBlockV1,
