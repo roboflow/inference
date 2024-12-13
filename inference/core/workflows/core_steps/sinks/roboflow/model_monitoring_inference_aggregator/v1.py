@@ -40,7 +40,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Periodically report an aggregated sample of inference results to Roboflow Model Monitoring"
+SHORT_DESCRIPTION = "Periodically report an aggregated sample of inference results to Roboflow Model Monitoring."
 
 LONG_DESCRIPTION = """
 This block 📊 **transforms inference data reporting** to a whole new level by 
@@ -214,7 +214,6 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
         api_key: Optional[str],
         background_tasks: Optional[BackgroundTasks],
         thread_pool_executor: Optional[ThreadPoolExecutor],
-        model_id: str,
     ):
         if api_key is None:
             raise ValueError(
@@ -228,7 +227,6 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
         self._background_tasks = background_tasks
         self._thread_pool_executor = thread_pool_executor
         self._predictions_aggregator = PredictionsAggregator()
-        self._model_id = model_id
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -244,10 +242,11 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
         predictions: Union[sv.Detections, dict],
         frequency: int,
         unique_aggregator_key: str,
+        model_id: str,
     ) -> BlockResult:
         self._last_report_time_cache_key = f"workflows:steps_cache:roboflow_core/model_monitoring_inference_aggregator@v1:{unique_aggregator_key}:last_report_time"
         if predictions:
-            self._predictions_aggregator.collect(predictions, self._model_id)
+            self._predictions_aggregator.collect(predictions, model_id)
         if not self._is_in_reporting_range(frequency):
             return {
                 "error_status": False,

@@ -52,7 +52,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Environment Secrets Store",
             "version": "v1",
-            "short_description": "Fetches secrets from environmental variables",
+            "short_description": "Fetch secrets from environmental variables.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "secrets_provider",

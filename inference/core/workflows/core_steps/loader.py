@@ -98,6 +98,9 @@ from inference.core.workflows.core_steps.common.serializers import (
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
 )
+from inference.core.workflows.core_steps.flow_control.delta_filter.v1 import (
+    DeltaFilterBlockV1,
+)
 from inference.core.workflows.core_steps.flow_control.rate_limiter.v1 import (
     RateLimiterBlockV1,
 )
@@ -142,7 +145,7 @@ from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
     CosineSimilarityBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.anthropic_claude.v1 import (
-    AntropicClaudeBlockV1,
+    AnthropicClaudeBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
     ClipModelBlockV1,
@@ -473,6 +476,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ContinueIfBlockV1,
         RateLimiterBlockV1,
         PerspectiveCorrectionBlockV1,
+        DeltaFilterBlockV1,
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         DetectionsClassesReplacementBlockV1,
@@ -480,8 +484,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         PropertyDefinitionBlockV1,
         DimensionCollapseBlockV1,
         FirstNonEmptyOrDefaultBlockV1,
+        AnthropicClaudeBlockV1,
         CosineSimilarityBlockV1,
-        AntropicClaudeBlockV1,
         BackgroundColorVisualizationBlockV1,
         BarcodeDetectorBlockV1,
         BlurVisualizationBlockV1,

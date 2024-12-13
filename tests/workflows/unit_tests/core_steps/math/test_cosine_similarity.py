@@ -1,7 +1,10 @@
 import pytest
 from pydantic import ValidationError
 
-from inference.core.workflows.core_steps.math.cosine_similarity.v1 import BlockManifest, CosineSimilarityBlockV1
+from inference.core.workflows.core_steps.math.cosine_similarity.v1 import (
+    BlockManifest,
+    CosineSimilarityBlockV1,
+)
 
 
 def test_manifest_parsing_when_data_is_valid():

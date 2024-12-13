@@ -99,6 +99,7 @@ def test_clip_embedding_model(
         len(result[0]["image_embeddings"]) == 1024
     ), "Expected image embedding to be of dimension 1024 for RN50 model"
 
+
 CLIP_TEXT_WORKFLOW = {
     "version": "1.0",
     "inputs": [
@@ -141,9 +142,7 @@ def test_clip_text_embedding_model(
     )
 
     # when
-    result = execution_engine.run(
-        runtime_parameters={"prompt": "Foo Bar"}
-    )
+    result = execution_engine.run(runtime_parameters={"prompt": "Foo Bar"})
 
     # then
     assert isinstance(result, list), "Expected list to be delivered"
@@ -166,6 +165,7 @@ def test_clip_text_embedding_model(
     assert (
         pytest.approx(np.std(result[0]["text_embeddings"]), 0.0001) == 0.39733439
     ), "Expected embedding to have a value similar to during testing"
+
 
 CLIP_COMPARISON_WORKFLOW = {
     "version": "1.0",

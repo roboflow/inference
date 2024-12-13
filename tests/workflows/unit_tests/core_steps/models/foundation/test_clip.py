@@ -1,17 +1,17 @@
-import pytest
 from unittest.mock import MagicMock, patch
-from pydantic import ValidationError
 
 import numpy as np
+import pytest
+from pydantic import ValidationError
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.clip.v1 import (
     BlockManifest,
-    ClipModelBlockV1
+    ClipModelBlockV1,
 )
-from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
-    WorkflowImageData
+    WorkflowImageData,
 )
 
 
@@ -102,7 +102,9 @@ def test_run_locally_with_image(mock_model_manager, mock_workflow_image_data):
     mock_model_manager.infer_from_request_sync.assert_called_once()
 
 
-@patch("inference.core.workflows.core_steps.models.foundation.clip.v1.InferenceHTTPClient")
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.clip.v1.InferenceHTTPClient"
+)
 def test_run_remotely_with_text(mock_client_cls, mock_model_manager):
     # Mock the remote client and its return value
     mock_client = MagicMock()
@@ -123,8 +125,12 @@ def test_run_remotely_with_text(mock_client_cls, mock_model_manager):
     mock_client.get_clip_text_embeddings.assert_called_once()
 
 
-@patch("inference.core.workflows.core_steps.models.foundation.clip.v1.InferenceHTTPClient")
-def test_run_remotely_with_image(mock_client_cls, mock_model_manager, mock_workflow_image_data):
+@patch(
+    "inference.core.workflows.core_steps.models.foundation.clip.v1.InferenceHTTPClient"
+)
+def test_run_remotely_with_image(
+    mock_client_cls, mock_model_manager, mock_workflow_image_data
+):
     mock_client = MagicMock()
     mock_client.get_clip_image_embeddings.return_value = [0.1, 0.2, 0.3]
     mock_client_cls.return_value = mock_client
