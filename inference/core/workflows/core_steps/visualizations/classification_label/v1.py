@@ -23,7 +23,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-SHORT_DESCRIPTION = "Visualizes both single-label and multi-label classification predictions with customizable display options."
+SHORT_DESCRIPTION = "Visualize both single-label and multi-label classification predictions with customizable display options."
 
 LONG_DESCRIPTION = """
 Visualizes classification predictions with customizable labels and positioning options. 

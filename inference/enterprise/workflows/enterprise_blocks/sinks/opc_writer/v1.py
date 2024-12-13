@@ -32,47 +32,44 @@ from inference.core.workflows.prototypes.block import (
 
 BLOCK_TYPE = "roboflow_enterprise/opc_writer_sink@v1"
 LONG_DESCRIPTION = """
-The **OPC Writer** block enables sending a data from Workflow into OPC server
-by setting value of OPC object under OPC namespace.
+The **OPC UA Writer** block enables you to write data to a variable on an OPC UA server, leveraging the 
+[asyncua](https://github.com/FreeOpcUa/opcua-asyncio) library for seamless communication.
 
-This block is making use of [asyncua](https://github.com/FreeOpcUa/opcua-asyncio) in order to
-perform communication with OPC servers.
+### Supported Data Types
+This block supports writing the following data types to OPC UA server variables:
+- Numbers (integers, floats)
+- Booleans
+- Strings
 
-Block will attempt to send:
-
-* numbers (integers, floats)
-
-* booleans
-
-* strings
-
-Type of sent data must match type of OPC object.
+**Note:** The data type you send must match the expected type of the target OPC UA variable.
 
 ### Cooldown
+To prevent excessive traffic to the OPC UA server, the block includes a `cooldown_seconds` parameter, 
+which defaults to **5 seconds**. During the cooldown period:
+- Consecutive executions of the block will set the `throttling_status` output to `True`.
+- No data will be sent to the server.
 
-The block accepts `cooldown_seconds` (which **defaults to `5` seconds**) to prevent unintended bursts of 
-traffic sent to OPC server. Please adjust it according to your needs, setting `0` indicate no cooldown. 
+You can customize the `cooldown_seconds` parameter based on your needs. Setting it to `0` disables 
+the cooldown entirely.
 
-During cooldown period, consecutive runs of the step will cause `throttling_status` output to be set `True`
-and no data will be sent.
+### Asynchronous Execution
+The block provides a `fire_and_forget` property for asynchronous execution:
+- **When `fire_and_forget=True`**: The block sends data in the background, allowing the Workflow to 
+  proceed immediately. However, the `error_status` output will always be set to `False`, so we do not 
+  recommend this mode for debugging.
+- **When `fire_and_forget=False`**: The block waits for confirmation before proceeding, ensuring errors 
+  are captured in the `error_status` output.
 
-### Async execution
+### Disabling the Block Dynamically
+You can disable the **OPC UA Writer** block during execution by linking the `disable_sink` parameter 
+to a Workflow input. By providing a specific input value, you can dynamically prevent the block from 
+executing.
 
-Configure the `fire_and_forget` property. Set it to True if you want the data to be sent in the background, 
-allowing the Workflow to proceed without waiting on data to be sent. In this case you will not be able to rely on 
-`error_status` output which will always be set to `False`, so we **recommend setting the `fire_and_forget=False` for
-debugging purposes**.
-
-### Disabling notifications based on runtime parameter
-
-Sometimes it would be convenient to manually disable the **OPC Writer** block. This can be achieved by
-setting `disable_sink` flag to hold reference to Workflow input. With such setup, caller cat disable the sink
-by sending agreed input parameter.
-
-!!! warning "Cooldown limitations"
-    Current implementation of cooldown is limited to video processing - using this block in context of a 
-    Workflow that is run behind HTTP service (Roboflow Hosted API, Dedicated Deployment or self-hosted 
-    `inference` server) will have no effect with regards to cooldown timer.
+### Cooldown Limitations
+!!! warning "Cooldown Limitations"
+    The cooldown feature is optimized for workflows involving video processing.  
+    - In other contexts, such as Workflows triggered by HTTP services (e.g., Roboflow Hosted API, 
+      Dedicated Deployment, or self-hosted `Inference` server), the cooldown timer will not be applied effectively.
 """
 
 QUERY_PARAMS_KIND = [
@@ -103,9 +100,9 @@ HEADER_KIND = [
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "OPC Writer Sink",
+            "name": "OPC UA Writer Sink",
             "version": "v1",
-            "short_description": "Pushes data to OPC server, this block is making use of [asyncua](https://github.com/FreeOpcUa/opcua-asyncio)",
+            "short_description": "Writes data to an OPC UA server using the [asyncua](https://github.com/FreeOpcUa/opcua-asyncio) library for communication.",
             "long_description": LONG_DESCRIPTION,
             "license": "Roboflow Enterprise License",
             "block_type": "sink",
@@ -113,66 +110,79 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal[BLOCK_TYPE]
     url: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="URL of OPC server where data should be pushed to",
-        examples=["$inputs.opc_url", "opc.tcp://localhost:4840/freeopcua/server/"],
+        description="URL of the OPC UA server to which data will be written.",
+        examples=["opc.tcp://localhost:4840/freeopcua/server/", "$inputs.opc_url"],
     )
     namespace: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="OPC namespace",
-        examples=["$inputs.opc_namespace", "http://examples.freeopcua.github.io"],
+        description="The OPC UA namespace URI or index used to locate objects and variables.",
+        examples=["http://examples.freeopcua.github.io", "2", "$inputs.opc_namespace"],
     )
     user_name: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
         default=None,
-        description="Optional user name to be used for authentication when connecting to OPC server",
-        examples=["$inputs.opc_user_name", "John"],
+        description="Optional username for authentication when connecting to the OPC UA server.",
+        examples=["John", "$inputs.opc_user_name"],
     )
     password: Optional[Union[str, Selector(kind=[STRING_KIND])]] = Field(
         default=None,
-        description="Optional password to be used for authentication when connecting to OPC server",
-        examples=["$inputs.opc_password", "secret"],
+        description="Optional password for authentication when connecting to the OPC UA server.",
+        examples=["secret", "$inputs.opc_password"],
     )
     object_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Name of object to be searched in namespace",
-        examples=["$inputs.opc_object_name", "Line1"],
+        description="The name of the target object in the namespace to search for.",
+        examples=["Line1", "$inputs.opc_object_name"],
     )
     variable_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Name of variable to be set under found object",
+        description="The name of the variable within the target object to be updated.",
         examples=[
-            "$inputs.opc_variable_name",
             "InspectionSuccess",
+            "$inputs.opc_variable_name",
         ],
     )
     value: Union[
         Selector(kind=[BOOLEAN_KIND, FLOAT_KIND, INTEGER_KIND, STRING_KIND]),
-        Union[bool, float, int, str],
+        str,
+        bool,
+        float,
+        int,
     ] = Field(
-        description="value to be written into variable",
-        examples=["$other_block.result", "running"],
+        description="The value to be written to the target variable on the OPC UA server.",
+        examples=["running", "$other_block.result"],
+    )
+    value_type: Union[
+        Selector(kind=[STRING_KIND]),
+        Literal["Boolean", "Float", "Integer", "String"],
+    ] = Field(
+        default="String",
+        description="The type of the value to be written to the target variable on the OPC UA server.",
+        examples=["Boolean", "Float", "Integer", "String"],
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     timeout: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=2,
-        description="Number of seconds to wait for OPC server to respond",
-        examples=["$inputs.timeout", 10],
+        description="The number of seconds to wait for a response from the OPC UA server before timing out.",
+        examples=[10, "$inputs.timeout"],
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Boolean flag dictating if sink is supposed to be executed in the background, "
-        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-        "registration is needed, use `False` while debugging and if error handling is needed",
-        examples=["$inputs.fire_and_forget", True],
+        description="Determines if the block should execute asynchronously. Set to `True` for best-effort updates "
+        "where the Workflow continues without waiting for confirmation. Use `False` during debugging or when error "
+        "handling is required.",
+        examples=[True, "$inputs.fire_and_forget"],
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="boolean flag that can be also reference to input - to arbitrarily disable "
-        "data collection for specific request",
+        description="Boolean flag to disable the block for specific requests. Can be dynamically linked to a Workflow input.",
         examples=[False, "$inputs.disable_opc_writers"],
     )
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=5,
-        description="Number of seconds to wait until next value update can be sent",
+        description="The minimum number of seconds to wait between consecutive updates to the OPC UA server.",
         json_schema_extra={
             "always_visible": True,
         },
-        examples=["$inputs.cooldown_seconds", 10],
+        examples=[10, "$inputs.cooldown_seconds"],
     )
 
     @classmethod
@@ -216,11 +226,12 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
         password: Optional[str],
         object_name: str,
         variable_name: str,
-        value: Union[bool, float, int, str],
-        timeout: int,
-        fire_and_forget: bool,
-        disable_sink: bool,
-        cooldown_seconds: int,
+        value: Union[str, bool, float, int],
+        value_type: Literal["Boolean", "Float", "Integer", "String"] = "String",
+        timeout: int = 2,
+        fire_and_forget: bool = True,
+        disable_sink: bool = False,
+        cooldown_seconds: int = 5,
     ) -> BlockResult:
         if disable_sink:
             return {
@@ -242,6 +253,27 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
                 "error_status": False,
                 "message": "Sink cooldown applies",
             }
+
+        value_str = str(value)
+        try:
+            if value_type in [BOOLEAN_KIND, "Boolean"]:
+                decoded_value = value_str.strip().lower() in ("true", "1")
+            elif value_type in [FLOAT_KIND, "Float"]:
+                decoded_value = float(value_str)
+            elif value_type in [INTEGER_KIND, "Integer"]:
+                decoded_value = int(value_str)
+            elif value_type in [STRING_KIND, "String"]:
+                decoded_value = value_str
+            else:
+                raise ValueError(f"Unsupported value type: {value_type}")
+        except ValueError as exc:
+            return {
+                "disabled": False,
+                "error_status": True,
+                "throttling_status": False,
+                "message": f"Failed to convert value: {exc}",
+            }
+
         opc_writer_handler = partial(
             opc_connect_and_write_value,
             url=url,
@@ -250,7 +282,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
             password=password,
             object_name=object_name,
             variable_name=variable_name,
-            value=value,
+            value=decoded_value,
             timeout=timeout,
         )
         self._last_notification_fired = datetime.now()
@@ -260,7 +292,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
                 "disabled": False,
                 "error_status": False,
                 "throttling_status": False,
-                "message": "Writing to OPC in the background task",
+                "message": "Writing to the OPC UA server in the background task",
             }
         if fire_and_forget and self._thread_pool_executor:
             self._thread_pool_executor.submit(opc_writer_handler)
@@ -268,7 +300,7 @@ class OPCWriterSinkBlockV1(WorkflowBlock):
                 "disabled": False,
                 "error_status": False,
                 "throttling_status": False,
-                "message": "Writing to OPC in the background task",
+                "message": "Writing to the OPC UA server in the background task",
             }
         error_status, message = opc_writer_handler()
         return {
@@ -338,7 +370,10 @@ def _opc_connect_and_write_value(
     )
 
     try:
-        nsidx = get_namespace_index(namespace)
+        if namespace.isdigit():
+            nsidx = int(namespace)
+        else:
+            nsidx = get_namespace_index(namespace)
     except ValueError as exc:
         client.disconnect()
         raise Exception(f"WRONG NAMESPACE ERROR: {exc}")
