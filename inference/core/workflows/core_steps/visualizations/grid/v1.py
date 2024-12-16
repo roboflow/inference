@@ -1,15 +1,19 @@
-from typing import Literal, Optional, Type, Union, List
+import math
+import uuid
+from typing import List, Literal, Optional, Type, Union
 
+import cv2
+import numpy as np
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.visualizations.common.base import (
-    OUTPUT_IMAGE_KEY
+    OUTPUT_IMAGE_KEY,
 )
 from inference.core.workflows.core_steps.visualizations.common.utils import str_to_color
 from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
     OutputDefinition,
     WorkflowImageData,
-    ImageParentMetadata,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
@@ -22,11 +26,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
-import cv2
-import math
-import uuid
-import numpy as np
 
 TYPE: str = "roboflow_core/grid_visualization@v1"
 SHORT_DESCRIPTION = "Shows an array of images in a grid."
@@ -55,11 +54,7 @@ class GridVisualizationManifest(WorkflowBlockManifest):
         }
     )
 
-    images: Selector(
-        kind=[
-            LIST_OF_VALUES_KIND
-        ]
-    ) = Field(  # type: ignore
+    images: Selector(kind=[LIST_OF_VALUES_KIND]) = Field(  # type: ignore
         description="Images to visualize",
         examples=["$steps.buffer.output"],
     )
@@ -103,10 +98,7 @@ class GridVisualizationBlockV1(WorkflowBlock):
         return GridVisualizationManifest
 
     def run(
-        self,
-        images: List[WorkflowImageData],
-        width: int,
-        height: int
+        self, images: List[WorkflowImageData], width: int, height: int
     ) -> BlockResult:
         # use previous result if input hasn't changed
         if self.prev_output is not None:
@@ -116,13 +108,16 @@ class GridVisualizationBlockV1(WorkflowBlock):
                 return {OUTPUT_IMAGE_KEY: self.prev_output}
 
         output = getImageFor(images, width, height)
-        
+
         self.prev_input = images
         self.prev_output = output
 
         return {OUTPUT_IMAGE_KEY: output}
 
-def getImageFor(images: List[WorkflowImageData], width: int, height: int) -> WorkflowImageData:
+
+def getImageFor(
+    images: List[WorkflowImageData], width: int, height: int
+) -> WorkflowImageData:
     if images is None or len(images) == 0:
         return getEmptyImage(width, height)
     else:
@@ -131,13 +126,17 @@ def getImageFor(images: List[WorkflowImageData], width: int, height: int) -> Wor
             origin_image_data=images[0], numpy_image=np_image
         )
 
+
 def getEmptyImage(width: int, height: int) -> WorkflowImageData:
     return WorkflowImageData(
         parent_metadata=ImageParentMetadata(parent_id=str(uuid.uuid4())),
-        numpy_image=np.zeros((height, width, 3), dtype=np.uint8)
+        numpy_image=np.zeros((height, width, 3), dtype=np.uint8),
     )
 
-def createGrid(images: List[WorkflowImageData], width: int, height: int) -> WorkflowImageData:
+
+def createGrid(
+    images: List[WorkflowImageData], width: int, height: int
+) -> WorkflowImageData:
     grid_size = math.ceil(math.sqrt(len(images)))
     img = np.zeros((height, width, 3), dtype=np.uint8)
 
@@ -150,7 +149,7 @@ def createGrid(images: List[WorkflowImageData], width: int, height: int) -> Work
 
             if index >= len(images):
                 break
-            
+
             if images[index] is None:
                 continue
 
@@ -179,16 +178,17 @@ def createGrid(images: List[WorkflowImageData], width: int, height: int) -> Work
             target_width = end_x - start_x
 
             img[start_y:end_y, start_x:end_x] = img_data[:target_height, :target_width]
-    
+
     return img
+
 
 def resizeImage(img: np.ndarray, width: int, height: int) -> np.ndarray:
     img_height, img_width, _ = img.shape
     scale_w = width / img_width
     scale_h = height / img_height
     scale = min(scale_w, scale_h)  # choose the scale that fits both dimensions
-    
+
     new_width = int(img_width * scale)
     new_height = int(img_height * scale)
-    
+
     return cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)

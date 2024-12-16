@@ -2,13 +2,11 @@ from typing import Any, List, Literal, Optional, Type
 
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.execution_engine.entities.base import (
-    OutputDefinition,
-)
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     LIST_OF_VALUES_KIND,
     WILDCARD_KIND,
-    IMAGE_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -25,9 +23,7 @@ Useful for keeping a sliding window of images or detections for
 later processing, visualization, or comparison.
 """
 
-SHORT_DESCRIPTION = (
-    "Returns an array of the last `length` values passed to it."
-)
+SHORT_DESCRIPTION = "Returns an array of the last `length` values passed to it."
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -76,7 +72,7 @@ class BufferBlockV1(WorkflowBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.buffer = []
-    
+
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -85,7 +81,7 @@ class BufferBlockV1(WorkflowBlock):
         self.buffer.insert(0, data)
         if len(self.buffer) > length:
             self.buffer = self.buffer[:length]
-        
+
         if pad:
             while len(self.buffer) < length:
                 self.buffer.append(None)

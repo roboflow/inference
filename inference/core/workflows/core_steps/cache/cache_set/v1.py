@@ -2,15 +2,16 @@ from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.core_steps.cache.memory_cache import WorkflowMemoryCache
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
-    WorkflowImageData
+    WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    WILDCARD_KIND,
     IMAGE_KIND,
-    STRING_KIND,
     LIST_OF_VALUES_KIND,
+    STRING_KIND,
+    WILDCARD_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -19,17 +20,13 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-from inference.core.workflows.core_steps.cache.memory_cache import WorkflowMemoryCache
-
 LONG_DESCRIPTION = """
 Stores a value in a cache entry for later retrieval.
 
 Use the `Cache Get` block to fetch values from the cache.
 """
 
-SHORT_DESCRIPTION = (
-    "Stores a value in a cache entry for later retrieval."
-)
+SHORT_DESCRIPTION = "Stores a value in a cache entry for later retrieval."
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -44,10 +41,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/cache_set@v1"]
-    image: Selector(
-        kind=[IMAGE_KIND],
-        pattern=r"(^\$inputs.[A-Za-z_0-9\-]+$)"
-    ) = Field(
+    image: Selector(kind=[IMAGE_KIND], pattern=r"(^\$inputs.[A-Za-z_0-9\-]+$)") = Field(
         description="The image data to use as a reference for the cache namespace.",
         examples=["$inputs.image"],
     )
@@ -55,9 +49,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="The key of the cache entry to set.",
         examples=["my_cache_key"],
     )
-    value: Union[Selector(
-        kind=[WILDCARD_KIND, LIST_OF_VALUES_KIND]
-    )] = Field(
+    value: Union[Selector(kind=[WILDCARD_KIND, LIST_OF_VALUES_KIND])] = Field(
         description="The value to store in the cache.",
         examples=["any_value"],
     )
@@ -80,7 +72,7 @@ class CacheSetBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
-    
+
     def __init__(
         self,
     ):
@@ -94,7 +86,7 @@ class CacheSetBlockV1(WorkflowBlock):
         metadata = image.video_metadata
         namespace = metadata.video_identifier or "default"
         self.namespace = namespace
-        
+
         cache = WorkflowMemoryCache.get_dict(namespace)
         cache[key] = value
         return {"output": value}

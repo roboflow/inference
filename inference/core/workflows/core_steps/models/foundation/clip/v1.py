@@ -1,3 +1,5 @@
+import hashlib
+import time
 from functools import partial
 from typing import List, Literal, Optional, Type, Union
 
@@ -110,6 +112,9 @@ class ClipModelBlockV1(WorkflowBlock):
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
 
+        self.text_cache = {}
+        self.text_cache_size = 128
+
     @classmethod
     def get_init_parameters(cls) -> List[str]:
         return ["model_manager", "api_key", "step_execution_mode"]
@@ -138,6 +143,11 @@ class ClipModelBlockV1(WorkflowBlock):
         version: str,
     ) -> BlockResult:
         if isinstance(data, str):
+            hash_key = hashlib.md5((version + data).encode("utf-8")).hexdigest()
+            if hash_key in self.text_cache:
+                self.text_cache[hash_key]["timestamp"] = time.time()
+                return { "embedding": self.text_cache[hash_key]["embedding"] }
+
             inference_request = ClipTextEmbeddingRequest(
                 clip_version_id=version,
                 text=[data],
@@ -151,7 +161,19 @@ class ClipModelBlockV1(WorkflowBlock):
             predictions = self._model_manager.infer_from_request_sync(
                 clip_model_id, inference_request
             )
-            return {"embedding": predictions.embeddings[0]}
+
+            self.text_cache[hash_key] = {
+                "embedding": predictions.embeddings[0],
+                "timestamp": time.time(),
+            }
+
+            if len(self.text_cache) > self.text_cache_size:
+                oldest_key = min(
+                    self.text_cache, key=lambda k: self.text_cache[k]["timestamp"]
+                )
+                del self.text_cache[oldest_key]
+
+            return { "embedding": predictions.embeddings[0] }
         else:
             inference_request = ClipImageEmbeddingRequest(
                 clip_version_id=version,

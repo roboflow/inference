@@ -28,12 +28,8 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
 from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
     TimeInZoneBlockV2,
 )
-from inference.core.workflows.core_steps.cache.cache_get.v1 import (
-    CacheGetBlockV1
-)
-from inference.core.workflows.core_steps.cache.cache_set.v1 import (
-    CacheSetBlockV1
-)
+from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
+from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
@@ -135,9 +131,7 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1 import (
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
     VLMAsDetectorBlockV2,
 )
-from inference.core.workflows.core_steps.fusion.buffer.v1 import (
-    BufferBlockV1,
-)
+from inference.core.workflows.core_steps.fusion.buffer.v1 import BufferBlockV1
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
     DetectionsClassesReplacementBlockV1,
 )

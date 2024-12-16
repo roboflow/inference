@@ -5,7 +5,7 @@ class WorkflowMemoryCache:
     def get_dict(cls, namespace):
         if namespace not in WorkflowMemoryCache.cache:
             WorkflowMemoryCache.cache[namespace] = {}
-        
+
         return WorkflowMemoryCache.cache[namespace]
 
     @classmethod
