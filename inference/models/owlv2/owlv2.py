@@ -46,6 +46,16 @@ def to_corners(box):
     return torch.stack([x1, y1, x2, y2], dim=-1)
 
 
+def from_corners(box):
+    x1, y1, x2, y2 = box.unbind(-1)
+    cx = (x1 + x2) / 2
+    cy = (y1 + y2) / 2
+    w = x2 - x1
+    h = y2 - y1
+    return torch.stack([cx, cy, w, h], dim=-1)
+
+
+
 from collections import OrderedDict
 
 
@@ -118,7 +128,9 @@ def filter_tensors_by_objectness(
     logit_scale: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     objectness = objectness.squeeze(0)
-    max_detections = min(MAX_DETECTIONS, int(0.05 * objectness.numel()))
+    # max_detections = min(MAX_DETECTIONS, int(0.05 * objectness.numel()))
+    # max_detections = objectness.numel()
+    max_detections = MAX_DETECTIONS
     objectness, objectness_indices = torch.topk(objectness, max_detections, dim=0)
     boxes = boxes.squeeze(0)
     image_class_embeds = image_class_embeds.squeeze(0)
@@ -154,8 +166,9 @@ def get_class_preds_from_embeds(
         prediction_scores = pred_logits.max(dim=0)[0]
         # prediction_scores = (prediction_scores + logit_shift) * logit_scale
         # prediction_scores = prediction_scores.sigmoid()
-        prediction_scores = (prediction_scores + 1) / 2
-        prediction_scores = prediction_scores * objectness
+        # prediction_scores = (prediction_scores + 1) / 2
+        # prediction_scores = 0.5*prediction_scores + 0.2
+        # prediction_scores = prediction_scores * objectness
         score_mask = prediction_scores > confidence
         predicted_boxes_per_class.append(image_boxes[score_mask])
         scores = prediction_scores[score_mask]
@@ -263,9 +276,10 @@ class OwlV2(RoboflowCoreModel):
     task_type = "object-detection"
     box_format = "xywh"
 
-    def __init__(self, *args, model_id="owlv2/owlv2-base-patch16-ensemble", **kwargs):
+    def __init__(self, *args, model_id="owlv2/owlv2-large-patch14-ensemble", **kwargs):
         super().__init__(*args, model_id=model_id, **kwargs)
         hf_id = os.path.join("google", self.version_id)
+        print(f"Using model: {hf_id}")
         processor = Owlv2Processor.from_pretrained(hf_id)
         self.image_size = tuple(processor.image_processor.size.values())
         self.image_mean = torch.tensor(
@@ -361,8 +375,9 @@ class OwlV2(RoboflowCoreModel):
         # as we don't know a priori our torch version
         device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
         # we disable autocast on CPU for stability, although it's possible using bfloat16 would work
+        # NOTE: data type actually has a big impact on performance
         with torch.autocast(
-            device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
+            device_type=device_str, dtype=torch.bfloat16, enabled=device_str == "cuda"
         ):
             image_embeds, _ = self.model.image_embedder(pixel_values=pixel_values)
             batch_size, h, w, dim = image_embeds.shape
@@ -372,7 +387,7 @@ class OwlV2(RoboflowCoreModel):
 
         image_class_embeds = self.model.class_head.dense0(image_features)
         image_class_embeds /= (
-            torch.linalg.norm(image_class_embeds, ord=2, dim=-1, keepdim=True) + 1e-6
+            torch.linalg.norm(image_class_embeds, ord=2, dim=-1, keepdim=True)
         )
         logit_shift = self.model.class_head.logit_shift(image_features)
         logit_scale = (
@@ -387,6 +402,36 @@ class OwlV2(RoboflowCoreModel):
             )
         )
 
+
+        # Convert boxes from center/width/height to corners format
+        boxes = to_corners(boxes)
+
+        # Get original aspect ratio to determine image boundaries
+        original_h, original_w = np_image.shape[:2]
+        max_dim = max(original_h, original_w)
+        
+        # Scale coordinates based on max dimension
+        boxes = boxes * max_dim
+
+        # Filter boxes where top-left is outside image bounds
+        valid_tl = (boxes[..., 0] < original_w) & (boxes[..., 1] < original_h)
+        boxes = boxes[valid_tl]
+        objectness = objectness[valid_tl]
+        image_class_embeds = image_class_embeds[valid_tl]
+        logit_shift = logit_shift[valid_tl]
+        logit_scale = logit_scale[valid_tl]
+
+        # Clip bottom-right coordinates to image bounds
+        boxes[..., 2] = boxes[..., 2].clamp(max=original_w)
+        boxes[..., 3] = boxes[..., 3].clamp(max=original_h)
+
+        # Normalize back to [0,1] range
+        boxes = boxes / max_dim
+
+        # Convert back to center/width/height format
+        boxes = from_corners(boxes)
+
+        
         self.image_embed_cache[image_hash] = (
             objectness,
             boxes,
@@ -398,10 +443,11 @@ class OwlV2(RoboflowCoreModel):
         return image_hash
 
     def get_query_embedding(
-        self, query_spec: QuerySpecType, iou_threshold: float
+        self, query_spec: QuerySpecType, iou_threshold: float, return_missed_embeds: bool = False
     ) -> torch.Tensor:
         # NOTE: for now we're handling each image seperately
         query_embeds = []
+        missed_embeds = []
         for image_hash, query_boxes in query_spec.items():
             try:
                 _objectness, image_boxes, image_class_embeds, _, _ = (
@@ -420,20 +466,32 @@ class OwlV2(RoboflowCoreModel):
             )  # 3000, k
             ious, indices = torch.max(iou, dim=0)
             # filter for only iou > 0.4
-            iou_mask = ious > iou_threshold
-            indices = indices[iou_mask]
-            if not indices.numel() > 0:
-                continue
+            iou_mask = ious >= iou_threshold
+            matched_indices = indices[iou_mask]
+            if matched_indices.numel() > 0:
+                embeds = image_class_embeds[matched_indices]
+                query_embeds.append(embeds)
 
-            # if _objectness[indices].max() < 0.9:
-            #     continue
+            if return_missed_embeds:
+                missed_indices = torch.ones(image_class_embeds.shape[0], dtype=torch.bool, device=image_class_embeds.device)
+                missed_indices[matched_indices] = 0
+                missed_indices = torch.nonzero(missed_indices, as_tuple=False)
+                if missed_indices.numel() > 0:
+                    missed_embeds.append(image_class_embeds[missed_indices].squeeze(1))
 
-            embeds = image_class_embeds[indices]
-            query_embeds.append(embeds)
         if not query_embeds:
-            return None
-        query = torch.cat(query_embeds, dim=0)
-        return query
+            query = None
+        else:
+            query = torch.cat(query_embeds, dim=0)
+
+        if return_missed_embeds:
+            if not missed_embeds:
+                missed_embeds = None
+            else:
+                missed_embeds = torch.cat(missed_embeds, dim=0)
+            return query, missed_embeds
+        else:
+            return query
 
     def infer_from_embed(
         self,
@@ -497,14 +555,19 @@ class OwlV2(RoboflowCoreModel):
             )
         ]
     
+    def compute_iou_from_training_data_hash(self, training_data_hash: Hash) -> float:
+        # we appended the iou threshold to the training data hash
+        # so we can use this to compute the iou threshold used for a given training data hash
+        return float(training_data_hash.split("-")[-1])
+
     def infer_from_training_data_hash(
         self,
         image: Any,
         training_data_hash: Hash,
         confidence: float,
-        iou_threshold: float,
         **kwargs,
     ):
+        iou_threshold = self.compute_iou_from_training_data_hash(training_data_hash)
         class_embeddings_dict = self.class_embeddings_cache[training_data_hash]
 
         if not isinstance(image, list):
@@ -529,6 +592,62 @@ class OwlV2(RoboflowCoreModel):
         return self.make_response(
             results, image_sizes, sorted(list(class_embeddings_dict.keys()))
         )
+
+    def infer_via_head(
+        self,
+        image: Any,
+        head: torch.nn.Module,
+        class_names: List[str],
+        iou_threshold: float = 0.3,
+        **kwargs,
+    ):
+        if not isinstance(image, list):
+            images = [image]
+        else:
+            images = image
+
+        images = [LazyImageRetrievalWrapper(image) for image in images]
+
+        results = []
+        image_sizes = []
+        for image_wrapper in images:
+            this_image_results = []
+
+            image_size = self.compute_image_size(image_wrapper)
+            image_sizes.append(image_size)
+            image_hash = self.embed_image(image_wrapper)
+
+            _, boxes, image_class_embeds, _, _ = self.image_embed_cache[image_hash]
+
+            boxes = boxes.squeeze(0).float()
+            image_class_embeds = image_class_embeds.squeeze(0).float()
+
+            print(f"shape of image_class_embeds: {image_class_embeds.shape}")
+            print(f"shape of boxes: {boxes.shape}")
+
+            class_logits = head(image_class_embeds).softmax(dim=-1)
+            class_inds = torch.argmax(class_logits, dim=-1)
+            classes = [class_names[i] for i in class_inds]
+            scores = class_logits[torch.arange(class_logits.shape[0]), class_inds]
+
+            corners = to_corners(boxes)
+            survival_indices = torchvision.ops.nms(corners, scores, iou_threshold)
+            boxes = boxes[survival_indices]
+            classes = [classes[i] for i in survival_indices]
+            scores = [scores[i] for i in survival_indices]
+
+            for i in range(len(boxes)):
+                if classes[i] != "_background":
+                    this_image_results.append({
+                        "class_name": classes[i],
+                        "x": boxes[i][0],
+                        "y": boxes[i][1],
+                        "w": boxes[i][2],
+                        "h": boxes[i][3],
+                        "confidence": scores[i],
+                    })
+            results.append(this_image_results)
+        return self.make_response(results, image_sizes, class_names)
 
     def infer(
         self,
@@ -573,6 +692,9 @@ class OwlV2(RoboflowCoreModel):
 
         class_embeddings_dict = defaultdict(lambda: {"positive": [], "negative": []})
 
+        total_boxes = 0
+        total_matches = 0
+
         bool_to_literal = {True: "positive", False: "negative"}
         for train_image in wrapped_training_data:
             # grab and embed image
@@ -586,6 +708,8 @@ class OwlV2(RoboflowCoreModel):
             classes = [box["cls"] for box in boxes]
             is_positive = [not box["negative"] for box in boxes]
 
+            total_boxes += len(boxes)
+
             # compute the embeddings for the box prompts
             query_spec = {image_hash: coords}
             # NOTE: because we just computed the embedding for this image, this should never result in a KeyError
@@ -593,6 +717,8 @@ class OwlV2(RoboflowCoreModel):
 
             if embeddings is None:
                 continue
+
+            total_matches += embeddings.shape[0]
 
             # add the embeddings to their appropriate class and positive/negative list
             for embedding, class_name, is_positive in zip(
@@ -603,6 +729,8 @@ class OwlV2(RoboflowCoreModel):
                 )
 
         # convert the lists of embeddings to tensors
+
+        # print(f"total boxes: {total_boxes}, total matches: {total_matches}")
 
         class_embeddings_dict = {
             k: {
@@ -615,6 +743,50 @@ class OwlV2(RoboflowCoreModel):
         self.class_embeddings_cache[wrapped_training_data_hash] = class_embeddings_dict
 
         return wrapped_training_data_hash
+    
+    def mine_training_data(self, training_data: List[Any], iou_threshold: float) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
+        # we embed the training data and return query hits as positive and non-hits as negative
+        # we would then use this to train a new class head for the model
+        # Initialize defaultdict to store embeddings for each class
+        class_examples = defaultdict(list)
+        all_misses = []
+
+        # Process each training example
+        for train_image in training_data:
+            # Embed the image
+            image_hash = self.embed_image(train_image["image"])
+
+            # Get image size and normalize box coordinates
+            image_size = self.compute_image_size(train_image["image"])
+            boxes = train_image["boxes"]
+            coords = [[box["x"], box["y"], box["w"], box["h"]] for box in boxes]
+            coords = [tuple([c / max(image_size) for c in coord]) for coord in coords]
+            classes = [box["cls"] for box in boxes]
+
+            # Get embeddings for the boxes
+            query_spec = {image_hash: coords}
+            query_embeds, missed_embeds = self.get_query_embedding(
+                query_spec, iou_threshold, return_missed_embeds=True
+            )
+
+            num_matches = query_embeds.shape[0] if query_embeds is not None else 0
+            num_misses = missed_embeds.shape[0] if missed_embeds is not None else 0
+
+            # Handle matched embeddings (positives)
+            if query_embeds is not None:
+                for embedding, class_name in zip(query_embeds, classes):
+                    class_examples[class_name].append(embedding)
+
+            # Handle missed embeddings (negatives)
+            if missed_embeds is not None:
+                all_misses.append(missed_embeds)
+
+        # Convert lists to tensors
+        class_examples = {
+            k: torch.stack(v) for k, v in class_examples.items()
+        }
+
+        return class_examples, torch.cat(all_misses, dim=0)
 
     def make_response(self, predictions, image_sizes, class_names):
         responses = [
