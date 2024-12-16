@@ -45,12 +45,6 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/detect_outliers@v1"]
     name: str = Field(description="Unique name of step in workflows")
 
-    threshold_percentile: Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float] = Field(
-        default=0.05,
-        description="The desired percentage of outliers to detect. The default of 5% captures data points that are more than 2 standard deviations away from the average.",
-        examples=["$inputs.sample_rate", 0.01],
-    )
-
     strategy: Literal[
         "Exponential Moving Average (EMA)",
         "Simple Moving Average (SMA)",
@@ -60,6 +54,23 @@ class BlockManifest(WorkflowBlockManifest):
         default="Exponential Moving Average (EMA)",
         description="The outlier detection algorithm to use.",
         examples=["Simple Moving Average (SMA)"],
+        json_schema_extra={
+            "always_visible": True,
+        },
+    )
+
+    embedding: Selector(kind=[EMBEDDING_KIND]) = Field(
+        description="Embedding of the current data.",
+        examples=["$steps.clip.embedding"],
+    )
+
+    threshold_percentile: Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float] = Field(
+        default=0.05,
+        description="The desired percentage of data points to fire for. The default of 5% captures data points that are more than 2 standard deviations away from the average.",
+        examples=["$inputs.sample_rate", 0.01],
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
 
     warmup: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
@@ -68,7 +79,9 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[100],
     )
 
-    smoothing_factor: Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float] = Field(
+    smoothing_factor: Optional[
+        Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float]
+    ] = Field(
         default=0.25,
         description="The smoothing factor for the EMA algorithm. The default of 0.25 means the most recent data point will carry 25% weight in the average. Higher values will make the average more responsive to recent data points.",
         examples=[0.1],
@@ -76,13 +89,12 @@ class BlockManifest(WorkflowBlockManifest):
             "relevant_for": {
                 "strategy": {
                     "values": {"Exponential Moving Average (EMA)"},
-                    "required": True,
                 },
             },
         },
     )
 
-    window_size: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
+    window_size: Optional[Union[Selector(kind=[INTEGER_KIND]), int]] = Field(
         default=10,
         description="The number of data points to consider in the sliding window algorithm.",
         examples=[5],
@@ -93,7 +105,8 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
 
-    custom_average: Selector(kind=[EMBEDDING_KIND]) = Field(
+    custom_average: Optional[Selector(kind=[EMBEDDING_KIND])] = Field(
+        default=None,
         description="Average embedding of the prior data to compare with (for Custom strategy).",
         examples=["$steps.custom_average.embedding"],
         json_schema_extra={
@@ -103,7 +116,8 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
 
-    custom_std: Selector(kind=[EMBEDDING_KIND]) = Field(
+    custom_std: Optional[Selector(kind=[EMBEDDING_KIND])] = Field(
+        default=None,
         description="Standard deviation of the prior data to compare with (for Custom strategy).",
         examples=["$steps.custom_average.std"],
         json_schema_extra={
@@ -111,11 +125,6 @@ class BlockManifest(WorkflowBlockManifest):
                 "strategy": {"values": {"Custom"}, "required": True},
             },
         },
-    )
-
-    embedding: Selector(kind=[EMBEDDING_KIND]) = Field(
-        description="Embedding of the current data.",
-        examples=["$steps.clip.embedding"],
     )
 
     @model_validator(mode="after")
@@ -170,14 +179,14 @@ class DetectOutliersBlockV1(WorkflowBlock):
 
     def run(
         self,
-        threshold_percentile: float,
         strategy: str,
+        embedding: List[float],
+        threshold_percentile: float,
         smoothing_factor: float,
         window_size: int,
         warmup: int,
         custom_average: List[float],
         custom_std: float,
-        embedding: List[float],
     ) -> BlockResult:
         is_outlier = False
         percentile = 0.5
