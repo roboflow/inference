@@ -146,7 +146,7 @@ class ClipModelBlockV1(WorkflowBlock):
             hash_key = hashlib.md5((version + data).encode("utf-8")).hexdigest()
             if hash_key in self.text_cache:
                 self.text_cache[hash_key]["timestamp"] = time.time()
-                return { "embedding": self.text_cache[hash_key]["embedding"] }
+                return {"embedding": self.text_cache[hash_key]["embedding"]}
 
             inference_request = ClipTextEmbeddingRequest(
                 clip_version_id=version,
@@ -173,7 +173,7 @@ class ClipModelBlockV1(WorkflowBlock):
                 )
                 del self.text_cache[oldest_key]
 
-            return { "embedding": predictions.embeddings[0] }
+            return {"embedding": predictions.embeddings[0]}
         else:
             inference_request = ClipImageEmbeddingRequest(
                 clip_version_id=version,

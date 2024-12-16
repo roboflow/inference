@@ -1,14 +1,15 @@
 from typing import List, Literal, Optional, Type, Union
 
+import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
     EMBEDDING_KIND,
     FLOAT_KIND,
-    BOOLEAN_KIND,
-    INTEGER_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    INTEGER_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -16,8 +17,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-
-import numpy as np
 
 LONG_DESCRIPTION = """
 Detect outlier embeddings compared to prior data.
@@ -50,13 +49,13 @@ class BlockManifest(WorkflowBlockManifest):
         default=0.05,
         description="The desired percentage of outliers to detect. The default of 5% captures data points that are more than 2 standard deviations away from the average.",
         examples=["$inputs.sample_rate", 0.01],
-    ) 
+    )
 
     strategy: Literal[
-            "Exponential Moving Average (EMA)",
-            "Simple Moving Average (SMA)",
-            "Sliding Window",
-            "Custom",
+        "Exponential Moving Average (EMA)",
+        "Simple Moving Average (SMA)",
+        "Sliding Window",
+        "Custom",
     ] = Field(
         default="Exponential Moving Average (EMA)",
         description="The outlier detection algorithm to use.",
@@ -75,7 +74,10 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[0.1],
         json_schema_extra={
             "relevant_for": {
-                "strategy": {"values": { "Exponential Moving Average (EMA)" }, "required": True},
+                "strategy": {
+                    "values": {"Exponential Moving Average (EMA)"},
+                    "required": True,
+                },
             },
         },
     )
@@ -86,7 +88,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[5],
         json_schema_extra={
             "relevant_for": {
-                "strategy": {"values": { "Sliding Window" }, "required": True},
+                "strategy": {"values": {"Sliding Window"}, "required": True},
             },
         },
     )
@@ -96,7 +98,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$steps.custom_average.embedding"],
         json_schema_extra={
             "relevant_for": {
-                "strategy": {"values": { "Custom" }, "required": True},
+                "strategy": {"values": {"Custom"}, "required": True},
             },
         },
     )
@@ -106,7 +108,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["$steps.custom_average.std"],
         json_schema_extra={
             "relevant_for": {
-                "strategy": {"values": { "Custom" }, "required": True},
+                "strategy": {"values": {"Custom"}, "required": True},
             },
         },
     )
@@ -122,19 +124,21 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 f"`custom_average` parameter required to be set for strategy `Custom`"
             )
-        
+
         if self.strategy == "Custom" and self.custom_std is None:
             raise ValueError(
                 f"`custom_std` parameter required to be set for strategy `Custom`"
             )
-        
-        if self.strategy == "Custom" and len(self.custom_average) != len(self.custom_std):
+
+        if self.strategy == "Custom" and len(self.custom_average) != len(
+            self.custom_std
+        ):
             raise ValueError(
                 f"`custom_average` and `custom_std` should have the same dimensions"
             )
-        
+
         return self
-    
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -152,13 +156,11 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class DetectOutliersBlockV1(WorkflowBlock):
-    def __init__(
-        self
-    ):
+    def __init__(self):
         self.average = None
         self.std = None
         self.var = None  # For EMA variance tracking
-        self.M2 = None   # For SMA variance tracking
+        self.M2 = None  # For SMA variance tracking
         self.sliding_window = []
         self.samples = 0
 
@@ -175,13 +177,13 @@ class DetectOutliersBlockV1(WorkflowBlock):
         warmup: int,
         custom_average: List[float],
         custom_std: float,
-        embedding: List[float]
+        embedding: List[float],
     ) -> BlockResult:
         is_outlier = False
         percentile = 0.5
         z_score = 0
         warming_up = False
-        
+
         embedding = np.array(embedding)
 
         # determine if embedding is an outlier
@@ -194,8 +196,10 @@ class DetectOutliersBlockV1(WorkflowBlock):
             is_outlier = False
             warming_up = True
         else:
-            is_outlier = percentile <= threshold_percentile/2 or percentile >= (1 - threshold_percentile/2)
-        
+            is_outlier = percentile <= threshold_percentile / 2 or percentile >= (
+                1 - threshold_percentile / 2
+            )
+
         # update average and std
         if self.average is None:
             self.average = embedding
@@ -205,23 +209,27 @@ class DetectOutliersBlockV1(WorkflowBlock):
         else:
             if strategy == "Exponential Moving Average (EMA)":
                 # Update EMA average:
-                self.average = (1 - smoothing_factor) * self.average + smoothing_factor * embedding
-                
+                self.average = (
+                    1 - smoothing_factor
+                ) * self.average + smoothing_factor * embedding
+
                 # Update EMA variance:
                 # var_new = (1 - alpha)*var_old + alpha*(x - new_avg)^2
                 diff = embedding - self.average
-                self.var = (1 - smoothing_factor)*self.var + smoothing_factor*(diff**2)
+                self.var = (1 - smoothing_factor) * self.var + smoothing_factor * (
+                    diff**2
+                )
                 self.std = np.sqrt(self.var)
 
             elif strategy == "Simple Moving Average (SMA)":
                 # Use Welford's method to update mean and variance
                 count = self.samples + 1
                 delta = embedding - self.average
-                
+
                 # Update average:
                 self.average = self.average + delta / count
                 delta2 = embedding - self.average
-                
+
                 # Update M2:
                 self.M2 = self.M2 + delta * delta2
                 var = self.M2 / (count - 1)
@@ -231,7 +239,7 @@ class DetectOutliersBlockV1(WorkflowBlock):
                 self.sliding_window.append(embedding)
                 if len(self.sliding_window) > window_size:
                     self.sliding_window.pop(0)
-                
+
                 self.average = np.mean(self.sliding_window, axis=0)
                 self.std = np.std(self.sliding_window, axis=0)
 
@@ -248,5 +256,5 @@ class DetectOutliersBlockV1(WorkflowBlock):
             "z_score": z_score,
             "average": self.average.tolist(),
             "std": self.std.tolist(),
-            "warming_up": warming_up
+            "warming_up": warming_up,
         }
