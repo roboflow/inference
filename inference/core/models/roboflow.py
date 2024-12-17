@@ -116,7 +116,11 @@ class RoboflowInferenceModel(Model):
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
         model_id = resolve_roboflow_model_alias(model_id=model_id)
-        self.dataset_id, self.version_id = model_id.split("/")
+        # TODO: Is this really all we had to do here?
+        if "/" in model_id:
+            self.dataset_id, self.version_id = model_id.split("/")
+        else:
+            self.model_id = model_id
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
         self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
@@ -217,6 +221,7 @@ class RoboflowInferenceModel(Model):
     def cache_model_artefacts(self) -> None:
         infer_bucket_files = self.get_all_required_infer_bucket_file()
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
+            print("are_all_files_cached 5555", infer_bucket_files)
             return None
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
@@ -252,12 +257,14 @@ class RoboflowInferenceModel(Model):
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
+        print("i am in download_model_artifacts_from_roboflow_api", self.endpoint)
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,
             endpoint_type=ModelEndpointType.ORT,
             device_id=self.device_id,
         )
+        print("api_data", api_data)
         if "ort" not in api_data.keys():
             raise ModelArtefactError(
                 "Could not find `ort` key in roboflow API model description response."
@@ -274,10 +281,20 @@ class RoboflowInferenceModel(Model):
                 "Could not find `model` key in roboflow API model description response."
             )
         if "environment" not in api_data:
-            raise ModelArtefactError(
-                "Could not find `environment` key in roboflow API model description response."
-            )
-        environment = get_from_url(api_data["environment"])
+            # Create default environment if not provided
+            environment = {
+                "PREPROCESSING": api_data.get("preprocessing", {}),
+                "MULTICLASS": api_data.get("multilabel", False),
+                #don't think we actually need this
+                "MODEL_NAME": api_data.get("modelName", ""),
+             
+                # ClASS_MAP might be the only other thing that we would need
+                 # "CLASS_MAP": api_data.get("classes", {}),
+            }
+        else:
+            # TODO: do we need to load the environment from the url or can we safely remove?
+            environment = get_from_url(api_data["environment"])
+        print("environment", environment)
         model_weights_response = get_from_url(api_data["model"], json_response=False)
         save_bytes_in_cache(
             content=model_weights_response.content,
@@ -308,6 +325,11 @@ class RoboflowInferenceModel(Model):
                 model_id=self.endpoint,
                 object_pairs_hook=OrderedDict,
             )
+            print("self.environment123", load_json_from_cache(
+                file="environment.json",
+                model_id=self.endpoint,
+                object_pairs_hook=OrderedDict,
+            ))
         if "class_names.txt" in infer_bucket_files:
             self.class_names = load_text_file_from_cache(
                 file="class_names.txt",
@@ -693,7 +715,9 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
     def initialize_model(self) -> None:
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         logger.debug("Getting model artefacts")
+        print("self.endpoint in initialize_model", self.endpoint)
         self.get_model_artifacts()
+        print(" after get_model_artifacts")
         logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()

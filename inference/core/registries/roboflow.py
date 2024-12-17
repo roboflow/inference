@@ -93,10 +93,23 @@ def get_model_type(
     if dataset_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]
+    
+    if version_id is None:
+        print("it's a new model id")
+        api_data = get_roboflow_model_data(
+            api_key=api_key,
+            model_id=model_id,
+            endpoint_type=ModelEndpointType.ORT,
+            device_id=GLOBAL_DEVICE_ID,
+        ).get("ort")
+        print("api data from new model id", api_data)
+        return (api_data.get("taskType"), api_data.get("modelType"))
+   
     cached_metadata = get_model_metadata_from_cache(
         dataset_id=dataset_id, version_id=version_id
     )
     if cached_metadata is not None:
+        print("returning cached_metadata", cached_metadata)
         return cached_metadata[0], cached_metadata[1]
     if version_id == STUB_VERSION_ID:
         if api_key is None:
@@ -115,16 +128,18 @@ def get_model_type(
             model_type=model_type,
         )
         return project_task_type, model_type
+    workspace_id = get_roboflow_workspace(api_key=api_key)
     api_data = get_roboflow_model_data(
         api_key=api_key,
         model_id=model_id,
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
     ).get("ort")
+    print("api_data", api_data)
     if api_data is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
     # some older projects do not have type field - hence defaulting
-    project_task_type = api_data.get("type", "object-detection")
+    project_task_type = api_data.get("taskType", "object-detection")
     model_type = api_data.get("modelType")
     if model_type is None or model_type == "ort":
         # some very old model versions do not have modelType reported - and API respond in a generic way -
@@ -138,6 +153,8 @@ def get_model_type(
         project_task_type=project_task_type,
         model_type=model_type,
     )
+
+    print("returning project_task_type and model_type", project_task_type, model_type)
 
     return project_task_type, model_type
 
