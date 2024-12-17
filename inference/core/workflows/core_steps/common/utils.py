@@ -2,7 +2,7 @@ import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar, Union, Tuple
 
 import numpy as np
 import supervision as sv
@@ -421,3 +421,78 @@ def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[
 
 def _run(fun: Callable[[], T]) -> T:
     return fun()
+
+
+def convert_gaze_detections_to_sv_detections_and_angles(
+    images: Batch[WorkflowImageData],
+    gaze_predictions: List[dict],
+) -> Tuple[List[sv.Detections], List[List[float]], List[List[float]]]:
+    """Convert gaze detection results to supervision detections and angle lists."""
+    face_predictions = []
+    yaw_degrees = []
+    pitch_degrees = []
+    
+    for single_image, predictions in zip(images, gaze_predictions):
+        height, width = single_image.numpy_image.shape[:2]
+        
+        # Format predictions for this image
+        image_face_preds = {"predictions": [], "image": {"width": width, "height": height}}
+        batch_yaw = []
+        batch_pitch = []
+        
+        for p in predictions:  # predictions is already a list
+            p_dict = p.model_dump(by_alias=True, exclude_none=True)
+            for pred in p_dict["predictions"]:
+                face = pred["face"]
+                
+                # Face detection with landmarks
+                face_pred = {
+                    "x": face["x"],
+                    "y": face["y"],
+                    "width": face["width"],
+                    "height": face["height"],
+                    "confidence": face["confidence"],
+                    "class": "face",
+                    "class_id": 0,
+                    "keypoints": [
+                        {
+                            "x": l["x"],
+                            "y": l["y"],
+                            "confidence": face["confidence"],
+                            "class_name": str(i),
+                            "class_id": i,
+                        }
+                        for i, l in enumerate(face["landmarks"])
+                    ]
+                }
+                
+                image_face_preds["predictions"].append(face_pred)
+                
+                # Store angles in degrees
+                batch_yaw.append(pred["yaw"] * 180 / np.pi)
+                batch_pitch.append(pred["pitch"] * 180 / np.pi)
+        
+        face_predictions.append(image_face_preds)
+        yaw_degrees.append(batch_yaw)
+        pitch_degrees.append(batch_pitch)
+
+    # Process predictions
+    face_preds = convert_inference_detections_batch_to_sv_detections(face_predictions)
+    
+    # Add keypoints to supervision detections
+    for prediction, detections in zip(face_predictions, face_preds):
+        add_inference_keypoints_to_sv_detections(
+            inference_prediction=prediction["predictions"],
+            detections=detections,
+        )
+    
+    face_preds = attach_prediction_type_info_to_sv_detections_batch(
+        predictions=face_preds,
+        prediction_type="facial-landmark",
+    )
+    face_preds = attach_parents_coordinates_to_batch_of_sv_detections(
+        images=images,
+        predictions=face_preds,
+    )
+
+    return face_preds, yaw_degrees, pitch_degrees

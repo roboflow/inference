@@ -12,6 +12,7 @@ from inference.core.workflows.core_steps.common.utils import (
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
     load_core_model,
+    convert_gaze_detections_to_sv_detections_and_angles,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -132,9 +133,7 @@ class GazeBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         do_run_face_detection: bool,
     ) -> BlockResult:
-        face_predictions = []
-        yaw_degrees = []
-        pitch_degrees = []
+        predictions = []
         
         for single_image in images:
             inference_request = GazeDetectionInferenceRequest(
@@ -150,66 +149,12 @@ class GazeBlockV1(WorkflowBlock):
             prediction = self._model_manager.infer_from_request_sync(
                 gaze_model_id, inference_request
             )
-            height, width = single_image.numpy_image.shape[:2]
-            
-            # Format predictions for this image
-            image_face_preds = {"predictions": [], "image": {"width": width, "height": height}}
-            batch_yaw = []
-            batch_pitch = []
-            
-            for p in prediction:
-                p_dict = p.model_dump(by_alias=True, exclude_none=True)
-                for pred in p_dict["predictions"]:
-                    face = pred["face"]
-                    
-                    # Face detection with landmarks from L2CS-Net
-                    face_pred = {
-                        "x": face["x"],
-                        "y": face["y"],
-                        "width": face["width"],
-                        "height": face["height"],
-                        "confidence": face["confidence"],
-                        "class": "face",
-                        "class_id": 0,
-                        "keypoints": [
-                            {
-                                "x": l["x"],
-                                "y": l["y"],
-                                "confidence": face["confidence"],
-                                "class_name": str(i),
-                                "class_id": i,
-                            }
-                            for i, l in enumerate(face["landmarks"])
-                        ]
-                    }
-                    
-                    image_face_preds["predictions"].append(face_pred)
-                    
-                    # Store angles
-                    batch_yaw.append(pred["yaw"] * 180 / np.pi)
-                    batch_pitch.append(pred["pitch"] * 180 / np.pi)
-                
-                face_predictions.append(image_face_preds)
-                yaw_degrees.append(batch_yaw)
-                pitch_degrees.append(batch_pitch)
+            predictions.append(prediction)
 
-        # Process predictions
-        face_preds = convert_inference_detections_batch_to_sv_detections(face_predictions)
-        
-        # Add keypoints to supervision detections
-        for prediction, detections in zip(face_predictions, face_preds):
-            add_inference_keypoints_to_sv_detections(
-                inference_prediction=prediction["predictions"],
-                detections=detections,
-            )
-        
-        face_preds = attach_prediction_type_info_to_sv_detections_batch(
-            predictions=face_preds,
-            prediction_type="facial-landmark",
-        )
-        face_preds = attach_parents_coordinates_to_batch_of_sv_detections(
+        # Convert predictions to supervision format and get angles
+        face_preds, yaw_degrees, pitch_degrees = convert_gaze_detections_to_sv_detections_and_angles(
             images=images,
-            predictions=face_preds,
+            gaze_predictions=predictions,
         )
 
         return [{
