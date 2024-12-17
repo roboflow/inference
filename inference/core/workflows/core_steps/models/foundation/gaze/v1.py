@@ -35,7 +35,7 @@ This block can:
 1. Detect faces in images and estimate their gaze direction
 2. Estimate gaze direction on pre-cropped face images
 
-The gaze direction is represented by yaw and pitch angles in radians.
+The gaze direction is represented by yaw and pitch angles in degrees.
 """
 
 
@@ -119,8 +119,9 @@ class GazeBlockV1(WorkflowBlock):
                 do_run_face_detection=do_run_face_detection,
             )
         elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            raise NotImplementedError(
-                "Remote execution is not supported for Gaze Detection. Run a local or dedicated inference server to use this block."
+            return self.run_locally(
+                images=images,
+                do_run_face_detection=do_run_face_detection,
             )
         else:
             raise ValueError(
