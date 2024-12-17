@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 from pydantic import ConfigDict, Field
 
+from inference.core.cache.lru_cache import LRUCache
 from inference.core.workflows.core_steps.visualizations.common.base import (
     OUTPUT_IMAGE_KEY,
 )
@@ -93,6 +94,9 @@ class GridVisualizationBlockV1(WorkflowBlock):
         self.prev_input = None
         self.prev_output = None
 
+        self.thumbCache = LRUCache()
+        
+
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return GridVisualizationManifest
@@ -107,88 +111,90 @@ class GridVisualizationBlockV1(WorkflowBlock):
             ):
                 return {OUTPUT_IMAGE_KEY: self.prev_output}
 
-        output = getImageFor(images, width, height)
+        self.thumbCache.set_max_size(len(images) + 1)
+        output = self.getImageFor(images, width, height)
 
         self.prev_input = images
         self.prev_output = output
 
         return {OUTPUT_IMAGE_KEY: output}
 
+    def getImageFor(
+        self,
+        images: List[WorkflowImageData], width: int, height: int
+    ) -> WorkflowImageData:
+        if images is None or len(images) == 0:
+            return self.getEmptyImage(width, height)
+        else:
+            np_image = self.createGrid(images, width, height)
+            return WorkflowImageData.copy_and_replace(
+                origin_image_data=images[0], numpy_image=np_image
+            )
 
-def getImageFor(
-    images: List[WorkflowImageData], width: int, height: int
-) -> WorkflowImageData:
-    if images is None or len(images) == 0:
-        return getEmptyImage(width, height)
-    else:
-        np_image = createGrid(images, width, height)
-        return WorkflowImageData.copy_and_replace(
-            origin_image_data=images[0], numpy_image=np_image
+
+    def getEmptyImage(self, width: int, height: int) -> WorkflowImageData:
+        return WorkflowImageData(
+            parent_metadata=ImageParentMetadata(parent_id=str(uuid.uuid4())),
+            numpy_image=np.zeros((height, width, 3), dtype=np.uint8),
         )
 
+    def createGrid(
+        self,
+        images: List[WorkflowImageData], width: int, height: int
+    ) -> WorkflowImageData:
+        grid_size = math.ceil(math.sqrt(len(images)))
+        img = np.zeros((height, width, 3), dtype=np.uint8)
 
-def getEmptyImage(width: int, height: int) -> WorkflowImageData:
-    return WorkflowImageData(
-        parent_metadata=ImageParentMetadata(parent_id=str(uuid.uuid4())),
-        numpy_image=np.zeros((height, width, 3), dtype=np.uint8),
-    )
+        cell_width = width // grid_size
+        cell_height = height // grid_size
 
+        for r in range(grid_size):
+            for c in range(grid_size):
+                index = r * grid_size + c
 
-def createGrid(
-    images: List[WorkflowImageData], width: int, height: int
-) -> WorkflowImageData:
-    grid_size = math.ceil(math.sqrt(len(images)))
-    img = np.zeros((height, width, 3), dtype=np.uint8)
+                if index >= len(images):
+                    break
 
-    cell_width = width // grid_size
-    cell_height = height // grid_size
+                if images[index] is None:
+                    continue
 
-    for r in range(grid_size):
-        for c in range(grid_size):
-            index = r * grid_size + c
+                cacheKey = f"{id(images[index])}_{cell_width}_{cell_height}"
+                if self.thumbCache.get(cacheKey) is None:
+                    self.thumbCache.set(cacheKey, self.resizeImage(images[index].numpy_image, cell_width, cell_height))
+                img_data = self.thumbCache.get(cacheKey)
+                
+                img_data_height, img_data_width, _ = img_data.shape
 
-            if index >= len(images):
-                break
+                # place image in cell (centered)
+                start_x = c * cell_width + (cell_width - img_data_width) // 2
+                start_y = r * cell_height + (cell_height - img_data_height) // 2
 
-            if images[index] is None:
-                continue
+                # Clamp to avoid negative indices
+                start_x = max(start_x, 0)
+                start_y = max(start_y, 0)
 
-            img_data = images[index].numpy_image
-            # resize, preserving aspect ratio & fit within cell width and height
-            img_data = resizeImage(img_data, cell_width, cell_height)
-            img_data_height, img_data_width, _ = img_data.shape
+                end_x = start_x + img_data_width
+                end_y = start_y + img_data_height
 
-            # place image in cell (centered)
-            start_x = c * cell_width + (cell_width - img_data_width) // 2
-            start_y = r * cell_height + (cell_height - img_data_height) // 2
+                # Ensure we do not exceed the canvas boundaries
+                end_x = min(end_x, width)
+                end_y = min(end_y, height)
 
-            # Clamp to avoid negative indices
-            start_x = max(start_x, 0)
-            start_y = max(start_y, 0)
+                # If for some reason the image doesn't fit perfectly, we crop it
+                target_height = end_y - start_y
+                target_width = end_x - start_x
 
-            end_x = start_x + img_data_width
-            end_y = start_y + img_data_height
+                img[start_y:end_y, start_x:end_x] = img_data[:target_height, :target_width]
 
-            # Ensure we do not exceed the canvas boundaries
-            end_x = min(end_x, width)
-            end_y = min(end_y, height)
+        return img
 
-            # If for some reason the image doesn't fit perfectly, we crop it
-            target_height = end_y - start_y
-            target_width = end_x - start_x
+    def resizeImage(self, img: np.ndarray, width: int, height: int) -> np.ndarray:
+        img_height, img_width, _ = img.shape
+        scale_w = width / img_width
+        scale_h = height / img_height
+        scale = min(scale_w, scale_h)  # choose the scale that fits both dimensions
 
-            img[start_y:end_y, start_x:end_x] = img_data[:target_height, :target_width]
+        new_width = int(img_width * scale)
+        new_height = int(img_height * scale)
 
-    return img
-
-
-def resizeImage(img: np.ndarray, width: int, height: int) -> np.ndarray:
-    img_height, img_width, _ = img.shape
-    scale_w = width / img_width
-    scale_h = height / img_height
-    scale = min(scale_w, scale_h)  # choose the scale that fits both dimensions
-
-    new_width = int(img_width * scale)
-    new_height = int(img_height * scale)
-
-    return cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
+        return cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)

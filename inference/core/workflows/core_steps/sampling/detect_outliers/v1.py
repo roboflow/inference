@@ -198,8 +198,10 @@ class DetectOutliersBlockV1(WorkflowBlock):
         # determine if embedding is an outlier
         if self.samples > 0 and self.std is not None and np.all(self.std != 0):
             z_scores = (embedding - self.average) / self.std
-            z_score = np.linalg.norm(z_scores)
+            z_score = np.mean(np.abs(z_scores))
             percentile = 1 - 0.5 * (1 + np.math.erf(z_score / np.sqrt(2)))
+
+            print(f"Z-score: {z_score}, Percentile: {percentile}, Average std: {np.mean(self.std)}, Average distance: {np.mean(np.abs(embedding - self.average))}")
 
         if self.samples < warmup:
             is_outlier = False
