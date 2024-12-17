@@ -79,10 +79,12 @@ class RateLimiterManifest(WorkflowBlockManifest):
         description="Reference to steps which shall be executed if rate limit allows.",
         examples=[["$steps.upload"]],
     )
-    video_reference_image: Optional[Selector(kind=[IMAGE_KIND], pattern=r"(^\$inputs.[A-Za-z_0-9\-]+$)")] = Field(
+    video_reference_image: Optional[
+        Selector(kind=[IMAGE_KIND], pattern=r"(^\$inputs.[A-Za-z_0-9\-]+$)")
+    ] = Field(
         description="Reference to a video frame to use for timestamp generation (if running faster than realtime on recorded video).",
         examples=["$inputs.image"],
-        default=None
+        default=None,
     )
 
     @classmethod
@@ -117,7 +119,6 @@ class RateLimiterBlockV1(WorkflowBlock):
         except Exception:
             # reference not passed, metadata not set, or not a video frame
             pass
-
 
         should_throttle = False
         if self._last_executed_at is not None:
