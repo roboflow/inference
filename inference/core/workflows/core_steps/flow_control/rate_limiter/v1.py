@@ -19,6 +19,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+PATTERN_STR = r"(^\$inputs.[A-Za-z_0-9\-]+$)"
+
 LONG_DESCRIPTION = """
 The **Rate Limiter** block controls the execution frequency of a branch within a Workflow by enforcing a 
 cooldown period. It ensures that the connected steps do not run more frequently than a specified interval, 
@@ -80,7 +82,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
         examples=[["$steps.upload"]],
     )
     video_reference_image: Optional[
-        Selector(kind=[IMAGE_KIND], pattern=r"(^\$inputs.[A-Za-z_0-9\-]+$)")
+        Selector(kind=[IMAGE_KIND], pattern=PATTERN_STR)
     ] = Field(
         description="Reference to a video frame to use for timestamp generation (if running faster than realtime on recorded video).",
         examples=["$inputs.image"],
