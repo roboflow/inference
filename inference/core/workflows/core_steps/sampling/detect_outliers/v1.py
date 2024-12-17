@@ -3,6 +3,7 @@ from typing import List, Literal, Optional, Type, Union
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 
+from inference.core.utils.postprocess import cosine_similarity
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
@@ -173,6 +174,12 @@ class DetectOutliersBlockV1(WorkflowBlock):
         self.sliding_window = []
         self.samples = 0
 
+        self.cosine_similarity_avg = None
+        self.cosine_similarity_std = None
+        self.cosine_similarity_var = None
+        self.cosine_similarity_m2 = None
+        self.cosine_similarity_sliding_window = []
+
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -194,14 +201,56 @@ class DetectOutliersBlockV1(WorkflowBlock):
         warming_up = False
 
         embedding = np.array(embedding)
+        norm = np.linalg.norm(embedding)
+        if norm != 0:
+            embedding = embedding / norm
 
         # determine if embedding is an outlier
-        if self.samples > 0 and self.std is not None and np.all(self.std != 0):
-            z_scores = (embedding - self.average) / self.std
-            z_score = np.mean(np.abs(z_scores))
+        if self.average is not None:
+            cs = cosine_similarity(embedding, self.average)
+            
+            if self.cosine_similarity_avg is None:
+                self.cosine_similarity_avg = cs
+                self.cosine_similarity_std = 0
+                self.cosine_similarity_var = 0
+                self.cosine_similarity_m2 = 0
+            else:
+                if strategy == "Exponential Moving Average (EMA)":
+                    # Update EMA average:
+                    self.cosine_similarity_avg = (
+                        1 - smoothing_factor
+                    ) * self.cosine_similarity_avg + smoothing_factor * cs
+
+                    # Update EMA variance:
+                    # var_new = (1 - alpha)*var_old + alpha*(x - new_avg)^2
+                    diff = cs - self.cosine_similarity_avg
+                    self.cosine_similarity_var = (
+                        1 - smoothing_factor
+                    ) * self.cosine_similarity_var + smoothing_factor * (diff**2)
+                    self.cosine_similarity_std = np.sqrt(self.cosine_similarity_var)
+                elif strategy == "Simple Moving Average (SMA)" or strategy == "Custom":
+                    count = self.samples + 1
+                    delta = cs - self.cosine_similarity_avg
+
+                    self.cosine_similarity_avg = cs / count + self.cosine_similarity_avg * self.samples / count
+                    delta2 = cs - self.cosine_similarity_avg
+
+                    self.cosine_similarity_m2 = self.cosine_similarity_m2 + delta * delta2
+                    var = self.cosine_similarity_m2 / (count - 1)
+                    self.cosine_similarity_std = np.sqrt(var)
+                elif strategy == "Sliding Window":
+                    self.cosine_similarity_sliding_window.append(cs)
+                    if len(self.cosine_similarity_sliding_window) > window_size:
+                        self.cosine_similarity_sliding_window.pop(0)
+
+                    self.cosine_similarity_avg = np.mean(self.cosine_similarity_sliding_window)
+                    self.cosine_similarity_std = np.std(self.cosine_similarity_sliding_window)
+
+
+            z_score = (cs - self.cosine_similarity_avg) / self.cosine_similarity_std
             percentile = 1 - 0.5 * (1 + np.math.erf(z_score / np.sqrt(2)))
 
-            print(f"Z-score: {z_score}, Percentile: {percentile}, Average std: {np.mean(self.std)}, Average distance: {np.mean(np.abs(embedding - self.average))}")
+            print(f"Z-score: {z_score}, Percentile: {percentile}, Cosine Similarity: {cs}, Average: {self.cosine_similarity_avg}, Std: {self.cosine_similarity_std}")
 
         if self.samples < warmup:
             is_outlier = False
