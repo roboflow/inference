@@ -1,5 +1,4 @@
 from typing import List, Literal, Optional, Type, Union
-import numpy as np
 
 from pydantic import ConfigDict, Field
 
@@ -7,12 +6,8 @@ from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
-    add_inference_keypoints_to_sv_detections,
-    attach_parents_coordinates_to_batch_of_sv_detections,
-    attach_prediction_type_info_to_sv_detections_batch,
-    convert_inference_detections_batch_to_sv_detections,
-    load_core_model,
     convert_gaze_detections_to_sv_detections_and_angles,
+    load_core_model,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -21,9 +16,9 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    FLOAT_KIND,
     IMAGE_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
-    FLOAT_KIND,
     ImageInputField,
     Selector,
 )
@@ -43,11 +38,12 @@ This block can:
 The gaze direction is represented by yaw and pitch angles in radians.
 """
 
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "Gaze Detection Model",
-            "version": "v1", 
+            "version": "v1",
             "short_description": "Detect faces and estimate gaze direction",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
@@ -92,6 +88,7 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+
 class GazeBlockV1(WorkflowBlock):
     def __init__(
         self,
@@ -126,7 +123,9 @@ class GazeBlockV1(WorkflowBlock):
                 "Remote execution is not supported for Gaze Detection. Run a local or dedicated inference server to use this block."
             )
         else:
-            raise ValueError(f"Unknown step execution mode: {self._step_execution_mode}")
+            raise ValueError(
+                f"Unknown step execution mode: {self._step_execution_mode}"
+            )
 
     def run_locally(
         self,
@@ -134,7 +133,7 @@ class GazeBlockV1(WorkflowBlock):
         do_run_face_detection: bool,
     ) -> BlockResult:
         predictions = []
-        
+
         for single_image in images:
             inference_request = GazeDetectionInferenceRequest(
                 image=single_image.to_inference_format(numpy_preferred=True),
@@ -152,13 +151,18 @@ class GazeBlockV1(WorkflowBlock):
             predictions.append(prediction)
 
         # Convert predictions to supervision format and get angles
-        face_preds, yaw_degrees, pitch_degrees = convert_gaze_detections_to_sv_detections_and_angles(
-            images=images,
-            gaze_predictions=predictions,
+        face_preds, yaw_degrees, pitch_degrees = (
+            convert_gaze_detections_to_sv_detections_and_angles(
+                images=images,
+                gaze_predictions=predictions,
+            )
         )
 
-        return [{
-            "face_predictions": face_pred,
-            "yaw_degrees": yaw,
-            "pitch_degrees": pitch,
-        } for face_pred, yaw, pitch in zip(face_preds, yaw_degrees, pitch_degrees)]
+        return [
+            {
+                "face_predictions": face_pred,
+                "yaw_degrees": yaw,
+                "pitch_degrees": pitch,
+            }
+            for face_pred, yaw, pitch in zip(face_preds, yaw_degrees, pitch_degrees)
+        ]

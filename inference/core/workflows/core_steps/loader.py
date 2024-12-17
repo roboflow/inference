@@ -165,6 +165,7 @@ from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
 from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
     Florence2BlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
 )
@@ -408,7 +409,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     Kind,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
-from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
 
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
