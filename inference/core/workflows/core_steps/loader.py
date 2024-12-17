@@ -233,6 +233,9 @@ from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1
 from inference.core.workflows.core_steps.sampling.detect_outliers.v1 import (
     DetectOutliersBlockV1,
 )
+from inference.core.workflows.core_steps.sampling.identify_changes.v1 import (
+    IdentifyChangesBlockV1,
+)
 from inference.core.workflows.core_steps.secrets_providers.environment_secrets_store.v1 import (
     EnvironmentSecretsStoreBlockV1,
 )
@@ -591,6 +594,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         VLMAsClassifierBlockV2,
         VLMAsDetectorBlockV2,
         DetectOutliersBlockV1,
+        IdentifyChangesBlockV1,
         EnvironmentSecretsStoreBlockV1,
         SlackNotificationBlockV1,
         TwilioSMSNotificationBlockV1,
