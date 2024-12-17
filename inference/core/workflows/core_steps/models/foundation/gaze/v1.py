@@ -1,4 +1,5 @@
 from typing import List, Literal, Optional, Type, Union
+import numpy as np
 
 from pydantic import ConfigDict, Field
 
@@ -21,6 +22,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    FLOAT_KIND,
     ImageInputField,
     Selector,
 )
@@ -82,6 +84,16 @@ class BlockManifest(WorkflowBlockManifest):
                 name="gaze_predictions",
                 kind=[OBJECT_DETECTION_PREDICTION_KIND],
                 description="Gaze direction predictions with yaw and pitch angles",
+            ),
+            OutputDefinition(
+                name="yaw_degrees",
+                kind=[FLOAT_KIND],
+                description="Yaw angle in degrees (-180 to 180, negative is left)",
+            ),
+            OutputDefinition(
+                name="pitch_degrees",
+                kind=[FLOAT_KIND],
+                description="Pitch angle in degrees (-90 to 90, negative is down)",
             ),
         ]
 
@@ -206,11 +218,25 @@ class GazeBlockV1(WorkflowBlock):
             landmark_predictions.append(image_landmark_preds)
             gaze_predictions.append(image_gaze_preds)
 
+        # Calculate angles in degrees for each prediction
+        yaw_degrees = []
+        pitch_degrees = []
+        for gaze_pred_batch in gaze_predictions:
+            batch_yaw = []
+            batch_pitch = []
+            for pred in gaze_pred_batch["predictions"]:
+                batch_yaw.append(pred["yaw"] * 180 / np.pi)
+                batch_pitch.append(pred["pitch"] * 180 / np.pi)
+            yaw_degrees.append(batch_yaw)
+            pitch_degrees.append(batch_pitch)
+
         return self._post_process_result(
             images=images,
             face_predictions=face_predictions,
             landmark_predictions=landmark_predictions,
             gaze_predictions=gaze_predictions,
+            yaw_degrees=yaw_degrees,
+            pitch_degrees=pitch_degrees,
         )
 
     def _post_process_result(
@@ -219,6 +245,8 @@ class GazeBlockV1(WorkflowBlock):
         face_predictions: List[dict],
         landmark_predictions: List[dict],
         gaze_predictions: List[dict],
+        yaw_degrees: List[List[float]],
+        pitch_degrees: List[List[float]],
     ) -> BlockResult:
         # Process face detections
         face_preds = convert_inference_detections_batch_to_sv_detections(face_predictions)
@@ -257,4 +285,8 @@ class GazeBlockV1(WorkflowBlock):
             "face_predictions": face_pred,
             "landmark_predictions": landmark_pred,
             "gaze_predictions": gaze_pred,
-        } for face_pred, landmark_pred, gaze_pred in zip(face_preds, landmark_preds, gaze_preds)]
+            "yaw_degrees": yaw,
+            "pitch_degrees": pitch,
+        } for face_pred, landmark_pred, gaze_pred, yaw, pitch in zip(
+            face_preds, landmark_preds, gaze_preds, yaw_degrees, pitch_degrees
+        )]
