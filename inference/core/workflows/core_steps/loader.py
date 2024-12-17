@@ -408,6 +408,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     Kind,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
 
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
@@ -580,6 +581,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EnvironmentSecretsStoreBlockV1,
         SlackNotificationBlockV1,
         TwilioSMSNotificationBlockV1,
+        GazeBlockV1,
     ]
 
 
