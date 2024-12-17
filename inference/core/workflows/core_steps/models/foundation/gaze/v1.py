@@ -7,6 +7,7 @@ from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.utils import (
+    add_inference_keypoints_to_sv_detections,
     attach_parents_coordinates_to_batch_of_sv_detections,
     attach_prediction_type_info_to_sv_detections_batch,
     convert_inference_detections_batch_to_sv_detections,
@@ -20,7 +21,6 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     IMAGE_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     FLOAT_KIND,
     ImageInputField,
@@ -72,18 +72,8 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="face_predictions",
-                kind=[OBJECT_DETECTION_PREDICTION_KIND],
-                description="Face detection predictions with bounding boxes",
-            ),
-            OutputDefinition(
-                name="landmark_predictions",
                 kind=[KEYPOINT_DETECTION_PREDICTION_KIND],
                 description="Facial landmark predictions",
-            ),
-            OutputDefinition(
-                name="gaze_predictions",
-                kind=[OBJECT_DETECTION_PREDICTION_KIND],
-                description="Gaze direction predictions with yaw and pitch angles",
             ),
             OutputDefinition(
                 name="yaw_degrees",
@@ -143,11 +133,8 @@ class GazeBlockV1(WorkflowBlock):
         do_run_face_detection: bool,
     ) -> BlockResult:
         face_predictions = []
-        landmark_predictions = []
-        gaze_predictions = []
-        
-        # Define landmark box size (small fixed size for visualization)
-        LANDMARK_SIZE = 10
+        yaw_degrees = []
+        pitch_degrees = []
         
         for single_image in images:
             inference_request = GazeDetectionInferenceRequest(
@@ -165,17 +152,17 @@ class GazeBlockV1(WorkflowBlock):
             )
             height, width = single_image.numpy_image.shape[:2]
             
-            # Process predictions for each type
+            # Format predictions for this image
             image_face_preds = {"predictions": [], "image": {"width": width, "height": height}}
-            image_landmark_preds = {"predictions": [], "image": {"width": width, "height": height}}
-            image_gaze_preds = {"predictions": [], "image": {"width": width, "height": height}}
+            batch_yaw = []
+            batch_pitch = []
             
             for p in prediction:
                 p_dict = p.model_dump(by_alias=True, exclude_none=True)
                 for pred in p_dict["predictions"]:
                     face = pred["face"]
                     
-                    # Face detection
+                    # Face detection with landmarks from L2CS-Net
                     face_pred = {
                         "x": face["x"],
                         "y": face["y"],
@@ -184,109 +171,49 @@ class GazeBlockV1(WorkflowBlock):
                         "confidence": face["confidence"],
                         "class": "face",
                         "class_id": 0,
+                        "keypoints": [
+                            {
+                                "x": l["x"],
+                                "y": l["y"],
+                                "confidence": face["confidence"],
+                                "class_name": str(i),
+                                "class_id": i,
+                            }
+                            for i, l in enumerate(face["landmarks"])
+                        ]
                     }
+                    
                     image_face_preds["predictions"].append(face_pred)
                     
-                    # Landmarks - add small bounding box around each point
-                    for i, landmark in enumerate(face["landmarks"]):
-                        landmark_pred = {
-                            "x": landmark["x"],
-                            "y": landmark["y"],
-                            "width": LANDMARK_SIZE,  # Small fixed size box
-                            "height": LANDMARK_SIZE,
-                            "confidence": face["confidence"],
-                            "class": f"landmark_{i}",
-                            "class_id": i,
-                        }
-                        image_landmark_preds["predictions"].append(landmark_pred)
-                    
-                    # Gaze
-                    gaze_pred = {
-                        "x": face["x"],
-                        "y": face["y"],
-                        "width": face["width"],
-                        "height": face["height"],
-                        "confidence": face["confidence"],
-                        "class": "gaze",
-                        "class_id": 0,
-                        "yaw": pred["yaw"],
-                        "pitch": pred["pitch"],
-                    }
-                    image_gaze_preds["predictions"].append(gaze_pred)
-            
-            face_predictions.append(image_face_preds)
-            landmark_predictions.append(image_landmark_preds)
-            gaze_predictions.append(image_gaze_preds)
+                    # Store angles
+                    batch_yaw.append(pred["yaw"] * 180 / np.pi)
+                    batch_pitch.append(pred["pitch"] * 180 / np.pi)
+                
+                face_predictions.append(image_face_preds)
+                yaw_degrees.append(batch_yaw)
+                pitch_degrees.append(batch_pitch)
 
-        # Calculate angles in degrees for each prediction
-        yaw_degrees = []
-        pitch_degrees = []
-        for gaze_pred_batch in gaze_predictions:
-            batch_yaw = []
-            batch_pitch = []
-            for pred in gaze_pred_batch["predictions"]:
-                batch_yaw.append(pred["yaw"] * 180 / np.pi)
-                batch_pitch.append(pred["pitch"] * 180 / np.pi)
-            yaw_degrees.append(batch_yaw)
-            pitch_degrees.append(batch_pitch)
-
-        return self._post_process_result(
-            images=images,
-            face_predictions=face_predictions,
-            landmark_predictions=landmark_predictions,
-            gaze_predictions=gaze_predictions,
-            yaw_degrees=yaw_degrees,
-            pitch_degrees=pitch_degrees,
-        )
-
-    def _post_process_result(
-        self,
-        images: Batch[WorkflowImageData],
-        face_predictions: List[dict],
-        landmark_predictions: List[dict],
-        gaze_predictions: List[dict],
-        yaw_degrees: List[List[float]],
-        pitch_degrees: List[List[float]],
-    ) -> BlockResult:
-        # Process face detections
+        # Process predictions
         face_preds = convert_inference_detections_batch_to_sv_detections(face_predictions)
+        
+        # Add keypoints to supervision detections
+        for prediction, detections in zip(face_predictions, face_preds):
+            add_inference_keypoints_to_sv_detections(
+                inference_prediction=prediction["predictions"],
+                detections=detections,
+            )
+        
         face_preds = attach_prediction_type_info_to_sv_detections_batch(
             predictions=face_preds,
-            prediction_type="face-detection",
+            prediction_type="facial-landmark",
         )
         face_preds = attach_parents_coordinates_to_batch_of_sv_detections(
             images=images,
             predictions=face_preds,
         )
-        
-        # Process landmarks
-        landmark_preds = convert_inference_detections_batch_to_sv_detections(landmark_predictions)
-        landmark_preds = attach_prediction_type_info_to_sv_detections_batch(
-            predictions=landmark_preds,
-            prediction_type="facial-landmark",
-        )
-        landmark_preds = attach_parents_coordinates_to_batch_of_sv_detections(
-            images=images,
-            predictions=landmark_preds,
-        )
-        
-        # Process gaze predictions
-        gaze_preds = convert_inference_detections_batch_to_sv_detections(gaze_predictions)
-        gaze_preds = attach_prediction_type_info_to_sv_detections_batch(
-            predictions=gaze_preds,
-            prediction_type="gaze-direction",
-        )
-        gaze_preds = attach_parents_coordinates_to_batch_of_sv_detections(
-            images=images,
-            predictions=gaze_preds,
-        )
-        
+
         return [{
             "face_predictions": face_pred,
-            "landmark_predictions": landmark_pred,
-            "gaze_predictions": gaze_pred,
             "yaw_degrees": yaw,
             "pitch_degrees": pitch,
-        } for face_pred, landmark_pred, gaze_pred, yaw, pitch in zip(
-            face_preds, landmark_preds, gaze_preds, yaw_degrees, pitch_degrees
-        )]
+        } for face_pred, yaw, pitch in zip(face_preds, yaw_degrees, pitch_degrees)]
