@@ -66,8 +66,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     threshold_percentile: Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float] = Field(
-        default=0.05,
-        description="The desired percentage of data points to fire for. The default of 5% captures data points that are more than 2 standard deviations away from the average.",
+        default=0.2,
+        description="The desired sensitivity. A higher value will result in more data points being classified as outliers.",
         examples=["$inputs.sample_rate", 0.01],
         json_schema_extra={
             "always_visible": True,
@@ -83,7 +83,7 @@ class BlockManifest(WorkflowBlockManifest):
     smoothing_factor: Optional[
         Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float]
     ] = Field(
-        default=0.25,
+        default=0.1,
         description="The smoothing factor for the EMA algorithm. The default of 0.25 means the most recent data point will carry 25% weight in the average. Higher values will make the average more responsive to recent data points.",
         examples=[0.1],
         json_schema_extra={
