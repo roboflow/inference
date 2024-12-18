@@ -93,7 +93,7 @@ def test_owlv2_serialized():
         hf_id=f"google/{OWLV2_VERSION_ID}",
     )
     assert os.path.exists(serialized_pt)
-    pt_path = get_cache_file_path(file=SerializedOwlV2.weights_file, model_id=model_id)
+    pt_path = get_cache_file_path(file=SerializedOwlV2.weights_file_path, model_id=model_id)
     os.makedirs(os.path.dirname(pt_path), exist_ok=True)
     os.rename(serialized_pt, pt_path)
     serialized_owlv2 = SerializedOwlV2(model_id=model_id)
