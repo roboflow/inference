@@ -11,12 +11,14 @@ import torchvision
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import box_iou
 
+from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
 from inference.core.env import (
+    MODEL_CACHE_DIR,
     DEVICE,
     MAX_DETECTIONS,
     OWLV2_IMAGE_CACHE_SIZE,
@@ -26,6 +28,7 @@ from inference.core.env import (
 from inference.core.models.roboflow import (
     DEFAULT_COLOR_PALETTE,
     RoboflowCoreModel,
+    RoboflowInferenceModel,
     draw_detection_predictions,
 )
 from inference.core.utils.image_utils import (
@@ -69,6 +72,27 @@ class LimitedSizeDict(OrderedDict):
         if self.size_limit is not None:
             while len(self) > self.size_limit:
                 self.popitem(last=False)
+
+
+class Owlv2Singleton:
+    _instances = {}
+    _models = {}
+
+    def __new__(cls, huggingface_id: str):
+        if huggingface_id not in cls._instances:
+            cls._instances[huggingface_id] = super().__new__(cls)
+            cls._instances[huggingface_id].huggingface_id = huggingface_id
+        return cls._instances[huggingface_id]
+
+    @property
+    def model(self):
+        if self.huggingface_id not in self._models:
+            self._models[self.huggingface_id] = (
+                Owlv2ForObjectDetection.from_pretrained(self.huggingface_id)
+                .eval()
+                .to(DEVICE)
+            )
+        return self._models[self.huggingface_id]
 
 
 def preprocess_image(
@@ -258,7 +282,7 @@ def hash_wrapped_training_data(wrapped_training_data: List[Dict[str, Any]]) -> H
     return hash_function(pickle.dumps(just_hash_relevant_data))
 
 
-class OwlV2(RoboflowCoreModel):
+class OwlV2(RoboflowInferenceModel):
     task_type = "object-detection"
     box_format = "xywh"
 
@@ -273,7 +297,7 @@ class OwlV2(RoboflowCoreModel):
         self.image_std = torch.tensor(
             processor.image_processor.image_std, device=DEVICE
         ).view(1, 3, 1, 1)
-        self.model = Owlv2ForObjectDetection.from_pretrained(hf_id).eval().to(DEVICE)
+        self.model = Owlv2Singleton(hf_id).model
         self.reset_cache()
 
         # compile forward pass of the visual backbone of the model
@@ -614,3 +638,96 @@ class OwlV2(RoboflowCoreModel):
             for ind, batch_predictions in enumerate(predictions)
         ]
         return responses
+
+
+class SerializedOwlV2(RoboflowInferenceModel):
+    task_type = "object-detection"
+    box_format = "xywh"
+
+    @classmethod
+    def serialize_training_data(
+        self,
+        training_data: List[Any],
+        hf_id: str = f"google/{OWLV2_VERSION_ID}",
+        iou_threshold: float = 0.3,
+        save_dir: str = os.path.join(MODEL_CACHE_DIR, "owl-v2-serialized-data"),
+    ):
+        owlv2 = OwlV2(hf_id)
+        train_data_dict = owlv2.make_class_embeddings_dict(training_data, iou_threshold)
+        train_data_dict = {
+            "huggingface_id": hf_id,
+            "train_data_dict": train_data_dict,
+            "class_names": list(train_data_dict.keys()),
+        }
+        train_data_path = os.path.join(save_dir, "train_data.pt")
+        torch.save(train_data_dict, train_data_path)
+        return train_data_path
+
+    def infer_from_request(
+        self,
+        request: ObjectDetectionInferenceRequest,
+    ) -> Union[
+        List[ObjectDetectionInferenceResponse], ObjectDetectionInferenceResponse
+    ]:
+        return super().infer_from_request(request)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cache_model_artefacts()
+
+    def get_inference_bucket_file_list(self):
+        return ["train_data.pt"]
+
+    def download_model_artefacts_from_s3(self):
+        raise NotImplementedError("Owlv2 not currently supported on hosted inference")
+
+    def download_model_artifacts_from_roboflow_api(self):
+        # Start draft implementation
+        api_data = get_roboflow_model_data(
+            api_key=self.api_key,
+            model_id=self.endpoint,
+            endpoint_type=ModelEndpointType.OWLV2,  # TODO: Change this to whatever owlv2 format
+            device_id=self.device_id,
+        )
+        if "model" not in api_data:
+            raise ModelArtefactError(
+                "Could not find `model` key in roboflow API model description response."
+            )
+        model_weights_response = get_from_url(api_data["model"], json_response=False)
+        save_bytes_in_cache(
+            content=model_weights_response.content,
+            file=self.weights_file,
+            model_id=self.endpoint,
+        )
+        # End draft implementation
+        # TODO: Implement this
+        raise NotImplementedError("TONY: Implement this")
+
+    def load_model_artifacts_from_cache(self):
+        self.model_data = torch.load(os.path.join(MODEL_CACHE_DIR, self.weights_file))
+        self.class_names = self.model_data["class_names"]
+        self.train_data_dict = self.model_data["train_data_dict"]
+        self.huggingface_id = self.model_data["huggingface_id"]
+        # each model can have its own OwlV2 instance because we use a singleton
+        self.OwlV2 = OwlV2(self.huggingface_id)
+
+    @property
+    def weights_file(self):
+        return "train_data.pt"
+
+    def infer(self, image, **kwargs):
+        return self.OwlV2.infer(
+            image,
+            training_data=self.train_data_dict,
+            **kwargs,
+        )
+
+    def draw_predictions(
+        self,
+        inference_request: ObjectDetectionInferenceRequest,
+        inference_response: ObjectDetectionInferenceResponse,
+    ):
+        return self.OwlV2.draw_predictions(
+            inference_request,
+            inference_response,
+        )
