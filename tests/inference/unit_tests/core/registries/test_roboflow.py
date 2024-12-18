@@ -21,98 +21,78 @@ from inference.core.roboflow_api import ModelEndpointType
 
 
 @pytest.mark.parametrize("is_lambda", [False, True])
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_file_does_not_exist(
-    construct_model_type_cache_path_mock: MagicMock,
-    empty_local_dir: str,
     is_lambda: bool,
 ) -> None:
-    # given
-    construct_model_type_cache_path_mock.return_value = os.path.join(
-        empty_local_dir, "model_type.json"
-    )
-
     # when
     with mock.patch.object(roboflow, "LAMBDA", is_lambda):
-        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+        result = get_model_metadata_from_cache(cache_path="model-id", lock_key="model:id")
 
     # then
     assert result is None
 
 
 @pytest.mark.parametrize("is_lambda", [False, True])
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_file_is_not_json(
-    construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
     is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
-    construct_model_type_cache_path_mock.return_value = metadata_path
     with open(metadata_path, "w") as f:
         f.write("FOR SURE NOT JSON :)")
 
     # when
     with mock.patch.object(roboflow, "LAMBDA", is_lambda):
-        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+        result = get_model_metadata_from_cache(cache_path=metadata_path, lock_key="model:id")
 
     # then
     assert result is None
 
 
 @pytest.mark.parametrize("is_lambda", [False, True])
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_file_is_empty(
-    construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
     is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
-    construct_model_type_cache_path_mock.return_value = metadata_path
     with open(metadata_path, "w") as f:
         f.write("")
 
     # when
     with mock.patch.object(roboflow, "LAMBDA", is_lambda):
-        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+        result = get_model_metadata_from_cache(cache_path=metadata_path, lock_key="model:id")
 
     # then
     assert result is None
 
 
 @pytest.mark.parametrize("is_lambda", [False, True])
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_is_invalid(
-    construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
     is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
-    construct_model_type_cache_path_mock.return_value = metadata_path
     with open(metadata_path, "w") as f:
         f.write(json.dumps({"some": "key"}))
 
     # when
     with mock.patch.object(roboflow, "LAMBDA", is_lambda):
-        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+        result = get_model_metadata_from_cache(cache_path=metadata_path, lock_key="model:id")
 
     # then
     assert result is None
 
 
 @pytest.mark.parametrize("is_lambda", [False, True])
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_get_model_metadata_from_cache_when_metadata_is_valid(
-    construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
     is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
-    construct_model_type_cache_path_mock.return_value = metadata_path
     with open(metadata_path, "w") as f:
         f.write(
             json.dumps(
@@ -125,7 +105,7 @@ def test_get_model_metadata_from_cache_when_metadata_is_valid(
 
     # when
     with mock.patch.object(roboflow, "LAMBDA", is_lambda):
-        result = get_model_metadata_from_cache(dataset_id="some", version_id="1")
+        result = get_model_metadata_from_cache(cache_path=metadata_path, lock_key="model:id")
 
     # then
     assert result == ("object-detection", "yolov8n")
@@ -172,21 +152,19 @@ def test_model_metadata_content_is_invalid_when_task_type_is_missing() -> None:
 
 
 @pytest.mark.parametrize("is_lambda", [False, True])
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
 def test_save_model_metadata_in_cache(
-    construct_model_type_cache_path_mock: MagicMock,
     empty_local_dir: str,
     is_lambda: bool,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
-    construct_model_type_cache_path_mock.return_value = metadata_path
+    lock_key = "lock:metadata:test"
 
     # when
     with mock.patch.object(roboflow, "LAMBDA", is_lambda):
         save_model_metadata_in_cache(
-            dataset_id="some",
-            version_id="1",
+            cache_path=metadata_path,
+            lock_key=lock_key,
             project_task_type="instance-segmentation",
             model_type="yolov8l",
         )
@@ -196,19 +174,11 @@ def test_save_model_metadata_in_cache(
     # then
     assert result["model_type"] == "yolov8l"
     assert result["project_task_type"] == "instance-segmentation"
-    construct_model_type_cache_path_mock.assert_called_once_with(
-        dataset_id="some", version_id="1"
-    )
 
 
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
-def test_get_model_type_when_cache_is_utilised(
-    construct_model_type_cache_path_mock: MagicMock,
-    empty_local_dir: str,
-) -> None:
+def test_get_model_type_when_cache_is_utilised(empty_local_dir: str) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
-    construct_model_type_cache_path_mock.return_value = metadata_path
     with open(metadata_path, "w") as f:
         f.write(
             json.dumps(
@@ -220,12 +190,10 @@ def test_get_model_type_when_cache_is_utilised(
         )
 
     # when
-    result = get_model_type(model_id="some/1", api_key="my_api_key")
+    with mock.patch.object(roboflow, "determine_cache_paths", return_value=("test_lock", metadata_path)):
+        result = get_model_type(model_id="some/1", api_key="my_api_key")
 
     # then
-    construct_model_type_cache_path_mock.assert_called_once_with(
-        dataset_id="some", version_id="1"
-    )
     assert result == ("object-detection", "yolov8n")
 
 
@@ -249,15 +217,23 @@ def test_get_model_type_when_generic_model_is_utilised(
 
 
 @mock.patch.object(roboflow, "get_roboflow_model_data")
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
+@mock.patch.object(roboflow, "get_roboflow_workspace")
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "some/1",
+        "model-id1",
+    ],
+)
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model(
-    construct_model_type_cache_path_mock: MagicMock,
+    get_roboflow_workspace_mock: MagicMock,
     get_roboflow_model_data_mock: MagicMock,
     empty_local_dir: str,
+    model_id: str,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
-    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_roboflow_workspace_mock.return_value = "my_workspace"
     get_roboflow_model_data_mock.return_value = {
         "ort": {
             "type": "object-detection",
@@ -266,10 +242,11 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model(
     }
 
     # when
-    result = get_model_type(
-        model_id="some/1",
-        api_key="my_api_key",
-    )
+    with mock.patch.object(roboflow, "determine_cache_paths", return_value=("test_lock", metadata_path)):
+        result = get_model_type(
+            model_id=model_id,
+            api_key="my_api_key",
+        )
 
     # then
     assert result == ("object-detection", "yolov8n")
@@ -279,34 +256,35 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model(
     assert persisted_metadata["project_task_type"] == "object-detection"
     get_roboflow_model_data_mock.assert_called_once_with(
         api_key="my_api_key",
-        model_id="some/1",
+        model_id=model_id,
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
     )
 
 
 @mock.patch.object(roboflow, "get_roboflow_model_data")
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
+@mock.patch.object(roboflow, "get_roboflow_workspace")
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model_type_specified_as_ort(
-    construct_model_type_cache_path_mock: MagicMock,
+    get_roboflow_workspace_mock: MagicMock,
     get_roboflow_model_data_mock: MagicMock,
     empty_local_dir: str,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
-    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_roboflow_workspace_mock.return_value = "my_workspace"
     get_roboflow_model_data_mock.return_value = {
         "ort": {
-            "type": "object-detection",
+            "taskType": "object-detection",
             "modelType": "ort",
         }
     }
 
     # when
-    result = get_model_type(
-        model_id="some/1",
-        api_key="my_api_key",
-    )
+    with mock.patch.object(roboflow, "determine_cache_paths", return_value=("test_lock", metadata_path)):
+        result = get_model_type(
+            model_id="some/1",
+            api_key="my_api_key",
+        )
 
     # then
     assert result == ("object-detection", "yolov5v2s")
@@ -322,21 +300,24 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model
     )
 
 
+@mock.patch.object(roboflow, "determine_cache_paths")
 @mock.patch.object(roboflow, "get_roboflow_model_data")
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
+@mock.patch.object(roboflow, "get_roboflow_workspace")
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model_type_not_specified(
-    construct_model_type_cache_path_mock: MagicMock,
+    get_roboflow_workspace_mock: MagicMock,
     get_roboflow_model_data_mock: MagicMock,
+    determine_cache_paths_mock: MagicMock,
     empty_local_dir: str,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
-    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_roboflow_workspace_mock.return_value = "my_workspace"
     get_roboflow_model_data_mock.return_value = {
         "ort": {
-            "type": "object-detection",
+            "taskType": "object-detection",
         }
     }
+    determine_cache_paths_mock.return_value = ("test_lock", metadata_path)
 
     # when
     result = get_model_type(
@@ -358,17 +339,20 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model
     )
 
 
+@mock.patch.object(roboflow, "determine_cache_paths")
 @mock.patch.object(roboflow, "get_roboflow_model_data")
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
+@mock.patch.object(roboflow, "get_roboflow_workspace")
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_project_type_not_specified(
-    construct_model_type_cache_path_mock: MagicMock,
+    get_roboflow_workspace_mock: MagicMock,
     get_roboflow_model_data_mock: MagicMock,
+    determine_cache_paths_mock: MagicMock,
     empty_local_dir: str,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
-    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_roboflow_workspace_mock.return_value = "my_workspace"
     get_roboflow_model_data_mock.return_value = {"ort": {}}
+    determine_cache_paths_mock.return_value = ("test_lock", metadata_path)
 
     # when
     result = get_model_type(
@@ -390,22 +374,25 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_proje
     )
 
 
+@mock.patch.object(roboflow, "determine_cache_paths")
 @mock.patch.object(roboflow, "get_roboflow_model_data")
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
+@mock.patch.object(roboflow, "get_roboflow_workspace")
 def test_get_model_type_when_roboflow_api_is_called_for_specific_model_without_api_key_for_public_model(
-    construct_model_type_cache_path_mock: MagicMock,
+    get_roboflow_workspace_mock: MagicMock,
     get_roboflow_model_data_mock: MagicMock,
+    determine_cache_paths_mock: MagicMock,
     empty_local_dir: str,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
-    construct_model_type_cache_path_mock.return_value = metadata_path
+    get_roboflow_workspace_mock.return_value = "my_workspace"
     get_roboflow_model_data_mock.return_value = {
         "ort": {
-            "type": "object-detection",
+            "taskType": "object-detection",  # Updated to match new API response structure
             "modelType": "yolov8n",
         }
     }
+    determine_cache_paths_mock.return_value = ("test_lock", metadata_path)
 
     # when
     result = get_model_type(
@@ -426,19 +413,18 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_without_a
         device_id=GLOBAL_DEVICE_ID,
     )
 
-
-@mock.patch.object(roboflow, "get_roboflow_workspace")
+@mock.patch.object(roboflow, "determine_cache_paths")
 @mock.patch.object(roboflow, "get_roboflow_dataset_type")
-@mock.patch.object(roboflow, "construct_model_type_cache_path")
+@mock.patch.object(roboflow, "get_roboflow_workspace")
 def test_get_model_type_when_roboflow_api_is_called_for_mock(
-    construct_model_type_cache_path_mock: MagicMock,
-    get_roboflow_dataset_type_mock: MagicMock,
     get_roboflow_workspace_mock: MagicMock,
+    get_roboflow_dataset_type_mock: MagicMock,
+    determine_cache_paths_mock: MagicMock,
     empty_local_dir: str,
 ) -> None:
     # given
     metadata_path = os.path.join(empty_local_dir, "model_type.json")
-    construct_model_type_cache_path_mock.return_value = metadata_path
+    determine_cache_paths_mock.return_value = ("test_lock", metadata_path)
     get_roboflow_dataset_type_mock.return_value = "object-detection"
     get_roboflow_workspace_mock.return_value = "my_workspace"
 
@@ -461,8 +447,17 @@ def test_get_model_type_when_roboflow_api_is_called_for_mock(
     )
     get_roboflow_workspace_mock.assert_called_once_with(api_key="my_api_key")
 
+@mock.patch.object(roboflow, "get_model_id_chunks")
+@mock.patch.object(roboflow, "get_roboflow_workspace")
+def test_get_model_type_when_roboflow_api_is_called_for_mock_without_api_key(
+    get_roboflow_workspace_mock: MagicMock,
+    get_model_id_chunks_mock: MagicMock,
+) -> None:
+    # given
+    get_model_id_chunks_mock.return_value = ("some", "0")
+    get_roboflow_workspace_mock.return_value = "workspace-id"
 
-def test_get_model_type_when_roboflow_api_is_called_for_mock_without_api_key() -> None:
+    # when
     with pytest.raises(MissingApiKeyError):
         _ = get_model_type(
             model_id="some/0",
