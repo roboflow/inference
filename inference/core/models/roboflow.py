@@ -224,7 +224,6 @@ class RoboflowInferenceModel(Model):
     def cache_model_artefacts(self) -> None:
         infer_bucket_files = self.get_all_required_infer_bucket_file()
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
-            print("all files are cached", infer_bucket_files)
             return None
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
@@ -268,7 +267,6 @@ class RoboflowInferenceModel(Model):
             device_id=self.device_id,
             workspace_id=workspace_id,
         )
-        print("api_data", api_data)
         if "ort" not in api_data.keys():
             raise ModelArtefactError(
                 "Could not find `ort` key in roboflow API model description response."
@@ -298,7 +296,6 @@ class RoboflowInferenceModel(Model):
         else:
             # TODO: do we need to load the environment from the url or can we safely remove?
             environment = get_from_url(api_data["environment"])
-        print("environment", environment)
         model_weights_response = get_from_url(api_data["model"], json_response=False)
         save_bytes_in_cache(
             content=model_weights_response.content,
@@ -718,9 +715,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
     def initialize_model(self) -> None:
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         logger.debug("Getting model artefacts")
-        print("self.endpoint in initialize_model", self.endpoint)
         self.get_model_artifacts()
-        print(" after get_model_artifacts")
         logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()

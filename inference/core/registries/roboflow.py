@@ -100,9 +100,7 @@ def get_model_type(
         cache_path=cache_path, lock_key=lock_key
     )
     if cached_metadata is not None:
-        print("returning cached_metadata", cached_metadata)
         return cached_metadata[0], cached_metadata[1]
-    print("not cached metadata")
     workspace_id = get_roboflow_workspace(api_key=api_key)
     
     # THis path will never be executed for a model ID
@@ -150,7 +148,6 @@ def get_model_type(
         project_task_type=project_task_type,
         model_type=model_type,
     )
-    print("returning project_task_type and model_type", project_task_type, model_type)
     return project_task_type, model_type
 
 def determine_cache_paths(dataset_or_model_id: str, version_id: Optional[str]) -> Tuple[str, str]:    
