@@ -18,6 +18,7 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
+from inference.core.roboflow_api import get_roboflow_model_data
 from inference.core.env import (
     DEVICE,
     MAX_DETECTIONS,
