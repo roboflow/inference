@@ -742,6 +742,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
             endpoint_type=ModelEndpointType.ORT,
             device_id=self.device_id,
         )
+        api_data = api_data["ort"]
         if "model" not in api_data:
             raise ModelArtefactError(
                 "Could not find `model` key in roboflow API model description response."
