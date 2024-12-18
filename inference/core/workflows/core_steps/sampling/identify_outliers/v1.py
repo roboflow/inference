@@ -21,7 +21,7 @@ from inference.core.workflows.prototypes.block import (
 LONG_DESCRIPTION = """
 Identify outlier embeddings compared to prior data.
 
-This block accepts an embedding and compares it to an average and standard deviation of prior data.
+This block accepts an embedding and compares it to a sample of prior data.
 If the embedding is an outlier, the block will return a boolean flag and the percentile of the embedding
 along with other useful statistics about the distribution.
 """
@@ -45,20 +45,6 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/identify_outliers@v1"]
     name: str = Field(description="Unique name of step in workflows")
 
-    strategy: Literal[
-        "Exponential Moving Average (EMA)",
-        "Simple Moving Average (SMA)",
-        "Sliding Window",
-        "Custom",
-    ] = Field(
-        default="Exponential Moving Average (EMA)",
-        description="The outlier identification algorithm to use.",
-        examples=["Simple Moving Average (SMA)"],
-        json_schema_extra={
-            "always_visible": True,
-        },
-    )
-
     embedding: Selector(kind=[EMBEDDING_KIND]) = Field(
         description="Embedding of the current data.",
         examples=["$steps.clip.embedding"],
@@ -79,24 +65,9 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[100],
     )
 
-    smoothing_factor: Optional[
-        Union[Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]), float]
-    ] = Field(
-        default=0.25,
-        description="The smoothing factor for the EMA algorithm. The default of 0.25 means the most recent data point will carry 25% weight in the average. Higher values will make the average more responsive to recent data points.",
-        examples=[0.1],
-        json_schema_extra={
-            "relevant_for": {
-                "strategy": {
-                    "values": {"Exponential Moving Average (EMA)"},
-                },
-            },
-        },
-    )
-
     window_size: Optional[Union[Selector(kind=[INTEGER_KIND]), int]] = Field(
-        default=10,
-        description="The number of data points to consider in the sliding window algorithm.",
+        default=1024,
+        description="The number of previous data points to consider in the sliding window algorithm.",
         examples=[5],
         json_schema_extra={
             "relevant_for": {
@@ -105,57 +76,11 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
 
-    custom_average: Optional[Selector(kind=[EMBEDDING_KIND])] = Field(
-        default=None,
-        description="Average embedding of the prior data to compare with (for Custom strategy).",
-        examples=["$steps.custom_average.embedding"],
-        json_schema_extra={
-            "relevant_for": {
-                "strategy": {"values": {"Custom"}, "required": True},
-            },
-        },
-    )
-
-    custom_std: Optional[Selector(kind=[EMBEDDING_KIND])] = Field(
-        default=None,
-        description="Standard deviation of the prior data to compare with (for Custom strategy).",
-        examples=["$steps.custom_average.std"],
-        json_schema_extra={
-            "relevant_for": {
-                "strategy": {"values": {"Custom"}, "required": True},
-            },
-        },
-    )
-
-    @model_validator(mode="after")
-    def validate(self) -> "BlockManifest":
-        if self.strategy == "Custom" and self.custom_average is None:
-            raise ValueError(
-                f"`custom_average` parameter required to be set for strategy `Custom`"
-            )
-
-        if self.strategy == "Custom" and self.custom_std is None:
-            raise ValueError(
-                f"`custom_std` parameter required to be set for strategy `Custom`"
-            )
-
-        if self.strategy == "Custom" and len(self.custom_average) != len(
-            self.custom_std
-        ):
-            raise ValueError(
-                f"`custom_average` and `custom_std` should have the same dimensions"
-            )
-
-        return self
-
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="is_outlier", kind=[BOOLEAN_KIND]),
             OutputDefinition(name="percentile", kind=[FLOAT_ZERO_TO_ONE_KIND]),
-            OutputDefinition(name="z_score", kind=[FLOAT_KIND]),
-            OutputDefinition(name="average", kind=[EMBEDDING_KIND]),
-            OutputDefinition(name="std", kind=[EMBEDDING_KIND]),
             OutputDefinition(name="warming_up", kind=[BOOLEAN_KIND]),
         ]
 
@@ -166,104 +91,108 @@ class BlockManifest(WorkflowBlockManifest):
 
 class IdentifyOutliersBlockV1(WorkflowBlock):
     def __init__(self):
-        self.average = None
-        self.std = None
-        self.var = None  # For EMA variance tracking
-        self.M2 = None  # For SMA variance tracking
-        self.sliding_window = []
         self.samples = 0
+        
+        # Keep track of all embeddings for vMF parameter estimation:
+        self.all_embeddings = []  # Store normalized embeddings
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
+    def _fit_vmf_parameters(self, embeddings: np.ndarray):
+        """
+        Fit a von Mises-Fisher distribution to the given set of unit-normalized embeddings.
+        Returns:
+            mu (np.ndarray): Mean direction vector.
+            kappa (float): Concentration parameter.
+        """
+        n, d = embeddings.shape
+        if n < 2:
+            # Not enough data to fit
+            return None, None
+
+        # Sum all embeddings:
+        sum_vec = np.sum(embeddings, axis=0)
+        R = np.linalg.norm(sum_vec)
+        if R == 0:
+            # All embeddings canceled out, no direction
+            return None, None
+
+        mu = sum_vec / R
+        r_bar = R / n
+
+        # Approximate kappa:
+        # For d>2, a known approximation:
+        # kappa ≈ r_bar*(d - r_bar^2)/(1 - r_bar^2)
+        d = float(d)
+        if r_bar < 1.0:
+            kappa = (r_bar * (d - r_bar**2)) / (1 - r_bar**2)
+        else:
+            # Degenerate case: all points are identical
+            kappa = np.inf
+
+        return mu, kappa
+
     def run(
         self,
-        strategy: str,
         embedding: List[float],
         threshold_percentile: float,
-        smoothing_factor: float,
-        window_size: int,
         warmup: int,
-        custom_average: List[float],
-        custom_std: float,
+        window_size: int,
     ) -> BlockResult:
-        is_outlier = False
-        percentile = 0.5
-        z_score = 0
-        warming_up = False
-
-        embedding = np.array(embedding)
-
-        # determine if embedding is an outlier
-        if self.samples > 0 and self.std is not None and np.all(self.std != 0):
-            z_scores = (embedding - self.average) / self.std
-            z_score = np.mean(np.abs(z_scores))
-            percentile = 1 - 0.5 * (1 + np.math.erf(z_score / np.sqrt(2)))
-
-        if self.samples < warmup:
-            is_outlier = False
-            warming_up = True
+        # Convert to np array
+        embedding = np.array(embedding, dtype=float)
+        # Normalize embedding for vMF
+        norm = np.linalg.norm(embedding)
+        if norm == 0:
+            # If zero vector, skip normalization
+            embedding_normed = embedding
         else:
-            is_outlier = percentile <= threshold_percentile / 2 or percentile >= (
-                1 - threshold_percentile / 2
-            )
+            embedding_normed = embedding / norm
 
-        # update average and std
-        if self.average is None:
-            self.average = embedding
-            self.std = np.zeros_like(embedding)
-            self.var = np.zeros_like(embedding)
-            self.M2 = np.zeros_like(embedding)
-        else:
-            if strategy == "Exponential Moving Average (EMA)":
-                # Update EMA average:
-                self.average = (
-                    1 - smoothing_factor
-                ) * self.average + smoothing_factor * embedding
+        self.samples += 1
+        warming_up = self.samples < warmup
 
-                # Update EMA variance:
-                # var_new = (1 - alpha)*var_old + alpha*(x - new_avg)^2
-                diff = embedding - self.average
-                self.var = (1 - smoothing_factor) * self.var + smoothing_factor * (
-                    diff**2
-                )
-                self.std = np.sqrt(self.var)
+        # Store normalized embedding for vMF:
+        self.all_embeddings.append(embedding_normed)
 
-            elif strategy == "Simple Moving Average (SMA)":
-                # Use Welford's method to update mean and variance
-                count = self.samples + 1
-                delta = embedding - self.average
+        # If we're still in warmup, we cannot decide outliers yet
+        if warming_up:
+            return {
+                "is_outlier": False,
+                "percentile": 0.5,
+                "warming_up": True,
+            }
 
-                # Update average:
-                self.average = self.average + delta / count
-                delta2 = embedding - self.average
+        # Fit vMF parameters based on all embeddings so far
+        all_emb_array = np.array(self.all_embeddings)
+        mu, kappa = self._fit_vmf_parameters(all_emb_array)
+        if mu is None or kappa is None:
+            # Fallback if we cannot fit (e.g. all embeddings identical)
+            mu = embedding_normed
+            kappa = 0.0
 
-                # Update M2:
-                self.M2 = self.M2 + delta * delta2
-                var = self.M2 / (count - 1)
-                self.std = np.sqrt(var)
+        # Compute alignment score with the current mean direction
+        t_new = np.dot(mu, embedding_normed)
 
-            elif strategy == "Sliding Window":
-                self.sliding_window.append(embedding)
-                if len(self.sliding_window) > window_size:
-                    self.sliding_window.pop(0)
+        # Compute empirical percentile of t_new relative to historical t_i
+        # Using all previous embeddings (excluding the current one if desired)
+        t_values = np.einsum('ij,j->i', all_emb_array, mu)
+        # Sort t-values to find percentile
+        sorted_t = np.sort(t_values)
+        rank = np.searchsorted(sorted_t, t_new, side='left')
+        percentile = rank / len(sorted_t)
 
-                self.average = np.mean(self.sliding_window, axis=0)
-                self.std = np.std(self.sliding_window, axis=0)
+        # Determine outlier based on percentile thresholds
+        is_outlier = (percentile < threshold_percentile) or (percentile > (1 - threshold_percentile))
 
-            elif strategy == "Custom":
-                # Just set provided custom averages/stds
-                self.average = np.array(custom_average)
-                self.std = np.array(custom_std)
+        print(is_outlier, percentile, abs(t_new - np.mean(t_values)))
 
-        self.samples = self.samples + 1
-
+        # We retain fields "average" and "std" for compatibility, though they are less meaningful
+        # now. We can still return the SMA/EMA-based averages/std for debugging, or just zeros.
         return {
-            "is_outlier": is_outlier,
-            "percentile": percentile,
-            "z_score": z_score,
-            "average": self.average.tolist(),
-            "std": self.std.tolist(),
+            "is_outlier": bool(is_outlier),
+            "percentile": float(percentile),
             "warming_up": warming_up,
         }
