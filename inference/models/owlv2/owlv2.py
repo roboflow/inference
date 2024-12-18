@@ -529,8 +529,8 @@ class OwlV2(RoboflowInferenceModel):
         self,
         image: Any,
         training_data: Dict,
-        confidence=0.99,
-        iou_threshold=0.3,
+        confidence: float = 0.99,
+        iou_threshold: float = 0.3,
         **kwargs,
     ):
         class_embeddings_dict = self.make_class_embeddings_dict(
@@ -756,7 +756,9 @@ class SerializedOwlV2(RoboflowInferenceModel):
 
     def load_model_artifacts_from_cache(self):
         if DEVICE == "cpu":
-            self.model_data = torch.load(self.cache_file(self.weights_file), map_location="cpu")
+            self.model_data = torch.load(
+                self.cache_file(self.weights_file), map_location="cpu"
+            )
         else:
             self.model_data = torch.load(self.cache_file(self.weights_file))
         self.class_names = self.model_data["class_names"]
@@ -772,10 +774,14 @@ class SerializedOwlV2(RoboflowInferenceModel):
     def weights_file(cls):
         return "weights.pt"
 
-    def infer(self, image, **kwargs):
+    def infer(
+        self, image, confidence: float = 0.99, iou_threshold: float = 0.3, **kwargs
+    ):
         return self.owlv2.infer_from_embedding_dict(
             image,
             self.train_data_dict,
+            confidence=confidence,
+            iou_threshold=iou_threshold,
             **kwargs,
         )
 
