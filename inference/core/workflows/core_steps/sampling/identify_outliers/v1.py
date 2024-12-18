@@ -7,7 +7,6 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     EMBEDDING_KIND,
-    FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
     Selector,
@@ -22,8 +21,8 @@ LONG_DESCRIPTION = """
 Identify outlier embeddings compared to prior data.
 
 This block accepts an embedding and compares it to a sample of prior data.
-If the embedding is an outlier, the block will return a boolean flag and the percentile of the embedding
-along with other useful statistics about the distribution.
+If the embedding is an outlier, the block will return a boolean flag and the
+percentile of the embedding.
 """
 
 
@@ -68,12 +67,7 @@ class BlockManifest(WorkflowBlockManifest):
     window_size: Optional[Union[Selector(kind=[INTEGER_KIND]), int]] = Field(
         default=1024,
         description="The number of previous data points to consider in the sliding window algorithm.",
-        examples=[5],
-        json_schema_extra={
-            "relevant_for": {
-                "strategy": {"values": {"Sliding Window"}, "required": True},
-            },
-        },
+        examples=[5]
     )
 
     @classmethod
