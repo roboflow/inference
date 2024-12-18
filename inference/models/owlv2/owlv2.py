@@ -739,7 +739,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,
-            endpoint_type=ModelEndpointType.ORT,  # TODO: Change this to whatever owlv2 format
+            endpoint_type=ModelEndpointType.ORT,
             device_id=self.device_id,
         )
         if "model" not in api_data:
@@ -754,7 +754,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         )
 
     def load_model_artifacts_from_cache(self):
-        self.model_data = torch.load(self.cache_file("train_data.pt"))
+        self.model_data = torch.load(self.cache_file(self.weights_file))
         self.class_names = self.model_data["class_names"]
         self.train_data_dict = self.model_data["train_data_dict"]
         self.huggingface_id = self.model_data["huggingface_id"]
