@@ -20,7 +20,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-Detect outlier embeddings compared to prior data.
+Identify outlier embeddings compared to prior data.
 
 This block accepts an embedding and compares it to an average and standard deviation of prior data.
 If the embedding is an outlier, the block will return a boolean flag and the percentile of the embedding
@@ -31,9 +31,9 @@ along with other useful statistics about the distribution.
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Detect Outliers",
+            "name": "Identify Outliers",
             "version": "v1",
-            "short_description": "Detect outlier embeddings compared to prior data.",
+            "short_description": "Identify outlier embeddings compared to prior data.",
             "long_description": LONG_DESCRIPTION,
             "license": "MIT",
             "block_type": "video",
@@ -43,7 +43,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         }
     )
-    type: Literal["roboflow_core/detect_outliers@v1"]
+    type: Literal["roboflow_core/identify_outliers@v1"]
     name: str = Field(description="Unique name of step in workflows")
 
     strategy: Literal[
@@ -53,7 +53,7 @@ class BlockManifest(WorkflowBlockManifest):
         "Custom",
     ] = Field(
         default="Exponential Moving Average (EMA)",
-        description="The outlier detection algorithm to use.",
+        description="The outlier identification algorithm to use.",
         examples=["Simple Moving Average (SMA)"],
         json_schema_extra={
             "always_visible": True,
@@ -76,7 +76,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     warmup: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=3,
-        description="The number of data points to use for the initial average calculation. No outliers are detected during this period.",
+        description="The number of data points to use for the initial average calculation. No outliers are identified during this period.",
         examples=[100],
     )
 
@@ -165,7 +165,7 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-class DetectOutliersBlockV1(WorkflowBlock):
+class IdentifyOutliersBlockV1(WorkflowBlock):
     def __init__(self):
         self.average = None
         self.std = None
