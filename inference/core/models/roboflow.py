@@ -116,11 +116,13 @@ class RoboflowInferenceModel(Model):
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
         model_id = resolve_roboflow_model_alias(model_id=model_id)
-        # TODO: Is this really all we had to do here?
+        # TODO:
+        #  Is this really all we had to do here?, think we don't even need it?
         if "/" in model_id:
             self.dataset_id, self.version_id = model_id.split("/")
         else:
             self.model_id = model_id
+        # Model ID is only unique for a workspace
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
         self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
@@ -221,7 +223,7 @@ class RoboflowInferenceModel(Model):
     def cache_model_artefacts(self) -> None:
         infer_bucket_files = self.get_all_required_infer_bucket_file()
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
-            print("are_all_files_cached 5555", infer_bucket_files)
+            print("all files are cached", infer_bucket_files)
             return None
         if is_model_artefacts_bucket_available():
             self.download_model_artefacts_from_s3()
@@ -257,7 +259,6 @@ class RoboflowInferenceModel(Model):
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
-        print("i am in download_model_artifacts_from_roboflow_api", self.endpoint)
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,
@@ -325,11 +326,7 @@ class RoboflowInferenceModel(Model):
                 model_id=self.endpoint,
                 object_pairs_hook=OrderedDict,
             )
-            print("self.environment123", load_json_from_cache(
-                file="environment.json",
-                model_id=self.endpoint,
-                object_pairs_hook=OrderedDict,
-            ))
+
         if "class_names.txt" in infer_bucket_files:
             self.class_names = load_text_file_from_cache(
                 file="class_names.txt",

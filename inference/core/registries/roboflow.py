@@ -234,7 +234,6 @@ def _save_model_metadata_in_cache(
         PROJECT_TASK_TYPE_KEY: project_task_type,
         MODEL_TYPE_KEY: model_type,
     }
-    print("saving metadata to cache", cache_path, metadata)
     dump_json(
         path=cache_path, content=metadata, allow_override=True, indent=4
     )
