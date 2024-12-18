@@ -712,7 +712,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
             "roboflow_id": roboflow_id,
             "image_embeds": image_embeds,
         }
-        train_data_path = os.path.join(save_dir, cls.weights_file)
+        train_data_path = os.path.join(save_dir, cls.weights_file_path)
         os.makedirs(save_dir, exist_ok=True)
         torch.save(train_data_dict, train_data_path)
         return train_data_path
@@ -769,10 +769,10 @@ class SerializedOwlV2(RoboflowInferenceModel):
         self.owlv2 = OwlV2(model_id=self.roboflow_id)
         self.owlv2.cpu_image_embed_cache = self.model_data["image_embeds"]
 
-    @classmethod
+    weights_file_path = "weights.pt"
     @property
-    def weights_file(cls):
-        return "weights.pt"
+    def weights_file(self):
+        return self.weights_file_path
 
     def infer(
         self, image, confidence: float = 0.99, iou_threshold: float = 0.3, **kwargs
