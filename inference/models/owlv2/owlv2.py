@@ -766,3 +766,13 @@ class SerializedOwlV2(RoboflowInferenceModel):
             inference_request,
             inference_response,
         )
+
+    def save_model(self):
+        return self.serialize_training_data(
+            training_data=self.train_data_dict,
+            hf_id=self.huggingface_id,
+        )
+
+    def save_small_model_without_image_embeds(self):
+        self.owlv2.cpu_image_embed_cache = dict()
+        return self.save_model()
