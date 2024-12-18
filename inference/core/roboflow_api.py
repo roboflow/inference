@@ -608,12 +608,7 @@ def _get_from_url(url: str, json_response: bool = True) -> Union[Response, dict]
     api_key_safe_raise_for_status(response=response)
     
     if json_response:
-        try:
-            return response.json()
-        except requests.exceptions.JSONDecodeError as e:
-            print(f"JSON decode error: {e}")
-            print(f"Raw response content: {response.content}")
-            raise
+        return response.json()
     return response
 
 
