@@ -2,7 +2,7 @@ import pytest
 import gc
 from unittest.mock import MagicMock
 import os
-
+import torch
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.models.owlv2.owlv2 import OwlV2, SerializedOwlV2, Owlv2Singleton, LazyImageRetrievalWrapper
@@ -114,6 +114,12 @@ def test_owlv2_serialized():
     assert abs(264 - posts[2].x) < 1.5
     assert abs(532 - posts[3].x) < 1.5
     assert abs(572 - posts[4].x) < 1.5
+    
+    pt_path = serialized_owlv2.save_small_model_without_image_embeds()
+    assert os.path.exists(pt_path)
+    pt_dict = torch.load(pt_path)
+    assert len(pt_dict["image_embeds"]) == 0
+
 
 
 

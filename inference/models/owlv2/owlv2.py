@@ -673,7 +673,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
 
     @classmethod
     def serialize_training_data(
-        self,
+        cls,
         training_data: List[Any],
         hf_id: str = f"google/{OWLV2_VERSION_ID}",
         iou_threshold: float = 0.3,
@@ -684,6 +684,20 @@ class SerializedOwlV2(RoboflowInferenceModel):
         train_data_dict, image_embeds = owlv2.make_class_embeddings_dict(
             training_data, iou_threshold, return_image_embeds=True
         )
+
+        return cls.save_model(
+            hf_id, roboflow_id, train_data_dict, image_embeds, save_dir
+        )
+
+    @classmethod
+    def save_model(
+        cls,
+        hf_id: str,
+        roboflow_id: str,
+        train_data_dict: Dict,
+        image_embeds: Dict,
+        save_dir: str,
+    ):
         train_data_dict = {
             "huggingface_id": hf_id,
             "train_data_dict": train_data_dict,
@@ -767,12 +781,14 @@ class SerializedOwlV2(RoboflowInferenceModel):
             inference_response,
         )
 
-    def save_model(self):
-        return self.serialize_training_data(
-            training_data=self.train_data_dict,
-            hf_id=self.huggingface_id,
-        )
-
-    def save_small_model_without_image_embeds(self):
+    def save_small_model_without_image_embeds(
+        self, save_dir: str = os.path.join(MODEL_CACHE_DIR, "owl-v2-serialized-data")
+    ):
         self.owlv2.cpu_image_embed_cache = dict()
-        return self.save_model()
+        return self.save_model(
+            self.huggingface_id,
+            self.roboflow_id,
+            self.train_data_dict,
+            self.owlv2.cpu_image_embed_cache,
+            save_dir,
+        )
