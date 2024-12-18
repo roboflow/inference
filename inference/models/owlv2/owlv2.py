@@ -1,6 +1,7 @@
 import hashlib
 import os
 import pickle
+import weakref
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, NewType, Tuple, Union
 
@@ -18,9 +19,9 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.env import (
-    MODEL_CACHE_DIR,
     DEVICE,
     MAX_DETECTIONS,
+    MODEL_CACHE_DIR,
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
     OWLV2_VERSION_ID,
@@ -75,24 +76,23 @@ class LimitedSizeDict(OrderedDict):
 
 
 class Owlv2Singleton:
-    _instances = {}
-    _models = {}
+    _instances = weakref.WeakValueDictionary()
 
     def __new__(cls, huggingface_id: str):
         if huggingface_id not in cls._instances:
-            cls._instances[huggingface_id] = super().__new__(cls)
-            cls._instances[huggingface_id].huggingface_id = huggingface_id
-        return cls._instances[huggingface_id]
-
-    @property
-    def model(self):
-        if self.huggingface_id not in self._models:
-            self._models[self.huggingface_id] = (
-                Owlv2ForObjectDetection.from_pretrained(self.huggingface_id)
+            instance = super().__new__(cls)
+            instance.huggingface_id = huggingface_id
+            # Load model directly in the instance
+            model = (
+                Owlv2ForObjectDetection.from_pretrained(huggingface_id)
                 .eval()
                 .to(DEVICE)
             )
-        return self._models[self.huggingface_id]
+            torch._dynamo.config.suppress_errors = True
+            model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
+            instance.model = model
+            cls._instances[huggingface_id] = instance
+        return cls._instances[huggingface_id]
 
 
 def preprocess_image(
@@ -287,6 +287,8 @@ class OwlV2(RoboflowInferenceModel):
     box_format = "xywh"
 
     def __init__(self, *args, model_id=f"owlv2/{OWLV2_VERSION_ID}", **kwargs):
+        print(model_id)
+        print(kwargs)
         super().__init__(*args, model_id=model_id, **kwargs)
         hf_id = os.path.join("google", self.version_id)
         processor = Owlv2Processor.from_pretrained(hf_id)
@@ -299,15 +301,6 @@ class OwlV2(RoboflowInferenceModel):
         ).view(1, 3, 1, 1)
         self.model = Owlv2Singleton(hf_id).model
         self.reset_cache()
-
-        # compile forward pass of the visual backbone of the model
-        # NOTE that this is able to fix the manual attention implementation used in OWLv2
-        # so we don't have to force in flash attention by ourselves
-        # however that is only true if torch version 2.4 or later is used
-        # for torch < 2.4, this is a LOT slower and using flash attention by ourselves is faster
-        # this also breaks in torch < 2.1 so we supress torch._dynamo errors
-        torch._dynamo.config.suppress_errors = True
-        self.model.owlv2.vision_model = torch.compile(self.model.owlv2.vision_model)
 
     def reset_cache(self):
         # each entry should be on the order of 300*4KB, so 1000 is 400MB of CUDA memory
@@ -525,7 +518,18 @@ class OwlV2(RoboflowInferenceModel):
         class_embeddings_dict = self.make_class_embeddings_dict(
             training_data, iou_threshold
         )
+        return self.infer_from_embedding_dict(
+            image, class_embeddings_dict, confidence, iou_threshold
+        )
 
+    def infer_from_embedding_dict(
+        self,
+        image: Any,
+        class_embeddings_dict: Dict[str, PosNegDictType],
+        confidence: float,
+        iou_threshold: float,
+        **kwargs,
+    ):
         if not isinstance(image, list):
             images = [image]
         else:
@@ -652,14 +656,17 @@ class SerializedOwlV2(RoboflowInferenceModel):
         iou_threshold: float = 0.3,
         save_dir: str = os.path.join(MODEL_CACHE_DIR, "owl-v2-serialized-data"),
     ):
-        owlv2 = OwlV2(hf_id)
+        roboflow_id = hf_id.replace("google/", "owlv2/")
+        owlv2 = OwlV2(model_id=roboflow_id)
         train_data_dict = owlv2.make_class_embeddings_dict(training_data, iou_threshold)
         train_data_dict = {
             "huggingface_id": hf_id,
             "train_data_dict": train_data_dict,
             "class_names": list(train_data_dict.keys()),
+            "roboflow_id": roboflow_id,
         }
         train_data_path = os.path.join(save_dir, "train_data.pt")
+        os.makedirs(save_dir, exist_ok=True)
         torch.save(train_data_dict, train_data_path)
         return train_data_path
 
@@ -671,11 +678,11 @@ class SerializedOwlV2(RoboflowInferenceModel):
     ]:
         return super().infer_from_request(request)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.cache_model_artefacts()
+    def __init__(self, model_id, *args, **kwargs):
+        super().__init__(model_id, *args, **kwargs)
+        self.get_model_artifacts()
 
-    def get_inference_bucket_file_list(self):
+    def get_infer_bucket_file_list(self):
         return ["train_data.pt"]
 
     def download_model_artefacts_from_s3(self):
@@ -704,21 +711,22 @@ class SerializedOwlV2(RoboflowInferenceModel):
         raise NotImplementedError("TONY: Implement this")
 
     def load_model_artifacts_from_cache(self):
-        self.model_data = torch.load(os.path.join(MODEL_CACHE_DIR, self.weights_file))
+        self.model_data = torch.load(self.cache_file("train_data.pt"))
         self.class_names = self.model_data["class_names"]
         self.train_data_dict = self.model_data["train_data_dict"]
         self.huggingface_id = self.model_data["huggingface_id"]
+        self.roboflow_id = self.model_data["roboflow_id"]
         # each model can have its own OwlV2 instance because we use a singleton
-        self.OwlV2 = OwlV2(self.huggingface_id)
+        self.owlv2 = OwlV2(model_id=self.roboflow_id)
 
     @property
     def weights_file(self):
         return "train_data.pt"
 
     def infer(self, image, **kwargs):
-        return self.OwlV2.infer(
+        return self.owlv2.infer_from_embedding_dict(
             image,
-            training_data=self.train_data_dict,
+            self.train_data_dict,
             **kwargs,
         )
 
@@ -727,7 +735,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         inference_request: ObjectDetectionInferenceRequest,
         inference_response: ObjectDetectionInferenceResponse,
     ):
-        return self.OwlV2.draw_predictions(
+        return self.owlv2.draw_predictions(
             inference_request,
             inference_response,
         )

@@ -1,7 +1,13 @@
 import pytest
+import gc
+from unittest.mock import MagicMock
+import os
 
+from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
-from inference.models.owlv2.owlv2 import OwlV2
+from inference.models.owlv2.owlv2 import OwlV2, SerializedOwlV2, Owlv2Singleton
+from inference.core.env import OWLV2_VERSION_ID
+from inference.core.cache.model_artifacts import get_cache_file_path
 
 
 @pytest.mark.slow
@@ -33,7 +39,7 @@ def test_owlv2():
         confidence=0.9,
     )
 
-    response = OwlV2().infer_from_request(request)
+    response = OwlV2(model_id=f"owlv2/{OWLV2_VERSION_ID}").infer_from_request(request)
     # we assert that we're finding all of the posts in the image
     assert len(response.predictions) == 5
     # next we check the x coordinates to force something about localization
@@ -51,6 +57,56 @@ def test_owlv2():
     assert abs(264 - posts[2].x) < 1.5
     assert abs(532 - posts[3].x) < 1.5
     assert abs(572 - posts[4].x) < 1.5
+
+def test_owlv2_serialized():
+    image = {
+        "type": "url",
+        "value": "https://media.roboflow.com/inference/seawithdock.jpeg",
+    }
+
+    training_data=[
+        {
+            "image": image,
+            "boxes": [
+                {
+                    "x": 223,
+                    "y": 306,
+                    "w": 40,
+                    "h": 226,
+                    "cls": "post",
+                    "negative": False,
+                },
+            ],
+        }
+    ]
+    model_id = "test/test_id"
+    request = ObjectDetectionInferenceRequest(
+        model_id=model_id,
+        image=image,
+        visualize_predictions=True,
+        confidence=0.9,
+    )
+
+    SerializedOwlV2.download_model_artifacts_from_roboflow_api = MagicMock()
+    serialized_pt = SerializedOwlV2.serialize_training_data(
+        training_data=training_data,
+        hf_id=f"google/{OWLV2_VERSION_ID}",
+    )
+    assert os.path.exists(serialized_pt)
+    pt_path = get_cache_file_path(file="train_data.pt", model_id=model_id)
+    os.makedirs(os.path.dirname(pt_path), exist_ok=True)
+    os.rename(serialized_pt, pt_path)
+    serialized_owlv2 = SerializedOwlV2(model_id=model_id)
+    response = serialized_owlv2.infer_from_request(request)
+    assert len(response.predictions) == 5
+    posts = [p for p in response.predictions if p.class_name == "post"]
+    posts.sort(key=lambda x: x.x)
+    assert abs(223 - posts[0].x) < 1.5
+    assert abs(248 - posts[1].x) < 1.5
+    assert abs(264 - posts[2].x) < 1.5
+    assert abs(532 - posts[3].x) < 1.5
+    assert abs(572 - posts[4].x) < 1.5
+
 
 
 @pytest.mark.slow
@@ -341,6 +397,12 @@ def test_owlv2_multiple_training_images_repeated_inference():
         assert p1.height == p2.height
         assert p1.confidence == p2.confidence
 
+@pytest.mark.slow
+def test_owlv2_model_unloaded_when_garbage_collected():
+    model = OwlV2()
+    del model
+    gc.collect()
+    assert len(Owlv2Singleton._instances) == 0
 
 if __name__ == "__main__":
     test_owlv2()
