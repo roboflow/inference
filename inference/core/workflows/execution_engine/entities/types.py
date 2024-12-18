@@ -1172,6 +1172,7 @@ WorkflowVideoMetadataSelector = Annotated[
 
 def Selector(
     kind: Optional[List[Kind]] = None,
+    pattern: str = r"(^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$)|(^\$inputs.[A-Za-z_0-9\-]+$)",
 ):
     if kind is None:
         kind = [WILDCARD_KIND]
@@ -1183,8 +1184,6 @@ def Selector(
     }
     return Annotated[
         str,
-        StringConstraints(
-            pattern=r"(^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$)|(^\$inputs.[A-Za-z_0-9\-]+$)"
-        ),
+        StringConstraints(pattern=pattern),
         Field(json_schema_extra=json_schema_extra),
     ]
