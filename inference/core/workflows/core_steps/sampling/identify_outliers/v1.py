@@ -65,7 +65,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     window_size: Optional[Union[Selector(kind=[INTEGER_KIND]), int]] = Field(
-        default=1024,
+        default=32,
         description="The number of previous data points to consider in the sliding window algorithm.",
         examples=[5]
     )
@@ -150,6 +150,9 @@ class IdentifyOutliersBlockV1(WorkflowBlock):
 
         # Store normalized embedding for vMF:
         self.all_embeddings.append(embedding_normed)
+        if len(self.all_embeddings) > window_size:
+            # Remove oldest embedding
+            self.all_embeddings.pop(0)
 
         # If we're still in warmup, we cannot decide outliers yet
         if warming_up:
@@ -181,7 +184,7 @@ class IdentifyOutliersBlockV1(WorkflowBlock):
         # Determine outlier based on percentile thresholds
         is_outlier = (percentile < threshold_percentile) or (percentile > (1 - threshold_percentile))
 
-        print(is_outlier, percentile, abs(t_new - np.mean(t_values)))
+        # print(is_outlier, f"{round(percentile*100)}%", warming_up)
 
         # We retain fields "average" and "std" for compatibility, though they are less meaningful
         # now. We can still return the SMA/EMA-based averages/std for debugging, or just zeros.

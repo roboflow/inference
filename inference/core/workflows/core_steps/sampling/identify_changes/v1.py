@@ -205,7 +205,7 @@ class IdentifyChangesBlockV1(WorkflowBlock):
             z_score = (cs - self.cosine_similarity_avg) / self.cosine_similarity_std
             percentile = 1 - 0.5 * (1 + np.math.erf(z_score / np.sqrt(2)))
 
-            print(f"Z-score: {z_score}, Percentile: {percentile}, Cosine Similarity: {cs}, Average: {self.cosine_similarity_avg}, Std: {self.cosine_similarity_std}")
+            # print(f"Z-score: {z_score}, Percentile: {percentile}, Cosine Similarity: {cs}, Average: {self.cosine_similarity_avg}, Std: {self.cosine_similarity_std}")
 
         if self.samples < warmup:
             is_outlier = False
