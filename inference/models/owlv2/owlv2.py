@@ -770,6 +770,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         self.owlv2.cpu_image_embed_cache = self.model_data["image_embeds"]
 
     weights_file_path = "weights.pt"
+
     @property
     def weights_file(self):
         return self.weights_file_path
