@@ -730,17 +730,16 @@ class SerializedOwlV2(RoboflowInferenceModel):
         self.get_model_artifacts()
 
     def get_infer_bucket_file_list(self):
-        return ["train_data.pt"]
+        return [self.weights_file]
 
     def download_model_artefacts_from_s3(self):
         raise NotImplementedError("Owlv2 not currently supported on hosted inference")
 
     def download_model_artifacts_from_roboflow_api(self):
-        # Start draft implementation
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,
-            endpoint_type=ModelEndpointType.OWLV2,  # TODO: Change this to whatever owlv2 format
+            endpoint_type=ModelEndpointType.ORT,  # TODO: Change this to whatever owlv2 format
             device_id=self.device_id,
         )
         if "model" not in api_data:
@@ -753,9 +752,6 @@ class SerializedOwlV2(RoboflowInferenceModel):
             file=self.weights_file,
             model_id=self.endpoint,
         )
-        # End draft implementation
-        # TODO: Implement this
-        raise NotImplementedError("TONY: Implement this")
 
     def load_model_artifacts_from_cache(self):
         self.model_data = torch.load(self.cache_file("train_data.pt"))
