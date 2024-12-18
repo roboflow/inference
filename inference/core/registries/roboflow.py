@@ -121,6 +121,7 @@ def get_model_type(
             lock_key=lock_key,
             project_task_type=project_task_type,
             model_type=model_type,
+            # TODO: do we need to save the workspace_id here/for the cache path to be unique?
         )
         return project_task_type, model_type
 
@@ -129,6 +130,7 @@ def get_model_type(
         model_id=model_id,
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+        workspace_id=workspace_id,
     ).get("ort")
 
     if api_data is None:

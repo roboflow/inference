@@ -213,6 +213,7 @@ def get_roboflow_model_data(
     model_id: str,
     endpoint_type: ModelEndpointType,
     device_id: str,
+    workspace_id: str,
 ) -> dict:
     api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
     api_data = cache.get(api_data_cache_key)
@@ -220,8 +221,6 @@ def get_roboflow_model_data(
         logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
         return api_data
     else:
-        # TODO: do we actually need an api call to get the workspace id?
-        workspace_id = get_roboflow_workspace(api_key=api_key)
         params = [
             ("nocache", "true"),
             ("device", device_id),

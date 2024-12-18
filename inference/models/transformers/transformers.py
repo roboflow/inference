@@ -40,6 +40,7 @@ from inference.core.roboflow_api import (
     get_from_url,
     get_roboflow_base_lora,
     get_roboflow_model_data,
+    get_roboflow_workspace,
 )
 from inference.core.utils.image_utils import load_image_rgb
 
@@ -160,11 +161,13 @@ class TransformerModel(RoboflowInferenceModel):
         ]
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
+        workspace_id = get_roboflow_workspace(api_key=self.api_key)
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,
             endpoint_type=ModelEndpointType.ORT,
             device_id=self.device_id,
+            workspace_id=workspace_id,
         )
         if "weights" not in api_data["ort"]:
             raise ModelArtefactError(
@@ -207,6 +210,7 @@ class TransformerModel(RoboflowInferenceModel):
                     model_id=self.endpoint,
                     endpoint_type=ModelEndpointType.ORT,
                     device_id=self.device_id,
+                    workspace_id=workspace_id,
                 )
 
     @property

@@ -55,6 +55,7 @@ from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
     get_roboflow_model_data,
+    get_roboflow_workspace,
 )
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
@@ -259,11 +260,13 @@ class RoboflowInferenceModel(Model):
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
+        workspace_id = get_roboflow_workspace(api_key=self.api_key)
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,
             endpoint_type=ModelEndpointType.ORT,
             device_id=self.device_id,
+            workspace_id=workspace_id,
         )
         print("api_data", api_data)
         if "ort" not in api_data.keys():
@@ -516,11 +519,13 @@ class RoboflowCoreModel(RoboflowInferenceModel):
         self.download_model_from_roboflow_api()
 
     def download_model_from_roboflow_api(self) -> None:
+        workspace_id = get_roboflow_workspace(api_key=self.api_key)
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,
             endpoint_type=ModelEndpointType.CORE_MODEL,
             device_id=self.device_id,
+            workspace_id=workspace_id,
         )
         if "weights" not in api_data:
             raise ModelArtefactError(
@@ -545,6 +550,7 @@ class RoboflowCoreModel(RoboflowInferenceModel):
                     model_id=self.endpoint,
                     endpoint_type=ModelEndpointType.CORE_MODEL,
                     device_id=self.device_id,
+                    workspace_id=workspace_id,
                 )
 
     def get_device_id(self) -> str:
