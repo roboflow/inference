@@ -26,14 +26,18 @@ from inference.core.env import (
     OWLV2_MODEL_CACHE_SIZE,
     OWLV2_VERSION_ID,
 )
+from inference.core.exceptions import ModelArtefactError
 from inference.core.models.roboflow import (
     DEFAULT_COLOR_PALETTE,
     RoboflowCoreModel,
     RoboflowInferenceModel,
     draw_detection_predictions,
 )
-from inference.core.roboflow_api import get_roboflow_model_data, get_from_url, ModelEndpointType
-from inference.core.exceptions import ModelArtefactError
+from inference.core.roboflow_api import (
+    ModelEndpointType,
+    get_from_url,
+    get_roboflow_model_data,
+)
 from inference.core.utils.image_utils import (
     ImageType,
     extract_image_payload_and_type,
