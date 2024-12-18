@@ -118,7 +118,7 @@ class RateLimiterBlockV1(WorkflowBlock):
         current_time = datetime.now()
         try:
             metadata = video_reference_image.video_metadata
-            current_time = datetime.fromtimestamp(metadata.fps * metadata.frame_number)
+            current_time = datetime.fromtimestamp(1 / metadata.fps * metadata.frame_number)
         except Exception:
             # reference not passed, metadata not set, or not a video frame
             pass
