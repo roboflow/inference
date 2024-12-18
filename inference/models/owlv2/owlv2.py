@@ -730,7 +730,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         self.get_model_artifacts()
 
     def get_infer_bucket_file_list(self):
-        return [self.weights_file]
+        return []
 
     def download_model_artefacts_from_s3(self):
         raise NotImplementedError("Owlv2 not currently supported on hosted inference")
