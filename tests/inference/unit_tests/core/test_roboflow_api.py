@@ -549,6 +549,7 @@ def test_get_roboflow_model_data_when_connection_error_occurs(
             model_id="coins_detection/1",
             endpoint_type=ModelEndpointType.ORT,
             device_id="some",
+            workspace_id="my_workspace",
         )
 
 
@@ -566,6 +567,7 @@ def test_get_roboflow_model_data_when_wrong_api_key_used(requests_mock: Mocker) 
             model_id="coins_detection/1",
             endpoint_type=ModelEndpointType.ORT,
             device_id="some",
+            workspace_id="my_workspace",
         )
 
     # then
@@ -588,6 +590,7 @@ def test_get_roboflow_model_data_when_wrong_model_used(requests_mock: Mocker) ->
             model_id="coins_detection/1",
             endpoint_type=ModelEndpointType.ORT,
             device_id="some",
+            workspace_id="my_workspace",
         )
 
     # then
@@ -610,6 +613,7 @@ def test_get_roboflow_model_data_when_http_error_occurs(requests_mock: Mocker) -
             model_id="coins_detection/1",
             endpoint_type=ModelEndpointType.ORT,
             device_id="some",
+            workspace_id="my_workspace",
         )
 
     # then
@@ -634,6 +638,7 @@ def test_get_roboflow_model_data_when_response_parsing_error_occurs(
             model_id="coins_detection/1",
             endpoint_type=ModelEndpointType.ORT,
             device_id="some",
+            workspace_id="my_workspace",
         )
 
     # then

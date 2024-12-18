@@ -259,6 +259,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model(
         model_id=model_id,
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+        workspace_id="my_workspace",
     )
 
 
@@ -297,6 +298,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model
         model_id="some/1",
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+        workspace_id="my_workspace",
     )
 
 
@@ -336,6 +338,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_model
         model_id="some/1",
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+        workspace_id="my_workspace",
     )
 
 
@@ -371,6 +374,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_and_proje
         model_id="some/1",
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+        workspace_id="my_workspace",
     )
 
 
@@ -411,6 +415,7 @@ def test_get_model_type_when_roboflow_api_is_called_for_specific_model_without_a
         model_id="some/1",
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
+        workspace_id="my_workspace",
     )
 
 @mock.patch.object(roboflow, "determine_cache_paths")
