@@ -5,7 +5,7 @@ import os
 
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
-from inference.models.owlv2.owlv2 import OwlV2, SerializedOwlV2, Owlv2Singleton
+from inference.models.owlv2.owlv2 import OwlV2, SerializedOwlV2, Owlv2Singleton, LazyImageRetrievalWrapper
 from inference.core.env import OWLV2_VERSION_ID
 from inference.core.cache.model_artifacts import get_cache_file_path
 
@@ -97,7 +97,15 @@ def test_owlv2_serialized():
     os.makedirs(os.path.dirname(pt_path), exist_ok=True)
     os.rename(serialized_pt, pt_path)
     serialized_owlv2 = SerializedOwlV2(model_id=model_id)
+    
+    # Get the image hash before inference
+    image_wrapper = LazyImageRetrievalWrapper(request.image)
+    image_hash = image_wrapper.image_hash
+    assert image_hash in serialized_owlv2.owlv2.cpu_image_embed_cache
+    
     response = serialized_owlv2.infer_from_request(request)
+    
+    
     assert len(response.predictions) == 5
     posts = [p for p in response.predictions if p.class_name == "post"]
     posts.sort(key=lambda x: x.x)
