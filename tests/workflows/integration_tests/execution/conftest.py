@@ -91,3 +91,9 @@ def bool_env(val):
     if isinstance(val, bool):
         return val
     return val.lower() in ["true", "1", "t", "y", "yes"]
+
+
+@pytest.fixture(scope="function")
+def face_image() -> np.ndarray:
+    return cv2.imread(os.path.join(ASSETS_DIR, "face.jpeg"))
+
