@@ -97,8 +97,8 @@ def test_processing_images_directory_with_hosted_api(
     result_csv = pd.read_csv(os.path.join(empty_directory, "aggregated_results.csv"))
     assert len(result_csv) == 3
     assert (
-        len(result_csv.columns) == 2
-    ), "Two columns expected - predictions and deducted visualization"
+        len(result_csv.columns) == 3
+    ), "3 columns expected - predictions and deducted visualization"
 
 
 @pytest.mark.skipif(
@@ -238,8 +238,8 @@ def test_processing_images_directory_with_inference_package(
     result_csv = pd.read_csv(os.path.join(empty_directory, "aggregated_results.csv"))
     assert len(result_csv) == 3
     assert (
-        len(result_csv.columns) == 2
-    ), "Two columns expected - predictions and deducted visualization"
+        len(result_csv.columns) == 3
+    ), "3 columns expected - predictions and deducted visualization"
 
 
 @pytest.mark.skipif(

@@ -228,12 +228,15 @@ def aggregate_batch_processing_results(
     file_descriptor.close()
     all_results = [
         os.path.join(output_directory, f, "results.json")
-        for f in all_processed_files
+        for f in sorted(all_processed_files)
         if os.path.exists(os.path.join(output_directory, f, "results.json"))
     ]
     decoded_content = []
     for result_path in track(all_results, description="Grabbing processing results..."):
-        decoded_content.append(read_json(path=result_path))
+        content = read_json(path=result_path)
+        processed_file = result_path.split("/")[-2]
+        content["image"] = processed_file
+        decoded_content.append(content)
     if aggregation_format is OutputFileType.JSONL:
         aggregated_results_path = os.path.join(
             output_directory, "aggregated_results.jsonl"
