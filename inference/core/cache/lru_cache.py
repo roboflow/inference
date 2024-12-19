@@ -1,5 +1,6 @@
 import collections
 
+
 class LRUCache:
     def __init__(self, capacity=128):
         self.capacity = capacity
@@ -8,7 +9,7 @@ class LRUCache:
     def set_max_size(self, capacity):
         self.capacity = capacity
         self.enforce_size()
-    
+
     def enforce_size(self):
         while len(self.cache) > self.capacity:
             self.cache.popitem(last=False)

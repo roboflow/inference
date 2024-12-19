@@ -5,6 +5,7 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
+from inference.core.cache.lru_cache import LRUCache
 from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
@@ -112,8 +113,7 @@ class ClipModelBlockV1(WorkflowBlock):
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
 
-        self.text_cache = {}
-        self.text_cache_size = 128
+        self.text_cache = LRUCache()
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
@@ -144,9 +144,10 @@ class ClipModelBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if isinstance(data, str):
             hash_key = hashlib.md5((version + data).encode("utf-8")).hexdigest()
-            if hash_key in self.text_cache:
-                self.text_cache[hash_key]["timestamp"] = time.time()
-                return {"embedding": self.text_cache[hash_key]["embedding"]}
+
+            cached_value = self.text_cache.get(hash_key)
+            if cached_value is not None:
+                return {"embedding": cached_value}
 
             inference_request = ClipTextEmbeddingRequest(
                 clip_version_id=version,
@@ -162,16 +163,7 @@ class ClipModelBlockV1(WorkflowBlock):
                 clip_model_id, inference_request
             )
 
-            self.text_cache[hash_key] = {
-                "embedding": predictions.embeddings[0],
-                "timestamp": time.time(),
-            }
-
-            if len(self.text_cache) > self.text_cache_size:
-                oldest_key = min(
-                    self.text_cache, key=lambda k: self.text_cache[k]["timestamp"]
-                )
-                del self.text_cache[oldest_key]
+            self.text_cache.set(hash_key, predictions.embeddings[0])
 
             return {"embedding": predictions.embeddings[0]}
         else:
