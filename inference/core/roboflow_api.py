@@ -213,7 +213,6 @@ def get_roboflow_model_data(
     model_id: str,
     endpoint_type: ModelEndpointType,
     device_id: str,
-    workspace_id: str,
 ) -> dict:
     api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
     api_data = cache.get(api_data_cache_key)
@@ -227,7 +226,6 @@ def get_roboflow_model_data(
             ("dynamic", "true"),
             ("type", endpoint_type.value),
             ("model", model_id),
-            ("workspace", workspace_id),
         ]
         if api_key is not None:
             params.append(("api_key", api_key))

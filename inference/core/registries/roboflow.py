@@ -101,7 +101,7 @@ def get_model_type(
     )
     if cached_metadata is not None:
         return cached_metadata[0], cached_metadata[1]
-    workspace_id = get_roboflow_workspace(api_key=api_key)
+   
     
     # THis path will never be executed for a model ID
     if version_id == STUB_VERSION_ID:
@@ -109,6 +109,7 @@ def get_model_type(
             raise MissingApiKeyError(
                 "Stub model version provided but no API key was provided. API key is required to load stub models."
             )
+        workspace_id = get_roboflow_workspace(api_key=api_key)
         
         project_task_type = get_roboflow_dataset_type(
             api_key=api_key, workspace_id=workspace_id, dataset_id=dataset_id
@@ -128,7 +129,6 @@ def get_model_type(
         model_id=model_id,
         endpoint_type=ModelEndpointType.ORT,
         device_id=GLOBAL_DEVICE_ID,
-        workspace_id=workspace_id,
     ).get("ort")
 
     if api_data is None:
