@@ -67,7 +67,7 @@ class BlockManifest(WorkflowBlockManifest):
     window_size: Optional[Union[Selector(kind=[INTEGER_KIND]), int]] = Field(
         default=32,
         description="The number of previous data points to consider in the sliding window algorithm.",
-        examples=[5]
+        examples=[5],
     )
 
     @classmethod
@@ -86,7 +86,7 @@ class BlockManifest(WorkflowBlockManifest):
 class IdentifyOutliersBlockV1(WorkflowBlock):
     def __init__(self):
         self.samples = 0
-        
+
         # Keep track of all embeddings for vMF parameter estimation:
         self.all_embeddings = []  # Store normalized embeddings
 
@@ -175,14 +175,16 @@ class IdentifyOutliersBlockV1(WorkflowBlock):
 
         # Compute empirical percentile of t_new relative to historical t_i
         # Using all previous embeddings (excluding the current one if desired)
-        t_values = np.einsum('ij,j->i', all_emb_array, mu)
+        t_values = np.einsum("ij,j->i", all_emb_array, mu)
         # Sort t-values to find percentile
         sorted_t = np.sort(t_values)
-        rank = np.searchsorted(sorted_t, t_new, side='left')
+        rank = np.searchsorted(sorted_t, t_new, side="left")
         percentile = rank / len(sorted_t)
 
         # Determine outlier based on percentile thresholds
-        is_outlier = (percentile < threshold_percentile) or (percentile > (1 - threshold_percentile))
+        is_outlier = (percentile < threshold_percentile) or (
+            percentile > (1 - threshold_percentile)
+        )
 
         # print(is_outlier, f"{round(percentile*100)}%", warming_up)
 

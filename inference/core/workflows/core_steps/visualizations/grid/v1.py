@@ -95,7 +95,6 @@ class GridVisualizationBlockV1(WorkflowBlock):
         self.prev_output = None
 
         self.thumbCache = LRUCache()
-        
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -120,8 +119,7 @@ class GridVisualizationBlockV1(WorkflowBlock):
         return {OUTPUT_IMAGE_KEY: output}
 
     def getImageFor(
-        self,
-        images: List[WorkflowImageData], width: int, height: int
+        self, images: List[WorkflowImageData], width: int, height: int
     ) -> WorkflowImageData:
         if images is None or len(images) == 0:
             return self.getEmptyImage(width, height)
@@ -131,7 +129,6 @@ class GridVisualizationBlockV1(WorkflowBlock):
                 origin_image_data=images[0], numpy_image=np_image
             )
 
-
     def getEmptyImage(self, width: int, height: int) -> WorkflowImageData:
         return WorkflowImageData(
             parent_metadata=ImageParentMetadata(parent_id=str(uuid.uuid4())),
@@ -139,8 +136,7 @@ class GridVisualizationBlockV1(WorkflowBlock):
         )
 
     def createGrid(
-        self,
-        images: List[WorkflowImageData], width: int, height: int
+        self, images: List[WorkflowImageData], width: int, height: int
     ) -> WorkflowImageData:
         grid_size = math.ceil(math.sqrt(len(images)))
         img = np.zeros((height, width, 3), dtype=np.uint8)
@@ -160,9 +156,14 @@ class GridVisualizationBlockV1(WorkflowBlock):
 
                 cacheKey = f"{id(images[index])}_{cell_width}_{cell_height}"
                 if self.thumbCache.get(cacheKey) is None:
-                    self.thumbCache.set(cacheKey, self.resizeImage(images[index].numpy_image, cell_width, cell_height))
+                    self.thumbCache.set(
+                        cacheKey,
+                        self.resizeImage(
+                            images[index].numpy_image, cell_width, cell_height
+                        ),
+                    )
                 img_data = self.thumbCache.get(cacheKey)
-                
+
                 img_data_height, img_data_width, _ = img_data.shape
 
                 # place image in cell (centered)
@@ -184,7 +185,9 @@ class GridVisualizationBlockV1(WorkflowBlock):
                 target_height = end_y - start_y
                 target_width = end_x - start_x
 
-                img[start_y:end_y, start_x:end_x] = img_data[:target_height, :target_width]
+                img[start_y:end_y, start_x:end_x] = img_data[
+                    :target_height, :target_width
+                ]
 
         return img
 

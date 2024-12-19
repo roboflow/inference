@@ -50,7 +50,7 @@ class BlockManifest(WorkflowBlockManifest):
     strategy: Literal[
         "Exponential Moving Average (EMA)",
         "Simple Moving Average (SMA)",
-        "Sliding Window"
+        "Sliding Window",
     ] = Field(
         default="Exponential Moving Average (EMA)",
         description="The change identification algorithm to use.",
@@ -163,7 +163,7 @@ class IdentifyChangesBlockV1(WorkflowBlock):
         # determine if embedding is an outlier
         if self.average is not None:
             cs = cosine_similarity(embedding, self.average)
-            
+
             if self.cosine_similarity_avg is None:
                 self.cosine_similarity_avg = cs
                 self.cosine_similarity_std = 0
@@ -187,10 +187,14 @@ class IdentifyChangesBlockV1(WorkflowBlock):
                     count = self.samples + 1
                     delta = cs - self.cosine_similarity_avg
 
-                    self.cosine_similarity_avg = cs / count + self.cosine_similarity_avg * self.samples / count
+                    self.cosine_similarity_avg = (
+                        cs / count + self.cosine_similarity_avg * self.samples / count
+                    )
                     delta2 = cs - self.cosine_similarity_avg
 
-                    self.cosine_similarity_m2 = self.cosine_similarity_m2 + delta * delta2
+                    self.cosine_similarity_m2 = (
+                        self.cosine_similarity_m2 + delta * delta2
+                    )
                     var = self.cosine_similarity_m2 / (count - 1)
                     self.cosine_similarity_std = np.sqrt(var)
                 elif strategy == "Sliding Window":
@@ -198,9 +202,12 @@ class IdentifyChangesBlockV1(WorkflowBlock):
                     if len(self.cosine_similarity_sliding_window) > window_size:
                         self.cosine_similarity_sliding_window.pop(0)
 
-                    self.cosine_similarity_avg = np.mean(self.cosine_similarity_sliding_window)
-                    self.cosine_similarity_std = np.std(self.cosine_similarity_sliding_window)
-
+                    self.cosine_similarity_avg = np.mean(
+                        self.cosine_similarity_sliding_window
+                    )
+                    self.cosine_similarity_std = np.std(
+                        self.cosine_similarity_sliding_window
+                    )
 
             z_score = (cs - self.cosine_similarity_avg) / self.cosine_similarity_std
             percentile = 1 - 0.5 * (1 + np.math.erf(z_score / np.sqrt(2)))
