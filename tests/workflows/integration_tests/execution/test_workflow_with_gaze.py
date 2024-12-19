@@ -27,8 +27,14 @@ GAZE_DETECTION_WORKFLOW = {
             "name": "visualization",
             "predictions": "$steps.gaze.face_predictions",
             "image": "$inputs.image",
-            "annotator_type": "edge",
+            "annotator_type": "vertex",
             "color": "#A351FB",
+            "text_color": "black",
+            "text_scale": 0.5,
+            "text_thickness": 1,
+            "text_padding": 10,
+            "thickness": 2,
+            "radius": 10,
         },
     ],
     "outputs": [
@@ -71,7 +77,7 @@ The output includes:
 )
 def test_gaze_workflow_with_face_detection(
     model_manager: ModelManager,
-    face_image: np.ndarray,  # Need to add this fixture
+    face_image: np.ndarray,
 ) -> None:
     # given
     workflow_init_parameters = {
@@ -142,6 +148,6 @@ def test_gaze_workflow_batch_processing(
     # then
     assert len(result) == 2, "Expected results for both images"
     # Results should be identical since we used the same image
-    assert len(result[0]["face_predictions"]) == len(result[1]["face_predictions"])
-    assert np.allclose(result[0]["yaw_degrees"], result[1]["yaw_degrees"])
-    assert np.allclose(result[0]["pitch_degrees"], result[1]["pitch_degrees"])
+    assert result[0]["face_predictions"].box_area == result[1]["face_predictions"].box_area
+    assert result[0]["yaw_degrees"] == result[1]["yaw_degrees"]
+    assert result[0]["pitch_degrees"] == result[1]["pitch_degrees"]
