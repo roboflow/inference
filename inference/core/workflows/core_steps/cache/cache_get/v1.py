@@ -72,12 +72,14 @@ class CacheGetBlockV1(WorkflowBlock):
 
     def __init__(
         self,
-        model_manager: ModelManager,
-        api_key: Optional[str],
         step_execution_mode: StepExecutionMode,
     ):
         self._step_execution_mode = step_execution_mode
         self.namespace = None
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["step_execution_mode"]
 
     def __del__(self):
         if self.namespace:
