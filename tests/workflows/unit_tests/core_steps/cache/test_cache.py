@@ -31,7 +31,7 @@ def test_cache_on_video() -> None:
         video_metadata=metadata,
     )
     cache_get_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
-    cache_set_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_set_block = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
 
     # empty result
     get_empty = cache_get_block.run(
@@ -62,8 +62,8 @@ def test_cache_with_no_metadata() -> None:
         parent_metadata=ImageParentMetadata(parent_id="some"),
         numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
     )
-    cache_get_block = CacheGetBlockV1()
-    cache_set_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_get_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_set_block = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
 
     # empty result
     get_empty = cache_get_block.run(
@@ -116,8 +116,8 @@ def test_cache_on_multiple_videos() -> None:
         video_metadata=metadata_2,
     )
 
-    cache_get_block = CacheGetBlockV1()
-    cache_set_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_get_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_set_block = CacheSetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
 
     # empty result
     get_empty = cache_get_block.run(
