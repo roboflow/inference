@@ -189,6 +189,9 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 
 from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1 import (
     StabilityAIInpaintingBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.ultralytics.v1 import (
+    UltralyticsBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
 )
@@ -560,6 +563,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TimeInZoneBlockV1,
         TimeInZoneBlockV2,
         TriangleVisualizationBlockV1,
+        UltralyticsBlockV1,
         VLMAsClassifierBlockV1,
         VLMAsDetectorBlockV1,
         YoloWorldModelBlockV1,
