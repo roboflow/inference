@@ -1,8 +1,9 @@
-from functools import partial
+import hashlib
 from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
+from inference.core.cache.lru_cache import LRUCache
 from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
@@ -11,16 +12,11 @@ from inference.core.env import (
     HOSTED_CORE_MODEL_URL,
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import (
-    load_core_model,
-    run_in_parallel,
-)
+from inference.core.workflows.core_steps.common.utils import load_core_model
 from inference.core.workflows.execution_engine.entities.base import (
-    Batch,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -97,7 +93,7 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
-
+text_cache = LRUCache()
 class ClipModelBlockV1(WorkflowBlock):
 
     def __init__(
@@ -138,6 +134,15 @@ class ClipModelBlockV1(WorkflowBlock):
         version: str,
     ) -> BlockResult:
         if isinstance(data, str):
+            hash_key = hashlib.md5((version + data).encode("utf-8")).hexdigest()
+
+            cached_value = text_cache.get(hash_key)
+            if cached_value is not None:
+                print("Using cached value")
+                return {"embedding": cached_value}
+            else:
+                print("Cache miss")
+
             inference_request = ClipTextEmbeddingRequest(
                 clip_version_id=version,
                 text=[data],
@@ -151,6 +156,9 @@ class ClipModelBlockV1(WorkflowBlock):
             predictions = self._model_manager.infer_from_request_sync(
                 clip_model_id, inference_request
             )
+
+            text_cache.set(hash_key, predictions.embeddings[0])
+
             return {"embedding": predictions.embeddings[0]}
         else:
             inference_request = ClipImageEmbeddingRequest(
