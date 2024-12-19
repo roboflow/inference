@@ -1184,8 +1184,6 @@ def Selector(
     }
     return Annotated[
         str,
-        StringConstraints(
-            pattern=pattern
-        ),
+        StringConstraints(pattern=pattern),
         Field(json_schema_extra=json_schema_extra),
     ]
