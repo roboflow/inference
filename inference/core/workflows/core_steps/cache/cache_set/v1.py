@@ -29,6 +29,8 @@ Use the `Cache Get` block to fetch values from the cache.
 
 SHORT_DESCRIPTION = "Stores a value in a cache entry for later retrieval."
 
+PATTERN_STR = r"(^\$inputs.[A-Za-z_0-9\-]+$)"
+
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -42,7 +44,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/cache_set@v1"]
-    image: Selector(kind=[IMAGE_KIND], pattern=r"(^\$inputs.[A-Za-z_0-9\-]+$)") = Field(
+    image: Selector(kind=[IMAGE_KIND], pattern=PATTERN_STR) = Field(
         description="The image data to use as a reference for the cache namespace.",
         examples=["$inputs.image"],
     )
