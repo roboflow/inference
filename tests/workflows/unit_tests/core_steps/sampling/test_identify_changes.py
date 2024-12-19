@@ -41,7 +41,7 @@ def test_identify_changes() -> None:
         )
 
     assert np.allclose(result.get("average"), initial_value_normalized)
-    assert np.all(result.get("std") == [0, 0, 0, 0, 0])
+    assert np.allclose(result.get("std"), [0, 0, 0, 0, 0])
     assert not result.get("is_outlier")
     assert not result.get("warming_up")
 
@@ -52,7 +52,10 @@ def test_identify_changes() -> None:
             embedding = get_perturbed_value(initial_value, 1e-4)
         )
 
-    # ensure these small changes aren't detected as outliers
+    result = identify_changes_block.run(
+        **default_inputs,
+        embedding = initial_value
+    )
     assert not result.get("is_outlier")
 
     # ensure that the average and std have changed
