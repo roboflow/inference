@@ -3,6 +3,7 @@ from typing import Any, List, Literal, Optional, Type, Union
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.core_steps.cache.memory_cache import WorkflowMemoryCache
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     WorkflowImageData,
@@ -77,6 +78,11 @@ class CacheGetBlockV1(WorkflowBlock):
             WorkflowMemoryCache.clear_namespace(self.namespace)
 
     def run(self, image: WorkflowImageData, key: str) -> BlockResult:
+        if self._step_execution_mode is not StepExecutionMode.LOCAL:
+            raise NotImplementedError(
+                "Cache blocks require running locally or on a dedicated deployment."
+            )
+
         metadata = image.video_metadata
         namespace = metadata.video_identifier or "default"
         self.namespace = namespace
