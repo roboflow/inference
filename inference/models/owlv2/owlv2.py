@@ -739,10 +739,10 @@ class SerializedOwlV2(RoboflowInferenceModel):
         api_data = get_roboflow_model_data(
             api_key=self.api_key,
             model_id=self.endpoint,
-            endpoint_type=ModelEndpointType.ORT,
+            endpoint_type=ModelEndpointType.OWLV2,
             device_id=self.device_id,
         )
-        api_data = api_data["ort"]
+        api_data = api_data["owlv2"]
         if "model" not in api_data:
             raise ModelArtefactError(
                 "Could not find `model` key in roboflow API model description response."
