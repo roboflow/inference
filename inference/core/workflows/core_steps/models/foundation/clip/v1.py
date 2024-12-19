@@ -138,10 +138,7 @@ class ClipModelBlockV1(WorkflowBlock):
 
             cached_value = text_cache.get(hash_key)
             if cached_value is not None:
-                print("Using cached value")
                 return {"embedding": cached_value}
-            else:
-                print("Cache miss")
 
             inference_request = ClipTextEmbeddingRequest(
                 clip_version_id=version,
