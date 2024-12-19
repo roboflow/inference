@@ -227,6 +227,12 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
 )
+from inference.core.workflows.core_steps.sampling.identify_changes.v1 import (
+    IdentifyChangesBlockV1,
+)
+from inference.core.workflows.core_steps.sampling.identify_outliers.v1 import (
+    IdentifyOutliersBlockV1,
+)
 from inference.core.workflows.core_steps.secrets_providers.environment_secrets_store.v1 import (
     EnvironmentSecretsStoreBlockV1,
 )
@@ -577,6 +583,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowObjectDetectionModelBlockV2,
         VLMAsClassifierBlockV2,
         VLMAsDetectorBlockV2,
+        IdentifyOutliersBlockV1,
+        IdentifyChangesBlockV1,
         EnvironmentSecretsStoreBlockV1,
         SlackNotificationBlockV1,
         TwilioSMSNotificationBlockV1,
