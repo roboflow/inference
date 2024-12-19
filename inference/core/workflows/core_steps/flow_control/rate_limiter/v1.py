@@ -20,8 +20,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-PATTERN_STR = r"(^\$inputs.[A-Za-z_0-9\-]+$)"
-
 LONG_DESCRIPTION = """
 The **Rate Limiter** block controls the execution frequency of a branch within a Workflow by enforcing a 
 cooldown period. It ensures that the connected steps do not run more frequently than a specified interval, 
