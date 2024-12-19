@@ -71,6 +71,8 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class CacheSetBlockV1(WorkflowBlock):
+    namespace = None
+
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -80,7 +82,6 @@ class CacheSetBlockV1(WorkflowBlock):
         step_execution_mode: StepExecutionMode,
     ):
         self._step_execution_mode = step_execution_mode
-        self.namespace = None
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
