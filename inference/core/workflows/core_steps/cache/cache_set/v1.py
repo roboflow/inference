@@ -14,6 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     WILDCARD_KIND,
     Selector,
+    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -29,8 +30,6 @@ Use the `Cache Get` block to fetch values from the cache.
 
 SHORT_DESCRIPTION = "Stores a value in a cache entry for later retrieval."
 
-PATTERN_STR = r"(^\$inputs.[A-Za-z_0-9\-]+$)"
-
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
@@ -44,7 +43,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/cache_set@v1"]
-    image: Selector(kind=[IMAGE_KIND], pattern=PATTERN_STR) = Field(
+    image: WorkflowImageSelector = Field(
         description="The image data to use as a reference for the cache namespace.",
         examples=["$inputs.image"],
     )
