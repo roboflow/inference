@@ -11,6 +11,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     Selector,
     StepSelector,
+    WorkflowImageSelector,
 )
 from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
@@ -81,9 +82,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
         description="Reference to steps which shall be executed if rate limit allows.",
         examples=[["$steps.upload"]],
     )
-    video_reference_image: Optional[
-        Selector(kind=[IMAGE_KIND], pattern=PATTERN_STR)
-    ] = Field(
+    video_reference_image: Optional[WorkflowImageSelector] = Field(
         description="Reference to a video frame to use for timestamp generation (if running faster than realtime on recorded video).",
         examples=["$inputs.image"],
         default=None,
@@ -117,7 +116,9 @@ class RateLimiterBlockV1(WorkflowBlock):
         current_time = datetime.now()
         try:
             metadata = video_reference_image.video_metadata
-            current_time = datetime.fromtimestamp(1 / metadata.fps * metadata.frame_number)
+            current_time = datetime.fromtimestamp(
+                1 / metadata.fps * metadata.frame_number
+            )
         except Exception:
             # reference not passed, metadata not set, or not a video frame
             pass
