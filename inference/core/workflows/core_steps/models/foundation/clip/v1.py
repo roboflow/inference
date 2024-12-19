@@ -1,8 +1,11 @@
+import hashlib
+import time
 from functools import partial
 from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
+from inference.core.cache.lru_cache import LRUCache
 from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
@@ -110,6 +113,8 @@ class ClipModelBlockV1(WorkflowBlock):
         self._api_key = api_key
         self._step_execution_mode = step_execution_mode
 
+        self.text_cache = LRUCache()
+
     @classmethod
     def get_init_parameters(cls) -> List[str]:
         return ["model_manager", "api_key", "step_execution_mode"]
@@ -138,6 +143,12 @@ class ClipModelBlockV1(WorkflowBlock):
         version: str,
     ) -> BlockResult:
         if isinstance(data, str):
+            hash_key = hashlib.md5((version + data).encode("utf-8")).hexdigest()
+
+            cached_value = self.text_cache.get(hash_key)
+            if cached_value is not None:
+                return {"embedding": cached_value}
+
             inference_request = ClipTextEmbeddingRequest(
                 clip_version_id=version,
                 text=[data],
@@ -151,6 +162,9 @@ class ClipModelBlockV1(WorkflowBlock):
             predictions = self._model_manager.infer_from_request_sync(
                 clip_model_id, inference_request
             )
+
+            self.text_cache.set(hash_key, predictions.embeddings[0])
+
             return {"embedding": predictions.embeddings[0]}
         else:
             inference_request = ClipImageEmbeddingRequest(
