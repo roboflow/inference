@@ -93,7 +93,10 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+
 text_cache = LRUCache()
+
+
 class ClipModelBlockV1(WorkflowBlock):
 
     def __init__(
