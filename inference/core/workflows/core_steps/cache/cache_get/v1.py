@@ -70,8 +70,13 @@ class CacheGetBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        model_manager: ModelManager,
+        api_key: Optional[str],
+        step_execution_mode: StepExecutionMode,
+    ):
+        self._step_execution_mode = step_execution_mode
         self.namespace = None
 
     def __del__(self):
