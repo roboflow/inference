@@ -253,6 +253,8 @@ class LoRATransformerModel(TransformerModel):
             .to(self.dtype)
         )
 
+        self.model.merge_and_unload()
+
         self.processor = self.processor_class.from_pretrained(
             model_load_id, revision=revision, cache_dir=cache_dir, token=token
         )
