@@ -314,9 +314,10 @@ except:
     pass
 
 try:
-    from inference.models.owlv2.owlv2 import OwlV2
+    from inference.models.owlv2.owlv2 import OwlV2, SerializedOwlV2
 
     ROBOFLOW_MODEL_TYPES[("object-detection", "owlv2")] = OwlV2
+    ROBOFLOW_MODEL_TYPES[("object-detection", "owlv2-finetuned")] = SerializedOwlV2
 except:
     pass
 
