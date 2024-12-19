@@ -38,6 +38,7 @@ GENERIC_MODELS = {
     "paligemma": ("llm", "paligemma"),
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
+    "gaze_detection": ("gaze", "l2cs"),
 }
 
 STUB_VERSION_ID = "0"
