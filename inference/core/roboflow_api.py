@@ -205,6 +205,7 @@ def get_roboflow_model_type(
 class ModelEndpointType(Enum):
     ORT = "ort"
     CORE_MODEL = "core_model"
+    OWLV2 = "owlv2"
 
 
 @wrap_roboflow_api_errors()
