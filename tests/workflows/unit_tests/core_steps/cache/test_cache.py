@@ -1,9 +1,8 @@
 import datetime
 
 import numpy as np
-import pytest
-import supervision as sv
 
+from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.cache.cache_get.v1 import (
     CacheGetBlockV1,
 )
@@ -31,8 +30,8 @@ def test_cache_on_video() -> None:
         numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
         video_metadata=metadata,
     )
-    cache_get_block = CacheGetBlockV1()
-    cache_set_block = CacheSetBlockV1()
+    cache_get_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
+    cache_set_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
 
     # empty result
     get_empty = cache_get_block.run(
@@ -64,7 +63,7 @@ def test_cache_with_no_metadata() -> None:
         numpy_image=np.zeros((192, 168, 3), dtype=np.uint8),
     )
     cache_get_block = CacheGetBlockV1()
-    cache_set_block = CacheSetBlockV1()
+    cache_set_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
 
     # empty result
     get_empty = cache_get_block.run(
@@ -118,7 +117,7 @@ def test_cache_on_multiple_videos() -> None:
     )
 
     cache_get_block = CacheGetBlockV1()
-    cache_set_block = CacheSetBlockV1()
+    cache_set_block = CacheGetBlockV1(step_execution_mode=StepExecutionMode.LOCAL)
 
     # empty result
     get_empty = cache_get_block.run(
