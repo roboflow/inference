@@ -1,10 +1,9 @@
-from unittest.mock import MagicMock, patch
-from pydantic import BaseModel
 from typing import List
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.gaze.v1 import (
@@ -44,7 +43,7 @@ def mock_model_manager():
                         "landmarks": [
                             {"x": 120, "y": 120},
                             {"x": 130, "y": 120},
-                        ]
+                        ],
                     },
                     yaw=0.5,  # ~28.6 degrees
                     pitch=-0.2,  # ~-11.5 degrees
@@ -131,7 +130,7 @@ def test_run_locally(mock_model_manager, mock_workflow_image_data):
         "yaw_degrees",
         "pitch_degrees",
     }
-    
+
     # Check angles are converted to degrees correctly
     assert len(result[0]["yaw_degrees"]) == 1
     assert len(result[0]["pitch_degrees"]) == 1
