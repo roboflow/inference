@@ -73,7 +73,7 @@ CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
 CLIP_MODEL_ID = f"clip/{CLIP_VERSION_ID}"
 
 # Gaze version ID, default is "L2CS"
-GAZE_VERSION_ID = os.getenv("GAZE_VERSION_ID", "l2cs")
+GAZE_VERSION_ID = os.getenv("GAZE_VERSION_ID", "L2CS")
 
 # Gaze model ID
 GAZE_MODEL_ID = f"gaze/{GAZE_VERSION_ID}"
