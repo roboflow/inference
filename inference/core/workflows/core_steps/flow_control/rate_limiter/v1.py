@@ -3,10 +3,15 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.base import (
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     Selector,
     StepSelector,
+    WorkflowImageSelector,
 )
 from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
@@ -75,6 +80,11 @@ class RateLimiterManifest(WorkflowBlockManifest):
         description="Reference to steps which shall be executed if rate limit allows.",
         examples=[["$steps.upload"]],
     )
+    video_reference_image: Optional[WorkflowImageSelector] = Field(
+        description="Reference to a video frame to use for timestamp generation (if running faster than realtime on recorded video).",
+        examples=["$inputs.image"],
+        default=None,
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -99,8 +109,18 @@ class RateLimiterBlockV1(WorkflowBlock):
         cooldown_seconds: float,
         depends_on: any,
         next_steps: List[StepSelector],
+        video_reference_image: Optional[WorkflowImageData] = None,
     ) -> BlockResult:
         current_time = datetime.now()
+        try:
+            metadata = video_reference_image.video_metadata
+            current_time = datetime.fromtimestamp(
+                1 / metadata.fps * metadata.frame_number
+            )
+        except Exception:
+            # reference not passed, metadata not set, or not a video frame
+            pass
+
         should_throttle = False
         if self._last_executed_at is not None:
             should_throttle = (
