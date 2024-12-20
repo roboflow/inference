@@ -1,6 +1,7 @@
+import sys
+
 import numpy as np
 import pytest
-import sys
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
@@ -14,7 +15,11 @@ GAZE_DETECTION_WORKFLOW = {
     "version": "1.0",
     "inputs": [
         {"type": "WorkflowImage", "name": "image"},
-        {"type": "WorkflowParameter", "name": "do_run_face_detection", "default_value": True},
+        {
+            "type": "WorkflowParameter",
+            "name": "do_run_face_detection",
+            "default_value": True,
+        },
     ],
     "steps": [
         {
@@ -76,7 +81,9 @@ The output includes:
     workflow_definition=GAZE_DETECTION_WORKFLOW,
     workflow_name_in_app="gaze-detection",
 )
-@pytest.mark.skip(reason="Test not supported on Python 3.12+, skipping due to dependencies conflict when building CI")
+@pytest.mark.skip(
+    reason="Test not supported on Python 3.12+, skipping due to dependencies conflict when building CI"
+)
 def test_gaze_workflow_with_face_detection(
     model_manager: ModelManager,
     face_image: np.ndarray,
@@ -109,21 +116,24 @@ def test_gaze_workflow_with_face_detection(
         "pitch_degrees",
         "visualization",
     }, "Expected all outputs to be registered"
-    
+
     # Check face predictions
     assert len(result[0]["face_predictions"]) > 0, "Expected at least one face detected"
     assert result[0]["face_predictions"].data["prediction_type"][0] == "facial-landmark"
-    
+
     # Check angles
     assert len(result[0]["yaw_degrees"]) == len(result[0]["face_predictions"])
     assert len(result[0]["pitch_degrees"]) == len(result[0]["face_predictions"])
-    
+
     # Check visualization
     assert not np.array_equal(
         face_image, result[0]["visualization"].numpy_image
     ), "Expected visualization to modify the image"
 
-@pytest.mark.skip(reason="Test not supported on Python 3.12+, skipping due to dependencies conflict when building CI")
+
+@pytest.mark.skip(
+    reason="Test not supported on Python 3.12+, skipping due to dependencies conflict when building CI"
+)
 def test_gaze_workflow_batch_processing(
     model_manager: ModelManager,
     face_image: np.ndarray,
@@ -151,6 +161,8 @@ def test_gaze_workflow_batch_processing(
     # then
     assert len(result) == 2, "Expected results for both images"
     # Results should be identical since we used the same image
-    assert result[0]["face_predictions"].box_area == result[1]["face_predictions"].box_area
+    assert (
+        result[0]["face_predictions"].box_area == result[1]["face_predictions"].box_area
+    )
     assert result[0]["yaw_degrees"] == result[1]["yaw_degrees"]
     assert result[0]["pitch_degrees"] == result[1]["pitch_degrees"]
