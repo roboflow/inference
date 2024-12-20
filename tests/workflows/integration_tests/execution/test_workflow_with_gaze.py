@@ -76,7 +76,7 @@ The output includes:
     workflow_definition=GAZE_DETECTION_WORKFLOW,
     workflow_name_in_app="gaze-detection",
 )
-@pytest.mark.skipif(sys.version_info >= (3, 12), reason="Test not supported on Python 3.12+")
+@pytest.mark.skip(reason="Test not supported on Python 3.12+, skipping due to dependencies conflict when building CI")
 def test_gaze_workflow_with_face_detection(
     model_manager: ModelManager,
     face_image: np.ndarray,
