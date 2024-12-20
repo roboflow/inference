@@ -1,8 +1,8 @@
 from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
-from pydantic import ConfigDict, Field
 import supervision as sv
+from pydantic import ConfigDict, Field
 
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.managers.base import ModelManager
