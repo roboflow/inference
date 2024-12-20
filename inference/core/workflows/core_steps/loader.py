@@ -28,6 +28,8 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
 from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
     TimeInZoneBlockV2,
 )
+from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
+from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
@@ -129,6 +131,7 @@ from inference.core.workflows.core_steps.formatters.vlm_as_detector.v1 import (
 from inference.core.workflows.core_steps.formatters.vlm_as_detector.v2 import (
     VLMAsDetectorBlockV2,
 )
+from inference.core.workflows.core_steps.fusion.buffer.v1 import BufferBlockV1
 from inference.core.workflows.core_steps.fusion.detections_classes_replacement.v1 import (
     DetectionsClassesReplacementBlockV1,
 )
@@ -226,6 +229,12 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1
 )
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
+)
+from inference.core.workflows.core_steps.sampling.identify_changes.v1 import (
+    IdentifyChangesBlockV1,
+)
+from inference.core.workflows.core_steps.sampling.identify_outliers.v1 import (
+    IdentifyOutliersBlockV1,
 )
 from inference.core.workflows.core_steps.secrets_providers.environment_secrets_store.v1 import (
     EnvironmentSecretsStoreBlockV1,
@@ -332,6 +341,9 @@ from inference.core.workflows.core_steps.visualizations.dot.v1 import (
 )
 from inference.core.workflows.core_steps.visualizations.ellipse.v1 import (
     EllipseVisualizationBlockV1,
+)
+from inference.core.workflows.core_steps.visualizations.grid.v1 import (
+    GridVisualizationBlockV1,
 )
 from inference.core.workflows.core_steps.visualizations.halo.v1 import (
     HaloVisualizationBlockV1,
@@ -479,6 +491,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DeltaFilterBlockV1,
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
+        BufferBlockV1,
         DetectionsClassesReplacementBlockV1,
         ExpressionBlockV1,
         PropertyDefinitionBlockV1,
@@ -492,6 +505,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         BoundingBoxVisualizationBlockV1,
         BoundingRectBlockV1,
         ByteTrackerBlockV2,
+        CacheGetBlockV1,
+        CacheSetBlockV1,
         CameraFocusBlockV1,
         CircleVisualizationBlockV1,
         ClipComparisonBlockV1,
@@ -512,6 +527,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Florence2BlockV2,
         GoogleGeminiBlockV1,
         GoogleVisionOCRBlockV1,
+        GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,
@@ -577,6 +593,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowObjectDetectionModelBlockV2,
         VLMAsClassifierBlockV2,
         VLMAsDetectorBlockV2,
+        IdentifyOutliersBlockV1,
+        IdentifyChangesBlockV1,
         EnvironmentSecretsStoreBlockV1,
         SlackNotificationBlockV1,
         TwilioSMSNotificationBlockV1,
