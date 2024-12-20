@@ -38,7 +38,6 @@ def test_identify_outliers() -> None:
             embedding = get_perturbed_value(initial_value, 1e-6)
         )
 
-    print(result)
     assert not result.get("is_outlier")
     assert not result.get("warming_up")
 
