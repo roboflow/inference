@@ -34,12 +34,12 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
     )
     image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
-        description="The input image for this step.",
+        description="Select the input image to visualize on.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
     copy_image: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
-        description="Duplicate the image contents (vs overwriting the image in place). Deselect for chained visualizations that should stack on previous ones where the intermediate state is not needed.",
+        description="Enable this option to create a copy of the input image for visualization, preserving the original. Use this when stacking multiple visualizations.",
         default=True,
         examples=[True, False],
     )
