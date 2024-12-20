@@ -28,6 +28,8 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
 from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
     TimeInZoneBlockV2,
 )
+from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
+from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
@@ -340,6 +342,9 @@ from inference.core.workflows.core_steps.visualizations.dot.v1 import (
 from inference.core.workflows.core_steps.visualizations.ellipse.v1 import (
     EllipseVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.grid.v1 import (
+    GridVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.halo.v1 import (
     HaloVisualizationBlockV1,
 )
@@ -500,6 +505,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         BoundingBoxVisualizationBlockV1,
         BoundingRectBlockV1,
         ByteTrackerBlockV2,
+        CacheGetBlockV1,
+        CacheSetBlockV1,
         CameraFocusBlockV1,
         CircleVisualizationBlockV1,
         ClipComparisonBlockV1,
@@ -520,6 +527,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Florence2BlockV2,
         GoogleGeminiBlockV1,
         GoogleVisionOCRBlockV1,
+        GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,

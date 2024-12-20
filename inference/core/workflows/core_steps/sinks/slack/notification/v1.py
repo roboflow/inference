@@ -78,27 +78,27 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/slack_notification@v1"]
     slack_token: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = Field(
-        description="Slack Token. Visit "
+        description="Visit "
         "https://api.slack.com/tutorials/tracks/getting-a-token "
-        "to find out how to generate the token.",
+        "to find out how to generate a Slack API token.",
         private=True,
         examples=["$inputs.slack_token"],
     )
+    channel: Union[str, Selector(kind=[STRING_KIND])] = Field(
+        description="Identifier of Slack channel.",
+        examples=["$inputs.slack_channel_id"],
+    )
     message: str = Field(
-        description="Content of the message to be send",
+        description="Content of the message to be sent.",
         examples=[
             "During last 5 minutes detected {{ $parameters.num_instances }} instances"
         ],
-    )
-    channel: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        description="Identifier of Slack channel",
-        examples=["$inputs.slack_channel_id"],
     )
     message_parameters: Dict[
         str,
         Union[Selector(), Selector(), str, int, float, bool],
     ] = Field(
-        description="References data to be used to construct each and every column",
+        description="Data to be used in the message content.",
         examples=[
             {
                 "predictions": "$steps.model.predictions",
@@ -106,6 +106,9 @@ class BlockManifest(WorkflowBlockManifest):
             }
         ],
         default_factory=dict,
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     message_parameters_operations: Dict[str, List[AllOperationsType]] = Field(
         description="UQL definitions of operations to be performed on defined data w.r.t. each message parameter",
@@ -119,21 +122,18 @@ class BlockManifest(WorkflowBlockManifest):
         default_factory=dict,
     )
     attachments: Dict[str, Selector(kind=[STRING_KIND, BYTES_KIND])] = Field(
-        description="Attachments",
+        description="Attachments to be sent in the message, such as a csv file or jpg image.",
         default_factory=dict,
         examples=[{"report.csv": "$steps.csv_formatter.csv_content"}],
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Boolean flag dictating if sink is supposed to be executed in the background, "
-        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-        "registration is needed, use `False` while debugging and if error handling is needed",
+        description="Boolean flag to run the block asynchronously (True) for faster workflows or synchronously (False) for debugging and error handling.",
         examples=["$inputs.fire_and_forget", False],
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="boolean flag that can be also reference to input - to arbitrarily disable "
-        "data collection for specific request",
+        description="Boolean flag to disable block execution.",
         examples=[False, "$inputs.disable_slack_notifications"],
     )
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
