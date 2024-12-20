@@ -55,6 +55,7 @@ from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
     get_roboflow_model_data,
+    get_roboflow_workspace,
 )
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
@@ -116,7 +117,13 @@ class RoboflowInferenceModel(Model):
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
         model_id = resolve_roboflow_model_alias(model_id=model_id)
-        self.dataset_id, self.version_id = model_id.split("/")
+        # TODO:
+        #  Is this really all we had to do here?, think we don't even need it?
+        if "/" in model_id:
+            self.dataset_id, self.version_id = model_id.split("/")
+        else:
+            self.model_id = model_id
+        # Model ID is only unique for a workspace
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
         self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
@@ -274,10 +281,19 @@ class RoboflowInferenceModel(Model):
                 "Could not find `model` key in roboflow API model description response."
             )
         if "environment" not in api_data:
-            raise ModelArtefactError(
-                "Could not find `environment` key in roboflow API model description response."
-            )
-        environment = get_from_url(api_data["environment"])
+            # Create default environment if not provided
+            environment = {
+                "PREPROCESSING": api_data.get("preprocessing", {}),
+                "MULTICLASS": api_data.get("multilabel", False),
+                #don't think we actually need this
+                "MODEL_NAME": api_data.get("modelName", ""),
+             
+                # ClASS_MAP might be the only other thing that we would need
+                 # "CLASS_MAP": api_data.get("classes", {}),
+            }
+        else:
+            # TODO: do we need to load the environment from the url or can we safely remove?
+            environment = get_from_url(api_data["environment"])
         model_weights_response = get_from_url(api_data["model"], json_response=False)
         save_bytes_in_cache(
             content=model_weights_response.content,
@@ -308,6 +324,7 @@ class RoboflowInferenceModel(Model):
                 model_id=self.endpoint,
                 object_pairs_hook=OrderedDict,
             )
+
         if "class_names.txt" in infer_bucket_files:
             self.class_names = load_text_file_from_cache(
                 file="class_names.txt",
