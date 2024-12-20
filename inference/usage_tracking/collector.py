@@ -348,9 +348,7 @@ class UsageCollector:
             source_usage["source_duration"] += (
                 frames / fps if fps and not inference_test_run else 0
             )
-            source_usage["fps"] = (
-                fps if isinstance(fps, numbers.Number) else 0
-            )
+            source_usage["fps"] = fps if isinstance(fps, numbers.Number) else 0
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
             source_usage["resource_details"] = json.dumps(resource_details)
