@@ -346,7 +346,7 @@ class UsageCollector:
             source_usage["timestamp_stop"] = time.time_ns()
             source_usage["processed_frames"] += frames if not inference_test_run else 0
             source_usage["fps"] = (
-                round(fps, 2) if isinstance(fps, numbers.Number) else 0
+                fps if isinstance(fps, numbers.Number) else 0
             )
             source_usage["source_duration"] += (
                 frames / fps if fps and not inference_test_run else 0
