@@ -201,14 +201,9 @@ class GazeBlockV1(WorkflowBlock):
                 images=images,
                 do_run_face_detection=do_run_face_detection,
             )
-        elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return self.run_locally(
-                images=images,
-                do_run_face_detection=do_run_face_detection,
-            )
         else:
             raise ValueError(
-                f"Unknown step execution mode: {self._step_execution_mode}"
+                f"Unsupported step execution mode: {self._step_execution_mode}"
             )
 
     def run_locally(

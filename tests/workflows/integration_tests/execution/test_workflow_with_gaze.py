@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import sys
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
@@ -75,6 +76,7 @@ The output includes:
     workflow_definition=GAZE_DETECTION_WORKFLOW,
     workflow_name_in_app="gaze-detection",
 )
+@pytest.mark.skipif(sys.version_info >= (3, 12), reason="Test not supported on Python 3.12+")
 def test_gaze_workflow_with_face_detection(
     model_manager: ModelManager,
     face_image: np.ndarray,
