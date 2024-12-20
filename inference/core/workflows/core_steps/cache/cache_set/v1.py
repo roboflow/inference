@@ -40,6 +40,10 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "fusion",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "far fa-memory",
+            },
         }
     )
     type: Literal["roboflow_core/cache_set@v1"]
