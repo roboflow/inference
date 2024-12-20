@@ -168,6 +168,7 @@ from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
 from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
     Florence2BlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
 )
@@ -598,6 +599,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EnvironmentSecretsStoreBlockV1,
         SlackNotificationBlockV1,
         TwilioSMSNotificationBlockV1,
+        GazeBlockV1,
     ]
 
 
