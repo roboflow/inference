@@ -162,7 +162,7 @@ class UsageCollector:
             usage_dict["roboflow_service_name"] = ROBOFLOW_INTERNAL_SERVICE_NAME
 
         return defaultdict(  # api_key_hash
-            lambda: defaultdict(lambda: usage_dict)  # category:resource_id
+            lambda: defaultdict(lambda: {**usage_dict})  # category:resource_id
         )
 
     def _dump_usage_queue_no_lock(self) -> List[APIKeyUsage]:
@@ -359,7 +359,6 @@ class UsageCollector:
             source_usage["hostname"] = hostname
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
-            print(source_usage)
             logger.debug("Updated usage: %s", source_usage)
 
     def record_usage(
