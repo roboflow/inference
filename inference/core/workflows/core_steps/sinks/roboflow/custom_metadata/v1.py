@@ -62,20 +62,20 @@ class BlockManifest(WorkflowBlockManifest):
             CLASSIFICATION_PREDICTION_KIND,
         ]
     ) = Field(
-        description="Reference data to extract property from",
+        description="Reference data to extract the property from.",
         examples=["$steps.my_step.predictions"],
+    )
+    field_name: str = Field(
+        description="Name of the field to be set.",
+        examples=["inspection_result"],
     )
     field_value: Union[
         str,
         Selector(kind=[STRING_KIND]),
         Selector(kind=[STRING_KIND]),
     ] = Field(
-        description="This is the name of the metadata field you are creating",
-        examples=["toronto", "pass", "fail"],
-    )
-    field_name: str = Field(
-        description="Name of the field to be updated in Roboflow Customer Metadata",
-        examples=["The name of the value of the field"],
+        description="Value of the field to be set.",
+        examples=["pass", "toronto", "fail"],
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
