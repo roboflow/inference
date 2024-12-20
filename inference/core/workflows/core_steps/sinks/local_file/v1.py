@@ -69,7 +69,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Local File Sink",
             "version": "v1",
-            "short_description": "Saves data into local file",
+            "short_description": "Save data to a local file.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",

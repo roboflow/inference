@@ -73,10 +73,10 @@ CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
 CLIP_MODEL_ID = f"clip/{CLIP_VERSION_ID}"
 
 # Gaze version ID, default is "L2CS"
-GAZE_VERSION_ID = os.getenv("GAZE_VERSION_ID", "L2CS")
+GAZE_VERSION_ID = os.getenv("GAZE_VERSION_ID", "l2cs")
 
 # Gaze model ID
-GAZE_MODEL_ID = f"gaze/{CLIP_VERSION_ID}"
+GAZE_MODEL_ID = f"gaze/{GAZE_VERSION_ID}"
 
 # OWLv2 version ID, default is "owlv2-large-patch14-ensemble"
 OWLV2_VERSION_ID = os.getenv("OWLV2_VERSION_ID", "owlv2-large-patch14-ensemble")

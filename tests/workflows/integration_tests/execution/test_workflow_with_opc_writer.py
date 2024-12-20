@@ -26,6 +26,7 @@ WORKFLOW_OPC_WRITER = {
         {"type": "InferenceParameter", "name": "opc_object_name"},
         {"type": "InferenceParameter", "name": "opc_variable_name"},
         {"type": "InferenceParameter", "name": "opc_value"},
+        {"type": "InferenceParameter", "name": "opc_value_type"},
     ],
     "steps": [
         {
@@ -38,6 +39,7 @@ WORKFLOW_OPC_WRITER = {
             "object_name": "$inputs.opc_object_name",
             "variable_name": "$inputs.opc_variable_name",
             "value": "$inputs.opc_value",
+            "value_type": "$inputs.opc_value_type",
             "fire_and_forget": False,
         }
     ],
@@ -53,6 +55,7 @@ WORKFLOW_OPC_WRITER = {
 
 OPC_SERVER_STARTED = False
 STOP_OPC_SERVER = False
+SERVER_TASK = None
 
 
 def start_loop(loop: asyncio.AbstractEventLoop):
@@ -79,6 +82,8 @@ async def start_test_opc_server(
 ):
     global OPC_SERVER_STARTED
     global STOP_OPC_SERVER
+    global SERVER_TASK
+
     server = Server(user_manager=UserManager())
     await server.init()
     server.set_endpoint(url)
@@ -90,9 +95,18 @@ async def start_test_opc_server(
     myvar = await myobj.add_variable(idx, variable_name, initial_value)
     await myvar.set_writable()
     OPC_SERVER_STARTED = True
-    async with server:
-        while not STOP_OPC_SERVER:
-            await asyncio.sleep(0.1)
+
+    async def run_server():
+        async with server:
+            while not STOP_OPC_SERVER:
+                await asyncio.sleep(0.1)
+
+    loop = asyncio.get_event_loop()
+    SERVER_TASK = loop.create_task(run_server())
+    try:
+        await SERVER_TASK
+    except asyncio.CancelledError:
+        pass
 
 
 def _opc_connect_and_read_value(
@@ -124,7 +138,10 @@ def _opc_connect_and_read_value(
     )
 
     try:
-        nsidx = get_namespace_index(namespace)
+        if namespace.isdigit():
+            nsidx = int(namespace)
+        else:
+            nsidx = get_namespace_index(namespace)
     except ValueError as exc:
         client.disconnect()
         raise Exception(f"WRONG NAMESPACE ERROR: {exc}")
@@ -173,6 +190,7 @@ allowing factory automation engineers to take advantage of machine vision when b
 @pytest.mark.timeout(5)
 def test_workflow_with_opc_writer_sink() -> None:
     # given
+    global SERVER_TASK
     loop = asyncio.new_event_loop()
     t = threading.Thread(target=start_loop, args=(loop,), daemon=True)
     t.start()
@@ -215,6 +233,7 @@ def test_workflow_with_opc_writer_sink() -> None:
             "opc_object_name": opc_object_name,
             "opc_variable_name": opc_variable_name,
             "opc_value": 41,
+            "opc_value_type": "Integer",
         }
     )
 
@@ -229,7 +248,15 @@ def test_workflow_with_opc_writer_sink() -> None:
     )
 
     STOP_OPC_SERVER = True
+    if SERVER_TASK:
+        SERVER_TASK.cancel()
+        try:
+            # Give the server a chance to clean up
+            asyncio.run_coroutine_threadsafe(asyncio.sleep(0.1), loop).result()
+        except:
+            pass
     loop.stop()
+    t.join()
 
     assert set(result[0].keys()) == {
         "opc_writer_results",
