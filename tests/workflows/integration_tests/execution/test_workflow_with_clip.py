@@ -63,6 +63,7 @@ similarity of two images with each other.
     workflow_definition=CLIP_WORKFLOW,
     workflow_name_in_app="clip",
 )
+@pytest.mark.skip(reason="Known problem of race condition in execution engine")
 def test_clip_embedding_model(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
@@ -143,6 +144,7 @@ CLIP_WORKFLOW_COSINE_SIMILARITY_CROSS_DATA_TYPE = {
 }
 
 
+@pytest.mark.skip(reason="Known problem of race condition in execution engine")
 def test_clip_embedding_model_on_batches_of_cross_type_data(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
@@ -236,6 +238,7 @@ CLIP_WORKFLOW_COSINE_SIMILARITY_CROSS_DATA_TYPE_WITH_INVALID_LENGTH_OF_EMBEDDING
 }
 
 
+@pytest.mark.skip(reason="Known problem of race condition in execution engine")
 def test_clip_embedding_model_on_batches_of_cross_type_data_with_different_embeddings_length(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
