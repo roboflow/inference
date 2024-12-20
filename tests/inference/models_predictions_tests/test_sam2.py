@@ -17,6 +17,7 @@ from inference.core.workflows.core_steps.common.utils import (
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     convert_sam2_segmentation_response_to_inference_instances_seg_response,
 )
+
 try:
     from inference.models.sam2 import SegmentAnything2
     from inference.models.sam2.segment_anything2 import (

@@ -1,12 +1,13 @@
 import numpy as np
 
 from inference.core.workflows.core_steps.visualizations.grid.v1 import (
-    GridVisualizationBlockV1
+    GridVisualizationBlockV1,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     ImageParentMetadata,
     WorkflowImageData,
 )
+
 
 def test_grid_visualization_block_single() -> None:
     # given
@@ -17,11 +18,7 @@ def test_grid_visualization_block_single() -> None:
         numpy_image=np.zeros((1000, 1000, 3), dtype=np.uint8),
     )
 
-    output = block.run(
-        images=[image],
-        width=1000,
-        height=1000
-    )
+    output = block.run(images=[image], width=1000, height=1000)
 
     assert output is not None
     assert "image" in output
@@ -33,6 +30,7 @@ def test_grid_visualization_block_single() -> None:
     assert np.array_equal(
         output.get("image").numpy_image, np.zeros((1000, 1000, 3), dtype=np.uint8)
     )
+
 
 def test_grid_visualization_block_2x2() -> None:
     # given
@@ -60,9 +58,7 @@ def test_grid_visualization_block_2x2() -> None:
     )
 
     output = block.run(
-        images=[image_1, image_2, image_3, image_4],
-        width=400,
-        height=400
+        images=[image_1, image_2, image_3, image_4], width=400, height=400
     )
 
     assert output is not None
@@ -71,27 +67,25 @@ def test_grid_visualization_block_2x2() -> None:
 
     # dimensions of output match params
     assert output.get("image").numpy_image.shape == (400, 400, 3)
-    
+
     # check that each quadrant is the right color
     # top left: black
     assert np.array_equal(
         output.get("image").numpy_image[:200, :200, :],
-        np.zeros((200, 200, 3), dtype=np.uint8)
+        np.zeros((200, 200, 3), dtype=np.uint8),
     )
     # top right: white
     assert np.array_equal(
         output.get("image").numpy_image[:200, 200:, :],
-        np.array([[[255, 255, 255]] * 200] * 200, dtype=np.uint8)
+        np.array([[[255, 255, 255]] * 200] * 200, dtype=np.uint8),
     )
     # bottom left: red
     assert np.array_equal(
         output.get("image").numpy_image[200:, :200, :],
-        np.array([[[255, 0, 0]] * 200] * 200, dtype=np.uint8)
+        np.array([[[255, 0, 0]] * 200] * 200, dtype=np.uint8),
     )
     # bottom right: green
     assert np.array_equal(
         output.get("image").numpy_image[200:, 200:, :],
-        np.array([[[0, 255, 0]] * 200] * 200, dtype=np.uint8)
+        np.array([[[0, 255, 0]] * 200] * 200, dtype=np.uint8),
     )
-
-
