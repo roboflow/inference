@@ -186,10 +186,6 @@ class IdentifyOutliersBlockV1(WorkflowBlock):
             percentile > (1 - threshold_percentile)
         )
 
-        # print(is_outlier, f"{round(percentile*100)}%", warming_up)
-
-        # We retain fields "average" and "std" for compatibility, though they are less meaningful
-        # now. We can still return the SMA/EMA-based averages/std for debugging, or just zeros.
         return {
             "is_outlier": bool(is_outlier),
             "percentile": float(percentile),
