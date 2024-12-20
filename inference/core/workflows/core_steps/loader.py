@@ -28,6 +28,8 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
 from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
     TimeInZoneBlockV2,
 )
+from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
+from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
@@ -498,6 +500,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         BoundingBoxVisualizationBlockV1,
         BoundingRectBlockV1,
         ByteTrackerBlockV2,
+        CacheGetBlockV1,
+        CacheSetBlockV1,
         CameraFocusBlockV1,
         CircleVisualizationBlockV1,
         ClipComparisonBlockV1,
