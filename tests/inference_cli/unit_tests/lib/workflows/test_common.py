@@ -86,25 +86,22 @@ def test_aggregate_batch_processing_results_when_json_output_is_expected_and_res
                 continue
             decoded_results.append(json.loads(line))
     print(decoded_results)
-    assert (
-        decoded_results
-        == [
-            {
-                "some": "value",
-                "image": "other.jpg",
-                "other": 3.0,
-                "list_field": [1, 2, 3],
-                "object_field": {"nested": "value"},
-            },
-            {
-                "some": "value",
-                "image": "some.jpg",
-                "other": 3.0,
-                "list_field": [1, 2, 3],
-                "object_field": {"nested": "value"},
-            }
-        ]
-    )
+    assert decoded_results == [
+        {
+            "some": "value",
+            "image": "other.jpg",
+            "other": 3.0,
+            "list_field": [1, 2, 3],
+            "object_field": {"nested": "value"},
+        },
+        {
+            "some": "value",
+            "image": "some.jpg",
+            "other": 3.0,
+            "list_field": [1, 2, 3],
+            "object_field": {"nested": "value"},
+        },
+    ]
 
 
 def test_aggregate_batch_processing_results_when_json_output_is_expected_and_results_not_present(

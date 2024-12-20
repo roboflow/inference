@@ -77,7 +77,7 @@ class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
         Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="DEFAULT",
-        description="Select a color palette for the bounding boxes.",
+        description="Select a color palette for the visualised elements.",
         examples=["DEFAULT", "$inputs.color_palette"],
     )
 
@@ -93,7 +93,7 @@ class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
     custom_colors: Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])] = (
         Field(  # type: ignore
             default=[],
-            description='Define a list of custom colors for bounding boxes in HEX format.',
+            description="Define a list of custom colors for bounding boxes in HEX format.",
             examples=[["#FF0000", "#00FF00", "#0000FF"], "$inputs.custom_colors"],
         )
     )
