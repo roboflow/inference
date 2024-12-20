@@ -35,6 +35,10 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "fusion",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "far fa-layer-group",
+            },
         }
     )
     type: Literal["roboflow_core/buffer@v1", "Buffer"]
