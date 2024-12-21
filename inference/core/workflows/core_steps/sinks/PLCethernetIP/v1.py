@@ -2,7 +2,6 @@ from typing import Dict, List, Optional, Type, Union
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal
 
-#TODO: Add to requirements.
 import pylogix
 
 from inference.core.workflows.execution_engine.entities.base import (
@@ -14,51 +13,78 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
 
+LONG_DESCRIPTION = """
+This **PLC Communication** block integrates a Roboflow Workflow with a PLC using Ethernet/IP communication.
+It can:
+- Read tags from a PLC if `mode='read'`.
+- Write tags to a PLC if `mode='write'`.
+- Perform both read and write in a single run if `mode='read_and_write'`.
+
+**Parameters depending on mode:**
+- If `mode='read'` or `mode='read_and_write'`, `tags_to_read` must be provided.
+- If `mode='write'` or `mode='read_and_write'`, `tags_to_write` must be provided.
+
+If a read or write operation fails, an error message is printed to the terminal, 
+and the corresponding entry in the output dictionary is set to a generic "ReadFailure" or "WriteFailure" message.
+"""
+
 
 class PLCBlockManifest(WorkflowBlockManifest):
-    """Manifest class for the PLC Communication Block.
+    """Manifest for a PLC communication block using Ethernet/IP.
 
-    This specifies the parameters that the block needs:
-    - plc_ip: The PLC IP address.
-    - tags_to_read: A list of tag names to read from the PLC.
-    - tags_to_write: A dictionary of tags and values to write to the PLC.
+    The block can be used in one of three modes:
+    - 'read': Only reads specified tags.
+    - 'write': Only writes specified tags.
+    - 'read_and_write': Performs both reading and writing in one execution.
+
+    `tags_to_read` and `tags_to_write` are applicable depending on the mode chosen.
     """
 
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "PLC Communication",
+            "name": "PLC EthernetIP",
             "version": "v1",
-            "short_description": "Block that reads/writes tags from/to a PLC using pylogix.",
-            "long_description": "The PLCBlock allows reading and writing of tags from a PLC. "
-                                "This can be used to integrate model results into a factory automation workflow.",
+            "short_description": "Generic PLC read/write block using pylogix over Ethernet/IP.",
+            "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
-            "block_type": "analytics",
+            "block_type": "sinks",
         }
     )
 
-    type: Literal["roboflow_core/plc_communication@v1"]
+    type: Literal["roboflow_core/sinks@v1"]
 
     plc_ip: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
-        description="IP address of the PLC",
+        description="IP address of the target PLC.",
         examples=["192.168.1.10"]
+    )
+
+    mode: Literal["read", "write", "read_and_write"] = Field(
+        description="Mode of operation: 'read', 'write', or 'read_and_write'.",
+        examples=["read", "write", "read_and_write"]
     )
 
     tags_to_read: Union[List[str], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(
         default=[],
-        description="List of PLC tags to read",
-        examples=[["tag1", "tag2", "tag3"]]
+        description="List of PLC tag names to read. Applicable if mode='read' or mode='read_and_write'.",
+        examples=[["camera_msg", "sku_number"]]
     )
 
     tags_to_write: Union[Dict[str, Union[int, float, str]], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(
         default={},
-        description="Dictionary of PLC tags to write and their corresponding values",
-        examples=[{"class_name": "car", "class_count": 5}]
+        description="Dictionary of tags and the values to write. Applicable if mode='write' or mode='read_and_write'.",
+        examples=[{"camera_fault": True, "defect_count": 5}]
+    )
+
+    depends_on: Selector() = Field(
+        description="Reference to the step output this block depends on.",
+        examples=["$steps.some_previous_step"]
     )
 
     @classmethod
@@ -76,13 +102,14 @@ class PLCBlockManifest(WorkflowBlockManifest):
 
 
 class PLCBlockV1(WorkflowBlock):
-    """A workflow block for PLC communication.
+    """A PLC communication workflow block using Ethernet/IP and pylogix.
 
-    This block:
-    - Connects to a PLC using pylogix.
-    - Reads specified tags from the PLC.
-    - Writes specified values to the PLC.
-    - Returns a dictionary containing read results and write confirmations.
+    Depending on the selected mode:
+    - 'read': Reads specified tags.
+    - 'write': Writes provided values to specified tags.
+    - 'read_and_write': Reads and writes in one go.
+
+    In case of failures, errors are printed to terminal and the corresponding tag entry in the output is set to "ReadFailure" or "WriteFailure".
     """
 
     @classmethod
@@ -92,22 +119,26 @@ class PLCBlockV1(WorkflowBlock):
     def run(
         self,
         plc_ip: str,
+        mode: str,
         tags_to_read: List[str],
         tags_to_write: Dict[str, Union[int, float, str]],
+        depends_on: any,
         image: Optional[WorkflowImageData] = None,
         metadata: Optional[VideoMetadata] = None,
     ) -> dict:
-        """Connect to the PLC, read and write tags, and return the results.
+        """Run PLC read/write operations using pylogix over Ethernet/IP.
 
         Args:
-            plc_ip (str): The PLC IP address.
-            tags_to_read (List[str]): Tag names to read from PLC.
-            tags_to_write (Dict[str, Union[int, float, str]]): Key-value pairs of tags and values to write.
-            image (Optional[WorkflowImageData]): Not required, included for framework compliance.
-            metadata (Optional[VideoMetadata]): Not required, included for framework compliance.
+            plc_ip (str): PLC IP address.
+            mode (str): 'read', 'write', or 'read_and_write'.
+            tags_to_read (List[str]): Tags to read if applicable.
+            tags_to_write (Dict[str, Union[int, float, str]]): Tags to write if applicable.
+            depends_on (any): The step output this block depends on.
+            image (Optional[WorkflowImageData]): Not required for this block.
+            metadata (Optional[VideoMetadata]): Not required for this block.
 
         Returns:
-            dict: A dictionary with 'plc_results' containing read and write results.
+            dict: A dictionary with `plc_results` as a list containing one dictionary. That dictionary has 'read' and/or 'write' keys.
         """
         read_results = {}
         write_results = {}
@@ -115,25 +146,31 @@ class PLCBlockV1(WorkflowBlock):
         with pylogix.PLC() as comm:
             comm.IPAddress = plc_ip
 
-            # Read tags
-            for tag in tags_to_read:
-                read_response = comm.Read(tag)
-                if read_response.Status == "Success":
-                    read_results[tag] = read_response.Value
-                else:
-                    read_results[tag] = f"ReadError: {read_response.Status}"
+            # If mode involves reading
+            if mode in ["read", "read_and_write"]:
+                for tag in tags_to_read:
+                    response = comm.Read(tag)
+                    if response.Status == "Success":
+                        read_results[tag] = response.Value
+                    else:
+                        print(f"Error reading tag '{tag}': {response.Status}")
+                        read_results[tag] = "ReadFailure"
 
-            # Write tags
-            for tag, value in tags_to_write.items():
-                write_response = comm.Write(tag, value)
-                if write_response.Status == "Success":
-                    write_results[tag] = "WriteSuccess"
-                else:
-                    write_results[tag] = f"WriteError: {write_response.Status}"
+            # If mode involves writing
+            if mode in ["write", "read_and_write"]:
+                for tag, value in tags_to_write.items():
+                    response = comm.Write(tag, value)
+                    if response.Status == "Success":
+                        write_results[tag] = "WriteSuccess"
+                    else:
+                        print(f"Error writing tag '{tag}' with value '{value}': {response.Status}")
+                        write_results[tag] = "WriteFailure"
 
-        return {
-            "plc_results": {
-                "read": read_results,
-                "write": write_results
-            }
-        }
+        plc_output = {}
+        if read_results:
+            plc_output["read"] = read_results
+        if write_results:
+            plc_output["write"] = write_results
+
+        # Return as a list of dicts for the 'plc_results' key
+        return {"plc_results": [plc_output]}
