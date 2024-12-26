@@ -90,7 +90,7 @@ class ImagePreprocessingManifest(WorkflowBlockManifest):
         description="Positive value to rotate clockwise, negative value to rotate counterclockwise",
         default=90,
         examples=[90, "$inputs.rotation_degrees"],
-        gte=-360,
+        ge=-360,
         le=360,
         json_schema_extra={
             "relevant_for": {

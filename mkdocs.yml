@@ -109,7 +109,13 @@ nav:
           - Stream Management API: enterprise/stream_management_api.md
       - Inference Helpers:
           - Inference Landing Page: inference_helpers/inference_landing_page.md
-          - Inference CLI: inference_helpers/inference_cli.md
+          - Inference CLI:
+              - About CLI: inference_helpers/inference_cli.md
+              - Control The Server: inference_helpers/cli_commands/server.md
+              - Run Workflows: inference_helpers/cli_commands/workflows.md
+              - Benchmark Inference: inference_helpers/cli_commands/benchmark.md
+              - Make Predictions: inference_helpers/cli_commands/infer.md
+              - Deploy To Cloud: inference_helpers/cli_commands/cloud.md
           - Inference SDK: inference_helpers/inference_sdk.md
       - inference configuration:
           - Environmental variables: server_configuration/environmental_variables.md
@@ -187,6 +193,5 @@ markdown_extensions:
       permalink: true
 
 extra_javascript:
-  - 'https://widget.kapa.ai/kapa-widget.bundle.js'
   - 'javascript/init_kapa_widget.js'
   - 'javascript/cookbooks.js'

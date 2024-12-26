@@ -1,15 +1,13 @@
 name: INTEGRATION TESTS - inference models
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
 
 jobs:
   call_is_mergeable:
-    uses: ./.github/workflows/is_mergeable.yml
+    uses: ./.github/workflows/check_if_branch_is_mergeable.yml
     secrets: inherit
   build-dev-test:
     needs: call_is_mergeable
@@ -20,7 +18,7 @@ jobs:
     timeout-minutes: 45
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11"]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4

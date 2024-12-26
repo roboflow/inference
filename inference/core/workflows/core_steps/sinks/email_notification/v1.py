@@ -28,6 +28,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     BYTES_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
+    SECRET_KIND,
     STRING_KIND,
     Selector,
 )
@@ -59,7 +60,7 @@ Content of the message can be parametrised with Workflow execution outcomes. Tak
 message using dynamic parameters:
 
 ```
-message = "This is example notification. Predicted classes: \{\{ $parameters.predicted_classes \}\}"
+message = "This is example notification. Predicted classes: {{ '{{' }} $parameters.predicted_classes {{ '}}' }}"
 ```
 
 Message parameters are delivered by Workflows Execution Engine by setting proper data selectors in
@@ -124,6 +125,12 @@ notifications. Please adjust it according to your needs, setting `0` indicate no
 During cooldown period, consecutive runs of the step will cause `throttling_status` output to be set `True`
 and no notification will be sent.
 
+!!! warning "Cooldown limitations"
+
+    Current implementation of cooldown is limited to video processing - using this block in context of a 
+    Workflow that is run behind HTTP service (Roboflow Hosted API, Dedicated Deployment or self-hosted 
+    `inference` server) will have no effect for processing HTTP requests.  
+
 
 ### Attachments
 
@@ -160,7 +167,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Email Notification",
             "version": "v1",
-            "short_description": "Send notification via E-Mail",
+            "short_description": "Send notification via e-mail.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
@@ -174,7 +181,7 @@ class BlockManifest(WorkflowBlockManifest):
     message: str = Field(
         description="Content of the message to be send",
         examples=[
-            "During last 5 minutes detected \{\{ $parameters.num_instances \}\} instances"
+            "During last 5 minutes detected {{ $parameters.num_instances }} instances"
         ],
     )
     sender_email: Union[str, Selector(kind=[STRING_KIND])] = Field(
@@ -244,10 +251,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Custom SMTP server to be used",
         examples=["$inputs.smtp_server", "smtp.google.com"],
     )
-    sender_email_password: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        description="Sender e-mail password be used when authenticating to SMTP server",
-        private=True,
-        examples=["$inputs.email_password"],
+    sender_email_password: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = (
+        Field(
+            description="Sender e-mail password be used when authenticating to SMTP server",
+            private=True,
+            examples=["$inputs.email_password"],
+        )
     )
     smtp_port: int = Field(
         default=465,
@@ -298,7 +307,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class EmailNotificationBlockV1(WorkflowBlock):

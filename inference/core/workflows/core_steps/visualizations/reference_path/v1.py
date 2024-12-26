@@ -22,7 +22,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Draws a reference path in the image"
+SHORT_DESCRIPTION = "Draw a reference path in the image."
 LONG_DESCRIPTION = """
 The **Reference Path Visualization** block draws reference path in the image.
 To be used in combination with **Path deviation** block - to display the reference

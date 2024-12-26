@@ -1,0 +1,37 @@
+name: mergeable
+
+on:
+  workflow_call:
+    outputs:
+      mergeable_state:
+        description: "Set to 'clean' if branch is mergeable, otherwise set to 'not_clean'"
+        value: ${{ jobs.check_if_branch_is_mergeable.outputs.mergeable_state }}
+
+jobs:
+  check_if_branch_is_mergeable:
+    name: Check if branch is mergeable
+    runs-on: ubuntu-latest
+    outputs:
+      mergeable_state: ${{ steps.mergeable_check.outputs.mergeable_state }}
+    steps:
+      - name: Check if branch contains all commits from main via GitHub CLI
+        id: mergeable_check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "main" = "${{ github.head_ref || github.ref_name }}" ]; then
+            echo "[OK] Merging to main"
+            exit 0
+          fi
+          response=$(gh api /repos/${{ github.repository }}/compare/main...${{ github.head_ref || github.ref_name }} )
+
+          status=$(echo "$response" | jq -r '.status')
+
+          if [ "$status" = "ahead" ]; then
+            echo "[OK] Selected branch is ahead of main and can be merged"
+            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
+          else
+            echo "[FAIL] Selected branch does NOT meet the criteria."
+            echo "Status: $status"
+            echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
+          fi

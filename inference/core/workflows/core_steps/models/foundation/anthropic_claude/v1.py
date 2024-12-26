@@ -25,6 +25,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
+    SECRET_KIND,
     STRING_KIND,
     ImageInputField,
     Selector,
@@ -87,7 +88,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Anthropic Claude",
             "version": "v1",
-            "short_description": "Run Anthropic Claude model with vision capabilities",
+            "short_description": "Run Anthropic Claude model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -149,9 +150,9 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Your Antropic API key",
-        examples=["xxx-xxx", "$inputs.antropics_api_key"],
+    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
+        description="Your Anthropic API key",
+        examples=["xxx-xxx", "$inputs.anthropics_api_key"],
         private=True,
     )
     model_version: Union[
@@ -183,7 +184,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="Number of concurrent requests that can be executed by block when batch of input images provided. "
         "If not given - block defaults to value configured globally in Workflows Execution Engine. "
-        "Please restrict if you hit ANtropic API limits.",
+        "Please restrict if you hit Anthropic API limits.",
     )
 
     @model_validator(mode="after")
@@ -220,10 +221,10 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
-class AntropicClaudeBlockV1(WorkflowBlock):
+class AnthropicClaudeBlockV1(WorkflowBlock):
 
     def __init__(
         self,

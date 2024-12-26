@@ -394,7 +394,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
         callback=slicer_callback,
         slice_wh=(640, 640),
         overlap_ratio_wh=(0.2, 0.2),
-        overlap_filter_strategy=sv.OverlapFilter.NON_MAX_SUPPRESSION,
+        overlap_filter=sv.OverlapFilter.NON_MAX_SUPPRESSION,
         iou_threshold=0.3,
     )
 

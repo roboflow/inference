@@ -9,6 +9,9 @@ import pytest
 ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
 ROCK_PAPER_SCISSORS_ASSETS = os.path.join(ASSETS_DIR, "rock_paper_scissors")
 
+DUMMY_SECRET_ENV_VARIABLE = "DUMMY_SECRET"
+os.environ[DUMMY_SECRET_ENV_VARIABLE] = "this-is-not-a-real-secret"
+
 
 @pytest.fixture(scope="function")
 def crowd_image() -> np.ndarray:
@@ -88,3 +91,8 @@ def bool_env(val):
     if isinstance(val, bool):
         return val
     return val.lower() in ["true", "1", "t", "y", "yes"]
+
+
+@pytest.fixture(scope="function")
+def face_image() -> np.ndarray:
+    return cv2.imread(os.path.join(ASSETS_DIR, "face.jpeg"))

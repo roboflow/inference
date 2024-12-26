@@ -17,6 +17,7 @@ from inference.core.roboflow_api import (
     get_roboflow_workspace,
     send_inference_results_to_model_monitoring,
 )
+from inference.core.version import __version__
 from inference.core.workflows.execution_engine.constants import (
     CLASS_NAME_KEY,
     INFERENCE_ID_KEY,
@@ -29,6 +30,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
     Selector,
 )
@@ -38,7 +40,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Periodically report an aggregated sample of inference results to Roboflow Model Monitoring"
+SHORT_DESCRIPTION = "Periodically report an aggregated sample of inference results to Roboflow Model Monitoring."
 
 LONG_DESCRIPTION = """
 This block 📊 **transforms inference data reporting** to a whole new level by 
@@ -105,6 +107,10 @@ class BlockManifest(WorkflowBlockManifest):
         description="Reference data to extract property from",
         examples=["$steps.my_step.predictions"],
     )
+    model_id: Selector(kind=[ROBOFLOW_MODEL_ID_KIND]) = Field(
+        description="Model ID to report to Roboflow Model Monitoring",
+        examples=["my_project/3"],
+    )
     frequency: Union[
         int,
         Selector(kind=[STRING_KIND]),
@@ -135,6 +141,13 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError("`frequency` cannot be lower than 1.")
         return value
 
+    @field_validator("model_id")
+    @classmethod
+    def ensure_model_id_is_correct(cls, value: Any) -> Any:
+        if isinstance(value, str) and value == "":
+            raise ValueError("`model_id` cannot be empty.")
+        return value
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
@@ -148,6 +161,11 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class ParsedPrediction(BaseModel):
+    model_config = ConfigDict(
+        protected_namespaces=(),
+    )
+
+    model_id: str
     class_name: str
     confidence: float
     inference_id: str
@@ -157,22 +175,26 @@ class ParsedPrediction(BaseModel):
 class PredictionsAggregator(object):
 
     def __init__(self):
-        self._raw_predictions: List[Union[sv.Detections, dict]] = []
+        self._raw_predictions: dict[str, List[Union[sv.Detections, dict]]] = {}
 
-    def collect(self, value: Union[sv.Detections, dict]) -> None:
+    def collect(self, value: Union[sv.Detections, dict], model_id: str) -> None:
         # TODO: push into global state, otherwise for HTTP server use,
         #   state would at most have 1 prediction!!!
-        self._raw_predictions.append(value)
+        if model_id not in self._raw_predictions:
+            self._raw_predictions[model_id] = []
+        self._raw_predictions[model_id].append(value)
 
     def get_and_flush(self) -> List[ParsedPrediction]:
         predictions = self._consolidate()
-        self._raw_predictions = []
+        self._raw_predictions = {}
         return predictions
 
     def _consolidate(self) -> List[ParsedPrediction]:
         formatted_predictions = []
-        for p in self._raw_predictions:
-            formatted_predictions.extend(format_predictions_for_model_monitoring(p))
+        for model_id, predictions in self._raw_predictions.items():
+            formatted_predictions.extend(
+                format_predictions_for_model_monitoring(predictions, model_id)
+            )
         class_groups: Dict[str, List[ParsedPrediction]] = defaultdict(list)
         for prediction in formatted_predictions:
             class_name = prediction.class_name
@@ -220,10 +242,11 @@ class ModelMonitoringInferenceAggregatorBlockV1(WorkflowBlock):
         predictions: Union[sv.Detections, dict],
         frequency: int,
         unique_aggregator_key: str,
+        model_id: str,
     ) -> BlockResult:
         self._last_report_time_cache_key = f"workflows:steps_cache:roboflow_core/model_monitoring_inference_aggregator@v1:{unique_aggregator_key}:last_report_time"
         if predictions:
-            self._predictions_aggregator.collect(predictions)
+            self._predictions_aggregator.collect(predictions, model_id)
         if not self._is_in_reporting_range(frequency):
             return {
                 "error_status": False,
@@ -293,6 +316,7 @@ def send_to_model_monitoring_request(
             "source_info": "ModelMonitoringInferenceAggregatorBlockV1",
             "inference_results": [],
             "device_id": DEVICE_ID,
+            "inference_server_version": __version__,
         }
         system_info = get_system_info()
         if system_info:
@@ -316,39 +340,44 @@ def send_to_model_monitoring_request(
 
 
 def format_predictions_for_model_monitoring(
-    predictions: Union[sv.Detections, dict],
+    predictions_list: List[Union[sv.Detections, dict]],
+    model_id: str,
 ) -> List[ParsedPrediction]:
     results = []
-    if isinstance(predictions, sv.Detections):
-        for detection in predictions:
-            _, _, confidence, _, _, data = detection
-            prediction = ParsedPrediction(
-                class_name=data.get("class_name", ""),
-                confidence=(confidence if confidence is not None else 0.0),
-                inference_id=data.get(INFERENCE_ID_KEY, ""),
-                model_type=data.get(PREDICTION_TYPE_KEY, ""),
-            )
-            results.append(prediction)
-    elif isinstance(predictions, dict):
-        detections = predictions.get("predictions", [])
-        prediction_type = predictions.get(PREDICTION_TYPE_KEY, "")
-        inference_id = predictions.get(INFERENCE_ID_KEY, "")
-        if isinstance(detections, list):
-            for d in detections:
-                pred_instance = ParsedPrediction(
-                    class_name=d.get(CLASS_NAME_KEY, ""),
-                    confidence=d.get("confidence", 0.0),
-                    inference_id=inference_id,
-                    model_type=prediction_type,
+    for predictions in predictions_list:
+        if isinstance(predictions, sv.Detections):
+            for detection in predictions:
+                _, _, confidence, _, _, data = detection
+                prediction = ParsedPrediction(
+                    class_name=data.get("class_name", ""),
+                    confidence=(confidence if confidence is not None else 0.0),
+                    inference_id=data.get(INFERENCE_ID_KEY, ""),
+                    model_type=data.get(PREDICTION_TYPE_KEY, ""),
+                    model_id=model_id,
                 )
-                results.append(pred_instance)
-        elif isinstance(detections, dict):
-            for class_name, details in detections.items():
-                pred_instance = ParsedPrediction(
-                    class_name=class_name,
-                    confidence=details.get("confidence", 0.0),
-                    inference_id=inference_id,
-                    model_type=prediction_type,
-                )
-                results.append(pred_instance)
+                results.append(prediction)
+        elif isinstance(predictions, dict):
+            detections = predictions.get("predictions", [])
+            prediction_type = predictions.get(PREDICTION_TYPE_KEY, "")
+            inference_id = predictions.get(INFERENCE_ID_KEY, "")
+            if isinstance(detections, list):
+                for d in detections:
+                    pred_instance = ParsedPrediction(
+                        class_name=d.get(CLASS_NAME_KEY, ""),
+                        confidence=d.get("confidence", 0.0),
+                        inference_id=inference_id,
+                        model_type=prediction_type,
+                        model_id=model_id,
+                    )
+                    results.append(pred_instance)
+            elif isinstance(detections, dict):
+                for class_name, details in detections.items():
+                    pred_instance = ParsedPrediction(
+                        class_name=class_name,
+                        confidence=details.get("confidence", 0.0),
+                        inference_id=inference_id,
+                        model_type=prediction_type,
+                        model_id=model_id,
+                    )
+                    results.append(pred_instance)
     return results
