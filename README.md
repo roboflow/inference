@@ -28,17 +28,18 @@
 
 Inference turns any computer or edge device into a command center for your computer vision projects.
 
-* 🛠️ Deploy your own fine-tuned models
+* 🛠️ Self-host your own fine-tuned models
 * 🧠 Access the latest and greatest foundation models (like [Florence-2](https://blog.roboflow.com/florence-2/), [CLIP](https://blog.roboflow.com/openai-clip/), and [SAM2](https://blog.roboflow.com/what-is-segment-anything-2/))
 * 🤝 Use Workflows to track, count, time, measure, and visualize
 * 👁️ Combine ML with traditional CV methods (like OCR, Barcode Reading, QR, and template matching)
 * 📈 Monitor, record, and analyze predictions
 * 🎥 Manage cameras and video streams
 * 📬 Send notifications when events happen
-* 🔗 Connect with external systems and APIs
-* 🚀 Extend with your own code and models
+* 🛜 Connect with external systems and APIs
+* 🔗 Extend with your own code and models
+* 🚀 Deploy production systems at scale
 
-See [Example Workflows](https://roboflow.com/workflows/templates) for common use-cases like detecting small objects, active learning, reading license plates, blurring faces, background removal, and more.
+See [Example Workflows](https://roboflow.com/workflows/templates) for common use-cases like detecting small objects with SAHI, multi-model consensus, active learning, reading license plates, blurring faces, background removal, and more.
 
 [Time In Zone Workflow Example](https://github.com/user-attachments/assets/743233d9-3460-442d-83f8-20e29e76b346)
 
@@ -46,21 +47,22 @@ See [Example Workflows](https://roboflow.com/workflows/templates) for common use
 
 [Install Docker](https://docs.docker.com/engine/install/) (and
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
-for GPU acceleration if applicable). Then run
+for GPU acceleration if you have a CUDA-enabled GPU). Then run
 
 ```
 pip install inference-cli && inference server start --dev
 ```
 
-This will pull the proper image for your machine, start it in development mode, and run you through a wizard to configure the server to run inference locally.
+This will pull the proper image for your machine and start it in development mode.
 
 In development mode, a Jupyter notebook server with a quickstart guide runs on 
-`localhost:9002`](http://localhost:9002). Dive in there for a whirlwind tour
-of your new Inference Server's functionality! You can also now
-[start building & deploying Workflows in the UI](https://app.roboflow.com/workflows)
-or interacting with the server via its API.
+[`localhost:9002`](http://localhost:9002). Dive in there for a whirlwind tour
+of your new Inference Server's functionality!
 
-Now you're ready to connect to your camera streams and [start building](https://inference.roboflow.com/workflows/create_and_run/).
+Now you're ready to connect your camera streams and
+[start building & deploying Workflows in the UI](https://app.roboflow.com/workflows)
+or [interacting with your new server](https://inference.roboflow.com/workflows/create_and_run/)
+via its API.
 
 ## 🛠️ build with Workflows
 
@@ -89,9 +91,12 @@ Workflows allow you to extend simple model predictions to build computer vision 
 
 ## 📟 connecting via api
   
-Your machine is now a fully-featured CV center. You can use its API to run models and workflows on images and video streams. By default, the server is running on [`localhost:9001`](http://localhost:9001).
+Once you've installed Infernece, your machine is a fully-featured CV center.
+You can use its API to run models and workflows on images and video streams.
+By default, the server is running locally on
+[`localhost:9001`](http://localhost:9001).
 
-To interface with the server via Python, use our SDK. `pip install inference-sdk` then:
+To interface with your server via Python, use our SDK. `pip install inference-sdk` then:
 
   ```python
   from inference_sdk import InferenceHTTPClient
@@ -104,15 +109,20 @@ To interface with the server via Python, use our SDK. `pip install inference-sdk
       predictions = client.infer("https://media.roboflow.com/inference/soccer.jpg")
   ```
 
-In other languages, use the server's REST API; you can access the API docs for your server at [`/docs` (OpenAPI format)](http://localhost:9001/docs) or [`/redoc` (Redoc Format)](http://localhost:9001/redoc).
+In other languages, use the server's REST API;
+you can access the API docs for your server at
+[`/docs` (OpenAPI format)](http://localhost:9001/docs) or
+[`/redoc` (Redoc Format)](http://localhost:9001/redoc).
 
-Check out [the inference_sdk docs](https://inference.roboflow.com/inference_helpers/inference_sdk/) to see what else you can do with your new server.
+Check out [the inference_sdk docs](https://inference.roboflow.com/inference_helpers/inference_sdk/)
+to see what else you can do with your new server.
 
 ## 🎥 connect to video streams
 
 The inference server is a video processing beast. You can set it up to run
-Workflows on RTSP streams, webcam devices, and more. It will handle managing
-resources, multithreading, and batching to get the most out of your hardware.
+Workflows on RTSP streams, webcam devices, and more. It will handle hardware
+acceleration, multiprocessing, video decoding and GPU batching to get the
+most out of your hardware.
 
 ```python
 from inference import InferencePipeline
@@ -130,7 +140,8 @@ pipeline.join()
 ```
 
 If you have a Roboflow account & have linked an API key, you can also remotely
-monitor and manage your running streams via the Roboflow UI.
+[monitor and manage your running streams](https://app.roboflow.com/devices)
+via the Roboflow UI.
 
 ## 🔑 connect to the cloud
 
