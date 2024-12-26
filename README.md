@@ -54,9 +54,11 @@ pip install inference-cli && inference server start --dev
 
 This will pull the proper image for your machine, start it in development mode, and run you through a wizard to configure the server to run inference locally.
 
-In development mode, a Jupyter notebook server with a quickstart guide runs on [`localhost:9002`](http://localhost:9002). Dive in there for a whirlwind tour of your new Inference Server's functionality!
-
-If you linked [an API key](https://app.roboflow.com/settings/api) during setup, your device will now show up in your [Roboflow](https://app.roboflow.com) account and you can [start building & deploying Workflows in the UI](https://app.roboflow.com/workflows). Otherwise, interact with the server via its API.
+In development mode, a Jupyter notebook server with a quickstart guide runs on 
+`localhost:9002`](http://localhost:9002). Dive in there for a whirlwind tour
+of your new Inference Server's functionality! You can also now
+[start building & deploying Workflows in the UI](https://app.roboflow.com/workflows)
+or interacting with the server via its API.
 
 Now you're ready to connect to your camera streams and [start building](https://inference.roboflow.com/workflows/create_and_run/).
 
@@ -108,9 +110,9 @@ Check out [the inference_sdk docs](https://inference.roboflow.com/inference_help
 
 ## 🎥 connect to video streams
 
-The inference pipeline is an efficient method for processing static video files and streams. Select a model, define the video source, and set a callback action. You can choose from predefined callbacks that allow you to [display results](https://inference.roboflow.com/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) on the screen or [save them to a file](https://inference.roboflow.com/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.VideoFileSink).
-
-This method does not use the inference server via Docker; instead, it runs inference directly in your Python script. To get started, `pip install inference` (or `pip install inference-gpu` if you have an NVIDIA GPU) and then start a pipeline:
+The inference server is a video processing beast. You can set it up to run
+Workflows on RTSP streams, webcam devices, and more. It will handle managing
+resources, multithreading, and batching to get the most out of your hardware.
 
 ```python
 from inference import InferencePipeline
@@ -127,7 +129,8 @@ pipeline.start()
 pipeline.join()
 ```
 
-*Coming Soon:* The server can also programmatically start and connect to a video stream (either by polling for results or streaming them over WebRTC) via the API. [Get early access](https://app.roboflow.com/request/videoSdk).
+If you have a Roboflow account & have linked an API key, you can also remotely
+monitor and manage your running streams via the Roboflow UI.
 
 ## 🔑 connect to the cloud
 
