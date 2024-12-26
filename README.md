@@ -96,18 +96,34 @@ You can use its API to run models and workflows on images and video streams.
 By default, the server is running locally on
 [`localhost:9001`](http://localhost:9001).
 
-To interface with your server via Python, use our SDK. `pip install inference-sdk` then:
+To interface with your server via Python, use our SDK.
+`pip install inference-sdk` then run
+[an example model comparison Workflow](https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiSHhIODdZR0FGUWhaVmtOVWNEeVUiLCJ3b3Jrc3BhY2VJZCI6IlhySm9BRVFCQkFPc2ozMmpYZ0lPIiwidXNlcklkIjoiNXcyMFZ6UU9iVFhqSmhUanE2a2FkOXVicm0zMyIsImlhdCI6MTczNTIzNDA4Mn0.AA78pZnlivFs5pBPVX9cMigFAOIIMZk0dA4gxEF5tj4)
+like this:
 
-  ```python
-  from inference_sdk import InferenceHTTPClient
-  
-  client = InferenceHTTPClient(
-      api_url="http://localhost:9001",
-      api_key=<ROBOFLOW_API_KEY> # optional to access your private & Universe models
-  )
-  with client.use_model(model_id="soccer-players-5fuqs/1"):
-      predictions = client.infer("https://media.roboflow.com/inference/soccer.jpg")
-  ```
+```python
+from inference_sdk import InferenceHTTPClient
+
+client = InferenceHTTPClient(
+    api_url="http://localhost:9001", # use local inference server
+    # api_key="<YOUR API KEY>" # optional to access your private data and models
+)
+
+result = client.run_workflow(
+    workspace_name="roboflow-docs",
+    workflow_id="model-comparison",
+    images={
+        "image": "https://media.roboflow.com/workflows/examples/bleachers.jpg"
+    },
+    parameters={
+        "model1": "yolov8n-640",
+        "model2": "yolov11n-640"
+    }
+)
+
+print(result)
+
+```
 
 In other languages, use the server's REST API;
 you can access the API docs for your server at
