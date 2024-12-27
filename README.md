@@ -28,7 +28,7 @@
 
 Inference turns any computer or edge device into a command center for your computer vision projects.
 
-* 🛠️ Self-host your own fine-tuned models
+* 🛠️ Self-host [your own fine-tuned models](https://inference.roboflow.com/quickstart/explore_models/)
 * 🧠 Access the latest and greatest foundation models (like [Florence-2](https://blog.roboflow.com/florence-2/), [CLIP](https://blog.roboflow.com/openai-clip/), and [SAM2](https://blog.roboflow.com/what-is-segment-anything-2/))
 * 🤝 Use Workflows to track, count, time, measure, and visualize
 * 👁️ Combine ML with traditional CV methods (like OCR, Barcode Reading, QR, and template matching)
@@ -66,7 +66,7 @@ via its API.
 
 ## 🛠️ build with Workflows
 
-A key component of Inference is Workflows, composable blocks of common functionality that give models a common interface to make chaining and experimentation easy.
+A key component of Inference is [Workflows](https://roboflow.com/workflows), composable blocks of common functionality that give models a common interface to make chaining and experimentation easy.
 
 ![License Plate OCR Workflow Visualization](https://github.com/user-attachments/assets/178046a2-011e-489d-bfc2-41dcfefe44a4)
 
@@ -155,8 +155,9 @@ client = InferenceHTTPClient(
     # api_key="<YOUR API KEY>" # optional to access your private data and models
 )
 
+# Start a stream on an rtsp stream
 result = client.start_inference_pipeline_with_workflow(
-    video_reference=[0],
+    video_reference=["rtsp://user:password@192.168.0.100:554/"],
     workspace_name="roboflow-docs",
     workflow_id="clip-frames",
     max_fps=max_fps,
@@ -181,7 +182,7 @@ while True:
   output = result["outputs"][0]
   is_match = output.get("is_match")
   similarity = round(output.get("similarity")*100, 1)
-  print(f"Matches? {is_match} (similarity: {similarity}%)")
+  print(f"Matches prompt? {is_match} (similarity: {similarity}%)")
 
   time.sleep(1/max_fps)
 ```
@@ -189,8 +190,8 @@ while True:
 Pipeline outputs can be consumed via API for downstream processing or the
 Workflow can be configured to call external services with Notification blocks
 (like [Email](https://inference.roboflow.com/workflows/blocks/email_notification/)
-or [Twilio](https://inference.roboflow.com/workflows/blocks/twilio_sms_notification/)),
-the [Webhook block](https://inference.roboflow.com/workflows/blocks/webhook_sink/).
+or [Twilio](https://inference.roboflow.com/workflows/blocks/twilio_sms_notification/))
+or the [Webhook block](https://inference.roboflow.com/workflows/blocks/webhook_sink/).
 For more info on video pipeline management, see the
 [Video Processing overview](https://inference.roboflow.com/workflows/video_processing/overview/).
 
