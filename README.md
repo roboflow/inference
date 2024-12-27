@@ -122,7 +122,6 @@ result = client.run_workflow(
 )
 
 print(result)
-
 ```
 
 In other languages, use the server's REST API;
@@ -140,20 +139,60 @@ Workflows on RTSP streams, webcam devices, and more. It will handle hardware
 acceleration, multiprocessing, video decoding and GPU batching to get the
 most out of your hardware.
 
+[This example workflow](https://app.roboflow.com/workflows/embed/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3b3JrZmxvd0lkIjoiNHMzSDAzcmtyU0JiSDhFMjEzZUUiLCJ3b3Jrc3BhY2VJZCI6IlhySm9BRVFCQkFPc2ozMmpYZ0lPIiwidXNlcklkIjoiNXcyMFZ6UU9iVFhqSmhUanE2a2FkOXVicm0zMyIsImlhdCI6MTczNTIzOTk3NX0.TYdmD5AS8tbpz8AxEr5xW-05LlegK61kq-5_OReIrwc?showGraph=true&hideToolbar=false)
+will watch a stream for frames that
+[CLIP thinks](https://blog.roboflow.com/openai-clip/) match an
+inputted text prompt.
 ```python
-from inference import InferencePipeline
-from inference.core.interfaces.stream.sinks import render_boxes
+from inference_sdk import InferenceHTTPClient
+import atexit
+import time
 
-pipeline = InferencePipeline.init(
-    video_reference=0, # can be a link/path to a video file, an RTSP stream url, or an integer representing a device id (usually 0 for built in webcams)
-    model_id="yolov11n-640",
-    video_reference="https://media.roboflow.com/inference/people-walking.mp4",
-    on_prediction=render_boxes
+max_fps = 4
+
+client = InferenceHTTPClient(
+    api_url="http://localhost:9001", # use local inference server
+    # api_key="<YOUR API KEY>" # optional to access your private data and models
 )
 
-pipeline.start()
-pipeline.join()
+result = client.start_inference_pipeline_with_workflow(
+    video_reference=[0],
+    workspace_name="roboflow-docs",
+    workflow_id="clip-frames",
+    max_fps=max_fps,
+    workflows_parameters={
+        "prompt": "blurry", # change to look for something else
+        "threshold": 0.16
+    }
+)
+
+pipeline_id = result["context"]["pipeline_id"]
+
+# Terminate the pipeline when the script exits
+atexit.register(lambda: client.terminate_inference_pipeline(pipeline_id))
+
+while True:
+  result = client.consume_inference_pipeline_result(pipeline_id=pipeline_id)
+
+  if not result["outputs"] or not result["outputs"][0]:
+    # still initializing
+    continue
+
+  output = result["outputs"][0]
+  is_match = output.get("is_match")
+  similarity = round(output.get("similarity")*100, 1)
+  print(f"Matches? {is_match} (similarity: {similarity}%)")
+
+  time.sleep(1/max_fps)
 ```
+
+Pipeline outputs can be consumed via API for downstream processing or the
+Workflow can be configured to call external services with Notification blocks
+(like [Email](https://inference.roboflow.com/workflows/blocks/email_notification/)
+or [Twilio](https://inference.roboflow.com/workflows/blocks/twilio_sms_notification/)),
+the [Webhook block](https://inference.roboflow.com/workflows/blocks/webhook_sink/).
+For more info on video pipeline management, see the
+[Video Processing overview](https://inference.roboflow.com/workflows/video_processing/overview/).
 
 If you have a Roboflow account & have linked an API key, you can also remotely
 [monitor and manage your running streams](https://app.roboflow.com/devices)
