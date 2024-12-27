@@ -162,7 +162,7 @@ class UsageCollector:
             usage_dict["roboflow_service_name"] = ROBOFLOW_INTERNAL_SERVICE_NAME
 
         return defaultdict(  # api_key_hash
-            lambda: defaultdict(lambda: usage_dict)  # category:resource_id
+            lambda: defaultdict(lambda: {**usage_dict})  # category:resource_id
         )
 
     def _dump_usage_queue_no_lock(self) -> List[APIKeyUsage]:
@@ -345,12 +345,10 @@ class UsageCollector:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
             source_usage["processed_frames"] += frames if not inference_test_run else 0
-            source_usage["fps"] = (
-                round(fps, 2) if isinstance(fps, numbers.Number) else 0
-            )
             source_usage["source_duration"] += (
                 frames / fps if fps and not inference_test_run else 0
             )
+            source_usage["fps"] = fps if isinstance(fps, numbers.Number) else 0
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
             source_usage["resource_details"] = json.dumps(resource_details)
