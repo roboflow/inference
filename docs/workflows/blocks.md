@@ -1,6 +1,5 @@
 ---
 hide:
-  - navigation
   - toc
 ---
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
