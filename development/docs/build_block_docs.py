@@ -190,6 +190,9 @@ def main() -> None:
         kind_file_path = build_kind_page_path(kind_name=declared_kind.name)
         with open(kind_file_path, "w") as documentation_file:
             documentation_file.write(kind_page)
+    
+    generated_kinds_index_lines = sorted(generated_kinds_index_lines)
+
     kinds_index_lines = read_text_file(
         path=KINDS_DOCUMENTATION_FILE,
         split_lines=True,
