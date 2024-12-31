@@ -75,7 +75,6 @@ nav:
       - Create And Run: workflows/create_and_run.md
       - Ecosystem: workflows/understanding.md
       - Blocks Overview: workflows/blocks_connections.md
-      - Blocks Gallery: workflows/blocks.md
       - Examples: workflows/gallery_index.md
       - Video Processing: workflows/video_processing/overview.md
 
@@ -83,6 +82,9 @@ nav:
         - Running Workflows: workflows/modes_of_running.md
         - Workflows Definitions: workflows/definitions.md
         - Workflow Execution: workflows/workflow_execution.md
+
+      - Block Gallery: workflows/blocks/
+
       - Developer Guide:
         - Compiler: workflows/workflows_compiler.md
         - Execution Engine: workflows/workflows_execution_engine.md
@@ -177,7 +179,8 @@ plugins:
       scripts:
         - docs/scripts/gen_ref_pages.py
   - literate-nav:
-      nav_file: nav.md
+      nav_file: SUMMARY.md
+      implicit_index: True
   - macros:
       include_dir: docs/include
 

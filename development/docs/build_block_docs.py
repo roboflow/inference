@@ -30,7 +30,10 @@ DOCS_ROOT_DIR = os.path.abspath(
     )
 )
 
-BLOCK_DOCUMENTATION_FILE = os.path.join(DOCS_ROOT_DIR, "workflows", "blocks.md")
+BLOCKS_DIR = os.path.join(DOCS_ROOT_DIR, "workflows", "blocks")
+
+BLOCKS_DOCUMENTATION_TEMPLATE = os.path.join(DOCS_ROOT_DIR, "workflows", "blocks_gallery_template.md")
+BLOCK_DOCUMENTATION_FILE = os.path.join(DOCS_ROOT_DIR, "workflows", "blocks", "index.md")
 KINDS_DOCUMENTATION_FILE = os.path.join(DOCS_ROOT_DIR, "workflows", "kinds.md")
 BLOCK_DOCUMENTATION_DIRECTORY = os.path.join(DOCS_ROOT_DIR, "workflows", "blocks")
 KINDS_DOCUMENTATION_DIRECTORY = os.path.join(DOCS_ROOT_DIR, "workflows", "kinds")
@@ -141,7 +144,7 @@ def main() -> None:
     os.makedirs(BLOCK_DOCUMENTATION_DIRECTORY, exist_ok=True)
     os.makedirs(KINDS_DOCUMENTATION_DIRECTORY, exist_ok=True)
     lines = read_text_file(
-        path=BLOCK_DOCUMENTATION_FILE,
+        path=BLOCKS_DOCUMENTATION_TEMPLATE,
         split_lines=True,
     )
     start_index, end_index = get_auto_generation_markers(
@@ -280,6 +283,8 @@ def main() -> None:
         allow_override=True,
         lines_connector="",
     )
+
+    write_blocks_summary_md(block_families)
 
 
 def _dump_step_example_definition(example_definition: dict) -> str:
@@ -433,6 +438,44 @@ def generate_example_step_definition(block: BlockDescription) -> dict:
             example = examples[0]
         result[property_name] = example
     return result
+
+def to_title_case(s: str) -> str:
+    """
+    Convert e.g. 'object_detection' -> 'Object Detection'
+    """
+    words = re.split(r'[_\s]+', s.lower())
+    return " ".join(w.capitalize() for w in words if w)
+
+def write_blocks_summary_md(block_families):
+    """
+    Creates docs/workflows/blocks/SUMMARY.md for mkdocs-literate-nav.
+    """
+    # Group families by block_type
+    blocks_by_type = defaultdict(list)
+    for family_name, members in block_families.items():
+        if not members:
+            block_type = "OTHER"
+        else:
+            block_type = members[0].block_schema.get("block_type", "OTHER")
+            if not block_type:
+                block_type = "OTHER"
+        blocks_by_type[block_type].append(family_name)
+
+    lines = []
+
+    # For each block type, create a top-level bullet, then sub-bullets for families
+    for block_type in sorted(blocks_by_type.keys()):
+        type_title = to_title_case(block_type)
+        lines.append(f"* {type_title}")
+        for family_name in sorted(blocks_by_type[block_type]):
+            # Suppose you had a function slugify_block_name:
+            slug = slugify_block_name(family_name)
+            # Link to foo.md (or bar.md, etc.)
+            lines.append(f"    * [{family_name}]({slug}.md)")
+
+    summary_path = os.path.join(BLOCKS_DIR, "SUMMARY.md")
+    with open(summary_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 if __name__ == "__main__":

@@ -16,3 +16,10 @@
   display: flex;
   justify-content: space-between;
 }
+
+@media screen and (min-width: 76.25em) {
+  .md-nav__item--section>.md-nav__link {
+      font-weight: 700;
+      color: var(--md-default-fg-color--light);
+  }
+}
