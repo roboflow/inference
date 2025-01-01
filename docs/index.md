@@ -1,7 +1,19 @@
 ---
 hide:
+  - path
+  - navigation
   - toc
 ---
+
+<style>
+/* Hide <h1> on homepage */
+.md-typeset h1 {
+  display: none;
+}
+.md-main__inner {
+  margin-top: -1rem;
+}
+</style>
 
 ![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
 
