@@ -1,4 +1,4 @@
-site_name: Inference
+site_name: Roboflow Inference
 site_url: https://inference.roboflow.com/
 site_author: Roboflow
 site_description: Scalable, on-device computer vision deployment.
@@ -133,8 +133,8 @@ theme:
   favicon: favicon.png
   custom_dir: docs/theme
   font:
-    text: Roboto
-    code: Roboto Mono
+    text: Inter
+    code: ui-monospace
   features:
     - navigation.top
     - navigation.tabs

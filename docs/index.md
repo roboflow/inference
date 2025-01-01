@@ -13,6 +13,12 @@ hide:
 .md-main__inner {
   margin-top: -1rem;
 }
+
+/* constrain to same width even w/o sidebar */
+.md-content {
+  max-width: 50rem;
+  margin: auto;
+}
 </style>
 
 ![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
