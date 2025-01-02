@@ -24,13 +24,35 @@ SHORT_DESCRIPTION = (
     "Measure the dimensions of objects in relation to a reference object."
 )
 LONG_DESCRIPTION = """
-The `SizeMeasurementBlock` is a transformer block designed to measure the dimensions of objects
-in relation to a reference object. The reference object is detected using one model,
-and the object to be measured is detected using another model. The block outputs the dimensions of the
-objects to be measured in terms of the reference object.
-Note: if reference_predictions provides multiple boxes, the most confident one will be selected.
-In order to achieve different behavior you can use Detection Transformation block with custom filter
-and also continue_if block if no reference detection meets expectations.
+The [**Size Measurement Block**](https://example.com/video) calculates the dimensions of objects relative to a reference object. It uses one model to detect the reference object and another to detect the objects to measure. The block outputs the dimensions of the objects in terms of the reference object.
+
+- **Reference Object**: This is the known object used as a baseline for measurements. Its dimensions are known and used to scale the measurements of other objects.
+- **Object to Measure**: This is the object whose dimensions are being calculated. The block measures these dimensions relative to the reference object.
+
+### Block Usage
+
+To use the Size Measurement Block, follow these steps:
+
+1. **Select Models**: Choose a model to detect the reference object and another model to detect the objects you want to measure.
+2. **Configure Inputs**: Provide the predictions from both models as inputs to the block.
+3. **Set Reference Dimensions**: Specify the known dimensions of the reference object in the format 'width,height' or as a tuple (width, height).
+4. **Run the Block**: Execute the block to calculate the dimensions of the detected objects relative to the reference object.
+
+### Example
+
+Imagine you have a scene with a calibration card and several packages. The calibration card has known dimensions of 5.0 inches by 3.0 inches. You want to measure the dimensions of packages in the scene.
+
+- **Reference Object**: Calibration card with dimensions 5.0 inches (width) by 3.0 inches (height).
+- **Objects to Measure**: Packages detected in the scene.
+
+The block will use the known dimensions of the calibration card to calculate the dimensions of each package. For example, if a package is detected with a width of 100 pixels and a height of 60 pixels, and the calibration card is detected with a width of 50 pixels and a height of 30 pixels, the block will calculate the package's dimensions as:
+
+- **Width**: (100 pixels / 50 pixels) * 5.0 inches = 10.0 inches
+- **Height**: (60 pixels / 30 pixels) * 3.0 inches = 6.0 inches
+
+This allows you to obtain the real-world dimensions of the packages based on the reference object's known size.
+
+[Watch the video tutorial](https://example.com/video)
 """
 
 
