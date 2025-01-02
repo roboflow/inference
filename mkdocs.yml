@@ -183,9 +183,7 @@ plugins:
   - search
   - swagger-ui-tag
   - mkdocs-jupyter
-  - social:
-      cards_layout_dir: docs/layouts
-      cards_layout: custom
+  - social
   - gen-files:
       scripts:
         - docs/scripts/gen_ref_pages.py
