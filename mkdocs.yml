@@ -28,15 +28,11 @@ extra_css:
   - styles/cookbooks.css
 
 nav:
-  - Roboflow Inference:
-      - What is Inference?: index.md
-      - Enterprise Features: enterprise/enterprise.md
-      - Inference Basics:
-          - Roboflow Ecosystem: quickstart/roboflow_ecosystem.md
-          - 'Models: Popular': quickstart/aliases.md
-          - 'Models: Fine-tuned': quickstart/explore_models.md
-          - 'Models: Universe': quickstart/load_from_universe.md
-          - 'Models: Local Weights': models/from_local_weights.md
+  - Models:
+      - 'Models: Popular': quickstart/aliases.md
+      - 'Models: Fine-tuned': quickstart/explore_models.md
+      - 'Models: Universe': quickstart/load_from_universe.md
+      - 'Models: Local Weights': models/from_local_weights.md
       - Supported Fine-Tuned Models:
           - YOLOv10: fine-tuned/yolov10.md
           - YOLOv9: fine-tuned/yolov9.md
@@ -96,6 +92,7 @@ nav:
         - Schema API: workflows/schema_api.md
         - Changelog: workflows/execution_engine_changelog.md
   - Reference:
+      - Roboflow Ecosystem: quickstart/roboflow_ecosystem.md
       - Inference Pipeline: using_inference/inference_pipeline.md
       - Active Learning:
           - Use Active Learning: enterprise/active-learning/active_learning.md
@@ -132,12 +129,12 @@ nav:
 
 theme:
   name: 'material'
-  logo: inference-icon.png
-  favicon: inference-icon.png
+  logo: roboflow-logomark-white.svg
+  favicon: favicon.png
   custom_dir: docs/theme
   font:
-    text: Roboto
-    code: Roboto Mono
+    text: Inter
+    code: ui-monospace
   features:
     - navigation.top
     - navigation.tabs
@@ -152,15 +149,6 @@ theme:
   palette:
     - scheme: default
       primary: 'custom'
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
-
-    - scheme: slate
-      primary: 'custom'
-      toggle:
-        icon: material/brightness-4
-        name: Switch to light mode
 
 plugins:
   - mkdocstrings:
