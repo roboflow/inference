@@ -118,12 +118,10 @@ class OwlV2TrainingRequest(BaseRequest):
         description="Training data to ground the model on"
     )
     model_id: Optional[str] = Field(
-        default=None,
-        description="Model id to be saved as."
+        default=None, description="Model id to be saved as."
     )
     save_dir: Optional[str] = Field(
-        default=None,
-        description="Directory to save the serialized model."
+        default=None, description="Directory to save the serialized model."
     )
 
     @validator("model_id", always=True, allow_reuse=True)

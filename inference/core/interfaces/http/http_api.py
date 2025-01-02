@@ -1944,10 +1944,11 @@ class HttpInterface(BaseInterface):
                     return model_response
 
             if CORE_MODEL_OWLV2_ENABLED:
+
                 @app.post(
                     "/owlv2/infer",
                     response_model=ObjectDetectionInferenceResponse,
-                    summary="Owlv2 image prompting", 
+                    summary="Owlv2 image prompting",
                     description="Run the google owlv2 model to few-shot object detect",
                 )
                 @with_route_exceptions
@@ -1980,45 +1981,53 @@ class HttpInterface(BaseInterface):
                 @app.post(
                     "/owlv2/train",
                     summary="Train OwlV2 Model",
-                    description="Train and serialize an OwlV2 model based on provided training data"
+                    description="Train and serialize an OwlV2 model based on provided training data",
                 )
                 @with_route_exceptions
-                async def train_owlv2_model(
-                    request: OwlV2TrainingRequest
-                ):
+                async def train_owlv2_model(request: OwlV2TrainingRequest):
                     """Train and serialize an OwlV2 model based on provided training data.
-                    
+
                     Args:
                         request (OwlV2TrainingRequest): The training request containing training data and model configuration
-                        
+
                     Returns:
                         dict: Information about the trained model including its save path and model ID
                     """
                     try:
                         # Use default save directory if none provided
-                        save_dir = request.save_dir or os.path.join(MODEL_CACHE_DIR, "owl-v2-serialized-data")
-                        
+                        save_dir = request.save_dir or os.path.join(
+                            MODEL_CACHE_DIR, "owl-v2-serialized-data"
+                        )
+
                         # Create and serialize the model
                         model = SerializedOwlV2.serialize_training_data(
                             training_data=request.training_data,
                             hf_id=f"google/{request.owlv2_version_id}",
-                            save_dir=save_dir
+                            save_dir=save_dir,
                         )
-                        
+
                         # Get the save path
-                        save_path = os.path.join(save_dir, f"{request.model_id}.pt" if request.model_id else "model.pt")
-                        
+                        save_path = os.path.join(
+                            save_dir,
+                            (
+                                f"{request.model_id}.pt"
+                                if request.model_id
+                                else "model.pt"
+                            ),
+                        )
+
                         return {
                             "status": "success",
-                            "model_id": request.model_id or f"owlv2/{request.owlv2_version_id}",
+                            "model_id": request.model_id
+                            or f"owlv2/{request.owlv2_version_id}",
                             "save_path": save_path,
-                            "message": "Model successfully trained and serialized"
+                            "message": "Model successfully trained and serialized",
                         }
-                        
+
                     except Exception as e:
                         raise HTTPException(
                             status_code=500,
-                            detail=f"Error training OwlV2 model: {str(e)}"
+                            detail=f"Error training OwlV2 model: {str(e)}",
                         )
 
             if CORE_MODEL_GAZE_ENABLED:
