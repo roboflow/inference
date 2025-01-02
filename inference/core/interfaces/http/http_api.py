@@ -3,6 +3,7 @@ import base64
 import os
 import traceback
 from functools import partial, wraps
+from http.client import HTTPException
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
 
@@ -37,7 +38,10 @@ from inference.core.entities.requests.inference import (
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
-from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
+from inference.core.entities.requests.owlv2 import (
+    OwlV2InferenceRequest,
+    OwlV2TrainingRequest,
+)
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
@@ -124,6 +128,7 @@ from inference.core.env import (
     LMM_ENABLED,
     METLO_KEY,
     METRICS_ENABLED,
+    MODEL_CACHE_DIR,
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
@@ -235,6 +240,7 @@ from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser impo
     parse_workflow_definition,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.models.owlv2.owlv2 import SerializedOwlV2
 from inference.usage_tracking.collector import usage_collector
 
 if LAMBDA:
