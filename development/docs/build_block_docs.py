@@ -66,12 +66,14 @@ as step in your workflow.
 The **Refs** column marks possibility to parametrise the property with dynamic values available 
 in `workflow` runtime. See *Bindings* for more info.
 
-### Available Connections
+### Available Connections { data-search-exclude }
 
 Check what blocks you can connect to `{family_name}` in version `{version}`.
 
 - inputs: {input_connections}
 - outputs: {output_connections}
+
+### Input and Output Bindings
 
 The available connections depend on its binding kinds. Check what binding kinds 
 `{family_name}` in version `{version}`  has.

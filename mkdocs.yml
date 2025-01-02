@@ -8,6 +8,10 @@ edit_uri: https://github.com/roboflow/inference/tree/main/docs
 copyright: Roboflow 2024. All rights reserved.
 
 extra:
+  analytics:
+    provider: google
+    property: G-T0CED2YY8K
+  generator: false
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/roboflow
@@ -17,9 +21,6 @@ extra:
       link: https://www.linkedin.com/company/roboflow-ai/mycompany/
     - icon: fontawesome/brands/twitter
       link: https://twitter.com/roboflow
-  analytics:
-    provider: google
-    property: G-T0CED2YY8K
   version:
     default: 1.0
 
@@ -139,16 +140,28 @@ theme:
     text: Roboto
     code: Roboto Mono
   features:
-    - navigation.top
+    - announce.dismiss
+    - content.action.edit
+    - content.code.copy
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.preview
+    - navigation.instant.progress
+    - navigation.prune
+    - navigation.sections
     - navigation.tabs
     - navigation.tabs.sticky
-    - navigation.prune
-    - navigation.footer
+    - navigation.top
     - navigation.tracking
-    - navigation.indexes
-    - navigation.sections
-    - content.code.copy
-
+    - optimize
+    - search.share
+    - search.suggest
+    - toc.follow
+    - toc.integrate
+  icon:
+    repo: fontawesome/brands/github
   palette:
     - scheme: default
       primary: 'custom'
