@@ -29,8 +29,10 @@ jobs:
         id: enterprise_blocks_token
         uses: actions/create-github-app-token@v1
         with:
-          app_id: ${{ secrets.ENTERPRISE_BLOCKS_APP_ID }}
-          private_key: ${{ secrets.ENTERPRISE_BLOCKS_PEM }}
+          app-id: ${{ secrets.ENTERPRISE_BLOCKS_APP_ID }}
+          private-key: ${{ secrets.ENTERPRISE_BLOCKS_PEM }}
+          owner: roboflow
+          repositories: workflows-enterprise-blocks
 
       - name: Check out enterprise blocks
         uses: actions/checkout@v4
@@ -44,8 +46,10 @@ jobs:
         id: mkdocs_token
         uses: actions/create-github-app-token@v1
         with:
-          app_id: ${{ secrets.MKDOCS_APP_ID }}
-          private_key: ${{ secrets.MKDOCS_PEM }}
+          app-id: ${{ secrets.MKDOCS_APP_ID }}
+          private-key: ${{ secrets.MKDOCS_PEM }}
+          owner: roboflow
+          repositories: mkdocs-material-insiders
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -59,7 +63,7 @@ jobs:
           python -m pip install --upgrade pip setuptools
 
           # Install mkdocs-material-insiders using the GitHub App token
-          pip install git+https://${{ steps.mkdocs_token.outputs.token }}@github.com/squidfunk/mkdocs-material-insiders.git
+          pip install git+https://${{ steps.mkdocs_token.outputs.token }}@github.com/roboflow/mkdocs-material-insiders.git
 
           # Install doc requirements
           pip install -r requirements/requirements.docs.txt
