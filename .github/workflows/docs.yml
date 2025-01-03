@@ -63,7 +63,7 @@ jobs:
           python -m pip install --upgrade pip setuptools
 
           # Install mkdocs-material-insiders using the GitHub App token
-          pip install git+https://${{ steps.mkdocs_token.outputs.token }}@github.com/roboflow/mkdocs-material-insiders.git
+          pip install git+https://roboflow:${{ steps.mkdocs_token.outputs.token }}@github.com/roboflow/mkdocs-material-insiders.git
 
           # Install doc requirements
           pip install -r requirements/requirements.docs.txt
