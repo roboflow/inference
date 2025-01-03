@@ -62,6 +62,7 @@ setuptools.setup(
     ),
     extras_require={
         "sam": read_requirements("requirements/requirements.sam.txt"),
+        "ultralytics": read_requirements("requirements/requirements.ultralytics.txt"),
     },
     classifiers=[
         "Programming Language :: Python :: 3",
