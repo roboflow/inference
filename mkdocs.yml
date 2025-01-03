@@ -5,7 +5,7 @@ site_description: Scalable, on-device computer vision deployment.
 repo_name: roboflow/inference
 repo_url: https://github.com/roboflow/inference
 edit_uri: https://github.com/roboflow/inference/tree/main/docs
-copyright: Roboflow 2024. All rights reserved.
+copyright: Roboflow 2025. All rights reserved.
 
 extra:
   analytics:
@@ -29,15 +29,11 @@ extra_css:
   - styles/cookbooks.css
 
 nav:
-  - Roboflow Inference:
-      - What is Inference?: index.md
-      - Enterprise Features: enterprise/enterprise.md
-      - Inference Basics:
-          - Roboflow Ecosystem: quickstart/roboflow_ecosystem.md
-          - 'Models: Popular': quickstart/aliases.md
-          - 'Models: Fine-tuned': quickstart/explore_models.md
-          - 'Models: Universe': quickstart/load_from_universe.md
-          - 'Models: Local Weights': models/from_local_weights.md
+  - Models:
+      - 'Models: Popular': quickstart/aliases.md
+      - 'Models: Fine-tuned': quickstart/explore_models.md
+      - 'Models: Universe': quickstart/load_from_universe.md
+      - 'Models: Local Weights': models/from_local_weights.md
       - Supported Fine-Tuned Models:
           - YOLOv10: fine-tuned/yolov10.md
           - YOLOv9: fine-tuned/yolov9.md
@@ -76,7 +72,6 @@ nav:
       - Create And Run: workflows/create_and_run.md
       - Ecosystem: workflows/understanding.md
       - Blocks Overview: workflows/blocks_connections.md
-      - Blocks Gallery: workflows/blocks.md
       - Examples: workflows/gallery_index.md
       - Video Processing: workflows/video_processing/overview.md
 
@@ -84,10 +79,13 @@ nav:
         - Running Workflows: workflows/modes_of_running.md
         - Workflows Definitions: workflows/definitions.md
         - Workflow Execution: workflows/workflow_execution.md
+
+      - Block Gallery: workflows/blocks/
+
       - Developer Guide:
         - Compiler: workflows/workflows_compiler.md
         - Execution Engine: workflows/workflows_execution_engine.md
-        - Kinds: workflows/kinds.md
+        - Kinds: workflows/kinds/
         - Blocks Creation: workflows/create_workflow_block.md
         - Data Representations: workflows/internal_data_types.md
         - Blocks Bundling: workflows/blocks_bundling.md
@@ -97,6 +95,7 @@ nav:
         - Schema API: workflows/schema_api.md
         - Changelog: workflows/execution_engine_changelog.md
   - Reference:
+      - Roboflow Ecosystem: quickstart/roboflow_ecosystem.md
       - Inference Pipeline: using_inference/inference_pipeline.md
       - Active Learning:
           - Use Active Learning: enterprise/active-learning/active_learning.md
@@ -133,12 +132,12 @@ nav:
 
 theme:
   name: 'material'
-  logo: inference-icon.png
-  favicon: inference-icon.png
+  logo: roboflow-logomark-white.svg
+  favicon: favicon.png
   custom_dir: docs/theme
   font:
-    text: Roboto
-    code: Roboto Mono
+    text: Inter
+    code: ui-monospace
   features:
     - announce.dismiss
     - content.action.edit
@@ -165,15 +164,6 @@ theme:
   palette:
     - scheme: default
       primary: 'custom'
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
-
-    - scheme: slate
-      primary: 'custom'
-      toggle:
-        icon: material/brightness-4
-        name: Switch to light mode
 
 plugins:
   - mkdocstrings:
@@ -188,7 +178,8 @@ plugins:
       scripts:
         - docs/scripts/gen_ref_pages.py
   - literate-nav:
-      nav_file: nav.md
+      nav_file: SUMMARY.md
+      implicit_index: True
   - macros:
       include_dir: docs/include
 
