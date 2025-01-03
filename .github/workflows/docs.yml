@@ -26,13 +26,6 @@ jobs:
         with:
           python-version: "3.11"
           check-latest: true
-      - run: pip install mkdocs-material
-      - run: pip install "mkdocstrings[python]"
-      - run: pip install "mkdocs-material[imaging]"
-      - run: pip install "mkdocs-swagger-ui-tag"
-      - run: pip install "mkdocs-gen-files"
-      - run: pip install "mkdocs-literate-nav"
-      - run: pip install "mkdocs-jupyter"
       - run: pip install -r requirements/requirements.docs.txt
         working-directory: ./inference_repo
       - run: |
