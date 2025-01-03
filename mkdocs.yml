@@ -195,5 +195,7 @@ markdown_extensions:
       permalink: true
 
 extra_javascript:
+  - "https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"
   - 'javascript/init_kapa_widget.js'
   - 'javascript/cookbooks.js'
+  - 'javascript/workflows.js'

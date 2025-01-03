@@ -56,8 +56,6 @@ BLOCK_FAMILY_TEMPLATE = """
 
 
 BLOCK_VERSION_TEMPLATE = """
-## Version `{version}`
-
 {description}
 
 ### Type identifier
@@ -72,7 +70,7 @@ as step in your workflow.
 The **Refs** column marks possibility to parametrise the property with dynamic values available 
 in `workflow` runtime. See *Bindings* for more info.
 
-### Available Connections { data-search-exclude }
+### Available Connections {{ data-search-exclude }}
 
 Check what blocks you can connect to `{family_name}` in version `{version}`.
 
@@ -285,6 +283,7 @@ def main() -> None:
         )
         block_card_lines.append(block_card_line)
 
+    block_card_lines = sorted(block_card_lines)
     lines = lines[: start_index + 1] + block_card_lines + lines[end_index:]
     dump_text_lines(
         path=BLOCK_DOCUMENTATION_FILE,
