@@ -418,6 +418,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     VIDEO_METADATA_KIND,
     WILDCARD_KIND,
     ZONE_KIND,
+    EMBEDDING_KIND,
     Kind,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
@@ -640,4 +641,5 @@ def load_kinds() -> List[Kind]:
         BYTES_KIND,
         INFERENCE_ID_KIND,
         SECRET_KIND,
+        EMBEDDING_KIND,
     ]
