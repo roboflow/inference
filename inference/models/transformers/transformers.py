@@ -40,6 +40,7 @@ from inference.core.roboflow_api import (
     get_from_url,
     get_roboflow_base_lora,
     get_roboflow_model_data,
+    get_roboflow_workspace,
 )
 from inference.core.utils.image_utils import load_image_rgb
 

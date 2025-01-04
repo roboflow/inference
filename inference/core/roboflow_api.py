@@ -225,13 +225,17 @@ def get_roboflow_model_data(
             ("nocache", "true"),
             ("device", device_id),
             ("dynamic", "true"),
+            ("type", endpoint_type.value),
+            ("model", model_id),
         ]
         if api_key is not None:
             params.append(("api_key", api_key))
         api_url = _add_params_to_url(
-            url=f"{API_BASE_URL}/{endpoint_type.value}/{model_id}",
+            url=f"{API_BASE_URL}/getWeights",
             params=params,
         )
+        print("api_url", api_url)
+
         api_data = _get_from_url(url=api_url)
         cache.set(
             api_data_cache_key,
@@ -596,7 +600,9 @@ def get_from_url(
 
 def _get_from_url(url: str, json_response: bool = True) -> Union[Response, dict]:
     response = requests.get(wrap_url(url))
+    
     api_key_safe_raise_for_status(response=response)
+    
     if json_response:
         return response.json()
     return response

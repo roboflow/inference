@@ -3,3 +3,4 @@ VersionID = str
 TaskType = str
 ModelType = str
 WorkspaceID = str
+ModelID = str
