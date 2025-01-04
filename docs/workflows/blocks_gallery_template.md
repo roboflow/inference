@@ -15,3 +15,10 @@ hide:
     </div>
   </div>
 </section>
+
+<style>
+/* hide edit button for generated pages */
+article > a.md-content__button.md-icon:first-child {
+    display: none;
+}
+</style>

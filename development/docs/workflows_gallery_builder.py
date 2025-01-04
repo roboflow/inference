@@ -135,6 +135,13 @@ GALLERY_PAGE_TEMPLATE = """
 Below you can find example workflows you can use as inspiration to build your apps.
 
 {examples}
+
+<style>
+/* hide edit button for generated pages */
+article > a.md-content__button.md-icon:first-child {{
+    display: none;
+}}
+</style>
 """.strip()
 
 

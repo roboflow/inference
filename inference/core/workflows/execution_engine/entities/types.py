@@ -66,7 +66,7 @@ external representation. As an input we support:
 * `np.ndarray` image when Workflows Execution Engine is used directly in `inference` python package (array can be
 provided in a form of dictionary presented below, if `video_metadata` is intended to be injected)
 
-* dictionary compatible with [inference image utils](https://inference.roboflow.com/docs/reference/inference/core/utils/image_utils/):
+* dictionary compatible with [inference image utils](https://inference.roboflow.com/reference/inference/core/utils/image_utils/):
 
 ```python
 {
