@@ -13,7 +13,7 @@ compilation process to assist in building Workflow blocks and encourage contribu
 !!! Note
 
     This document covers the design of Execution Engine `v1` (which is current stable version). Please 
-    acknowledge information about [versioning](/workflows/versioning) to understand Execution Engine 
+    acknowledge information about [versioning](/workflows/versioning/) to understand Execution Engine 
     development cycle.
 
 ## Stages of compilation
@@ -23,7 +23,7 @@ Workflow compilation involves several stages, including:
 1. Loading available blocks: Gathering all the blocks that can be used in the workflow based on 
 configuration of execution environment
 
-2. Compiling dynamic blocks: Turning [dynamic blocks definitions](/workflows/custom_python_code_blocks) into 
+2. Compiling dynamic blocks: Turning [dynamic blocks definitions](/workflows/custom_python_code_blocks/) into 
 standard Workflow Blocks
 
 3. Parsing the Workflow Definition: Reading and interpreting the JSON document that defines the workflow, detecting 
@@ -69,7 +69,7 @@ Once Compiler loads all plugins it is ready for the next stage of compilation.
 
 !!! Note
 
-    The topic of [dynamic Python blocks](/workflows/custom_python_code_blocks) is covered
+    The topic of [dynamic Python blocks](/workflows/custom_python_code_blocks/) is covered
     in separate docs page. To unerstand the content of this section you only need to know that
     there is a way to define Workflow Blocks in-place in Workflow Definition - specifying
     both block manifest and Python code in JSON document. This functionality only works if you
@@ -193,7 +193,7 @@ unpredictable results during execution if the situation is not prevented.
     into batches at `dimensionality level` 1 with matching lineage.
 
 
-As outlined in the section dedicated to [blocks development](/workflows/create_workflow_block), each block can define 
+As outlined in the section dedicated to [blocks development](/workflows/create_workflow_block/), each block can define 
 the expected dimensionality of its inputs and outputs. This refers to how the data should be structured. 
 For example, if a block needs an `image` input that's one level above a batch of `predictions`, the Compiler will 
 check that this requirement is met when verifying the Workflow step. If the connections between steps don’t match 
@@ -278,7 +278,7 @@ references that block. Some blocks may need specific initialization parameters, 
 When a block requires initialization parameters:
 
 * The block must declare the parameters it needs, as explained in detail in 
-the [blocks development guide](/workflows/create_workflow_block)
+the [blocks development guide](/workflows/create_workflow_block/)
 
 * The values for these parameters must be provided from the environment where the Workflow is being executed.
 

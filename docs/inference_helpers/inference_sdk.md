@@ -27,7 +27,7 @@ Further details to be found in specific sections of this document.
 
 !!! tip
 
-    Read our [Run Model on an Image](/quickstart/run_model_on_image) guide to learn how to run a model with the Inference Client.
+    Read our [Run Model on an Image](/quickstart/run_model_on_image/) guide to learn how to run a model with the Inference Client.
 
 ## Quickstart
 

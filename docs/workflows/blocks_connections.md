@@ -54,7 +54,7 @@ Each block provides a manifest that lists the fields to be included in the Workf
 The Values of these fields in a Workflow Definition may contain:
 
 - References ([selectors](/workflows/definitions/)) to data the block will process, such as step outputs or 
-[batch-oriented workflow inputs](/workflows/workflow_execution)
+[batch-oriented workflow inputs](/workflows/workflow_execution/)
 
 - Configuration values: Specific settings for the step or references ([selectors](/workflows/definitions/)) that 
 provide configuration parameters dynamically during execution.
@@ -62,14 +62,14 @@ provide configuration parameters dynamically during execution.
 The manifest also includes the block's outputs.
 
 For each step definition field (if it can hold a [selector](/workflows/definitions/)) and step output, 
-the expected [kind](/workflows/kinds) is specified. A [kind](/workflows/kinds) is a high-level definition 
+the expected [kind](/workflows/kinds/) is specified. A [kind](/workflows/kinds/) is a high-level definition 
 of the type of data that will be passed during workflow execution. Simply put, it describes the data that 
 will replace the [selector](/workflows/definitions/) during block execution.
 
-To ensure steps are correctly connected, the Workflow Compiler checks if the input and output [kinds](/workflows/kinds)
+To ensure steps are correctly connected, the Workflow Compiler checks if the input and output [kinds](/workflows/kinds/)
 match. If they do, the connection is valid.
 
-Additionally, the [`dimensionality level`](/workflows/workflow_execution#dimensionality-level) of the data is considered when 
+Additionally, the [`dimensionality level`](/workflows/workflow_execution/#dimensionality-level) of the data is considered when 
 validating connections. This ensures that data from multiple sources is compatible across the entire Workflow, 
 not just between two connected steps. More details on dimensionality levels can be found in the 
-[user guide describing workflow execution](/workflows/workflow_execution).
+[user guide describing workflow execution](/workflows/workflow_execution/).

@@ -1,6 +1,6 @@
 # Workflows Execution Engine in details
 
-The [compilation process](/workflows/workflows_compiler) creates a Workflow Execution graph, which 
+The [compilation process](/workflows/workflows_compiler/) creates a Workflow Execution graph, which 
 holds all the necessary details to run a Workflow definition. In this section, we'll explain the details 
 of the execution process.
 
@@ -19,7 +19,7 @@ for future use.
 ## Validation of runtime input
 
 The Workflow definition specifies the expected inputs for Workflow execution. As discussed 
-[earlier](/workflows/definitions), inputs can be either batch-oriented data to be processed by steps or parameters that 
+[earlier](/workflows/definitions/), inputs can be either batch-oriented data to be processed by steps or parameters that 
 configure the step execution. This distinction is crucial to how the Workflow runs and will be explored throughout 
 this page.
 

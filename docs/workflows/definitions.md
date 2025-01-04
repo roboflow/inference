@@ -117,7 +117,7 @@ value is not expected to be a batch of elements, so when you provide a list, it 
 elements, rather than batch of elements, each to be processed individually.
 
 More details about the nature of batch-oriented data processing in workflows can be found 
-[here](/workflows/workflow_execution).
+[here](/workflows/workflow_execution/).
 
 ### Generic batch-oriented inputs
 
@@ -167,7 +167,7 @@ be more and more useful.
 
 ## Steps
 
-As mentioned [here](/workflows/understanding), steps are instances of Workflow blocks connected with inputs and outputs 
+As mentioned [here](/workflows/understanding/), steps are instances of Workflow blocks connected with inputs and outputs 
 of other steps to dictate how data flows through the workflow. Let's see example step definition:
 
 ```json
@@ -186,7 +186,7 @@ Two remaining properties declare `selectors` (this is how we call references in 
 `model`. While running the workflow, data passed into those placeholders will be provided for block to process.
 
 Our documentation showcases what is the structure of each block and provides examples of how each block can be 
-used as workflow step. Explore our blocks collection [here](/workflows/blocks) where you can find what are 
+used as workflow step. Explore our blocks collection [here](/workflows/blocks/) where you can find what are 
 block data inputs, outputs and configuration properties.
 
 Input data bindings of blocks (like `images` property) can be filled with selectors to batch-oriented inputs and 

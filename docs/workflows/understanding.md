@@ -72,10 +72,10 @@ When adding a block to your workflow, you need to provide its inputs by referenc
 or the output of another step. You also specify the values for any required parameters. Once the step is incorporated, 
 its outputs can be referenced by subsequent steps, allowing for seamless integration and chaining of operations.
 
-The creation of blocks is a more advanced topic, which you can explore [here](/workflows/create_workflow_block). 
+The creation of blocks is a more advanced topic, which you can explore [here](/workflows/create_workflow_block/). 
 It’s essential to understand that blocks are grouped in workflow plugins, which are standard Python libraries. 
 Roboflow offers its own set of plugins, and community members are encouraged to create their own. 
-The process of importing a plugin into your environment is detailed [here](/workflows/blocks_bundling).
+The process of importing a plugin into your environment is detailed [here](/workflows/blocks_bundling/).
 
 Feel encouraged to explore [Workflows blocks prepared by Roboflow](/workflows/blocks/).
 

@@ -5,7 +5,7 @@ essential. This allows users to create their own blocks and bundle them into Wor
 is essentially a Python library that implements a defined interface and can be structured in various ways. 
 
 This page outlines the mandatory interface requirements and suggests a structure for blocks that aligns with 
-the [Workflows versioning](/workflows/versioning) guidelines.
+the [Workflows versioning](/workflows/versioning/) guidelines.
 
 ## Proposed structure of plugin
 

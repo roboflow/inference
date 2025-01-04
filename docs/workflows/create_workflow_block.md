@@ -252,7 +252,7 @@ The most important are:
       You may have noticed that we recommend importing the `Batch` and `WorkflowImageData` classes, which are 
       fundamental components used when constructing building blocks in our system. For a deeper understanding of 
       how these classes fit into the overall architecture, we encourage you to refer to the 
-      [Data Representations](/workflows/internal_data_types) page for more detailed information. 
+      [Data Representations](/workflows/internal_data_types/) page for more detailed information. 
 
 
 ## Block manifest
@@ -423,12 +423,12 @@ Let's now add the parameter that will influence step execution.
         )
     ```
   
-    * line `9` imports [`float_zero_to_one`](/workflows/kinds/float_zero_to_one) `kind` 
+    * line `9` imports [`float_zero_to_one`](/workflows/kinds/float_zero_to_one/) `kind` 
       definition which will be used to define the parameter.
   
     * in line `27` we start defining parameter called `similarity_threshold`. Manifest will accept 
     either float values or selector to workflow input of `kind`
-    [`float_zero_to_one`](/workflows/kinds/float_zero_to_one), imported in line `9`.
+    [`float_zero_to_one`](/workflows/kinds/float_zero_to_one/), imported in line `9`.
 
 Such definition of manifest can handle the following step declaration in Workflow definition:
 
@@ -513,7 +513,7 @@ successfully run blocks. Let's define block outputs.
 
     * line `5` imports class that is used to describe step outputs
   
-    * line `11` imports [`boolean`](/workflows/kinds/boolean) `kind` to be used 
+    * line `11` imports [`boolean`](/workflows/kinds/boolean/) `kind` to be used 
     in outputs definitions
   
     * lines `32-39` declare class method to specify outputs from the block - 
@@ -2103,7 +2103,7 @@ Constructor parameters must be:
 
     * directly, as shown in [this](/workflows/modes_of_running/#workflows-in-python-package) example
     
-    * using defaults [registered for Workflow plugin](/workflows/blocks_bundling)
+    * using defaults [registered for Workflow plugin](/workflows/blocks_bundling/)
 
 Let's see how to request init parameters while defining block.
 
