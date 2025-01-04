@@ -495,7 +495,7 @@ def write_kinds_summary_md(kinds):
 
 def write_blocks_summary_md(block_families):
     """
-    Creates docsSUMMARY.md for mkdocs-literate-nav.
+    Creates SUMMARY.md for mkdocs-literate-nav.
     """
     # Group families by block_type
     blocks_by_type = defaultdict(list)
