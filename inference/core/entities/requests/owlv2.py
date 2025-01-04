@@ -32,14 +32,17 @@ class TrainingImage(BaseModel):
 
 
 class OwlV2InferenceRequest(BaseRequest):
-    """Request for gaze detection inference.
+    """Request for OWL-ViT inference.
 
     Attributes:
         api_key (Optional[str]): Roboflow API Key.
-        owlv2_version_id (Optional[str]): The version ID of Gaze to be used for this request.
+        owlv2_version_id (Optional[str]): The version ID of OWL-ViT to be used for this request.
         image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) for inference.
-        training_data (List[TrainingImage]): Training data to ground the model on
-        confidence (float): Confidence threshold to filter predictions by
+        training_data (List[TrainingImage]): Training data to ground the model on.
+        confidence (float): Confidence threshold to filter predictions by.
+        visualize_predictions (bool): If true, return visualized predictions as a base64 string.
+        visualization_labels (bool): If true, labels will be rendered on prediction visualizations.
+        visualization_stroke_width (int): The stroke width used when visualizing predictions.
     """
 
     owlv2_version_id: Optional[str] = Field(
@@ -55,7 +58,7 @@ class OwlV2InferenceRequest(BaseRequest):
         description="Images to run the model on"
     )
     training_data: List[TrainingImage] = Field(
-        description="Training images for the owlvit model to learn form"
+        description="Training images for the owlvit model to learn from"
     )
     confidence: Optional[float] = Field(
         default=0.99,
@@ -93,3 +96,38 @@ class OwlV2InferenceRequest(BaseRequest):
         if values.get("owl2_version_id") is None:
             return None
         return f"google/{values['owl2_version_id']}"
+
+
+class OwlV2TrainingRequest(BaseRequest):
+    """Request for training an OWL-ViT model.
+
+    Attributes:
+        api_key (Optional[str]): Roboflow API Key.
+        owlv2_version_id (Optional[str]): The version ID of OWL-ViT to be used for this request.
+        training_data (List[TrainingImage]): Training data to ground the model on.
+        model_id (Optional[str]): Model id to be saved as.
+        save_dir (Optional[str]): Directory to save the serialized model.
+    """
+
+    owlv2_version_id: Optional[str] = Field(
+        default=OWLV2_VERSION_ID,
+        examples=["owlv2-base-patch16-ensemble"],
+        description="The version ID of owlv2 to be used for this request.",
+    )
+    training_data: List[TrainingImage] = Field(
+        description="Training data to ground the model on"
+    )
+    model_id: Optional[str] = Field(
+        default=None, description="Model id to be saved as."
+    )
+    save_dir: Optional[str] = Field(
+        default=None, description="Directory to save the serialized model."
+    )
+
+    @validator("model_id", always=True, allow_reuse=True)
+    def validate_model_id(cls, value, values):
+        if value is not None:
+            return value
+        if values.get("owlv2_version_id") is None:
+            return None
+        return f"owlv2/{values['owlv2_version_id']}"

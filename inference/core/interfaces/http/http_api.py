@@ -3,6 +3,7 @@ import base64
 import os
 import traceback
 from functools import partial, wraps
+from http.client import HTTPException
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
 
@@ -37,7 +38,10 @@ from inference.core.entities.requests.inference import (
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
 )
-from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
+from inference.core.entities.requests.owlv2 import (
+    OwlV2InferenceRequest,
+    OwlV2TrainingRequest,
+)
 from inference.core.entities.requests.sam import (
     SamEmbeddingRequest,
     SamSegmentationRequest,
@@ -124,6 +128,7 @@ from inference.core.env import (
     LMM_ENABLED,
     METLO_KEY,
     METRICS_ENABLED,
+    MODEL_CACHE_DIR,
     NOTEBOOK_ENABLED,
     NOTEBOOK_PASSWORD,
     NOTEBOOK_PORT,
@@ -235,6 +240,7 @@ from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser impo
     parse_workflow_definition,
 )
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.models.owlv2.owlv2 import SerializedOwlV2
 from inference.usage_tracking.collector import usage_collector
 
 if LAMBDA:
@@ -1977,6 +1983,58 @@ class HttpInterface(BaseInterface):
                         owl2_model_id, inference_request
                     )
                     return model_response
+
+                @app.post(
+                    "/owlv2/train",
+                    summary="Train OwlV2 Model",
+                    description="Train and serialize an OwlV2 model based on provided training data",
+                )
+                @with_route_exceptions
+                async def train_owlv2_model(request: OwlV2TrainingRequest):
+                    """Train and serialize an OwlV2 model based on provided training data.
+
+                    Args:
+                        request (OwlV2TrainingRequest): The training request containing training data and model configuration
+
+                    Returns:
+                        dict: Information about the trained model including its save path and model ID
+                    """
+                    try:
+                        # Use default save directory if none provided
+                        save_dir = request.save_dir or os.path.join(
+                            MODEL_CACHE_DIR, "owl-v2-serialized-data"
+                        )
+
+                        # Create and serialize the model
+                        model = SerializedOwlV2.serialize_training_data(
+                            training_data=request.training_data,
+                            hf_id=f"google/{request.owlv2_version_id}",
+                            save_dir=save_dir,
+                        )
+
+                        # Get the save path
+                        save_path = os.path.join(
+                            save_dir,
+                            (
+                                f"{request.model_id}.pt"
+                                if request.model_id
+                                else "model.pt"
+                            ),
+                        )
+
+                        return {
+                            "status": "success",
+                            "model_id": request.model_id
+                            or f"owlv2/{request.owlv2_version_id}",
+                            "save_path": save_path,
+                            "message": "Model successfully trained and serialized",
+                        }
+
+                    except Exception as e:
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Error training OwlV2 model: {str(e)}",
+                        )
 
             if CORE_MODEL_GAZE_ENABLED:
 
