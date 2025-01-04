@@ -390,6 +390,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     CONTOURS_KIND,
     DETECTION_KIND,
     DICTIONARY_KIND,
+    EMBEDDING_KIND,
     FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KEYPOINTS_KIND,
@@ -418,7 +419,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     VIDEO_METADATA_KIND,
     WILDCARD_KIND,
     ZONE_KIND,
-    EMBEDDING_KIND,
     Kind,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
