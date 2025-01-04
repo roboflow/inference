@@ -14,7 +14,7 @@ results = model.infer("https://media.roboflow.com/inference/people-walking.jpg")
 
 !!! Tip
 
-    See the [Use a fine-tuned model](/quickstart/explore_models/) guide for an example on how to deploy your own model.
+    See the [Use a fine-tuned model](/quickstart/explore_models.md) guide for an example on how to deploy your own model.
 
 ## Supported Pre-Trained Models
 

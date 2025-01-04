@@ -371,4 +371,4 @@ serialisation strategies:
     sv.Detections, which is our standard representation of detection-based predictions is treated specially 
     by output constructor. `JsonField` output definition can specify optionally `coordinates_system` property,
     which may enforce translation of detection coordinates into coordinates system of parent image in workflow.
-    See more in [docs page describing outputs definitions](/workflows/definitions/)
+    See more in [docs page describing outputs definitions](/workflows/definitions.md)

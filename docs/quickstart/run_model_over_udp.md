@@ -6,7 +6,7 @@ This feature only works on devices with a CUDA-enabled GPU.
 
 Inference has been used at sports broadcasting events around the world for real-time object detection.
 
-!!! tip "Follow our [Run a Fine-Tuned Model on Images](/quickstart/run_model_on_image/) guide to learn how to find a model to run."
+!!! tip "Follow our [Run a Fine-Tuned Model on Images](/quickstart/run_model_on_image.md) guide to learn how to find a model to run."
 
 ## Run a Vision Model on a UDP Stream
 

@@ -4,17 +4,17 @@ Below you can find the changelog for Execution Engine.
 
 ## Execution Engine `v1.2.0` | inference `v0.23.0`
 
-* The [`video_metadata` kind](/workflows/kinds/video_metadata/) has been deprecated, and we **strongly recommend discontinuing its use for building 
-blocks moving forward**. As an alternative, the [`image` kind](/workflows/kinds/image/) has been extended to support the same metadata as 
-[`video_metadata` kind](/workflows/kinds/video_metadata/), which can now be provided optionally. This update is 
+* The [`video_metadata` kind](/workflows/kinds/video_metadata.md) has been deprecated, and we **strongly recommend discontinuing its use for building 
+blocks moving forward**. As an alternative, the [`image` kind](/workflows/kinds/image.md) has been extended to support the same metadata as 
+[`video_metadata` kind](/workflows/kinds/video_metadata.md), which can now be provided optionally. This update is 
 **non-breaking** for existing blocks, but **some older blocks** that produce images **may become incompatible** with 
 **future** video processing blocks.
 
 ??? warning "Potential blocks incompatibility"
 
     As previously mentioned, adding `video_metadata` as an optional field to the internal representation of 
-    [`image` kind](/workflows/kinds/image/) (`WorkflowImageData` class) 
-    may introduce some friction between existing blocks that output the [`image` kind](/workflows/kinds/image/) and 
+    [`image` kind](/workflows/kinds/image.md) (`WorkflowImageData` class) 
+    may introduce some friction between existing blocks that output the [`image` kind](/workflows/kinds/image.md) and 
     future video processing blocks that rely on `video_metadata` being part of `image` representation. 
     
     The issue arises because, while we can provide **default** values for `video_metadata` in `image` without 
@@ -25,26 +25,26 @@ blocks moving forward**. As an alternative, the [`image` kind](/workflows/kinds/
     external repositories may cause issues in workflows where their output images are used by video processing blocks.
 
 
-* While the deprecated [`video_metadata` kind](/workflows/kinds/video_metadata/) is still available for use, it will be fully removed in 
+* While the deprecated [`video_metadata` kind](/workflows/kinds/video_metadata.md) is still available for use, it will be fully removed in 
 Execution Engine version `v2.0.0`.
 
 !!! warning "Breaking change planned - Execution Engine `v2.0.0`"
 
-    [`video_metadata` kind](/workflows/kinds/video_metadata/) got deprecated and will be removed in `v2.0.0`
+    [`video_metadata` kind](/workflows/kinds/video_metadata.md) got deprecated and will be removed in `v2.0.0`
 
 
-* As a result of the changes mentioned above, the internal representation of the [`image` kind](/workflows/kinds/image/) has been updated to 
+* As a result of the changes mentioned above, the internal representation of the [`image` kind](/workflows/kinds/image.md) has been updated to 
 include a new `video_metadata` property. This property can be optionally set in the constructor; if not provided, 
 a default value with reasonable defaults will be used. To simplify metadata manipulation within blocks, we have 
 introduced two new class methods: `WorkflowImageData.copy_and_replace(...)` and `WorkflowImageData.create_crop(...)`. 
-For more details, refer to the updated [`WoorkflowImageData` usage guide](/workflows/internal_data_types/#workflowimagedata).
+For more details, refer to the updated [`WoorkflowImageData` usage guide](/workflows/internal_data_types.md#workflowimagedata).
 
 
 ## Execution Engine `v1.3.0` | inference `v0.27.0`
 
 * Introduced the change that let each kind have serializer and deserializer defined. The change decouples Workflows 
 plugins with Execution Engine and make it possible to integrate the ecosystem with external systems that 
-require data transfer through the wire. [Blocks bundling](/workflows/blocks_bundling/) page was updated to reflect 
+require data transfer through the wire. [Blocks bundling](/workflows/blocks_bundling.md) page was updated to reflect 
 that change.
 
 * *Kinds* defined in `roboflow_core` plugin were provided with suitable serializers and deserializers
@@ -56,8 +56,8 @@ format introduced **at the level of Execution Engine**). As a result of the chan
 
     * **new input type was introduced:** `WorkflowBatchInput` should be used from now on to denote 
     batch-oriented inputs (and clearly separate them from `WorkflowParameters`). `WorkflowBatchInput` 
-    let users define both *[kind](/workflows/kinds/)* of the data and it's 
-    *[dimensionality](/workflows/workflow_execution/#steps-interactions-with-data)*.
+    let users define both *[kind](/workflows/kinds.md)* of the data and it's 
+    *[dimensionality](/workflows/workflow_execution.md#steps-interactions-with-data)*.
     New input type is effectively a superset of all previous batch-oriented inputs: `WorkflowImage` and
     `WorkflowVideoMetadata`, which **remain supported**, but **will be removed in Execution Engine `v2`**. 
     We advise adjusting to the new input format, yet the requirement is not strict at the moment - as 
@@ -73,7 +73,7 @@ format introduced **at the level of Execution Engine**). As a result of the chan
 
     * as a result of simplification in the selectors type annotations, the old selector will no 
     longer be providing the information on which parameter of blocks' `run(...)` method is 
-    shipped by Execution Engine wrapped into [`Batch[X]` container](/workflows/internal_data_types/#batch).
+    shipped by Execution Engine wrapped into [`Batch[X]` container](/workflows/internal_data_types.md#batch).
     Instead of old selectors type annotations and `block_manifest.accepts_batch_input()` method, 
     we propose the switch into two methods explicitly defining the parameters that are expected to 
     be fed with batch-oriented data (`block_manifest.get_parameters_accepting_batches()`) and 
@@ -305,7 +305,7 @@ subsets of steps**, enabling building such tools as debuggers.
 
 ## Execution Engine `v1.4.0` | inference `v0.29.0`
 
-* Added new kind - [`secret`](/workflows/kinds/secret/) to represent credentials. **No action needed** for existing 
+* Added new kind - [`secret`](/workflows/kinds/secret.md) to represent credentials. **No action needed** for existing 
 blocks, yet it is expected that over time blocks developers should use this kind, whenever block is to accept secret 
 value as parameter.
 

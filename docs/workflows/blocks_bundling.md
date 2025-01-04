@@ -5,7 +5,7 @@ essential. This allows users to create their own blocks and bundle them into Wor
 is essentially a Python library that implements a defined interface and can be structured in various ways. 
 
 This page outlines the mandatory interface requirements and suggests a structure for blocks that aligns with 
-the [Workflows versioning](/workflows/versioning/) guidelines.
+the [Workflows versioning](/workflows/versioning.md) guidelines.
 
 ## Proposed structure of plugin
 
@@ -33,7 +33,7 @@ compared to standard Python library:
 
 * `load_blocks()` function to provide list of blocks' classes (required)
 
-* `load_kinds()` function to return all custom [kinds](/workflows/kinds/) the plugin defines (optional)
+* `load_kinds()` function to return all custom [kinds](/workflows/kinds.md) the plugin defines (optional)
 
 * `REGISTERED_INITIALIZERS` module property which is a dict mapping name of block 
 init parameter into default value or parameter-free function constructing that value - optional 
@@ -85,8 +85,8 @@ def load_kinds() -> List[Kind]:
 
 ## `REGISTERED_INITIALIZERS` dictionary
 
-As you know from [the docs describing the Workflows Compiler](/workflows/workflows_compiler/) 
-and the [blocks development guide](/workflows/create_workflow_block/), Workflow
+As you know from [the docs describing the Workflows Compiler](/workflows/workflows_compiler.md) 
+and the [blocks development guide](/workflows/create_workflow_block.md), Workflow
 blocs are dynamically initialized during compilation and may require constructor 
 parameters. Those parameters can default to values registered in the `REGISTERED_INITIALIZERS`
 dictionary. To expose default a value for an init parameter of your block - 
@@ -112,7 +112,7 @@ REGISTERED_INITIALIZERS = {
 
 Support for custom serializers and deserializers was introduced in Execution Engine `v1.3.0`.
 From that version onward it is possible to point custom functions that 
-Execution Engine should use to serialize and deserialize any *[kind](/workflows/kinds/)*.
+Execution Engine should use to serialize and deserialize any *[kind](/workflows/kinds.md)*.
 
 Deserializers will determine how to decode inputs send through the wire 
 into internal data representation used by blocks. Serializers, on the other hand, 

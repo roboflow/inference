@@ -15,7 +15,7 @@ You can set up a server to use computer vision models with Inference on the foll
 
 The table below shows on what devices you can deploy models supported by Inference.
 
-See our [Docker Getting Started](/quickstart/docker/) guide for more information on how to deploy Inference on your device.
+See our [Docker Getting Started](/quickstart/docker.md) guide for more information on how to deploy Inference on your device.
 
 Table key:
 
@@ -48,4 +48,4 @@ The installation and setup instructions are the same as for any edge device, onc
 
 You can also run your models in the cloud with the <a href="https://docs.roboflow.com/deploy/hosted-api" target="_blank">Roboflow hosted inference offering</a>. The Roboflow hosted inference solution enables you to deploy your models in the cloud without having to manage your own infrastructure. Roboflow's hosted solution does not support all features available in Inference that you can run on your own infrastructure.
 
-To learn more about device compatability with different models, refer to the [model compatability matrix](/quickstart/compatability_matrix/).
+To learn more about device compatability with different models, refer to the [model compatability matrix](/quickstart/compatability_matrix.md).

@@ -1,7 +1,7 @@
 # Data representations in Workflows
 
 Many frameworks enforce standard data types for developers to work with, and the Workflows ecosystem is no 
-exception. While the [kind](/workflows/kinds/) in a Workflow represents a high-level abstraction of the data 
+exception. While the [kind](/workflows/kinds.md) in a Workflow represents a high-level abstraction of the data 
 being passed through, it's important to understand the specific data types that will be provided to the 
 `WorkflowBlock.run(...)` method when building Workflow blocks.
 
@@ -259,7 +259,7 @@ def some_transformation(image: np.ndarray) -> np.ndarray:
 
 !!! warning "Deprecation"
 
-    [`video_metadata` kind](/workflows/kinds/video_metadata/) is deprecated - we advise not using that kind in new 
+    [`video_metadata` kind](/workflows/kinds/video_metadata.md) is deprecated - we advise not using that kind in new 
     blocks. `VideoMetadata` data representation became a member of `WorkflowImageData` in Execution Engine `v1.2.0` 
     (`inference` release `v0.23.0`)
 

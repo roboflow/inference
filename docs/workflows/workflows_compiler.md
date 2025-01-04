@@ -13,7 +13,7 @@ compilation process to assist in building Workflow blocks and encourage contribu
 !!! Note
 
     This document covers the design of Execution Engine `v1` (which is current stable version). Please 
-    acknowledge information about [versioning](/workflows/versioning/) to understand Execution Engine 
+    acknowledge information about [versioning](/workflows/versioning.md) to understand Execution Engine 
     development cycle.
 
 ## Stages of compilation
@@ -23,7 +23,7 @@ Workflow compilation involves several stages, including:
 1. Loading available blocks: Gathering all the blocks that can be used in the workflow based on 
 configuration of execution environment
 
-2. Compiling dynamic blocks: Turning [dynamic blocks definitions](/workflows/custom_python_code_blocks/) into 
+2. Compiling dynamic blocks: Turning [dynamic blocks definitions](/workflows/custom_python_code_blocks.md) into 
 standard Workflow Blocks
 
 3. Parsing the Workflow Definition: Reading and interpreting the JSON document that defines the workflow, detecting 
@@ -39,7 +39,7 @@ Let's take a closer look at each of the workflow compilation steps.
 
 ### Workflows blocks loading
 
-As described in the [blocks bundling guide](/workflows/blocks_bundling/), a group of Workflow blocks can be packaged 
+As described in the [blocks bundling guide](/workflows/blocks_bundling.md), a group of Workflow blocks can be packaged 
 into a workflow plugin. A plugin is essentially a standard Python library that, in its main module, exposes specific 
 functions allowing Workflow Blocks to be dynamically loaded.
 
@@ -69,7 +69,7 @@ Once Compiler loads all plugins it is ready for the next stage of compilation.
 
 !!! Note
 
-    The topic of [dynamic Python blocks](/workflows/custom_python_code_blocks/) is covered
+    The topic of [dynamic Python blocks](/workflows/custom_python_code_blocks.md) is covered
     in separate docs page. To unerstand the content of this section you only need to know that
     there is a way to define Workflow Blocks in-place in Workflow Definition - specifying
     both block manifest and Python code in JSON document. This functionality only works if you
@@ -124,7 +124,7 @@ helpful at later stages of compilation and during execution
 !!! Note
     
     Normally, step inputs "request" data from step outputs, forming an edge from Step A's output to Step B's input 
-    during Step B's processing. However, [control-flow blocks](/workflows/create_workflow_block/) are an exception, 
+    during Step B's processing. However, [control-flow blocks](/workflows/create_workflow_block.md) are an exception, 
     as they both accept data and declare other steps in the manifest, creating a special flow-control edge in the graph.
 
 #### Structural Validation
@@ -193,7 +193,7 @@ unpredictable results during execution if the situation is not prevented.
     into batches at `dimensionality level` 1 with matching lineage.
 
 
-As outlined in the section dedicated to [blocks development](/workflows/create_workflow_block/), each block can define 
+As outlined in the section dedicated to [blocks development](/workflows/create_workflow_block.md), each block can define 
 the expected dimensionality of its inputs and outputs. This refers to how the data should be structured. 
 For example, if a block needs an `image` input that's one level above a batch of `predictions`, the Compiler will 
 check that this requirement is met when verifying the Workflow step. If the connections between steps don’t match 
@@ -218,7 +218,7 @@ blocks to work flexibly at any dimensionality level.
 The Workflows Compiler helps the Execution Engine manage flow-control structures in workflows. It marks specific 
 attributes that allow the system to understand how flow-control impacts building inputs for certain steps and the 
 execution of the workflow graph (for more details, see the 
-[Execution Engine docs](/workflows/workflows_execution_engine/)).
+[Execution Engine docs](/workflows/workflows_execution_engine.md)).
 
 To ensure the workflow structure is correct, the Compiler checks data lineage for flow-control steps in a 
 similar way as described in the section on [data-lineage verification](#data-lineage-verification).
@@ -235,7 +235,7 @@ can decide separately for each element in the batch which ones will proceed and 
 #### Batch-orientation compatibility
 
 As it was outlined, Workflows define **batch-oriented data** and **scalars**.
-From [the description of the nature of data in Workflows](/workflows/workflow_execution/#what-is-the-data), 
+From [the description of the nature of data in Workflows](/workflows/workflow_execution.md#what-is-the-data), 
 you can also conclude that operations which are executed against batch-oriented data
 have two almost equivalent ways of running:
 
@@ -248,7 +248,7 @@ Since the default way for Workflow blocks to deal with the batches is to consume
 in such case. Execution Engine simply unpacks scalars from batches and pass them to each step.
 
 The process may complicate when block accepts batch input. You will learn the 
-details in [blocks development guide](/workflows/create_workflow_block/), but 
+details in [blocks development guide](/workflows/create_workflow_block.md), but 
 block is required to denote each input that must be provided *batch-wise* and all inputs
 which can be fed with both batch-oriented data and scalars at the same time (which is much 
 less common case). In such cases, *lineage* is used to deduce if the actual data fed into 
@@ -278,13 +278,13 @@ references that block. Some blocks may need specific initialization parameters, 
 When a block requires initialization parameters:
 
 * The block must declare the parameters it needs, as explained in detail in 
-the [blocks development guide](/workflows/create_workflow_block/)
+the [blocks development guide](/workflows/create_workflow_block.md)
 
 * The values for these parameters must be provided from the environment where the Workflow is being executed.
 
 * The values for these parameters must be provided from the environment where the Workflow is being executed.
 
-This second part might seem tricky, so let’s look at an example. In the [in user guide](/workflows/modes_of_running/),
+This second part might seem tricky, so let’s look at an example. In the [in user guide](/workflows/modes_of_running.md),
 under the section showing how to integrate with Workflows using the `inference` Python package, you might come 
 across code like this:
 

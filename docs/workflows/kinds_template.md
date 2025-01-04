@@ -61,7 +61,7 @@ providing compile-time verification of Workflows definitions.
     Support for proper serialization and deserialization of any arbitrary *kind* was 
     introduced in Execution Engine `v1.3.0` (released with inference `0.26.0`). Workflows
     plugins created prior that change may be updated - see refreshed 
-    [Blocks Bundling](/workflows/blocks_bundling/) page.
+    [Blocks Bundling](/workflows/blocks_bundling.md) page.
 
     This warning **will be removed end of Q1 2025**.
 

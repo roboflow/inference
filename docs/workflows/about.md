@@ -30,4 +30,4 @@ With Workflows, you can:
 
 In this section of documentation, we walk through what you need to know to create and run workflows. Let’s get started! 
 
-[Create and run a workflow.](/workflows/create_and_run/)
+[Create and run a workflow.](/workflows/create_and_run.md)

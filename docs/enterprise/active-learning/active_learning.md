@@ -41,7 +41,7 @@ Active Learning data collection may be combined with different components of the
 - self-hosted `inference` server - where data is collected while processing requests
 - Roboflow hosted `inference` - where you let us make sure you get your predictions and data registered. No 
 infrastructure needs to run on your end, we take care of everything
-  - [Roboflow `workflows`](../../workflows/about.md) - our newest feature - supports [`Roboflow Dataset Upload block`](/workflows/blocks/roboflow_dataset_upload/)
+  - [Roboflow `workflows`](../../workflows/about.md) - our newest feature - supports [`Roboflow Dataset Upload block`](/workflows/blocks/roboflow_dataset_upload.md)
 
 
 ## Sampling Strategies
