@@ -30,11 +30,10 @@ extra_css:
 
 nav:
   - Models:
-      - 'Getting Started':
-          - Run a Model: quickstart/run_a_model.md
-          - From Local Weights: models/from_local_weights.md
-          - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
-          - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
+      - Run a Model: quickstart/run_a_model.md
+      - From Local Weights: models/from_local_weights.md
+      - Predict on an Image Over HTTP: quickstart/run_model_on_image.md
+      - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
       - 'Fine-Tuned Models':
           - quickstart/explore_models.md
           - YOLOv11: fine-tuned/yolov11.md
@@ -67,8 +66,8 @@ nav:
           - Retrieve Your API Key: quickstart/configure_api_key.md
           - Model Licenses: https://roboflow.com/licensing
   - Workflows:
+      - About Workflows: workflows/about.md
       - User Guide:
-        - About Workflows: workflows/about.md
         - Ecosystem: workflows/understanding.md
         - Create And Run: workflows/create_and_run.md
         - Blocks Overview: workflows/blocks_connections.md
@@ -167,6 +166,7 @@ plugins:
   - search
   - swagger-ui-tag
   - mkdocs-jupyter
+  - roamlinks
   - social
   - gen-files:
       scripts:

@@ -82,7 +82,7 @@ Check what blocks you can connect to `{family_name}` in version `{version}`.
 The available connections depend on its binding kinds. Check what binding kinds 
 `{family_name}` in version `{version}`  has.
 
-??? tip "Bindings"
+???+ tip "Bindings"
 
     - input
     
@@ -98,6 +98,13 @@ The available connections depend on its binding kinds. Check what binding kinds
     ```json
     {example}
     ```
+
+<style>
+/* hide edit button for generated pages */
+article > a.md-content__button.md-icon:first-child {{
+    display: none;
+}}
+</style>    
 """
 
 BLOCK_CARD_TEMPLATE = '<p class="card block-card" data-url="{data_url}" data-name="{data_name}" data-desc="{data_desc}" data-labels="{data_labels}" data-author="{data_authors}"></p>\n'
@@ -137,6 +144,13 @@ Type: `{internal_data_type}`
 ## Details
 
 {details}
+
+<style>
+/* hide edit button for generated pages */
+article > a.md-content__button.md-icon:first-child {{
+    display: none;
+}}
+</style>
 """
 
 INLINE_UQL_PARAMETER_PATTERN = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
@@ -185,7 +199,7 @@ def main() -> None:
             internal_data_type=declared_kind.internal_data_type,
         )
         relative_link = (
-            f"/workflows/kinds/{slugify_kind_name(kind_name=declared_kind.name)}"
+            f"../kinds/{slugify_kind_name(kind_name=declared_kind.name)}.md"
         )
         generated_kinds_index_lines.append(
             f"* [`{declared_kind.name}`]({relative_link}): {description}\n"
@@ -381,7 +395,7 @@ def prepare_selector_kinds_annotation(selector: SelectorDefinition) -> str:
             type_annotation_chunks.add("step")
             continue
         for kind in allowed_reference.kind:
-            relative_link = f"/workflows/kinds/{slugify_kind_name(kind_name=kind.name)}"
+            relative_link = f"../kinds/{slugify_kind_name(kind_name=kind.name)}.md"
             type_string = f"[`{kind.name}`]({relative_link})"
             type_annotation_chunks.add(type_string)
     type_annotation_str = ", ".join(type_annotation_chunks)
@@ -396,7 +410,7 @@ def format_block_outputs(outputs_manifest: List[OutputDefinition]) -> str:
     for output in outputs_manifest:
         if len(output.kind) == 1:
             relative_link = (
-                f"/workflows/kinds/{slugify_kind_name(kind_name=output.kind[0].name)}"
+                f"../kinds/{slugify_kind_name(kind_name=output.kind[0].name)}.md"
             )
             kind = output.kind[0].name
             description = output.kind[0].description
@@ -406,7 +420,7 @@ def format_block_outputs(outputs_manifest: List[OutputDefinition]) -> str:
         else:
             kind = ", ".join(
                 [
-                    f"[`{k.name}`](/workflows/kinds/{slugify_kind_name(kind_name=k.name)})"
+                    f"[`{k.name}`](../kinds/{slugify_kind_name(kind_name=k.name)}.md)"
                     for k in output.kind
                 ]
             )
@@ -427,7 +441,7 @@ def format_block_connections(
     connections = [
         (
             f"[`{block_type2manifest_type_identifier[connection]}`]"
-            f"(/workflows/blocks/{slugify_block_name(block_type2manifest_type_identifier[connection])})"
+            f"({slugify_block_name(block_type2manifest_type_identifier[connection])}.md)"
         )
         for connection in connections
     ]
@@ -470,11 +484,8 @@ def write_kinds_summary_md(kinds):
         # replace back ticks
         line = line.replace("`", "")
 
-        # relative links (remove `/workflows/kinds/` prefix)
-        line = line.replace("/workflows/kinds/", "")
-
-        # add .md before closing )
-        line = re.sub(r'\)$', '.md)', line)
+        # relative links (remove `../kinds/` prefix)
+        line = line.replace("../kinds/", "")
 
         lines.append(line)
 
@@ -484,7 +495,7 @@ def write_kinds_summary_md(kinds):
 
 def write_blocks_summary_md(block_families):
     """
-    Creates docs/workflows/blocks/SUMMARY.md for mkdocs-literate-nav.
+    Creates docsSUMMARY.md for mkdocs-literate-nav.
     """
     # Group families by block_type
     blocks_by_type = defaultdict(list)

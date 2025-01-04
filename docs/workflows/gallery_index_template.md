@@ -5,3 +5,10 @@ Browse through the various categories to find inspiration and ideas for building
 
 <ul id="workflows-gallery">
 </ul>
+
+<style>
+/* hide edit button for generated pages */
+article > a.md-content__button.md-icon:first-child {
+    display: none;
+}
+</style>
