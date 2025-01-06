@@ -18,6 +18,13 @@
   justify-content: space-between;
 }
 
+@media screen and (min-width: 76.25em) {
+  .md-nav__item--section>.md-nav__link {
+      font-weight: 700;
+      color: var(--md-default-fg-color--light);
+  }
+}
+
 .md-header {
   background: #8315f9;
   background: linear-gradient(90deg, #8315f9 5%, #7812c7 50%, #401e62);
@@ -46,6 +53,7 @@
   .md-search__input {
       font-size: .7rem;
   }
+}
 
 .md-main__inner {
   margin-top: 0.25rem;
