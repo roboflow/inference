@@ -22,7 +22,7 @@ extra:
     - icon: fontawesome/brands/twitter
       link: https://twitter.com/roboflow
   version:
-    default: 1.0
+    provider: mike
 
 extra_css:
   - styles.css
