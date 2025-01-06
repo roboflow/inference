@@ -14,14 +14,39 @@ jobs:
     outputs:
       mergeable_state: ${{ steps.mergeable_check.outputs.mergeable_state }}
     steps:
+      - name: Print debug info: GitHub context
+        run: |
+          echo "head_ref: ${{ github.head_ref }}"
+          echo "ref_name: ${{ github.ref_name }}"
+          echo "repository: ${{ github.repository }}"
+          echo "sha: ${{ github.sha }}"
+
       - name: Checkout the PR branch
         uses: actions/checkout@v3
         with:
           ref: ${{ github.head_ref || github.ref_name }}
-      
+      - name: Debug: Print current branch and commits
+        run: |
+          echo "Current branch:"
+          git branch --show-current
+          echo "Last 5 commits on branch:"
+          git log -5 --oneline
+
       - name: Fetch main branch
         run: |
+          echo "Fetching main branch..."
           git fetch origin main:main
+          echo "Branches available after fetch:"
+          git branch -a
+          echo "Last 5 commits on fetched main branch:"
+          git log main -5 --oneline
+
+      - name: Debug: Show merge-base comparison
+        run: |
+          echo "Finding merge-base..."
+          git merge-base main HEAD
+          echo "Checking if main is an ancestor of HEAD..."
+          git merge-base --is-ancestor main HEAD || echo "main is NOT an ancestor of HEAD."
 
       - name: Check if PR branch contains all commits from main
         id: mergeable_check
@@ -33,3 +58,6 @@ jobs:
             echo "[FAIL] Selected branch is NOT up-to-date with main."
             echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Debug: Output mergeable state
+        run: echo "Mergeable state: ${{ steps.mergeable_check.outputs.mergeable_state }}"
