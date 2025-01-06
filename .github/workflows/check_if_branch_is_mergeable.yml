@@ -14,24 +14,22 @@ jobs:
     outputs:
       mergeable_state: ${{ steps.mergeable_check.outputs.mergeable_state }}
     steps:
-      - name: Check if branch contains all commits from main via GitHub CLI
-        id: mergeable_check
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Checkout the PR branch
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      
+      - name: Fetch main branch
         run: |
-          if [ "main" = "${{ github.head_ref || github.ref_name }}" ]; then
-            echo "[OK] Merging to main"
-            exit 0
-          fi
-          response=$(gh api /repos/${{ github.repository }}/compare/main...${{ github.head_ref || github.ref_name }} )
+          git fetch origin main:main
 
-          status=$(echo "$response" | jq -r '.status')
-
-          if [ "$status" = "ahead" ]; then
-            echo "[OK] Selected branch is ahead of main and can be merged"
+      - name: Check if PR branch contains all commits from main
+        id: mergeable_check
+        run: |
+          if git merge-base --is-ancestor main HEAD; then
+            echo "[OK] Selected branch is up-to-date with main and can be merged."
             echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
           else
-            echo "[FAIL] Selected branch does NOT meet the criteria."
-            echo "Status: $status"
+            echo "[FAIL] Selected branch is NOT up-to-date with main."
             echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
           fi
