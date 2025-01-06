@@ -19,6 +19,11 @@ hide:
   max-width: 50rem;
   margin: auto;
 }
+
+/* hide edit button */
+article > a.md-content__button.md-icon:first-child {
+    display: none;
+}
 </style>
 
 ![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
