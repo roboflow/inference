@@ -1458,7 +1458,11 @@ class HttpInterface(BaseInterface):
                 )
 
         # Enable preloading models at startup
-        if PRELOAD_MODELS and API_KEY and not LAMBDA:
+        if (
+            (PRELOAD_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
+            and API_KEY
+            and not LAMBDA
+        ):
 
             class ModelInitState:
                 """Class to track model initialization state."""
@@ -1501,11 +1505,12 @@ class HttpInterface(BaseInterface):
                         async with state.lock:
                             state.initialization_errors.append((model_id, str(e)))
 
-                # Create tasks for each model to be loaded
-                tasks = [load_model(model_id) for model_id in PRELOAD_MODELS]
+                if PRELOAD_MODELS:
+                    # Create tasks for each model to be loaded
+                    tasks = [load_model(model_id) for model_id in PRELOAD_MODELS]
 
-                # Wait for all tasks to complete, collecting exceptions
-                await asyncio.gather(*tasks, return_exceptions=True)
+                    # Wait for all tasks to complete, collecting exceptions
+                    await asyncio.gather(*tasks, return_exceptions=True)
 
                 # Update the readiness state in a thread-safe manner
                 async with state.lock:
