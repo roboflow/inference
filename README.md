@@ -39,7 +39,7 @@ Inference turns any computer or edge device into a command center for your compu
 * 🔗 [Extend](https://inference.roboflow.com/workflows/create_workflow_block/) with your own code and models
 * 🚀 Deploy production systems at scale
 
-See [Example Workflows](https://roboflow.com/workflows/templates) for common use-cases like detecting small objects with SAHI, multi-model consensus, active learning, reading license plates, blurring faces, background removal, and more.
+See [Example Workflows](https://inference.roboflow.com/workflows/gallery/) for common use-cases like detecting small objects with SAHI, multi-model consensus, active learning, reading license plates, blurring faces, background removal, and more.
 
 [Time In Zone Workflow Example](https://github.com/user-attachments/assets/743233d9-3460-442d-83f8-20e29e76b346)
 
