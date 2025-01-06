@@ -1,11 +1,29 @@
 ---
 hide:
+  - path
+  - navigation
   - toc
 ---
 
+<style>
+/* Hide <h1> on homepage */
+.md-typeset h1 {
+  display: none;
+}
+.md-main__inner {
+  margin-top: -1rem;
+}
+
+/* constrain to same width even w/o sidebar */
+.md-content {
+  max-width: 50rem;
+  margin: auto;
+}
+</style>
+
 ![Roboflow Inference banner](https://github.com/roboflow/inference/blob/main/banner.png?raw=true)
 
-Roboflow Inference is an open-source platform designed to simplify the deployment of computer vision models. It enables developers to perform object detection, classification, instance segmentation and [keypoint detection](/quickstart/run_keypoint_detection/), and utilize foundation models like [CLIP](/foundation/clip), [Segment Anything](/foundation/sam), and [YOLO-World](/foundation/yolo_world) through a Python-native package, a self-hosted inference server, or a fully [managed API](https://docs.roboflow.com/).
+Roboflow Inference is an open-source platform designed to simplify the deployment of computer vision models. It enables developers to perform object detection, classification, instance segmentation and [keypoint detection](/quickstart/run_keypoint_detection.md), and utilize foundation models like [CLIP](/foundation/clip.md), [Segment Anything](/foundation/sam.md), and [YOLO-World](/foundation/yolo_world.md) through a Python-native package, a self-hosted inference server, or a fully [managed API](https://docs.roboflow.com/).
 
 Explore our [enterprise options](https://roboflow.com/sales) for advanced features like server deployment, active learning, and commercial licenses for YOLOv5 and YOLOv8.
 
@@ -13,7 +31,7 @@ Explore our [enterprise options](https://roboflow.com/sales) for advanced featur
 
 <div class="button-holder">
 <a href="/quickstart/inference_101/" class="button half-button">Learn about the various ways you can use Inference</a>
-<a href="/foundation/about/" class="button half-button">See all of the models you can run with Inference</a>
+<a href="/workflows/about/" class="button half-button">Build a visual agent with Workflows</a>
 </div>
 
 <style>
@@ -35,7 +53,7 @@ Here is an example of a model running on a video using Inference:
 
 ## 💻 install
 
-Inference package requires [**Python>=3.8,<=3.11**](https://www.python.org/). Click [here](/quickstart/docker/) to learn more about running Inference inside Docker.
+Inference package requires [**Python>=3.8,<=3.11**](https://www.python.org/). Click [here](/quickstart/docker.md) to learn more about running Inference inside Docker.
 
 ```bash
 pip install inference
@@ -149,7 +167,7 @@ You can also run Inference as a microservice with Docker.
 
 ### deploy server
 
-The inference server is distributed via Docker. Behind the scenes, inference will download and run the image that is appropriate for your hardware. [Here](/quickstart/docker/#advanced-build-a-docker-container-from-scratch), you can learn more about the supported images.
+The inference server is distributed via Docker. Behind the scenes, inference will download and run the image that is appropriate for your hardware. [Here](/quickstart/docker.md#advanced-build-a-docker-container-from-scratch), you can learn more about the supported images.
 
 ```bash
 inference server start
@@ -174,7 +192,7 @@ If you're using the hosted API, change the local API URL to `https://detect.robo
 
 ## 🎥 inference pipeline
 
-The inference pipeline is an efficient method for processing static video files and streams. Select a model, define the video source, and set a callback action. You can choose from predefined callbacks that allow you to [display results](/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) on the screen or [save them to a file](/docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.VideoFileSink).
+The inference pipeline is an efficient method for processing static video files and streams. Select a model, define the video source, and set a callback action. You can choose from predefined callbacks that allow you to [display results](/reference/inference/core/interfaces/stream/sinks.md#inference.core.interfaces.stream.sinks.render_boxes) on the screen or [save them to a file](/reference/inference/core/interfaces/stream/sinks.md#inference.core.interfaces.stream.sinks.VideoFileSink).
 
 ```python
 from inference import InferencePipeline

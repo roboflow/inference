@@ -4,7 +4,7 @@ In Roboflow Workflows, the Workflow Definition is the internal "programming lang
 way to define how different blocks interact, specifying the necessary inputs, outputs, and configurations. 
 By using this syntax, users can create workflows without UI.
 
-Let's start from examining the Workflow Definition created in [this tutorial](/workflows/create_and_run/) and
+Let's start from examining the Workflow Definition created in [this tutorial](/workflows/create_and_run.md) and
 analyse it step by step.
 
 ??? Tip "Workflow definition"
@@ -117,13 +117,13 @@ value is not expected to be a batch of elements, so when you provide a list, it 
 elements, rather than batch of elements, each to be processed individually.
 
 More details about the nature of batch-oriented data processing in workflows can be found 
-[here](/workflows/workflow_execution).
+[here](/workflows/workflow_execution.md).
 
 ### Generic batch-oriented inputs
 
 Since Execution Engine `v1.3.0` (inference release `v0.27.0`), Workflows support
-batch oriented inputs of any *[kind](/workflows/kinds/)* and 
-*[dimensionality](/workflows/workflow_execution/#steps-interactions-with-data)*. 
+batch oriented inputs of any *[kind](/workflows/kinds.md)* and 
+*[dimensionality](/workflows/workflow_execution.md#steps-interactions-with-data)*. 
 This inputs are **not enforced for now**, but we expect that as the ecosystem grows, they will 
 be more and more useful.
 
@@ -167,7 +167,7 @@ be more and more useful.
 
 ## Steps
 
-As mentioned [here](/workflows/understanding), steps are instances of Workflow blocks connected with inputs and outputs 
+As mentioned [here](/workflows/understanding.md), steps are instances of Workflow blocks connected with inputs and outputs 
 of other steps to dictate how data flows through the workflow. Let's see example step definition:
 
 ```json
@@ -186,7 +186,7 @@ Two remaining properties declare `selectors` (this is how we call references in 
 `model`. While running the workflow, data passed into those placeholders will be provided for block to process.
 
 Our documentation showcases what is the structure of each block and provides examples of how each block can be 
-used as workflow step. Explore our blocks collection [here](/workflows/blocks) where you can find what are 
+used as workflow step. Explore our blocks collection [here](/workflows/blocks.md) where you can find what are 
 block data inputs, outputs and configuration properties.
 
 Input data bindings of blocks (like `images` property) can be filled with selectors to batch-oriented inputs and 
@@ -232,4 +232,4 @@ To ensure these coordinates are not translated back to the parent coordinate sys
 Additionally, outputs selectors support wildcards (`$steps.step_nane.*"`) to grab all outputs of specific step.
 
 To fully understand how output structure is created - read about 
-[data processing in Workflows](/workflows/workflow_execution/).
+[data processing in Workflows](/workflows/workflow_execution.md).

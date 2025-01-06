@@ -1,6 +1,4 @@
-# Workflows
-
-## What is Roboflow Workflows?
+# What is Roboflow Workflows?
 
 Roboflow Workflows is an ecosystem that enables users to create machine learning applications using a wide range 
 of pluggable and reusable blocks. These blocks are organized in a way that makes it easy for users to design 
@@ -32,4 +30,4 @@ With Workflows, you can:
 
 In this section of documentation, we walk through what you need to know to create and run workflows. Let’s get started! 
 
-[Create and run a workflow.](/workflows/create_and_run/)
+[Create and run a workflow.](/workflows/create_and_run.md)

@@ -46,7 +46,7 @@ any of its component changes and those changes are ready to be published
     all other changes to block should yield new version
 
     * each version of the block is to be submitted into new module
-    (as suggested [here](/workflows/blocks_bundling/)) - even **for the price of code duplication**
+    (as suggested [here](/workflows/blocks_bundling.md)) - even **for the price of code duplication**
     as we think stability is more important than DRY in this particular case
 
     * on the similar note, we suggest each block to be as independent as possible, 
