@@ -23,15 +23,30 @@ jobs:
             echo "[OK] Merging to main"
             exit 0
           fi
-          response=$(gh api /repos/${{ github.repository }}/compare/main...${{ github.head_ref || github.ref_name }} )
 
+          # Extract repository information
+          target_repo="${{ github.repository }}"
+          source_repo="${{ github.event.pull_request.head.repo.full_name || github.repository }}"
+          target_branch="main"
+          source_branch="${{ github.head_ref || github.ref_name }}"
+
+          echo "Comparing $source_repo:$source_branch with $target_repo:$target_branch"
+
+          # For forks, we need to use the full repository path
+          response=$(gh api "/repos/$target_repo/compare/$target_branch...$source_repo:$source_branch")
           status=$(echo "$response" | jq -r '.status')
 
           if [ "$status" = "ahead" ]; then
             echo "[OK] Selected branch is ahead of main and can be merged"
             echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
+          elif [ "$status" = "behind" ]; then
+            echo "[FAIL] Selected branch is behind main and needs to be updated"
+            echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
+          elif [ "$status" = "diverged" ]; then
+            echo "[FAIL] Selected branch has diverged from main and needs to be rebased"
+            echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
           else
-            echo "[FAIL] Selected branch does NOT meet the criteria."
+            echo "[FAIL] Selected branch does NOT meet the criteria"
             echo "Status: $status"
             echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
           fi
