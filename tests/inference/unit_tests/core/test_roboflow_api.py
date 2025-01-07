@@ -1724,7 +1724,7 @@ def test_get_workflow_specification_when_connection_error_occurs_but_file_is_cac
     get_mock.return_value = MagicMock(
         status_code=200,
         json=MagicMock(
-            return_value={"workflow": {"config": json.dumps({"specification": "some"})}}
+            return_value={"workflow": {"config": json.dumps({"specification": {"some": "some"}})}}
         ),
     )
     _ = get_workflow_specification(
@@ -1744,7 +1744,7 @@ def test_get_workflow_specification_when_connection_error_occurs_but_file_is_cac
     )
 
     # then
-    assert result == "some", "Expected workflow specification to be retrieved from file"
+    assert result == {"some": "some", "id": None}, "Expected workflow specification to be retrieved from file"
 
 
 @mock.patch.object(roboflow_api.requests, "get")
@@ -1760,7 +1760,7 @@ def test_get_workflow_specification_when_consecutive_request_hits_ephemeral_cach
     get_mock.return_value = MagicMock(
         status_code=200,
         json=MagicMock(
-            return_value={"workflow": {"config": json.dumps({"specification": "some"})}}
+            return_value={"workflow": {"config": json.dumps({"specification": {"some": "some"}})}}
         ),
     )
     ephemeral_cache = MemoryCache()
@@ -1780,7 +1780,7 @@ def test_get_workflow_specification_when_consecutive_request_hits_ephemeral_cach
     )
 
     # then
-    assert result == "some", "Expected workflow specification to be retrieved from file"
+    assert result == {"some": "some", "id": None}, "Expected workflow specification to be retrieved from file"
     assert get_mock.call_count == 1, "Expected remote API to be only called once"
 
 
@@ -2102,6 +2102,7 @@ def test_get_workflow_specification_when_valid_response_given_and_cache_disabled
                 "selector": "$steps.step_1.predictions",
             }
         ],
+        "id": "Har3FW34j1Rjc4p8IX4B",
     }
 
 
@@ -2164,6 +2165,7 @@ def test_get_workflow_specification_when_valid_response_given_on_consecutive_req
                     "selector": "$steps.step_1.predictions",
                 }
             ],
+            "id": "Har3FW34j1Rjc4p8IX4B",
         }
     )
     assert len(ephemeral_cache.cache) == 1, "Expected cache content to appear"
