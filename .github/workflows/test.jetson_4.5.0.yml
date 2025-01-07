@@ -20,8 +20,6 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: 📦 Cache Python packages
         uses: actions/cache@v3
         with:

@@ -12,7 +12,7 @@ your Workflow. The metadata functions as a batch-oriented parameter, treated by 
 way as `WorkflowImage`.
 
 * The `InferencePipeline` supports 
-[video processing with Workflows](/using_inference/inference_pipeline/#inferencepipeline-and-roboflow-workflows) 
+[video processing with Workflows](/using_inference/inference_pipeline.md#inferencepipeline-and-roboflow-workflows) 
 by automatically injecting `WorkflowVideoMetadata` into the `video_metadata` field. This allows you to seamlessly run
 your Workflow using the `InferencePipeline` within the `inference` Python package.
 

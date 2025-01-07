@@ -96,4 +96,3 @@ def bool_env(val):
 @pytest.fixture(scope="function")
 def face_image() -> np.ndarray:
     return cv2.imread(os.path.join(ASSETS_DIR, "face.jpeg"))
-

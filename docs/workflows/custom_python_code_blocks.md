@@ -1,10 +1,10 @@
 # Dynamic Python blocks
 
-When the syntax for Workflow definitions was [outlined](/workflows/definitions/), one key 
+When the syntax for Workflow definitions was [outlined](/workflows/definitions.md), one key 
 aspect was not covered: the ability to define blocks directly within the Workflow definition itself. This section can
 include the manifest and Python code for blocks defined in-place, which are dynamically interpreted by the 
 Execution Engine. These in-place blocks function similarly to those statically defined in 
-[plugins](/workflows/blocks_bundling/), yet provide much more flexibility.
+[plugins](/workflows/blocks_bundling.md), yet provide much more flexibility.
 
 
 !!! Warning
@@ -182,7 +182,7 @@ Let's take a look and discuss example workflow with dynamic Python blocks.
 Let's start the analysis from `dynamic_blocks_definitions` - this is the part of 
 Workflow Definition that provides a list of dynamic blocks. Each block contains two sections:
 
-* `manifest` - providing JSON representation of `BlockManifest` - refer [blocks development guide](/workflows/create_workflow_block/)
+* `manifest` - providing JSON representation of `BlockManifest` - refer [blocks development guide](/workflows/create_workflow_block.md)
 
 * `code` - shipping Python code
 
@@ -205,7 +205,7 @@ by Execution Engine
 * `accepts_empty_values` - field deciding if empty inputs will be ignored while 
 constructing step inputs
 
-In any doubt, refer to [blocks development guide](/workflows/create_workflow_block/), as
+In any doubt, refer to [blocks development guide](/workflows/create_workflow_block.md), as
 the dynamic blocks replicates standard blocs capabilities.
 
 
