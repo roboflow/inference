@@ -15,7 +15,9 @@ def get_perturbed_value(initial_value: np.ndarray, perturbation: float) -> np.nd
     )
 
 
-@pytest.mark.skip(reason="Solve flakiness of the block: https://github.com/roboflow/inference/issues/901")
+@pytest.mark.skip(
+    reason="Solve flakiness of the block: https://github.com/roboflow/inference/issues/901"
+)
 def test_identify_outliers() -> None:
     # given
     identify_changes_block = IdentifyOutliersBlockV1()
