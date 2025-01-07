@@ -19,6 +19,8 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.logger import logger
+
 
 LONG_DESCRIPTION = """
 This **PLC Communication** block integrates a Roboflow Workflow with a PLC using Ethernet/IP communication.
@@ -61,30 +63,34 @@ class PLCBlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/sinks@v1"]
 
     plc_ip: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
-        description="IP address of the target PLC.",
-        examples=["192.168.1.10"]
+        description="IP address of the target PLC.", examples=["192.168.1.10"]
     )
 
     mode: Literal["read", "write", "read_and_write"] = Field(
         description="Mode of operation: 'read', 'write', or 'read_and_write'.",
-        examples=["read", "write", "read_and_write"]
+        examples=["read", "write", "read_and_write"],
     )
 
-    tags_to_read: Union[List[str], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(
+    tags_to_read: Union[
+        List[str], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])
+    ] = Field(
         default=[],
         description="List of PLC tag names to read. Applicable if mode='read' or mode='read_and_write'.",
-        examples=[["camera_msg", "sku_number"]]
+        examples=[["camera_msg", "sku_number"]],
     )
 
-    tags_to_write: Union[Dict[str, Union[int, float, str]], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(
+    tags_to_write: Union[
+        Dict[str, Union[int, float, str]],
+        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
+    ] = Field(
         default={},
         description="Dictionary of tags and the values to write. Applicable if mode='write' or mode='read_and_write'.",
-        examples=[{"camera_fault": True, "defect_count": 5}]
+        examples=[{"camera_fault": True, "defect_count": 5}],
     )
 
     depends_on: Selector() = Field(
         description="Reference to the step output this block depends on.",
-        examples=["$steps.some_previous_step"]
+        examples=["$steps.some_previous_step"],
     )
 
     @classmethod
@@ -149,21 +155,36 @@ class PLCBlockV1(WorkflowBlock):
             # If mode involves reading
             if mode in ["read", "read_and_write"]:
                 for tag in tags_to_read:
-                    response = comm.Read(tag)
-                    if response.Status == "Success":
-                        read_results[tag] = response.Value
-                    else:
-                        print(f"Error reading tag '{tag}': {response.Status}")
+                    try:
+                        response = comm.Read(tag)
+                        if response.Status == "Success":
+                            read_results[tag] = response.Value
+                        else:
+                            logger.error(
+                                f"Error reading tag '%s': %s", tag, response.Status
+                            )
+                            read_results[tag] = "ReadFailure"
+                    except Exception as e:
+                        logger.error(f"Unhandled error reading tag '%s': %s", tag, e)
                         read_results[tag] = "ReadFailure"
 
             # If mode involves writing
             if mode in ["write", "read_and_write"]:
                 for tag, value in tags_to_write.items():
-                    response = comm.Write(tag, value)
-                    if response.Status == "Success":
-                        write_results[tag] = "WriteSuccess"
-                    else:
-                        print(f"Error writing tag '{tag}' with value '{value}': {response.Status}")
+                    try:
+                        response = comm.Write(tag, value)
+                        if response.Status == "Success":
+                            write_results[tag] = "WriteSuccess"
+                        else:
+                            logger.error(
+                                "Error writing tag '%s' with value '%s': %s",
+                                tag,
+                                value,
+                                response.Status,
+                            )
+                            write_results[tag] = "WriteFailure"
+                    except Exception as e:
+                        logger.error(f"Unhandled error writing tag '%s': %s", tag, e)
                         write_results[tag] = "WriteFailure"
 
         plc_output = {}
