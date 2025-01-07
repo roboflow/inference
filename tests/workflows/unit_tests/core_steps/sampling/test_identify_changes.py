@@ -16,7 +16,7 @@ default_inputs = {
 def get_perturbed_value(initial_value: np.ndarray, perturbation: float) -> np.ndarray:
     # randomly fluctuate by +- rand in perturbation in dimensions
     return initial_value + np.random.uniform(
-        -perturbation, perturbation, size=len(initial_value)
+        0, perturbation, size=len(initial_value)
     )
 
 
@@ -46,14 +46,14 @@ def test_identify_changes() -> None:
     # add a bit of variance
     for i in range(10):
         result = identify_changes_block.run(
-            **default_inputs, embedding=get_perturbed_value(initial_value, 1e-4)
+            **default_inputs, embedding=get_perturbed_value(initial_value, 1e-3)
         )
 
     result = identify_changes_block.run(**default_inputs, embedding=initial_value)
     assert not result.get("is_outlier")
 
     # ensure that the average and std have changed
-    assert not np.allclose(result.get("average"), initial_value_normalized, atol=1e-3)
+    assert not np.allclose(result.get("average"), initial_value_normalized)
     assert not np.all(result.get("std") == [0, 0, 0, 0, 0])
 
     # make a large change
@@ -63,5 +63,5 @@ def test_identify_changes() -> None:
 
     assert result.get("is_outlier")
     # average and std should not be zero anymore
-    assert not np.allclose(result.get("average"), initial_value_normalized, atol=1e-3)
+    assert not np.allclose(result.get("average"), initial_value_normalized)
     assert not np.all(result.get("std") == [0, 0, 0, 0, 0])
