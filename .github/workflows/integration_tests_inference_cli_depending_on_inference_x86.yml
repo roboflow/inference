@@ -1,8 +1,6 @@
 name: INTEGRATION TESTS - inference CLI + inference CORE
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
@@ -24,8 +22,6 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: 🐍 Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:

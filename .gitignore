@@ -139,6 +139,7 @@ profile/
 *.pstats
 *.jpeg
 *.png
+!favicon.png
 !icon.png
 *.mp4
 *.roboflow.txt

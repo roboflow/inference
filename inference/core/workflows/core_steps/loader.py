@@ -28,6 +28,8 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
 from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
     TimeInZoneBlockV2,
 )
+from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
+from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
     CameraFocusBlockV1,
 )
@@ -166,6 +168,7 @@ from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
 from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
     Florence2BlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
 )
@@ -227,6 +230,12 @@ from inference.core.workflows.core_steps.models.third_party.barcode_detection.v1
 )
 from inference.core.workflows.core_steps.models.third_party.qr_code_detection.v1 import (
     QRCodeDetectorBlockV1,
+)
+from inference.core.workflows.core_steps.sampling.identify_changes.v1 import (
+    IdentifyChangesBlockV1,
+)
+from inference.core.workflows.core_steps.sampling.identify_outliers.v1 import (
+    IdentifyOutliersBlockV1,
 )
 from inference.core.workflows.core_steps.secrets_providers.environment_secrets_store.v1 import (
     EnvironmentSecretsStoreBlockV1,
@@ -334,6 +343,9 @@ from inference.core.workflows.core_steps.visualizations.dot.v1 import (
 from inference.core.workflows.core_steps.visualizations.ellipse.v1 import (
     EllipseVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.visualizations.grid.v1 import (
+    GridVisualizationBlockV1,
+)
 from inference.core.workflows.core_steps.visualizations.halo.v1 import (
     HaloVisualizationBlockV1,
 )
@@ -378,6 +390,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     CONTOURS_KIND,
     DETECTION_KIND,
     DICTIONARY_KIND,
+    EMBEDDING_KIND,
     FLOAT_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KEYPOINTS_KIND,
@@ -494,6 +507,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         BoundingBoxVisualizationBlockV1,
         BoundingRectBlockV1,
         ByteTrackerBlockV2,
+        CacheGetBlockV1,
+        CacheSetBlockV1,
         CameraFocusBlockV1,
         CircleVisualizationBlockV1,
         ClipComparisonBlockV1,
@@ -514,6 +529,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Florence2BlockV2,
         GoogleGeminiBlockV1,
         GoogleVisionOCRBlockV1,
+        GridVisualizationBlockV1,
         HaloVisualizationBlockV1,
         ImageBlurBlockV1,
         ImageContoursDetectionBlockV1,
@@ -579,9 +595,12 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RoboflowObjectDetectionModelBlockV2,
         VLMAsClassifierBlockV2,
         VLMAsDetectorBlockV2,
+        IdentifyOutliersBlockV1,
+        IdentifyChangesBlockV1,
         EnvironmentSecretsStoreBlockV1,
         SlackNotificationBlockV1,
         TwilioSMSNotificationBlockV1,
+        GazeBlockV1,
     ]
 
 
@@ -622,4 +641,5 @@ def load_kinds() -> List[Kind]:
         BYTES_KIND,
         INFERENCE_ID_KIND,
         SECRET_KIND,
+        EMBEDDING_KIND,
     ]

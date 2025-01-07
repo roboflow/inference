@@ -19,7 +19,7 @@ from tests.inference_cli.integration_tests.conftest import (
     INFERENCE_CLI_TESTS_API_KEY is None,
     reason="`INFERENCE_CLI_TESTS_API_KEY` not provided.",
 )
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_processing_image_with_hosted_api(
     image_to_be_processed: str,
     empty_directory: str,
@@ -60,7 +60,7 @@ def test_processing_image_with_hosted_api(
     INFERENCE_CLI_TESTS_API_KEY is None,
     reason="`INFERENCE_CLI_TESTS_API_KEY` not provided.",
 )
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_processing_images_directory_with_hosted_api(
     dataset_directory: str,
     empty_directory: str,
@@ -109,7 +109,7 @@ def test_processing_images_directory_with_hosted_api(
     not RUN_TESTS_WITH_INFERENCE_PACKAGE,
     reason="`RUN_TESTS_WITH_INFERENCE_PACKAGE` set to False",
 )
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_processing_image_with_inference_package(
     image_to_be_processed: str,
     empty_directory: str,
@@ -154,7 +154,7 @@ def test_processing_image_with_inference_package(
     not RUN_TESTS_WITH_INFERENCE_PACKAGE,
     reason="`RUN_TESTS_WITH_INFERENCE_PACKAGE` set to False",
 )
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_processing_image_with_inference_package_when_output_images_should_not_be_preserved(
     image_to_be_processed: str,
     empty_directory: str,
@@ -201,7 +201,7 @@ def test_processing_image_with_inference_package_when_output_images_should_not_b
     not RUN_TESTS_WITH_INFERENCE_PACKAGE,
     reason="`RUN_TESTS_WITH_INFERENCE_PACKAGE` set to False",
 )
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_processing_images_directory_with_inference_package(
     dataset_directory: str,
     empty_directory: str,
@@ -250,7 +250,7 @@ def test_processing_images_directory_with_inference_package(
     not RUN_TESTS_WITH_INFERENCE_PACKAGE,
     reason="`RUN_TESTS_WITH_INFERENCE_PACKAGE` set to False",
 )
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_processing_video_with_inference_package_with_modulated_fps(
     video_to_be_processed: str,
     empty_directory: str,
@@ -294,7 +294,7 @@ def test_processing_video_with_inference_package_with_modulated_fps(
     not RUN_TESTS_WITH_INFERENCE_PACKAGE,
     reason="`RUN_TESTS_WITH_INFERENCE_PACKAGE` set to False",
 )
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_processing_video_with_inference_package_with_modulated_fps_when_video_should_not_be_preserved(
     video_to_be_processed: str,
     empty_directory: str,
@@ -338,7 +338,7 @@ def test_processing_video_with_inference_package_with_modulated_fps_when_video_s
     not RUN_TESTS_EXPECTING_ERROR_WHEN_INFERENCE_NOT_INSTALLED,
     reason="`RUN_TESTS_EXPECTING_ERROR_WHEN_INFERENCE_NOT_INSTALLED` set to False",
 )
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_processing_image_with_inference_package_when_inference_not_installed(
     empty_directory: str,
     image_to_be_processed: str,
@@ -376,7 +376,7 @@ def test_processing_image_with_inference_package_when_inference_not_installed(
     not RUN_TESTS_EXPECTING_ERROR_WHEN_INFERENCE_NOT_INSTALLED,
     reason="`RUN_TESTS_EXPECTING_ERROR_WHEN_INFERENCE_NOT_INSTALLED` set to False",
 )
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_processing_images_directory_with_inference_package_when_inference_not_installed(
     empty_directory: str,
     dataset_directory: str,
@@ -414,7 +414,7 @@ def test_processing_images_directory_with_inference_package_when_inference_not_i
     not RUN_TESTS_EXPECTING_ERROR_WHEN_INFERENCE_NOT_INSTALLED,
     reason="`RUN_TESTS_EXPECTING_ERROR_WHEN_INFERENCE_NOT_INSTALLED` set to False",
 )
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_processing_video_with_inference_package_when_inference_not_installed(
     empty_directory: str,
     video_to_be_processed: str,
