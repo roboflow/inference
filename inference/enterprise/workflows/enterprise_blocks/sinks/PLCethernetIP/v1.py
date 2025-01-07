@@ -53,7 +53,7 @@ class PLCBlockManifest(WorkflowBlockManifest):
             "version": "v1",
             "short_description": "Generic PLC read/write block using pylogix over Ethernet/IP.",
             "long_description": LONG_DESCRIPTION,
-            "license": "Apache-2.0",
+            "license": "Roboflow Enterprise License",
             "block_type": "sinks",
         }
     )
