@@ -223,12 +223,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Maximum number of tokens the model can generate in it's response.",
         gt=1,
     )
-    temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
+    temperature: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=1,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
         'random / "creative" the generations are.',
     )
-    top_p: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
+    top_p: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         default=1.0,
         description="Top-p to sample from the model - value in range 0.0-1.0, the higher - the more diverse and creative the generations are",
     )
@@ -258,8 +258,8 @@ class BlockManifest(WorkflowBlockManifest):
             )
         return self
 
-    @classmethod
     @field_validator("temperature")
+    @classmethod
     def validate_temperature(cls, value: Union[str, float]) -> Union[str, float]:
         if isinstance(value, str):
             return value
@@ -267,14 +267,16 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 "'temperature' parameter required to be in range [0.0, 2.0]"
             )
+        return value
 
-    @classmethod
     @field_validator("top_p")
-    def validate_temperature(cls, value: Union[str, float]) -> Union[str, float]:
+    @classmethod
+    def validate_top_p(cls, value: Union[str, float]) -> Union[str, float]:
         if isinstance(value, str):
             return value
         if value < 0.0 or value > 1.0:
             raise ValueError("'top_p' parameter required to be in range [0.0, 2.0]")
+        return value
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -325,7 +327,7 @@ class LlamaVisionBlockV1(WorkflowBlock):
         model_version: ModelVersion,
         max_tokens: int,
         temperature: float,
-        top_p: Optional[float],
+        top_p: float,
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
@@ -357,7 +359,7 @@ def run_llama_vision_32_llm_prompting(
     llama_model_version: ModelVersion,
     max_tokens: int,
     temperature: float,
-    top_p: Optional[float],
+    top_p: float,
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
@@ -397,7 +399,7 @@ def execute_llama_vision_32_requests(
     model_version_id: str,
     max_tokens: int,
     temperature: float,
-    top_p: Optional[float],
+    top_p: float,
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=llama_api_key)
@@ -429,7 +431,7 @@ def execute_llama_vision_32_request(
     llama_model_version: str,
     max_tokens: int,
     temperature: float,
-    top_p: Optional[float],
+    top_p: float,
 ) -> str:
     response = client.chat.completions.create(
         model=llama_model_version,
