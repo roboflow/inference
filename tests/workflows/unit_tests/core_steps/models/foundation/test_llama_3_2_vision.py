@@ -180,23 +180,6 @@ def test_llama_3_2_vision_step_validation_when_temperature_is_invalid(
         _ = BlockManifest.model_validate(specification)
 
 
-@pytest.mark.parametrize("value", [-0.5, 3.0])
-def test_llama_3_2_vision_step_validation_when_top_p_is_invalid(value: float) -> None:
-    # given
-    specification = {
-        "type": "roboflow_core/llama_3_2_vision@v1",
-        "name": "step_1",
-        "images": "$inputs.image",
-        "prompt": "This is my prompt",
-        "api_key": "$inputs.open_router_api_key",
-        "top_p": value,
-    }
-
-    # when
-    with pytest.raises(ValidationError):
-        _ = BlockManifest.model_validate(specification)
-
-
 @pytest.mark.parametrize("value", ["unconstrained", "visual-question-answering"])
 def test_llama_3_2_vision_when_prompt_not_delivered_when_required(value: float) -> None:
     # given
@@ -288,7 +271,6 @@ def test_execute_llama_vision_32_request_when_request_succeeds() -> None:
         llama_model_version="meta-llama/llama-3.2-11b-vision-instruct:free",
         max_tokens=300,
         temperature=0.5,
-        top_p=0.7,
     )
 
     # then
@@ -320,7 +302,6 @@ def test_execute_llama_vision_32_request_when_request_fails() -> None:
             llama_model_version="meta-llama/llama-3.2-11b-vision-instruct:free",
             max_tokens=300,
             temperature=0.5,
-            top_p=0.7,
         )
 
     # then
