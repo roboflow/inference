@@ -22,19 +22,29 @@ jobs:
             exit 0
           fi
 
+          # Sanitize and escape input values
+          sanitize() {
+            local input="$1"
+            # URL encode the string
+            printf "%s" "$input" | jq -sRr @uri
+          }
+
           # Extract repository information
           target_repo="${{ github.repository }}"
-          source_repo="${{ github.event.pull_request.head.repo.full_name || github.repository }}"
-          target_branch="main"
-          source_branch="${{ github.head_ref || github.ref_name }}"
+          source_owner=$(sanitize "${{ github.event.pull_request.head.user.login || github.repository_owner }}")
+          target_repo_name=$(echo "$target_repo" | cut -d'/' -f2)
+          target_repo_name=$(sanitize "$target_repo_name")
+          target_branch=$(sanitize "main")
+          source_branch=$(sanitize "${{ github.head_ref || github.ref_name }}")
 
-          echo "Source repo: $source_repo"
+          echo "Source owner: $source_owner"
           echo "Target repo: $target_repo"
+          echo "Target repo name: $target_repo_name"
           echo "Source branch: $source_branch"
           echo "Target branch: $target_branch"
 
-          # The comparison URL format should be base...head
-          api_url="/repos/$target_repo/compare/$target_branch...${source_repo}:${source_branch}"
+          # Format: /repos/OWNER/REPO/compare/BASE...FORK_OWNER:REPO:BRANCH
+          api_url="/repos/$target_repo/compare/$target_branch...$source_owner:$target_repo_name:$source_branch"
           echo "API URL: $api_url"
 
           response=$(gh api "$api_url" || echo '{"status": "error"}')
@@ -47,14 +57,18 @@ jobs:
           if [ "$status" = "ahead" ]; then
             echo "[OK] Selected branch is ahead of main and can be merged"
             echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
+            exit 0
           elif [ "$status" = "behind" ]; then
             echo "[FAIL] Selected branch is behind main and needs to be updated"
             echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
+            exit 1
           elif [ "$status" = "diverged" ]; then
             echo "[FAIL] Selected branch has diverged from main and needs to be rebased"
             echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
+            exit 1
           else
             echo "[FAIL] Selected branch does NOT meet the criteria"
             echo "Status: $status"
             echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
