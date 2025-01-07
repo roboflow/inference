@@ -370,9 +370,6 @@ from inference.core.workflows.core_steps.visualizations.trace.v1 import (
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.sinks.PLCethernetIP.v1 import (
-    PLCBlockV1,
-)
 from inference.core.workflows.execution_engine.entities.types import (
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
@@ -585,7 +582,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EnvironmentSecretsStoreBlockV1,
         SlackNotificationBlockV1,
         TwilioSMSNotificationBlockV1,
-        PLCBlockV1,
     ]
 
 
