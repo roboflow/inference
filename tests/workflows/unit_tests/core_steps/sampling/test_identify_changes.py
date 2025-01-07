@@ -15,9 +15,7 @@ default_inputs = {
 
 def get_perturbed_value(initial_value: np.ndarray, perturbation: float) -> np.ndarray:
     # randomly fluctuate by +- rand in perturbation in dimensions
-    return initial_value + np.random.uniform(
-        0, perturbation, size=len(initial_value)
-    )
+    return initial_value + np.random.uniform(0, perturbation, size=len(initial_value))
 
 
 def test_identify_changes() -> None:

@@ -99,6 +99,17 @@ the state of the matter changes.
     * [Llama 3.2 Vision 11B (Regular)](https://openrouter.ai/meta-llama/llama-3.2-11b-vision-instruct/providers)
     
     * [Llama 3.2 Vision 90B (Regular)](https://openrouter.ai/meta-llama/llama-3.2-90b-vision-instruct/providers)
+
+#### 💡 Further reading and Acceptable Use Policy
+
+!!! warning "Model license"
+
+    Check out [model license](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/LICENSE) before
+    use. 
+
+[Click here](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/MODEL_CARD_VISION.md) for the original model card.
+
+Usage of this model is subject to Meta's [Acceptable Use Policy](https://www.llama.com/llama3/use-policy/).
 """
 
 
@@ -126,7 +137,7 @@ class BlockManifest(WorkflowBlockManifest):
             "version": "v1",
             "short_description": "Run Llama model with Vision capabilities",
             "long_description": LONG_DESCRIPTION,
-            "license": "Apache-2.0",
+            "license": "Llama 3.2 Community",
             "block_type": "model",
             "search_keywords": ["LMM", "VLM", "Llama", "Vision", "Meta"],
             "is_vlm_block": True,
@@ -420,8 +431,6 @@ def execute_llama_vision_32_request(
     temperature: float,
     top_p: Optional[float],
 ) -> str:
-    if temperature is None:
-        temperature = 1
     response = client.chat.completions.create(
         model=llama_model_version,
         messages=prompt,
@@ -429,6 +438,13 @@ def execute_llama_vision_32_request(
         temperature=temperature,
         top_p=top_p,
     )
+    if response.choices is None:
+        error_detail = getattr(response, "error", {}).get("message", "N/A")
+        raise RuntimeError(
+            "OpenRouter provider failed in delivering response. This issue happens from time "
+            "to time, especially when using Free offering - raise issue to OpenRouter if that's "
+            f"problematic for you. Details: {error_detail}"
+        )
     return response.choices[0].message.content
 
 
@@ -464,7 +480,8 @@ def prepare_classification_prompt(
             "You are only allowed to produce JSON document in Markdown ```json [...]``` markers. "
             'Expected structure of json: {"class_name": "class-name", "confidence": 0.4}. '
             "`class-name` must be one of the class names defined by user. You are only allowed to return "
-            "single JSON document, even if there are potentially multiple classes. You are not allowed to return list.",
+            "single JSON document, even if there are potentially multiple classes. You are not allowed to return list. "
+            "You cannot discuss the result, you are only allowed to return JSON document.",
         },
         {
             "role": "user",
@@ -497,7 +514,7 @@ def prepare_multi_label_classification_prompt(
             '{"class": "class-name-2", "confidence": 0.7}]}. '
             "`class-name-X` must be one of the class names defined by user and `confidence` is a float value in range "
             "0.0-1.0 that represent how sure you are that the class is present in the image. Only return class names "
-            "that are visible.",
+            "that are visible. You cannot discuss the result, you are only allowed to return JSON document.",
         },
         {
             "role": "user",

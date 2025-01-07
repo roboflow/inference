@@ -123,10 +123,7 @@ MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
         {"dog"},
         {"cat", "dog"},
     ],
-    PlatformEnvironment.ROBOFLOW_PLATFORM: [
-        {"cat", "dog"},
-        {"cat", "dog"}
-    ],
+    PlatformEnvironment.ROBOFLOW_PLATFORM: [{"cat", "dog"}, {"cat", "dog"}],
 }
 
 
