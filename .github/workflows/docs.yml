@@ -22,7 +22,6 @@ jobs:
       - name: Check out inference repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
           path: inference_repo
 
       - name: Create GitHub App token (enterprise blocks)
