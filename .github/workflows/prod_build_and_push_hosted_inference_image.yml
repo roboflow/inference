@@ -21,8 +21,6 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: ⚙️ Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
