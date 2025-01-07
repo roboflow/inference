@@ -53,7 +53,7 @@ def test_identify_changes() -> None:
     assert not result.get("is_outlier")
 
     # ensure that the average and std have changed
-    assert not np.allclose(result.get("average"), initial_value_normalized)
+    assert not np.allclose(result.get("average"), initial_value_normalized, atol=1e-3)
     assert not np.all(result.get("std") == [0, 0, 0, 0, 0])
 
     # make a large change
@@ -63,5 +63,5 @@ def test_identify_changes() -> None:
 
     assert result.get("is_outlier")
     # average and std should not be zero anymore
-    assert not np.allclose(result.get("average"), initial_value_normalized)
+    assert not np.allclose(result.get("average"), initial_value_normalized, atol=1e-3)
     assert not np.all(result.get("std") == [0, 0, 0, 0, 0])
