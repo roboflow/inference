@@ -15,8 +15,6 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: Install code analysis dependencies
         run: |
           python -m pip install --upgrade pip
