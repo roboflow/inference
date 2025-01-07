@@ -84,6 +84,7 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
     "structured-answering",
 }
 
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
@@ -93,7 +94,7 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
-            "search_keywords": ["LMM", "VLM", "Llama","Vision","Meta"],
+            "search_keywords": ["LMM", "VLM", "Llama", "Vision", "Meta"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
         },
@@ -172,9 +173,7 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["xxx-xxx", "$inputs.llama_api_key"],
         private=True,
     )
-    model_version: Union[
-        Selector(kind=[STRING_KIND]), Literal["vision-11B"]
-    ] = Field(
+    model_version: Union[Selector(kind=[STRING_KIND]), Literal["vision-11B"]] = Field(
         default="Llama-Vision-11B",
         description="Model to be used",
         examples=["Llama-Vision-11B", "$inputs.llama_model"],
@@ -274,7 +273,7 @@ class LlamaVisionBlockV1(WorkflowBlock):
         model_version: str,
         max_tokens: int,
         temperature: float,
-        top_p : Optional[float],
+        top_p: Optional[float],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
@@ -288,7 +287,7 @@ class LlamaVisionBlockV1(WorkflowBlock):
             llama_model_version=model_version,
             max_tokens=max_tokens,
             temperature=temperature,
-            top_p = top_p,
+            top_p=top_p,
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
@@ -306,7 +305,7 @@ def run_llama_vision_32_llm_prompting(
     llama_model_version: str,
     max_tokens: int,
     temperature: float,
-    top_p : Optional[float],
+    top_p: Optional[float],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
@@ -330,7 +329,7 @@ def run_llama_vision_32_llm_prompting(
         llama_model_version=llama_model_version,
         max_tokens=max_tokens,
         temperature=temperature,
-        top_p =  top_p,
+        top_p=top_p,
         max_concurrent_requests=max_concurrent_requests,
     )
 
@@ -341,7 +340,7 @@ def execute_llama_vision_32_requests(
     llama_model_version: str,
     max_tokens: int,
     temperature: float,
-    top_p : Optional[float],
+    top_p: Optional[float],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     llama_model_version = MODEL_NAME_MAPPING.get(llama_model_version)
@@ -349,8 +348,7 @@ def execute_llama_vision_32_requests(
         raise ValueError(
             f"Invalid model name: '{llama_model_version}'. Please use one of {list(MODEL_NAME_MAPPING.keys())}."
         )
-    client = OpenAI(base_url="https://openrouter.ai/api/v1",
-                    api_key=llama_api_key)
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=llama_api_key)
     tasks = [
         partial(
             execute_llama_vision_32_request,
@@ -359,7 +357,7 @@ def execute_llama_vision_32_requests(
             llama_model_version=llama_model_version,
             max_tokens=max_tokens,
             temperature=temperature,
-            top_p = top_p,
+            top_p=top_p,
         )
         for prompt in llama_prompts
     ]
@@ -372,13 +370,14 @@ def execute_llama_vision_32_requests(
         max_workers=max_workers,
     )
 
+
 def execute_llama_vision_32_request(
     client: OpenAI,
     prompt: List[dict],
     llama_model_version: str,
     max_tokens: int,
     temperature: float,
-    top_p : Optional[float],
+    top_p: Optional[float],
 ) -> str:
     if temperature is None:
         temperature = 1
@@ -387,7 +386,7 @@ def execute_llama_vision_32_request(
         messages=prompt,
         max_tokens=max_tokens,
         temperature=temperature,
-        top_p = top_p,
+        top_p=top_p,
     )
     return response.choices[0].message.content
 
@@ -412,6 +411,7 @@ def prepare_unconstrained_prompt(
             ],
         }
     ]
+
 
 def prepare_classification_prompt(
     base64_image: str, classes: List[str], gpt_image_detail: str, **kwargs
@@ -500,6 +500,7 @@ def prepare_vqa_prompt(
             ],
         },
     ]
+
 
 def prepare_ocr_prompt(
     base64_image: str, gpt_image_detail: str, **kwargs
@@ -592,6 +593,3 @@ PROMPT_BUILDERS = {
     "multi-label-classification": prepare_multi_label_classification_prompt,
     "structured-answering": prepare_structured_answering_prompt,
 }
-
-
-
