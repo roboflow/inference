@@ -52,6 +52,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             prevent_local_images_loading=prevent_local_images_loading,
             profiler=profiler,
             workflow_id=workflow_id,
+            internal_id=workflow_definition.get("id")
         )
 
     def __init__(
@@ -61,12 +62,14 @@ class ExecutionEngineV1(BaseExecutionEngine):
         prevent_local_images_loading: bool,
         profiler: WorkflowsProfiler,
         workflow_id: Optional[str] = None,
+        internal_id: Optional[str] = None,
     ):
         self._compiled_workflow = compiled_workflow
         self._max_concurrent_steps = max_concurrent_steps
         self._prevent_local_images_loading = prevent_local_images_loading
         self._workflow_id = workflow_id
         self._profiler = profiler
+        self._internal_id = internal_id
 
     def run(
         self,
@@ -93,7 +96,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             runtime_parameters=runtime_parameters,
             max_concurrent_steps=self._max_concurrent_steps,
             usage_fps=fps,
-            usage_workflow_id=self._workflow_id,
+            usage_workflow_id=self._workflow_id if not self._internal_id else self._internal_id,
             usage_workflow_preview=_is_preview,
             kinds_serializers=self._compiled_workflow.kinds_serializers,
             serialize_results=serialize_results,
