@@ -73,6 +73,13 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
+!!! warning "Issues with structured prompting"
+
+    Model tends to be quite unpredictable when structured output (in our case JSON document) is expected.
+    That problems may impact tasks like `structured-answering`, `classification` or `multi-label-classification`.
+    
+    The cause seems to be quite sensitive "filters" of inappropriate content embedded in model.
+    
 
 #### 🛠️ API providers and model variants
 
@@ -219,18 +226,14 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["11B (Free) - OpenRouter", "$inputs.llama_model"],
     )
     max_tokens: int = Field(
-        default=300,
+        default=500,
         description="Maximum number of tokens the model can generate in it's response.",
         gt=1,
     )
-    temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
-        default=1,
+    temperature: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+        default=0.1,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
         'random / "creative" the generations are.',
-    )
-    top_p: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
-        default=1.0,
-        description="Top-p to sample from the model - value in range 0.0-1.0, the higher - the more diverse and creative the generations are",
     )
     max_concurrent_requests: Optional[int] = Field(
         default=None,
@@ -258,8 +261,8 @@ class BlockManifest(WorkflowBlockManifest):
             )
         return self
 
-    @classmethod
     @field_validator("temperature")
+    @classmethod
     def validate_temperature(cls, value: Union[str, float]) -> Union[str, float]:
         if isinstance(value, str):
             return value
@@ -267,14 +270,7 @@ class BlockManifest(WorkflowBlockManifest):
             raise ValueError(
                 "'temperature' parameter required to be in range [0.0, 2.0]"
             )
-
-    @classmethod
-    @field_validator("top_p")
-    def validate_temperature(cls, value: Union[str, float]) -> Union[str, float]:
-        if isinstance(value, str):
-            return value
-        if value < 0.0 or value > 1.0:
-            raise ValueError("'top_p' parameter required to be in range [0.0, 2.0]")
+        return value
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -325,7 +321,6 @@ class LlamaVisionBlockV1(WorkflowBlock):
         model_version: ModelVersion,
         max_tokens: int,
         temperature: float,
-        top_p: Optional[float],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
@@ -339,7 +334,6 @@ class LlamaVisionBlockV1(WorkflowBlock):
             llama_model_version=model_version,
             max_tokens=max_tokens,
             temperature=temperature,
-            top_p=top_p,
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
@@ -357,7 +351,6 @@ def run_llama_vision_32_llm_prompting(
     llama_model_version: ModelVersion,
     max_tokens: int,
     temperature: float,
-    top_p: Optional[float],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
@@ -386,7 +379,6 @@ def run_llama_vision_32_llm_prompting(
         model_version_id=model_version_id,
         max_tokens=max_tokens,
         temperature=temperature,
-        top_p=top_p,
         max_concurrent_requests=max_concurrent_requests,
     )
 
@@ -397,7 +389,6 @@ def execute_llama_vision_32_requests(
     model_version_id: str,
     max_tokens: int,
     temperature: float,
-    top_p: Optional[float],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=llama_api_key)
@@ -409,7 +400,6 @@ def execute_llama_vision_32_requests(
             llama_model_version=model_version_id,
             max_tokens=max_tokens,
             temperature=temperature,
-            top_p=top_p,
         )
         for prompt in llama_prompts
     ]
@@ -429,14 +419,12 @@ def execute_llama_vision_32_request(
     llama_model_version: str,
     max_tokens: int,
     temperature: float,
-    top_p: Optional[float],
 ) -> str:
     response = client.chat.completions.create(
         model=llama_model_version,
         messages=prompt,
         max_tokens=max_tokens,
         temperature=temperature,
-        top_p=top_p,
     )
     if response.choices is None:
         error_detail = getattr(response, "error", {}).get("message", "N/A")
