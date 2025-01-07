@@ -529,6 +529,8 @@ def get_workflow_specification(
                 specification=specification,
                 ephemeral_cache=ephemeral_cache,
             )
+        if isinstance(specification, dict):
+            specification["id"] = response["workflow"].get("id")
         return specification
     except KeyError as error:
         raise MalformedWorkflowResponseError(
