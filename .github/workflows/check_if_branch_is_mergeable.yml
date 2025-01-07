@@ -1,12 +1,10 @@
 name: mergeable
-
 on:
   workflow_call:
     outputs:
       mergeable_state:
         description: "Set to 'clean' if branch is mergeable, otherwise set to 'not_clean'"
         value: ${{ jobs.check_if_branch_is_mergeable.outputs.mergeable_state }}
-
 jobs:
   check_if_branch_is_mergeable:
     name: Check if branch is mergeable
@@ -30,11 +28,21 @@ jobs:
           target_branch="main"
           source_branch="${{ github.head_ref || github.ref_name }}"
 
-          echo "Comparing $source_repo:$source_branch with $target_repo:$target_branch"
+          echo "Source repo: $source_repo"
+          echo "Target repo: $target_repo"
+          echo "Source branch: $source_branch"
+          echo "Target branch: $target_branch"
 
-          # For forks, we need to use the full repository path
-          response=$(gh api "/repos/$target_repo/compare/$target_branch...$source_repo:$source_branch")
+          # The comparison URL format should be base...head
+          api_url="/repos/$target_repo/compare/$target_branch...${source_repo}:${source_branch}"
+          echo "API URL: $api_url"
+
+          response=$(gh api "$api_url" || echo '{"status": "error"}')
+          echo "Raw API response:"
+          echo "$response"
+
           status=$(echo "$response" | jq -r '.status')
+          echo "Parsed status: $status"
 
           if [ "$status" = "ahead" ]; then
             echo "[OK] Selected branch is ahead of main and can be merged"
