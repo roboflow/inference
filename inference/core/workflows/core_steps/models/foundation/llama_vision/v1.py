@@ -4,8 +4,7 @@ from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from openai import OpenAI
-from openai._types import NOT_GIVEN
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS
 from inference.core.managers.base import ModelManager
@@ -32,9 +31,19 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-MODEL_NAME_MAPPING = {
-    "Llama-Vision-11B": "meta-llama/llama-3.2-11b-vision-instruct:free",
+MODEL_VERSION_MAPPING = {
+    "11B (Free) - OpenRouter": "meta-llama/llama-3.2-11b-vision-instruct:free",
+    "11B (Regular) - OpenRouter": "meta-llama/llama-3.2-11b-vision-instruct",
+    "90B (Free) - OpenRouter": "meta-llama/llama-3.2-90b-vision-instruct:free",
+    "90B (Regular) - OpenRouter": "meta-llama/llama-3.2-90b-vision-instruct",
 }
+
+ModelVersion = Literal[
+    "11B (Free) - OpenRouter",
+    "11B (Regular) - OpenRouter",
+    "90B (Free) - OpenRouter",
+    "90B (Regular) - OpenRouter",
+]
 
 SUPPORTED_TASK_TYPES_LIST = [
     "unconstrained",
@@ -64,7 +73,43 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-You need to provide your Openrouter API key to use the Llama Vision model. 
+
+#### 🛠️ API providers and model variants
+
+Llama Vision 3.2 model is exposed via [OpenRouter API](https://openrouter.ai/) and we require 
+passing [OpenRouter API Key](https://openrouter.ai/docs/api-keys) to run.
+
+There are different versions of the model supported:
+
+* smaller version (`11B`) is faster and cheaper, yet you can expect better quality of results using `90B` version
+
+* `Regular` version is paid (and usually faster) API, whereas `Free` is free for use for OpenRouter clients 
+(state at 01.01.2025)
+
+
+As for now, OpenRouter is the only provider for Llama 3.2 Vision model, but we will keep you posted if
+the state of the matter changes.
+
+
+!!! warning "API Usage Charges"
+
+    OpenRouter is external third party providing access to the model and incurring charges on the usage.
+    Please check out pricing before use:
+    
+    * [Llama 3.2 Vision 11B (Regular)](https://openrouter.ai/meta-llama/llama-3.2-11b-vision-instruct/providers)
+    
+    * [Llama 3.2 Vision 90B (Regular)](https://openrouter.ai/meta-llama/llama-3.2-90b-vision-instruct/providers)
+
+#### 💡 Further reading and Acceptable Use Policy
+
+!!! warning "Model license"
+
+    Check out [model license](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/LICENSE) before
+    use. 
+
+[Click here](https://github.com/meta-llama/llama-models/blob/main/models/llama3_2/MODEL_CARD_VISION.md) for the original model card.
+
+Usage of this model is subject to Meta's [Acceptable Use Policy](https://www.llama.com/llama3/use-policy/).
 """
 
 
@@ -84,6 +129,7 @@ TASKS_REQUIRING_OUTPUT_STRUCTURE = {
     "structured-answering",
 }
 
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
@@ -91,15 +137,19 @@ class BlockManifest(WorkflowBlockManifest):
             "version": "v1",
             "short_description": "Run Llama model with Vision capabilities",
             "long_description": LONG_DESCRIPTION,
-            "license": "Apache-2.0",
+            "license": "Llama 3.2 Community",
             "block_type": "model",
-            "search_keywords": ["LMM", "VLM", "Llama","Vision","Meta"],
+            "search_keywords": ["LMM", "VLM", "Llama", "Vision", "Meta"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-brands fa-meta",
+            },
         },
         protected_namespaces=(),
     )
-    type: Literal["roboflow_core/llama_vision@v1"]
+    type: Literal["roboflow_core/llama_3_2_vision@v1"]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
@@ -110,12 +160,10 @@ class BlockManifest(WorkflowBlockManifest):
                 "structured-answering": "roboflow_core/json_parser@v1",
                 "classification": "roboflow_core/vlm_as_classifier@v1",
                 "multi-label-classification": "roboflow_core/vlm_as_classifier@v1",
-                "object-detection": "roboflow_core/vlm_as_detector@v1",
             },
             "always_visible": True,
         },
     )
-
     prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Text prompt to the Llama model",
@@ -139,7 +187,6 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-
     classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
         default=None,
         description="List of classes to be used",
@@ -153,49 +200,37 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
-        default=None,
-        description="List of classes to be used",
-        examples=[["class-a", "class-b"], "$inputs.classes"],
-        json_schema_extra={
-            "relevant_for": {
-                "task_type": {
-                    "values": TASKS_REQUIRING_CLASSES,
-                    "required": True,
-                },
-            },
-        },
-    )
-
     api_key: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="Your Llama Vision API key",
+        description="Your Llama Vision API key (dependent on provider, ex: OpenRouter API key)",
         examples=["xxx-xxx", "$inputs.llama_api_key"],
         private=True,
     )
     model_version: Union[
-        Selector(kind=[STRING_KIND]), Literal["vision-11B"]
+        Selector(kind=[STRING_KIND]),
+        Literal[
+            "11B (Free) - OpenRouter",
+            "11B (Regular) - OpenRouter",
+            "90B (Free) - OpenRouter",
+            "90B (Regular) - OpenRouter",
+        ],
     ] = Field(
-        default="Llama-Vision-11B",
+        default="11B (Free) - OpenRouter",
         description="Model to be used",
-        examples=["Llama-Vision-11B", "$inputs.llama_model"],
+        examples=["11B (Free) - OpenRouter", "$inputs.llama_model"],
     )
     max_tokens: int = Field(
         default=300,
         description="Maximum number of tokens the model can generate in it's response.",
+        gt=1,
     )
     temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=1,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
         'random / "creative" the generations are.',
-        ge=0.0,
-        le=1.0,
     )
-
     top_p: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
-        default=1,
+        default=1.0,
         description="Top-p to sample from the model - value in range 0.0-1.0, the higher - the more diverse and creative the generations are",
-        ge=0.7,
-        le=1.0,
     )
     max_concurrent_requests: Optional[int] = Field(
         default=None,
@@ -224,6 +259,24 @@ class BlockManifest(WorkflowBlockManifest):
         return self
 
     @classmethod
+    @field_validator("temperature")
+    def validate_temperature(cls, value: Union[str, float]) -> Union[str, float]:
+        if isinstance(value, str):
+            return value
+        if value < 0.0 or value > 2.0:
+            raise ValueError(
+                "'temperature' parameter required to be in range [0.0, 2.0]"
+            )
+
+    @classmethod
+    @field_validator("top_p")
+    def validate_temperature(cls, value: Union[str, float]) -> Union[str, float]:
+        if isinstance(value, str):
+            return value
+        if value < 0.0 or value > 1.0:
+            raise ValueError("'top_p' parameter required to be in range [0.0, 2.0]")
+
+    @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images"]
 
@@ -246,14 +299,12 @@ class LlamaVisionBlockV1(WorkflowBlock):
     def __init__(
         self,
         model_manager: ModelManager,
-        api_key: Optional[str],
     ):
         self._model_manager = model_manager
-        self._api_key = api_key
 
     @classmethod
     def get_init_parameters(cls) -> List[str]:
-        return ["model_manager", "api_key"]
+        return ["model_manager"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -271,10 +322,10 @@ class LlamaVisionBlockV1(WorkflowBlock):
         output_structure: Optional[Dict[str, str]],
         classes: Optional[List[str]],
         api_key: str,
-        model_version: str,
+        model_version: ModelVersion,
         max_tokens: int,
         temperature: float,
-        top_p : Optional[float],
+        top_p: Optional[float],
         max_concurrent_requests: Optional[int],
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
@@ -288,7 +339,7 @@ class LlamaVisionBlockV1(WorkflowBlock):
             llama_model_version=model_version,
             max_tokens=max_tokens,
             temperature=temperature,
-            top_p = top_p,
+            top_p=top_p,
             max_concurrent_requests=max_concurrent_requests,
         )
         return [
@@ -303,14 +354,19 @@ def run_llama_vision_32_llm_prompting(
     output_structure: Optional[Dict[str, str]],
     classes: Optional[List[str]],
     llama_api_key: Optional[str],
-    llama_model_version: str,
+    llama_model_version: ModelVersion,
     max_tokens: int,
     temperature: float,
-    top_p : Optional[float],
+    top_p: Optional[float],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
     if task_type not in PROMPT_BUILDERS:
         raise ValueError(f"Task type: {task_type} not supported.")
+    model_version_id = MODEL_VERSION_MAPPING.get(llama_model_version)
+    if not llama_model_version:
+        raise ValueError(
+            f"Invalid model name: '{llama_model_version}'. Please use one of {list(MODEL_VERSION_MAPPING.keys())}."
+        )
     llama_prompts = []
     for image in images:
         loaded_image, _ = load_image(image)
@@ -327,10 +383,10 @@ def run_llama_vision_32_llm_prompting(
     return execute_llama_vision_32_requests(
         llama_api_key=llama_api_key,
         llama_prompts=llama_prompts,
-        llama_model_version=llama_model_version,
+        model_version_id=model_version_id,
         max_tokens=max_tokens,
         temperature=temperature,
-        top_p =  top_p,
+        top_p=top_p,
         max_concurrent_requests=max_concurrent_requests,
     )
 
@@ -338,28 +394,22 @@ def run_llama_vision_32_llm_prompting(
 def execute_llama_vision_32_requests(
     llama_api_key: str,
     llama_prompts: List[List[dict]],
-    llama_model_version: str,
+    model_version_id: str,
     max_tokens: int,
     temperature: float,
-    top_p : Optional[float],
+    top_p: Optional[float],
     max_concurrent_requests: Optional[int],
 ) -> List[str]:
-    llama_model_version = MODEL_NAME_MAPPING.get(llama_model_version)
-    if not llama_model_version:
-        raise ValueError(
-            f"Invalid model name: '{llama_model_version}'. Please use one of {list(MODEL_NAME_MAPPING.keys())}."
-        )
-    client = OpenAI(base_url="https://openrouter.ai/api/v1",
-                    api_key=llama_api_key)
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=llama_api_key)
     tasks = [
         partial(
             execute_llama_vision_32_request,
             client=client,
             prompt=prompt,
-            llama_model_version=llama_model_version,
+            llama_model_version=model_version_id,
             max_tokens=max_tokens,
             temperature=temperature,
-            top_p = top_p,
+            top_p=top_p,
         )
         for prompt in llama_prompts
     ]
@@ -372,30 +422,35 @@ def execute_llama_vision_32_requests(
         max_workers=max_workers,
     )
 
+
 def execute_llama_vision_32_request(
     client: OpenAI,
     prompt: List[dict],
     llama_model_version: str,
     max_tokens: int,
     temperature: float,
-    top_p : Optional[float],
+    top_p: Optional[float],
 ) -> str:
-    if temperature is None:
-        temperature = 1
     response = client.chat.completions.create(
         model=llama_model_version,
         messages=prompt,
         max_tokens=max_tokens,
         temperature=temperature,
-        top_p = top_p,
+        top_p=top_p,
     )
+    if response.choices is None:
+        error_detail = getattr(response, "error", {}).get("message", "N/A")
+        raise RuntimeError(
+            "OpenRouter provider failed in delivering response. This issue happens from time "
+            "to time, especially when using Free offering - raise issue to OpenRouter if that's "
+            f"problematic for you. Details: {error_detail}"
+        )
     return response.choices[0].message.content
 
 
 def prepare_unconstrained_prompt(
     base64_image: str,
     prompt: str,
-    gpt_image_detail: str,
     **kwargs,
 ) -> List[dict]:
     return [
@@ -413,8 +468,9 @@ def prepare_unconstrained_prompt(
         }
     ]
 
+
 def prepare_classification_prompt(
-    base64_image: str, classes: List[str], gpt_image_detail: str, **kwargs
+    base64_image: str, classes: List[str], **kwargs
 ) -> List[dict]:
     serialised_classes = ", ".join(classes)
     return [
@@ -424,7 +480,8 @@ def prepare_classification_prompt(
             "You are only allowed to produce JSON document in Markdown ```json [...]``` markers. "
             'Expected structure of json: {"class_name": "class-name", "confidence": 0.4}. '
             "`class-name` must be one of the class names defined by user. You are only allowed to return "
-            "single JSON document, even if there are potentially multiple classes. You are not allowed to return list.",
+            "single JSON document, even if there are potentially multiple classes. You are not allowed to return list. "
+            "You cannot discuss the result, you are only allowed to return JSON document.",
         },
         {
             "role": "user",
@@ -445,7 +502,7 @@ def prepare_classification_prompt(
 
 
 def prepare_multi_label_classification_prompt(
-    base64_image: str, classes: List[str], gpt_image_detail: str, **kwargs
+    base64_image: str, classes: List[str], **kwargs
 ) -> List[dict]:
     serialised_classes = ", ".join(classes)
     return [
@@ -457,7 +514,7 @@ def prepare_multi_label_classification_prompt(
             '{"class": "class-name-2", "confidence": 0.7}]}. '
             "`class-name-X` must be one of the class names defined by user and `confidence` is a float value in range "
             "0.0-1.0 that represent how sure you are that the class is present in the image. Only return class names "
-            "that are visible.",
+            "that are visible. You cannot discuss the result, you are only allowed to return JSON document.",
         },
         {
             "role": "user",
@@ -477,9 +534,7 @@ def prepare_multi_label_classification_prompt(
     ]
 
 
-def prepare_vqa_prompt(
-    base64_image: str, prompt: str, gpt_image_detail: str, **kwargs
-) -> List[dict]:
+def prepare_vqa_prompt(base64_image: str, prompt: str, **kwargs) -> List[dict]:
     return [
         {
             "role": "system",
@@ -501,9 +556,8 @@ def prepare_vqa_prompt(
         },
     ]
 
-def prepare_ocr_prompt(
-    base64_image: str, gpt_image_detail: str, **kwargs
-) -> List[dict]:
+
+def prepare_ocr_prompt(base64_image: str, **kwargs) -> List[dict]:
     return [
         {
             "role": "system",
@@ -526,7 +580,7 @@ def prepare_ocr_prompt(
 
 
 def prepare_caption_prompt(
-    base64_image: str, gpt_image_detail: str, short_description: bool, **kwargs
+    base64_image: str, short_description: bool, **kwargs
 ) -> List[dict]:
     caption_detail_level = "Caption should be short."
     if not short_description:
@@ -552,7 +606,7 @@ def prepare_caption_prompt(
 
 
 def prepare_structured_answering_prompt(
-    base64_image: str, output_structure: Dict[str, str], gpt_image_detail: str, **kwargs
+    base64_image: str, output_structure: Dict[str, str], **kwargs
 ) -> List[dict]:
     output_structure_serialised = json.dumps(output_structure, indent=4)
     return [
@@ -592,6 +646,3 @@ PROMPT_BUILDERS = {
     "multi-label-classification": prepare_multi_label_classification_prompt,
     "structured-answering": prepare_structured_answering_prompt,
 }
-
-
-
