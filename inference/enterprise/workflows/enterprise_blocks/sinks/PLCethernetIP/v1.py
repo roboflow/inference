@@ -1,26 +1,25 @@
 from typing import Dict, List, Optional, Type, Union
+
+import pylogix
 from pydantic import ConfigDict, Field
 from typing_extensions import Literal
 
-import pylogix
-
+from inference.core.logger import logger
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
-    WorkflowImageData,
     VideoMetadata,
+    WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    WorkflowParameterSelector,
     Selector,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference.core.logger import logger
-
 
 LONG_DESCRIPTION = """
 This **PLC Communication** block integrates a Roboflow Workflow with a PLC using Ethernet/IP communication.
@@ -122,6 +121,33 @@ class PLCBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return PLCBlockManifest
 
+    def _read_single_tag(self, comm, tag):
+        try:
+            response = comm.Read(tag)
+            if response.Status == "Success":
+                return response.Value
+            logger.error(f"Error reading tag '%s': %s", tag, response.Status)
+            return "ReadFailure"
+        except Exception as e:
+            logger.error(f"Unhandled error reading tag '%s': %s", tag, e)
+            return "ReadFailure"
+
+    def _write_single_tag(self, comm, tag, value):
+        try:
+            response = comm.Write(tag, value)
+            if response.Status == "Success":
+                return "WriteSuccess"
+            logger.error(
+                "Error writing tag '%s' with value '%s': %s",
+                tag,
+                value,
+                response.Status,
+            )
+            return "WriteFailure"
+        except Exception as e:
+            logger.error(f"Unhandled error writing tag '%s': %s", tag, e)
+            return "WriteFailure"
+
     def run(
         self,
         plc_ip: str,
@@ -152,40 +178,16 @@ class PLCBlockV1(WorkflowBlock):
         with pylogix.PLC() as comm:
             comm.IPAddress = plc_ip
 
-            # If mode involves reading
             if mode in ["read", "read_and_write"]:
-                for tag in tags_to_read:
-                    try:
-                        response = comm.Read(tag)
-                        if response.Status == "Success":
-                            read_results[tag] = response.Value
-                        else:
-                            logger.error(
-                                f"Error reading tag '%s': %s", tag, response.Status
-                            )
-                            read_results[tag] = "ReadFailure"
-                    except Exception as e:
-                        logger.error(f"Unhandled error reading tag '%s': %s", tag, e)
-                        read_results[tag] = "ReadFailure"
+                read_results = {
+                    tag: self._read_single_tag(comm, tag) for tag in tags_to_read
+                }
 
-            # If mode involves writing
             if mode in ["write", "read_and_write"]:
-                for tag, value in tags_to_write.items():
-                    try:
-                        response = comm.Write(tag, value)
-                        if response.Status == "Success":
-                            write_results[tag] = "WriteSuccess"
-                        else:
-                            logger.error(
-                                "Error writing tag '%s' with value '%s': %s",
-                                tag,
-                                value,
-                                response.Status,
-                            )
-                            write_results[tag] = "WriteFailure"
-                    except Exception as e:
-                        logger.error(f"Unhandled error writing tag '%s': %s", tag, e)
-                        write_results[tag] = "WriteFailure"
+                write_results = {
+                    tag: self._write_single_tag(comm, tag, value)
+                    for tag, value in tags_to_write.items()
+                }
 
         plc_output = {}
         if read_results:
@@ -193,5 +195,4 @@ class PLCBlockV1(WorkflowBlock):
         if write_results:
             plc_output["write"] = write_results
 
-        # Return as a list of dicts for the 'plc_results' key
         return {"plc_results": [plc_output]}
