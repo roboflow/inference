@@ -21,9 +21,9 @@ def test_validate_runtime_input_when_input_is_valid() -> None:
                 type="ClipComparison",
                 name="a",
                 image="$inputs.image",
-                text="$inputs.text_1",
+                texts="$inputs.text_1",
             ),
-            manifest_property="text",
+            manifest_property="texts",
         ),
         InputSubstitution(
             input_parameter_name="text_2",
@@ -31,9 +31,9 @@ def test_validate_runtime_input_when_input_is_valid() -> None:
                 type="ClipComparison",
                 name="a",
                 image="$inputs.image",
-                text="$inputs.text_2",
+                texts="$inputs.text_2",
             ),
-            manifest_property="text",
+            manifest_property="texts",
         ),
     ]
 

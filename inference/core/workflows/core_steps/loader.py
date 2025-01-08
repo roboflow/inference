@@ -175,6 +175,9 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 impo
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 import (
+    LlamaVisionBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBlockV1
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
@@ -601,6 +604,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SlackNotificationBlockV1,
         TwilioSMSNotificationBlockV1,
         GazeBlockV1,
+        LlamaVisionBlockV1,
     ]
 
 
