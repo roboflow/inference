@@ -245,6 +245,44 @@ def get_roboflow_model_data(
 
 
 @wrap_roboflow_api_errors()
+def get_roboflow_instant_model_data(
+    api_key: str,
+    model_id: str,
+    endpoint_type: ModelEndpointType,
+    device_id: str,
+) -> dict:
+    api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
+    api_data = cache.get(api_data_cache_key)
+    if api_data is not None:
+        logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
+        return api_data
+    else:
+        params = [
+            ("nocache", "true"),
+            ("device", device_id),
+            ("dynamic", "true"),
+            ("type", endpoint_type.value),
+            ("model", model_id),
+        ]
+        if api_key is not None:
+            params.append(("api_key", api_key))
+        api_url = _add_params_to_url(
+            url=f"{API_BASE_URL}/getWeights",
+            params=params,
+        )
+        api_data = _get_from_url(url=api_url)
+        cache.set(
+            api_data_cache_key,
+            api_data,
+            expire=10,
+        )
+        logger.debug(
+            f"Loaded model data from Roboflow API and saved to cache with key: {api_data_cache_key}."
+        )
+        return api_data
+
+
+@wrap_roboflow_api_errors()
 def get_roboflow_base_lora(
     api_key: str, repo: str, revision: str, device_id: str
 ) -> dict:

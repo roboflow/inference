@@ -37,6 +37,7 @@ from inference.core.models.roboflow import (
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
+    get_roboflow_instant_model_data,
     get_roboflow_model_data,
 )
 from inference.core.utils.image_utils import (
@@ -736,12 +737,20 @@ class SerializedOwlV2(RoboflowInferenceModel):
         raise NotImplementedError("Owlv2 not currently supported on hosted inference")
 
     def download_model_artifacts_from_roboflow_api(self):
-        api_data = get_roboflow_model_data(
-            api_key=self.api_key,
-            model_id=self.endpoint,
-            endpoint_type=ModelEndpointType.OWLV2,
-            device_id=self.device_id,
-        )
+        if self.version_id is None:
+            api_data = get_roboflow_instant_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.OWLV2,
+                device_id=self.device_id,
+            )
+        else:
+            api_data = get_roboflow_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.OWLV2,
+                device_id=self.device_id,
+            )
         api_data = api_data["owlv2"]
         if "model" not in api_data:
             raise ModelArtefactError(

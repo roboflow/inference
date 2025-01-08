@@ -19,6 +19,7 @@ from inference.core.roboflow_api import (
     PROJECT_TASK_TYPE_KEY,
     ModelEndpointType,
     get_roboflow_dataset_type,
+    get_roboflow_instant_model_data,
     get_roboflow_model_data,
     get_roboflow_workspace,
 )
@@ -115,12 +116,21 @@ def get_model_type(
             model_type=model_type,
         )
         return project_task_type, model_type
-    api_data = get_roboflow_model_data(
-        api_key=api_key,
-        model_id=model_id,
-        endpoint_type=ModelEndpointType.ORT,
-        device_id=GLOBAL_DEVICE_ID,
-    ).get("ort")
+
+    if version_id is None:
+        api_data = get_roboflow_instant_model_data(
+            api_key=api_key,
+            model_id=model_id,
+            endpoint_type=ModelEndpointType.ORT,
+            device_id=GLOBAL_DEVICE_ID,
+        ).get("ort")
+    else:
+        api_data = get_roboflow_model_data(
+            api_key=api_key,
+            model_id=model_id,
+            endpoint_type=ModelEndpointType.ORT,
+            device_id=GLOBAL_DEVICE_ID,
+        ).get("ort")
     if api_data is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
     # some older projects do not have type field - hence defaulting
@@ -237,5 +247,5 @@ def _save_model_metadata_in_cache(
 
 
 def construct_model_type_cache_path(dataset_id: str, version_id: str) -> str:
-    cache_dir = os.path.join(MODEL_CACHE_DIR, dataset_id, version_id)
+    cache_dir = os.path.join(MODEL_CACHE_DIR, dataset_id, version_id if version_id else "")
     return os.path.join(cache_dir, "model_type.json")
