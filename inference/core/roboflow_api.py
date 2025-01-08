@@ -225,6 +225,7 @@ def get_roboflow_model_data(
             ("nocache", "true"),
             ("device", device_id),
             ("dynamic", "true"),
+            ("weights", "true"),
             ("type", endpoint_type.value),
             ("model", model_id),
         ]
