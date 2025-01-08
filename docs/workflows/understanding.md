@@ -48,7 +48,7 @@ and run it in various environments using the Workflows Compiler and Execution En
 
 You have two options for creating a workflow definition: UI to design it visually or write it from scratch 
 if you’re comfortable with the workflows language. More details on writing definitions manually 
-are available [here](/workflows/definitions/). For now, it's important to grasp the role of the definition 
+are available [here](/workflows/definitions.md). For now, it's important to grasp the role of the definition 
 within the ecosystem.
 
 A workflow definition is in fact JSON document which outlines:
@@ -72,12 +72,12 @@ When adding a block to your workflow, you need to provide its inputs by referenc
 or the output of another step. You also specify the values for any required parameters. Once the step is incorporated, 
 its outputs can be referenced by subsequent steps, allowing for seamless integration and chaining of operations.
 
-The creation of blocks is a more advanced topic, which you can explore [here](/workflows/create_workflow_block). 
+The creation of blocks is a more advanced topic, which you can explore [here](/workflows/create_workflow_block.md). 
 It’s essential to understand that blocks are grouped in workflow plugins, which are standard Python libraries. 
 Roboflow offers its own set of plugins, and community members are encouraged to create their own. 
-The process of importing a plugin into your environment is detailed [here](/workflows/blocks_bundling).
+The process of importing a plugin into your environment is detailed [here](/workflows/blocks_bundling.md).
 
-Feel encouraged to explore [Workflows blocks prepared by Roboflow](/workflows/blocks/).
+Feel encouraged to explore [Workflows blocks prepared by Roboflow](/workflows/blocks.md).
 
 ## Workflows Compiler and Execution Engine
 
@@ -89,7 +89,7 @@ a program you create using reusable blocks — into a format that can be execute
 acts as a blueprint, with blocks functioning like functions in programming, connected to produce the desired outcomes.
 
 Roboflow provides these tools as part of their [Inference Server](/#inference-server) (which can be deployed locally or 
-accessed via the Roboflow Hosted platform), [video processing component](/using_inference/inference_pipeline/), 
+accessed via the Roboflow Hosted platform), [video processing component](/using_inference/inference_pipeline.md), 
 and [Python package](https://pypi.org/project/inference/), making it easy to run your workflows in 
 various environments.
 

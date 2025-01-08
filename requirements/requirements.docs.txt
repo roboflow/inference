@@ -6,6 +6,7 @@ mkdocs-literate-nav
 mkdocs-macros-plugin
 mkdocs-material[imaging]
 mkdocs-material
+mkdocs-ezlinks-plugin
 mkdocs-swagger-ui-tag
 mkdocs
 mkdocstrings[python]

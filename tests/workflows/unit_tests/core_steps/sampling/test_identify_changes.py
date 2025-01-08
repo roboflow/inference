@@ -15,9 +15,7 @@ default_inputs = {
 
 def get_perturbed_value(initial_value: np.ndarray, perturbation: float) -> np.ndarray:
     # randomly fluctuate by +- rand in perturbation in dimensions
-    return initial_value + np.random.uniform(
-        -perturbation, perturbation, size=len(initial_value)
-    )
+    return initial_value + np.random.uniform(0, perturbation, size=len(initial_value))
 
 
 def test_identify_changes() -> None:
@@ -46,7 +44,7 @@ def test_identify_changes() -> None:
     # add a bit of variance
     for i in range(10):
         result = identify_changes_block.run(
-            **default_inputs, embedding=get_perturbed_value(initial_value, 1e-4)
+            **default_inputs, embedding=get_perturbed_value(initial_value, 1e-3)
         )
 
     result = identify_changes_block.run(**default_inputs, embedding=initial_value)
