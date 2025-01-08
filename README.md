@@ -269,7 +269,7 @@ cd inference
 python3 -m venv inf
 source inf/bin/activate
 pip install .
-cp docker/config/cpu_http:app .
+cp docker/config/cpu_http.py .
 ```
 
 Then start the server by running `uvicorn` with the `cpu_http` module in your virtual environment:
