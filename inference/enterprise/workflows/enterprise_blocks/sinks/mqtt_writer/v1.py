@@ -1,13 +1,7 @@
 import logging
 from typing import List, Literal, Optional, Type, Union
 
-try:
-    import paho.mqtt.client as mqtt
-except ImportError:
-    import subprocess
-    import sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "paho-mqtt"])
-    import paho.mqtt.client as mqtt
+import paho.mqtt.client as mqtt
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
