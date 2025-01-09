@@ -17,7 +17,12 @@ class ModelStub(Model):
         super().__init__()
         self.model_id = model_id
         self.api_key = api_key
-        self.dataset_id, self.version_id = model_id.split("/")
+        model_id_chunks = model_id.split("/")
+        if len(model_id_chunks) == 1:
+            self.dataset_id = model_id
+            self.version_id = None
+        else:
+            self.dataset_id, self.version_id = model_id.split("/")
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         initialise_cache(model_id=model_id)
 

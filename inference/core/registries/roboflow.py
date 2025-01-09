@@ -153,7 +153,7 @@ def get_model_type(
 
 
 def get_model_metadata_from_cache(
-    dataset_id: str, version_id: str
+    dataset_id: str, version_id: Optional[VersionID]
 ) -> Optional[Tuple[TaskType, ModelType]]:
     if LAMBDA:
         return _get_model_metadata_from_cache(
@@ -168,7 +168,7 @@ def get_model_metadata_from_cache(
 
 
 def _get_model_metadata_from_cache(
-    dataset_id: str, version_id: str
+    dataset_id: str, version_id: Optional[VersionID]
 ) -> Optional[Tuple[TaskType, ModelType]]:
     model_type_cache_path = construct_model_type_cache_path(
         dataset_id=dataset_id, version_id=version_id
@@ -204,7 +204,7 @@ def model_metadata_content_is_invalid(content: Optional[Union[list, dict]]) -> b
 
 def save_model_metadata_in_cache(
     dataset_id: DatasetID,
-    version_id: VersionID,
+    version_id: Optional[VersionID],
     project_task_type: TaskType,
     model_type: ModelType,
 ) -> None:
@@ -230,7 +230,7 @@ def save_model_metadata_in_cache(
 
 def _save_model_metadata_in_cache(
     dataset_id: DatasetID,
-    version_id: VersionID,
+    version_id: Optional[VersionID],
     project_task_type: TaskType,
     model_type: ModelType,
 ) -> None:
@@ -246,8 +246,10 @@ def _save_model_metadata_in_cache(
     )
 
 
-def construct_model_type_cache_path(dataset_id: str, version_id: str) -> str:
+def construct_model_type_cache_path(
+    dataset_id: str, version_id: Optional[VersionID]
+) -> str:
     cache_dir = os.path.join(
-        MODEL_CACHE_DIR, dataset_id, version_id if version_id else ""
+        MODEL_CACHE_DIR, dataset_id, version_id if version_id is not None else ""
     )
     return os.path.join(cache_dir, "model_type.json")
