@@ -39,10 +39,13 @@ class ActiveLearningManager(ModelManager):
         active_learning_disabled_for_request = getattr(
             request, DISABLE_ACTIVE_LEARNING_PARAM, False
         )
+        # TODO: active learning is disabled for instant models; to be enabled in the future
+        roboflow_instant_model = len(str(model_id).split("/")) == 1
         if (
             not active_learning_eligible
             or active_learning_disabled_for_request
             or request.api_key is None
+            or roboflow_instant_model
         ):
             return prediction
         self.register(prediction=prediction, model_id=model_id, request=request)
@@ -58,10 +61,13 @@ class ActiveLearningManager(ModelManager):
         active_learning_disabled_for_request = getattr(
             request, DISABLE_ACTIVE_LEARNING_PARAM, False
         )
+        # TODO: active learning is disabled for instant models; to be enabled in the future
+        roboflow_instant_model = len(str(model_id).split("/")) == 1
         if (
             not active_learning_eligible
             or active_learning_disabled_for_request
             or request.api_key is None
+            or roboflow_instant_model
         ):
             return prediction
         self.register(prediction=prediction, model_id=model_id, request=request)
@@ -196,10 +202,13 @@ class BackgroundTaskActiveLearningManager(ActiveLearningManager):
         prediction = super().infer_from_request_sync(
             model_id=model_id, request=request, **kwargs
         )
+        # TODO: active learning is disabled for instant models; to be enabled in the future
+        roboflow_instant_model = len(str(model_id).split("/")) == 1
         if (
             not active_learning_eligible
             or active_learning_disabled_for_request
             or request.api_key is None
+            or roboflow_instant_model
         ):
             return prediction
         if BACKGROUND_TASKS_PARAM not in kwargs:
