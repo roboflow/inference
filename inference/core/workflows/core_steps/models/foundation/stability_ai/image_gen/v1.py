@@ -1,7 +1,3 @@
-"""
-Credits to: https://github.com/Fafruch for origin idea
-"""
-
 from typing import List, Literal, Optional, Type, Union
 
 import cv2
