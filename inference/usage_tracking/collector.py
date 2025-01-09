@@ -645,6 +645,7 @@ class UsageCollector:
             usage_billable: bool = True,
             **kwargs: P.kwargs,
         ) -> T:
+            res = func(*args, **kwargs)
             self.record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
@@ -658,7 +659,7 @@ class UsageCollector:
                     kwargs=kwargs,
                 )
             )
-            return func(*args, **kwargs)
+            return res
 
         @wraps(func)
         async def async_wrapper(
@@ -671,6 +672,7 @@ class UsageCollector:
             usage_billable: bool = True,
             **kwargs: P.kwargs,
         ) -> T:
+            res = await func(*args, **kwargs)
             await self.async_record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
@@ -684,7 +686,7 @@ class UsageCollector:
                     kwargs=kwargs,
                 )
             )
-            return await func(*args, **kwargs)
+            return res
 
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
