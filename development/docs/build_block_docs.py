@@ -3,6 +3,7 @@ import os
 import re
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple, Type
+import inspect
 
 from inference.core.utils.file_system import dump_text_lines, read_text_file
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
@@ -51,13 +52,10 @@ USER_CONFIGURATION_HEADER = [
 BLOCK_FAMILY_TEMPLATE = """
 # {family_name}
 
-{versions}
+{content}
 """
 
-
 BLOCK_VERSION_TEMPLATE = """
-## Version `{version}`
-
 {description}
 
 ### Type identifier
@@ -72,17 +70,21 @@ as step in your workflow.
 The **Refs** column marks possibility to parametrise the property with dynamic values available 
 in `workflow` runtime. See *Bindings* for more info.
 
-### Available Connections
+### Available Connections {{ data-search-exclude }}
 
-Check what blocks you can connect to `{family_name}` in version `{version}`.
+??? tip "Compatible Blocks"
+    Check what blocks you can connect to `{family_name}` in version `{version}`.
 
-- inputs: {input_connections}
-- outputs: {output_connections}
+    - inputs: {input_connections}
+    - outputs: {output_connections}
+
+    
+### Input and Output Bindings
 
 The available connections depend on its binding kinds. Check what binding kinds 
 `{family_name}` in version `{version}`  has.
 
-??? tip "Bindings"
+???+ tip "Bindings"
 
     - input
     
@@ -93,12 +95,49 @@ The available connections depend on its binding kinds. Check what binding kinds
 {block_output_bindings}
 
 
+
 ??? tip "Example JSON definition of step `{family_name}` in version `{version}`"
 
     ```json
     {example}
     ```
+
+<style>
+/* hide edit button for generated pages */
+article > a.md-content__button.md-icon:first-child {{
+    display: none;
+}}
+</style>    
 """
+
+
+
+BLOCK_VERSION_TEMPLATE_SINGLE_VERSION = """
+
+??? "Class: `{short_block_class_name}`"
+
+    Source:
+    <a target="_blank" href="{block_source_link}">{block_class_name}</a>
+    
+
+""" + BLOCK_VERSION_TEMPLATE
+
+
+BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS = """
+
+## {version}
+
+??? "Class: `{short_block_class_name}`  *(there are multiple versions of this block)*"
+
+    Source:
+    <a target="_blank" href="{block_source_link}">{block_class_name}</a>
+
+    **Warning: This block has multiple versions. Please refer to the specific version for details.**
+    You can learn more about how versions work here: [Versioning](/workflows/versioning.md)
+
+    
+
+""" + BLOCK_VERSION_TEMPLATE
 
 BLOCK_CARD_TEMPLATE = '<p class="card block-card" data-url="{data_url}" data-name="{data_name}" data-desc="{data_desc}" data-labels="{data_labels}" data-author="{data_authors}"></p>\n'
 
@@ -137,6 +176,13 @@ Type: `{internal_data_type}`
 ## Details
 
 {details}
+
+<style>
+/* hide edit button for generated pages */
+article > a.md-content__button.md-icon:first-child {{
+    display: none;
+}}
+</style>
 """
 
 INLINE_UQL_PARAMETER_PATTERN = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
@@ -185,7 +231,7 @@ def main() -> None:
             internal_data_type=declared_kind.internal_data_type,
         )
         relative_link = (
-            f"/workflows/kinds/{slugify_kind_name(kind_name=declared_kind.name)}"
+            f"../kinds/{slugify_kind_name(kind_name=declared_kind.name)}.md"
         )
         generated_kinds_index_lines.append(
             f"* [`{declared_kind.name}`]({relative_link}): {description}\n"
@@ -235,7 +281,11 @@ def main() -> None:
         short_descriptions = []
         versions_content = []
         for block in family_members:
+
             block_type = block.block_schema.get("block_type", "").upper()
+            
+            block_class_name = block.fully_qualified_block_class_name
+            block_source_link = get_source_link_for_block_class(block.block_class)
             block_types_in_family.add(block_type)
             block_license = block.block_schema.get("license", "").upper()
             block_licenses_in_family.add(block_license)
@@ -244,9 +294,15 @@ def main() -> None:
             long_description = block.block_schema.get("long_description", "Description not available")
             short_description = block.block_schema.get("short_description", "Description not available")
             short_descriptions.append(short_description)
-            version_content = BLOCK_VERSION_TEMPLATE.format(
+
+            template = BLOCK_VERSION_TEMPLATE_SINGLE_VERSION if len(family_members) == 1 else BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS
+
+            version_content = template.format(
                 family_name=family_name,
                 version=block.block_schema.get("version", "undefined"),
+                block_source_link=block_source_link,
+                block_class_name=block_class_name,
+                short_block_class_name = block.fully_qualified_block_class_name.split(".")[-1],
                 type_identifier=block.manifest_type_identifier,
                 description=long_description,
                 block_inputs=format_block_inputs(parsed_manifest),
@@ -267,10 +323,10 @@ def main() -> None:
                 example=_dump_step_example_definition(example_definition=example_definition),
             )
             versions_content.append(version_content)
-        all_versions_compact = "\n\n".join(versions_content)
+        all_versions_combined = combined_content_from_versions(versions_content)
         family_document_content = BLOCK_FAMILY_TEMPLATE.format(
             family_name=family_name,
-            versions=all_versions_compact,
+            content=all_versions_combined,
         )
         with open(documentation_file_path, "w") as documentation_file:
             documentation_file.write(family_document_content)
@@ -283,6 +339,7 @@ def main() -> None:
         )
         block_card_lines.append(block_card_line)
 
+    block_card_lines = sorted(block_card_lines)
     lines = lines[: start_index + 1] + block_card_lines + lines[end_index:]
     dump_text_lines(
         path=BLOCK_DOCUMENTATION_FILE,
@@ -293,6 +350,9 @@ def main() -> None:
 
     write_blocks_summary_md(block_families)
 
+def combined_content_from_versions(versions_content: List[str]) -> str:
+    return "\n\n".join(versions_content)
+
 def _dump_step_example_definition(example_definition: dict) -> str:
     definition_stringified = "\n\t".join(json.dumps(example_definition, indent=4).split("\n"))
     return INLINE_UQL_PARAMETER_PATTERN.sub(_escape_uql_brackets, definition_stringified)
@@ -302,6 +362,13 @@ def _escape_uql_brackets(match: re.Match) -> str:
     content = match.group(0)
     return "{{ '{{' }}" + content[2:-2] + "{{ '}}' }}"
 
+
+def get_source_link_for_block_class(block_class: Type[WorkflowBlock]) -> str:
+    try:
+        filename = inspect.getfile(block_class).split("inference/core/workflows/")[1]
+        return f"https://github.com/roboflow/inference/blob/main/inference/core/workflows/{filename}"
+    except Exception as e:
+        return None
 
 def get_auto_generation_markers(
     documentation_lines: List[str],
@@ -380,7 +447,7 @@ def prepare_selector_kinds_annotation(selector: SelectorDefinition) -> str:
             type_annotation_chunks.add("step")
             continue
         for kind in allowed_reference.kind:
-            relative_link = f"/workflows/kinds/{slugify_kind_name(kind_name=kind.name)}"
+            relative_link = f"../kinds/{slugify_kind_name(kind_name=kind.name)}.md"
             type_string = f"[`{kind.name}`]({relative_link})"
             type_annotation_chunks.add(type_string)
     type_annotation_str = ", ".join(type_annotation_chunks)
@@ -395,7 +462,7 @@ def format_block_outputs(outputs_manifest: List[OutputDefinition]) -> str:
     for output in outputs_manifest:
         if len(output.kind) == 1:
             relative_link = (
-                f"/workflows/kinds/{slugify_kind_name(kind_name=output.kind[0].name)}"
+                f"../kinds/{slugify_kind_name(kind_name=output.kind[0].name)}.md"
             )
             kind = output.kind[0].name
             description = output.kind[0].description
@@ -405,7 +472,7 @@ def format_block_outputs(outputs_manifest: List[OutputDefinition]) -> str:
         else:
             kind = ", ".join(
                 [
-                    f"[`{k.name}`](/workflows/kinds/{slugify_kind_name(kind_name=k.name)})"
+                    f"[`{k.name}`](../kinds/{slugify_kind_name(kind_name=k.name)}.md)"
                     for k in output.kind
                 ]
             )
@@ -426,7 +493,7 @@ def format_block_connections(
     connections = [
         (
             f"[`{block_type2manifest_type_identifier[connection]}`]"
-            f"(/workflows/blocks/{slugify_block_name(block_type2manifest_type_identifier[connection])})"
+            f"({slugify_block_name(block_type2manifest_type_identifier[connection])}.md)"
         )
         for connection in connections
     ]
@@ -469,11 +536,8 @@ def write_kinds_summary_md(kinds):
         # replace back ticks
         line = line.replace("`", "")
 
-        # relative links (remove `/workflows/kinds/` prefix)
-        line = line.replace("/workflows/kinds/", "")
-
-        # add .md before closing )
-        line = re.sub(r'\)$', '.md)', line)
+        # relative links (remove `../kinds/` prefix)
+        line = line.replace("../kinds/", "")
 
         lines.append(line)
 
@@ -483,7 +547,7 @@ def write_kinds_summary_md(kinds):
 
 def write_blocks_summary_md(block_families):
     """
-    Creates docs/workflows/blocks/SUMMARY.md for mkdocs-literate-nav.
+    Creates SUMMARY.md for mkdocs-literate-nav.
     """
     # Group families by block_type
     blocks_by_type = defaultdict(list)

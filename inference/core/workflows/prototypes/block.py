@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Type, Union
 
-from openai import BaseModel
-from pydantic import ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.workflows.errors import BlockInterfaceError
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition

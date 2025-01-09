@@ -4,18 +4,18 @@ Workflows blocks development requires an understanding of the
 Workflow Ecosystem. Before diving deeper into the details, let's summarize the 
 required knowledge:
 
-Understanding of [Workflow execution](/workflows/workflow_execution/), in particular:
+Understanding of [Workflow execution](/workflows/workflow_execution.md), in particular:
     
 * what is the relation of Workflow blocks and steps in Workflow definition
 
-* how Workflow blocks and their manifests are used by [Workflows Compiler](/workflows/workflows_compiler/)
+* how Workflow blocks and their manifests are used by [Workflows Compiler](/workflows/workflows_compiler.md)
 
 * what is the `dimensionality level` of batch-oriented data passing through Workflow
 
-* how [Execution Engine](/workflows/workflows_execution_engine/) interacts with step, regarding 
+* how [Execution Engine](/workflows/workflows_execution_engine.md) interacts with step, regarding 
 its inputs and outputs
 
-* what is the nature and role of [Workflow `kinds`](/workflows/kinds/)
+* what is the nature and role of [Workflow `kinds`](/workflows/kinds.md)
 
 * understanding how [`pydantic`](https://docs.pydantic.dev/latest/) works
 
@@ -252,7 +252,7 @@ The most important are:
       You may have noticed that we recommend importing the `Batch` and `WorkflowImageData` classes, which are 
       fundamental components used when constructing building blocks in our system. For a deeper understanding of 
       how these classes fit into the overall architecture, we encourage you to refer to the 
-      [Data Representations](/workflows/internal_data_types) page for more detailed information. 
+      [Data Representations](/workflows/internal_data_types.md) page for more detailed information. 
 
 
 ## Block manifest
@@ -277,7 +277,7 @@ the workflow during execution and indicates their kinds.
 inputs and empty values.
 
 * **Ensures Compatibility:** It dictates the compatibility with different Execution Engine versions to maintain 
-stability. For more details, see [versioning](/workflows/versioning/).
+stability. For more details, see [versioning](/workflows/versioning.md).
 
 ### Scaffolding for manifest
 
@@ -348,7 +348,7 @@ We want our step to take two inputs with images to be compared.
     If you look deeper into codebase, you will discover this is type alias constructor function - telling `pydantic`
     to expect string matching `$inputs.{name}` and `$steps.{name}.*` patterns respectively, additionally providing 
     extra schema field metadata that tells Workflows ecosystem components that the `kind` of data behind selector is 
-    [image](/workflows/kinds/image/). **important note:** we denote *kind* as list - the list of specific kinds 
+    [image](/workflows/kinds/image.md). **important note:** we denote *kind* as list - the list of specific kinds 
     is interpreted as *union of kinds* by Execution Engine.
   
     * denoting `pydantic` `Field(...)` attribute in the last parts of line `20` is optional, yet appreciated, 
@@ -423,12 +423,12 @@ Let's now add the parameter that will influence step execution.
         )
     ```
   
-    * line `9` imports [`float_zero_to_one`](/workflows/kinds/float_zero_to_one) `kind` 
+    * line `9` imports [`float_zero_to_one`](/workflows/kinds/float_zero_to_one.md) `kind` 
       definition which will be used to define the parameter.
   
     * in line `27` we start defining parameter called `similarity_threshold`. Manifest will accept 
     either float values or selector to workflow input of `kind`
-    [`float_zero_to_one`](/workflows/kinds/float_zero_to_one), imported in line `9`.
+    [`float_zero_to_one`](/workflows/kinds/float_zero_to_one.md), imported in line `9`.
 
 Such definition of manifest can handle the following step declaration in Workflow definition:
 
@@ -513,7 +513,7 @@ successfully run blocks. Let's define block outputs.
 
     * line `5` imports class that is used to describe step outputs
   
-    * line `11` imports [`boolean`](/workflows/kinds/boolean) `kind` to be used 
+    * line `11` imports [`boolean`](/workflows/kinds/boolean.md) `kind` to be used 
     in outputs definitions
   
     * lines `32-39` declare class method to specify outputs from the block - 
@@ -521,7 +521,7 @@ successfully run blocks. Let's define block outputs.
     Our block will return boolean flag `images_match` for each pair of images.
   
     * lines `41-43` declare compatibility of the block with Execution Engine -
-    see [versioning page](/workflows/versioning/) for more details
+    see [versioning page](/workflows/versioning.md) for more details
 
 As a result of those changes:
 
@@ -684,9 +684,9 @@ block.
 
     * lines `57-63` define `run(...)` function, which Execution Engine
     will invoke with data to get desired results. Please note that 
-    manifest fields defining inputs of [image](/workflows/kinds/image/) kind
+    manifest fields defining inputs of [image](/workflows/kinds/image.md) kind
     are marked as `WorkflowImageData` - which is compliant with intenal data 
-    representation of `image` kind described in [kind documentation](/workflows/kinds/image/).
+    representation of `image` kind described in [kind documentation](/workflows/kinds/image.md).
 
 ### Providing implementation for block logic
 
@@ -805,7 +805,7 @@ it can produce meaningful results.
 ## Exposing block in `plugin`
 
 Now, your block is ready to be used, but Execution Engine is not aware of its existence. This is because no registered 
-plugin exports the block you just created. Details of blocks bundling are be covered in [separate page](/workflows/blocks_bundling/), 
+plugin exports the block you just created. Details of blocks bundling are be covered in [separate page](/workflows/blocks_bundling.md), 
 but the remaining thing to do is to add block class into list returned from your plugins' `load_blocks(...)` function:
 
 ```python
@@ -2092,7 +2092,7 @@ that even if some elements are empty, the output lacks missing elements making i
 Some blocks may require objects constructed by outside world to work. In such
 scenario, Workflows Execution Engine job is to transfer those entities to the block, 
 making it possible to be used. The mechanism is described in 
-[the page presenting Workflows Compiler](/workflows/workflows_compiler/), as this is the 
+[the page presenting Workflows Compiler](/workflows/workflows_compiler.md), as this is the 
 component responsible for dynamic construction of steps from blocks classes.
 
 Constructor parameters must be:
@@ -2101,9 +2101,9 @@ Constructor parameters must be:
 
 * provided in the environment running Workflows Execution Engine:
 
-    * directly, as shown in [this](/workflows/modes_of_running/#workflows-in-python-package) example
+    * directly, as shown in [this](/workflows/modes_of_running.md#workflows-in-python-package) example
     
-    * using defaults [registered for Workflow plugin](/workflows/blocks_bundling)
+    * using defaults [registered for Workflow plugin](/workflows/blocks_bundling.md)
 
 Let's see how to request init parameters while defining block.
 

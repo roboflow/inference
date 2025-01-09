@@ -4,6 +4,12 @@ on:
   release:
     types: [created]
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy docs?"
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   deploy:
@@ -11,33 +17,81 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out inference repository
+        uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
           path: inference_repo
-      - uses: actions/checkout@v4
+
+      - name: Create GitHub App token (enterprise blocks)
+        id: enterprise_blocks_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.ENTERPRISE_BLOCKS_APP_ID }}
+          private-key: ${{ secrets.ENTERPRISE_BLOCKS_PEM }}
+          owner: roboflow
+          repositories: workflows-enterprise-blocks
+
+      - name: Check out enterprise blocks
+        uses: actions/checkout@v4
         with:
           repository: roboflow/workflows-enterprise-blocks
           ref: main
           path: roboflow_enterprise_blocks
-          token: ${{ secrets.GH_TOKEN_FOR_WORKFLOWS_ENTERPRISE }}
-      - uses: actions/setup-python@v5
+          token: ${{ steps.enterprise_blocks_token.outputs.token }}
+
+      - name: Create GitHub App token (mkdocs)
+        id: mkdocs_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.MKDOCS_APP_ID }}
+          private-key: ${{ secrets.MKDOCS_PEM }}
+          owner: roboflow
+          repositories: mkdocs-material-insiders
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           check-latest: true
-      - run: pip install -r requirements/requirements.docs.txt
+
+      - name: Install Python dependencies
+        run: |
+          # Upgrade pip and setuptools
+          python -m pip install --upgrade pip setuptools
+
+          # Install mkdocs-material-insiders using the GitHub App token
+          pip install git+https://roboflow:${{ steps.mkdocs_token.outputs.token }}@github.com/roboflow/mkdocs-material-insiders.git
+
+          # Install doc requirements
+          pip install -r requirements/requirements.docs.txt
+
+          # Install remaining dependencies
+          pip install -r requirements/_requirements.txt \
+                      -r requirements/requirements.cpu.txt \
+                      -r requirements/requirements.sdk.http.txt \
+                      -r requirements/requirements.test.unit.txt \
+                      -r requirements/requirements.test.integration.txt \
+                      -r requirements/requirements.http.txt
         working-directory: ./inference_repo
-      - run: |
-          python -m pip install --upgrade pip
-          pip install --upgrade setuptools
-          pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements.http.txt
-        working-directory: ./inference_repo
-      - run: pip install .
+
+      - name: Install enterprise blocks
+        run: pip install .
         working-directory: ./roboflow_enterprise_blocks
-      - run: |
-          python -m development.docs.build_block_docs
-          WORKFLOWS_GALLERY_API_KEY=${{ secrets.WORKFLOWS_GALLERY_API_KEY }} python -m development.docs.workflows_gallery_builder
+
+      - name: Build block docs
+        run: python -m development.docs.build_block_docs
         working-directory: ./inference_repo
-      - run: mkdocs gh-deploy --force
+
+      - name: Build workflows gallery
+        env:
+          WORKFLOWS_GALLERY_API_KEY: ${{ secrets.WORKFLOWS_GALLERY_API_KEY }}
+        run: python -m development.docs.workflows_gallery_builder
+        working-directory: ./inference_repo
+
+      - name: Deploy docs
+        # Only deploy if release event OR if deploy input was set to true
+        if: ${{ github.event_name == 'release' || github.event.inputs.deploy == 'true' }}
+        run: mkdocs gh-deploy --force
         working-directory: ./inference_repo
