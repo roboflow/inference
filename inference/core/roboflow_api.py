@@ -22,6 +22,7 @@ from inference.core.entities.types import (
 from inference.core.env import (
     API_BASE_URL,
     MODEL_CACHE_DIR,
+    ROBOFLOW_API_EXTRA_HEADERS,
     USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS,
     WORKFLOWS_DEFINITION_CACHE_EXPIRY,
 )
@@ -147,6 +148,7 @@ def add_custom_metadata(
                 }
             ]
         },
+        headers=build_roboflow_api_headers(),
     )
     api_key_safe_raise_for_status(response=response)
 
@@ -318,10 +320,13 @@ def register_image_at_roboflow(
             "file": ("imageToUpload", image_bytes, "image/jpeg"),
         }
     )
+    headers = build_roboflow_api_headers(
+        explicit_headers={"Content-Type": m.content_type},
+    )
     response = requests.post(
         url=wrapped_url,
         data=m,
-        headers={"Content-Type": m.content_type},
+        headers=headers,
     )
     api_key_safe_raise_for_status(response=response)
     parsed_response = response.json()
@@ -357,10 +362,13 @@ def annotate_image_at_roboflow(
         ("prediction", str(is_prediction).lower()),
     ]
     wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
+    headers = build_roboflow_api_headers(
+        explicit_headers={"Content-Type": "text/plain"},
+    )
     response = requests.post(
         wrapped_url,
         data=annotation_content,
-        headers={"Content-Type": "text/plain"},
+        headers=headers,
     )
     api_key_safe_raise_for_status(response=response)
     parsed_response = response.json()
@@ -597,7 +605,10 @@ def get_from_url(
 
 
 def _get_from_url(url: str, json_response: bool = True) -> Union[Response, dict]:
-    response = requests.get(wrap_url(url))
+    response = requests.get(
+        wrap_url(url),
+        headers=build_roboflow_api_headers(),
+    )
     api_key_safe_raise_for_status(response=response)
     if json_response:
         return response.json()
@@ -627,5 +638,21 @@ def send_inference_results_to_model_monitoring(
     response = requests.post(
         url=api_url,
         json=inference_data,
+        headers=build_roboflow_api_headers(),
     )
     api_key_safe_raise_for_status(response=response)
+
+
+def build_roboflow_api_headers(
+    explicit_headers: Optional[Dict[str, Union[str, List[str]]]] = None,
+) -> Optional[Dict[str, Union[List[str]]]]:
+    if not ROBOFLOW_API_EXTRA_HEADERS:
+        return explicit_headers
+    try:
+        extra_headers: dict = json.loads(ROBOFLOW_API_EXTRA_HEADERS)
+        if explicit_headers:
+            extra_headers.update(explicit_headers)
+        return extra_headers
+    except ValueError:
+        logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
+        return explicit_headers
