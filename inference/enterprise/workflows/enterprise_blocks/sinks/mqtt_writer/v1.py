@@ -6,9 +6,9 @@ from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    STRING_KIND,
-    INTEGER_KIND,
     BOOLEAN_KIND,
+    INTEGER_KIND,
+    STRING_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
