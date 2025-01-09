@@ -247,5 +247,7 @@ def _save_model_metadata_in_cache(
 
 
 def construct_model_type_cache_path(dataset_id: str, version_id: str) -> str:
-    cache_dir = os.path.join(MODEL_CACHE_DIR, dataset_id, version_id if version_id else "")
+    cache_dir = os.path.join(
+        MODEL_CACHE_DIR, dataset_id, version_id if version_id else ""
+    )
     return os.path.join(cache_dir, "model_type.json")
