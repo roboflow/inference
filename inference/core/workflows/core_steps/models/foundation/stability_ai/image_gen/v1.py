@@ -150,12 +150,9 @@ class StabilityAIImageGenBlockV1(WorkflowBlock):
             raise RuntimeError(
                 f"Request to StabilityAI API failed: {str(response.json())}"
             )
-        result_image = bytes_to_opencv_image(payload=response.content)
+        result_image = bytes_to_numpy_image(payload=response.content)
         return {
-            "image": WorkflowImageData.copy_and_replace(
-                origin_image_data=image,
-                numpy_image=result_image,
-            ),
+            "image": result_image,
         }
 
 
@@ -166,11 +163,8 @@ def numpy_array_to_jpeg_bytes(
     return np.array(img_encoded).tobytes()
 
 
-def bytes_to_opencv_image(
+def bytes_to_numpy_image(
     payload: bytes, array_type: np.number = np.uint8
 ) -> np.ndarray:
     bytes_array = np.frombuffer(payload, dtype=array_type)
-    decoding_result = cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
-    if decoding_result is None:
-        raise ValueError("Could not encode bytes to OpenCV image.")
-    return decoding_result
+    return bytes_array
