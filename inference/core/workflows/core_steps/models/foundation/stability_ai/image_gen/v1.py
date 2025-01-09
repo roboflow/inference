@@ -3,9 +3,7 @@ from typing import List, Literal, Optional, Type, Union
 import cv2
 import numpy as np
 import requests
-import supervision as sv
 from pydantic import ConfigDict, Field
-from supervision import Color
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -13,7 +11,6 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     SECRET_KIND,
     STRING_KIND,
     Selector,
