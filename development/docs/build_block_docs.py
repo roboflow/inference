@@ -3,6 +3,7 @@ import os
 import re
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple, Type
+import inspect
 
 from inference.core.utils.file_system import dump_text_lines, read_text_file
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
@@ -51,9 +52,8 @@ USER_CONFIGURATION_HEADER = [
 BLOCK_FAMILY_TEMPLATE = """
 # {family_name}
 
-{versions}
+{content}
 """
-
 
 BLOCK_VERSION_TEMPLATE = """
 {description}
@@ -72,11 +72,13 @@ in `workflow` runtime. See *Bindings* for more info.
 
 ### Available Connections {{ data-search-exclude }}
 
-Check what blocks you can connect to `{family_name}` in version `{version}`.
+??? tip "Compatible Blocks"
+    Check what blocks you can connect to `{family_name}` in version `{version}`.
 
-- inputs: {input_connections}
-- outputs: {output_connections}
+    - inputs: {input_connections}
+    - outputs: {output_connections}
 
+    
 ### Input and Output Bindings
 
 The available connections depend on its binding kinds. Check what binding kinds 
@@ -93,6 +95,7 @@ The available connections depend on its binding kinds. Check what binding kinds
 {block_output_bindings}
 
 
+
 ??? tip "Example JSON definition of step `{family_name}` in version `{version}`"
 
     ```json
@@ -106,6 +109,35 @@ article > a.md-content__button.md-icon:first-child {{
 }}
 </style>    
 """
+
+
+
+BLOCK_VERSION_TEMPLATE_SINGLE_VERSION = """
+
+??? "Class: `{short_block_class_name}`"
+
+    Source:
+    <a target="_blank" href="{block_source_link}">{block_class_name}</a>
+    
+
+""" + BLOCK_VERSION_TEMPLATE
+
+
+BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS = """
+
+## {version}
+
+??? "Class: `{short_block_class_name}`  *(there are multiple versions of this block)*"
+
+    Source:
+    <a target="_blank" href="{block_source_link}">{block_class_name}</a>
+
+    **Warning: This block has multiple versions. Please refer to the specific version for details.**
+    You can learn more about how versions work here: [Versioning](/workflows/versioning.md)
+
+    
+
+""" + BLOCK_VERSION_TEMPLATE
 
 BLOCK_CARD_TEMPLATE = '<p class="card block-card" data-url="{data_url}" data-name="{data_name}" data-desc="{data_desc}" data-labels="{data_labels}" data-author="{data_authors}"></p>\n'
 
@@ -249,7 +281,11 @@ def main() -> None:
         short_descriptions = []
         versions_content = []
         for block in family_members:
+
             block_type = block.block_schema.get("block_type", "").upper()
+            
+            block_class_name = block.fully_qualified_block_class_name
+            block_source_link = get_source_link_for_block_class(block.block_class)
             block_types_in_family.add(block_type)
             block_license = block.block_schema.get("license", "").upper()
             block_licenses_in_family.add(block_license)
@@ -258,9 +294,15 @@ def main() -> None:
             long_description = block.block_schema.get("long_description", "Description not available")
             short_description = block.block_schema.get("short_description", "Description not available")
             short_descriptions.append(short_description)
-            version_content = BLOCK_VERSION_TEMPLATE.format(
+
+            template = BLOCK_VERSION_TEMPLATE_SINGLE_VERSION if len(family_members) == 1 else BLOCK_VERSION_TEMPLATE_MULTIPLE_VERSIONS
+
+            version_content = template.format(
                 family_name=family_name,
                 version=block.block_schema.get("version", "undefined"),
+                block_source_link=block_source_link,
+                block_class_name=block_class_name,
+                short_block_class_name = block.fully_qualified_block_class_name.split(".")[-1],
                 type_identifier=block.manifest_type_identifier,
                 description=long_description,
                 block_inputs=format_block_inputs(parsed_manifest),
@@ -281,10 +323,10 @@ def main() -> None:
                 example=_dump_step_example_definition(example_definition=example_definition),
             )
             versions_content.append(version_content)
-        all_versions_compact = "\n\n".join(versions_content)
+        all_versions_combined = combined_content_from_versions(versions_content)
         family_document_content = BLOCK_FAMILY_TEMPLATE.format(
             family_name=family_name,
-            versions=all_versions_compact,
+            content=all_versions_combined,
         )
         with open(documentation_file_path, "w") as documentation_file:
             documentation_file.write(family_document_content)
@@ -308,6 +350,9 @@ def main() -> None:
 
     write_blocks_summary_md(block_families)
 
+def combined_content_from_versions(versions_content: List[str]) -> str:
+    return "\n\n".join(versions_content)
+
 def _dump_step_example_definition(example_definition: dict) -> str:
     definition_stringified = "\n\t".join(json.dumps(example_definition, indent=4).split("\n"))
     return INLINE_UQL_PARAMETER_PATTERN.sub(_escape_uql_brackets, definition_stringified)
@@ -317,6 +362,13 @@ def _escape_uql_brackets(match: re.Match) -> str:
     content = match.group(0)
     return "{{ '{{' }}" + content[2:-2] + "{{ '}}' }}"
 
+
+def get_source_link_for_block_class(block_class: Type[WorkflowBlock]) -> str:
+    try:
+        filename = inspect.getfile(block_class).split("inference/core/workflows/")[1]
+        return f"https://github.com/roboflow/inference/blob/main/inference/core/workflows/{filename}"
+    except Exception as e:
+        return None
 
 def get_auto_generation_markers(
     documentation_lines: List[str],
