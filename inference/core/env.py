@@ -48,6 +48,8 @@ API_BASE_URL = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
+# extra headers expected to be serialised json
+ROBOFLOW_API_EXTRA_HEADERS = os.getenv("ROBOFLOW_API_EXTRA_HEADERS")
 
 # Debug flag for the API, default is False
 API_DEBUG = os.getenv("API_DEBUG", False)
