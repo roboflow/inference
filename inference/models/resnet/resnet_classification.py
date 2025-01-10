@@ -15,6 +15,7 @@ class ResNetClassification(ClassificationBaseOnnxRoboflowInferenceModel):
     Attributes:
         multiclass (bool): A flag that specifies if the model should handle multiclass classification.
     """
+    
     preprocess_means = [0.485, 0.456, 0.406]
     preprocess_stds = [0.229, 0.224, 0.225]
 
