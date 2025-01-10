@@ -15,6 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     SECRET_KIND,
     STRING_KIND,
+    FLOAT_ZERO_TO_ONE_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -68,9 +69,14 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/stability_ai_image_gen@v1"]
     image: Selector(kind=[IMAGE_KIND]) = Field(
-        description="The image which was the base to generate VLM prediction",
+        description="The image to use as the starting point for the generation.",
         examples=["$inputs.image"],
         default=None,
+    )
+    strength: Union[float, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
+        description="controls how much influence the image parameter has on the generated image. A value of 0 would yield an image that is identical to the input. A value of 1 would be as if you passed in no image at all.",
+        default=0.3,
+        examples=[0.7, "$inputs.strength"],
     )
     prompt: Union[
         Selector(kind=[STRING_KIND]),
@@ -126,22 +132,25 @@ class StabilityAIImageGenBlockV1(WorkflowBlock):
 
     def run(
         self,
-        image: WorkflowImageData,
         prompt: str,
         negative_prompt: str,
         model: str,
         api_key: str,
+        image: WorkflowImageData,
+        strength: float = 0.3,
     ) -> BlockResult:
+        request_data = {
+            "prompt": prompt,
+            "output_format": "jpeg",
+        }
         files_to_send = {"none": ""}
         if image is not None:
             encoded_image = numpy_array_to_jpeg_bytes(image=image.numpy_image)
             files_to_send = {
                 "image": encoded_image,
             }
-        request_data = {
-            "prompt": prompt,
-            "output_format": "jpeg",
-        }
+            request_data["strength"] = strength
+
         if negative_prompt is not None:
             request_data["negative_prompt"] = negative_prompt
         if model not in ENDPOINT.keys():
