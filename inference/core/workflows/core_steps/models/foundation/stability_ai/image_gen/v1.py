@@ -1,3 +1,5 @@
+import base64
+import uuid
 from typing import List, Literal, Optional, Type, Union
 
 import cv2
@@ -19,6 +21,10 @@ from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
+)
+
+from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
 )
 
 LONG_DESCRIPTION = """
@@ -150,9 +156,10 @@ class StabilityAIImageGenBlockV1(WorkflowBlock):
             raise RuntimeError(
                 f"Request to StabilityAI API failed: {str(response.json())}"
             )
-        result_image = bytes_to_numpy_image(payload=response.content)
+        new_image_base64 = base64.b64encode(response.content).decode("utf-8")
+        parent_metadata = ImageParentMetadata(parent_id=str(uuid.uuid1()))
         return {
-            "image": result_image,
+            "image": WorkflowImageData(parent_metadata, base64_image=new_image_base64),
         }
 
 
@@ -168,3 +175,13 @@ def bytes_to_numpy_image(
 ) -> np.ndarray:
     bytes_array = np.frombuffer(payload, dtype=array_type)
     return bytes_array
+
+
+def bytes_to_opencv_image(
+    payload: bytes, array_type: np.number = np.uint8
+) -> np.ndarray:
+    bytes_array = np.frombuffer(payload, dtype=array_type)
+    decoding_result = cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
+    if decoding_result is None:
+        raise ValueError("Could not encode bytes to OpenCV image.")
+    return decoding_result
