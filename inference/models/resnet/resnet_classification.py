@@ -4,7 +4,7 @@ from inference.core.models.classification_base import (
 )
 
 
-class VitClassification(ClassificationBaseOnnxRoboflowInferenceModel):
+class ResNetClassification(ClassificationBaseOnnxRoboflowInferenceModel):
     """VitClassification handles classification inference
     for Vision Transformer (ViT) models using ONNX.
 
@@ -15,9 +15,8 @@ class VitClassification(ClassificationBaseOnnxRoboflowInferenceModel):
     Attributes:
         multiclass (bool): A flag that specifies if the model should handle multiclass classification.
     """
-
-    preprocess_means = [0.5, 0.5, 0.5]
-    preprocess_stds = [0.5, 0.5, 0.5]
+    preprocess_means = [0.485, 0.456, 0.406]
+    preprocess_stds = [0.229, 0.224, 0.225]
 
     def __init__(self, *args, **kwargs):
         """Initializes the VitClassification instance.

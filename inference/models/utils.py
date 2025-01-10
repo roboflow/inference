@@ -12,6 +12,7 @@ from inference.core.utils.function import deprecated
 from inference.models import (
     YOLACT,
     VitClassification,
+    ResNetClassification,
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
     YOLOv5ObjectDetection,
@@ -32,6 +33,10 @@ from inference.models.yolov11.yolov11_keypoints_detection import (
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "stub"): ClassificationModelStub,
     ("classification", "vit"): VitClassification,
+    ("classification", "resnet18"): ResNetClassification,
+    ("classification", "resnet34"): ResNetClassification,
+    ("classification", "resnet50"): ResNetClassification,
+    ("classification", "resnet101"): ResNetClassification,
     ("classification", "yolov8"): YOLOv8Classification,
     ("classification", "yolov8n"): YOLOv8Classification,
     ("classification", "yolov8s"): YOLOv8Classification,
