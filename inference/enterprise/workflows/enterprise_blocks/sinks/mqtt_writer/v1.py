@@ -71,7 +71,7 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="error_status", kind=[BOOLEAN_KIND]),
-            OutputDefinition(name="message", kind=[STRING_KIND])
+            OutputDefinition(name="message", kind=[STRING_KIND]),
         ]
 
 
@@ -106,12 +106,20 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 self.mqtt_client.connect(host, port)
             except Exception as e:
                 logging.error(f"Failed to connect to MQTT broker: {e}")
-                return {"error_status": True, "message": f"Failed to connect to MQTT broker: {e}"}
+                return {
+                    "error_status": True,
+                    "message": f"Failed to connect to MQTT broker: {e}",
+                }
 
         try:
-            res: mqtt.MQTTMessageInfo = self.mqtt_client.publish(topic, message, qos=qos, retain=retain)
+            res: mqtt.MQTTMessageInfo = self.mqtt_client.publish(
+                topic, message, qos=qos, retain=retain
+            )
             if res.is_published():
-                return {"error_status": False, "message": "Message published successfully"}
+                return {
+                    "error_status": False,
+                    "message": "Message published successfully",
+                }
             else:
                 return {"error_status": True, "message": "Failed to publish payload"}
         except Exception as e:
@@ -121,5 +129,7 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
     def mqtt_on_connect(self, client, userdata, flags, reason_code, properties=None):
         logging.info(f"Connected with result code {reason_code}")
 
-    def mqtt_on_connect_fail(self, client, userdata, flags, reason_code, properties=None):
+    def mqtt_on_connect_fail(
+        self, client, userdata, flags, reason_code, properties=None
+    ):
         logging.error(f"Failed to connect with result code {reason_code}")
