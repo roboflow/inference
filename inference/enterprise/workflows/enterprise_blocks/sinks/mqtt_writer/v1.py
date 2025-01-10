@@ -18,7 +18,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-
 LONG_DESCRIPTION = """
 MQTT Writer block for publishing messages to an MQTT broker.
 
