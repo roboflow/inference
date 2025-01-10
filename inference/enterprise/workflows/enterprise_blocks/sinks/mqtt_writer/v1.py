@@ -121,7 +121,9 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 self.mqtt_client.username_pw_set(username, password)
             self.mqtt_client.on_connect = self.mqtt_on_connect
             self.mqtt_client.on_connect_fail = self.mqtt_on_connect_fail
-            self.mqtt_client.reconnect_delay_set(min_delay=timeout, max_delay=2*timeout)
+            self.mqtt_client.reconnect_delay_set(
+                min_delay=timeout, max_delay=2 * timeout
+            )
             try:
                 # TODO: blocking, consider adding fire_and_forget like in OPC writer
                 self.mqtt_client.connect(host, port)
