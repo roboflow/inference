@@ -263,6 +263,7 @@ def get_roboflow_instant_model_data(
             ("dynamic", "true"),
             ("type", endpoint_type.value),
             ("model", model_id),
+            ("weights", "true"),
         ]
         if api_key is not None:
             params.append(("api_key", api_key))
