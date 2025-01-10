@@ -8,24 +8,21 @@ import requests
 from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     SECRET_KIND,
     STRING_KIND,
-    FLOAT_ZERO_TO_ONE_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
     WorkflowBlockManifest,
-)
-
-from inference.core.workflows.execution_engine.entities.base import (
-    ImageParentMetadata,
 )
 
 LONG_DESCRIPTION = """
