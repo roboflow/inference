@@ -1,31 +1,51 @@
-import pytest
-from unittest.mock import patch, MagicMock
+import unittest
+import time
+import paho.mqtt.client as mqtt
 from inference.enterprise.workflows.enterprise_blocks.sinks.mqtt_writer.v1 import MQTTWriterSinkBlockV1
-
+import pytest
 
 @pytest.mark.timeout(5)
-def test_mqtt_writer_sink_block_v1():
-    # given
-    host = "localhost"
-    port = 1883
-    topic = "test/topic"
-    message = "Hello, MQTT!"
-    qos = 1
-    retain = False
+class MQTTWriterSinkBlockV1IntegrationTest(unittest.TestCase):
+    def setUp(self):
+        self.broker_host = 'test.mosquitto.org'
+        self.broker_port = 1883
+        self.topic = 'test/topic'
+        self.received_messages = []
 
-    mqtt_block = MQTTWriterSinkBlockV1()
+        self.listener_client = mqtt.Client()
+        self.listener_client.on_message = self.on_message
+        self.listener_client.connect(self.broker_host, self.broker_port)
+        self.listener_client.subscribe(self.topic)
+        self.listener_client.loop_start()
 
-    with patch('paho.mqtt.client.Client') as MockClient:
-        mock_client_instance = MockClient.return_value
-        mock_client_instance.connect.return_value = 0
-        mock_client_instance.publish.return_value = (0, 0)
+    def on_message(self, client, userdata, msg):
+        self.received_messages.append(msg.payload.decode())
+
+    def tearDown(self):
+        self.listener_client.loop_stop()
+        self.listener_client.disconnect()
+
+    def test_successful_connection_and_publishing(self):
+        # given
+        block = MQTTWriterSinkBlockV1()
+        message = 'Test message'
+        expected_error_status = False
+        expected_message = 'Message published successfully'
 
         # when
-        result = mqtt_block.run(host=host, port=port, topic=topic, message=message, qos=qos, retain=retain)
+        result = block.run(
+            host=self.broker_host,
+            port=self.broker_port,
+            topic=self.topic,
+            message=message
+        )
+
+        time.sleep(2)
 
         # then
-        mock_client_instance.connect.assert_called_once_with(host, port)
-        mock_client_instance.publish.assert_called_once_with(topic, message, qos=qos, retain=retain)
-        mock_client_instance.disconnect.assert_called_once()
+        self.assertEqual(result['error_status'], expected_error_status)
+        self.assertEqual(result['message'], expected_message)
+        self.assertIn(message, self.received_messages)
 
-        assert result["status"] == "Message published successfully"
+if __name__ == '__main__':
+    unittest.main() 
