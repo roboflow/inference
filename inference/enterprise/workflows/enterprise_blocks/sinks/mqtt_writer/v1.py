@@ -1,12 +1,13 @@
-import logging
 from typing import List, Literal, Optional, Type, Union
 
 import paho.mqtt.client as mqtt
 from pydantic import ConfigDict, Field
 
+from inference.core.logger import logger
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    FLOAT_KIND,
     INTEGER_KIND,
     STRING_KIND,
     Selector,
@@ -18,13 +19,27 @@ from inference.core.workflows.prototypes.block import (
 )
 
 
+LONG_DESCRIPTION = """
+MQTT Writer block for publishing messages to an MQTT broker.
+
+This block is blocking on connect and publish operations.
+
+Outputs:
+    - error_status (bool): Indicates if an error occurred during the MQTT publishing process.
+                          True if there was an error, False if successful.
+    - message (str): Status message describing the result of the operation.
+                    Contains error details if error_status is True,
+                    or success confirmation if error_status is False.
+"""
+
+
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
             "name": "MQTT Writer",
             "version": "v1",
             "short_description": "Publishes messages to an MQTT broker.",
-            "long_description": "This block allows publishing messages to a specified MQTT broker and topic.",
+            "long_description": LONG_DESCRIPTION,
             "license": "Roboflow Enterprise License",
             "block_type": "sink",
         }
@@ -56,6 +71,11 @@ class BlockManifest(WorkflowBlockManifest):
         description="Whether the message should be retained by the broker.",
         examples=[True, False],
     )
+    timeout: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+        default=0.5,
+        description="Timeout for connecting to the MQTT broker and for sending MQTT messages.",
+        examples=[0.5],
+    )
     username: Union[Selector(kind=[STRING_KIND]), str] = Field(
         default=None,
         description="Username for MQTT broker authentication.",
@@ -77,7 +97,7 @@ class BlockManifest(WorkflowBlockManifest):
 
 class MQTTWriterSinkBlockV1(WorkflowBlock):
     def __init__(self):
-        self.mqtt_client: Optional[mqtt.Client] = mqtt.Client()
+        self.mqtt_client: Optional[mqtt.Client] = None
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -93,6 +113,7 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
         password: Optional[str] = None,
         qos: int = 0,
         retain: bool = False,
+        timeout: float = 0.5,
     ) -> BlockResult:
         if self.mqtt_client is None:
             self.mqtt_client = mqtt.Client()
@@ -100,12 +121,23 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
                 self.mqtt_client.username_pw_set(username, password)
             self.mqtt_client.on_connect = self.mqtt_on_connect
             self.mqtt_client.on_connect_fail = self.mqtt_on_connect_fail
+            self.mqtt_client.reconnect_delay_set(min_delay=timeout, max_delay=2*timeout)
+            try:
+                # TODO: blocking, consider adding fire_and_forget like in OPC writer
+                self.mqtt_client.connect(host, port)
+            except Exception as e:
+                logger.error("Failed to connect to MQTT broker: %s", e)
+                return {
+                    "error_status": True,
+                    "message": f"Failed to connect to MQTT broker: {e}",
+                }
 
         if not self.mqtt_client.is_connected():
             try:
-                self.mqtt_client.connect(host, port)
+                # TODO: blocking
+                self.mqtt_client.reconnect()
             except Exception as e:
-                logging.error(f"Failed to connect to MQTT broker: {e}")
+                logger.error("Failed to connect to MQTT broker: %s", e)
                 return {
                     "error_status": True,
                     "message": f"Failed to connect to MQTT broker: {e}",
@@ -115,6 +147,8 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
             res: mqtt.MQTTMessageInfo = self.mqtt_client.publish(
                 topic, message, qos=qos, retain=retain
             )
+            # TODO: this is blocking
+            res.wait_for_publish(timeout=timeout)
             if res.is_published():
                 return {
                     "error_status": False,
@@ -123,13 +157,13 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
             else:
                 return {"error_status": True, "message": "Failed to publish payload"}
         except Exception as e:
-            logging.error(f"Failed to publish message: {e}")
+            logger.error("Failed to publish message: %s", e)
             return {"error_status": True, "message": f"Unhandled error - {e}"}
 
     def mqtt_on_connect(self, client, userdata, flags, reason_code, properties=None):
-        logging.info(f"Connected with result code {reason_code}")
+        logger.info("Connected with result code %s", reason_code)
 
     def mqtt_on_connect_fail(
         self, client, userdata, flags, reason_code, properties=None
     ):
-        logging.error(f"Failed to connect with result code {reason_code}")
+        logger.error(f"Failed to connect with result code %s", reason_code)
