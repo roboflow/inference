@@ -1,4 +1,6 @@
+import os
 import os.path
+import socket
 import tempfile
 from typing import Generator
 
@@ -96,3 +98,62 @@ def bool_env(val):
 @pytest.fixture(scope="function")
 def face_image() -> np.ndarray:
     return cv2.imread(os.path.join(ASSETS_DIR, "face.jpeg"))
+
+
+# Below taken from https://github.com/eclipse-paho/paho.mqtt.python/blob/d45de3737879cfe7a6acc361631fa5cb1ef584bb/tests/testsupport/broker.py
+class FakeMQTTBroker:
+    def __init__(self):
+        # Bind to "localhost" for maximum performance, as described in:
+        # http://docs.python.org/howto/sockets.html#ipc
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.host = "localhost"
+        sock.bind((self.host, 0))
+        self.port = sock.getsockname()[1]
+        self.messages = []
+        self.messages_count_to_wait_for = 2
+
+        sock.settimeout(5)
+        sock.listen(1)
+
+        self._sock = sock
+        self._conn = None
+
+    def start(self):
+        if self._sock is None:
+            raise ValueError("Socket is not open")
+        if self._conn is not None:
+            raise ValueError("Connection is already open")
+
+        while len(self.messages) < self.messages_count_to_wait_for:
+            (conn, address) = self._sock.accept()
+            conn.settimeout(1)
+            self._conn = conn
+            self.messages.append(self.receive_packet(1000))
+
+    def finish(self):
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
+        if self._sock is not None:
+            self._sock.close()
+            self._sock = None
+
+    def receive_packet(self, num_bytes):
+        if self._conn is None:
+            raise ValueError("Connection is not open")
+
+        packet_in = self._conn.recv(num_bytes)
+        return packet_in
+
+
+@pytest.fixture(scope="function")
+def fake_mqtt_broker():
+    print("Setup broker")
+    broker = FakeMQTTBroker()
+
+    yield broker
+
+    print("Teardown broker")
+    broker.finish()
