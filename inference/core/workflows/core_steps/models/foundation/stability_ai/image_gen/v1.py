@@ -168,20 +168,3 @@ def numpy_array_to_jpeg_bytes(
 ) -> bytes:
     _, img_encoded = cv2.imencode(".jpg", image)
     return np.array(img_encoded).tobytes()
-
-
-def bytes_to_numpy_image(
-    payload: bytes, array_type: np.number = np.uint8
-) -> np.ndarray:
-    bytes_array = np.frombuffer(payload, dtype=array_type)
-    return bytes_array
-
-
-def bytes_to_opencv_image(
-    payload: bytes, array_type: np.number = np.uint8
-) -> np.ndarray:
-    bytes_array = np.frombuffer(payload, dtype=array_type)
-    decoding_result = cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
-    if decoding_result is None:
-        raise ValueError("Could not encode bytes to OpenCV image.")
-    return decoding_result
