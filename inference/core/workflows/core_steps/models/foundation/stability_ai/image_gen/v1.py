@@ -29,9 +29,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 
 LONG_DESCRIPTION = """
-The block wraps 
-[Stability AI image generation API](https://platform.stability.ai/docs/api-reference#tag/Generate) and 
-let users generate new images from text, or create variations of existing images.
+The block wraps [Stability AI image generation API](https://platform.stability.ai/docs/api-reference#tag/Generate) and let users generate new images from text, or create variations of existing images.
 """
 
 SHORT_DESCRIPTION = (
@@ -76,7 +74,7 @@ class BlockManifest(WorkflowBlockManifest):
     strength: Union[float, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
         description="controls how much influence the image parameter has on the generated image. A value of 0 would yield an image that is identical to the input. A value of 1 would be as if you passed in no image at all.",
         default=0.3,
-        examples=[0.7, "$inputs.strength"],
+        examples=[0.3, "$inputs.strength"],
     )
     prompt: Union[
         Selector(kind=[STRING_KIND]),
