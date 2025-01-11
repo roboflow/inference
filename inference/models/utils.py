@@ -11,8 +11,8 @@ from inference.core.registries.roboflow import get_model_type
 from inference.core.utils.function import deprecated
 from inference.models import (
     YOLACT,
-    VitClassification,
     ResNetClassification,
+    VitClassification,
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
     YOLOv5ObjectDetection,
