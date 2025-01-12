@@ -29,6 +29,45 @@ extra_css:
   - styles/cookbooks.css
 
 nav:
+  - Start:
+      - Overview: start/overview.md
+      - Understand:
+          - Architecture: start/understand/architecture.md
+          - Features: start/understand/features.md
+          - Alternatives: start/understand/alternatives.md
+          - More Resources: start/understand/resources.md
+      - Cloud Hosting:
+          - managed/index.md
+          - Serverless API: managed/serverless.md
+          - Dedicated Deployments: managed/dedicated.md
+      - Self Hosting:
+          - install/index.md
+          - Install on Linux: install/linux.md
+          - Install on Windows: install/windows.md
+          - Install on Mac: install/mac.md
+          - Install on Jetson: install/jetson.md
+          - Install on Raspberry Pi: install/raspberry-pi.md
+          - Bring Your Own Cloud:
+              - install/cloud/index.md
+              - AWS: install/cloud/aws.md
+              - Azure: install/cloud/azure.md
+              - GCP: install/cloud/gcp.md
+      - Inputs:
+          - inputs/index.md
+          - Images: inputs/images.md
+          - Webcam: inputs/webcam.md
+          - IP Camera (RTSP):
+              - inputs/rtsp/index.md
+              - Reolink: inputs/rtsp/reolink.md
+              - Unifi: inputs/rtsp/unifi.md
+          - Recorded Video: inputs/video.md
+          - Industrial:
+              - inputs/industrial/index.md
+              - Basler: inputs/industrial/basler.md
+              - Lucid: inputs/industrial/lucid.md
+              - FLIR: inputs/industrial/flir.md
+      - Next Steps: start/next.md
+          
   - Models:
       - Run a Model: quickstart/run_a_model.md
       - From Local Weights: models/from_local_weights.md

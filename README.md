@@ -201,9 +201,11 @@ via the Roboflow UI.
 
 ## 🔑 connect to the cloud
 
-Without an API Key, you can access a wide range of pre-trained and foundational models and run Workflows via our JSON API.
+Without an API Key, you can access a wide range of pre-trained and foundational models and run public Workflows.
 
-Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to the `inference_sdk` or API to access additional features.
+Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to the `inference_sdk` or API to access additional features enhanced by Roboflow's Cloud
+platform. When running with an API Key, usage is metered according to
+Roboflow's [pricing tiers](https://roboflow.com/pricing).
 
 |                         | Open Access | With API Key |
 |-------------------------|-------------|--------------|
