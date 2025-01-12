@@ -29,10 +29,16 @@ The core functionality of Inference is open source
 under the Apache 2.0 license. You may freely fork, extend, or
 [contribute](https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md) to its functionality.
 
-Models are subject to licensing which respects the underlying architecture. These licenses are listed in [`inference/models`](/inference/models). Paid Roboflow accounts include a commercial license for some models (see [roboflow.com/licensing](https://roboflow.com/licensing) for details).
+Models are subject to licensing which respects the underlying architecture.
+These licenses are listed in
+[`inference/models`](https://github.com/roboflow/inference/tree/main/inference/models).
+Paid Roboflow accounts include a commercial license for some models
+(see [roboflow.com/licensing](https://roboflow.com/licensing) for details).
 
-Cloud connected functionality (like our model and Workflows registries, dataset management, model monitoring, device management, and managed infrastructure) requires a Roboflow account and API key & is metered based on usage according to
-Roboflow's [platform pricing tiers](https://roboflow.com/pricing).
+Cloud connected functionality (like our model and Workflows registries, dataset management,
+model monitoring, device management, and managed infrastructure) requires a Roboflow account
+and API key & is metered based on usage according to Roboflow's
+[platform pricing tiers](https://roboflow.com/pricing).
 
 |                         | Open Access | With API Key |
 |-------------------------|-------------|--------------|
