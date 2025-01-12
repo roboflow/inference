@@ -24,11 +24,10 @@ powering instant replay at some of the world's premier sporting events.
 
 ## Open Source
 
-The core functionality of Inference is 100% open source
-[on GitHub](https://github.com/roboflow/inference) under the Apache 2.0 license.
-You may freely fork, extend, or
-[contribute](https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md)
-to its functionality.
+The core functionality of Inference is open source
+[on GitHub](https://github.com/roboflow/inference)
+under the Apache 2.0 license. You may freely fork, extend, or
+[contribute](https://github.com/roboflow/inference/blob/main/CONTRIBUTING.md) to its functionality.
 
 Models are subject to licensing which respects the underlying architecture. These licenses are listed in [`inference/models`](/inference/models). Paid Roboflow accounts include a commercial license for some models (see [roboflow.com/licensing](https://roboflow.com/licensing) for details).
 
