@@ -62,3 +62,17 @@ and API key & is metered based on usage according to Roboflow's
 If you don't want to manage your own infrastructure for self-hosting, Roboflow offers a hosted Inference Server via [one-click Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) (CPU and GPU machines) billed hourly, or simple models and Workflows via our [serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) billed per API-call.
 
 Roboflow offers a [generous free-tier](https://roboflow.com/pricing) to get started.
+
+## Local Installation
+
+Self-hosting for production or local development is easy. We recommend using Docker
+to manage your installation because machine learning dependencies are often
+fragile and finicky. On most systems, the easiest way to get started is to use our CLI
+to choose the right docker image with the `inference server start` command:
+
+```bash
+pip install inference-cli
+inference server start
+```
+
+For detailed instructions on various systems, see our [installation guide](/install/index.md).
