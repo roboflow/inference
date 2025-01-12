@@ -91,7 +91,7 @@ Workflows allow you to extend simple model predictions to build computer vision 
 
 ## 📟 connecting via api
   
-Once you've installed Infernece, your machine is a fully-featured CV center.
+Once you've installed Inference, your machine is a fully-featured CV center.
 You can use its API to run models and workflows on images and video streams.
 By default, the server is running locally on
 [`localhost:9001`](http://localhost:9001).

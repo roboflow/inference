@@ -34,6 +34,7 @@ nav:
       - Understand:
           - Architecture: start/understand/architecture.md
           - Features: start/understand/features.md
+          - Vocabulary: start/understand/vocabulary.md
           - Alternatives: start/understand/alternatives.md
           - More Resources: start/understand/resources.md
       - Cloud Hosting:
