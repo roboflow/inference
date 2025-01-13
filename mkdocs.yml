@@ -60,7 +60,7 @@ nav:
           - IP Camera (RTSP):
               - inputs/rtsp/index.md
               - Reolink: inputs/rtsp/reolink.md
-              - Unifi: inputs/rtsp/unifi.md
+              - UniFi: inputs/rtsp/unifi.md
           - Recorded Video: inputs/video.md
           - Industrial:
               - inputs/industrial/index.md
