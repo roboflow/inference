@@ -27,7 +27,7 @@ from inference.core.env import (
     OWLV2_MODEL_CACHE_SIZE,
     OWLV2_VERSION_ID,
 )
-from inference.core.exceptions import ModelArtefactError
+from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
 from inference.core.models.roboflow import (
     DEFAULT_COLOR_PALETTE,
     RoboflowCoreModel,
@@ -296,7 +296,14 @@ class OwlV2(RoboflowInferenceModel):
 
     def __init__(self, model_id=f"owlv2/{OWLV2_VERSION_ID}", *args, **kwargs):
         super().__init__(model_id=model_id, *args, **kwargs)
-        hf_id = os.path.join("google", self.version_id if self.version_id else "")
+        # TODO: owlv2 makes use of version_id - version_id is being dropped so this class needs to be refactored
+        if self.version_id is None:
+            owlv2_model_id_chunks = model_id.split("/")
+            if len(owlv2_model_id_chunks) != 2:
+                raise InvalidModelIDError(f"Model ID: `{model_id}` is invalid.")
+            self.dataset_id = owlv2_model_id_chunks[0]
+            self.version_id = owlv2_model_id_chunks[1]
+        hf_id = os.path.join("google", self.version_id)
         processor = Owlv2Processor.from_pretrained(hf_id)
         self.image_size = tuple(processor.image_processor.size.values())
         self.image_mean = torch.tensor(
