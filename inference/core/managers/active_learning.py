@@ -12,6 +12,7 @@ from inference.core.env import DISABLE_PREPROC_AUTO_ORIENT
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 from inference.models.aliases import resolve_roboflow_model_alias
+from inference.core.utils.roboflow import get_model_id_chunks
 
 ACTIVE_LEARNING_ELIGIBLE_PARAM = "active_learning_eligible"
 DISABLE_ACTIVE_LEARNING_PARAM = "disable_active_learning"
@@ -40,7 +41,8 @@ class ActiveLearningManager(ModelManager):
             request, DISABLE_ACTIVE_LEARNING_PARAM, False
         )
         # TODO: active learning is disabled for instant models; to be enabled in the future
-        roboflow_instant_model = len(str(model_id).split("/")) == 1
+        _, version_id = get_model_id_chunks(model_id=model_id)
+        roboflow_instant_model = version_id is None
         if (
             not active_learning_eligible
             or active_learning_disabled_for_request
@@ -62,7 +64,8 @@ class ActiveLearningManager(ModelManager):
             request, DISABLE_ACTIVE_LEARNING_PARAM, False
         )
         # TODO: active learning is disabled for instant models; to be enabled in the future
-        roboflow_instant_model = len(str(model_id).split("/")) == 1
+        _, version_id = get_model_id_chunks(model_id=model_id)
+        roboflow_instant_model = version_id is None
         if (
             not active_learning_eligible
             or active_learning_disabled_for_request
@@ -203,7 +206,8 @@ class BackgroundTaskActiveLearningManager(ActiveLearningManager):
             model_id=model_id, request=request, **kwargs
         )
         # TODO: active learning is disabled for instant models; to be enabled in the future
-        roboflow_instant_model = len(str(model_id).split("/")) == 1
+        _, version_id = get_model_id_chunks(model_id=model_id)
+        roboflow_instant_model = version_id is None
         if (
             not active_learning_eligible
             or active_learning_disabled_for_request

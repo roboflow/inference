@@ -13,7 +13,7 @@ def test_get_model_id_chunks_when_invalid_input_given(value: Any) -> None:
         _ = get_model_id_chunks(model_id=value)
 
 
-@pytest.mark.parametrize("value", ["some", "another-2"])
+@pytest.mark.parametrize("value", ["some/other", "some-2/another-2"])
 def test_get_model_id_chunks_when_instant_model_id_given(value: Any) -> None:
     # when
     result = get_model_id_chunks(model_id=value)

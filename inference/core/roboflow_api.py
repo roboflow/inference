@@ -14,6 +14,7 @@ from inference.core.cache import cache
 from inference.core.cache.base import BaseCache
 from inference.core.entities.types import (
     DatasetID,
+    ModelID,
     ModelType,
     TaskType,
     VersionID,
@@ -247,23 +248,17 @@ def get_roboflow_model_data(
 @wrap_roboflow_api_errors()
 def get_roboflow_instant_model_data(
     api_key: str,
-    model_id: str,
-    endpoint_type: ModelEndpointType,
-    device_id: str,
+    model_id: ModelID,
+    cache_prefix: str = "roboflow_api_data",
 ) -> dict:
-    api_data_cache_key = f"roboflow_api_data:{endpoint_type.value}:{model_id}"
+    api_data_cache_key = f"{cache_prefix}:{model_id}"
     api_data = cache.get(api_data_cache_key)
     if api_data is not None:
         logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
         return api_data
     else:
         params = [
-            ("nocache", "true"),
-            ("device", device_id),
-            ("dynamic", "true"),
-            ("type", endpoint_type.value),
             ("model", model_id),
-            ("weights", "true"),
         ]
         if api_key is not None:
             params.append(("api_key", api_key))
