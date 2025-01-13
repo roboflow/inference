@@ -30,6 +30,7 @@ class RequestMethod(Enum):
         GET: The GET method.
         POST: The POST method.
     """
+
     GET = "get"
     POST = "post"
 

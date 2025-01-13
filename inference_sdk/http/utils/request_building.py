@@ -25,6 +25,7 @@ class RequestData:
         payload: The payload of the request.
         image_scaling_factors: The scaling factors of the images.
     """
+
     url: str
     request_elements: int
     headers: Optional[Dict[str, str]]
