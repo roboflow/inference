@@ -102,7 +102,7 @@ nav:
           - Benchmark Inference: inference_helpers/cli_commands/benchmark.md
           - Make Predictions: inference_helpers/cli_commands/infer.md
           - Deploy To Cloud: inference_helpers/cli_commands/cloud.md
-          - Reference: reference/inference_cli/
+          - Reference: inference_helpers/cli_commands/reference.md
       - inference Python Package: reference/inference/
       - Active Learning:
           - Use Active Learning: enterprise/active-learning/active_learning.md
@@ -176,6 +176,7 @@ plugins:
       implicit_index: True
   - macros:
       include_dir: docs/include
+  
 
 markdown_extensions:
   - admonition
@@ -187,6 +188,7 @@ markdown_extensions:
       alternate_style: true
   - toc:
       permalink: true
+  
 
 extra_javascript:
   - "https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"

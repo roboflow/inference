@@ -90,6 +90,10 @@ jobs:
         run: python -m development.docs.workflows_gallery_builder
         working-directory: ./inference_repo
 
+      - name: Write CLI docs
+        run: python -m development.docs.write_cli_docs
+        working-directory: ./inference_repo
+
       - name: Deploy docs
         # Only deploy if release event OR if deploy input was set to true
         if: ${{ github.event_name == 'release' || github.event.inputs.deploy == 'true' }}
