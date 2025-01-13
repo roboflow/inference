@@ -24,6 +24,12 @@ RETRYABLE_STATUS_CODES = {429, 503}
 
 
 class RequestMethod(Enum):
+    """Enum for the request method.
+
+    Attributes:
+        GET: The GET method.
+        POST: The POST method.
+    """
     GET = "get"
     POST = "post"
 
@@ -33,6 +39,16 @@ def execute_requests_packages(
     request_method: RequestMethod,
     max_concurrent_requests: int,
 ) -> List[Response]:
+    """Execute a list of requests in parallel.
+
+    Args:
+        requests_data: The list of requests to execute.
+        request_method: The method to use for the requests.
+        max_concurrent_requests: The maximum number of concurrent requests.
+
+    Returns:
+        The list of responses.
+    """
     requests_data_packages = make_batches(
         iterable=requests_data,
         batch_size=max_concurrent_requests,
@@ -53,6 +69,15 @@ def make_parallel_requests(
     requests_data: List[RequestData],
     request_method: RequestMethod,
 ) -> List[Response]:
+    """Execute a list of requests in parallel.
+
+    Args:
+        requests_data: The list of requests to execute.
+        request_method: The method to use for the requests.
+
+    Returns:
+        The list of responses.
+    """
     workers = len(requests_data)
     make_request_closure = partial(make_request, request_method=request_method)
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -76,6 +101,15 @@ def make_parallel_requests(
     giveup_log_level=logging.DEBUG,
 )
 def make_request(request_data: RequestData, request_method: RequestMethod) -> Response:
+    """Make a request to the API.
+
+    Args:
+        request_data: The request data.
+        request_method: The method to use for the request.
+
+    Returns:
+        The response from the API.
+    """
     method = requests.get if request_method is RequestMethod.GET else requests.post
     return method(
         request_data.url,
@@ -91,6 +125,16 @@ async def execute_requests_packages_async(
     request_method: RequestMethod,
     max_concurrent_requests: int,
 ) -> List[Union[dict, bytes]]:
+    """Execute a list of requests in parallel asynchronously.
+
+    Args:
+        requests_data: The list of requests to execute.
+        request_method: The method to use for the requests.
+        max_concurrent_requests: The maximum number of concurrent requests.
+
+    Returns:
+        The list of responses.
+    """
     requests_data_packages = make_batches(
         iterable=requests_data,
         batch_size=max_concurrent_requests,
@@ -109,6 +153,15 @@ async def make_parallel_requests_async(
     requests_data: List[RequestData],
     request_method: RequestMethod,
 ) -> List[Union[dict, bytes]]:
+    """Execute a list of requests in parallel asynchronously.
+
+    Args:
+        requests_data: The list of requests to execute.
+        request_method: The method to use for the requests.
+
+    Returns:
+        The list of responses.
+    """
     async with aiohttp.ClientSession() as session:
         make_request_closure = partial(
             make_request_async,
@@ -121,6 +174,11 @@ async def make_parallel_requests_async(
 
 
 def raise_client_error(details: dict) -> None:
+    """Raise a client error.
+
+    Args:
+        details: The details of the error.
+    """
     status_code = details["value"][0]
     request_data = details["kwargs"]["request_data"]
     raise ClientResponseError(
@@ -156,6 +214,16 @@ async def make_request_async(
     request_method: RequestMethod,
     session: aiohttp.ClientSession,
 ) -> Tuple[int, Union[bytes, dict]]:
+    """Make a request to the API asynchronously.
+
+    Args:
+        request_data: The request data.
+        request_method: The method to use for the request.
+        session: The session to use for the request.
+
+    Returns:
+        The response from the API.
+    """
     method = session.get if request_method is RequestMethod.GET else session.post
     parameters_serialised = None
     if request_data.parameters is not None:
@@ -184,4 +252,12 @@ async def make_request_async(
 
 
 def response_is_not_retryable_error(response: ClientResponse) -> bool:
+    """Check if the response is not a retryable error.
+
+    Args:
+        response: The response to check.
+
+    Returns:
+        True if the response is not a retryable error, False otherwise.
+    """
     return response.status != 200 and response.status not in RETRYABLE_STATUS_CODES

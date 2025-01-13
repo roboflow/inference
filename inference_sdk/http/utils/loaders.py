@@ -27,6 +27,15 @@ def load_stream_inference_input(
     input_uri: str,
     image_extensions: Optional[List[str]],
 ) -> Generator[Tuple[Union[str, int], np.ndarray], None, None]:
+    """Load an inference input from a stream.
+
+    Args:
+        input_uri: The URI of the input.
+        image_extensions: The extensions of the images.
+
+    Returns:
+        The generator of the inference input.
+    """
     if os.path.isdir(input_uri):
         yield from load_directory_inference_input(
             directory_path=input_uri, image_extensions=image_extensions
@@ -39,6 +48,15 @@ def load_directory_inference_input(
     directory_path: str,
     image_extensions: Optional[List[str]],
 ) -> Generator[Tuple[Union[str, int], np.ndarray], None, None]:
+    """Load an inference input from a directory.
+
+    Args:
+        directory_path: The path to the directory.
+        image_extensions: The extensions of the images.
+
+    Returns:
+        The generator of the inference input.
+    """
     paths = {
         path.as_posix().lower()
         for path in sv.list_files_with_extensions(
@@ -57,6 +75,16 @@ def load_nested_batches_of_inference_input(
     max_height: Optional[int] = None,
     max_width: Optional[int] = None,
 ) -> Union[Tuple[str, Optional[float]], list]:
+    """Load a nested batch of inference input.
+
+    Args:
+        inference_input: The inference input.
+        max_height: The maximum height of the image.
+        max_width: The maximum width of the image.
+
+    Returns:
+        The nested batch of inference input.
+    """
     if not isinstance(inference_input, list):
         return load_static_inference_input(
             inference_input=inference_input,
@@ -80,6 +108,16 @@ def load_static_inference_input(
     max_height: Optional[int] = None,
     max_width: Optional[int] = None,
 ) -> List[Tuple[str, Optional[float]]]:
+    """Load a static inference input.
+
+    Args:
+        inference_input: The inference input.
+        max_height: The maximum height of the image.
+        max_width: The maximum width of the image.
+
+    Returns:
+        The list of the inference input.
+    """
     if issubclass(type(inference_input), list):
         results = []
         for element in inference_input:
@@ -121,6 +159,16 @@ async def load_static_inference_input_async(
     max_height: Optional[int] = None,
     max_width: Optional[int] = None,
 ) -> List[Tuple[str, Optional[float]]]:
+    """Load a static inference input asynchronously.
+
+    Args:
+        inference_input: The inference input.
+        max_height: The maximum height of the image.
+        max_width: The maximum width of the image.
+
+    Returns:
+        The list of the inference input.
+    """
     if issubclass(type(inference_input), list):
         results = []
         for element in inference_input:
@@ -162,6 +210,16 @@ def load_image_from_string(
     max_height: Optional[int] = None,
     max_width: Optional[int] = None,
 ) -> Tuple[str, Optional[float]]:
+    """Load an image from a string.
+
+    Args:
+        reference: The reference to the image.
+        max_height: The maximum height of the image.
+        max_width: The maximum width of the image.
+
+    Returns:
+        The image and the scaling factor.
+    """
     if uri_is_http_link(uri=reference):
         return load_image_from_url(
             url=reference, max_height=max_height, max_width=max_width
@@ -198,6 +256,16 @@ async def load_image_from_string_async(
     max_height: Optional[int] = None,
     max_width: Optional[int] = None,
 ) -> Tuple[str, Optional[float]]:
+    """Load an image from a string asynchronously.
+
+    Args:
+        reference: The reference to the image.
+        max_height: The maximum height of the image.
+        max_width: The maximum width of the image.
+
+    Returns:
+        The image and the scaling factor.
+    """
     if uri_is_http_link(uri=reference):
         return await load_image_from_url_async(
             url=reference, max_height=max_height, max_width=max_width
@@ -229,6 +297,16 @@ def load_image_from_url(
     max_height: Optional[int] = None,
     max_width: Optional[int] = None,
 ) -> Tuple[str, Optional[float]]:
+    """Load an image from a URL.
+
+    Args:
+        url: The URL of the image.
+        max_height: The maximum height of the image.
+        max_width: The maximum width of the image.
+
+    Returns:
+        The image and the scaling factor.
+    """
     response = requests.get(url)
     response.raise_for_status()
     if max_height is None or max_width is None:
@@ -248,6 +326,16 @@ async def load_image_from_url_async(
     max_height: Optional[int] = None,
     max_width: Optional[int] = None,
 ) -> Tuple[str, Optional[float]]:
+    """Load an image from a URL asynchronously.
+
+    Args:
+        url: The URL of the image.
+        max_height: The maximum height of the image.
+        max_width: The maximum width of the image.
+
+    Returns:
+        The image and the scaling factor.
+    """
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             response.raise_for_status()
@@ -265,4 +353,12 @@ async def load_image_from_url_async(
 
 
 def uri_is_http_link(uri: str) -> bool:
+    """Check if the URI is an HTTP link.
+
+    Args:
+        uri: The URI to check.
+
+    Returns:
+        True if the URI is an HTTP link, False otherwise.
+    """
     return uri.startswith("http://") or uri.startswith("https://")
