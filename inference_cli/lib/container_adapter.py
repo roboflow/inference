@@ -170,7 +170,13 @@ def start_inference_container(
         labels=labels,
         ports=ports,
         device_requests=device_requests,
-        environment=environment,
+        environment=environment + [
+            "MODEL_CACHE_DIR=/tmp/model-cache",
+            "TRANSFORMERS_CACHE=/tmp/huggingface",
+            "YOLO_CONFIG_DIR=/tmp/yolo",
+            "MPLCONFIGDIR=/tmp/matplotlib",
+            "HOME=/tmp/home",
+        ],
         mem_limit="4g",
         memswap_limit="6g",
         cpu_shares=1024,
@@ -178,6 +184,12 @@ def start_inference_container(
         cap_drop=["ALL"] if not is_jetson else None,
         cap_add=(["NET_BIND_SERVICE"] + (["SYS_ADMIN"] if is_gpu else [])) if not is_jetson else None,
         read_only=not is_jetson,
+        volumes={
+            "/tmp": {
+                "bind": "/tmp",
+                "mode": "rw"
+            }
+        },
         network_mode="bridge",
         ipc_mode="private" if not is_jetson else None,
         **docker_run_kwargs,
