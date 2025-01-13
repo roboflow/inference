@@ -75,6 +75,7 @@ except:
     pass
 
 from inference.models.vit import VitClassification
+from inference.models.resnet import ResNetClassification
 from inference.models.yolact import YOLACT
 from inference.models.yolonas import YOLONASObjectDetection
 from inference.models.yolov5 import YOLOv5InstanceSegmentation, YOLOv5ObjectDetection
