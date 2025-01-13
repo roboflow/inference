@@ -136,14 +136,17 @@ def start_inference_container(
     device_requests = None
     privileged = False
     docker_run_kwargs = {}
-    if "gpu" in image:
-        privileged = True
+    is_gpu = "gpu" in image and "jetson" not in image
+    is_jetson = "jetson" in image
+    
+    if is_gpu:
         device_requests = [
             docker.types.DeviceRequest(device_ids=["all"], capabilities=[["gpu"]])
         ]
-    if "jetson" in image:
+    if is_jetson:
         privileged = True
         docker_run_kwargs = {"runtime": "nvidia"}
+
     environment = prepare_container_environment(
         port=port,
         project=project,
@@ -168,6 +171,15 @@ def start_inference_container(
         ports=ports,
         device_requests=device_requests,
         environment=environment,
+        mem_limit="4g",
+        memswap_limit="6g",
+        cpu_shares=1024,
+        security_opt=["no-new-privileges"] if not is_jetson else None,
+        cap_drop=["ALL"] if not is_jetson else None,
+        cap_add=(["NET_BIND_SERVICE"] + (["SYS_ADMIN"] if is_gpu else [])) if not is_jetson else None,
+        read_only=not is_jetson,
+        network_mode="bridge",
+        ipc_mode="private" if not is_jetson else None,
         **docker_run_kwargs,
     )
 
