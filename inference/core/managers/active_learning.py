@@ -11,8 +11,8 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import DISABLE_PREPROC_AUTO_ORIENT
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
-from inference.models.aliases import resolve_roboflow_model_alias
 from inference.core.utils.roboflow import get_model_id_chunks
+from inference.models.aliases import resolve_roboflow_model_alias
 
 ACTIVE_LEARNING_ELIGIBLE_PARAM = "active_learning_eligible"
 DISABLE_ACTIVE_LEARNING_PARAM = "disable_active_learning"

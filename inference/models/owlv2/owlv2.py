@@ -756,17 +756,25 @@ class SerializedOwlV2(RoboflowInferenceModel):
                 raise ModelArtefactError(
                     "Could not find `model` key in roboflow API model description response."
                 )
-            model_weights_response = get_from_url(api_data["model"], json_response=False)
+            model_weights_response = get_from_url(
+                api_data["model"], json_response=False
+            )
         else:
             api_data = get_roboflow_instant_model_data(
                 api_key=self.api_key,
                 model_id=self.endpoint,
             )
-            if "modelFiles" not in api_data or "owlv2" not in api_data["modelFiles"] or "model" not in api_data["modelFiles"]["owlv2"]:
+            if (
+                "modelFiles" not in api_data
+                or "owlv2" not in api_data["modelFiles"]
+                or "model" not in api_data["modelFiles"]["owlv2"]
+            ):
                 raise ModelArtefactError(
                     "Could not find `modelFiles` key or `modelFiles`.`owlv2` or `modelFiles`.`owlv2`.`model` key in roboflow API model description response."
                 )
-            model_weights_response = get_from_url(api_data["modelFiles"]["owlv2"]["model"], json_response=False)
+            model_weights_response = get_from_url(
+                api_data["modelFiles"]["owlv2"]["model"], json_response=False
+            )
         save_bytes_in_cache(
             content=model_weights_response.content,
             file=self.weights_file,

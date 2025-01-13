@@ -3,7 +3,13 @@ from typing import Optional, Tuple, Union
 
 from inference.core.cache import cache
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
-from inference.core.entities.types import DatasetID, ModelID, ModelType, TaskType, VersionID
+from inference.core.entities.types import (
+    DatasetID,
+    ModelID,
+    ModelType,
+    TaskType,
+    VersionID,
+)
 from inference.core.env import LAMBDA, MODEL_CACHE_DIR
 from inference.core.exceptions import (
     MissingApiKeyError,
@@ -249,5 +255,7 @@ def _save_model_metadata_in_cache(
 def construct_model_type_cache_path(
     dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
 ) -> str:
-    cache_dir = os.path.join(MODEL_CACHE_DIR, dataset_id, version_id if version_id else "")
+    cache_dir = os.path.join(
+        MODEL_CACHE_DIR, dataset_id, version_id if version_id else ""
+    )
     return os.path.join(cache_dir, "model_type.json")
