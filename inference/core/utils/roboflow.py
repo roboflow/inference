@@ -6,6 +6,11 @@ from inference.core.exceptions import InvalidModelIDError
 
 def get_model_id_chunks(model_id: str) -> Tuple[Union[DatasetID, ModelID], Optional[VersionID]]:
     model_id_chunks = model_id.split("/")
+
+    # TODO: owlv2 uses str as version_id
+    if model_id.startswith("owlv2/") and len(model_id_chunks) == 2:
+        return tuple(model_id_chunks)
+
     if len(model_id_chunks) != 2:
         raise InvalidModelIDError(f"Model ID: `{model_id}` is invalid.")
     try:
