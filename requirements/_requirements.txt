@@ -4,7 +4,7 @@ asyncua~=1.1.5
 cython~=3.0.0
 python-dotenv~=1.0.0
 fastapi>=0.100,<0.111
-numpy<=1.26.4
+numpy<2.2.0
 opencv-python>=4.8.1.78,<=4.10.0.84
 pillow<11.0
 prometheus-fastapi-instrumentator<=6.0.0

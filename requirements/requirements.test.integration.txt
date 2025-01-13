@@ -3,5 +3,5 @@ requests
 pytest
 pillow 
 requests_toolbelt
-numpy<=1.26.4
+numpy<2.2.0
 pytest-retry<=1.6.3
