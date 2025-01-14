@@ -36,6 +36,7 @@ For image workloads, the input is passed in as a parameter and the response is
 returned synchronously.
 
 Example microservice use-cases:
+
 * Tagging of user-uploaded images to a website
 * Determining if a machine is setup correctly before allowing it to turn on
 * Blurring faces in a video
@@ -53,6 +54,7 @@ the full logic of the system is defined in a Workflow and the output is pushed t
 external systems.
 
 Example appliance use-cases:
+
 * Stopping a conveyor belt if a jam has occurred
 * Collecting highway traffic analytics
 * Flagging suspicious activity in a security camera feed
