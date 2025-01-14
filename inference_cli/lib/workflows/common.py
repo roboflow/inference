@@ -1,6 +1,8 @@
 import json
 import os.path
 import re
+from collections import defaultdict
+from copy import copy
 from datetime import datetime
 from functools import lru_cache
 from threading import Lock
@@ -14,7 +16,13 @@ import supervision as sv
 from rich.progress import track
 
 from inference_cli.lib.utils import dump_json, dump_jsonl, read_json
-from inference_cli.lib.workflows.entities import OutputFileType
+from inference_cli.lib.workflows.entities import (
+    ImagePath,
+    ImageResultsIndexEntry,
+    OutputFileType,
+    WorkflowExecutionMetadataResultPath,
+    WorkflowOutputField,
+)
 
 BASE64_DATA_TYPE_PATTERN = re.compile(r"^data:image\/[a-z]+;base64,")
 
@@ -74,10 +82,10 @@ def get_progress_log_path(output_directory: str) -> str:
 
 def dump_image_processing_results(
     result: Dict[str, Any],
-    image_path: str,
+    image_path: ImagePath,
     output_directory: str,
     save_image_outputs: bool,
-) -> None:
+) -> ImageResultsIndexEntry:
     images_in_result = []
     if save_image_outputs:
         images_in_result = extract_images_from_result(result=result)
@@ -92,21 +100,33 @@ def dump_image_processing_results(
         path=structured_results_path,
         content=structured_content,
     )
-    dump_images_outputs(
+    image_outputs = dump_images_outputs(
         image_results_dir=image_results_dir,
         images_in_result=images_in_result,
+    )
+    return ImageResultsIndexEntry(
+        metadata_output_path=structured_results_path,
+        image_outputs=image_outputs,
     )
 
 
 def dump_images_outputs(
     image_results_dir: str,
     images_in_result: List[Tuple[str, np.ndarray]],
-) -> None:
+) -> Dict[WorkflowOutputField, List[ImagePath]]:
+    result = defaultdict(list)
     for image_key, image in images_in_result:
         target_path = os.path.join(image_results_dir, f"{image_key}.jpg")
         target_path_dir = os.path.dirname(target_path)
         os.makedirs(target_path_dir, exist_ok=True)
         cv2.imwrite(target_path, image)
+        workflow_field = _extract_workflow_field_from_image_key(image_key=image_key)
+        result[workflow_field].append(target_path)
+    return result
+
+
+def _extract_workflow_field_from_image_key(image_key: str) -> WorkflowOutputField:
+    return image_key.split("/")[0]
 
 
 def construct_image_output_dir_path(image_path: str, output_directory: str) -> str:
@@ -203,7 +223,7 @@ def _is_file_system_case_sensitive() -> bool:
 
 def report_failed_files(
     failed_files: List[Tuple[str, str]], output_directory: str
-) -> None:
+) -> Optional[str]:
     if not failed_files:
         return None
     os.makedirs(output_directory, exist_ok=True)
@@ -216,12 +236,13 @@ def report_failed_files(
     print(
         f"Detected {len(failed_files)} processing failures. Details saved under: {failed_files_path}"
     )
+    return failed_files_path
 
 
 def aggregate_batch_processing_results(
     output_directory: str,
     aggregation_format: OutputFileType,
-) -> None:
+) -> str:
     file_descriptor, all_processed_files = open_progress_log(
         output_directory=output_directory
     )
@@ -247,7 +268,7 @@ def aggregate_batch_processing_results(
                 decoded_content, description="Dumping aggregated results to JSONL..."
             ),
         )
-        return None
+        return aggregated_results_path
     dumped_results = []
     for decoded_result in track(
         decoded_content, description="Dumping aggregated results to CSV..."
@@ -258,6 +279,7 @@ def aggregate_batch_processing_results(
     data_frame = pd.DataFrame(dumped_results)
     aggregated_results_path = os.path.join(output_directory, "aggregated_results.csv")
     data_frame.to_csv(aggregated_results_path, index=False)
+    return aggregated_results_path
 
 
 def dump_objects_to_json(value: Any) -> Any:
@@ -266,3 +288,56 @@ def dump_objects_to_json(value: Any) -> Any:
     if isinstance(value, list) or isinstance(value, dict) or isinstance(value, set):
         return json.dumps(value)
     return value
+
+
+class WorkflowsImagesProcessingIndex:
+
+    @classmethod
+    def init(cls) -> "WorkflowsImagesProcessingIndex":
+        return cls(index_content={}, registered_output_images=set())
+
+    def __init__(
+        self,
+        index_content: Dict[ImagePath, ImageResultsIndexEntry],
+        registered_output_images: Set[WorkflowOutputField],
+    ):
+        self._index_content = index_content
+        self._registered_output_images = registered_output_images
+
+    @property
+    def registered_output_images(self) -> Set[WorkflowOutputField]:
+        return copy(self._registered_output_images)
+
+    def collect_entry(
+        self, image_path: ImagePath, entry: ImageResultsIndexEntry
+    ) -> None:
+        self._index_content[image_path] = entry
+        for image_output_name in entry.image_outputs.keys():
+            self._registered_output_images.add(image_output_name)
+
+    def export_metadata(
+        self,
+    ) -> List[Tuple[ImagePath, WorkflowExecutionMetadataResultPath]]:
+        return [
+            (image_path, index_entry.metadata_output_path)
+            for image_path, index_entry in self._index_content.items()
+        ]
+
+    def export_images(
+        self,
+    ) -> Dict[WorkflowOutputField, List[Tuple[ImagePath, List[ImagePath]]]]:
+        result = {}
+        for field_name in self._registered_output_images:
+            result[field_name] = self.export_images_for_field(field_name=field_name)
+        return result
+
+    def export_images_for_field(
+        self, field_name: WorkflowOutputField
+    ) -> List[Tuple[ImagePath, List[ImagePath]]]:
+        results = []
+        for image_path, index_entry in self._index_content.items():
+            if field_name not in index_entry.image_outputs:
+                continue
+            registered_images = index_entry.image_outputs[field_name]
+            results.append((image_path, registered_images))
+        return results
