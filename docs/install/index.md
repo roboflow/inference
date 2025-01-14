@@ -14,7 +14,7 @@ The preferred way to use Inference is via Docker
 
 [Install Docker](https://docs.docker.com/engine/install/) (and
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
-for GPU acceleration if you have a CUDA-enabled GPU). Then run
+for GPU acceleration if you have a CUDA-enabled GPU). Then run:
 
 ```bash
 pip install inference-cli
