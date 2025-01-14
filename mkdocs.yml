@@ -53,6 +53,7 @@ nav:
               - AWS: install/cloud/aws.md
               - Azure: install/cloud/azure.md
               - GCP: install/cloud/gcp.md
+          - Other Devices: install/other.md
       - Inputs:
           - inputs/index.md
           - Images: inputs/images.md

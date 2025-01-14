@@ -363,7 +363,7 @@ This is untested and performance improvements are not guaranteed.
 <details>
 <summary><b>Other Edge Devices</b></summary>
 <br />
-Roboflow has <a href="https://docs.roboflow.com/deploy/supported-deployment-devices">SDKs for running object detection natively</a> on other deployment targets like <a href="https://docs.roboflow.com/deploy/sdks/web-browser">Tensorflow.js in a web browser</a>, <a href="https://docs.roboflow.com/deploy/sdks/mobile-ios-on-device">Native Swift on iOS</a> via CoreML, and <a href="https://docs.roboflow.com/deploy/sdks/luxonis-oak">Luxonis OpenCV AI Kit (OAK)</a>.
+Roboflow has <a href="https://docs.roboflow.com/deploy/supported-deployment-devices">SDKs for running object detection natively</a> on other deployment targets like <a href="https://docs.roboflow.com/deploy/sdks/web-browser">Tensorflow.js in a web browser</a>, <a href="https://docs.roboflow.com/deploy/sdks/mobile-ios-on-device">Native Swift on iOS</a> via CoreML, and <a href="https://docs.roboflow.com/deploy/sdks/lens-studio">Snap Lens Studio</a>.
 <br /><br />
 Connect to an Inference Server via its API for additional functionality beyond object detection (like running Workflows).
 <br />
