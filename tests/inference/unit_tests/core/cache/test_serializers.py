@@ -209,7 +209,7 @@ def mock_keypoints_detection_data():
     mock_response.predictions = [
         KeypointsPrediction(
             **{
-                "class_name": "person",
+                "class": "person",
                 "confidence": 0.9,
                 "class_confidence": None,
                 "detection_id": "1",

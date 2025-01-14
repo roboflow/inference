@@ -143,7 +143,7 @@ class KeypointsDetectionBaseOnnxRoboflowInferenceModel(
                             "width": pred[2] - pred[0],
                             "height": pred[3] - pred[1],
                             "confidence": pred[4],
-                            "class_name": self.class_names[int(pred[6])],
+                            "class": self.class_names[int(pred[6])],
                             "class_id": int(pred[6]),
                             "keypoints": model_keypoints_to_response(
                                 keypoints_metadata=self.keypoints_metadata,
