@@ -16,9 +16,6 @@ class VitClassification(ClassificationBaseOnnxRoboflowInferenceModel):
         multiclass (bool): A flag that specifies if the model should handle multiclass classification.
     """
 
-    preprocess_means = [0.5, 0.5, 0.5]
-    preprocess_stds = [0.5, 0.5, 0.5]
-
     def __init__(self, *args, **kwargs):
         """Initializes the VitClassification instance.
 
