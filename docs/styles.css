@@ -1,5 +1,16 @@
 :root {
-  --md-primary-fg-color: #8315f9;
+  --md-primary-fg-color: rgb(131, 21, 249);
+  --md-primary-fg-color--light: rgb(221, 214, 254);
+  --md-primary-fg-color--dark:  rgb(91, 33, 182);
+}
+
+[data-md-color-accent=indigo] {
+  --md-accent-fg-color: rgb(76, 29, 149);
+  --md-accent-fg-color--transparent: rgb(76, 29, 149, 0.1);
+}
+
+.md-typeset a:focus, .md-typeset a:hover {
+  text-decoration: underline;
 }
 
 .md-nav {
