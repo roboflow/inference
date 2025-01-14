@@ -5,6 +5,10 @@ import cv2
 import numpy as np
 from skimage.exposure import rescale_intensity
 
+import torch
+
+from typing import Union
+
 from inference.core.env import (
     DISABLE_PREPROC_CONTRAST,
     DISABLE_PREPROC_GRAYSCALE,
@@ -58,7 +62,7 @@ def prepare(
         to conditionally enable or disable certain preprocessing steps.
     """
     try:
-        h, w = image.shape[0:2]
+        h, w = image.shape[0:2] if isinstance(image, np.ndarray) else image.shape[-2:]
         img_dims = (h, w)
         if static_crop_should_be_applied(
             preprocessing_config=preproc,
@@ -171,10 +175,10 @@ def apply_grayscale_conversion(image: np.ndarray) -> np.ndarray:
 
 
 def letterbox_image(
-    image: np.ndarray,
+    image: Union[np.ndarray, torch.Tensor],
     desired_size: Tuple[int, int],
     color: Tuple[int, int, int] = (0, 0, 0),
-) -> np.ndarray:
+) -> Union[np.ndarray, torch.Tensor]:
     """
     Resize and pad image to fit the desired size, preserving its aspect ratio.
 
@@ -190,20 +194,23 @@ def letterbox_image(
         image=image,
         desired_size=desired_size,
     )
-    new_height, new_width = resized_img.shape[:2]
+    new_height, new_width = resized_img.shape[:2] if isinstance(resized_img, np.ndarray) else resized_img.shape[-2:]
     top_padding = (desired_size[1] - new_height) // 2
     bottom_padding = desired_size[1] - new_height - top_padding
     left_padding = (desired_size[0] - new_width) // 2
     right_padding = desired_size[0] - new_width - left_padding
-    return cv2.copyMakeBorder(
-        resized_img,
-        top_padding,
-        bottom_padding,
-        left_padding,
-        right_padding,
-        cv2.BORDER_CONSTANT,
-        value=color,
-    )
+    if isinstance(resized_img, np.ndarray):
+        return cv2.copyMakeBorder(
+            resized_img,
+            top_padding,
+            bottom_padding,
+            left_padding,
+            right_padding,
+            cv2.BORDER_CONSTANT,
+            value=color,
+        )
+    else:
+        return torch.nn.functional.pad(resized_img, (left_padding, right_padding, top_padding, bottom_padding), "constant", color[0])
 
 
 def downscale_image_keeping_aspect_ratio(
@@ -216,9 +223,9 @@ def downscale_image_keeping_aspect_ratio(
 
 
 def resize_image_keeping_aspect_ratio(
-    image: np.ndarray,
+    image: Union[np.ndarray, torch.Tensor],
     desired_size: Tuple[int, int],
-) -> np.ndarray:
+) -> Union[np.ndarray, torch.Tensor]:
     """
     Resize reserving its aspect ratio.
 
@@ -226,7 +233,8 @@ def resize_image_keeping_aspect_ratio(
     - image: numpy array representing the image.
     - desired_size: tuple (width, height) representing the target dimensions.
     """
-    img_ratio = image.shape[1] / image.shape[0]
+    img_dims = image.shape[:2] if isinstance(image, np.ndarray) else image.shape[-2:]
+    img_ratio = img_dims[1] / img_dims[0]
     desired_ratio = desired_size[0] / desired_size[1]
 
     # Determine the new dimensions
@@ -240,4 +248,10 @@ def resize_image_keeping_aspect_ratio(
         new_width = int(desired_size[1] * img_ratio)
 
     # Resize the image to new dimensions
-    return cv2.resize(image, (new_width, new_height))
+    if isinstance(image, np.ndarray):
+        return cv2.resize(image, (new_width, new_height))
+    else:
+        return torch.nn.functional.interpolate(image, size=(new_width, new_height))
+    # print(image.shape)
+    # image = torch.from_numpy(image).cuda()
+    # return torch.nn.functional.interpolate(image.permute(2, 0, 1).unsqueeze(0), size=(new_width, new_height)).squeeze(0).permute(1, 2, 0).cpu().numpy()

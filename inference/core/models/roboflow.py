@@ -7,6 +7,10 @@ from functools import partial
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import torch
+
+import time
+
 import cv2
 import numpy as np
 import onnxruntime
@@ -383,12 +387,14 @@ class RoboflowInferenceModel(Model):
         Returns:
             Tuple[np.ndarray, Tuple[int, int]]: A tuple containing a numpy array of the preprocessed image pixel data and a tuple of the images original size.
         """
+        t0 = time.time()
         np_image, is_bgr = load_image(
             image,
             disable_preproc_auto_orient=disable_preproc_auto_orient
             or "auto-orient" not in self.preproc.keys()
             or DISABLE_PREPROC_AUTO_ORIENT,
         )
+        print(self.preproc)
         preprocessed_image, img_dims = self.preprocess_image(
             np_image,
             disable_preproc_contrast=disable_preproc_contrast,
@@ -396,10 +402,20 @@ class RoboflowInferenceModel(Model):
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
 
+        t0 = time.time()
+        preprocessed_image = torch.from_numpy(preprocessed_image).cuda()
+        preprocessed_image = preprocessed_image.permute(2, 0, 1).unsqueeze(0)
+        print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
+
+        print(self.resize_method)
+
         if self.resize_method == "Stretch to":
-            resized = cv2.resize(
-                preprocessed_image, (self.img_size_w, self.img_size_h), cv2.INTER_CUBIC
-            )
+            if isinstance(preprocessed_image, np.ndarray):
+                resized = cv2.resize(
+                    preprocessed_image, (self.img_size_w, self.img_size_h), cv2.INTER_CUBIC
+                )
+            else:
+                resized = torch.nn.functional.interpolate(preprocessed_image, size=(self.img_size_w, self.img_size_h), mode="bicubic")
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
                 preprocessed_image, (self.img_size_w, self.img_size_h)
@@ -418,10 +434,31 @@ class RoboflowInferenceModel(Model):
             )
 
         if is_bgr:
-            resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        img_in = np.transpose(resized, (2, 0, 1))
-        img_in = img_in.astype(np.float32)
-        img_in = np.expand_dims(img_in, axis=0)
+            if isinstance(resized, np.ndarray):
+                resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+            else:
+                resized = resized[:, [2, 1, 0], :, :]
+        
+        if isinstance(resized, np.ndarray):
+            img_in = np.transpose(resized, (2, 0, 1))
+            img_in = img_in.astype(np.float32)
+            img_in = np.expand_dims(img_in, axis=0)
+        else:
+            # we assume a torch tensor is already in the correct format
+            img_in = resized.float()
+        
+        # if is_bgr:
+        #     img_in = img_in[:, [2, 1, 0], :, :]
+
+        print("finished preproc")
+
+        # img_in = img_in.cpu().numpy()
+
+        print(f"Preprocessing time taken: {time.time() - t0} seconds")
+
+        # t0 = time.time()
+        # img_in = torch.from_numpy(img_in).cuda()
+        # print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
 
         return img_in, img_dims
 
@@ -700,6 +737,21 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
             providers = self.onnxruntime_execution_providers
 
+            weights_file = self.weights_file
+
+            try:
+                # convert to fp16
+                fp16_weights_file = self.weights_file.replace(".onnx", "_fp16.onnx")
+                model_name = self.cache_file(self.weights_file)
+                import onnx
+                loaded_model = onnx.load(model_name)
+                from onnxconverter_common.float16 import convert_float_to_float16
+                loaded_fp16_model = convert_float_to_float16(loaded_model)
+                onnx.save(loaded_fp16_model, self.cache_file(fp16_weights_file))
+                weights_file = fp16_weights_file
+            except Exception as e:
+                logger.error(f"Unable to convert model to fp16: {e}")
+
             if not self.load_weights:
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
             try:
@@ -709,8 +761,9 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     session_options.graph_optimization_level = (
                         onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
                     )
+                print(self.cache_file(weights_file))
                 self.onnx_session = onnxruntime.InferenceSession(
-                    self.cache_file(self.weights_file),
+                    self.cache_file(weights_file),
                     providers=providers,
                     sess_options=session_options,
                 )
@@ -786,6 +839,13 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
+        
+        # try:
+        #     # convert to fp16
+        #     from onnxconverter_common.float16 import convert_float_to_float16
+        #     convert_float_to_float16(self.onnx_session.get_model())
+        # except Exception as e:
+        #     logger.error(f"Unable to convert model to fp16: {e}")
         logger.debug("Model initialisation finished.")
 
     def load_image(
@@ -806,7 +866,10 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             )
             imgs_with_dims = self.image_loader_threadpool.map(preproc_image, image)
             imgs, img_dims = zip(*imgs_with_dims)
-            img_in = np.concatenate(imgs, axis=0)
+            if isinstance(imgs[0], np.ndarray):
+                img_in = np.concatenate(imgs, axis=0)
+            else:
+                img_in = torch.cat(imgs, dim=0)
         else:
             img_in, img_dims = self.preproc_image(
                 image,
