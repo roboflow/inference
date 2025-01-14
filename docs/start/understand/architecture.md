@@ -1,6 +1,6 @@
 # Architecture
 
-Inference is best run in server mode (though it also supports a native Python interface;
+Inference is best run in server mode (it also supports a native Python interface;
 though see [why we recommend Docker](#why-docker)). You interact with it via a REST API
 (most often through [the Python SDK](/inference_helpers/inference_sdk/)) or a web
 browser (for example, the [Roboflow Platform's UI](https://app.roboflow.com) optionally

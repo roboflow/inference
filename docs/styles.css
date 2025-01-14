@@ -1,6 +1,15 @@
 :root {
   --md-primary-fg-color: #8315f9;
 }
+
+.md-nav {
+  font-size: 14px;
+}
+
+.md-typeset {
+  font-size: 14px;
+}
+
 .md-typeset h1 {
   margin-bottom: 0;
 }
