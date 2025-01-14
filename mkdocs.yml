@@ -177,6 +177,7 @@ theme:
     - announce.dismiss
     - content.action.edit
     - content.code.copy
+    - content.tabs.link
     - navigation.footer
     - navigation.indexes
     - navigation.instant
@@ -220,12 +221,15 @@ plugins:
 
 markdown_extensions:
   - admonition
-  - pymdownx.details
-  - pymdownx.superfences
   - attr_list
   - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
   - toc:
       permalink: true
   
