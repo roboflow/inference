@@ -74,7 +74,6 @@ try:
 except:
     pass
 
-from inference.models.resnet import ResNetClassification
 from inference.models.vit import VitClassification
 from inference.models.yolact import YOLACT
 from inference.models.yolonas import YOLONASObjectDetection
