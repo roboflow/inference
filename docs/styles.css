@@ -23,7 +23,10 @@
 
 .md-typeset h1 {
   margin-bottom: 0;
+  color: var(--md-typeset-color);
+  opacity: 0.75;
 }
+
 .md-tabs__link {
   font-size: 0.9rem;
   margin-top: 0.1rem;
@@ -52,6 +55,10 @@
 .md-header {
   background: #8315f9;
   background: linear-gradient(90deg, #8315f9 5%, #7812c7 50%, #401e62);
+}
+
+.md-footer {
+  margin-top: 1.5rem;
 }
 
 .md-tabs {
