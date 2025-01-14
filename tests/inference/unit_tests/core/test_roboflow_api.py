@@ -26,6 +26,7 @@ from inference.core.exceptions import (
 from inference.core.roboflow_api import (
     ModelEndpointType,
     annotate_image_at_roboflow,
+    build_roboflow_api_headers,
     delete_cached_workflow_response_if_exists,
     get_roboflow_active_learning_configuration,
     get_roboflow_dataset_type,
@@ -37,7 +38,7 @@ from inference.core.roboflow_api import (
     get_workflow_specification,
     raise_from_lambda,
     register_image_at_roboflow,
-    wrap_roboflow_api_errors, build_roboflow_api_headers,
+    wrap_roboflow_api_errors,
 )
 from inference.core.utils.url_utils import wrap_url
 
@@ -225,9 +226,7 @@ def test_get_roboflow_workspace_when_workspace_id_is_empty(
 
 
 @mock.patch.object(
-    roboflow_api,
-    "ROBOFLOW_API_EXTRA_HEADERS",
-    json.dumps({"extra": "header"})
+    roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", json.dumps({"extra": "header"})
 )
 def test_get_roboflow_workspace_when_response_is_valid(requests_mock: Mocker) -> None:
     # given
@@ -2196,7 +2195,9 @@ def test_build_roboflow_api_headers_when_no_extra_headers() -> None:
 
 
 @mock.patch.object(roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", None)
-def test_build_roboflow_api_headers_when_no_extra_headers_but_explicit_headers_given() -> None:
+def test_build_roboflow_api_headers_when_no_extra_headers_but_explicit_headers_given() -> (
+    None
+):
     # when
     result = build_roboflow_api_headers(explicit_headers={"my": "header"})
 
@@ -2207,22 +2208,27 @@ def test_build_roboflow_api_headers_when_no_extra_headers_but_explicit_headers_g
 @mock.patch.object(
     roboflow_api,
     "ROBOFLOW_API_EXTRA_HEADERS",
-    json.dumps({"extra": "header", "another": "extra"})
+    json.dumps({"extra": "header", "another": "extra"}),
 )
 def test_build_roboflow_api_headers_when_extra_headers_given() -> None:
     # when
     result = build_roboflow_api_headers()
 
     # then
-    assert result == {"extra": "header", "another": "extra"}, "Expected extra headers to be decoded"
+    assert result == {
+        "extra": "header",
+        "another": "extra",
+    }, "Expected extra headers to be decoded"
 
 
 @mock.patch.object(
     roboflow_api,
     "ROBOFLOW_API_EXTRA_HEADERS",
-    json.dumps({"extra": "header", "another": "extra"})
+    json.dumps({"extra": "header", "another": "extra"}),
 )
-def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_headers_present() -> None:
+def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_headers_present() -> (
+    None
+):
     # when
     result = build_roboflow_api_headers(explicit_headers={"my": "header"})
 
@@ -2234,11 +2240,7 @@ def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_header
     }, "Expected extra headers to be decoded and shipped along with explicit headers"
 
 
-@mock.patch.object(
-    roboflow_api,
-    "ROBOFLOW_API_EXTRA_HEADERS",
-    "For sure not a JSON :)"
-)
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", "For sure not a JSON :)")
 def test_build_roboflow_api_headers_when_extra_headers_given_as_invalid_json() -> None:
     # when
     result = build_roboflow_api_headers(explicit_headers={"my": "header"})
@@ -2252,14 +2254,18 @@ def test_build_roboflow_api_headers_when_extra_headers_given_as_invalid_json() -
 @mock.patch.object(
     roboflow_api,
     "ROBOFLOW_API_EXTRA_HEADERS",
-    json.dumps({"extra": "header", "another": "extra"})
+    json.dumps({"extra": "header", "another": "extra"}),
 )
-def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_headers_collide_with_extras() -> None:
+def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_headers_collide_with_extras() -> (
+    None
+):
     # when
-    result = build_roboflow_api_headers(explicit_headers={
-        "extra": "explicit-is-better",
-        "my": "header",
-    })
+    result = build_roboflow_api_headers(
+        explicit_headers={
+            "extra": "explicit-is-better",
+            "my": "header",
+        }
+    )
 
     # then
     assert result == {

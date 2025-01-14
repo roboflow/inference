@@ -2,14 +2,13 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from threading import Lock
-from typing import Any, Callable, Dict, List, Optional, TextIO, Tuple
+from typing import Any, Callable, Dict, List, Optional, TextIO, Tuple, Type
 
 import cv2
 from rich.progress import Progress, TaskID
 
 from inference.core.cache import cache
 from inference.core.env import API_KEY, MAX_ACTIVE_MODELS
-from inference.core.exceptions import MissingApiKeyError
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
@@ -22,6 +21,7 @@ from inference.core.workflows.execution_engine.profiling.core import (
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 from inference_cli.lib.logger import CLI_LOGGER
 from inference_cli.lib.workflows.common import (
+    WorkflowsImagesProcessingIndex,
     aggregate_batch_processing_results,
     denote_image_processed,
     dump_image_processing_results,
@@ -29,7 +29,12 @@ from inference_cli.lib.workflows.common import (
     open_progress_log,
     report_failed_files,
 )
-from inference_cli.lib.workflows.entities import OutputFileType
+from inference_cli.lib.workflows.entities import (
+    ImagePath,
+    ImageResultsIndexEntry,
+    ImagesDirectoryProcessingDetails,
+    OutputFileType,
+)
 
 
 def process_image_with_workflow_using_inference_package(
@@ -67,7 +72,7 @@ def process_image_with_workflow_using_inference_package(
             workflow_parameters=workflow_parameters,
             api_key=api_key,
         )
-        dump_image_processing_results(
+        _ = dump_image_processing_results(
             result=result,
             image_path=image_path,
             output_directory=output_directory,
@@ -94,9 +99,10 @@ def process_image_directory_with_workflow_using_inference_package(
     aggregate_structured_results: bool = True,
     aggregation_format: OutputFileType = OutputFileType.JSONL,
     debug_mode: bool = False,
-) -> None:
+) -> ImagesDirectoryProcessingDetails:
     if api_key is None:
         api_key = API_KEY
+    processing_index = WorkflowsImagesProcessingIndex.init()
     files_to_process = get_all_images_in_directory(input_directory=input_directory)
     log_file, log_content = open_progress_log(output_directory=output_directory)
     try:
@@ -109,6 +115,7 @@ def process_image_directory_with_workflow_using_inference_package(
         failed_files = _process_images_within_directory(
             files_to_process=remaining_files,
             output_directory=output_directory,
+            processing_index=processing_index,
             workflow_specification=workflow_specification,
             workspace_name=workspace_name,
             workflow_id=workflow_id,
@@ -121,18 +128,32 @@ def process_image_directory_with_workflow_using_inference_package(
         )
     finally:
         log_file.close()
-    report_failed_files(failed_files=failed_files, output_directory=output_directory)
-    if not aggregate_structured_results:
-        return None
-    aggregate_batch_processing_results(
+    failures_report_path = report_failed_files(
+        failed_files=failed_files, output_directory=output_directory
+    )
+    aggregated_results_path = None
+    if aggregate_structured_results:
+        aggregated_results_path = aggregate_batch_processing_results(
+            output_directory=output_directory,
+            aggregation_format=aggregation_format,
+        )
+    result_metadata_paths = processing_index.export_metadata()
+    result_images_paths = processing_index.export_images()
+    return ImagesDirectoryProcessingDetails(
         output_directory=output_directory,
-        aggregation_format=aggregation_format,
+        processed_images=len(remaining_files),
+        failures=len(failed_files),
+        result_metadata_paths=result_metadata_paths,
+        result_images_paths=result_images_paths,
+        aggregated_results_path=aggregated_results_path,
+        failures_report_path=failures_report_path,
     )
 
 
 def _process_images_within_directory(
     files_to_process: List[str],
     output_directory: str,
+    processing_index: WorkflowsImagesProcessingIndex,
     workflow_specification: Dict[str, Any],
     workspace_name: Optional[str],
     workflow_id: Optional[str],
@@ -157,7 +178,10 @@ def _process_images_within_directory(
     )
     failed_files = []
     on_success = partial(
-        _on_success, progress_bar=progress_bar, task_id=processing_task
+        _on_success,
+        progress_bar=progress_bar,
+        task_id=processing_task,
+        processing_index=processing_index,
     )
     on_failure = partial(
         _on_failure,
@@ -187,11 +211,14 @@ def _process_images_within_directory(
 
 
 def _on_success(
-    path: str,
+    path: ImagePath,
+    index_entry: ImageResultsIndexEntry,
     progress_bar: Progress,
     task_id: TaskID,
+    processing_index: WorkflowsImagesProcessingIndex,
 ) -> None:
     progress_bar.update(task_id, advance=1)
+    processing_index.collect_entry(image_path=path, entry=index_entry)
 
 
 def _on_failure(
@@ -206,9 +233,9 @@ def _on_failure(
 
 
 def _process_single_image_from_directory(
-    image_path: str,
+    image_path: ImagePath,
     model_manager: ModelManagerDecorator,
-    workflow_specification: Optional[Dict[str, Any]],
+    workflow_specification: Dict[str, Any],
     workflow_id: Optional[str],
     image_input_name: str,
     workflow_parameters: Optional[Dict[str, Any]],
@@ -216,8 +243,8 @@ def _process_single_image_from_directory(
     output_directory: str,
     save_image_outputs: bool,
     log_file: TextIO,
-    on_success: Callable[[str], None],
-    on_failure: Callable[[str, str], None],
+    on_success: Callable[[ImagePath, ImageResultsIndexEntry], None],
+    on_failure: Callable[[ImagePath, str], None],
     log_file_lock: Optional[Lock] = None,
     debug_mode: bool = False,
 ) -> None:
@@ -231,7 +258,7 @@ def _process_single_image_from_directory(
             workflow_parameters=workflow_parameters,
             api_key=api_key,
         )
-        dump_image_processing_results(
+        index_entry = dump_image_processing_results(
             result=result,
             image_path=image_path,
             output_directory=output_directory,
@@ -240,7 +267,7 @@ def _process_single_image_from_directory(
         denote_image_processed(
             log_file=log_file, image_path=image_path, lock=log_file_lock
         )
-        on_success(image_path)
+        on_success(image_path, index_entry)
     except Exception as error:
         error_summary = f"Error in processing {image_path}. Error type: {error.__class__.__name__} - {error}"
         if debug_mode:
@@ -263,13 +290,6 @@ def _get_workflow_specification(
         raise ValueError(
             "Parameters (`workspace_name`, `workflow_id`) can be used mutually exclusive with "
             "`workflow_specification`, but at least one must be set."
-        )
-    if api_key is None:
-        raise MissingApiKeyError(
-            "Roboflow API key needs to be provided either as parameter or via env variable "
-            "ROBOFLOW_API_KEY. If you do not know how to get API key - visit "
-            "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
-            "retrieve one."
         )
     return get_workflow_specification(
         api_key=api_key,
