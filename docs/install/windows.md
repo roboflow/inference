@@ -4,7 +4,7 @@ First, you'll need to [install Docker Desktop](https://docs.docker.com/desktop/s
 Then, use the CLI to start the container.
 
 === "CPU"
-    ```bash
+    ```cmd
     pip install inference-cli
     inference server start
     ```
@@ -16,7 +16,7 @@ Then, use the CLI to start the container.
 
     Then, use the CLI to start the container:
 
-    ```bash
+    ```cmd
     pip install inference-cli
     inference server start
     ```
@@ -44,15 +44,15 @@ manually.
     To get started with CPU inference, use the `roboflow/roboflow-inference-server-cpu:latest`
     container.
 
-    ```bash
-    sudo docker run -d \
-        --name inference-server \
-        --read-only \
-        -p 9001:9001 \
-        --volume ~/.inference/cache:/tmp:rw \
-        --security-opt="no-new-privileges" \
-        --cap-drop="ALL" \
-        --cap-add="NET_BIND_SERVICE" \
+    ```cmd
+    docker run -d ^
+        --name inference-server ^
+        --read-only ^
+        -p 9001:9001 ^
+        --volume "%USERPROFILE%\.inference\cache:/tmp:rw" ^
+        --security-opt="no-new-privileges" ^
+        --cap-drop="ALL" ^
+        --cap-add="NET_BIND_SERVICE" ^
         roboflow/roboflow-inference-server-cpu:latest
     ```
 
@@ -62,16 +62,16 @@ manually.
     [setup Docker to access the GPU](https://docs.docker.com/desktop/features/gpu/)
     then add `--gpus all` to the `docker run` command:
 
-    ```bash
-    sudo docker run -d \
-        --name inference-server \
-        --gpus all \
-        --read-only \
-        -p 9001:9001 \
-        --volume ~/.inference/cache:/tmp:rw \
-        --security-opt="no-new-privileges" \
-        --cap-drop="ALL" \
-        --cap-add="NET_BIND_SERVICE" \
+    ```cmd
+    docker run -d ^
+        --name inference-server ^
+        --gpus all ^
+        --read-only ^
+        -p 9001:9001 ^
+        --volume "%USERPROFILE%\.inference\cache:/tmp:rw" ^
+        --security-opt="no-new-privileges" ^
+        --cap-drop="ALL" ^
+        --cap-add="NET_BIND_SERVICE" ^
         roboflow/roboflow-inference-server-gpu:latest
     ```
 
@@ -84,17 +84,17 @@ manually.
 
     You can enable TensorRT by adding `TensorrtExecutionProvider` to the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable.
 
-    ```bash
-    sudo docker run -d \
-        --name inference-server \
-        --gpus all \
-        --read-only \
-        -p 9001:9001 \
-        --volume ~/.inference/cache:/tmp:rw \
-        --security-opt="no-new-privileges" \
-        --cap-drop="ALL" \
-        --cap-add="NET_BIND_SERVICE" \
-        -e ONNXRUNTIME_EXECUTION_PROVIDERS="[TensorrtExecutionProvider,CUDAExecutionProvider,OpenVINOExecutionProvider,CPUExecutionProvider]" \
+    ```cmd
+    docker run -d ^
+        --name inference-server ^
+        --gpus all ^
+        --read-only ^
+        -p 9001:9001 ^
+        --volume "%USERPROFILE%\.inference\cache:/tmp:rw" ^
+        --security-opt="no-new-privileges" ^
+        --cap-drop="ALL" ^
+        --cap-add="NET_BIND_SERVICE" ^
+        -e ONNXRUNTIME_EXECUTION_PROVIDERS="[TensorrtExecutionProvider,CUDAExecutionProvider,OpenVINOExecutionProvider,CPUExecutionProvider]" ^
         roboflow/roboflow-inference-server-gpu:latest
     ```
 
@@ -116,7 +116,7 @@ If you are using Docker Compose for your application, the equivalent yaml is:
           - "9001:9001"
 
         volumes:
-          - "${HOME}/.inference/cache:/tmp:rw"
+          - "${USERPROFILE}/.inference/cache:/tmp:rw"
     
         security_opt:
           - no-new-privileges
@@ -140,7 +140,7 @@ If you are using Docker Compose for your application, the equivalent yaml is:
           - "9001:9001"
 
         volumes:
-          - "${HOME}/.inference/cache:/tmp:rw"
+          - "${USERPROFILE}/.inference/cache:/tmp:rw"
     
         deploy:
           resources:
@@ -172,7 +172,7 @@ If you are using Docker Compose for your application, the equivalent yaml is:
           - "9001:9001"
         
         volumes:
-          - "${HOME}/.inference/cache:/tmp:rw"
+          - "${USERPROFILE}/.inference/cache:/tmp:rw"
     
         deploy:
           resources:
