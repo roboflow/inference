@@ -3,10 +3,10 @@ APScheduler>=3.10.1,<4.0.0
 asyncua~=1.1.5
 cython~=3.0.0
 python-dotenv~=1.0.0
-fastapi>=0.100,<0.111
+fastapi>=0.100
 numpy<=1.26.4
 opencv-python>=4.8.1.78,<=4.10.0.84
-pillow<11.0
+pillow
 prometheus-fastapi-instrumentator<=6.0.0
 redis~=5.0.0
 requests>=2.32.0,<3.0.0

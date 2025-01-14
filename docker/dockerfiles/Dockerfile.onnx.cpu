@@ -1,80 +1,70 @@
-FROM python:3.9 as base
-
+# Builder stage
+FROM python:3.13-slim AS builder
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt update -y && apt install -y \
-    libxext6 \
-    libopencv-dev \
-    uvicorn \
-    python3-pip \
-    git \
-    libgdal-dev \
-    cmake \
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libxext6 libopencv-dev git libgdal-dev cmake make ninja-build gcc g++ curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements/requirements.sam.txt \
-    requirements/requirements.clip.txt \
-    requirements/requirements.cpu.txt \
-    requirements/requirements.vino.txt \
-    requirements/requirements.http.txt \
-    requirements/requirements.waf.txt \
-    requirements/requirements.gaze.txt \
-    requirements/requirements.doctr.txt \
-    requirements/requirements.groundingdino.txt \
-    requirements/requirements.yolo_world.txt \
-    requirements/requirements.transformers.txt \
-    requirements/_requirements.txt \
-    ./
+WORKDIR /builder
 
-RUN pip3 install --upgrade pip  && pip3 install \
-    -r _requirements.txt \
-    -r requirements.sam.txt \
-    -r requirements.clip.txt \
-    -r requirements.cpu.txt \
-    -r requirements.http.txt \
-    -r requirements.waf.txt \
-    -r requirements.gaze.txt \
-    -r requirements.doctr.txt \
-    -r requirements.groundingdino.txt \
-    -r requirements.yolo_world.txt \
-    -r requirements.transformers.txt \
-    jupyterlab \
-    "setuptools<=75.5.0" \
-    --upgrade \
-    && rm -rf ~/.cache/pip
+# Copy project configuration
+COPY pyproject.toml .
+COPY inference inference/
 
-FROM scratch
-ARG TARGETPLATFORM
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+RUN uv sync --compile-bytecode
 
-COPY --from=base / /
+# Install all dependencies using UV
+# Using separate commands to better utilize layer caching
+RUN uv pip install --upgrade pip && \
+    uv pip install . && \
+    uv pip install .[clip,container,cpu,doctr,gaze,groundingdino,http,sam,transformers,waf,yolo_world]
 
-WORKDIR /build
-COPY . .
+# Build wheels
+COPY . /builder
 RUN make create_wheels
-RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
 
-RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then pip3 install -r requirements/requirements.vino.txt; rm -rf ~/.cache/pip; fi
+# Final stage
+FROM python:3.13-slim
+ARG TARGETPLATFORM
+WORKDIR /app
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libxext6 libopencv-dev git libgdal-dev cmake make ninja-build gcc g++ curl \
+    && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /notebooks
-COPY examples/notebooks .
+COPY --from=ghcr.io/astral-sh/uv:0.5.18 /uv /uvx /bin/
+
+# Copy and install wheels
+COPY --from=builder /builder/dist /tmp/dist
+RUN uv pip install --upgrade pip && \
+    uv pip install \
+    /tmp/dist/inference_cli*.whl \
+    /tmp/dist/inference_core*.whl \
+    /tmp/dist/inference_cpu*.whl \
+    /tmp/dist/inference_sdk*.whl && \
+    if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then \
+    uv pip install .[vino]; \
+    fi
 
 WORKDIR /app
-COPY inference inference
 COPY docker/config/cpu_http.py cpu_http.py
 
-ENV VERSION_CHECK_MODE=continuous
-ENV PROJECT=roboflow-platform
-ENV NUM_WORKERS=1
-ENV HOST=0.0.0.0
-ENV PORT=9001
-ENV WORKFLOWS_STEP_EXECUTION_MODE=local
-ENV WORKFLOWS_MAX_CONCURRENT_STEPS=4
-ENV API_LOGGING_ENABLED=True
-ENV CORE_MODEL_SAM2_ENABLED=True
-ENV CORE_MODEL_OWLV2_ENABLED=True
-ENV ENABLE_STREAM_API=True
-ENV ENABLE_WORKFLOWS_PROFILING=True
-ENV ENABLE_PROMETHEUS=True
+ENV API_LOGGING_ENABLED=True \
+    CORE_MODEL_OWLV2_ENABLED=True \
+    CORE_MODEL_SAM2_ENABLED=True \
+    ENABLE_PROMETHEUS=True \
+    ENABLE_STREAM_API=True \
+    ENABLE_WORKFLOWS_PROFILING=True \
+    HOST=0.0.0.0 \
+    NUM_WORKERS=1 \
+    PORT=9001 \
+    PROJECT=roboflow-platform \
+    VERSION_CHECK_MODE=continuous \
+    WORKFLOWS_MAX_CONCURRENT_STEPS=4 \
+    WORKFLOWS_STEP_EXECUTION_MODE=local
 
-ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT
+ENTRYPOINT ["uvicorn", "cpu_http:app", "--workers", "1", "--host", "0.0.0.0", "--port", "9001"]
