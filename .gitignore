@@ -167,6 +167,7 @@ scratch
 docs/workflows/blocks/*
 docs/workflows/kinds/*
 docs/workflows/gallery/*
+docs/inference_helpers/cli_commands/reference.md
 !tests/workflows/integration_tests/execution/assets/*.jpg
 !tests/workflows/integration_tests/execution/assets/rock_paper_scissors/*.jpg
 !tests/workflows/unit_tests/core_steps/models/third_party/assets/*.png
