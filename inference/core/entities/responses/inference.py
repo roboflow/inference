@@ -227,7 +227,7 @@ class Keypoint(Point):
         description="Model confidence regarding keypoint visibility."
     )
     class_id: int = Field(description="Identifier of keypoint.")
-    class_name: str = Field(field="class", description="Type of keypoint.")
+    class_name: str = Field(field="class_name", description="Type of keypoint.")
 
 
 class KeypointsPrediction(ObjectDetectionPrediction):
