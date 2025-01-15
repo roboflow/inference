@@ -27,13 +27,23 @@ objects' categorization, location, and size in an image) but it could also repre
 the result of post-processing logic (like the pass/fail state of an inspection), an
 aggregation (like the count of unique objects seen over the past hour), or a visualization.
 
+For image workloads, the input is passed in as a parameter and the response is
+returned synchronously.
+
+<div class="imageContainer">
+    <div><img src="/images/architecture/microservice.svg" /></div>
+    <div class="caption">Inference as a Microservice</div>
+</div>
+
 In the case of video streams, a visual agent
 (called [an `InferencePipeline`](/workflows/video_processing/overview/))
 is started and runs in a loop until terminated. Responses are polled or subscribed
 to by the client application for display or processing.
 
-For image workloads, the input is passed in as a parameter and the response is
-returned synchronously.
+<div class="imageContainer">
+    <div><img src="/images/architecture/pipeline.svg" /></div>
+    <div class="caption">InferencePipeline</div>
+</div>
 
 Example microservice use-cases:
 
@@ -52,6 +62,11 @@ processes a video stream and performs downstream actions (like updating a databa
 sending notifications, firing webhooks, or signaling hardware). In this paradigm,
 the full logic of the system is defined in a Workflow and the output is pushed to
 external systems.
+
+<div class="imageContainer">
+    <div><img src="/images/architecture/appliance.svg" /></div>
+    <div class="caption">Inference as an Appliance</div>
+</div>
 
 Example appliance use-cases:
 

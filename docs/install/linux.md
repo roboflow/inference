@@ -65,7 +65,7 @@ manually.
     [TensorRT](https://developer.nvidia.com/tensorrt), NVIDIA's model optimization
     runtime that will greatly increase your models' speed at the expense of a heavy
     compilation and optimization step (sometimes 15+ minutes) the first time you
-    load it.
+    load each model.
 
     You can enable TensorRT by adding `TensorrtExecutionProvider` to the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable.
 

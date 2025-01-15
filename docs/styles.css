@@ -89,3 +89,20 @@
 .md-main__inner {
   margin-top: 0.25rem;
 }
+
+.imageContainer {
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+  margin: 0px auto 15px;
+  font-style: italic;
+}
+
+.imageContainer > div:first-child {
+  background-color: white;
+  padding: 15px 25px;
+}
+
+.imageContainer .caption {
+  opacity: 0.7;
+}
