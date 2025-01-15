@@ -2,7 +2,7 @@
 
 Inference uses some terms (and terms of art) that may be unfamiliar to some
 readers. This page aims to disambiguate and clarify their meaning, specifically
-in the context of Roboflow Workflows Blocks.
+in the context of the Roboflow and Inference ecosystem.
 
 ## API
 An interface that allows software applications to communicate with each other.

@@ -18,7 +18,7 @@ for GPU acceleration if you have a CUDA-enabled GPU). Then run:
 
 ```bash
 pip install inference-cli
-inference server start --dev
+inference server start
 ```
 
 The `inference server start` command attempts to automatically choose 
@@ -35,6 +35,10 @@ The `--dev` parameter to `inference server start` starts in development mode.
 This spins up a companion Jupyter notebook server with a quickstart guide on 
 [`localhost:9002`](http://localhost:9002). Dive in there for a whirlwind tour
 of your new Inference Server's functionality!
+
+```bash
+inference server start --dev
+```
 
 ## Connecting to the Server
 
