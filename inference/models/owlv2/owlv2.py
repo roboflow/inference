@@ -293,8 +293,8 @@ class OwlV2(RoboflowInferenceModel):
     task_type = "object-detection"
     box_format = "xywh"
 
-    def __init__(self, *args, model_id=f"owlv2/{OWLV2_VERSION_ID}", **kwargs):
-        super().__init__(*args, model_id=model_id, **kwargs)
+    def __init__(self, model_id=f"owlv2/{OWLV2_VERSION_ID}", *args, **kwargs):
+        super().__init__(model_id, *args, **kwargs)
         hf_id = os.path.join("google", self.version_id)
         processor = Owlv2Processor.from_pretrained(hf_id)
         self.image_size = tuple(processor.image_processor.size.values())
