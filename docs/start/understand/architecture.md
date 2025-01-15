@@ -42,7 +42,7 @@ to by the client application for display or processing.
 
 <div class="imageContainer">
     <div><img src="/images/architecture/pipeline.svg" /></div>
-    <div class="caption">InferencePipeline</div>
+    <div class="caption">InferencePipeline Video Streaming</div>
 </div>
 
 Example microservice use-cases:

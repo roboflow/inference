@@ -39,6 +39,16 @@ Inference exposes an HTTP server for interfacing with its functionality. This
 lets you use it as a micro-service in a larger system and programmatically
 command its operations.
 
+## SDK
+
+The included Python Client makes it easy to interact with the server from
+your applications.
+
+## CLI
+
+The Command Line Interface provides convenience methods for starting the server,
+running benchmarks, cloud deployment, and testing.
+
 ## Speed
 
 Built-in optimizations like automatic parallelization via multiprocessing,

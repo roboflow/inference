@@ -41,9 +41,8 @@ serving without an abstraction layer like Workflows for model chaining and
 integrations with other tools.
 
 **Choose LitServe if:** you are working on general-purpose machine learning
-tasks and want a lightweight, unopinionated, code-centric solution that's faster
-and comes with more batteries included than rolling your own server with
-FastAPI or Flask.
+tasks and were previously considering rolling your own server but want
+a more featureful starting point.
 
 ### Tensorflow Serving
 
@@ -102,8 +101,8 @@ Workflows Block and a YOLO ComfyUI Node), but the ecosystem of nodes and the
 community focus of Comfy is squarely centered around generative models while
 Inference is focused on interfacing with the real-world.
 
-**Chose ComfyUI if:** you're using generative image and video models like Flux and
-Stable Diffusion and don't need to use custom fine-tuned models in your pipeline
+**Chose ComfyUI if:** you're mainly interested in using generative image and video
+models like Flux and don't need to use custom fine-tuned models in your pipeline
 to do things like selectively replacing specific objects.
 
 ### Node-RED
