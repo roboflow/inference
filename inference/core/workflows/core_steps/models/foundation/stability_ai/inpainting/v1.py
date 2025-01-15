@@ -58,6 +58,7 @@ class BlockManifest(WorkflowBlockManifest):
             "ui_manifest": {
                 "section": "model",
                 "icon": "far fa-palette",
+                "blockPriority": 14,
             },
         }
     )

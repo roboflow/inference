@@ -51,6 +51,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-analytics",
+                "blockPriority": 8,
+            },
         }
     )
     type: Literal["roboflow_core/roboflow_custom_metadata@v1", "RoboflowCustomMetadata"]

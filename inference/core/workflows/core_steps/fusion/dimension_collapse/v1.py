@@ -39,6 +39,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "fusion",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-layer-minus",
+                "blockPriority": 6,
+                "inDevelopment": True,
+            },
         }
     )
     type: Literal["roboflow_core/dimension_collapse@v1", "DimensionCollapse"]

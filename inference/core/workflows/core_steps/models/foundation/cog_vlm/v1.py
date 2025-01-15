@@ -59,6 +59,13 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM"],
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 9,
+                "needsGPU": True,
+                "inference": True,
+            },
         }
     )
     type: Literal["roboflow_core/cog_vlm@v1", "CogVLM"]

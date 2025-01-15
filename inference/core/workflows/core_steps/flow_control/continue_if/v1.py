@@ -52,6 +52,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "flow_control",
+            "ui_manifest": {
+                "section": "flow_control",
+                "icon": "fak fa-branching",
+                "blockPriority": 0,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/continue_if@v1", "ContinueIf"]
