@@ -1,7 +1,7 @@
 # Overview
 
-Inference is the centralized hub that handles the dirty work of building
-computer vision applications. It implements the recurring dirty-work required for
+Inference is the centralized hub that handles the core tasks of building
+computer vision applications. It implements the recurring heavy-lifting required for
 efficiently processing and managing video streams, deploying and monitoring
 models and pipelines, optimizing CPU and GPU resources, and managing dependencies.
 
