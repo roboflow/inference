@@ -23,7 +23,11 @@ inference server start --dev
 
 The `inference server start` command attempts to automatically choose 
 and configure the optimal container to optimize performance on your machine.
-Special installation notes and performance tips by device are also available.
+
+
+!!! Tip
+    Special installation notes and performance tips by device are also available.
+    Browse the navigation on the left for detailed install guides.
 
 ## Dev Mode
 
