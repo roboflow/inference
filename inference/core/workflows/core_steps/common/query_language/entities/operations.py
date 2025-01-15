@@ -340,6 +340,8 @@ class DetectionsOffset(OperationDefinition):
     type: Literal["DetectionsOffset"]
     offset_x: int
     offset_y: int
+    offset_pct_x: float
+    offset_pct_y: float
 
 
 class DetectionsShift(OperationDefinition):

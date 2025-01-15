@@ -77,7 +77,7 @@ def filter_detections(
 
 
 def offset_detections(
-    value: Any, offset_x: int, offset_y: int, **kwargs
+    value: Any, offset_x: int, offset_y: int, offset_pct_x: float, offset_pct_y: float, **kwargs
 ) -> sv.Detections:
     if not isinstance(value, sv.Detections):
         value_as_str = safe_stringify(value=value)
@@ -87,7 +87,10 @@ def offset_detections(
             context="step_execution | roboflow_query_language_evaluation",
         )
     detections_copy = deepcopy(value)
-    detections_copy.xyxy += [-offset_x / 2, -offset_y / 2, offset_x / 2, offset_y / 2]
+    if offset_pct_x != 0 or offset_pct_y != 0:
+        detections_copy.xyxy *= [ 1 - offset_pct_x, 1 - offset_pct_y, 1 + offset_pct_x, 1 + offset_pct_y]
+    else:
+        detections_copy.xyxy += [-offset_x / 2, -offset_y / 2, offset_x / 2, offset_y / 2]
     return detections_copy
 
 
