@@ -295,7 +295,7 @@ class OwlV2(RoboflowInferenceModel):
     box_format = "xywh"
 
     def __init__(self, model_id=f"owlv2/{OWLV2_VERSION_ID}", *args, **kwargs):
-        super().__init__(model_id=model_id, *args, **kwargs)
+        super().__init__(model_id, *args, **kwargs)
         # TODO: owlv2 makes use of version_id - version_id is being dropped so this class needs to be refactored
         if self.version_id is None:
             owlv2_model_id_chunks = model_id.split("/")
