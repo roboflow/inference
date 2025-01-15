@@ -223,8 +223,9 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
 
         img_in /= 255.0
 
-        mean = self.preprocess_means
-        std = self.preprocess_stds
+        mean = (0.5, 0.5, 0.5)
+        std = (0.5, 0.5, 0.5)
+
         img_in = img_in.astype(np.float32)
 
         img_in[:, 0, :, :] = (img_in[:, 0, :, :] - mean[0]) / std[0]

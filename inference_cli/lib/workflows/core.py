@@ -122,7 +122,7 @@ def process_images_directory_with_workflow(
             process_image_directory_with_workflow_using_inference_package,
         )
 
-        process_image_directory_with_workflow_using_inference_package(
+        _ = process_image_directory_with_workflow_using_inference_package(
             input_directory=input_directory,
             output_directory=output_directory,
             workflow_specification=workflow_specification,
@@ -138,7 +138,7 @@ def process_images_directory_with_workflow(
             debug_mode=debug_mode,
         )
         return None
-    process_image_directory_with_workflow_using_api(
+    _ = process_image_directory_with_workflow_using_api(
         input_directory=input_directory,
         output_directory=output_directory,
         workflow_specification=workflow_specification,
