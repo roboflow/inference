@@ -9,6 +9,23 @@ There are three primary ways to deploy Inference:
 Each has pros and cons and which one you should choose depends on your particular
 use-case and organizational constraints.
 
+|                         | Serverless | Dedicated | Self-Hosted |
+|-------------------------|------------|-----------|-------------|
+| Workflows               | ✅         | ✅         | ✅          |
+| Basic Logic Blocks      | ✅         | ✅         | ✅          |
+| Pre-Trained Models      | ✅         | ✅         | ✅          |
+| Fine-Tuned Models       | ✅         | ✅         | ✅          |
+| Universe Models         | ✅         | ✅         | ✅          |
+| Active Learning         | ✅         | ✅         | ✅          |
+| Model Monitoring        | ✅         | ✅         | ✅          |
+| Foundation Models       |            | ✅         | ✅          |
+| Video Stream Management |            | ✅         | ✅          |
+| Dynamic Python Blocks   |            | ✅         | ✅          |
+| Device Management       |            | ✅         | ✅          |
+| Access Local Devices    |            |            | ✅          |
+| Can Run Offline         |            |            | ✅          |
+| Billing                 | Per-Call   | Hourly     | [See Below](#self-hosting) |
+
 ## Cloud Hosting
 
 By far the easiest way to get started is with Roboflow's managed services. You can
@@ -46,9 +63,11 @@ heavy foundation models like SAM 2, Florence-2, and Paligemma (including your fi
 of those models), and install additional dependencies. They are much higher performance
 machines than the instances backing the Serverless Hosted API.
 
-Dedicated Deployments are only available on accounts with an active subscription (and
-are not available on the free trial). Scale-up time is on the order of a minute or
-two. They are billed hourly.
+Scale-up time is on the order of a minute or two.
+
+!!! info "Dedicated Deployments Availability"
+    Dedicated Deployments are only available to Roboflow Workspaces with an active
+    subscription (and are not available on the free trial). They are billed hourly.
 
 ## Self Hosting
 
@@ -59,13 +78,24 @@ resiliency to Internet outages is mandatory.
 Running locally on a development machine, an AI computer, or an edge device is as simple
 as starting a Docker container.
 
+!!! info "Self-Hosted Pricing"
+    Basic usage of self-hosted Inference Servers is completely free.
+    
+    Workflows that require
+    [a Roboflow API Key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key)
+    to access Roboflow Cloud powered features (for example: the private model repository)
+    are [metered and consume credits](https://roboflow.com/pricing)
+    (which cost money after a generous free tier is used up) based on the number of images
+    or the hours of video processed.
+
 Detailed [installation instructions and device-specific performance tips are here](/install/index.md).
 
 ## Bring Your Own Cloud
 
 Sometimes enterprise compliance policies regarding sensitive data requires running
 workloads on-premises. This is supported via
-[self-hosting on your own cloud](/install/cloud/index.md).
+[self-hosting on your own cloud](/install/cloud/index.md). Billing is the same
+as for self-hosting on an edge device.
 
 --8<-- "docs/install/using-your-new-server.md"
 
