@@ -289,9 +289,6 @@ If you are using Docker Compose for your application, the equivalent yaml is:
           - NET_BIND_SERVICE
     ```
 
-## Enterprise Considerations
+--8<-- "docs/install/using-your-new-server.md"
 
-Roboflow also offers customized support and installation packages and
-[a pre-configured Jetson-based edge-device](https://roboflow.com/hardware)
-suitable for rapid prototyping. [Contact our sales team](https://roboflow.com/sales)
-if you're part of a large organization and interested in learning more.
+--8<-- "docs/install/enterprise-considerations.md"

@@ -40,9 +40,4 @@ of your new Inference Server's functionality!
 inference server start --dev
 ```
 
-## Connecting to the Server
-
-Now you're ready to connect your camera streams and
-[start building & deploying Workflows in the UI](https://app.roboflow.com/workflows)
-or [interacting with your new server](https://inference.roboflow.com/workflows/create_and_run/)
-via its API.
+--8<-- "docs/install/using-your-new-server.md"
