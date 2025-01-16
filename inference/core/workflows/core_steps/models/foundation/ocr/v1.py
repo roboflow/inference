@@ -67,6 +67,13 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-text",
+                "blockPriority": 11,
+                "inDevelopment": True,
+                "inference": True
+            }
         }
     )
     type: Literal["roboflow_core/ocr_model@v1", "OCRModel"]
