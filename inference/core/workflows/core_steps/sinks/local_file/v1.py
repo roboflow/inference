@@ -73,6 +73,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-file",
+                "blockPriority": 3,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/local_file_sink@v1"]

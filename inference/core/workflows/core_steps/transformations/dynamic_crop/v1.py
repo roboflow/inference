@@ -54,6 +54,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "transformation",
+                "icon": "far fa-crop-alt",
+                "blockPriority": 0,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/dynamic_crop@v1", "DynamicCrop", "Crop"]

@@ -36,6 +36,12 @@ class ColorPixelCountManifest(WorkflowBlockManifest):
             "long_description": SHORT_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
+            "ui_manifest": {
+                "section": "classical_cv",
+                "icon": "far fa-tally",
+                "blockPriority": 2,
+                "opencv": True,
+            },
         }
     )
     image: Selector(kind=[IMAGE_KIND]) = Field(

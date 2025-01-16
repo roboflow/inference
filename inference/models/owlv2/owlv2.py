@@ -27,7 +27,7 @@ from inference.core.env import (
     OWLV2_MODEL_CACHE_SIZE,
     OWLV2_VERSION_ID,
 )
-from inference.core.exceptions import ModelArtefactError
+from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
 from inference.core.models.roboflow import (
     DEFAULT_COLOR_PALETTE,
     RoboflowCoreModel,
@@ -37,6 +37,7 @@ from inference.core.models.roboflow import (
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
+    get_roboflow_instant_model_data,
     get_roboflow_model_data,
 )
 from inference.core.utils.image_utils import (
@@ -293,8 +294,15 @@ class OwlV2(RoboflowInferenceModel):
     task_type = "object-detection"
     box_format = "xywh"
 
-    def __init__(self, *args, model_id=f"owlv2/{OWLV2_VERSION_ID}", **kwargs):
-        super().__init__(*args, model_id=model_id, **kwargs)
+    def __init__(self, model_id=f"owlv2/{OWLV2_VERSION_ID}", *args, **kwargs):
+        super().__init__(model_id, *args, **kwargs)
+        # TODO: owlv2 makes use of version_id - version_id is being dropped so this class needs to be refactored
+        if self.version_id is None:
+            owlv2_model_id_chunks = model_id.split("/")
+            if len(owlv2_model_id_chunks) != 2:
+                raise InvalidModelIDError(f"Model ID: `{model_id}` is invalid.")
+            self.dataset_id = owlv2_model_id_chunks[0]
+            self.version_id = owlv2_model_id_chunks[1]
         hf_id = os.path.join("google", self.version_id)
         processor = Owlv2Processor.from_pretrained(hf_id)
         self.image_size = tuple(processor.image_processor.size.values())
@@ -736,18 +744,37 @@ class SerializedOwlV2(RoboflowInferenceModel):
         raise NotImplementedError("Owlv2 not currently supported on hosted inference")
 
     def download_model_artifacts_from_roboflow_api(self):
-        api_data = get_roboflow_model_data(
-            api_key=self.api_key,
-            model_id=self.endpoint,
-            endpoint_type=ModelEndpointType.OWLV2,
-            device_id=self.device_id,
-        )
-        api_data = api_data["owlv2"]
-        if "model" not in api_data:
-            raise ModelArtefactError(
-                "Could not find `model` key in roboflow API model description response."
+        if self.version_id is not None:
+            api_data = get_roboflow_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.OWLV2,
+                device_id=self.device_id,
             )
-        model_weights_response = get_from_url(api_data["model"], json_response=False)
+            api_data = api_data["owlv2"]
+            if "model" not in api_data:
+                raise ModelArtefactError(
+                    "Could not find `model` key in roboflow API model description response."
+                )
+            model_weights_response = get_from_url(
+                api_data["model"], json_response=False
+            )
+        else:
+            api_data = get_roboflow_instant_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+            )
+            if (
+                "modelFiles" not in api_data
+                or "owlv2" not in api_data["modelFiles"]
+                or "model" not in api_data["modelFiles"]["owlv2"]
+            ):
+                raise ModelArtefactError(
+                    "Could not find `modelFiles` key or `modelFiles`.`owlv2` or `modelFiles`.`owlv2`.`model` key in roboflow API model description response."
+                )
+            model_weights_response = get_from_url(
+                api_data["modelFiles"]["owlv2"]["model"], json_response=False
+            )
         save_bytes_in_cache(
             content=model_weights_response.content,
             file=self.weights_file,

@@ -128,28 +128,28 @@ def test_model_keypoints_to_response() -> None:
                 y=100,
                 confidence=0.5,
                 class_id=0,
-                class_name="nose",
+                **{"class": "nose"}
             ),
             Keypoint(
                 x=200,
                 y=200,
                 confidence=0.5,
                 class_id=1,
-                class_name="left_eye",
+                **{"class": "left_eye"}
             ),
             Keypoint(
                 x=300,
                 y=300,
                 confidence=0.5,
                 class_id=2,
-                class_name="right_eye",
+                **{"class": "right_eye"}
             ),
             Keypoint(
                 x=400,
                 y=400,
                 confidence=0.5,
                 class_id=3,
-                class_name="left_ear",
+                **{"class": "left_ear"}
             ),
         ],
     )
@@ -205,28 +205,28 @@ def test_model_keypoints_to_response_padded_points() -> None:
                 y=100,
                 confidence=0.5,
                 class_id=0,
-                class_name="nose",
+                **{"class": "nose"}
             ),
             Keypoint(
                 x=200,
                 y=200,
                 confidence=0.5,
                 class_id=1,
-                class_name="left_eye",
+                **{"class": "left_eye"}
             ),
             Keypoint(
                 x=300,
                 y=300,
                 confidence=0.5,
                 class_id=2,
-                class_name="right_eye",
+                **{"class": "right_eye"}
             ),
             Keypoint(
                 x=400,
                 y=400,
                 confidence=0.5,
                 class_id=3,
-                class_name="left_ear",
+                **{"class": "left_ear"}
             ),
         ],
     )

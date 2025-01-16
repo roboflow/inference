@@ -54,6 +54,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "fusion",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-reel",
+                "blockPriority": 10,
+                "supervision": True,
+            },
         }
     )
     type: Literal["roboflow_core/detections_stitch@v1"]

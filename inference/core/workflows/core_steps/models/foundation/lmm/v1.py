@@ -91,6 +91,10 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "deprecated": True,
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-chart-network",
+            },
         }
     )
     type: Literal["roboflow_core/lmm@v1", "LMM"]

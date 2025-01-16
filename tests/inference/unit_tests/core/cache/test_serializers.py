@@ -225,7 +225,7 @@ def mock_keypoints_detection_data():
                             "y": 0,
                             "confidence": 0.8,
                             "class_id": 1,
-                            "class_name": "nose",
+                            "class": "nose",
                         }
                     )
                 ],
