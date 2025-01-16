@@ -548,24 +548,77 @@ def write_blocks_summary_md(block_families):
     """
     Creates SUMMARY.md for mkdocs-literate-nav.
     """
+
+    BLOCK_SECTIONS = [
+        {
+            "title": "Models",
+            "id": "model",
+            "colorScheme": "purboflow"
+        },
+        {
+            "title": "Visualizations",
+            "id": "visualization",
+            "colorScheme": "blue"
+        },
+        {
+            "title": "Logic and Branching",
+            "id": "flow_control",
+            "colorScheme": "yellow"
+        },
+        {
+            "title": "Data Storage",
+            "id": "data_storage",
+            "colorScheme": "pink"
+        },
+        {
+            "title": "Notifications",
+            "id": "notifications",
+            "colorScheme": "salmon"
+        },
+        {
+            "title": "Transformations",
+            "id": "transformation",
+            "colorScheme": "green"
+        },
+        {
+            "title": "Classical Computer Vision",
+            "id": "classical_cv",
+            "colorScheme": "cyan"
+        },
+        {
+            "title": "Video",
+            "id": "video",
+            "colorScheme": "indigo"
+        },
+        {
+            "title": "Advanced",
+            "id": "advanced",
+            "colorScheme": "orange"
+        }
+    ]
+
     # Group families by block_type
-    blocks_by_type = defaultdict(list)
+    blocks_by_section = defaultdict(list)
     for family_name, members in block_families.items():
         if not members:
-            block_type = "OTHER"
+            section = "NOTHING"
         else:
-            block_type = members[0].block_schema.get("block_type", "OTHER")
-            if not block_type:
-                block_type = "OTHER"
-        blocks_by_type[block_type].append(family_name)
+            block_name =  members[0].block_schema.get("name", "NO NAME")
+            ui_manifest = members[0].block_schema.get("ui_manifest", {})
+            section =  ui_manifest.get("section", "OTHER")
+            if not section:
+                section = "OTHER"
+        blocks_by_section[section].append(family_name)
 
     lines = []
 
     # For each block type, create a top-level bullet, then sub-bullets for families
-    for block_type in sorted(blocks_by_type.keys()):
-        type_title = to_title_case(block_type)
-        lines.append(f"* {type_title}")
-        for family_name in sorted(blocks_by_type[block_type]):
+    for block_section in BLOCK_SECTIONS:
+        section_title = block_section['title']
+        section_id = block_section['id']
+        
+        lines.append(f"* {section_title}")
+        for family_name in sorted(blocks_by_section[section_id], key=lambda x: block_families[x][0].block_schema.get("ui_manifest", {}).get("blockPriority", 99)):
             # Suppose you had a function slugify_block_name:
             slug = slugify_block_name(family_name)
             # Link to foo.md (or bar.md, etc.)
