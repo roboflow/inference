@@ -55,6 +55,12 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-toolbox",
+                "blockPriority": 2,
+                "opencv": True,
+            },
         }
     )
     type: Literal["roboflow_core/perspective_correction@v1", "PerspectiveCorrection"]

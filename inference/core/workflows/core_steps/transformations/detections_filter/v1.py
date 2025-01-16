@@ -66,6 +66,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": SHORT_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "flow_control",
+                "icon": "far fa-filter",
+                "blockPriority": 1,
+            },
         }
     )
     type: Literal["roboflow_core/detections_filter@v1", "DetectionsFilter"]

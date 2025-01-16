@@ -132,6 +132,11 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["gaze", "face"],
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-eyes",
+                "blockPriority": 13.5,
+            },
         },
         protected_namespaces=(),
     )

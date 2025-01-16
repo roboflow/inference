@@ -63,6 +63,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "data_storage",
+                "icon": "fal fa-upload",
+                "blockPriority": 0,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/roboflow_dataset_upload@v2"]

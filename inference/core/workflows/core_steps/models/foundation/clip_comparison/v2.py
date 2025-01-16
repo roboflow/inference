@@ -64,6 +64,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fak fa-message-image",
+                "blockPriority": 10,
+                "inference": True,
+            },
         }
     )
     type: Literal["roboflow_core/clip_comparison@v2"]

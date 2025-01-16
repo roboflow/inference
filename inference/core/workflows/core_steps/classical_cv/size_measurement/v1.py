@@ -68,6 +68,7 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
             "ui_manifest": {
                 "section": "classical_cv",
                 "icon": "far fa-ruler",
+                "blockPriority": 10,
                 "opencv": True,
             },
         }
