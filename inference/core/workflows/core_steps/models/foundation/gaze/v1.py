@@ -83,7 +83,7 @@ def convert_gaze_detections_to_sv_detections_and_angles(
                             "x": l["x"],
                             "y": l["y"],
                             "confidence": face["confidence"],
-                            "class_name": str(i),
+                            "class": str(i),
                             "class_id": i,
                         }
                         for i, l in enumerate(face["landmarks"])
