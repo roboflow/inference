@@ -35,8 +35,8 @@ OUTPUT_DETECTIONS_KEY: str = "corrected_coordinates"
 OUTPUT_IMAGE_KEY: str = "warped_image"
 TYPE: str = "PerspectiveCorrection"
 SHORT_DESCRIPTION = (
-    "Correct coordinates of detections from plane defined by given polygon "
-    "to straight rectangular plane of given width and height"
+    "Adjust detection coordinates from a polygon-defined plane "
+    "to a straight rectangular plane with specified width and height."
 )
 LONG_DESCRIPTION = """
 The `PerspectiveCorrectionBlock` is a transformer block designed to correct
@@ -55,6 +55,12 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-toolbox",
+                "blockPriority": 2,
+                "opencv": True,
+            },
         }
     )
     type: Literal["roboflow_core/perspective_correction@v1", "PerspectiveCorrection"]

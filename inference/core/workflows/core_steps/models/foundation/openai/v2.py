@@ -22,6 +22,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
+    SECRET_KIND,
     STRING_KIND,
     ImageInputField,
     Selector,
@@ -86,13 +87,19 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "OpenAI",
             "version": "v2",
-            "short_description": "Run OpenAI's GPT-4 with Vision",
+            "short_description": "Run OpenAI's GPT-4 with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM", "VLM", "ChatGPT", "GPT", "OpenAI"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 5,
+                "popular": True,
+            },
         },
         protected_namespaces=(),
     )
@@ -147,7 +154,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[Selector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
         description="Your OpenAI API key",
         examples=["xxx-xxx", "$inputs.openai_api_key"],
         private=True,
@@ -218,7 +225,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class OpenAIBlockV2(WorkflowBlock):

@@ -166,3 +166,197 @@ def test_filtering_workflow_by_top_prediction_with_no_detections(
 
     assert len(all_detections) == 0, "Expected 0 total predictions"
     assert len(top_detections) == 0, "Expected top prediction to be an empty array"
+
+
+SORT_DETECTIONS_WORKFLOW_LAST = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "model_id"},
+        {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.3},
+        {"type": "WorkflowParameter", "name": "classes"},
+    ],
+    "steps": [
+        {
+            "type": "ObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "$inputs.model_id",
+            "confidence": "$inputs.confidence",
+        },
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "property_definition",
+            "data": "$steps.model.predictions",
+            "operations": [
+                {"type": "SortDetections", "mode": "confidence", "ascending": True},
+                {"type": "DetectionsSelection", "mode": "last"},
+            ],
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "all_predictions",
+            "selector": "$steps.model.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "selected_box",
+            "selector": "$steps.property_definition.output",
+        },
+    ],
+}
+
+
+def test_extracting_largest_bbox_from_detections(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=SORT_DETECTIONS_WORKFLOW_LAST,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": crowd_image,
+            "model_id": "yolov8n-640",
+            "classes": {"person"},
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    all_detections: sv.Detections = result[0]["all_predictions"]
+    selected_box: sv.Detections = result[0]["selected_box"]
+
+    assert len(all_detections) == 12, "Expected 12 total predictions"
+    assert np.allclose(
+        all_detections.xyxy,
+        EXPECTED_OBJECT_DETECTION_BBOXES,
+        atol=1,
+    ), "Expected bboxes to match what was validated manually as workflow outcome"
+    assert np.allclose(
+        all_detections.confidence,
+        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
+        atol=0.01,
+    ), "Expected confidences to match what was validated manually as workflow outcome"
+
+    assert len(selected_box) == 1, "Expected only one top prediction"
+    assert np.allclose(
+        selected_box.xyxy,
+        [EXPECTED_OBJECT_DETECTION_BBOXES[0]],
+        atol=1,
+    ), "Expected top bbox to match what was validated manually as workflow outcome"
+    assert np.allclose(
+        selected_box.confidence,
+        [EXPECTED_OBJECT_DETECTION_CONFIDENCES[0]],
+        atol=0.01,
+    ), "Expected top confidence to match what was validated manually as workflow outcome"
+
+
+SORT_DETECTIONS_WORKFLOW_FIRST = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "model_id"},
+        {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.3},
+        {"type": "WorkflowParameter", "name": "classes"},
+    ],
+    "steps": [
+        {
+            "type": "ObjectDetectionModel",
+            "name": "model",
+            "image": "$inputs.image",
+            "model_id": "$inputs.model_id",
+            "confidence": "$inputs.confidence",
+        },
+        {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "property_definition",
+            "data": "$steps.model.predictions",
+            "operations": [
+                {"type": "SortDetections", "mode": "confidence", "ascending": True},
+                {"type": "DetectionsSelection", "mode": "first"},
+            ],
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "all_predictions",
+            "selector": "$steps.model.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "first_box",
+            "selector": "$steps.property_definition.output",
+        },
+    ],
+}
+
+
+def test_extracting_smallest_bbox_from_detections(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=SORT_DETECTIONS_WORKFLOW_FIRST,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": crowd_image,
+            "model_id": "yolov8n-640",
+            "classes": {"person"},
+        }
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 1, "Single image provided - single output expected"
+    all_detections: sv.Detections = result[0]["all_predictions"]
+    first_box: sv.Detections = result[0]["first_box"]
+
+    assert len(all_detections) == 12, "Expected 12 total predictions"
+    assert np.allclose(
+        all_detections.xyxy,
+        EXPECTED_OBJECT_DETECTION_BBOXES,
+        atol=1,
+    ), "Expected bboxes to match what was validated manually as workflow outcome"
+    assert np.allclose(
+        all_detections.confidence,
+        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
+        atol=0.01,
+    ), "Expected confidences to match what was validated manually as workflow outcome"
+
+    assert len(first_box) == 1, "Expected only one prediction"
+    assert np.allclose(
+        first_box.xyxy,
+        [EXPECTED_OBJECT_DETECTION_BBOXES[-1]],
+        atol=1,
+    ), "Expected top bbox to match what was validated manually as workflow outcome"
+    assert np.allclose(
+        first_box.confidence,
+        [EXPECTED_OBJECT_DETECTION_CONFIDENCES[-1]],
+        atol=0.01,
+    ), "Expected top confidence to match what was validated manually as workflow outcome"

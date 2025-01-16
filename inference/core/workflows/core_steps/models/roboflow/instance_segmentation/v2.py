@@ -70,6 +70,13 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-chart-network",
+                "blockPriority": 1,
+                "inference": True,
+                "popular": True,
+            },
         },
         protected_namespaces=(),
     )
@@ -156,6 +163,7 @@ class BlockManifest(WorkflowBlockManifest):
                 name="predictions",
                 kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
             ),
+            OutputDefinition(name="model_id", kind=[ROBOFLOW_MODEL_ID_KIND]),
         ]
 
     @classmethod
@@ -281,6 +289,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             images=images,
             predictions=predictions,
             class_filter=class_filter,
+            model_id=model_id,
         )
 
     def run_remotely(
@@ -325,7 +334,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        inference_images = [i.numpy_image for i in images]
+        inference_images = [i.base64_image for i in images]
         predictions = client.infer(
             inference_input=inference_images,
             model_id=model_id,
@@ -336,6 +345,7 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             images=images,
             predictions=predictions,
             class_filter=class_filter,
+            model_id=model_id,
         )
 
     def _post_process_result(
@@ -343,8 +353,9 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
         images: Batch[WorkflowImageData],
         predictions: List[dict],
         class_filter: Optional[List[str]],
+        model_id: str,
     ) -> BlockResult:
-        inference_id = predictions[0].get(INFERENCE_ID_KEY, None)
+        inference_ids = [p.get(INFERENCE_ID_KEY, None) for p in predictions]
         predictions = convert_inference_detections_batch_to_sv_detections(predictions)
         predictions = attach_prediction_type_info_to_sv_detections_batch(
             predictions=predictions,
@@ -359,6 +370,10 @@ class RoboflowInstanceSegmentationModelBlockV2(WorkflowBlock):
             predictions=predictions,
         )
         return [
-            {"inference_id": inference_id, "predictions": prediction}
-            for prediction in predictions
+            {
+                "inference_id": inference_id,
+                "predictions": prediction,
+                "model_id": model_id,
+            }
+            for inference_id, prediction in zip(inference_ids, predictions)
         ]

@@ -49,10 +49,16 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Image Slicer",
             "version": "v1",
-            "short_description": "Splits input image into series of smaller images to perform accurate prediction.",
+            "short_description": "Tile the input image into a list of smaller images to perform small object detection.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-scissors",
+                "blockPriority": 9,
+                "opencv": True,
+            },
         }
     )
     type: Literal["roboflow_core/image_slicer@v1"]

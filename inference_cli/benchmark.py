@@ -136,6 +136,14 @@ def api_speed(
             help="Boolean flag to decide on auto `yes` answer given on user input required.",
         ),
     ] = False,
+    max_error_rate: Annotated[
+        Optional[float],
+        typer.Option(
+            "--max_error_rate",
+            help="Max error rate for API speed benchmark - if given and the error rate is higher - command will "
+            "return non-success error code. Expected percentage values in range 0.0-100.0",
+        ),
+    ] = None,
 ):
     if "roboflow.com" in host and not proceed_automatically:
         proceed = input(
@@ -158,6 +166,7 @@ def api_speed(
                 model_configuration=model_configuration,
                 output_location=output_location,
                 enforce_legacy_endpoints=enforce_legacy_endpoints,
+                max_error_rate=max_error_rate,
             )
         else:
             if workflow_specification:
@@ -179,6 +188,7 @@ def api_speed(
                 api_key=api_key,
                 model_configuration=model_configuration,
                 output_location=output_location,
+                max_error_rate=max_error_rate,
             )
     except Exception as error:
         typer.echo(f"Command failed. Cause: {error}")

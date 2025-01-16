@@ -54,11 +54,18 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "CogVLM",
             "version": "v1",
-            "short_description": "Run a self-hosted vision language model",
+            "short_description": "Run a self-hosted vision language model.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM"],
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 9,
+                "needsGPU": True,
+                "inference": True,
+            },
         }
     )
     type: Literal["roboflow_core/cog_vlm@v1", "CogVLM"]

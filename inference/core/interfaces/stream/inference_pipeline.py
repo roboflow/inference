@@ -172,10 +172,10 @@ class InferencePipeline:
                 without re-raising. Default: None.
             source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
                 video stream decoding behaviour. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             class_agnostic_nms (Optional[bool]): Parameter of model post-processing. If not given - value checked in
                 env variable "CLASS_AGNOSTIC_NMS" with default "False"
             confidence (Optional[float]): Parameter of model post-processing. If not given - value checked in
@@ -353,10 +353,10 @@ class InferencePipeline:
                 without re-raising. Default: None.
             source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
                 video stream decoding behaviour. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             class_agnostic_nms (Optional[bool]): Parameter of model post-processing. If not given - value checked in
                 env variable "CLASS_AGNOSTIC_NMS" with default "False"
             confidence (Optional[float]): Parameter of model post-processing. If not given - value checked in
@@ -466,6 +466,7 @@ class InferencePipeline:
         batch_collection_timeout: Optional[float] = None,
         profiling_directory: str = "./inference_profiling",
         use_workflow_definition_cache: bool = True,
+        serialize_results: bool = False,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -510,10 +511,10 @@ class InferencePipeline:
                 without re-raising. Default: None.
             source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
                 video stream decoding behaviour. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             video_source_properties (Optional[dict[str, float]]): Optional source properties to set up the video source,
                 corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
                 will be used.
@@ -540,6 +541,8 @@ class InferencePipeline:
             use_workflow_definition_cache (bool): Controls usage of cache for workflow definitions. Set this to False
                 when you frequently modify definition saved in Roboflow app and want to fetch the
                 newest version for the request. Only applies for Workflows definitions saved on Roboflow platform.
+            serialize_results (bool): Boolean flag to decide if ExecutionEngine run should serialize workflow
+                results for each frame. If that is set true, sinks will receive serialized workflow responses.
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -604,8 +607,6 @@ class InferencePipeline:
                 model_manager,
                 max_size=MAX_ACTIVE_MODELS,
             )
-            if api_key is None:
-                api_key = API_KEY
             if workflow_init_parameters is None:
                 workflow_init_parameters = {}
             thread_pool_executor = ThreadPoolExecutor(
@@ -629,6 +630,7 @@ class InferencePipeline:
                 execution_engine=execution_engine,
                 image_input_name=image_input_name,
                 video_metadata_input_name=video_metadata_input_name,
+                serialize_results=serialize_results,
             )
         except ImportError as error:
             raise CannotInitialiseModelError(
@@ -713,10 +715,10 @@ class InferencePipeline:
                 without re-raising. Default: None.
             source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
                 video stream decoding behaviour. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             video_source_properties (Optional[Union[Dict[str, float], List[Optional[Dict[str, float]]]]]):
                 Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties
                 cv2.CAP_PROP_*. If not given, defaults for the video source will be used.

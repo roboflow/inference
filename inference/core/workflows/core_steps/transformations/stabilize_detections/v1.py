@@ -38,10 +38,15 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Detections Stabilizer",
             "version": "v1",
-            "short_description": "Apply smoothing algorithm to reduce noise and flickering across video frames",
+            "short_description": "Apply a smoothing algorithm to reduce noise and flickering across video frames.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "fas fa-waveform-lines",
+                "blockPriority": 4,
+            },
         }
     )
     type: Literal["roboflow_core/stabilize_detections@v1"]

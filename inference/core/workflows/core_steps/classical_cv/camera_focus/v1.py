@@ -22,7 +22,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION: str = "Helps focus a camera by providing a focus measure."
+SHORT_DESCRIPTION: str = "Calculate a score to indicate how well-focused a camera is."
 LONG_DESCRIPTION: str = """
 This block calculate the Brenner function score which is a measure of the texture in the image. 
 An in-focus image has a high Brenner function score, and contains texture at a smaller scale than
@@ -41,6 +41,12 @@ class CameraFocusManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
+            "ui_manifest": {
+                "section": "classical_cv",
+                "icon": "far fa-aperture",
+                "blockPriority": 8,
+                "opencv": True,
+            },
         }
     )
 

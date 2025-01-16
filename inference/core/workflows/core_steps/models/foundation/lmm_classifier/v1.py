@@ -28,6 +28,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
+    SECRET_KIND,
     STRING_KIND,
     TOP_CLASS_KIND,
     ImageInputField,
@@ -64,6 +65,10 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "deprecated": True,
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-chart-network",
+            },
         }
     )
     type: Literal["roboflow_core/lmm_for_classification@v1", "LMMForClassification"]
@@ -86,11 +91,13 @@ class BlockManifest(WorkflowBlockManifest):
             }
         ],
     )
-    remote_api_key: Union[Selector(kind=[STRING_KIND]), Optional[str]] = Field(
-        default=None,
-        description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
-        examples=["xxx-xxx", "$inputs.api_key"],
-        private=True,
+    remote_api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), Optional[str]] = (
+        Field(
+            default=None,
+            description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
+            examples=["xxx-xxx", "$inputs.api_key"],
+            private=True,
+        )
     )
 
     @classmethod
@@ -110,7 +117,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class LMMForClassificationBlockV1(WorkflowBlock):

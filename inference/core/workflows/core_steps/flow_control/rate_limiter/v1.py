@@ -3,10 +3,15 @@ from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.base import (
+    OutputDefinition,
+    WorkflowImageData,
+)
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     Selector,
     StepSelector,
+    WorkflowImageSelector,
 )
 from inference.core.workflows.execution_engine.v1.entities import FlowControl
 from inference.core.workflows.prototypes.block import (
@@ -38,6 +43,14 @@ If you want to throttle the *Step 2* execution rate - you should apply rate limi
 
 * adjust `cooldown_seconds` to specify what is the number of seconds that must be awaited before next time
 when `step_2` is fired 
+
+
+!!! warning "Cooldown limitations"
+
+    Current implementation of cooldown is limited to video processing - using this block in context of a 
+    Workflow that is run behind HTTP service (Roboflow Hosted API, Dedicated Deployment or self-hosted 
+    `inference` server) will have no effect for processing HTTP requests.  
+    
 """
 
 
@@ -51,6 +64,12 @@ class RateLimiterManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "flow_control",
+            "ui_manifest": {
+                "section": "flow_control",
+                "icon": "far fa-clock",
+                "blockPriority": 2,
+                "popular": True,
+            },
         }
     )
     cooldown_seconds: float = Field(
@@ -66,6 +85,11 @@ class RateLimiterManifest(WorkflowBlockManifest):
     next_steps: List[StepSelector] = Field(
         description="Reference to steps which shall be executed if rate limit allows.",
         examples=[["$steps.upload"]],
+    )
+    video_reference_image: Optional[WorkflowImageSelector] = Field(
+        description="Reference to a video frame to use for timestamp generation (if running faster than realtime on recorded video).",
+        examples=["$inputs.image"],
+        default=None,
     )
 
     @classmethod
@@ -91,8 +115,18 @@ class RateLimiterBlockV1(WorkflowBlock):
         cooldown_seconds: float,
         depends_on: any,
         next_steps: List[StepSelector],
+        video_reference_image: Optional[WorkflowImageData] = None,
     ) -> BlockResult:
         current_time = datetime.now()
+        try:
+            metadata = video_reference_image.video_metadata
+            current_time = datetime.fromtimestamp(
+                1 / metadata.fps * metadata.frame_number
+            )
+        except Exception:
+            # reference not passed, metadata not set, or not a video frame
+            pass
+
         should_throttle = False
         if self._last_executed_at is not None:
             should_throttle = (

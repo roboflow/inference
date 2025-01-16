@@ -22,7 +22,7 @@ class GazeDetectionInferenceRequest(BaseRequest):
 
     gaze_version_id: Optional[str] = Field(
         default=GAZE_VERSION_ID,
-        examples=["l2cs"],
+        examples=["L2CS"],
         description="The version ID of Gaze to be used for this request. Must be one of l2cs.",
     )
 

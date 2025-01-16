@@ -4,7 +4,7 @@ There are few ways on how to run Workflow, including:
 
 - Request to HTTP API (Roboflow Hosted API or self-hosted `inference` server) running Workflows Execution Engine
 
-- Video processing using [InferencePipeline](/using_inference/inference_pipeline/)
+- Video processing using [InferencePipeline](/using_inference/inference_pipeline.md)
 
 - `inference` Python package, where you can use Workflows Execution Engine directly in your Python app
 
@@ -163,12 +163,12 @@ The above examples present how to run Workflow created and saved in Roboflow APP
 create and run workflow that is created from scratch and may not contain API-KEY gated blocks (for instance 
 your own blocks). Then you should use the 
 [following endpoint](https://detect.roboflow.com/docs#/default/infer_from_workflow_workflows_run_post) or
-[Inference SDK](/inference_helpers/inference_sdk/#inference-workflows) as showcased in docs.
+[Inference SDK](/inference_helpers/inference_sdk.md#inference-workflows) as showcased in docs.
 
 
 ## Video processing using `InferencePipeline`
 
-For use cases involving video files or streams, we recommend using [InferencePipeline](/using_inference/inference_pipeline/), which can run 
+For use cases involving video files or streams, we recommend using [InferencePipeline](/using_inference/inference_pipeline.md), which can run 
 Workflows on each video frame.
 
 This option is ideal for clients who:
@@ -215,11 +215,47 @@ Explore the example below to see how to combine `InferencePipeline` with Workflo
     for workflow run. `image` parameter must be single batch oriented input of your workflow
 
     - additional (non-batch oriented) inputs for your workflow can be passed as parameter to `init_with_workflow(...)` 
-    method see [docs](/docs/reference/inference/core/interfaces/stream/inference_pipeline/#inference.core.interfaces.stream.inference_pipeline.InferencePipeline.init_with_workflow)
+    method see [docs](/reference/inference/core/interfaces/stream/inference_pipeline.md#inference.core.interfaces.stream.inference_pipeline.InferencePipeline.init_with_workflow)
 
     !!! note
         
         Make sure you have `inference` or `inference-gpu` package installed in your Python environment
+
+## Batch processing using `inference-cli`
+
+[`inference-cli`](/inference_helpers/inference_cli.md) is command-line wrapper library around `inference`. You can use it
+to process your data using Workflows without writing a single line of code. You simply point the data to be processed,
+select your Workflow and specify where results should be saved. Thanks to `inference-cli` you can process:
+
+* individual images
+
+* directories of images
+
+* video files
+
+!!! example "Processing directory of images"
+
+    You can start the processing using the following command:
+
+    ```bash
+    inference workflows process-images-directory \
+        -i {your_input_directory} \
+        -o {your_output_directory} \[workflows.py](..%2F..%2Finference_cli%2Fworkflows.py)
+        --workspace_name {your-roboflow-workspace-url} \
+        --workflow_id {your-workflow-id} \
+        --api-key {your_roboflow_api_key}
+    ```
+
+    As a result, in the directory specified in `-o` option you should be able to find:
+
+    * sub-directories named after files in your original directory with `results.json` file that contain Worklfow 
+    results and optionally additional `*.jpg` files with images created during Workflow execution
+
+    * `aggregated_results.csv` file that contain concatenated results of Workflow execution for all input image file
+
+    !!! note
+        
+        Make sure you have `inference` or `inference-cli` package installed in your Python environment
 
 
 ## Workflows in Python package

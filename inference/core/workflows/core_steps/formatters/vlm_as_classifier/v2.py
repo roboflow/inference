@@ -49,7 +49,7 @@ Example:
 - in case of multiple markdown blocks with raw JSON content - only first will be parsed
 """
 
-SHORT_DESCRIPTION = "Parses raw string into classification prediction."
+SHORT_DESCRIPTION = "Parse a raw string into a classification prediction."
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -61,6 +61,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "formatter",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-tags",
+                "blockPriority": 5,
+            },
         }
     )
     type: Literal["roboflow_core/vlm_as_classifier@v2"]

@@ -15,7 +15,14 @@ from uuid import uuid4
 
 from typing_extensions import ParamSpec
 
-from inference.core.env import API_KEY, DEDICATED_DEPLOYMENT_ID, LAMBDA, REDIS_HOST
+from inference.core.env import (
+    API_KEY,
+    DEDICATED_DEPLOYMENT_ID,
+    LAMBDA,
+    REDIS_HOST,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+)
 from inference.core.logger import logger
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
@@ -130,28 +137,32 @@ class UsageCollector:
 
     @staticmethod
     def empty_usage_dict(exec_session_id: str) -> APIKeyUsage:
+        usage_dict = {
+            "timestamp_start": None,
+            "timestamp_stop": None,
+            "exec_session_id": exec_session_id,
+            "hostname": "",
+            "ip_address_hash": "",
+            "processed_frames": 0,
+            "fps": 0,
+            "source_duration": 0,
+            "category": "",
+            "resource_id": "",
+            "resource_details": "{}",
+            "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID),
+            "api_key_hash": "",
+            "is_gpu_available": False,
+            "python_version": sys.version.split()[0],
+            "inference_version": inference_version,
+            "enterprise": False,
+        }
+        if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+            usage_dict["roboflow_internal_secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
+        if ROBOFLOW_INTERNAL_SERVICE_NAME:
+            usage_dict["roboflow_service_name"] = ROBOFLOW_INTERNAL_SERVICE_NAME
+
         return defaultdict(  # api_key_hash
-            lambda: defaultdict(  # category:resource_id
-                lambda: {
-                    "timestamp_start": None,
-                    "timestamp_stop": None,
-                    "exec_session_id": exec_session_id,
-                    "hostname": "",
-                    "ip_address_hash": "",
-                    "processed_frames": 0,
-                    "fps": 0,
-                    "source_duration": 0,
-                    "category": "",
-                    "resource_id": "",
-                    "resource_details": "{}",
-                    "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID),
-                    "api_key_hash": "",
-                    "is_gpu_available": False,
-                    "python_version": sys.version.split()[0],
-                    "inference_version": inference_version,
-                    "enterprise": False,
-                }
-            )
+            lambda: defaultdict(lambda: {**usage_dict})  # category:resource_id
         )
 
     def _dump_usage_queue_no_lock(self) -> List[APIKeyUsage]:
@@ -334,12 +345,10 @@ class UsageCollector:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
             source_usage["processed_frames"] += frames if not inference_test_run else 0
-            source_usage["fps"] = (
-                round(fps, 2) if isinstance(fps, numbers.Number) else 0
-            )
             source_usage["source_duration"] += (
                 frames / fps if fps and not inference_test_run else 0
             )
+            source_usage["fps"] = fps if isinstance(fps, numbers.Number) else 0
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
             source_usage["resource_details"] = json.dumps(resource_details)
@@ -565,7 +574,9 @@ class UsageCollector:
         elif "self" in func_kwargs:
             _self = func_kwargs["self"]
             if hasattr(_self, "dataset_id") and hasattr(_self, "version_id"):
-                model_id = f"{_self.dataset_id}/{_self.version_id}"
+                model_id = str(_self.dataset_id)
+                if _self.version_id:
+                    model_id += f"/{_self.version_id}"
                 category = "model"
                 resource_id = model_id
             elif isinstance(kwargs, dict) and "model_id" in kwargs:
@@ -636,6 +647,7 @@ class UsageCollector:
             usage_billable: bool = True,
             **kwargs: P.kwargs,
         ) -> T:
+            res = func(*args, **kwargs)
             self.record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
@@ -649,7 +661,7 @@ class UsageCollector:
                     kwargs=kwargs,
                 )
             )
-            return func(*args, **kwargs)
+            return res
 
         @wraps(func)
         async def async_wrapper(
@@ -662,6 +674,7 @@ class UsageCollector:
             usage_billable: bool = True,
             **kwargs: P.kwargs,
         ) -> T:
+            res = await func(*args, **kwargs)
             await self.async_record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
@@ -675,7 +688,7 @@ class UsageCollector:
                     kwargs=kwargs,
                 )
             )
-            return await func(*args, **kwargs)
+            return res
 
         if asyncio.iscoroutinefunction(func):
             return async_wrapper

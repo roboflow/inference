@@ -18,7 +18,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/ellipse_visualization@v1"
-SHORT_DESCRIPTION = "Draws ellipses that highlight detected objects in an image."
+SHORT_DESCRIPTION = "Draw ellipses that highlight detected objects in an image."
 LONG_DESCRIPTION = """
 The `EllipseVisualization` block draws ellipses that highlight detected
 objects in an image using Supervision's `sv.EllipseAnnotator`.
@@ -35,6 +35,19 @@ class EllipseManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "fad fa-dot-circle",
+                "blockPriority": 10,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 

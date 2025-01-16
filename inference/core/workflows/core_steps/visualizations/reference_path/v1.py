@@ -22,7 +22,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Draws a reference path in the image"
+SHORT_DESCRIPTION = "Draw a reference path in the image."
 LONG_DESCRIPTION = """
 The **Reference Path Visualization** block draws reference path in the image.
 To be used in combination with **Path deviation** block - to display the reference
@@ -40,6 +40,19 @@ class ReferencePathVisualizationManifest(VisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "fas fa-road",
+                "blockPriority": 18,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
     reference_path: Union[

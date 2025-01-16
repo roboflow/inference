@@ -19,7 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-SHORT_DESCRIPTION = "Draws traces based on detections tracking results."
+SHORT_DESCRIPTION = "Draw traces based on detections tracking results."
 LONG_DESCRIPTION = """
 The `TraceVisualization` block draws tracker results on an image using Supervision's `sv.TraceAnnotator`.
 """
@@ -35,6 +35,19 @@ class TraceManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-scribble",
+                "blockPriority": 17,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 

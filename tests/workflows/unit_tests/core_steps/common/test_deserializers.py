@@ -192,21 +192,21 @@ def test_deserialize_detections_kind_when_serialized_non_empty_keypoints_detecti
                 "keypoints": [
                     {
                         "class_id": 1,
-                        "class_name": "nose",
+                        "class": "nose",
                         "confidence": 0.1,
                         "x": 11.0,
                         "y": 11.0,
                     },
                     {
                         "class_id": 2,
-                        "class_name": "ear",
+                        "class": "ear",
                         "confidence": 0.2,
                         "x": 12.0,
                         "y": 13.0,
                     },
                     {
                         "class_id": 3,
-                        "class_name": "eye",
+                        "class": "eye",
                         "confidence": 0.3,
                         "x": 14.0,
                         "y": 15.0,

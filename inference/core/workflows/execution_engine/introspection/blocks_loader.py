@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
+from inference.core.env import LOAD_ENTERPRISE_BLOCKS
 from inference.core.workflows.core_steps.loader import (
     KINDS_DESERIALIZERS,
     KINDS_SERIALIZERS,
@@ -41,6 +42,9 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
     BLOCK_SOURCE,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.enterprise.workflows.enterprise_blocks.loader import (
+    load_enterprise_blocks,
+)
 
 WORKFLOWS_PLUGINS_ENV = "WORKFLOWS_PLUGINS"
 WORKFLOWS_CORE_PLUGIN_NAME = "workflows_core"
@@ -150,6 +154,8 @@ def load_workflow_blocks(
 @lru_cache()
 def load_core_workflow_blocks() -> List[BlockSpecification]:
     core_blocks = load_blocks()
+    if LOAD_ENTERPRISE_BLOCKS:
+        core_blocks.extend(load_enterprise_blocks())
     already_spotted_blocks = set()
     result = []
     for block in core_blocks:

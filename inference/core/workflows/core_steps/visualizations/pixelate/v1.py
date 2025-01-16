@@ -16,7 +16,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/pixelate_visualization@v1"
-SHORT_DESCRIPTION = "Pixelates detected objects in an image."
+SHORT_DESCRIPTION = "Pixelate detected objects in an image."
 LONG_DESCRIPTION = """
 The `PixelateVisualization` block pixelates detected
 objects in an image using Supervision's `sv.PixelateAnnotator`.
@@ -33,6 +33,19 @@ class PixelateManifest(PredictionsVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "fad fa-grid",
+                "blockPriority": 13,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 

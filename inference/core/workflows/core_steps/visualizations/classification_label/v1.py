@@ -23,7 +23,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
-SHORT_DESCRIPTION = "Visualizes both single-label and multi-label classification predictions with customizable display options."
+SHORT_DESCRIPTION = "Visualize both single-label and multi-label classification predictions with customizable display options."
 
 LONG_DESCRIPTION = """
 Visualizes classification predictions with customizable labels and positioning options. 
@@ -89,6 +89,19 @@ class ClassificationLabelManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-tags",
+                "blockPriority": 2.5,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 

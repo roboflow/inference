@@ -28,7 +28,7 @@ OUTPUT_KEY_COUNT_OUT: str = "count_out"
 IN: str = "in"
 OUT: str = "out"
 DETECTIONS_IN_OUT_PARAM: str = "in_out"
-SHORT_DESCRIPTION = "Count detections passing line"
+SHORT_DESCRIPTION = "Count detections passing a line."
 LONG_DESCRIPTION = """
 The `LineCounter` is an analytics block designed to count objects passing the line.
 The block requires detections to be tracked (i.e. each object must have unique tracker_id assigned,
@@ -45,6 +45,11 @@ class LineCounterManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "analytics",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "far fa-arrow-down-up-across-line",
+                "blockPriority": 2,
+            },
         }
     )
     type: Literal["roboflow_core/line_counter@v1"]

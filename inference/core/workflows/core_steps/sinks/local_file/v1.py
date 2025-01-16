@@ -69,10 +69,16 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Local File Sink",
             "version": "v1",
-            "short_description": "Saves data into local file",
+            "short_description": "Save data to a local file.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-file",
+                "blockPriority": 3,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/local_file_sink@v1"]

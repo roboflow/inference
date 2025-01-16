@@ -112,6 +112,13 @@ notifications. Please adjust it according to your needs, setting `0` indicate no
 During cooldown period, consecutive runs of the step will cause `throttling_status` output to be set `True`
 and no notification will be sent.
 
+!!! warning "Cooldown limitations"
+
+    Current implementation of cooldown is limited to video processing - using this block in context of a 
+    Workflow that is run behind HTTP service (Roboflow Hosted API, Dedicated Deployment or self-hosted 
+    `inference` server) will have no effect for processing HTTP requests.  
+    
+
 ### Async execution
 
 Configure the `fire_and_forget` property. Set it to True if you want the request to be sent in the background, 
@@ -156,10 +163,16 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Webhook Sink",
             "version": "v1",
-            "short_description": "Sends the request to remote API with results of Workflow results",
+            "short_description": "Send a request to a remote API with Workflow results.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "data_storage",
+                "icon": "fal fa-webhook",
+                "blockPriority": 1,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/webhook_sink@v1"]

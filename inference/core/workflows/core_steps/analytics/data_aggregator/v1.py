@@ -183,10 +183,16 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Data Aggregator",
             "version": "v1",
-            "short_description": "Aggregates workflow data to produce time-based statistics",
+            "short_description": "Aggregate workflow data to produce time-based statistics.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "analytics",
+            "ui_manifest": {
+                "section": "data_storage",
+                "icon": "fal fa-database",
+                "blockPriority": 4,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/data_aggregator@v1"]

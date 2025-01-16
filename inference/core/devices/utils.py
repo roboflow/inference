@@ -19,20 +19,21 @@ def is_running_in_docker():
 def get_gpu_id():
     """Fetches the GPU ID if a GPU is present.
 
-    Tries to import and use the `GPUtil` module to retrieve the GPU information.
+    Tries to import and use the `pynvml` (delivered by nvidia-ml-py) module to retrieve the GPU information.
 
     Returns:
         Optional[int]: GPU ID if available, None otherwise.
     """
     try:
-        import GPUtil
+        from pynvml import nvmlDeviceGetCount, nvmlInit
 
-        GPUs = GPUtil.getGPUs()
-        if GPUs:
-            return GPUs[0].id
+        nvmlInit()
+        gpus_count = nvmlDeviceGetCount()
+        if gpus_count:
+            return 0
     except ImportError:
         return None
-    except Exception as e:
+    except Exception:
         return None
 
 

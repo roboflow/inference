@@ -23,7 +23,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/polygon_zone_visualization@v1"
-SHORT_DESCRIPTION = "Paints a mask over polygon zone in an image."
+SHORT_DESCRIPTION = "Apply a mask over a polygon zone in an image."
 LONG_DESCRIPTION = """
 The `PolygonZoneVisualization` block draws polygon zone
 in an image with a specified color and opacity.
@@ -42,6 +42,19 @@ class PolygonZoneVisualizationManifest(VisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-hexagon",
+                "blockPriority": 15,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
     zone: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore

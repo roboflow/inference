@@ -9,7 +9,7 @@ on:
 
 jobs:
   call_is_mergeable:
-    uses: ./.github/workflows/is_mergeable.yml
+    uses: ./.github/workflows/check_if_branch_is_mergeable.yml
     secrets: inherit
   build-dev-test:
     needs: call_is_mergeable
@@ -24,8 +24,6 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: 📦 Cache Python packages
         uses: actions/cache@v3
         with:

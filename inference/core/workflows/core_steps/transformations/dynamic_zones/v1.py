@@ -25,7 +25,7 @@ OUTPUT_KEY: str = "zones"
 TYPE: str = "roboflow_core/dynamic_zone@v1"
 SHORT_DESCRIPTION = (
     "Simplify polygons so they are geometrically convex "
-    "and simplify them to contain only requested amount of vertices"
+    "and contain only the requested amount of vertices."
 )
 LONG_DESCRIPTION = """
 The `DynamicZoneBlock` is a transformer block designed to simplify polygon
@@ -45,6 +45,12 @@ class DynamicZonesManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-square-dashed",
+                "blockPriority": 3,
+                "opencv": True,
+            },
         }
     )
     type: Literal[f"{TYPE}", "DynamicZone"]

@@ -64,6 +64,13 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-chart-network",
+                "blockPriority": 2,
+                "inference": True,
+                "popular": True,
+            },
         },
         protected_namespaces=(),
     )
@@ -101,6 +108,7 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(name="predictions", kind=[CLASSIFICATION_PREDICTION_KIND]),
             OutputDefinition(name=INFERENCE_ID_KEY, kind=[INFERENCE_ID_KIND]),
+            OutputDefinition(name="model_id", kind=[ROBOFLOW_MODEL_ID_KIND]),
         ]
 
     @classmethod
@@ -191,6 +199,7 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
         return self._post_process_result(
             predictions=predictions,
             images=images,
+            model_id=model_id,
         )
 
     def run_remotely(
@@ -221,7 +230,7 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        non_empty_inference_images = [i.numpy_image for i in images]
+        non_empty_inference_images = [i.base64_image for i in images]
         predictions = client.infer(
             inference_input=non_empty_inference_images,
             model_id=model_id,
@@ -231,12 +240,14 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
         return self._post_process_result(
             predictions=predictions,
             images=images,
+            model_id=model_id,
         )
 
     def _post_process_result(
         self,
         images: Batch[WorkflowImageData],
         predictions: List[dict],
+        model_id: str,
     ) -> BlockResult:
         predictions = attach_prediction_type_info(
             predictions=predictions,
@@ -251,6 +262,7 @@ class RoboflowClassificationModelBlockV2(WorkflowBlock):
             {
                 "inference_id": prediction.get(INFERENCE_ID_KEY),
                 "predictions": prediction,
+                "model_id": model_id,
             }
             for prediction in predictions
         ]

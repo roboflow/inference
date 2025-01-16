@@ -2,7 +2,7 @@
 
 A natural question you might ask is: *How do I know which blocks to connect to achieve my desired outcome?* 
 This is a crucial question, which is why we've created auto-generated 
-[documentation for all supported Workflow blocks](/workflows/blocks/). In this guide, we’ll show you how to use 
+[documentation for all supported Workflow blocks](/workflows/blocks.md). In this guide, we’ll show you how to use 
 these docs effectively and explain key details that help you understand why certain connections between 
 blocks are possible, while others may not be.
 
@@ -11,7 +11,7 @@ blocks are possible, while others may not be.
     Using the Workflows UI in the Roboflow APP you may find compatible connections between steps found
     automatically without need for your input. This page explains briefly how to deduce if two 
     blocks can be connected, making it possible to connect steps manually if needed. Logically,
-    the page must appear before a link to [blocks gallery](/workflows/blocks/), as it explains 
+    the page must appear before a link to [blocks gallery](/workflows/blocks.md), as it explains 
     how to effectively use these docs. At the same time, it introduces references to concepts 
     further explained in the User and Developer Guide. Please continue reading those sections
     if you find some concepts presented here needing further explanation.
@@ -53,23 +53,23 @@ and this is further explained in the developer guide.
 Each block provides a manifest that lists the fields to be included in the Workflow Definition when creating a step. 
 The Values of these fields in a Workflow Definition may contain:
 
-- References ([selectors](/workflows/definitions/)) to data the block will process, such as step outputs or 
-[batch-oriented workflow inputs](/workflows/workflow_execution)
+- References ([selectors](/workflows/definitions.md)) to data the block will process, such as step outputs or 
+[batch-oriented workflow inputs](/workflows/workflow_execution.md)
 
-- Configuration values: Specific settings for the step or references ([selectors](/workflows/definitions/)) that 
+- Configuration values: Specific settings for the step or references ([selectors](/workflows/definitions.md)) that 
 provide configuration parameters dynamically during execution.
 
 The manifest also includes the block's outputs.
 
-For each step definition field (if it can hold a [selector](/workflows/definitions/)) and step output, 
-the expected [kind](/workflows/kinds) is specified. A [kind](/workflows/kinds) is a high-level definition 
+For each step definition field (if it can hold a [selector](/workflows/definitions.md)) and step output, 
+the expected [kind](/workflows/kinds.md) is specified. A [kind](/workflows/kinds.md) is a high-level definition 
 of the type of data that will be passed during workflow execution. Simply put, it describes the data that 
-will replace the [selector](/workflows/definitions/) during block execution.
+will replace the [selector](/workflows/definitions.md) during block execution.
 
-To ensure steps are correctly connected, the Workflow Compiler checks if the input and output [kinds](/workflows/kinds)
+To ensure steps are correctly connected, the Workflow Compiler checks if the input and output [kinds](/workflows/kinds.md)
 match. If they do, the connection is valid.
 
-Additionally, the [`dimensionality level`](/workflows/workflow_execution#dimensionality-level) of the data is considered when 
+Additionally, the [`dimensionality level`](/workflows/workflow_execution.md#dimensionality-level) of the data is considered when 
 validating connections. This ensures that data from multiple sources is compatible across the entire Workflow, 
 not just between two connected steps. More details on dimensionality levels can be found in the 
-[user guide describing workflow execution](/workflows/workflow_execution).
+[user guide describing workflow execution](/workflows/workflow_execution.md).

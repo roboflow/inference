@@ -1,6 +1,5 @@
 
-document.addEventListener("DOMContentLoaded", function () {
-
+function render() {
     const colorList = [
         "#22c55e",
         "#14b8a6",
@@ -25,7 +24,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }, {});
 
     async function setCard(el, url, name, desc, labels, theme, authors) {
-      console.log(name, desc)
+      // console.log(name, desc)
       let labelHTML = ''
       if (labels) {
         const labelArray = labels.split(',').map((label, index) => {
@@ -75,4 +74,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
       setCard(el, url, name, desc, labels, theme, authors);
     }
-  })
+};
+
+document$.subscribe(render);

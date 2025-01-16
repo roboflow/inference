@@ -23,7 +23,7 @@ from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlock
 
 TYPE: str = "roboflow_core/background_color_visualization@v1"
 SHORT_DESCRIPTION = (
-    "Paints a mask over all areas outside of detected regions in an image."
+    "Apply a mask to cover all areas outside the detected regions in an image."
 )
 LONG_DESCRIPTION = """
 The `BackgroundColorVisualization` block draws all areas
@@ -42,6 +42,19 @@ class BackgroundColorManifest(PredictionsVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-fill-drip",
+                "blockPriority": 3,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 

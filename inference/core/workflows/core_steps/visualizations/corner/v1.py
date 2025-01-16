@@ -18,7 +18,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/corner_visualization@v1"
-SHORT_DESCRIPTION = "Draws the corners of detected objects in an image."
+SHORT_DESCRIPTION = "Draw the corners of detected objects in an image."
 LONG_DESCRIPTION = """
 The `CornerVisualization` block draws the corners of detected
 objects in an image using Supervision's `sv.BoxCornerAnnotator`.
@@ -35,6 +35,19 @@ class CornerManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-expand",
+                "blockPriority": 7,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 

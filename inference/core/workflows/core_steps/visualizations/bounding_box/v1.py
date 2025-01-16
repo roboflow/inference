@@ -20,7 +20,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/bounding_box_visualization@v1"
-SHORT_DESCRIPTION = "Draws a box around detected objects in an image."
+SHORT_DESCRIPTION = "Draw a box around detected objects in an image."
 LONG_DESCRIPTION = """
 The `BoundingBoxVisualization` block draws a box around detected
 objects in an image using Supervision's `sv.RoundBoxAnnotator`.
@@ -37,17 +37,31 @@ class BoundingBoxManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-object-group",
+                "blockPriority": 0,
+                "supervision": True,
+                "popular": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 
     thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Thickness of the bounding box in pixels.",
+        description="Set the thickness of the bounding box edges.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
 
     roundness: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
-        description="Roundness of the corners of the bounding box.",
+        description="Define the roundness of the bounding box corners.",
         default=0.0,
         examples=[0.0, "$inputs.roundness"],
     )

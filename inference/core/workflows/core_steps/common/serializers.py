@@ -40,6 +40,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 
+MIN_SECRET_LENGTH_TO_REVEAL_PREFIX = 8
+
 
 def serialise_sv_detections(detections: sv.Detections) -> dict:
     serialized_detections = []
@@ -180,3 +182,12 @@ def serialize_dict(elements: Dict[str, Any]) -> Dict[str, Any]:
         value = serialize_wildcard_kind(value=value)
         serialized_result[key] = value
     return serialized_result
+
+
+def serialize_secret(secret: str) -> str:
+    if len(secret) < MIN_SECRET_LENGTH_TO_REVEAL_PREFIX:
+        return "*" * MIN_SECRET_LENGTH_TO_REVEAL_PREFIX
+    prefix = secret[:2]
+    infix = "*" * MIN_SECRET_LENGTH_TO_REVEAL_PREFIX
+    suffix = secret[-2:]
+    return f"{prefix}{infix}{suffix}"

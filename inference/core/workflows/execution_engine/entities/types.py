@@ -66,7 +66,7 @@ external representation. As an input we support:
 * `np.ndarray` image when Workflows Execution Engine is used directly in `inference` python package (array can be
 provided in a form of dictionary presented below, if `video_metadata` is intended to be injected)
 
-* dictionary compatible with [inference image utils](https://inference.roboflow.com/docs/reference/inference/core/utils/image_utils/):
+* dictionary compatible with [inference image utils](https://inference.roboflow.com/reference/inference/core/utils/image_utils/):
 
 ```python
 {
@@ -208,6 +208,22 @@ LIST_OF_VALUES_KIND = Kind(
     docs=LIST_OF_VALUES_KIND_DOCS,
     serialised_data_type="List[Any]",
     internal_data_type="List[Any]",
+)
+
+EMBEDDING_KIND_DOCS = """
+This kind represents a vector embedding. It is a list of floating point numbers.
+
+Embeddings are used in various machine learning tasks like clustering, classification,
+and similarity search. They are used to represent data in a continuous, low-dimensional space.
+
+Typically, vectors that are close to each other in the embedding space are considered similar.
+"""
+EMBEDDING_KIND = Kind(
+    name="embedding",
+    description="A list of floating point numbers representing a vector embedding.",
+    docs=EMBEDDING_KIND_DOCS,
+    serialised_data_type="List[float]",
+    internal_data_type="List[float]",
 )
 
 RGB_COLOR_KIND_DOCS = """
@@ -1036,6 +1052,14 @@ INFERENCE_ID_KIND = Kind(
     name="inference_id",
     description="Inference identifier",
     docs=INFERENCE_ID_KIND_DOCS,
+    serialised_data_type="str",
+    internal_data_type="str",
+)
+
+SECRET_KIND = Kind(
+    name="secret",
+    description="Secret value",
+    docs="This kind represents a secret - password or other credential that should remain confidential.",
     serialised_data_type="str",
     internal_data_type="str",
 )

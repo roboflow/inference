@@ -48,6 +48,8 @@ API_BASE_URL = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
+# extra headers expected to be serialised json
+ROBOFLOW_API_EXTRA_HEADERS = os.getenv("ROBOFLOW_API_EXTRA_HEADERS")
 
 # Debug flag for the API, default is False
 API_DEBUG = os.getenv("API_DEBUG", False)
@@ -76,7 +78,7 @@ CLIP_MODEL_ID = f"clip/{CLIP_VERSION_ID}"
 GAZE_VERSION_ID = os.getenv("GAZE_VERSION_ID", "L2CS")
 
 # Gaze model ID
-GAZE_MODEL_ID = f"gaze/{CLIP_VERSION_ID}"
+GAZE_MODEL_ID = f"gaze/{GAZE_VERSION_ID}"
 
 # OWLv2 version ID, default is "owlv2-large-patch14-ensemble"
 OWLV2_VERSION_ID = os.getenv("OWLV2_VERSION_ID", "owlv2-large-patch14-ensemble")
@@ -441,6 +443,7 @@ DEDICATED_DEPLOYMENT_WORKSPACE_URL = os.environ.get(
 )
 
 ENABLE_STREAM_API = str2bool(os.getenv("ENABLE_STREAM_API", "False"))
+STREAM_API_PRELOADED_PROCESSES = int(os.getenv("STREAM_API_PRELOADED_PROCESSES", "0"))
 
 RUNS_ON_JETSON = str2bool(os.getenv("RUNS_ON_JETSON", "False"))
 
@@ -457,6 +460,19 @@ USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS = str2bool(
 ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE = str2bool(
     os.getenv("ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE", "True")
 )
+ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES = str2bool(
+    os.getenv("ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES", "True")
+)
 WORKFLOW_BLOCKS_WRITE_DIRECTORY = os.getenv("WORKFLOW_BLOCKS_WRITE_DIRECTORY")
 
 DEDICATED_DEPLOYMENT_ID = os.getenv("DEDICATED_DEPLOYMENT_ID")
+
+ROBOFLOW_INTERNAL_SERVICE_SECRET = os.getenv("ROBOFLOW_INTERNAL_SERVICE_SECRET")
+ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv("ROBOFLOW_INTERNAL_SERVICE_NAME")
+
+# Preload Models
+PRELOAD_MODELS = (
+    os.getenv("PRELOAD_MODELS").split(",") if os.getenv("PRELOAD_MODELS") else None
+)
+
+LOAD_ENTERPRISE_BLOCKS = str2bool(os.getenv("LOAD_ENTERPRISE_BLOCKS", "False"))

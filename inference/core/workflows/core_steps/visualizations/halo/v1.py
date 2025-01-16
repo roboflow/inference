@@ -24,7 +24,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/halo_visualization@v1"
-SHORT_DESCRIPTION = "Paints a halo around detected objects in an image."
+SHORT_DESCRIPTION = "Paint a halo around detected objects in an image."
 LONG_DESCRIPTION = """
 The `HaloVisualization` block uses a detected polygon
 from an instance segmentation to draw a halo using
@@ -42,6 +42,19 @@ class HaloManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-lightbulb-on",
+                "blockPriority": 11,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 

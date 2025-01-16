@@ -7,12 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  call_is_mergeable:
-    uses: ./.github/workflows/is_mergeable.yml
-    secrets: inherit
   build-dev-test:
-    needs: call_is_mergeable
-    if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
       labels: depot-ubuntu-22.04-small
       group: public-depot
@@ -20,8 +15,6 @@ jobs:
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: Install code analysis dependencies
         run: |
           python -m pip install --upgrade pip

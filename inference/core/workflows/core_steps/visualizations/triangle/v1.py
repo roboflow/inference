@@ -19,7 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/triangle_visualization@v1"
-SHORT_DESCRIPTION = "Draws triangle markers on an image at specific coordinates based on provided detections."
+SHORT_DESCRIPTION = "Draw triangle markers on an image at specific coordinates based on provided detections."
 LONG_DESCRIPTION = """
 The `TriangleVisualization` block draws triangle markers on an image at specific coordinates
 based on provided detections using Supervision's `sv.TriangleAnnotator`.
@@ -36,6 +36,19 @@ class TriangleManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-triangle",
+                "blockPriority": 14,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 
