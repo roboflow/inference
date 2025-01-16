@@ -14,6 +14,7 @@ from inference.core.cache import cache
 from inference.core.cache.base import BaseCache
 from inference.core.entities.types import (
     DatasetID,
+    ModelID,
     ModelType,
     TaskType,
     VersionID,
@@ -232,6 +233,39 @@ def get_roboflow_model_data(
             params.append(("api_key", api_key))
         api_url = _add_params_to_url(
             url=f"{API_BASE_URL}/{endpoint_type.value}/{model_id}",
+            params=params,
+        )
+        api_data = _get_from_url(url=api_url)
+        cache.set(
+            api_data_cache_key,
+            api_data,
+            expire=10,
+        )
+        logger.debug(
+            f"Loaded model data from Roboflow API and saved to cache with key: {api_data_cache_key}."
+        )
+        return api_data
+
+
+@wrap_roboflow_api_errors()
+def get_roboflow_instant_model_data(
+    api_key: str,
+    model_id: ModelID,
+    cache_prefix: str = "roboflow_api_data",
+) -> dict:
+    api_data_cache_key = f"{cache_prefix}:{model_id}"
+    api_data = cache.get(api_data_cache_key)
+    if api_data is not None:
+        logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
+        return api_data
+    else:
+        params = [
+            ("model", model_id),
+        ]
+        if api_key is not None:
+            params.append(("api_key", api_key))
+        api_url = _add_params_to_url(
+            url=f"{API_BASE_URL}/getWeights",
             params=params,
         )
         api_data = _get_from_url(url=api_url)
