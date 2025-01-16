@@ -26,8 +26,7 @@ class WorkflowInferenceRequest(BaseModel):
         "on Roboflow platform.",
     )
     workflow_id: Optional[str] = Field(
-        default=None,
-        description="Optional identifier of workflow"
+        default=None, description="Optional identifier of workflow"
     )
 
 
