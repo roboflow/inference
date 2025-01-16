@@ -13,7 +13,7 @@ There are three three core principles of Inference:
 2. **Production Grade** - Inference should be stable, thoroughly tested, scalable, secure, and fully-featured. It should be as fast as possible without degrading the developer experience.
 3. **Extensible** - Developers should never be constrained by what's included in the box. Adding additional models and functionality should be easy and seamless.
 
-## Battle Hardened
+## Use at Any Scale
 
 Inference is developed by [Roboflow](https://roboflow.com), a computer vision
 platform used by over a million developers and over half of the Fortune 100.
