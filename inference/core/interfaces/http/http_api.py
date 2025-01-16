@@ -731,7 +731,7 @@ class HttpInterface(BaseInterface):
             workflow_results = execution_engine.run(
                 runtime_parameters=workflow_request.inputs,
                 serialize_results=True,
-                is_preview=is_preview,
+                _is_preview=is_preview,
             )
             with profiler.profile_execution_phase(
                 name="workflow_results_filtering",
