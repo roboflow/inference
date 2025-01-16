@@ -25,6 +25,10 @@ class WorkflowInferenceRequest(BaseModel):
         "allow profiling traces to be exported to clients. Only applies for Workflows definitions saved "
         "on Roboflow platform.",
     )
+    workflow_id: Optional[str] = Field(
+        default=None,
+        description="Optional identifier of workflow"
+    )
 
 
 class PredefinedWorkflowInferenceRequest(WorkflowInferenceRequest):
