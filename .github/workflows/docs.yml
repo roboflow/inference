@@ -74,6 +74,7 @@ jobs:
                       -r requirements/requirements.test.unit.txt \
                       -r requirements/requirements.test.integration.txt \
                       -r requirements/requirements.http.txt
+                      -r requirements/requirements.cli.txt
         working-directory: ./inference_repo
 
       - name: Install enterprise blocks
