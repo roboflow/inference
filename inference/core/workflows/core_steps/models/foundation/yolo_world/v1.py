@@ -63,6 +63,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 8,
+                "inference": True,
+            },
         }
     )
     type: Literal["roboflow_core/yolo_world_model@v1", "YoloWorldModel", "YoloWorld"]

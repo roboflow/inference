@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import pytest
 
+
 ASSETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
 ROCK_PAPER_SCISSORS_ASSETS = os.path.join(ASSETS_DIR, "rock_paper_scissors")
 
@@ -125,11 +126,19 @@ class FakeMQTTBroker:
         if self._conn is not None:
             raise ValueError("Connection is already open")
 
+        (conn, address) = self._sock.accept()
+        conn.settimeout(1)
+        self._conn = conn
         while len(self.messages) < self.messages_count_to_wait_for:
-            (conn, address) = self._sock.accept()
-            conn.settimeout(1)
-            self._conn = conn
-            self.messages.append(self.receive_packet(1000))
+            packet = self.receive_packet(1000)
+            print(f"Received {packet}")
+            if not packet:
+                continue
+            if packet.startswith(b"\x10"):
+                print("sending CONNACK")
+                self._conn.send(b"\x20\x02\x00\x00")
+                continue
+            self.messages.append(packet)
 
     def finish(self):
         if self._conn is not None:

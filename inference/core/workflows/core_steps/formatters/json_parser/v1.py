@@ -60,6 +60,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "formatter",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-table-tree",
+                "blockPriority": 5,
+            },
         }
     )
     type: Literal["roboflow_core/json_parser@v1"]

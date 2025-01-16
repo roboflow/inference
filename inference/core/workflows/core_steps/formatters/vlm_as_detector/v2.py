@@ -88,6 +88,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "formatter",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-object-ungroup",
+                "blockPriority": 5,
+            },
         },
         protected_namespaces=(),
     )

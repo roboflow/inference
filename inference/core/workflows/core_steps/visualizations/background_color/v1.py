@@ -42,6 +42,19 @@ class BackgroundColorManifest(PredictionsVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-fill-drip",
+                "blockPriority": 3,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 
