@@ -724,6 +724,7 @@ class HttpInterface(BaseInterface):
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 prevent_local_images_loading=True,
                 profiler=profiler,
+                workflow_id=workflow_request.workflow_id,
             )
             is_preview = False
             if hasattr(workflow_request, "is_preview"):
