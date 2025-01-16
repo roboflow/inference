@@ -1,9 +1,9 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from modbus_tcp_block import ModbusTCPBlockV1
+from inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1 import ModbusTCPBlockV1
 
-class TestModbusTCPBlockV1(unittest.TestCase): inference.enterprise.workflows.enterprise_blocks.sinks.mqtt_writer.v1.mqtt.Clien
-    @patch('inference.enterprise.workflows.enterprise_blocks.PLC_writer.ModbusClient')
+class TestModbusTCPBlockV1(unittest.TestCase):
+    @patch('inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1.ModbusClient')
     def test_successful_read_mode(self, MockModbusClient):
         # Arrange
         mock_client = MagicMock()
@@ -11,7 +11,7 @@ class TestModbusTCPBlockV1(unittest.TestCase): inference.enterprise.workflows.en
         mock_client.connect.return_value = True
         
         # Simulate successful read for each register
-        def fake_read(address, count):
+        def fake_read(address):
             response = MagicMock()
             response.isError.return_value = False
             response.registers = [123]  # Sample value
@@ -25,8 +25,8 @@ class TestModbusTCPBlockV1(unittest.TestCase): inference.enterprise.workflows.en
             plc_ip='10.0.1.31',
             plc_port=502,
             mode='read',
-            tags_to_read=[1000, 1001],
-            tags_to_write={},
+            registers_to_read=[1000, 1001],
+            registers_to_write={},
             depends_on=None
         )
         
@@ -37,7 +37,7 @@ class TestModbusTCPBlockV1(unittest.TestCase): inference.enterprise.workflows.en
         self.assertEqual(results['read'][1000], 123)
         self.assertEqual(results['read'][1001], 123)
 
-    @patch('modbus_tcp_block.ModbusClient')
+    @patch('inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1.ModbusClient')
     def test_successful_write_mode(self, MockModbusClient):
         # Arrange
         mock_client = MagicMock()
@@ -54,11 +54,11 @@ class TestModbusTCPBlockV1(unittest.TestCase): inference.enterprise.workflows.en
 
         # Act
         result = block.run(
-            plc_ip='10.0.1.31',
+            plc_ip='10.0.0.205',
             plc_port=502,
             mode='write',
-            tags_to_read=[],
-            tags_to_write={1005: 25},
+            registers_to_read=[],
+            registers_to_write={1005: 25},
             depends_on=None
         )
 
@@ -68,7 +68,7 @@ class TestModbusTCPBlockV1(unittest.TestCase): inference.enterprise.workflows.en
         self.assertIn('write', results)
         self.assertEqual(results['write'][1005], 'WriteSuccess')
 
-    @patch('modbus_tcp_block.ModbusClient')
+    @patch('inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1.ModbusClient')
     def test_connection_failure(self, MockModbusClient):
         # Arrange
         mock_client = MagicMock()
@@ -82,8 +82,8 @@ class TestModbusTCPBlockV1(unittest.TestCase): inference.enterprise.workflows.en
             plc_ip='10.0.1.31',
             plc_port=502,
             mode='read',
-            tags_to_read=[1000],
-            tags_to_write={},
+            registers_to_read=[1000],
+            registers_to_write={},
             depends_on=None
         )
 
@@ -93,14 +93,14 @@ class TestModbusTCPBlockV1(unittest.TestCase): inference.enterprise.workflows.en
         self.assertIn('error', results)
         self.assertEqual(results['error'], 'ConnectionFailure')
 
-    @patch('modbus_tcp_block.ModbusClient')
+    @patch('inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1.ModbusClient')
     def test_read_failure(self, MockModbusClient):
         # Arrange
         mock_client = MagicMock()
         MockModbusClient.return_value = mock_client
         mock_client.connect.return_value = True
 
-        def fake_read(address, count):
+        def fake_read(address):
             response = MagicMock()
             response.isError.return_value = True
             return response
@@ -113,8 +113,8 @@ class TestModbusTCPBlockV1(unittest.TestCase): inference.enterprise.workflows.en
             plc_ip='10.0.1.31',
             plc_port=502,
             mode='read',
-            tags_to_read=[1000],
-            tags_to_write={},
+            registers_to_read=[1000],
+            registers_to_write={},
             depends_on=None
         )
 
@@ -124,7 +124,7 @@ class TestModbusTCPBlockV1(unittest.TestCase): inference.enterprise.workflows.en
         self.assertIn('read', results)
         self.assertEqual(results['read'][1000], 'ReadFailure')
 
-    @patch('modbus_tcp_block.ModbusClient')
+    @patch('inference.enterprise.workflows.enterprise_blocks.sinks.PLC_modbus.v1.ModbusClient')
     def test_write_failure(self, MockModbusClient):
         # Arrange
         mock_client = MagicMock()
@@ -144,8 +144,8 @@ class TestModbusTCPBlockV1(unittest.TestCase): inference.enterprise.workflows.en
             plc_ip='10.0.1.31',
             plc_port=502,
             mode='write',
-            tags_to_read=[],
-            tags_to_write={1005: 25},
+            registers_to_read=[],
+            registers_to_write={1005: 25},
             depends_on=None
         )
 

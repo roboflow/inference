@@ -1,21 +1,19 @@
-# modbus_tcp_block.py
-
 from typing import Dict, List, Optional, Type, Union
-from pydantic import ConfigDict, Field
-from typing_extensions import Literal
 
+from pydantic import ConfigDict, Field
 from pymodbus.client import ModbusTcpClient as ModbusClient
+from typing_extensions import Literal
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
-    WorkflowImageData,
     VideoMetadata,
+    WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    WorkflowParameterSelector,
     Selector,
+    WorkflowParameterSelector,
 )
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
@@ -30,17 +28,18 @@ It can:
 - Perform both read and write in a single run if `mode='read_and_write'`.
 
 **Parameters depending on mode:**
-- If `mode='read'` or `mode='read_and_write'`, `tags_to_read` must be provided as a list of register addresses.
-- If `mode='write'` or `mode='read_and_write'`, `tags_to_write` must be provided as a dictionary mapping register addresses to values.
+- If `mode='read'` or `mode='read_and_write'`, `registers_to_read` must be provided as a list of register addresses.
+- If `mode='write'` or `mode='read_and_write'`, `registers_to_write` must be provided as a dictionary mapping register addresses to values.
 
 If a read or write operation fails, an error message is printed to the terminal, 
 and the corresponding entry in the output dictionary is set to "ReadFailure" or "WriteFailure".
 """
 
+
 class ModbusTCPBlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Modbus TCP",
+            "name": "PLC ModbusTCP",
             "version": "v1",
             "short_description": "Generic Modbus TCP read/write block using pymodbus.",
             "long_description": LONG_DESCRIPTION,
@@ -52,31 +51,34 @@ class ModbusTCPBlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/modbus_tcp@v1"]
 
     plc_ip: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
-        description="IP address of the target PLC.",
-        examples=["10.0.1.31"]
+        description="IP address of the target PLC.", examples=["10.0.1.31"]
     )
     plc_port: int = Field(
         default=502,
         description="Port number for Modbus TCP communication.",
-        examples=[502]
+        examples=[502],
     )
     mode: Literal["read", "write", "read_and_write"] = Field(
         description="Mode of operation: 'read', 'write', or 'read_and_write'.",
-        examples=["read", "write", "read_and_write"]
+        examples=["read", "write", "read_and_write"],
     )
-    tags_to_read: Union[List[int], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(
+    registers_to_read: Union[
+        List[int], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])
+    ] = Field(
         default=[],
         description="List of register addresses to read. Applicable if mode='read' or 'read_and_write'.",
-        examples=[[1000, 1001]]
+        examples=[[1000, 1001]],
     )
-    tags_to_write: Union[Dict[int, int], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(
+    registers_to_write: Union[
+        Dict[int, int], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])
+    ] = Field(
         default={},
         description="Dictionary mapping register addresses to values to write. Applicable if mode='write' or 'read_and_write'.",
-        examples=[{1005: 25}]
+        examples=[{1005: 25}],
     )
     depends_on: Selector() = Field(
         description="Reference to the step output this block depends on.",
-        examples=["$steps.some_previous_step"]
+        examples=["$steps.some_previous_step"],
     )
 
     @classmethod
@@ -86,6 +88,7 @@ class ModbusTCPBlockManifest(WorkflowBlockManifest):
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
+
 
 class ModbusTCPBlockV1(WorkflowBlock):
     """A Modbus TCP communication block using pymodbus.
@@ -107,8 +110,8 @@ class ModbusTCPBlockV1(WorkflowBlock):
         plc_ip: str,
         plc_port: int,
         mode: str,
-        tags_to_read: List[int],
-        tags_to_write: Dict[int, int],
+        registers_to_read: List[int],
+        registers_to_write: Dict[int, int],
         depends_on: any,
         image: Optional[WorkflowImageData] = None,
         metadata: Optional[VideoMetadata] = None,
@@ -123,11 +126,13 @@ class ModbusTCPBlockV1(WorkflowBlock):
 
         # If mode involves reading
         if mode in ["read", "read_and_write"]:
-            for address in tags_to_read:
+            for address in registers_to_read:
                 try:
-                    response = client.read_holding_registers(address, 1)
+                    response = client.read_holding_registers(address)
                     if not response.isError():
-                        read_results[address] = response.registers[0] if response.registers else None
+                        read_results[address] = (
+                            response.registers[0] if response.registers else None
+                        )
                     else:
                         print(f"Error reading register {address}: {response}")
                         read_results[address] = "ReadFailure"
@@ -137,16 +142,20 @@ class ModbusTCPBlockV1(WorkflowBlock):
 
         # If mode involves writing
         if mode in ["write", "read_and_write"]:
-            for address, value in tags_to_write.items():
+            for address, value in registers_to_write.items():
                 try:
                     response = client.write_register(address, value)
                     if not response.isError():
                         write_results[address] = "WriteSuccess"
                     else:
-                        print(f"Error writing register {address} with value {value}: {response}")
+                        print(
+                            f"Error writing register {address} with value {value}: {response}"
+                        )
                         write_results[address] = "WriteFailure"
                 except Exception as e:
-                    print(f"Exception writing register {address} with value {value}: {e}")
+                    print(
+                        f"Exception writing register {address} with value {value}: {e}"
+                    )
                     write_results[address] = "WriteFailure"
 
         client.close()
