@@ -150,8 +150,14 @@ def offset_detections(
                 (
                     max(0, x1 - int(image_dimensions[i][1] * offset_width / 200)),
                     max(0, y1 - int(image_dimensions[i][0] * offset_height / 200)),
-                    min(image_dimensions[i][1], x2 + int(image_dimensions[i][1] * offset_width / 200)),
-                    min(image_dimensions[i][0], y2 + int(image_dimensions[i][0] * offset_height / 200)),
+                    min(
+                        image_dimensions[i][1],
+                        x2 + int(image_dimensions[i][1] * offset_width / 200),
+                    ),
+                    min(
+                        image_dimensions[i][0],
+                        y2 + int(image_dimensions[i][0] * offset_height / 200),
+                    ),
                 )
                 for i, (x1, y1, x2, y2) in enumerate(_detections.xyxy)
             ]
