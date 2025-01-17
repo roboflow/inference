@@ -177,8 +177,8 @@ def test_offset_detection_with_percentage() -> None:
     # when
     result = offset_detections(
         detections=detections,
-        offset_width=10,  # 10% of width
-        offset_height=10,  # 10% of height
+        offset_width=10,
+        offset_height=10,
         use_percentage=True
     )
 
