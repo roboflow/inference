@@ -11,7 +11,6 @@ import pytest
 from pandas.errors import EmptyDataError
 
 from inference_cli.lib.workflows.common import (
-    IMAGES_EXTENSIONS,
     WorkflowsImagesProcessingIndex,
     aggregate_batch_processing_results,
     decode_base64_image,
@@ -21,7 +20,6 @@ from inference_cli.lib.workflows.common import (
     dump_images_outputs,
     dump_objects_to_json,
     extract_images_from_result,
-    get_all_images_in_directory,
     open_progress_log,
     report_failed_files,
 )
@@ -252,27 +250,6 @@ def test_report_failed_files_when_errors_detected(empty_directory: str) -> None:
         {"file_path": "some.jpg", "cause": "some"},
         {"file_path": "other.jpg", "cause": "other"},
     ]
-
-
-def test_get_all_images_in_directory(empty_directory: str) -> None:
-    # given
-    for extension in IMAGES_EXTENSIONS:
-        _create_empty_file(directory=empty_directory, file_name=f"image.{extension}")
-    _create_empty_file(directory=empty_directory, file_name=f".tmp")
-    _create_empty_file(directory=empty_directory, file_name=f".bin")
-    expected_files = len(os.listdir(empty_directory)) - 2
-
-    # when
-    result = get_all_images_in_directory(input_directory=empty_directory)
-
-    # then
-    assert len(result) == expected_files
-
-
-def _create_empty_file(directory: str, file_name: str) -> None:
-    file_path = os.path.join(directory, file_name)
-    path = Path(file_path)
-    path.touch(exist_ok=True)
 
 
 def test_decode_base64_image_when_base64_header_present() -> None:
