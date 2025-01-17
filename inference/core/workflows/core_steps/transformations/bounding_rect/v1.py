@@ -44,6 +44,11 @@ class BoundingRectManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "transformation",
+                "icon": "fal fa-rectangles-mixed",
+                "blockPriority": 5,
+            },
         }
     )
     type: Literal["roboflow_core/bounding_rect@v1"]

@@ -74,6 +74,7 @@ jobs:
                       -r requirements/requirements.test.unit.txt \
                       -r requirements/requirements.test.integration.txt \
                       -r requirements/requirements.http.txt
+                      -r requirements/requirements.cli.txt
         working-directory: ./inference_repo
 
       - name: Install enterprise blocks
@@ -89,6 +90,15 @@ jobs:
           WORKFLOWS_GALLERY_API_KEY: ${{ secrets.WORKFLOWS_GALLERY_API_KEY }}
         run: python -m development.docs.workflows_gallery_builder
         working-directory: ./inference_repo
+
+      - name: Write CLI docs
+        run: python -m development.docs.write_cli_docs
+        working-directory: ./inference_repo
+
+      - name: Write OpenAPI spec
+        run: python -m development.docs.write_openapi_spec
+        working-directory: ./inference_repo
+
 
       - name: Deploy docs
         # Only deploy if release event OR if deploy input was set to true

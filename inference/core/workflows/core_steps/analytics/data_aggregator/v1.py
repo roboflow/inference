@@ -187,6 +187,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "analytics",
+            "ui_manifest": {
+                "section": "data_storage",
+                "icon": "fal fa-database",
+                "blockPriority": 4,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/data_aggregator@v1"]

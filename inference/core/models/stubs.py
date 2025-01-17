@@ -10,6 +10,7 @@ from inference.core.entities.responses.inference import InferenceResponse, StubR
 from inference.core.models.base import Model
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes
+from inference.core.utils.roboflow import get_model_id_chunks
 
 
 class ModelStub(Model):
@@ -17,7 +18,7 @@ class ModelStub(Model):
         super().__init__()
         self.model_id = model_id
         self.api_key = api_key
-        self.dataset_id, self.version_id = model_id.split("/")
+        self.dataset_id, self.version_id = get_model_id_chunks(model_id=model_id)
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         initialise_cache(model_id=model_id)
 

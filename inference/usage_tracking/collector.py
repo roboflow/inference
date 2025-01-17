@@ -574,7 +574,9 @@ class UsageCollector:
         elif "self" in func_kwargs:
             _self = func_kwargs["self"]
             if hasattr(_self, "dataset_id") and hasattr(_self, "version_id"):
-                model_id = f"{_self.dataset_id}/{_self.version_id}"
+                model_id = str(_self.dataset_id)
+                if _self.version_id:
+                    model_id += f"/{_self.version_id}"
                 category = "model"
                 resource_id = model_id
             elif isinstance(kwargs, dict) and "model_id" in kwargs:

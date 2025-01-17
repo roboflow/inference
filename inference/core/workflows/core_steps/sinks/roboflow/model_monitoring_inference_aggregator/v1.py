@@ -93,6 +93,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-chart-line",
+                "blockPriority": 8.5,
+            },
         }
     )
     type: Literal["roboflow_core/model_monitoring_inference_aggregator@v1"]
