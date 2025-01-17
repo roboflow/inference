@@ -192,6 +192,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen.v1 import (
+    StabilityAIImageGenBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1 import (
     StabilityAIInpaintingBlockV1,
 )
@@ -572,6 +575,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
         StabilityAIInpaintingBlockV1,
+        StabilityAIImageGenBlockV1,
         StabilizeTrackedDetectionsBlockV1,
         StitchImagesBlockV1,
         StitchOCRDetectionsBlockV1,
