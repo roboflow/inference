@@ -116,7 +116,7 @@ class DetectionOffsetBlockV1(WorkflowBlock):
         predictions: Batch[sv.Detections],
         offset_width: int,
         offset_height: int,
-        units: str = "Pixels"
+        units: str = "Pixels",
     ) -> BlockResult:
         use_percentage = units == "Percent (%)"
         return [
@@ -125,7 +125,7 @@ class DetectionOffsetBlockV1(WorkflowBlock):
                     detections=detections,
                     offset_width=offset_width,
                     offset_height=offset_height,
-                    use_percentage=use_percentage
+                    use_percentage=use_percentage,
                 )
             }
             for detections in predictions
@@ -134,11 +134,11 @@ class DetectionOffsetBlockV1(WorkflowBlock):
 
 def offset_detections(
     detections: sv.Detections,
-    offset_width: Union[int, float],
-    offset_height: Union[int, float],
+    offset_width: int,
+    offset_height: int,
     parent_id_key: str = PARENT_ID_KEY,
     detection_id_key: str = DETECTION_ID_KEY,
-    use_percentage: bool = False
+    use_percentage: bool = False,
 ) -> sv.Detections:
     if len(detections) == 0:
         return detections
@@ -150,8 +150,13 @@ def offset_detections(
                 (
                     max(0, x1 - int((x2 - x1) * offset_width / 200)),
                     max(0, y1 - int((y2 - y1) * offset_height / 200)),
-                    min(image_dimensions[i][1], x2 + int((x2 - x1) * offset_width / 200)),
-                    min(image_dimensions[i][0], y2 + int((y2 - y1) * offset_height / 200)),
+                    min(
+                        image_dimensions[i][1], x2 + int((x2 - x1) * offset_width / 200)
+                    ),
+                    min(
+                        image_dimensions[i][0],
+                        y2 + int((y2 - y1) * offset_height / 200),
+                    ),
                 )
                 for i, (x1, y1, x2, y2) in enumerate(_detections.xyxy)
             ]
