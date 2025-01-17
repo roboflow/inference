@@ -28,7 +28,6 @@ from inference_cli.lib.roboflow_cloud.common import (
 from inference_cli.lib.roboflow_cloud.config import (
     MAX_SHARD_SIZE,
     MAX_SHARDS_UPLOAD_PROCESSES,
-    MAX_THREADS_PER_SHARD_UPLOAD,
     MIN_IMAGES_TO_FORM_SHARD,
     REQUEST_TIMEOUT,
 )
@@ -130,7 +129,6 @@ def upload_images_to_simple_batch(
     batch_id: str,
     api_key: Optional[str],
 ) -> None:
-    images_paths = filter_out_corrupted_images(image_paths=images_paths)
     upload_image_closure = partial(
         upload_image,
         workspace=workspace,
@@ -174,9 +172,8 @@ def pack_and_upload_images_shard(
     batch_id: str,
     api_key: Optional[str],
 ) -> None:
-    images_paths = filter_out_corrupted_images(image_paths=images_paths)
     with tempfile.TemporaryDirectory() as tmp_dir:
-        archive_path = os.path.join(tmp_dir, f"{uuid4()}.zip")
+        archive_path = os.path.join(tmp_dir, f"{uuid4()}.tar")
         create_images_shard_archive(
             archive_path=archive_path, images_paths=images_paths
         )
@@ -186,17 +183,6 @@ def pack_and_upload_images_shard(
             batch_id=batch_id,
             api_key=api_key,
         )
-
-
-def filter_out_corrupted_images(image_paths: List[str]) -> List[str]:
-    with ThreadPool(processes=MAX_THREADS_PER_SHARD_UPLOAD) as pool:
-        decoded_images = pool.map(cv2.imread, image_paths)
-        image_paths = [
-            path
-            for path, image in zip(image_paths, decoded_images)
-            if image is not None
-        ]
-    return image_paths
 
 
 def create_images_shard_archive(images_paths: List[str], archive_path: str) -> None:
