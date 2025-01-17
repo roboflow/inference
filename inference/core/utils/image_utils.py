@@ -20,7 +20,7 @@ from tldextract.tldextract import ExtractResult
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.env import (
-    ALLOW_ACCESS_TO_LOCAL_FILESYSTEM,
+    ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM,
     ALLOW_NON_HTTPS_URL_INPUT,
     ALLOW_NUMPY_INPUT,
     ALLOW_URL_INPUT,
@@ -197,7 +197,7 @@ def load_image_with_inferred_type(
         return load_image_from_url(value=value, cv_imread_flags=cv_imread_flags), True
     elif (
         isinstance(value, str)
-        and ALLOW_ACCESS_TO_LOCAL_FILESYSTEM
+        and ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM
         and os.path.isfile(value)
     ):
         return cv2.imread(value, cv_imread_flags), True
