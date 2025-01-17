@@ -1,3 +1,4 @@
+import threading
 from typing import List, Literal, Optional, Type, Union
 
 import paho.mqtt.client as mqtt
@@ -93,10 +94,23 @@ class BlockManifest(WorkflowBlockManifest):
             OutputDefinition(name="message", kind=[STRING_KIND]),
         ]
 
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
 
 class MQTTWriterSinkBlockV1(WorkflowBlock):
     def __init__(self):
         self.mqtt_client: Optional[mqtt.Client] = None
+        self._connected = threading.Event()
+
+    def __del__(self):
+        try:
+            if self.mqtt_client is not None:
+                self.mqtt_client.disconnect()
+                self.mqtt_client.loop_stop()
+        except Exception as e:
+            logger.error("Failed to disconnect MQTT client: %s", e)
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -125,7 +139,12 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
             )
             try:
                 # TODO: blocking, consider adding fire_and_forget like in OPC writer
+                print("Connecting")
                 self.mqtt_client.connect(host, port)
+                self.mqtt_client.loop_start()
+
+                if not self._connected.wait(timeout=timeout):
+                    raise Exception("Connection timeout")
             except Exception as e:
                 logger.error("Failed to connect to MQTT broker: %s", e)
                 return {
@@ -136,7 +155,10 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
         if not self.mqtt_client.is_connected():
             try:
                 # TODO: blocking
+                print("Reconnecting")
                 self.mqtt_client.reconnect()
+                if not self._connected.wait(timeout=timeout):
+                    raise Exception("Connection timeout")
             except Exception as e:
                 logger.error("Failed to connect to MQTT broker: %s", e)
                 return {
@@ -163,8 +185,10 @@ class MQTTWriterSinkBlockV1(WorkflowBlock):
 
     def mqtt_on_connect(self, client, userdata, flags, reason_code, properties=None):
         logger.info("Connected with result code %s", reason_code)
+        self._connected.set()
 
     def mqtt_on_connect_fail(
         self, client, userdata, flags, reason_code, properties=None
     ):
         logger.error(f"Failed to connect with result code %s", reason_code)
+        self._connected.clear()

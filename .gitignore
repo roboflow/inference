@@ -167,6 +167,7 @@ scratch
 docs/workflows/blocks/*
 docs/workflows/kinds/*
 docs/workflows/gallery/*
+docs/reference/*
 docs/inference_helpers/cli_commands/reference.md
 docs/openapi.json
 !tests/workflows/integration_tests/execution/assets/*.jpg

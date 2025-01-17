@@ -148,13 +148,6 @@ nav:
       - HTTP API:
         - OpenAPI Spec: api.md
       - inference Python Package: reference/inference/
-      - Active Learning:
-          - Use Active Learning: enterprise/active-learning/active_learning.md
-          - Sampling Strategies:
-              - Random Sampling: enterprise/active-learning/random_sampling.md
-              - Detection Number: enterprise/active-learning/detection_number.md
-              - Close to Threshold Sampling: enterprise/active-learning/close_to_threshold_sampling.md
-              - Classes Based: enterprise/active-learning/classes_based.md
       - Enterprise Features:
           - Parallel HTTP API: enterprise/parallel_processing.md
           - Stream Management API: enterprise/stream_management_api.md
@@ -208,6 +201,8 @@ plugins:
       handlers:
         python:
           paths: [.]
+          # options:
+          #   show_if_no_docstring: true
   - search
   - swagger-ui-tag
   - mkdocs-jupyter

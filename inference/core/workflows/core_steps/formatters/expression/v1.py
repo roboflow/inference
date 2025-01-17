@@ -100,6 +100,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "formatter",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-code",
+                "blockPriority": 1,
+                "inDevelopment": True,
+            },
         }
     )
     type: Literal["roboflow_core/expression@v1", "Expression"]

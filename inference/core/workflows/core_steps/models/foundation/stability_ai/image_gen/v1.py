@@ -1,23 +1,20 @@
-"""
-Credits to: https://github.com/Fafruch for origin idea
-"""
-
+import base64
+import uuid
 from typing import List, Literal, Optional, Type, Union
 
 import cv2
 import numpy as np
 import requests
-import supervision as sv
 from pydantic import ConfigDict, Field
-from supervision import Color
 
 from inference.core.workflows.execution_engine.entities.base import (
+    ImageParentMetadata,
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     SECRET_KIND,
     STRING_KIND,
     Selector,
@@ -29,21 +26,25 @@ from inference.core.workflows.prototypes.block import (
 )
 
 LONG_DESCRIPTION = """
-The block wraps 
-[Stability AI inpainting API](https://platform.stability.ai/docs/legacy/grpc-api/features/inpainting#Python) and 
-let users use instance segmentation results to change the content of images in a creative way.
+The block wraps [Stability AI image generation API](https://platform.stability.ai/docs/api-reference#tag/Generate) and let users generate new images from text, or create variations of existing images.
 """
 
-SHORT_DESCRIPTION = "Use segmentation masks to inpaint objects within an image."
+SHORT_DESCRIPTION = (
+    "generate new images from text, or create variations of existing images."
+)
 
 API_HOST = "https://api.stability.ai"
-ENDPOINT = "/v2beta/stable-image/edit/inpaint"
+ENDPOINT = {
+    "ultra": "/v2beta/stable-image/generate/ultra",
+    "core": "/v2beta/stable-image/generate/core",
+    "sd3": "/v2beta/stable-image/generate/sd3",
+}
 
 
 class BlockManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Stability AI Inpainting",
+            "name": "Stability AI Image Generation",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -52,32 +53,32 @@ class BlockManifest(WorkflowBlockManifest):
             "search_keywords": [
                 "Stability AI",
                 "stability.ai",
-                "inpainting",
+                "image variation",
                 "image generation",
             ],
             "ui_manifest": {
                 "section": "model",
                 "icon": "far fa-palette",
-                "blockPriority": 14,
             },
         }
     )
-    type: Literal["roboflow_core/stability_ai_inpainting@v1"]
+    type: Literal["roboflow_core/stability_ai_image_gen@v1"]
     image: Selector(kind=[IMAGE_KIND]) = Field(
-        description="The image which was the base to generate VLM prediction",
-        examples=["$inputs.image", "$steps.cropping.crops"],
+        description="The image to use as the starting point for the generation.",
+        examples=["$inputs.image"],
+        default=None,
     )
-    segmentation_mask: Selector(kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]) = Field(
-        name="Segmentation Mask",
-        description="Segmentation masks",
-        examples=["$steps.model.predictions"],
+    strength: Union[float, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
+        description="controls how much influence the image parameter has on the generated image. A value of 0 would yield an image that is identical to the input. A value of 1 would be as if you passed in no image at all.",
+        default=0.3,
+        examples=[0.3, "$inputs.strength"],
     )
     prompt: Union[
         Selector(kind=[STRING_KIND]),
         Selector(kind=[STRING_KIND]),
         str,
     ] = Field(
-        description="Prompt to inpainting model (what you wish to see)",
+        description="Prompt to generate new images from text (what you wish to see)",
         examples=["my prompt", "$inputs.prompt"],
     )
     negative_prompt: Optional[
@@ -88,7 +89,18 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ] = Field(
         default=None,
-        description="Negative prompt to inpainting model (what you do not wish to see)",
+        description="Negative prompt to image generation model (what you do not wish to see)",
+        examples=["my prompt", "$inputs.prompt"],
+    )
+    model: Optional[
+        Union[
+            Selector(kind=[STRING_KIND]),
+            Selector(kind=[STRING_KIND]),
+            str,
+        ]
+    ] = Field(
+        default="core",
+        description="choose one of {'core', 'ultra', 'sd3'}. Default 'core' ",
         examples=["my prompt", "$inputs.prompt"],
     )
     api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
@@ -108,49 +120,50 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.4.0,<2.0.0"
 
 
-class StabilityAIInpaintingBlockV1(WorkflowBlock):
-
+class StabilityAIImageGenBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
     def run(
         self,
-        image: WorkflowImageData,
-        segmentation_mask: sv.Detections,
         prompt: str,
         negative_prompt: str,
+        model: str,
         api_key: str,
+        image: WorkflowImageData,
+        strength: float = 0.3,
     ) -> BlockResult:
-        black_image = np.zeros_like(image.numpy_image)
-        mask_annotator = sv.MaskAnnotator(color=Color.WHITE, opacity=1.0)
-        mask = mask_annotator.annotate(black_image, segmentation_mask)
-        mask = cv2.GaussianBlur(mask, (15, 15), 0)
-        encoded_image = numpy_array_to_jpeg_bytes(image=image.numpy_image)
-        encoded_mask = numpy_array_to_jpeg_bytes(image=mask)
         request_data = {
             "prompt": prompt,
             "output_format": "jpeg",
         }
-        response = requests.post(
-            f"{API_HOST}{ENDPOINT}",
-            headers={"authorization": f"Bearer {api_key}", "accept": "image/*"},
-            files={
+        files_to_send = {"none": ""}
+        if image is not None:
+            encoded_image = numpy_array_to_jpeg_bytes(image=image.numpy_image)
+            files_to_send = {
                 "image": encoded_image,
-                "mask": encoded_mask,
-            },
+            }
+            request_data["strength"] = strength
+
+        if negative_prompt is not None:
+            request_data["negative_prompt"] = negative_prompt
+        if model not in ENDPOINT.keys():
+            model = "core"
+        response = requests.post(
+            f"{API_HOST}{ENDPOINT[model]}",
+            headers={"authorization": f"Bearer {api_key}", "accept": "image/*"},
+            files=files_to_send,
             data=request_data,
         )
         if response.status_code != 200:
             raise RuntimeError(
                 f"Request to StabilityAI API failed: {str(response.json())}"
             )
-        result_image = bytes_to_opencv_image(payload=response.content)
+        new_image_base64 = base64.b64encode(response.content).decode("utf-8")
+        parent_metadata = ImageParentMetadata(parent_id=str(uuid.uuid1()))
         return {
-            "image": WorkflowImageData.copy_and_replace(
-                origin_image_data=image,
-                numpy_image=result_image,
-            ),
+            "image": WorkflowImageData(parent_metadata, base64_image=new_image_base64),
         }
 
 
@@ -159,13 +172,3 @@ def numpy_array_to_jpeg_bytes(
 ) -> bytes:
     _, img_encoded = cv2.imencode(".jpg", image)
     return np.array(img_encoded).tobytes()
-
-
-def bytes_to_opencv_image(
-    payload: bytes, array_type: np.number = np.uint8
-) -> np.ndarray:
-    bytes_array = np.frombuffer(payload, dtype=array_type)
-    decoding_result = cv2.imdecode(bytes_array, cv2.IMREAD_UNCHANGED)
-    if decoding_result is None:
-        raise ValueError("Could not encode bytes to OpenCV image.")
-    return decoding_result

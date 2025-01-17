@@ -20,6 +20,7 @@ from tldextract.tldextract import ExtractResult
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.env import (
+    ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM,
     ALLOW_NON_HTTPS_URL_INPUT,
     ALLOW_NUMPY_INPUT,
     ALLOW_URL_INPUT,
@@ -165,6 +166,11 @@ def load_image_with_known_type(
     Returns:
         Tuple[np.ndarray, bool]: A tuple of the loaded image as a numpy array and a boolean indicating if the image is in BGR format.
     """
+    if image_type is ImageType.FILE and not ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM:
+        raise InputImageLoadError(
+            message="Loading images from local filesystem is disabled.",
+            public_message="Loading images from local filesystem is disabled.",
+        )
     loader = IMAGE_LOADERS[image_type]
     is_bgr = True if image_type is not ImageType.PILLOW else False
     image = loader(value, cv_imread_flags)
@@ -194,7 +200,11 @@ def load_image_with_inferred_type(
         return np.asarray(value.convert("RGB")), False
     elif isinstance(value, str) and (value.startswith("http")):
         return load_image_from_url(value=value, cv_imread_flags=cv_imread_flags), True
-    elif isinstance(value, str) and os.path.isfile(value):
+    elif (
+        isinstance(value, str)
+        and ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM
+        and os.path.isfile(value)
+    ):
         return cv2.imread(value, cv_imread_flags), True
     else:
         return attempt_loading_image_from_string(

@@ -68,6 +68,12 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM", "ChatGPT"],
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 5,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/open_ai@v1", "OpenAI"]

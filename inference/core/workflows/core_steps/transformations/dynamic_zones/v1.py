@@ -45,6 +45,12 @@ class DynamicZonesManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-square-dashed",
+                "blockPriority": 3,
+                "opencv": True,
+            },
         }
     )
     type: Literal[f"{TYPE}", "DynamicZone"]
