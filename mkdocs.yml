@@ -158,6 +158,8 @@ plugins:
       handlers:
         python:
           paths: [.]
+          # options:
+          #   show_if_no_docstring: true
   - search
   - swagger-ui-tag
   - mkdocs-jupyter
