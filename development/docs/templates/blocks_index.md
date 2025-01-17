@@ -52,17 +52,19 @@ article > a.md-content__button.md-icon:first-child {
 .block {
   border: 1px solid black;
   border-radius: 4px;
-  padding: 4px;
+  padding: 10px;
+  height: 100px;
 }
 
 .block_name {
-  font-size: larger;
-  color: #444;
+  font-size: large;
+  color: black;
 }
 
 .block_description {
-    font-size: small;
-    color: darkgray;
+    font-size: 0.65em;
+    padding-top: 5px;
+    color: #444;
 }
 
 .block_license {
