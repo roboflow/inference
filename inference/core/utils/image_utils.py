@@ -166,6 +166,11 @@ def load_image_with_known_type(
     Returns:
         Tuple[np.ndarray, bool]: A tuple of the loaded image as a numpy array and a boolean indicating if the image is in BGR format.
     """
+    if image_type is ImageType.FILE and not ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM:
+        raise InputImageLoadError(
+            message="Loading images from local filesystem is disabled.",
+            public_message="Loading images from local filesystem is disabled.",
+        )
     loader = IMAGE_LOADERS[image_type]
     is_bgr = True if image_type is not ImageType.PILLOW else False
     image = loader(value, cv_imread_flags)
