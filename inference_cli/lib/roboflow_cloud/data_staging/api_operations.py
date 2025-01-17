@@ -284,8 +284,27 @@ def upload_archive_to_cloud(
 
 def display_batch_count(batch_id: str, api_key: Optional[str]) -> None:
     workspace = get_workspace(api_key=api_key)
-    count = get_batch_count(workspace=workspace, batch_id=batch_id, api_key=api_key)
-    print(f"Elements in batch: {count}")
+    batch_details = find_batch_by_id(
+        workspace=workspace, batch_id=batch_id, api_key=api_key
+    )
+    if batch_details.batch_type in {"simple-batch", "sharded-batch"}:
+        count = get_batch_count(workspace=workspace, batch_id=batch_id, api_key=api_key)
+        print(f"Elements in batch {batch_id}: {count}")
+    elif batch_details.batch_type == "multipart-batch":
+        parts = list_multipart_batch_parts(
+            workspace=workspace, batch_id=batch_id, api_key=api_key
+        )
+        for part in parts:
+            count = get_batch_count(
+                workspace=workspace,
+                batch_id=batch_id,
+                api_key=api_key,
+                part_name=part.part_name,
+            )
+            print(f"Elements in batch {batch_id} - part: {part.part_name}: {count}")
+    raise RoboflowCloudCommandError(
+        f"Batch content count not implemented for batch type: {batch_details.batch_type}"
+    )
 
 
 @backoff.on_exception(
@@ -294,10 +313,17 @@ def display_batch_count(batch_id: str, api_key: Optional[str]) -> None:
     max_tries=3,
     interval=1,
 )
-def get_batch_count(workspace: str, batch_id: str, api_key: Optional[str]) -> int:
+def get_batch_count(
+    workspace: str,
+    batch_id: str,
+    api_key: Optional[str],
+    part_name: Optional[str] = None,
+) -> int:
     params = {}
     if api_key is not None:
         params["api_key"] = api_key
+    if part_name is not None:
+        params["partName"] = part_name
     try:
         response = requests.get(
             f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/count",
