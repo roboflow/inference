@@ -184,7 +184,7 @@ def test_offset_detection_with_percentage() -> None:
 
     # then
     x1, y1, x2, y2 = result.xyxy[0]
-    assert x1 == 90, "Left corner should be moved by 10% of width to the left"
-    assert y1 == 190, "Top corner should be moved by 10% of height to the top"
-    assert x2 == 310, "Right corner should be moved by 10% of width to the right"
-    assert y2 == 410, "Bottom corner should be moved by 10% of height to the bottom"
+    assert x1 == 68, "Left corner should be moved by 10% of image width to the left"
+    assert y1 == 168, "Top corner should be moved by 10% of image height to the top"
+    assert x2 == 332, "Right corner should be moved by 10% of image width to the right"
+    assert y2 == 432, "Bottom corner should be moved by 10% of image height to the bottom"
