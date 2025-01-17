@@ -1,5 +1,5 @@
 """
-This test module requires OpenAI API key passed via env variable WORKFLOWS_TEST_OPEN_AI_KEY.
+This test module requires Stability AI image generation API key passed via env variable WORKFLOWS_TEST_STABILITY_AI_KEY.
 This is supposed to be used only locally, as that would be too much of a cost in CI
 """
 
