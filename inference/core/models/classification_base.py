@@ -35,6 +35,9 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
 
     task_type = "classification"
 
+    preprocess_means = [0.5, 0.5, 0.5]
+    preprocess_stds = [0.5, 0.5, 0.5]
+
     def __init__(self, *args, **kwargs):
         """Initialize the model, setting whether it is multiclass or not."""
         super().__init__(*args, **kwargs)
