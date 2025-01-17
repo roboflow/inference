@@ -87,6 +87,6 @@ other targets will be rejected.
 * `BLACKLISTED_DESTINATIONS_FOR_URL_INPUT` - Optionally, you can specify a comma-separated list of forbidden 
 destinations for URL requests. For example:  `BLACKLISTED_DESTINATIONS_FOR_URL_INPUT=192.168.0.15,some.site.com`.
 URLs pointing to these targets will be rejected.
-
+* `ALLOW_ACCESS_TO_LOCAL_FILESYSTEM` - Set to `False` to disable local filesystem access to images - default: `True`.
 
 Check [inference cli docs](../inference_helpers/inference_cli.md) to see how to run server with specific flags.
