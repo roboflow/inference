@@ -47,6 +47,11 @@ class TimeInZoneManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "analytics",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "far fa-timer",
+                "blockPriority": 1,
+            },
         }
     )
     type: Literal["roboflow_core/time_in_zone@v1"]

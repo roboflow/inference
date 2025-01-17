@@ -47,6 +47,12 @@ class BlockManifest(WorkflowBlockManifest):
                 "labels",
                 "coordinates",
             ],
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-gear-code",
+                "blockPriority": 0,
+                "popular": True,
+            },
         }
     )
     type: Literal[

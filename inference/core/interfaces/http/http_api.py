@@ -724,10 +724,15 @@ class HttpInterface(BaseInterface):
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 prevent_local_images_loading=True,
                 profiler=profiler,
+                workflow_id=workflow_request.workflow_id,
             )
+            is_preview = False
+            if hasattr(workflow_request, "is_preview"):
+                is_preview = workflow_request.is_preview
             workflow_results = execution_engine.run(
                 runtime_parameters=workflow_request.inputs,
                 serialize_results=True,
+                _is_preview=is_preview,
             )
             with profiler.profile_execution_phase(
                 name="workflow_results_filtering",

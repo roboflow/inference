@@ -39,6 +39,8 @@ class BlockManifest(WorkflowBlockManifest):
             "ui_manifest": {
                 "section": "classical_cv",
                 "icon": "far fa-ruler-triangle",
+                "blockPriority": 11,
+                "opencv": True,
             },
         }
     )

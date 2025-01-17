@@ -43,6 +43,12 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
+            "ui_manifest": {
+                "section": "classical_cv",
+                "icon": "far fa-magnifying-glass-arrows-rotate",
+                "blockPriority": 3,
+                "opencv": True,
+            },
         }
     )
     type: Literal["roboflow_core/sift_comparison@v2"]

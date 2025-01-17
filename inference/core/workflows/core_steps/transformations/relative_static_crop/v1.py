@@ -40,6 +40,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "transformation",
+                "icon": "far fa-crop-alt",
+                "blockPriority": 2,
+            },
         }
     )
     type: Literal["roboflow_core/relative_statoic_crop@v1", "RelativeStaticCrop"]

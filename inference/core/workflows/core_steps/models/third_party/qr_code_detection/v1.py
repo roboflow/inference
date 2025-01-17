@@ -51,6 +51,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-qrcode",
+                "blockPriority": 13,
+                "opencv": True,
+            },
         }
     )
     type: Literal[

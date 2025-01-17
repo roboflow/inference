@@ -167,6 +167,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "data_storage",
+                "icon": "fal fa-webhook",
+                "blockPriority": 1,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/webhook_sink@v1"]

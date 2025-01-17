@@ -73,6 +73,13 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["SAM2", "META"],
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fa-brands fa-meta",
+                "blockPriority": 9.5,
+                "needsGPU": True,
+                "inference": True,
+            },
         },
         protected_namespaces=(),
     )

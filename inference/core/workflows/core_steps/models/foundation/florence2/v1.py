@@ -293,6 +293,11 @@ class BlockManifest(BaseManifest):
             "search_keywords": ["Florence", "Florence-2", "Microsoft"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 5.5,
+            },
         },
         protected_namespaces=(),
     )

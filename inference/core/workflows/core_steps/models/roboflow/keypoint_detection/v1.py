@@ -70,6 +70,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-chart-network",
+                "blockPriority": 4,
+                "inference": True,
+            },
         },
         protected_namespaces=(),
     )

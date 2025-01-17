@@ -35,7 +35,7 @@ def model_keypoints_to_response(
             y=keypoints[3 * keypoint_id + 1],
             confidence=confidence,
             class_id=keypoint_id,
-            class_name=keypoint_id2name[keypoint_id],
+            **{"class": keypoint_id2name[keypoint_id]},
         )
         results.append(keypoint)
     return results

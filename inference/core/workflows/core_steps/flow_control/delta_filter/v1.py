@@ -56,6 +56,11 @@ class DeltaFilterManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "flow_control",
+            "ui_manifest": {
+                "section": "flow_control",
+                "icon": "far fa-arrow-progress",
+                "blockPriority": 3,
+            },
         }
     )
     image: WorkflowImageSelector
