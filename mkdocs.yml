@@ -39,8 +39,9 @@ nav:
           - Alternatives: understand/alternatives.md
       - Cloud Hosting:
           - managed/index.md
-          - Serverless API: managed/serverless.md
-          - Dedicated Deployments: managed/dedicated.md
+          - "Serverless API »": "https://docs.roboflow.com/deploy/hosted-api"
+          - "Dedicated Deployments »": "https://docs.roboflow.com/deploy/dedicated-deployments"
+          - "Bring Your Own Cloud": "install/cloud/index.md"
       - Self Hosting:
           - install/index.md
           - Install on Linux: install/linux.md

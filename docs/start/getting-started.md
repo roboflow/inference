@@ -38,7 +38,7 @@ and pricing models.
 
 ### Serverless Hosted API
 
-The [Serverless Hosted API](/managed/serverless.md) supports running Workflows on
+The [Serverless Hosted API](https://docs.roboflow.com/deploy/hosted-api) supports running Workflows on
 pre-trained & fine-tuned models, chaining models, basic logic, visualizations, and
 external integrations.
 
@@ -52,7 +52,7 @@ inference with no minimums. Roboflow's free tier credits may be used.
 
 ### Dedicated Deployments
 
-[Dedicated Deployments](/managed/dedicated.md) are single-tenant virtual machines that
+[Dedicated Deployments](https://docs.roboflow.com/deploy/dedicated-deployments) are single-tenant virtual machines that
 are allocated for your exclusive use. They can optionally be configured with a GPU
 and used in development mode (where you may be evicted if capacity is needed for a
 higher priority task & are limited to 3-hour sessions) or production mode (guaranteed
