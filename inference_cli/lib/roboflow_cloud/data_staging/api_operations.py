@@ -9,7 +9,6 @@ from typing import Dict, List, Optional
 from uuid import uuid4
 
 import backoff
-import cv2
 import requests
 from requests import Timeout
 from rich.console import Console
@@ -290,6 +289,7 @@ def display_batch_count(batch_id: str, api_key: Optional[str]) -> None:
     if batch_details.batch_type in {"simple-batch", "sharded-batch"}:
         count = get_batch_count(workspace=workspace, batch_id=batch_id, api_key=api_key)
         print(f"Elements in batch {batch_id}: {count}")
+        return None
     elif batch_details.batch_type == "multipart-batch":
         parts = list_multipart_batch_parts(
             workspace=workspace, batch_id=batch_id, api_key=api_key
@@ -302,6 +302,7 @@ def display_batch_count(batch_id: str, api_key: Optional[str]) -> None:
                 part_name=part.part_name,
             )
             print(f"Elements in batch {batch_id} - part: {part.part_name}: {count}")
+        return None
     raise RoboflowCloudCommandError(
         f"Batch content count not implemented for batch type: {batch_details.batch_type}"
     )
