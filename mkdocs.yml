@@ -31,13 +31,13 @@ extra_css:
 nav:
   - Start:
       - Overview: start/overview.md
+      - Getting Started: start/getting-started.md
       - Understand:
           - Architecture: start/understand/architecture.md
           - Features: start/understand/features.md
           - Vocabulary: start/understand/vocabulary.md
           - Alternatives: start/understand/alternatives.md
           - More Resources: start/understand/resources.md
-      - Getting Started: start/getting-started.md
       - Cloud Hosting:
           - managed/index.md
           - Serverless API: managed/serverless.md

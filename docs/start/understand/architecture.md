@@ -2,7 +2,7 @@
 
 Inference is best run in server mode (it also supports a native Python interface;
 though see [why we recommend Docker](#why-docker)). You interact with it via a REST API
-(most often through [the Python SDK](/inference_helpers/inference_sdk/)) or a web
+(most often through [the Python SDK](/inference_helpers/inference_sdk.md)) or a web
 browser (for example, the [Roboflow Platform's UI](https://app.roboflow.com) optionally
 provides a frontend for interfacing with a locally hosted Inference Server).
 
@@ -36,7 +36,7 @@ returned synchronously.
 </div>
 
 In the case of video streams, a visual agent
-(called [an `InferencePipeline`](/workflows/video_processing/overview/))
+(called [an `InferencePipeline`](/workflows/video_processing/overview.md))
 is started and runs in a loop until terminated. Responses are polled or subscribed
 to by the client application for display or processing.
 
