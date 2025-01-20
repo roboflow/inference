@@ -289,6 +289,6 @@ If you are using Docker Compose for your application, the equivalent yaml is:
           - NET_BIND_SERVICE
     ```
 
---8<-- "docs/install/using-your-new-server.md"
+--8<-- "install/using-your-new-server.md"
 
 --8<-- "docs/install/enterprise-considerations.md"

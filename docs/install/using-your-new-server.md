@@ -1,7 +1,8 @@
 ## Using Your New Server
 
-Once you have a server running, you can access it via [its API](/api.md) or using
-[the Python SDK](/inference_helpers/inference_sdk.md). You can also use it to build Workflows
+Once you [have a server running](../install/index.md),
+you can access it via [its API](../api.md) or using
+[the Python SDK](../inference_helpers/inference_sdk.md). You can also use it to build Workflows
 using [the Roboflow Platform UI](https://docs.roboflow.com/workflows/create-a-workflow).
 
 === "Python SDK"

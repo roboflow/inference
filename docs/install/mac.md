@@ -66,4 +66,4 @@
 
     Your server is now running at [`localhost:9001`](http://localhost:9001) with MPS acceleration.
 
---8<-- "docs/install/using-your-new-server.md"
+--8<-- "install/using-your-new-server.md"

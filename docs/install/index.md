@@ -10,7 +10,7 @@ notifications).
 ## Run via Docker
 
 The preferred way to use Inference is via Docker 
-(see [Why Docker](/understand/architecture/#why-docker)).
+(see [Why Docker](/understand/architecture.md#why-docker)).
 
 [Install Docker](https://docs.docker.com/engine/install/) (and
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
@@ -40,4 +40,4 @@ of your new Inference Server's functionality!
 inference server start --dev
 ```
 
---8<-- "docs/install/using-your-new-server.md"
+--8<-- "install/using-your-new-server.md"

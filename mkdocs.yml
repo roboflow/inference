@@ -33,11 +33,10 @@ nav:
       - Overview: start/overview.md
       - Getting Started: start/getting-started.md
       - Understand:
-          - Architecture: start/understand/architecture.md
-          - Features: start/understand/features.md
-          - Vocabulary: start/understand/vocabulary.md
-          - Alternatives: start/understand/alternatives.md
-          - More Resources: start/understand/resources.md
+          - Architecture: understand/architecture.md
+          - Features: understand/features.md
+          - Vocabulary: understand/vocabulary.md
+          - Alternatives: understand/alternatives.md
       - Cloud Hosting:
           - managed/index.md
           - Serverless API: managed/serverless.md
@@ -55,21 +54,22 @@ nav:
               - Azure: install/cloud/azure.md
               - GCP: install/cloud/gcp.md
           - Other Devices: install/other.md
-      - Inputs:
-          - inputs/index.md
-          - Images: inputs/images.md
-          - Webcam: inputs/webcam.md
-          - IP Camera (RTSP):
-              - inputs/rtsp/index.md
-              - Reolink: inputs/rtsp/reolink.md
-              - UniFi: inputs/rtsp/unifi.md
-          - Recorded Video: inputs/video.md
-          - Industrial:
-              - inputs/industrial/index.md
-              - Basler: inputs/industrial/basler.md
-              - Lucid: inputs/industrial/lucid.md
-              - FLIR: inputs/industrial/flir.md
+      # - Inputs:
+      #     - inputs/index.md
+      #     - Images: inputs/images.md
+      #     - Webcam: inputs/webcam.md
+      #     - IP Camera (RTSP):
+      #         - inputs/rtsp/index.md
+      #         - Reolink: inputs/rtsp/reolink.md
+      #         - UniFi: inputs/rtsp/unifi.md
+      #     - Recorded Video: inputs/video.md
+      #     - Industrial:
+      #         - inputs/industrial/index.md
+      #         - Basler: inputs/industrial/basler.md
+      #         - Lucid: inputs/industrial/lucid.md
+      #         - FLIR: inputs/industrial/flir.md
       - Next Steps: start/next.md
+      - More Resources: resources.md
           
   - Models:
       - Run a Model: quickstart/run_a_model.md
@@ -226,7 +226,8 @@ markdown_extensions:
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: docs
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
