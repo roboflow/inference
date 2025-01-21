@@ -42,30 +42,9 @@ You can then use the API endpoint for your server for use in running models.
 
 You can run any model that Inference supports, including object detection, segmentation, classification, and keypoint models that you have available on Roboflow, and foundation models like CLIP, PaliGemma, SAM-2, and more.
 
-## Run inference
+# Next Steps
 
-You can run inference with Roboflow models using the following code:
+Once you've decided on a deployment method and have a server running,
+[interfacing with it is easy](/start/next.md). 
 
-```python
-from inference_sdk import InferenceHTTPClient
-
-# initialize the client
-CLIENT = InferenceHTTPClient(
-    api_url="https://yourendpoint.com"
-    api_key="YOUR_API_KEY"
-)
-
-# infer on a local image
-result = CLIENT.infer("YOUR_IMAGE.jpg", model_id="counting-screws/3")
-```
-
-Replace:
-
-1. The API URL with your Azure instance IP and port.
-2. API Key with your Roboflow API key.
-3. YOUR_IMAGE with the image you want to run inference on.
-4. Your model ID with your [Roboflow model ID](https://docs.roboflow.com/api-reference/workspace-and-project-ids).
-
-You can also run Roboflow Workflows on your deployment.
-
-[Learn how to run Workflows with Inference](/start/getting-started/#install-the-sdk).
+Fill in your `api_url` with the IP address of your VM and the port (`9001` by default) your server is running on.

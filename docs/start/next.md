@@ -1,14 +1,10 @@
----
-hide:
-  - toc
----
-
 # Next Steps
 
-How that you [have a server running](/install/index.md), you're ready to start building! The easiest
-way to prototype is by
-[building a prototype with the Roboflow Platform's visual debugger](/workflows/create_and_run.md) but you
-can also [build with our Python SDK](/inference_helpers/inference_sdk.md) or
+--8<-- "install/using-your-new-server.md"
+
+The easiest way to build and test your Workflows is by
+[using the Roboflow Platform's visual debugger](/workflows/create_and_run.md)
+but you can also [build with our Python SDK](/inference_helpers/inference_sdk.md) or
 [start by forking an Example project](/workflows/gallery/index.md).
 
 Once you've built [a Workflow](/workflows/about.md) you're happy with, you can

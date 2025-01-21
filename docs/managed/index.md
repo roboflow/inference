@@ -48,7 +48,9 @@ workloads on-premises. This is supported via
 [self-hosting on your own cloud](/install/cloud/index.md). Billing is the same
 as for self-hosting on an edge device.
 
---8<-- "install/using-your-new-server.md"
+<br />
 
-See [more example Workflows](/workflows/gallery/index.md)
-or [start building](/workflows/create_and_run.md).
+# Next Steps
+
+Once you've decided on a deployment method and have a server running,
+[interfacing with it is easy](/start/next.md).

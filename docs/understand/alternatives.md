@@ -24,8 +24,8 @@ Triton's model ensembles. Additionally, Inference leans heavily into computer
 vision specific features like visualization and stateful video
 functionality and integrations like notifications and data sinks.
 
-**Choose Triton if:** you're a machine learning expert that values speed on
-NVIDIA GPUs above all else.
+**Choose Triton if:** you're a machine learning expert working on a tightly
+defined project that values speed on NVIDIA GPUs above all else.
 
 ### Lightning LitServe
 

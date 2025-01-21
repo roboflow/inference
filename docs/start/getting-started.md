@@ -2,9 +2,9 @@
 
 There are three primary ways to deploy Inference:
 
-* Cloud Hosting - using Roboflow's managed compute.
-* Self Hosting - on your own hardware or edge devices.
-* Bring Your Own Cloud - with a VM or cluster.
+* [Serverless Hosted API](#serverless-hosted-api) - for smaller image models.
+* [Dedicated Deployment](#dedicated-deployments) - for bigger models and streaming video.
+* [Self Hosted](#self-hosting) - on your own edge device or server.
 
 Each has pros and cons and which one you should choose depends on your particular
 use-case and organizational constraints.
@@ -71,7 +71,7 @@ Scale-up time is on the order of a minute or two.
 
 ## Self Hosting
 
-Running at the edge is a core priority and focus area of Inference. For many use-cases
+[Running at the edge](/install/index.md) is a core priority and focus area of Inference. For many use-cases
 latency matters, bandwidth is limited, interfacing with local devices is key, and
 resiliency to Internet outages is mandatory.
 
@@ -97,7 +97,9 @@ workloads on-premises. This is supported via
 [self-hosting on your own cloud](/install/cloud/index.md). Billing is the same
 as for self-hosting on an edge device.
 
---8<-- "install/using-your-new-server.md"
+<br />
 
-See [more example Workflows](/workflows/gallery/index.md)
-or [start building](/workflows/create_and_run.md).
+# Next Steps
+
+Once you've decided on a deployment method and have a server running,
+[interfacing with it is easy](/start/next.md).

@@ -44,6 +44,7 @@ nav:
           - "Bring Your Own Cloud": "install/cloud/index.md"
       - Self Hosting:
           - install/index.md
+          - Minimum Requirements: install/minimum-requirements.md
           - Install on Linux: install/linux.md
           - Install on Windows: install/windows.md
           - Install on Mac: install/mac.md

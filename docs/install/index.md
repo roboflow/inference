@@ -23,7 +23,7 @@ inference server start
 
 The `inference server start` command attempts to automatically choose 
 and configure the optimal container to optimize performance on your machine.
-
+See [Using Your New Server](#using-your-new-server) for next steps.
 
 !!! Tip
     Special installation notes and performance tips by device are also available.
