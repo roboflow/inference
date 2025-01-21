@@ -72,8 +72,8 @@ class BlockManifest(WorkflowBlockManifest):
                 "icon": "far fa-text",
                 "blockPriority": 11,
                 "inDevelopment": True,
-                "inference": True
-            }
+                "inference": True,
+            },
         }
     )
     type: Literal["roboflow_core/ocr_model@v1", "OCRModel"]

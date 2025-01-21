@@ -42,8 +42,8 @@ class BlockManifest(WorkflowBlockManifest):
             "ui_manifest": {
                 "section": "transformation",
                 "icon": "far fa-crop-alt",
-                "blockPriority": 1
-            }
+                "blockPriority": 1,
+            },
         }
     )
     type: Literal["roboflow_core/absolute_static_crop@v1", "AbsoluteStaticCrop"]

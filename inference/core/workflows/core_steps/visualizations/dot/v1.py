@@ -42,8 +42,8 @@ class DotManifest(ColorableVisualizationManifest):
                 "section": "classical_cv",
                 "icon": "far fa-palette",
                 "blockPriority": 1,
-                "opencv": True
-            }
+                "opencv": True,
+            },
         }
     )
 

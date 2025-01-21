@@ -44,8 +44,8 @@ class ImageBlurManifest(WorkflowBlockManifest):
                 "section": "classical_cv",
                 "icon": "far fa-droplet",
                 "blockPriority": 5,
-                "opencv": True
-            }
+                "opencv": True,
+            },
         }
     )
 
