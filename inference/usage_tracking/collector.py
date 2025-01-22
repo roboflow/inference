@@ -327,7 +327,10 @@ class UsageCollector:
         fps: float = 0,
     ):
         source = str(source) if source else ""
-        frames = frames if isinstance(frames, numbers.Number) else 0
+        try:
+            frames = int(frames)
+        except Exception:
+            frames = 0
         api_key_hash = self._calculate_api_key_hash(api_key=api_key)
         if not resource_id and resource_details:
             resource_id = UsageCollector._calculate_resource_hash(resource_details)
@@ -647,7 +650,7 @@ class UsageCollector:
             usage_billable: bool = True,
             **kwargs: P.kwargs,
         ) -> T:
-            res = func(*args, **kwargs)
+            #res = func(*args, **kwargs)
             self.record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,

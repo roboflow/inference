@@ -1194,6 +1194,10 @@ class HttpInterface(BaseInterface):
                         workflow_id=workflow_id,
                         use_cache=workflow_request.use_cache,
                     )
+                if not workflow_request.workflow_id:
+                    workflow_request.workflow_id = workflow_id
+                if not workflow_specification.get("id"):
+                    logger.warning("Workflow ID not found in workflow specification")
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,

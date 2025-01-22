@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from packaging.version import Version
 
+from inference.core.logger import logger
 from inference.core.workflows.execution_engine.entities.engine import (
     BaseExecutionEngine,
 )
@@ -91,14 +92,16 @@ class ExecutionEngineV1(BaseExecutionEngine):
             input_substitutions=self._compiled_workflow.input_substitutions,
             profiler=self._profiler,
         )
+        usage_workflow_id = self._internal_id
+        if self._workflow_id and not usage_workflow_id:
+            logger.warning("Workflow ID is set however internal Workflow ID is missing")
+            usage_workflow_id = self._workflow_id
         result = run_workflow(
             workflow=self._compiled_workflow,
             runtime_parameters=runtime_parameters,
             max_concurrent_steps=self._max_concurrent_steps,
             usage_fps=fps,
-            usage_workflow_id=(
-                self._workflow_id if not self._internal_id else self._internal_id
-            ),
+            usage_workflow_id=usage_workflow_id,
             usage_workflow_preview=_is_preview,
             kinds_serializers=self._compiled_workflow.kinds_serializers,
             serialize_results=serialize_results,
