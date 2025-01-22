@@ -275,6 +275,16 @@ class InferencePipelineManager(Process):
             def webrtc_sink(
                 prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
             ) -> None:
+                if parsed_payload.stream_output[0] not in prediction:
+                    from_inference_queue.sync_put(
+                        video_frame.image
+                    )
+                    return
+                if prediction[parsed_payload.stream_output[0]] is None:
+                    from_inference_queue.sync_put(
+                        video_frame.image
+                    )
+                    return
                 from_inference_queue.sync_put(
                     prediction[parsed_payload.stream_output[0]].numpy_image
                 )
