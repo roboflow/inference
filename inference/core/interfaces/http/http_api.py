@@ -1197,7 +1197,10 @@ class HttpInterface(BaseInterface):
                 if not workflow_request.workflow_id:
                     workflow_request.workflow_id = workflow_id
                 if not workflow_specification.get("id"):
-                    logger.warning("Workflow ID not found in workflow specification")
+                    logger.warning(
+                        "Internal workflow ID missing in specification for '%s'",
+                        workflow_id,
+                    )
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,

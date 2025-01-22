@@ -94,7 +94,10 @@ class ExecutionEngineV1(BaseExecutionEngine):
         )
         usage_workflow_id = self._internal_id
         if self._workflow_id and not usage_workflow_id:
-            logger.warning("Workflow ID is set however internal Workflow ID is missing")
+            logger.debug(
+                "Workflow ID is set to '%s' however internal Workflow ID is missing",
+                self._workflow_id,
+            )
             usage_workflow_id = self._workflow_id
         result = run_workflow(
             workflow=self._compiled_workflow,

@@ -650,7 +650,7 @@ class UsageCollector:
             usage_billable: bool = True,
             **kwargs: P.kwargs,
         ) -> T:
-            #res = func(*args, **kwargs)
+            # res = func(*args, **kwargs)
             self.record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
