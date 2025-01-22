@@ -34,3 +34,9 @@ class ImagesDirectoryProcessingDetails:
     ]
     aggregated_results_path: Optional[str] = field(default=None)
     failures_report_path: Optional[str] = field(default=None)
+
+
+@dataclass(frozen=True)
+class VideoProcessingDetails:
+    structured_results_file: Optional[str]
+    video_outputs: Optional[Dict[str, str]]
