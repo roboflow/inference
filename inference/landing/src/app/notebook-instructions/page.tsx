@@ -23,7 +23,7 @@ export default function Home() {
                 src="/static/roboflow_full_logo_color.svg"
                 alt="Roboflow Logo"
                 width={200}
-              
+                height={100}
               />
             </a>
             
