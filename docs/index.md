@@ -34,7 +34,7 @@ See [Example Workflows](/workflows/gallery/index.md) for common use-cases like d
 
 ## Video Tutorials
 
---8<-- video-tutorials.md
+--8<-- "video-tutorials.md"
 
 <style>
 .button-holder {
