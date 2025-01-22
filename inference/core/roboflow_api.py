@@ -563,6 +563,8 @@ def get_workflow_specification(
     try:
         workflow_config = json.loads(response["workflow"]["config"])
         specification = workflow_config["specification"]
+        if isinstance(specification, dict):
+            specification["id"] = response["workflow"].get("id")
         if use_cache:
             _cache_workflow_specification_in_ephemeral_cache(
                 api_key=api_key,
@@ -571,8 +573,6 @@ def get_workflow_specification(
                 specification=specification,
                 ephemeral_cache=ephemeral_cache,
             )
-        if isinstance(specification, dict):
-            specification["id"] = response["workflow"].get("id")
         return specification
     except KeyError as error:
         raise MalformedWorkflowResponseError(
