@@ -705,6 +705,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
             try:
                 session_options = onnxruntime.SessionOptions()
+                session_options.log_severity_level = 3
                 # TensorRT does better graph optimization for its EP than onnx
                 if has_trt(providers):
                     session_options.graph_optimization_level = (

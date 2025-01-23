@@ -118,7 +118,7 @@ class DetectionOffsetBlockV1(WorkflowBlock):
         offset_height: int,
         units: str = "Pixels",
     ) -> BlockResult:
-        use_percentage = units == "Percent (%)"
+        use_percentage = units == "Percent (%) - of bounding box width / height"
         return [
             {
                 "predictions": offset_detections(
@@ -148,18 +148,19 @@ def offset_detections(
         _detections.xyxy = np.array(
             [
                 (
-                    max(0, x1 - int(image_dimensions[i][1] * offset_width / 200)),
-                    max(0, y1 - int(image_dimensions[i][0] * offset_height / 200)),
+                    max(0, x1 - int(box_width * offset_width / 200)),
+                    max(0, y1 - int(box_height * offset_height / 200)),
                     min(
                         image_dimensions[i][1],
-                        x2 + int(image_dimensions[i][1] * offset_width / 200),
+                        x2 + int(box_width * offset_width / 200),
                     ),
                     min(
                         image_dimensions[i][0],
-                        y2 + int(image_dimensions[i][0] * offset_height / 200),
+                        y2 + int(box_height * offset_height / 200),
                     ),
                 )
                 for i, (x1, y1, x2, y2) in enumerate(_detections.xyxy)
+                for box_width, box_height in [(x2 - x1, y2 - y1)]
             ]
         )
     else:

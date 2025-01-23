@@ -23,6 +23,7 @@ export default function Home() {
                 src="/static/roboflow_full_logo_color.svg"
                 alt="Roboflow Logo"
                 width={200}
+                height={100}
               />
             </a>
             <div className="font-bold text-gray-900 text-5xl md:text-6xl">
@@ -40,24 +41,28 @@ export default function Home() {
               src="/static/cone.svg"
               alt="Roboflow Logo"
               width={120}
+              height={120}
               className="hidden md:flex flex-none absolute left-[-400px] -top-20 xl:left-[-450px] xl:-top-28 z-0"
             />
             <Image
               src="/static/trash.svg"
               alt="Roboflow Logo"
               width={110}
+              height={110}
               className="hidden md:flex flex-none absolute -left-56 top-4 xl:-left-64 xl:top-6 z-0"
             />
             <Image
               src="/static/boat.svg"
               alt="Roboflow Logo"
               width={100}
+              height={100}
               className="hidden md:flex flex-none absolute right-[-375px] top-36 xl:right-[-420px] xl:top-12 z-0"
             />
             <Image
               src="/static/car.svg"
               alt="Roboflow Logo"
               width={140}
+              height={140}
               className="hidden md:flex flex-none absolute -right-56 top- xl:-right-56 xl:-top-6 z-0"
             />
           </div>
