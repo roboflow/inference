@@ -1,15 +1,20 @@
-from typing_extensions import Annotated
-from typing import Optional, List
+from typing import List, Optional
 
 import typer
+from typing_extensions import Annotated
 
 from inference_cli.lib.env import ROBOFLOW_API_KEY
 from inference_cli.lib.roboflow_cloud.batch_processing.api_operations import (
     display_batch_job_details,
     display_batch_jobs,
-    trigger_job_with_workflows_images_processing, trigger_job_with_workflows_videos_processing,
+    trigger_job_with_workflows_images_processing,
+    trigger_job_with_workflows_videos_processing,
 )
-from inference_cli.lib.roboflow_cloud.batch_processing.entities import MachineType, MachineSize, AggregationFormat
+from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
+    AggregationFormat,
+    MachineSize,
+    MachineType,
+)
 
 batch_processing_app = typer.Typer(
     help="Commands for interacting with Roboflow Batch Processing"
@@ -32,7 +37,7 @@ def list_jobs(
             "--max-pages",
             "-m",
             help="Number of pagination pages with batch jobs to display",
-        )
+        ),
     ] = 1,
     debug_mode: Annotated[
         bool,
@@ -137,8 +142,11 @@ def process_images_with_workflow(
     ] = None,
     part_name: Annotated[
         Optional[str],
-        typer.Option("--part-name", "-p", help="Name of the batch part "
-                                               "(relevant for multipart batches"),
+        typer.Option(
+            "--part-name",
+            "-p",
+            help="Name of the batch part " "(relevant for multipart batches",
+        ),
     ] = None,
     machine_type: Annotated[
         Optional[MachineType],
@@ -154,7 +162,9 @@ def process_images_with_workflow(
     ] = None,
     max_parallel_tasks: Annotated[
         Optional[int],
-        typer.Option("--max-parallel-tasks", help="Max number of concurrent processing tasks"),
+        typer.Option(
+            "--max-parallel-tasks", help="Max number of concurrent processing tasks"
+        ),
     ] = None,
     aggregation_format: Annotated[
         Optional[AggregationFormat],
@@ -255,8 +265,11 @@ def process_videos_with_workflow(
     ] = None,
     part_name: Annotated[
         Optional[str],
-        typer.Option("--part-name", "-p", help="Name of the batch part "
-                                               "(relevant for multipart batches"),
+        typer.Option(
+            "--part-name",
+            "-p",
+            help="Name of the batch part " "(relevant for multipart batches",
+        ),
     ] = None,
     machine_type: Annotated[
         Optional[MachineType],
@@ -272,7 +285,9 @@ def process_videos_with_workflow(
     ] = None,
     max_parallel_tasks: Annotated[
         Optional[int],
-        typer.Option("--max-parallel-tasks", help="Max number of concurrent processing tasks"),
+        typer.Option(
+            "--max-parallel-tasks", help="Max number of concurrent processing tasks"
+        ),
     ] = None,
     aggregation_format: Annotated[
         Optional[AggregationFormat],
@@ -283,7 +298,7 @@ def process_videos_with_workflow(
         typer.Option(
             "--max-video-fps",
             help="Limit for FPS to process for video (subsampling predictions rate) - smaller FPS means faster "
-                 "processing and less accurate video analysis."
+            "processing and less accurate video analysis.",
         ),
     ] = None,
     job_id: Annotated[

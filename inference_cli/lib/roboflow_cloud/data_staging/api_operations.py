@@ -10,11 +10,11 @@ from uuid import uuid4
 
 import backoff
 import requests
+import supervision as sv
 from requests import Timeout
 from rich.console import Console
 from rich.table import Table
 from tqdm import tqdm
-import supervision as sv
 
 from inference_cli.lib.env import API_BASE_URL
 from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
@@ -29,7 +29,8 @@ from inference_cli.lib.roboflow_cloud.config import (
     MAX_SHARD_SIZE,
     MAX_SHARDS_UPLOAD_PROCESSES,
     MIN_IMAGES_TO_FORM_SHARD,
-    REQUEST_TIMEOUT, SUGGESTED_MAX_VIDEOS_IN_BATCH,
+    REQUEST_TIMEOUT,
+    SUGGESTED_MAX_VIDEOS_IN_BATCH,
 )
 from inference_cli.lib.roboflow_cloud.data_staging.entities import (
     BatchDetails,
@@ -41,7 +42,11 @@ from inference_cli.lib.roboflow_cloud.errors import (
     RFAPICallError,
     RoboflowCloudCommandError,
 )
-from inference_cli.lib.utils import create_batches, get_all_images_in_directory, get_all_videos_in_directory
+from inference_cli.lib.utils import (
+    create_batches,
+    get_all_images_in_directory,
+    get_all_videos_in_directory,
+)
 
 
 def display_batches(api_key: Optional[str]) -> None:

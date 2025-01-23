@@ -5,10 +5,12 @@ from pathlib import Path
 import pytest
 
 from inference_cli.lib.utils import (
+    IMAGES_EXTENSIONS,
     dump_json,
     ensure_target_directory_is_empty,
+    get_all_images_in_directory,
     read_env_file,
-    read_file_lines, IMAGES_EXTENSIONS, get_all_images_in_directory,
+    read_file_lines,
 )
 
 

@@ -2,7 +2,7 @@ import json
 import random
 import string
 from collections import Counter
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Union
 
 import backoff
@@ -16,14 +16,20 @@ from rich.text import Text
 
 from inference_cli.lib.env import API_BASE_URL
 from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
+    AggregationFormat,
+    ComputeConfigurationV1,
     GetJobMetadataResponse,
     JobMetadata,
     JobStageDetails,
     ListBatchJobsResponse,
     ListJobStagesResponse,
     ListJobStageTasksResponse,
-    TaskStatus, MachineType, MachineSize, AggregationFormat, ComputeConfigurationV1, StagingBatchInputV1,
-    WorkflowsProcessingSpecificationV1, WorkflowProcessingJobV1,
+    MachineSize,
+    MachineType,
+    StagingBatchInputV1,
+    TaskStatus,
+    WorkflowProcessingJobV1,
+    WorkflowsProcessingSpecificationV1,
 )
 from inference_cli.lib.roboflow_cloud.common import (
     get_workspace,
@@ -58,9 +64,15 @@ def display_batch_jobs(
         return None
     console = Console()
     table = Table(title="Batch Jobs Overview", show_lines=True)
-    table.add_column("ID", justify="center", style="cyan", no_wrap=True, vertical="middle")
-    table.add_column("Name", justify="center", width=24, overflow="ellipsis", vertical="middle")
-    table.add_column("Stage", justify="center", width=24, style="blue", vertical="middle")
+    table.add_column(
+        "ID", justify="center", style="cyan", no_wrap=True, vertical="middle"
+    )
+    table.add_column(
+        "Name", justify="center", width=24, overflow="ellipsis", vertical="middle"
+    )
+    table.add_column(
+        "Stage", justify="center", width=24, style="blue", vertical="middle"
+    )
     table.add_column("Status", justify="center", vertical="middle")
     table.add_column("Notification", justify="center", vertical="middle")
     table.add_column("Errors", justify="center", vertical="middle")
@@ -69,7 +81,8 @@ def display_batch_jobs(
         error_status = error_marker if batch_job.error else "🟢"
         terminal_status = "🏁" if batch_job.is_terminal else "🏃"
         stage_status = _prepare_stage_status(
-            current_stage=batch_job.current_stage, planned_stages=batch_job.planned_stages
+            current_stage=batch_job.current_stage,
+            planned_stages=batch_job.planned_stages,
         )
         table.add_row(
             batch_job.job_id,
@@ -174,7 +187,9 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
     )
     table.add_row("Progress", stage_status)
     table.add_row("Created At", job_metadata.created_at.strftime("%d %b %Y, %I:%M %p"))
-    table.add_row("Job Definition", JSON.from_data(job_metadata.job_definition, indent=2))
+    table.add_row(
+        "Job Definition", JSON.from_data(job_metadata.job_definition, indent=2)
+    )
     console.print(table)
     job_stages = list_job_stages(workspace=workspace, job_id=job_id, api_key=api_key)
     job_stages = sorted(job_stages, key=lambda e: e.start_timestamp)
@@ -214,25 +229,32 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
         is_terminal_str = "🏁" if stage.is_terminal else "🏃"
         elapse_update = ""
         if not stage.is_terminal:
-            most_recent_update = max(most_recent_task_update_time, stage.last_event_timestamp)
-            time_from_start = round((datetime.now(timezone.utc) - most_recent_update).total_seconds() / 60)
+            most_recent_update = max(
+                most_recent_task_update_time, stage.last_event_timestamp
+            )
+            time_from_start = round(
+                (datetime.now(timezone.utc) - most_recent_update).total_seconds() / 60
+            )
             elapse_update = f" (last update {max(time_from_start, 0)}m ago)"
-        updates_string = (
-            f"{prepare_status_type_emoji(status_type=stage.status_type)} {is_terminal_str}{elapse_update} {stage.status_name}"
-        )
+        updates_string = f"{prepare_status_type_emoji(status_type=stage.status_type)} {is_terminal_str}{elapse_update} {stage.status_name}"
         details_table.add_column("Property", justify="left", style="cyan", no_wrap=True)
         details_table.add_column("Value", justify="full", overflow="ellipsis")
         details_table.add_row(
             "ID",
             f"[bold green]StageID:[/bold green] {stage.processing_stage_id} "
-            f"[bold green]Name:[/bold green] {stage.processing_stage_name}"
+            f"[bold green]Name:[/bold green] {stage.processing_stage_name}",
         )
         details_table.add_row("Output Batches", output_batches_str)
         elapse_update = ""
         if not stage.is_terminal:
-            time_from_start = round((datetime.now(timezone.utc) - stage.start_timestamp).total_seconds() / 60)
+            time_from_start = round(
+                (datetime.now(timezone.utc) - stage.start_timestamp).total_seconds()
+                / 60
+            )
             elapse_update = f" ({max(time_from_start, 0)}m ago)"
-        started_at_str = f"{stage.start_timestamp.strftime('%d %b %Y, %I:%M %p')}{elapse_update}"
+        started_at_str = (
+            f"{stage.start_timestamp.strftime('%d %b %Y, %I:%M %p')}{elapse_update}"
+        )
         details_table.add_row("Started At", started_at_str)
         details_table.add_row("Status", updates_string)
         details_table.add_row(

@@ -6,10 +6,11 @@ from typing_extensions import Annotated
 from inference_cli.lib.env import ROBOFLOW_API_KEY
 from inference_cli.lib.roboflow_cloud.data_staging.api_operations import (
     create_images_batch_from_directory,
+    create_videos_batch_from_directory,
     display_batch_content,
     display_batch_count,
     display_batch_shards_statuses,
-    display_batches, create_videos_batch_from_directory,
+    display_batches,
 )
 
 data_staging_app = typer.Typer(

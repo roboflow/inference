@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional, Literal, Union, Dict, Any
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -85,9 +85,15 @@ class MachineSize(str, Enum):
 
 
 class ComputeConfigurationV1(BaseModel):
-    type: Literal["compute-configuration-v1"] = Field(default="compute-configuration-v1")
-    machine_type: Optional[MachineType] = Field(serialization_alias="machineType", default=None)
-    machine_size: Optional[MachineSize] = Field(serialization_alias="machineSize", default=None)
+    type: Literal["compute-configuration-v1"] = Field(
+        default="compute-configuration-v1"
+    )
+    machine_type: Optional[MachineType] = Field(
+        serialization_alias="machineType", default=None
+    )
+    machine_size: Optional[MachineSize] = Field(
+        serialization_alias="machineSize", default=None
+    )
 
 
 class StagingBatchInputV1(BaseModel):
@@ -102,21 +108,43 @@ class AggregationFormat(str, Enum):
 
 
 class WorkflowsProcessingSpecificationV1(BaseModel):
-    type: Literal["workflows-processing-specification-v1"] = Field(default="workflows-processing-specification-v1")
+    type: Literal["workflows-processing-specification-v1"] = Field(
+        default="workflows-processing-specification-v1"
+    )
     workspace: str
     workflow_id: str = Field(serialization_alias="workflowId")
-    workflow_parameters: Optional[Dict[str, Any]] = Field(serialization_alias="workflowParameters", default=None)
-    image_input_name: Optional[str] = Field(serialization_alias="imageInputName", default=None)
-    persist_images_outputs: Optional[bool] = Field(serialization_alias="persistImagesOutputs", default=None)
-    images_outputs_to_be_persisted: Optional[List[str]] = Field(serialization_alias="imagesOutputsToBePersisted", default=None)
-    aggregation_format: Optional[AggregationFormat] = Field(serialization_alias="aggregationFormat", default=None)
-    max_video_fps: Optional[Union[int, float]] = Field(serialization_alias="maxVideoFPS", default=None)
+    workflow_parameters: Optional[Dict[str, Any]] = Field(
+        serialization_alias="workflowParameters", default=None
+    )
+    image_input_name: Optional[str] = Field(
+        serialization_alias="imageInputName", default=None
+    )
+    persist_images_outputs: Optional[bool] = Field(
+        serialization_alias="persistImagesOutputs", default=None
+    )
+    images_outputs_to_be_persisted: Optional[List[str]] = Field(
+        serialization_alias="imagesOutputsToBePersisted", default=None
+    )
+    aggregation_format: Optional[AggregationFormat] = Field(
+        serialization_alias="aggregationFormat", default=None
+    )
+    max_video_fps: Optional[Union[int, float]] = Field(
+        serialization_alias="maxVideoFPS", default=None
+    )
 
 
 class WorkflowProcessingJobV1(BaseModel):
     type: WorkflowProcessingJobType
     job_input: StagingBatchInputV1 = Field(serialization_alias="jobInput")
-    compute_configuration: ComputeConfigurationV1 = Field(serialization_alias="computeConfiguration")
-    processing_timeout_seconds: Optional[int] = Field(serialization_alias="processingTimeoutSeconds", default=None)
-    max_parallel_tasks: Optional[int] = Field(serialization_alias="maxParallelTasks", default=None)
-    processing_specification: WorkflowsProcessingSpecificationV1 = Field(serialization_alias="processingSpecification")
+    compute_configuration: ComputeConfigurationV1 = Field(
+        serialization_alias="computeConfiguration"
+    )
+    processing_timeout_seconds: Optional[int] = Field(
+        serialization_alias="processingTimeoutSeconds", default=None
+    )
+    max_parallel_tasks: Optional[int] = Field(
+        serialization_alias="maxParallelTasks", default=None
+    )
+    processing_specification: WorkflowsProcessingSpecificationV1 = Field(
+        serialization_alias="processingSpecification"
+    )
