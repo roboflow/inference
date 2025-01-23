@@ -321,7 +321,9 @@ class OwlV2(RoboflowInferenceModel):
         # each entry should be on the order of 300*4KB, so 1000 is 400MB of CUDA memory
         self.image_embed_cache = LimitedSizeDict(size_limit=OWLV2_IMAGE_CACHE_SIZE)
         # no need for limit here, as we're only storing on CPU
-        self.cpu_image_embed_cache = LimitedSizeDict(size_limit=CPU_IMAGE_EMBED_CACHE_SIZE)
+        self.cpu_image_embed_cache = LimitedSizeDict(
+            size_limit=CPU_IMAGE_EMBED_CACHE_SIZE
+        )
         # each entry should be on the order of 10 bytes, so 1000 is 10KB
         self.image_size_cache = LimitedSizeDict(size_limit=OWLV2_IMAGE_CACHE_SIZE)
         # entry size will vary depending on the number of samples, but 10 should be safe
@@ -700,9 +702,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         roboflow_id = hf_id.replace("google/", "owlv2/")
         if previous_embeddings_file is not None:
             if DEVICE == "cpu":
-                model_data = torch.load(
-                    previous_embeddings_file, map_location="cpu"
-                )
+                model_data = torch.load(previous_embeddings_file, map_location="cpu")
             else:
                 model_data = torch.load(previous_embeddings_file)
             class_names = model_data["class_names"]
@@ -714,7 +714,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
             owlv2.cpu_image_embed_cache = model_data["image_embeds"]
         else:
             owlv2 = OwlV2(model_id=roboflow_id)
-        
+
         train_data_dict, image_embeds = owlv2.make_class_embeddings_dict(
             training_data, iou_threshold, return_image_embeds=True
         )
@@ -845,7 +845,9 @@ class SerializedOwlV2(RoboflowInferenceModel):
     def save_small_model_without_image_embeds(
         self, save_dir: str = os.path.join(MODEL_CACHE_DIR, "owl-v2-serialized-data")
     ):
-        self.owlv2.cpu_image_embed_cache = LimitedSizeDict(size_limit=CPU_IMAGE_EMBED_CACHE_SIZE)
+        self.owlv2.cpu_image_embed_cache = LimitedSizeDict(
+            size_limit=CPU_IMAGE_EMBED_CACHE_SIZE
+        )
         return self.save_model(
             self.huggingface_id,
             self.roboflow_id,
