@@ -2,7 +2,8 @@ import json
 import random
 import string
 from collections import Counter
-from typing import List, Optional
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional, Union
 
 import backoff
 import requests
@@ -21,7 +22,8 @@ from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     ListBatchJobsResponse,
     ListJobStagesResponse,
     ListJobStageTasksResponse,
-    TaskStatus,
+    TaskStatus, MachineType, MachineSize, AggregationFormat, ComputeConfigurationV1, StagingBatchInputV1,
+    WorkflowsProcessingSpecificationV1, WorkflowProcessingJobV1,
 )
 from inference_cli.lib.roboflow_cloud.common import (
     get_workspace,
@@ -33,6 +35,7 @@ from inference_cli.lib.roboflow_cloud.data_staging.api_operations import (
     find_batch_by_id,
 )
 from inference_cli.lib.roboflow_cloud.errors import RetryError, RFAPICallError
+from inference_cli.lib.utils import read_json
 
 WORKFLOWS_IMAGE_PROCESSING_JOB = "workflows-images-processing"
 WORKFLOWS_VIDEO_PROCESSING_JOB = "workflows-videos-processing"
@@ -40,7 +43,7 @@ WORKFLOWS_VIDEO_PROCESSING_JOB = "workflows-videos-processing"
 
 def display_batch_jobs(
     api_key: str,
-    page_size: int = 3,
+    page_size: int = 10,
     max_pages: Optional[int] = None,
 ) -> None:
     workspace = get_workspace(api_key=api_key)
@@ -56,20 +59,23 @@ def display_batch_jobs(
     console = Console()
     table = Table(title="Batch Jobs Overview", show_lines=True)
     table.add_column("ID", justify="center", style="cyan", no_wrap=True, vertical="middle")
-    table.add_column("Name", justify="center", width=32, overflow="ellipsis", vertical="middle")
-    table.add_column("Stage", justify="center", width=26, style="blue", vertical="middle")
+    table.add_column("Name", justify="center", width=24, overflow="ellipsis", vertical="middle")
+    table.add_column("Stage", justify="center", width=24, style="blue", vertical="middle")
+    table.add_column("Status", justify="center", vertical="middle")
     table.add_column("Notification", justify="center", vertical="middle")
     table.add_column("Errors", justify="center", vertical="middle")
     for batch_job in batch_jobs:
-        error_status = "🚨" if batch_job.error else "👍"
-        terminal_status = " 🏁" if batch_job.is_terminal else ""
+        error_marker = "🟡" if not batch_job.is_terminal else "🚨"
+        error_status = error_marker if batch_job.error else "🟢"
+        terminal_status = "🏁" if batch_job.is_terminal else "🏃"
         stage_status = _prepare_stage_status(
             current_stage=batch_job.current_stage, planned_stages=batch_job.planned_stages
         )
         table.add_row(
-            batch_job.id + terminal_status,
+            batch_job.job_id,
             batch_job.name,
             stage_status,
+            terminal_status,
             batch_job.last_notification,
             error_status,
         )
@@ -133,7 +139,7 @@ def get_batch_jobs_listing_page(
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
-    handle_response_errors(response=response, operation_name="list batches")
+    handle_response_errors(response=response, operation_name="list jobs")
     try:
         return ListBatchJobsResponse.model_validate(response.json())
     except ValueError as error:
@@ -158,7 +164,7 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
     table.add_column("Value", justify="full", overflow="ellipsis")
     table.add_row("Name", job_metadata.name)
     table.add_row("Last Notification", job_metadata.last_notification)
-    error_marker = "⚠️" if not job_metadata.is_terminal else "🚨"
+    error_marker = "🟡" if not job_metadata.is_terminal else "🚨"
     error_status = error_marker if job_metadata.error else "🟢"
     running_status = "🏁" if job_metadata.is_terminal else "🏃"
     table.add_row("Status", f"Errors: {error_status} Is Running: {running_status}")
@@ -168,11 +174,10 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
     )
     table.add_row("Progress", stage_status)
     table.add_row("Created At", job_metadata.created_at.strftime("%d %b %Y, %I:%M %p"))
-    table.add_row("Last Update", job_metadata.last_update.strftime("%d %b %Y, %I:%M %p"))
     table.add_row("Job Definition", JSON.from_data(job_metadata.job_definition, indent=2))
     console.print(table)
-
     job_stages = list_job_stages(workspace=workspace, job_id=job_id, api_key=api_key)
+    job_stages = sorted(job_stages, key=lambda e: e.start_timestamp)
     for stage in job_stages:
         job_tasks = list_job_stage_tasks(
             workspace=workspace,
@@ -180,6 +185,9 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
             stage_id=stage.processing_stage_id,
             api_key=api_key,
         )
+        most_recent_task_update_time = stage.start_timestamp
+        if job_tasks:
+            most_recent_task_update_time = max([t.event_timestamp for t in job_tasks])
         succeeded_tasks = [t for t in job_tasks if "success" in t.status_type.lower()]
         failed_tasks = [t for t in job_tasks if "error" in t.status_type.lower()]
         failed_tasks_statuses = Counter([t.status_name for t in failed_tasks])
@@ -201,25 +209,36 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
         console.print(heading_panel)
         details_table = Table(show_lines=True, expand=True)
         output_batches_str = (
-            "❌" if not stage.output_batches else ", ".join(stage.output_batches)
+            "⚪️" if not stage.output_batches else ", ".join(stage.output_batches)
         )
-        status_update = f"{prepare_status_type_emoji(status_type=stage.status_type)} {stage.status_name}"
-        is_terminal_str = "✋" if stage.is_terminal else "🏃"
+        is_terminal_str = "🏁" if stage.is_terminal else "🏃"
+        elapse_update = ""
+        if not stage.is_terminal:
+            most_recent_update = max(most_recent_task_update_time, stage.last_event_timestamp)
+            time_from_start = round((datetime.now(timezone.utc) - most_recent_update).total_seconds() / 60)
+            elapse_update = f" (last update {max(time_from_start, 0)}m ago)"
         updates_string = (
-            f"{is_terminal_str} - last update: {stage.last_event_timestamp.isoformat()}"
+            f"{prepare_status_type_emoji(status_type=stage.status_type)} {is_terminal_str}{elapse_update} {stage.status_name}"
         )
         details_table.add_column("Property", justify="left", style="cyan", no_wrap=True)
         details_table.add_column("Value", justify="full", overflow="ellipsis")
-        details_table.add_row("ID", stage.processing_stage_id)
-        details_table.add_row("Name", stage.processing_stage_name)
+        details_table.add_row(
+            "ID",
+            f"[bold green]StageID:[/bold green] {stage.processing_stage_id} "
+            f"[bold green]Name:[/bold green] {stage.processing_stage_name}"
+        )
         details_table.add_row("Output Batches", output_batches_str)
-        details_table.add_row("Started At", stage.start_timestamp.isoformat())
-        details_table.add_row("Status", status_update)
-        details_table.add_row("Progress", updates_string)
+        elapse_update = ""
+        if not stage.is_terminal:
+            time_from_start = round((datetime.now(timezone.utc) - stage.start_timestamp).total_seconds() / 60)
+            elapse_update = f" ({max(time_from_start, 0)}m ago)"
+        started_at_str = f"{stage.start_timestamp.strftime('%d %b %Y, %I:%M %p')}{elapse_update}"
+        details_table.add_row("Started At", started_at_str)
+        details_table.add_row("Status", updates_string)
         details_table.add_row(
             "Downstream Tasks",
             f"⏳️: {tasks_waiting_for_processing}, 🏃: {running_tasks}, 🏁: {terminated_tasks} "
-            f"(out of {registered_tasks})",
+            f"(out of {expected_tasks})",
         )
         details_table.add_row(
             "Completed Tasks Status",
@@ -251,7 +270,7 @@ def get_batch_job_metadata(
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
-    handle_response_errors(response=response, operation_name="list batches")
+    handle_response_errors(response=response, operation_name="get job metadata")
     try:
         return GetJobMetadataResponse.model_validate(response.json()).job
     except ValueError as error:
@@ -260,24 +279,55 @@ def get_batch_job_metadata(
 
 def trigger_job_with_workflows_images_processing(
     batch_id: str,
+    workflow_id: str,
+    workflow_parameters_path: Optional[str],
+    image_input_name: Optional[str],
+    save_image_outputs: bool,
+    image_outputs_to_save: Optional[List[str]],
+    part_name: Optional[str],
+    machine_type: Optional[MachineType],
+    machine_size: Optional[MachineSize],
+    max_runtime_seconds: Optional[int],
+    max_parallel_tasks: Optional[int],
+    aggregation_format: Optional[AggregationFormat],
     job_id: Optional[str],
     api_key: Optional[str],
 ) -> str:
     workspace = get_workspace(api_key=api_key)
-    selected_batch = find_batch_by_id(
-        workspace=workspace, batch_id=batch_id, api_key=api_key
+    compute_configuration = ComputeConfigurationV1(
+        machine_type=machine_type,
+        machine_size=machine_size,
+    )
+    input_configuration = StagingBatchInputV1(
+        batch_id=batch_id,
+        part_name=part_name,
+    )
+    workflow_parameters = None
+    if workflow_parameters_path:
+        workflow_parameters = read_json(path=workflow_parameters_path)
+    processing_specification = WorkflowsProcessingSpecificationV1(
+        workspace=workspace,
+        workflow_id=workflow_id,
+        workflow_parameters=workflow_parameters,
+        image_input_name=image_input_name,
+        persist_images_outputs=save_image_outputs,
+        images_outputs_to_be_persisted=image_outputs_to_save,
+        aggregation_format=aggregation_format,
     )
     if not job_id:
-        job_id = f"workflows-{_generate_random_string()}"
-    input_definition = {
-        "type": "images-batch",
-        "batchId": selected_batch.batch_id,
-    }
+        job_id = f"job-{_generate_random_string(length=8)}"
+    job_configuration = WorkflowProcessingJobV1(
+        type="simple-image-processing-v1",
+        job_input=input_configuration,
+        compute_configuration=compute_configuration,
+        processing_timeout_seconds=max_runtime_seconds,
+        max_parallel_tasks=max_parallel_tasks,
+        processing_specification=processing_specification,
+    )
     create_batch_job(
         workspace=workspace,
         job_id=job_id,
-        job_type=WORKFLOWS_IMAGE_PROCESSING_JOB,
-        input_definition=input_definition,
+        job_configuration=job_configuration,
         api_key=api_key,
     )
     return job_id
@@ -285,24 +335,57 @@ def trigger_job_with_workflows_images_processing(
 
 def trigger_job_with_workflows_videos_processing(
     batch_id: str,
+    workflow_id: str,
+    workflow_parameters_path: Optional[str],
+    image_input_name: Optional[str],
+    save_image_outputs: bool,
+    image_outputs_to_save: Optional[List[str]],
+    part_name: Optional[str],
+    machine_type: Optional[MachineType],
+    machine_size: Optional[MachineSize],
+    max_runtime_seconds: Optional[int],
+    max_parallel_tasks: Optional[int],
+    aggregation_format: Optional[AggregationFormat],
+    max_video_fps: Optional[Union[float, int]],
     job_id: Optional[str],
     api_key: Optional[str],
 ) -> str:
     workspace = get_workspace(api_key=api_key)
-    selected_batch = find_batch_by_id(
-        workspace=workspace, batch_id=batch_id, api_key=api_key
+    compute_configuration = ComputeConfigurationV1(
+        machine_type=machine_type,
+        machine_size=machine_size,
+    )
+    input_configuration = StagingBatchInputV1(
+        batch_id=batch_id,
+        part_name=part_name,
+    )
+    workflow_parameters = None
+    if workflow_parameters_path:
+        workflow_parameters = read_json(path=workflow_parameters_path)
+    processing_specification = WorkflowsProcessingSpecificationV1(
+        workspace=workspace,
+        workflow_id=workflow_id,
+        workflow_parameters=workflow_parameters,
+        image_input_name=image_input_name,
+        persist_images_outputs=save_image_outputs,
+        images_outputs_to_be_persisted=image_outputs_to_save,
+        aggregation_format=aggregation_format,
+        max_video_fps=max_video_fps,
     )
     if not job_id:
-        job_id = f"workflows-{_generate_random_string()}"
-    input_definition = {
-        "type": "videos-batch",
-        "batchId": selected_batch.batch_id,
-    }
+        job_id = f"job-{_generate_random_string(length=8)}"
+    job_configuration = WorkflowProcessingJobV1(
+        type="simple-video-processing-v1",
+        job_input=input_configuration,
+        compute_configuration=compute_configuration,
+        processing_timeout_seconds=max_runtime_seconds,
+        max_parallel_tasks=max_parallel_tasks,
+        processing_specification=processing_specification,
+    )
     create_batch_job(
         workspace=workspace,
         job_id=job_id,
-        job_type=WORKFLOWS_VIDEO_PROCESSING_JOB,
-        input_definition=input_definition,
+        job_configuration=job_configuration,
         api_key=api_key,
     )
     return job_id
@@ -317,28 +400,22 @@ def trigger_job_with_workflows_videos_processing(
 def create_batch_job(
     workspace: str,
     job_id: str,
-    job_type: str,
-    input_definition: dict,
-    api_key: Optional[str],
+    job_configuration: WorkflowProcessingJobV1,
+    api_key: str,
 ) -> None:
-    params = {}
-    if api_key is not None:
-        params["api_key"] = api_key
+    params = {"api_key": api_key}
     try:
         response = requests.post(
             f"{API_BASE_URL}/batch-processing/v1/external/{workspace}/jobs/{job_id}",
             params=params,
             timeout=REQUEST_TIMEOUT,
-            json={
-                "jobType": job_type,
-                "inputDefinition": input_definition,
-            },
+            json=job_configuration.model_dump(by_alias=True, exclude_none=True),
         )
     except (ConnectionError, Timeout):
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
-    handle_response_errors(response=response, operation_name="list batches")
+    handle_response_errors(response=response, operation_name="create job")
     return None
 
 
@@ -431,10 +508,8 @@ def get_job_stage_tasks_listing_page(
         )
     handle_response_errors(response=response, operation_name="list job stage tasks")
     try:
-        print(response.json())
         return ListJobStageTasksResponse.model_validate(response.json())
     except ValueError as error:
-        raise error
         raise RFAPICallError("Could not decode Roboflow API response.") from error
 
 

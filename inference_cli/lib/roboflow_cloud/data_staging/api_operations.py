@@ -258,7 +258,7 @@ def upload_image(
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         ) from error
-    handle_response_errors(response=response, operation_name="list batches")
+    handle_response_errors(response=response, operation_name="upload image")
 
 
 @backoff.on_exception(
@@ -412,7 +412,7 @@ def get_batch_count(
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
-    handle_response_errors(response=response, operation_name="list batches")
+    handle_response_errors(response=response, operation_name="get batch count")
     try:
         return response.json()["count"]
     except (ValueError, KeyError) as error:
@@ -525,7 +525,7 @@ def list_batch_content(
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
-    handle_response_errors(response=response, operation_name="list batches")
+    handle_response_errors(response=response, operation_name="list batch content")
     try:
         return response.json()["batchContent"]
     except (ValueError, KeyError) as error:
@@ -609,7 +609,7 @@ def list_batch_shards(
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
-    handle_response_errors(response=response, operation_name="list batches")
+    handle_response_errors(response=response, operation_name="list batch shards")
     try:
         return response.json()["shardsIds"]
     except (ValueError, KeyError) as error:
@@ -641,7 +641,7 @@ def get_shard_status(
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
-    handle_response_errors(response=response, operation_name="list batches")
+    handle_response_errors(response=response, operation_name="get shard status")
     try:
         return ShardDetails.model_validate(response.json()["shardStatus"])
     except (ValueError, KeyError) as error:

@@ -1,4 +1,5 @@
-from typing import Annotated, Optional
+from typing_extensions import Annotated
+from typing import Optional, List
 
 import typer
 
@@ -8,6 +9,7 @@ from inference_cli.lib.roboflow_cloud.batch_processing.api_operations import (
     display_batch_jobs,
     trigger_job_with_workflows_images_processing, trigger_job_with_workflows_videos_processing,
 )
+from inference_cli.lib.roboflow_cloud.batch_processing.entities import MachineType, MachineSize, AggregationFormat
 
 batch_processing_app = typer.Typer(
     help="Commands for interacting with Roboflow Batch Processing"
@@ -100,6 +102,64 @@ def process_images_with_workflow(
         str,
         typer.Option("--batch-id", "-b", help="Identifier of batch to be processed"),
     ],
+    workflow_id: Annotated[
+        str,
+        typer.Option("--workflow-id", "-w", help="Identifier of the workflow"),
+    ],
+    workflow_parameters_path: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workflow-params",
+            help="Path to JSON document with Workflow parameters - helpful when Workflow is parametrized and "
+            "passing the parameters in CLI is not handy / impossible due to typing conversion issues.",
+        ),
+    ] = None,
+    image_input_name: Annotated[
+        Optional[str],
+        typer.Option(
+            "--image-input-name",
+            help="Name of the Workflow input that defines placeholder for image to be processed",
+        ),
+    ] = None,
+    save_image_outputs: Annotated[
+        bool,
+        typer.Option(
+            "--save-image-outputs/--no-save-image-outputs",
+            help="Flag controlling persistence of Workflow outputs that are images",
+        ),
+    ] = False,
+    image_outputs_to_save: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--image-outputs-to-save",
+            help="Use this option to filter out workflow image outputs you want to save",
+        ),
+    ] = None,
+    part_name: Annotated[
+        Optional[str],
+        typer.Option("--part-name", "-p", help="Name of the batch part "
+                                               "(relevant for multipart batches"),
+    ] = None,
+    machine_type: Annotated[
+        Optional[MachineType],
+        typer.Option("--machine-type", "-mt", help="Type of machine"),
+    ] = None,
+    machine_size: Annotated[
+        Optional[MachineSize],
+        typer.Option("--machine-size", "-ms", help="Size of machine"),
+    ] = None,
+    max_runtime_seconds: Annotated[
+        Optional[int],
+        typer.Option("--max-runtime-seconds", help="Max processing duration"),
+    ] = None,
+    max_parallel_tasks: Annotated[
+        Optional[int],
+        typer.Option("--max-parallel-tasks", help="Max number of concurrent processing tasks"),
+    ] = None,
+    aggregation_format: Annotated[
+        Optional[AggregationFormat],
+        typer.Option("--aggregation-format", help="Format of results aggregation"),
+    ] = None,
     job_id: Annotated[
         Optional[str],
         typer.Option(
@@ -129,6 +189,17 @@ def process_images_with_workflow(
     try:
         job_id = trigger_job_with_workflows_images_processing(
             batch_id=batch_id,
+            workflow_id=workflow_id,
+            workflow_parameters_path=workflow_parameters_path,
+            image_input_name=image_input_name,
+            save_image_outputs=save_image_outputs,
+            image_outputs_to_save=image_outputs_to_save,
+            part_name=part_name,
+            machine_type=machine_type,
+            machine_size=machine_size,
+            max_runtime_seconds=max_runtime_seconds,
+            max_parallel_tasks=max_parallel_tasks,
+            aggregation_format=aggregation_format,
             job_id=job_id,
             api_key=api_key,
         )
@@ -143,12 +214,78 @@ def process_images_with_workflow(
         raise typer.Exit(code=1)
 
 
-@batch_processing_app.command(help="Trigger batch job to process images with Workflow")
+@batch_processing_app.command(help="Trigger batch job to process videos with Workflow")
 def process_videos_with_workflow(
     batch_id: Annotated[
         str,
         typer.Option("--batch-id", "-b", help="Identifier of batch to be processed"),
     ],
+    workflow_id: Annotated[
+        str,
+        typer.Option("--workflow-id", "-w", help="Identifier of the workflow"),
+    ],
+    workflow_parameters_path: Annotated[
+        Optional[str],
+        typer.Option(
+            "--workflow-params",
+            help="Path to JSON document with Workflow parameters - helpful when Workflow is parametrized and "
+            "passing the parameters in CLI is not handy / impossible due to typing conversion issues.",
+        ),
+    ] = None,
+    image_input_name: Annotated[
+        Optional[str],
+        typer.Option(
+            "--image-input-name",
+            help="Name of the Workflow input that defines placeholder for image to be processed",
+        ),
+    ] = None,
+    save_image_outputs: Annotated[
+        bool,
+        typer.Option(
+            "--save-image-outputs/--no-save-image-outputs",
+            help="Flag controlling persistence of Workflow outputs that are images",
+        ),
+    ] = False,
+    image_outputs_to_save: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--image-outputs-to-save",
+            help="Use this option to filter out workflow image outputs you want to save",
+        ),
+    ] = None,
+    part_name: Annotated[
+        Optional[str],
+        typer.Option("--part-name", "-p", help="Name of the batch part "
+                                               "(relevant for multipart batches"),
+    ] = None,
+    machine_type: Annotated[
+        Optional[MachineType],
+        typer.Option("--machine-type", "-mt", help="Type of machine"),
+    ] = None,
+    machine_size: Annotated[
+        Optional[MachineSize],
+        typer.Option("--machine-size", "-ms", help="Size of machine"),
+    ] = None,
+    max_runtime_seconds: Annotated[
+        Optional[int],
+        typer.Option("--max-runtime-seconds", help="Max processing duration"),
+    ] = None,
+    max_parallel_tasks: Annotated[
+        Optional[int],
+        typer.Option("--max-parallel-tasks", help="Max number of concurrent processing tasks"),
+    ] = None,
+    aggregation_format: Annotated[
+        Optional[AggregationFormat],
+        typer.Option("--aggregation-format", help="Format of results aggregation"),
+    ] = None,
+    max_video_fps: Annotated[
+        Optional[int],
+        typer.Option(
+            "--max-video-fps",
+            help="Limit for FPS to process for video (subsampling predictions rate) - smaller FPS means faster "
+                 "processing and less accurate video analysis."
+        ),
+    ] = None,
     job_id: Annotated[
         Optional[str],
         typer.Option(
@@ -178,6 +315,18 @@ def process_videos_with_workflow(
     try:
         job_id = trigger_job_with_workflows_videos_processing(
             batch_id=batch_id,
+            workflow_id=workflow_id,
+            workflow_parameters_path=workflow_parameters_path,
+            image_input_name=image_input_name,
+            save_image_outputs=save_image_outputs,
+            image_outputs_to_save=image_outputs_to_save,
+            part_name=part_name,
+            machine_type=machine_type,
+            machine_size=machine_size,
+            max_runtime_seconds=max_runtime_seconds,
+            max_parallel_tasks=max_parallel_tasks,
+            aggregation_format=aggregation_format,
+            max_video_fps=max_video_fps,
             job_id=job_id,
             api_key=api_key,
         )

@@ -59,7 +59,7 @@ def handle_response_errors(response: Response, operation_name: str) -> None:
     if response.status_code >= 400:
         response_payload = _get_response_payload(response=response)
         raise RFAPICallError(
-            f"Roboflow API returned invalid response code for list batches operation "
+            f"Roboflow API returned invalid response code for {operation_name} operation "
             f"{response.status_code}.\n\nResponse:\n{response_payload}"
         )
 
@@ -76,4 +76,4 @@ def prepare_status_type_emoji(status_type: str) -> str:
         return "🚨"
     if "info" in status_type.lower():
         return "💬"
-    return "👍"
+    return "🟢"
