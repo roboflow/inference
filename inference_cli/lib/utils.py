@@ -31,6 +31,15 @@ IMAGES_EXTENSIONS = [
     "WEBP",
 ]
 
+VIDEOS_EXTENSIONS = [
+    "mp4", "m4a", "m4p", "m4b", "m4r", "m4v",
+    "MP$", "M4A", "M4P", "M4B", "M4R", "M4V",
+    "avi", "AVI", "mov", "MOV", "mkv", "MKV",
+    "flv", "FLV", "wmv", "WMV", "mpeg", "MPEG",
+    "mpg", "MPG", "3gp", "3GP", "webm", "WEBM",
+    "ogg", "OGG",
+]
+
 B = TypeVar("B")
 
 
@@ -155,6 +164,27 @@ def get_all_images_in_directory(input_directory: str) -> List[str]:
             for path in sv.list_files_with_extensions(
                 directory=input_directory,
                 extensions=IMAGES_EXTENSIONS,
+            )
+        }
+    )
+
+
+def get_all_videos_in_directory(input_directory: str) -> List[str]:
+    file_system_is_case_sensitive = _is_file_system_case_sensitive()
+    if file_system_is_case_sensitive:
+        return [
+            path.as_posix()
+            for path in sv.list_files_with_extensions(
+                directory=input_directory,
+                extensions=VIDEOS_EXTENSIONS,
+            )
+        ]
+    return list(
+        {
+            path.as_posix().lower()
+            for path in sv.list_files_with_extensions(
+                directory=input_directory,
+                extensions=VIDEOS_EXTENSIONS,
             )
         }
     )

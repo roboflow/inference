@@ -20,7 +20,7 @@ from inference_cli.lib.roboflow_cloud.errors import (
     max_tries=3,
     interval=1,
 )
-def get_workspace(api_key: Optional[str]) -> str:
+def get_workspace(api_key: str) -> str:
     if api_key is None:
         raise UnauthorizedRequestError(
             "Request unauthorised. Are you sure you use valid Roboflow API key? "

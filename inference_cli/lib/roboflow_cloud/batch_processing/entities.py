@@ -4,31 +4,26 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
-class BatchJobStateDescription(BaseModel):
-    job_id: str = Field(alias="jobId")
-    display_name: str = Field(alias="displayName")
-    stage_name: Optional[str] = Field(alias="stageName", default=None)
+class JobMetadata(BaseModel):
+    id: str
+    name: str
+    job_definition: dict = Field(alias="jobDefinition")
+    current_stage: Optional[str] = Field(alias="currentStage", default=None)
     planned_stages: Optional[List[str]] = Field(alias="plannedStages", default=None)
     error: bool = Field(default=False)
-    error_details: Optional[str] = Field(alias="errorDetails", default=None)
+    is_terminal: bool = Field(alias="isTerminal")
+    last_notification: str = Field(alias="lastNotification")
+    created_at: datetime = Field(alias="createdAt")
+    last_update: datetime = Field(alias="lastUpdate")
 
 
 class ListBatchJobsResponse(BaseModel):
-    batch_jobs: List[BatchJobStateDescription] = Field(alias="batchJobs")
+    jobs: List[JobMetadata]
+    next_page_token: Optional[str] = Field(alias="nextPageToken")
 
 
-class BatchJobMetadata(BaseModel):
-    job_type: str = Field(alias="jobType")
-    display_name: str = Field(alias="displayName")
-    job_parameters: dict = Field(alias="jobParameters")
-    input_definition: dict = Field(alias="inputDefinition")
-    stage_name: Optional[str] = Field(alias="stageName", default=None)
-    event_timestamp: datetime = Field(alias="eventTimestamp")
-    planned_stages: Optional[List[str]] = Field(alias="plannedStages", default=None)
-
-
-class BatchJobMetadataResponse(BaseModel):
-    job_metadata: BatchJobMetadata = Field(alias="jobMetadata")
+class GetJobMetadataResponse(BaseModel):
+    job: JobMetadata
 
 
 class JobStageDetails(BaseModel):
@@ -44,7 +39,7 @@ class JobStageDetails(BaseModel):
 
 
 class ListJobStagesResponse(BaseModel):
-    job_stages_metadata: List[JobStageDetails] = Field(alias="jobStagesMetadata")
+    stages: List[JobStageDetails]
 
 
 class TaskStatus(BaseModel):
@@ -56,8 +51,8 @@ class TaskStatus(BaseModel):
 
 
 class ListJobStageTasksResponse(BaseModel):
-    total_tasks_number: int = Field(alias="totalTasksNumber")
-    tasks_statuses: List[TaskStatus] = Field(alias="tasksStatuses")
+    tasks: List[TaskStatus]
+    next_page_token: Optional[str] = Field(alias="nextToken")
 
 
 class MultipartBatchPartMetadata(BaseModel):

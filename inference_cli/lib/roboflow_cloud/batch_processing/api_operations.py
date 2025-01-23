@@ -8,15 +8,15 @@ import backoff
 import requests
 from requests import Timeout
 from rich.console import Console
+from rich.json import JSON
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
 from inference_cli.lib.env import API_BASE_URL
 from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
-    BatchJobMetadata,
-    BatchJobMetadataResponse,
-    BatchJobStateDescription,
+    GetJobMetadataResponse,
+    JobMetadata,
     JobStageDetails,
     ListBatchJobsResponse,
     ListJobStagesResponse,
@@ -35,34 +35,73 @@ from inference_cli.lib.roboflow_cloud.data_staging.api_operations import (
 from inference_cli.lib.roboflow_cloud.errors import RetryError, RFAPICallError
 
 WORKFLOWS_IMAGE_PROCESSING_JOB = "workflows-images-processing"
+WORKFLOWS_VIDEO_PROCESSING_JOB = "workflows-videos-processing"
 
 
-def display_batch_jobs(api_key: Optional[str]) -> None:
+def display_batch_jobs(
+    api_key: str,
+    page_size: int = 3,
+    max_pages: Optional[int] = None,
+) -> None:
     workspace = get_workspace(api_key=api_key)
-    batch_jobs = list_batch_jobs(workspace=workspace, api_key=api_key)
+    batch_jobs = list_batch_jobs(
+        workspace=workspace,
+        page_size=page_size,
+        api_key=api_key,
+        max_pages=max_pages,
+    )
     if len(batch_jobs) == 0:
         print("No batches found")
         return None
     console = Console()
     table = Table(title="Batch Jobs Overview", show_lines=True)
-    table.add_column("ID", justify="center", style="cyan", no_wrap=True)
-    table.add_column("Name", justify="center", width=26, overflow="ellipsis")
-    table.add_column("Stage", justify="center", width=26, style="blue")
-    table.add_column("Errors", justify="center")
-    table.add_column("Error Details", justify="center")
+    table.add_column("ID", justify="center", style="cyan", no_wrap=True, vertical="middle")
+    table.add_column("Name", justify="center", width=32, overflow="ellipsis", vertical="middle")
+    table.add_column("Stage", justify="center", width=26, style="blue", vertical="middle")
+    table.add_column("Notification", justify="center", vertical="middle")
+    table.add_column("Errors", justify="center", vertical="middle")
     for batch_job in batch_jobs:
         error_status = "🚨" if batch_job.error else "👍"
+        terminal_status = " 🏁" if batch_job.is_terminal else ""
         stage_status = _prepare_stage_status(
-            current_stage=batch_job.stage_name, planned_stages=batch_job.planned_stages
+            current_stage=batch_job.current_stage, planned_stages=batch_job.planned_stages
         )
         table.add_row(
-            batch_job.job_id,
-            batch_job.display_name,
+            batch_job.id + terminal_status,
+            batch_job.name,
             stage_status,
+            batch_job.last_notification,
             error_status,
-            batch_job.error_details if batch_job.error_details else "N/A",
         )
     console.print(table)
+
+
+def list_batch_jobs(
+    workspace: str,
+    api_key: str,
+    page_size: Optional[int] = None,
+    max_pages: Optional[int] = None,
+) -> List[JobMetadata]:
+    if max_pages is not None and max_pages <= 0:
+        raise ValueError("Could not specify max_pages <= 0")
+    next_page_token = None
+    pages_fetched = 0
+    results = []
+    while True:
+        if max_pages is not None and pages_fetched >= max_pages:
+            return results
+        listing_page = get_batch_jobs_listing_page(
+            workspace=workspace,
+            api_key=api_key,
+            page_size=page_size,
+            next_page_token=next_page_token,
+        )
+        results.extend(listing_page.jobs)
+        next_page_token = listing_page.next_page_token
+        if next_page_token is None:
+            break
+        pages_fetched += 1
+    return results
 
 
 @backoff.on_exception(
@@ -71,12 +110,19 @@ def display_batch_jobs(api_key: Optional[str]) -> None:
     max_tries=3,
     interval=1,
 )
-def list_batch_jobs(
-    workspace: str, api_key: Optional[str]
-) -> List[BatchJobStateDescription]:
+def get_batch_jobs_listing_page(
+    workspace: str,
+    api_key: str,
+    page_size: Optional[int] = None,
+    next_page_token: Optional[str] = None,
+) -> ListBatchJobsResponse:
     params = {}
     if api_key is not None:
         params["api_key"] = api_key
+    if page_size:
+        params["pageSize"] = page_size
+    if next_page_token:
+        params["nextPageToken"] = next_page_token
     try:
         response = requests.get(
             f"{API_BASE_URL}/batch-processing/v1/external/{workspace}/jobs",
@@ -89,7 +135,7 @@ def list_batch_jobs(
         )
     handle_response_errors(response=response, operation_name="list batches")
     try:
-        return ListBatchJobsResponse.model_validate(response.json()).batch_jobs
+        return ListBatchJobsResponse.model_validate(response.json())
     except ValueError as error:
         raise RFAPICallError("Could not decode Roboflow API response.") from error
 
@@ -101,7 +147,7 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
     )
     console = Console()
     heading_text = Text(
-        f"Batch Job Overview [job={job_id}]",
+        f"Batch Job Overview [id={job_id}]",
         style="bold grey89 on steel_blue",
         justify="center",
     )
@@ -110,17 +156,20 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
     table = Table(show_lines=True, expand=True)
     table.add_column("Property", justify="left", style="cyan", no_wrap=True)
     table.add_column("Value", justify="full", overflow="ellipsis")
-
-    table.add_row("Name", job_metadata.display_name)
-    table.add_row("Job Type", job_metadata.job_type)
-    table.add_row("Job Parameters", json.dumps(job_metadata.job_parameters, indent=4))
-    table.add_row("Input", json.dumps(job_metadata.input_definition, indent=4))
+    table.add_row("Name", job_metadata.name)
+    table.add_row("Last Notification", job_metadata.last_notification)
+    error_marker = "⚠️" if not job_metadata.is_terminal else "🚨"
+    error_status = error_marker if job_metadata.error else "🟢"
+    running_status = "🏁" if job_metadata.is_terminal else "🏃"
+    table.add_row("Status", f"Errors: {error_status} Is Running: {running_status}")
     stage_status = _prepare_stage_status(
-        current_stage=job_metadata.stage_name,
+        current_stage=job_metadata.current_stage,
         planned_stages=job_metadata.planned_stages,
     )
     table.add_row("Progress", stage_status)
-    table.add_row("Last Update", job_metadata.event_timestamp.isoformat())
+    table.add_row("Created At", job_metadata.created_at.strftime("%d %b %Y, %I:%M %p"))
+    table.add_row("Last Update", job_metadata.last_update.strftime("%d %b %Y, %I:%M %p"))
+    table.add_row("Job Definition", JSON.from_data(job_metadata.job_definition, indent=2))
     console.print(table)
 
     job_stages = list_job_stages(workspace=workspace, job_id=job_id, api_key=api_key)
@@ -188,7 +237,7 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
 )
 def get_batch_job_metadata(
     workspace: str, job_id: str, api_key: Optional[str]
-) -> BatchJobMetadata:
+) -> JobMetadata:
     params = {}
     if api_key is not None:
         params["api_key"] = api_key
@@ -204,7 +253,7 @@ def get_batch_job_metadata(
         )
     handle_response_errors(response=response, operation_name="list batches")
     try:
-        return BatchJobMetadataResponse.model_validate(response.json()).job_metadata
+        return GetJobMetadataResponse.model_validate(response.json()).job
     except ValueError as error:
         raise RFAPICallError("Could not decode Roboflow API response.") from error
 
@@ -228,6 +277,31 @@ def trigger_job_with_workflows_images_processing(
         workspace=workspace,
         job_id=job_id,
         job_type=WORKFLOWS_IMAGE_PROCESSING_JOB,
+        input_definition=input_definition,
+        api_key=api_key,
+    )
+    return job_id
+
+
+def trigger_job_with_workflows_videos_processing(
+    batch_id: str,
+    job_id: Optional[str],
+    api_key: Optional[str],
+) -> str:
+    workspace = get_workspace(api_key=api_key)
+    selected_batch = find_batch_by_id(
+        workspace=workspace, batch_id=batch_id, api_key=api_key
+    )
+    if not job_id:
+        job_id = f"workflows-{_generate_random_string()}"
+    input_definition = {
+        "type": "videos-batch",
+        "batchId": selected_batch.batch_id,
+    }
+    create_batch_job(
+        workspace=workspace,
+        job_id=job_id,
+        job_type=WORKFLOWS_VIDEO_PROCESSING_JOB,
         input_definition=input_definition,
         api_key=api_key,
     )
@@ -294,9 +368,34 @@ def list_job_stages(
         )
     handle_response_errors(response=response, operation_name="list job stages")
     try:
-        return ListJobStagesResponse.model_validate(response.json()).job_stages_metadata
+        return ListJobStagesResponse.model_validate(response.json()).stages
     except ValueError as error:
         raise RFAPICallError("Could not decode Roboflow API response.") from error
+
+
+def list_job_stage_tasks(
+    workspace: str,
+    job_id: str,
+    stage_id: str,
+    api_key: str,
+) -> List[TaskStatus]:
+    next_page_token = None
+    pages_fetched = 0
+    results = []
+    while True:
+        listing_page = get_job_stage_tasks_listing_page(
+            workspace=workspace,
+            job_id=job_id,
+            stage_id=stage_id,
+            api_key=api_key,
+            next_page_token=next_page_token,
+        )
+        results.extend(listing_page.tasks)
+        next_page_token = listing_page.next_page_token
+        if next_page_token is None:
+            break
+        pages_fetched += 1
+    return results
 
 
 @backoff.on_exception(
@@ -305,18 +404,24 @@ def list_job_stages(
     max_tries=3,
     interval=1,
 )
-def list_job_stage_tasks(
+def get_job_stage_tasks_listing_page(
     workspace: str,
     job_id: str,
     stage_id: str,
-    api_key: Optional[str],
-) -> List[TaskStatus]:
+    api_key: str,
+    page_size: Optional[int] = None,
+    next_page_token: Optional[str] = None,
+) -> ListJobStageTasksResponse:
     params = {}
     if api_key is not None:
         params["api_key"] = api_key
+    if page_size:
+        params["pageSize"] = page_size
+    if next_page_token:
+        params["nextPageToken"] = next_page_token
     try:
         response = requests.get(
-            f"{API_BASE_URL}/batch-processing/v1/external/{workspace}/jobs/{job_id}/stages/{stage_id}",
+            f"{API_BASE_URL}/batch-processing/v1/external/{workspace}/jobs/{job_id}/stages/{stage_id}/tasks",
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
@@ -324,10 +429,12 @@ def list_job_stage_tasks(
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
-    handle_response_errors(response=response, operation_name="list job stages")
+    handle_response_errors(response=response, operation_name="list job stage tasks")
     try:
-        return ListJobStageTasksResponse.model_validate(response.json()).tasks_statuses
+        print(response.json())
+        return ListJobStageTasksResponse.model_validate(response.json())
     except ValueError as error:
+        raise error
         raise RFAPICallError("Could not decode Roboflow API response.") from error
 
 

@@ -14,6 +14,7 @@ from requests import Timeout
 from rich.console import Console
 from rich.table import Table
 from tqdm import tqdm
+import supervision as sv
 
 from inference_cli.lib.env import API_BASE_URL
 from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
@@ -28,7 +29,7 @@ from inference_cli.lib.roboflow_cloud.config import (
     MAX_SHARD_SIZE,
     MAX_SHARDS_UPLOAD_PROCESSES,
     MIN_IMAGES_TO_FORM_SHARD,
-    REQUEST_TIMEOUT,
+    REQUEST_TIMEOUT, SUGGESTED_MAX_VIDEOS_IN_BATCH,
 )
 from inference_cli.lib.roboflow_cloud.data_staging.entities import (
     BatchDetails,
@@ -40,7 +41,7 @@ from inference_cli.lib.roboflow_cloud.errors import (
     RFAPICallError,
     RoboflowCloudCommandError,
 )
-from inference_cli.lib.utils import create_batches, get_all_images_in_directory
+from inference_cli.lib.utils import create_batches, get_all_images_in_directory, get_all_videos_in_directory
 
 
 def display_batches(api_key: Optional[str]) -> None:
@@ -88,7 +89,7 @@ def list_batches(workspace: str, api_key: Optional[str]) -> List[BatchDetails]:
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
@@ -120,6 +121,39 @@ def create_images_batch_from_directory(
         batch_id=batch_id,
         api_key=api_key,
     )
+
+
+def create_videos_batch_from_directory(
+    directory: str,
+    batch_id: str,
+    api_key: Optional[str],
+) -> None:
+    workspace = get_workspace(api_key=api_key)
+    video_paths = get_all_videos_in_directory(input_directory=directory)
+    video_paths = _filter_out_malformed_videos(video_paths=video_paths)
+    if len(video_paths) > SUGGESTED_MAX_VIDEOS_IN_BATCH:
+        print(
+            f"You try to upload {len(video_paths)} to single batch. "
+            f"Suggested max size is: {SUGGESTED_MAX_VIDEOS_IN_BATCH}."
+        )
+    for video in tqdm(video_paths, desc="Uploading video files..."):
+        upload_video(
+            video_path=video,
+            workspace=workspace,
+            batch_id=batch_id,
+            api_key=api_key,
+        )
+
+
+def _filter_out_malformed_videos(video_paths: List[str]) -> List[str]:
+    result = []
+    for path in tqdm(video_paths, desc="Verifying videos..."):
+        try:
+            _ = sv.VideoInfo.from_video_path(path)
+            result.append(path)
+        except Exception:
+            print(f"File: {path} is corrupted or is not a video file")
+    return result
 
 
 def upload_images_to_simple_batch(
@@ -220,11 +254,54 @@ def upload_image(
                 image_file_name: image_content,
             },
         )
-    except (ConnectionError, Timeout) as error:
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         ) from error
     handle_response_errors(response=response, operation_name="list batches")
+
+
+@backoff.on_exception(
+    backoff.constant,
+    exception=RetryError,
+    max_tries=3,
+    interval=1,
+)
+def upload_video(
+    video_path: str,
+    workspace: str,
+    batch_id: str,
+    api_key: Optional[str],
+) -> None:
+    params = {}
+    if api_key is not None:
+        params["api_key"] = api_key
+    image_file_name = os.path.basename(video_path)
+    params["file_name"] = image_file_name
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/upload/video",
+            params=params,
+            timeout=REQUEST_TIMEOUT,
+        )
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
+        raise RetryError(
+            f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
+        ) from error
+    handle_response_errors(response=response, operation_name="upload video")
+    try:
+        response_data = response.json()
+        upload_url, extension_headers = (
+            response_data["uploadURL"],
+            response_data["extensionHeaders"],
+        )
+    except (ValueError, KeyError) as error:
+        raise RFAPICallError("Could not decode Roboflow API response.") from error
+    upload_file_to_cloud(
+        file_path=video_path,
+        url=upload_url,
+        headers=extension_headers,
+    )
 
 
 @backoff.on_exception(
@@ -246,7 +323,7 @@ def upload_images_shard(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout) as error:
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         ) from error
@@ -260,7 +337,7 @@ def upload_images_shard(
     except (ValueError, KeyError) as error:
         raise RFAPICallError("Could not decode Roboflow API response.") from error
     try:
-        upload_archive_to_cloud(
+        upload_file_to_cloud(
             file_path=archive_path,
             url=upload_url,
             headers=extension_headers,
@@ -271,7 +348,7 @@ def upload_images_shard(
         ) from error
 
 
-def upload_archive_to_cloud(
+def upload_file_to_cloud(
     file_path: str,
     url: str,
     headers: Dict[str, str],
@@ -331,7 +408,7 @@ def get_batch_count(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
@@ -444,7 +521,7 @@ def list_batch_content(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
@@ -528,7 +605,7 @@ def list_batch_shards(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
@@ -560,7 +637,7 @@ def get_shard_status(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
@@ -591,7 +668,7 @@ def list_multipart_batch_parts(
             params=params,
             timeout=REQUEST_TIMEOUT,
         )
-    except (ConnectionError, Timeout):
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
