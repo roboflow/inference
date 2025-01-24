@@ -11,6 +11,7 @@ from threading import Event, Lock
 from types import FrameType
 from typing import Dict, Optional, Tuple
 
+import cv2 as cv
 from pydantic import ValidationError
 
 from inference.core import logger
@@ -275,18 +276,38 @@ class InferencePipelineManager(Process):
             def webrtc_sink(
                 prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
             ) -> None:
-                if parsed_payload.stream_output[0] not in prediction:
-                    from_inference_queue.sync_put(video_frame.image)
+                errors = []
+                if not any(
+                    isinstance(v, WorkflowImageData) for v in prediction.values()
+                ):
+                    errors.append("Visualisation blocks were not executed")
+                    errors.append("or workflow was not configured to output visuals.")
+                    errors.append(
+                        "Please try to adjust the scene so models detect objects"
+                    )
+                    errors.append("or stop preview, update workflow and try again.")
+                elif parsed_payload.stream_output[0] not in prediction:
+                    if not parsed_payload.stream_output[0]:
+                        errors.append("No stream output selected to show")
+                    else:
+                        errors.append(
+                            f"{parsed_payload.stream_output[0]} not available in results"
+                        )
+                    errors.append("Please stop, update outputs and try again")
+                if errors:
+                    result_frame = video_frame.image.copy()
+                    for row, error in enumerate(errors):
+                        result_frame = cv.putText(
+                            result_frame,
+                            error,
+                            (10, 20 + 30 * row),
+                            cv.FONT_HERSHEY_SIMPLEX,
+                            0.7,
+                            (0, 255, 0),
+                            2,
+                        )
+                    from_inference_queue.sync_put(result_frame)
                     return
-                if prediction[parsed_payload.stream_output[0]] is None:
-                    from_inference_queue.sync_put(video_frame.image)
-                    return
-                print("#################################")
-                print(type(prediction[parsed_payload.stream_output[0]]))
-                print("------")
-                for k, v in prediction.items():
-                    print(f"{k}: {type(v)}")
-                print("#################################")
                 from_inference_queue.sync_put(
                     prediction[parsed_payload.stream_output[0]].numpy_image
                 )
