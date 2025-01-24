@@ -5,7 +5,7 @@ import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
-from inference.core.workflows.execution_engine.entities.base import VideoMetadata
+from inference.core.workflows.execution_engine.entities.base import VideoMetadata, WorkflowImageData
 
 
 def test_velocity_block_basic_calculation() -> None:
@@ -30,11 +30,16 @@ def test_velocity_block_basic_calculation() -> None:
             tz=datetime.timezone.utc
         ),
     )
+    image1 = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata1,
+    )
 
     # Run on first frame
     frame1_result = velocity_block.run(
         detections=frame1_detections,
-        metadata=metadata1,
+        image=image1,
         smoothing_alpha=0.5,
         pixels_per_meter=1000,  # 1000 pixels = 1 meter
     )
@@ -94,11 +99,16 @@ def test_velocity_block_basic_calculation() -> None:
             tz=datetime.timezone.utc
         ),  # 1 second later
     )
+    image2 = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata2,
+    )
 
     # Run on second frame
     frame2_result = velocity_block.run(
         detections=frame2_detections,
-        metadata=metadata2,
+        image=image2,
         smoothing_alpha=0.5,
         pixels_per_meter=1000,  # 1000 pixels = 1 meter
     )
@@ -169,11 +179,16 @@ def test_velocity_block_new_tracker_id() -> None:
             tz=datetime.timezone.utc
         ),
     )
+    image1 = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata1,
+    )
 
     # Run on first frame
     velocity_block.run(
         detections=frame1_detections,
-        metadata=metadata1,
+        image=image1,
         smoothing_alpha=0.5,
         pixels_per_meter=1000,  # 1000 pixels = 1 meter
     )
@@ -196,11 +211,16 @@ def test_velocity_block_new_tracker_id() -> None:
             tz=datetime.timezone.utc
         ),
     )
+    image2 = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata2,
+    )
 
     # Run on second frame
     frame2_result = velocity_block.run(
         detections=frame2_detections,
-        metadata=metadata2,
+        image=image2,
         smoothing_alpha=0.5,
         pixels_per_meter=1000,
     )
@@ -266,6 +286,11 @@ def test_velocity_block_missing_tracker_id() -> None:
             tz=datetime.timezone.utc
         ),
     )
+    image = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata,
+    )
 
     # when / then
     with pytest.raises(
@@ -274,7 +299,7 @@ def test_velocity_block_missing_tracker_id() -> None:
     ):
         velocity_block.run(
             detections=detections,
-            metadata=metadata,
+            image=image,
             smoothing_alpha=0.5,
             pixels_per_meter=1000,
         )
@@ -296,6 +321,11 @@ def test_velocity_block_invalid_smoothing_alpha() -> None:
             tz=datetime.timezone.utc
         ),
     )
+    image = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata,
+    )
 
     # when / then: smoothing_alpha <= 0
     with pytest.raises(
@@ -304,7 +334,7 @@ def test_velocity_block_invalid_smoothing_alpha() -> None:
     ):
         velocity_block.run(
             detections=detections,
-            metadata=metadata,
+            image=image,
             smoothing_alpha=0.0,
             pixels_per_meter=1000,
         )
@@ -316,7 +346,7 @@ def test_velocity_block_invalid_smoothing_alpha() -> None:
     ):
         velocity_block.run(
             detections=detections,
-            metadata=metadata,
+            image=image,
             smoothing_alpha=1.5,
             pixels_per_meter=1000,
         )
@@ -338,6 +368,11 @@ def test_velocity_block_invalid_pixels_per_meter() -> None:
             tz=datetime.timezone.utc
         ),
     )
+    image = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata,
+    )
 
     # when / then: pixels_per_meter <= 0
     with pytest.raises(
@@ -346,7 +381,7 @@ def test_velocity_block_invalid_pixels_per_meter() -> None:
     ):
         velocity_block.run(
             detections=detections,
-            metadata=metadata,
+            image=image,
             smoothing_alpha=0.5,
             pixels_per_meter=0.0,
         )
@@ -357,7 +392,7 @@ def test_velocity_block_invalid_pixels_per_meter() -> None:
     ):
         velocity_block.run(
             detections=detections,
-            metadata=metadata,
+            image=image,
             smoothing_alpha=0.5,
             pixels_per_meter=-1000,
         )
@@ -380,11 +415,16 @@ def test_velocity_block_zero_delta_time() -> None:
             tz=datetime.timezone.utc
         ),
     )
+    image1 = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata1,
+    )
 
     # Run on first frame
     velocity_block.run(
         detections=frame1_detections,
-        metadata=metadata1,
+        image=image1,
         smoothing_alpha=0.5,
         pixels_per_meter=1000,
     )
@@ -398,14 +438,17 @@ def test_velocity_block_zero_delta_time() -> None:
     metadata2 = VideoMetadata(
         video_identifier="vid_1",
         frame_number=2,
-        frame_timestamp=datetime.datetime.fromtimestamp(1726570800).astimezone(
-            tz=datetime.timezone.utc
-        ),  # Same timestamp
+        frame_timestamp=metadata1.frame_timestamp,
+    )
+    image2 = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata2,
     )
 
     frame2_result = velocity_block.run(
         detections=frame2_detections,
-        metadata=metadata2,
+        image=image2,
         smoothing_alpha=0.5,
         pixels_per_meter=1000,
     )
@@ -468,11 +511,16 @@ def test_velocity_block_multiple_objects_with_movement() -> None:
             tz=datetime.timezone.utc
         ),
     )
+    image1 = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata1,
+    )
 
     # Run on first frame
     velocity_block.run(
         detections=frame1_detections,
-        metadata=metadata1,
+        image=image1,
         smoothing_alpha=0.3,
         pixels_per_meter=1000,  # 1000 pixels = 1 meter
     )
@@ -496,10 +544,15 @@ def test_velocity_block_multiple_objects_with_movement() -> None:
             tz=datetime.timezone.utc
         ),  # 1 second later
     )
+    image2 = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata2,
+    )
 
     frame2_result = velocity_block.run(
         detections=frame2_detections,
-        metadata=metadata2,
+        image=image2,
         smoothing_alpha=0.3,
         pixels_per_meter=1000,
     )
@@ -573,10 +626,15 @@ def test_velocity_block_inconsistent_tracker_ids() -> None:
             tz=datetime.timezone.utc
         ),
     )
+    image1 = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata1,
+    )
 
     velocity_block.run(
         detections=frame1_detections,
-        metadata=metadata1,
+        image=image1,
         smoothing_alpha=0.5,
         pixels_per_meter=1000,
     )
@@ -599,10 +657,15 @@ def test_velocity_block_inconsistent_tracker_ids() -> None:
             tz=datetime.timezone.utc
         ),
     )
+    image2 = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata2,
+    )
 
     frame2_result = velocity_block.run(
         detections=frame2_detections,
-        metadata=metadata2,
+        image=image2,
         smoothing_alpha=0.5,
         pixels_per_meter=1000,
     )
@@ -664,11 +727,16 @@ def test_velocity_block_large_movement() -> None:
             tz=datetime.timezone.utc
         ),
     )
+    image1 = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata1,
+    )
 
     # Run on first frame
     velocity_block.run(
         detections=frame1_detections,
-        metadata=metadata1,
+        image=image1,
         smoothing_alpha=0.5,
         pixels_per_meter=1000,  # 1000 pixels = 1 meter
     )
@@ -686,10 +754,15 @@ def test_velocity_block_large_movement() -> None:
             tz=datetime.timezone.utc
         ),
     )
+    image2 = WorkflowImageData(
+        parent_metadata=None,
+        numpy_image=np.array([1]),
+        video_metadata=metadata2,
+    )
 
     frame2_result = velocity_block.run(
         detections=frame2_detections,
-        metadata=metadata2,
+        image=image2,
         smoothing_alpha=0.5,
         pixels_per_meter=1000,
     )
