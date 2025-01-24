@@ -16,6 +16,7 @@ RUN yum update -y && yum install -y \
     mesa-libGL \
     pango \
     wget \
+    rustc \
     && yum clean all
 
 COPY requirements/requirements.clip.txt \

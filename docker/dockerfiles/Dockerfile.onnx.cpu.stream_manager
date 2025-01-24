@@ -12,6 +12,7 @@ RUN apt update -y && apt install -y \
     git \
     libgdal-dev \
     cmake \
+    rustc \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.cpu.txt \

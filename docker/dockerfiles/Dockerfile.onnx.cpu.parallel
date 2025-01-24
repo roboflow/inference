@@ -12,6 +12,7 @@ RUN apt update -y && apt install -y \
     python3-pip \
     git \
     libgdal-dev \
+    rustc \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \

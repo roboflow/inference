@@ -6,6 +6,7 @@ RUN apt-get update -y && apt-get install -y \
     libxext6 \
     libopencv-dev \
     uvicorn \
+    rustc \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \

@@ -16,6 +16,7 @@ RUN apt-get update -y && \
     wget \
     gdal-bin \
     libgdal-dev && \
+    rustc \
     rm -rf /var/lib/apt/lists/*
 
 # Copy all requirements files

@@ -8,6 +8,7 @@ RUN apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     uvicorn \
     python3-pip \
     git \
+    rustc \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
