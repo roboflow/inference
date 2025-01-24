@@ -4,6 +4,7 @@ from pydantic import ConfigDict, Field
 from pymodbus.client import ModbusTcpClient as ModbusClient
 from typing_extensions import Literal
 
+from inference.core.logger import logger
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
     VideoMetadata,
@@ -101,6 +102,16 @@ class ModbusTCPBlockV1(WorkflowBlock):
     On failures, errors are printed and marked as "ReadFailure" or "WriteFailure".
     """
 
+    def __init__(self):
+        self.client: Optional[ModbusClient] = None
+
+    def __del__(self):
+        if self.client:
+            try:
+                self.client.close()
+            except Exception as exc:
+                logger.debug("Failed to release modbus client: %s", exc)
+
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return ModbusTCPBlockManifest
@@ -119,16 +130,17 @@ class ModbusTCPBlockV1(WorkflowBlock):
         read_results = {}
         write_results = {}
 
-        client = ModbusClient(plc_ip, port=plc_port)
-        if not client.connect():
-            print("Failed to connect to PLC")
-            return {"modbus_results": [{"error": "ConnectionFailure"}]}
+        if not self.client:
+            self.client: ModbusClient = ModbusClient(plc_ip, port=plc_port)
+            if not self.client.connect():
+                print("Failed to connect to PLC")
+                return {"modbus_results": [{"error": "ConnectionFailure"}]}
 
         # If mode involves reading
         if mode in ["read", "read_and_write"]:
             for address in registers_to_read:
                 try:
-                    response = client.read_holding_registers(address)
+                    response = self.client.read_holding_registers(address)
                     if not response.isError():
                         read_results[address] = (
                             response.registers[0] if response.registers else None
@@ -144,7 +156,7 @@ class ModbusTCPBlockV1(WorkflowBlock):
         if mode in ["write", "read_and_write"]:
             for address, value in registers_to_write.items():
                 try:
-                    response = client.write_register(address, value)
+                    response = self.client.write_register(address, value)
                     if not response.isError():
                         write_results[address] = "WriteSuccess"
                     else:
@@ -157,8 +169,6 @@ class ModbusTCPBlockV1(WorkflowBlock):
                         f"Exception writing register {address} with value {value}: {e}"
                     )
                     write_results[address] = "WriteFailure"
-
-        client.close()
 
         modbus_output = {}
         if read_results:
