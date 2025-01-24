@@ -842,7 +842,7 @@ async def test_list_loaded_models_async_when_successful_response_expected() -> N
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={
                 "models": [
                     {
@@ -892,7 +892,7 @@ async def test_list_loaded_models_when_unsuccessful_response_expected() -> None:
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={"message": "Internal error."},
             status=500,
         )
@@ -951,7 +951,7 @@ async def test_get_model_description_async_when_model_when_error_occurs_in_model
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={"message": "Internal error."},
             status=500,
         )
@@ -1004,7 +1004,7 @@ async def test_get_model_description_async_when_model_was_loaded_already() -> No
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={"models": [{"model_id": "some/1", "task_type": "classification"}]},
         )
         # when
@@ -1024,7 +1024,7 @@ async def test_get_model_description_async_when_model_was_loaded_already_and_ali
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={
                 "models": [{"model_id": "coco/3", "task_type": "object-detection"}]
             },
@@ -1096,7 +1096,7 @@ async def test_get_model_description_async_when_model_was_not_loaded_before_and_
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={"models": []},
         )
         m.post(
@@ -1121,7 +1121,7 @@ async def test_get_model_description_async_when_model_was_not_loaded_before_and_
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={"models": []},
         )
         m.post(
@@ -1173,7 +1173,7 @@ async def test_get_model_description_async_when_model_was_not_loaded_before_and_
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={"models": []},
         )
         m.post(
