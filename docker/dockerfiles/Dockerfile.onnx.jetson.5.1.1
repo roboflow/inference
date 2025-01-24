@@ -20,6 +20,7 @@ RUN apt-get update -y && apt-get install -y \
     gdal-bin \
     libgdal-dev \
     rustc \
+    cargo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.clip.txt \

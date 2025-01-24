@@ -17,6 +17,7 @@ RUN yum update -y && yum install -y \
     pango \
     wget \
     rustc \
+    cargo \
     && yum clean all
 
 COPY requirements/requirements.clip.txt \

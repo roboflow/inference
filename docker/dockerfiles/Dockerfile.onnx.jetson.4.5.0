@@ -21,6 +21,7 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     libgdal-dev \
     python3-setuptools \
     rustc \
+    cargo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.clip.txt \

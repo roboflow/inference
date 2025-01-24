@@ -10,6 +10,7 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     git \
     libgdal-dev \
     rustc \
+    cargo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.http.txt \

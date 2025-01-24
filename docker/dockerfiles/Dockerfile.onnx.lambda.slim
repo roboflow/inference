@@ -15,6 +15,7 @@ RUN yum update -y && yum install -y \
     mesa-libGL \
     pango \
     rustc \
+    cargo \
     && yum clean all
 
 COPY requirements/requirements.cpu.txt \

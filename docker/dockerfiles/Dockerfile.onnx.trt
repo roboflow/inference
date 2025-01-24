@@ -7,6 +7,7 @@ RUN apt-get update -y && apt-get install -y \
     libopencv-dev \
     uvicorn \
     rustc \
+    cargo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
