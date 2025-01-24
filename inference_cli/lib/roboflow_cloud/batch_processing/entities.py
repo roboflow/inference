@@ -13,7 +13,7 @@ class JobMetadata(BaseModel):
     planned_stages: Optional[List[str]] = Field(alias="plannedStages", default=None)
     error: bool = Field(default=False)
     is_terminal: bool = Field(alias="isTerminal")
-    last_notification: str = Field(alias="lastNotification")
+    last_notification: Optional[str] = Field(alias="lastNotification", default=None)
     created_at: datetime = Field(alias="createdAt")
     last_update: datetime = Field(alias="lastUpdate")
 
@@ -54,16 +54,6 @@ class TaskStatus(BaseModel):
 class ListJobStageTasksResponse(BaseModel):
     tasks: List[TaskStatus]
     next_page_token: Optional[str] = Field(alias="nextPageToken")
-
-
-class MultipartBatchPartMetadata(BaseModel):
-    part_name: str = Field(alias="partName")
-    part_type: str = Field(alias="partType")
-    content_type: str = Field(alias="contentType")
-
-
-class ListMultipartBatchPartsResponse(BaseModel):
-    batch_parts: List[MultipartBatchPartMetadata] = Field(alias="batchParts")
 
 
 class WorkflowProcessingJobType(str, Enum):

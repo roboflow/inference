@@ -37,9 +37,6 @@ from inference_cli.lib.roboflow_cloud.common import (
     prepare_status_type_emoji,
 )
 from inference_cli.lib.roboflow_cloud.config import REQUEST_TIMEOUT
-from inference_cli.lib.roboflow_cloud.data_staging.api_operations import (
-    find_batch_by_id,
-)
 from inference_cli.lib.roboflow_cloud.errors import RetryError, RFAPICallError
 from inference_cli.lib.utils import read_json
 
@@ -89,7 +86,7 @@ def display_batch_jobs(
             batch_job.name,
             stage_status,
             terminal_status,
-            batch_job.last_notification,
+            batch_job.last_notification or "🔄",
             error_status,
         )
     console.print(table)
@@ -176,7 +173,7 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
     table.add_column("Property", justify="left", style="cyan", no_wrap=True)
     table.add_column("Value", justify="full", overflow="ellipsis")
     table.add_row("Name", job_metadata.name)
-    table.add_row("Last Notification", job_metadata.last_notification)
+    table.add_row("Last Notification", job_metadata.last_notification or "🔄")
     error_marker = "🟡" if not job_metadata.is_terminal else "🚨"
     error_status = error_marker if job_metadata.error else "🟢"
     running_status = "🏁" if job_metadata.is_terminal else "🏃"
@@ -539,7 +536,7 @@ def _prepare_stage_status(
     current_stage: Optional[str], planned_stages: Optional[List[str]]
 ) -> str:
     if not current_stage:
-        stage_status = "🕰"
+        stage_status = "🔄"
     else:
         stage_status = current_stage
     if current_stage and planned_stages and current_stage in planned_stages:
