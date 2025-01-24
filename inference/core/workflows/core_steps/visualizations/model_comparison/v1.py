@@ -20,13 +20,12 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     FloatZeroToOne,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/model_comparison_visualization@v1"
-SHORT_DESCRIPTION = "Visualizes the difference between two models' detections."
+SHORT_DESCRIPTION = "Visualize the difference between two models' detections."
 LONG_DESCRIPTION = """
 The `ModelComparisonVisualization` block draws all areas
 predicted by neither model with a specified color,
@@ -48,11 +47,20 @@ class ModelComparisonManifest(VisualizationManifest):
             "ui_manifest": {
                 "section": "visualization",
                 "icon": "far fa-not-equal",
+                "blockPriority": 16,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
             },
         }
     )
 
-    predictions_a: StepOutputSelector(
+    predictions_a: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -63,13 +71,13 @@ class ModelComparisonManifest(VisualizationManifest):
         examples=["$steps.object_detection_model.predictions"],
     )
 
-    color_a: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    color_a: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the areas Model A predicted that Model B did not..",
         default="GREEN",
         examples=["GREEN", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.color_a"],
     )
 
-    predictions_b: StepOutputSelector(
+    predictions_b: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -80,19 +88,19 @@ class ModelComparisonManifest(VisualizationManifest):
         examples=["$steps.object_detection_model.predictions"],
     )
 
-    color_b: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    color_b: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the areas Model B predicted that Model A did not.",
         default="RED",
         examples=["RED", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.color_b"],
     )
 
-    background_color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    background_color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the areas neither model predicted.",
         default="BLACK",
         examples=["BLACK", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
     )
 
-    opacity: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the overlay.",
         default=0.7,
         examples=[0.7, "$inputs.opacity"],
@@ -100,7 +108,7 @@ class ModelComparisonManifest(VisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class ModelComparisonVisualizationBlockV1(PredictionsVisualizationBlock):

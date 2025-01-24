@@ -78,7 +78,7 @@ class TileDetectionsNonBatchBlock(WorkflowBlock):
         crops: Batch[WorkflowImageData],
         crops_predictions: Batch[sv.Detections],
     ) -> BlockResult:
-        annotator = sv.BoundingBoxAnnotator()
+        annotator = sv.BoxAnnotator()
         visualisations = []
         for image, prediction in zip(crops, crops_predictions):
             annotated_image = annotator.annotate(

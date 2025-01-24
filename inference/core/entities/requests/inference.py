@@ -22,6 +22,7 @@ class BaseRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
     id: str
     api_key: Optional[str] = ApiKey
+    usage_billable: bool = True
     start: Optional[float] = None
     source: Optional[str] = None
     source_info: Optional[str] = None
@@ -201,6 +202,10 @@ class ClassificationInferenceRequest(CVInferenceRequest):
         visualization_stroke_width (Optional[int]): The stroke width used when visualizing predictions.
         visualize_predictions (Optional[bool]): If true, the predictions will be drawn on the original image and returned as a base64 string.
     """
+
+    def __init__(self, **kwargs):
+        kwargs["model_type"] = "classification"
+        super().__init__(**kwargs)
 
     confidence: Optional[float] = Field(
         default=0.4,

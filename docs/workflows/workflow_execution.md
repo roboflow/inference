@@ -53,17 +53,21 @@ actual data values. It simply tells the Execution Engine how to direct and handl
 
 Input data in a Workflow can be divided into two types:
 
-- Data to be processed: This can be submitted as a batch of data points.
+- Batch-Oriented Data to be processed: Main data to be processed, which you expect to derive results 
+from (for instance: making inference with your model)
 
-- Parameters: These are single values used for specific settings or configurations.
+- Scalars: These are single values used for specific settings or configurations.
 
-To clarify the difference, consider this simple Python function:
+Thinking about standard data processing, like the one presented below, you may find the distinction 
+between scalars and batch-oriented data artificial. 
 
 ```python
 def is_even(number: int) -> bool:
     return number % 2 == 0
 ```
-You use this function like this, providing one number at a time:
+
+You can easily submit different values as `number` parameter and do not bother associating the 
+parameter into one of the two categories.
 
 ```python
 is_even(number=1)
@@ -71,14 +75,15 @@ is_even(number=2)
 is_even(number=3)
 ```
 
-The situation becomes more complex with machine learning models. Unlike a simple function like `is_even(...)`, 
+The situation becomes more complicated with machine learning models. Unlike a simple function like `is_even(...)`, 
 which processes one number at a time, ML models often handle multiple pieces of data at once. For example, 
 instead of providing just one image to a classification model, you can usually submit a list of images and 
-receive predictions for all of them at once.
+receive predictions for all of them at once performing **the same operation** for each image. 
 
 This is different from our `is_even(...)` function, which would need to be called separately 
 for each number to get a list of results. The difference comes from how ML models work, especially how 
-GPUs process data - applying the same operation to many pieces of data simultaneously. 
+GPUs process data - applying the same operation to many pieces of data simultaneously, executing 
+[Single Instruction Multiple Data](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) operations.
 
 <center><iframe width="560" height="315" src="https://www.youtube.com/embed/-P28LKWTzrI?si=o_jORHPT8dqinQ3_" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></center>
 
@@ -90,10 +95,12 @@ for number in [1, 2, 3, 4]:
     results.append(is_even(number))
 ```
 
-In Workflows, similar methods are used to handle non-batch-oriented steps facing batch input data. But what if 
-step expects batch-oriented data and is given singular data point? Let's look at inference process from example
-classification model:
+In Workflows, usually **you do not need to worry** about broadcasting the operations into batches of data - 
+Execution Engine is doing that for you behind the scenes, but once you understood the role of *batch-oriented*
+data, let's think if all data can be represented as batches.
 
+Standard way of making predictions from classification model is be illustrated with the following 
+pseudo-code:
 ```python
 images = [PIL.Image(...), PIL.Image(...), PIL.Image(...), PIL.Image(...)]
 model = MyClassificationModel()
@@ -101,38 +108,44 @@ model = MyClassificationModel()
 predictions = model.infer(images=images, confidence_threshold=0.5)
 ```
 
-As you may imagine, this code has chance to run correctly, as there is substantial difference in meaning of
-`images` and `confidence_threshold` parameter. Former is batch of data to apply single operation (prediction 
-from a model) and the latter is parameter influencing the processing for all elements in the batch. Virtually, 
-`confidence_threshold` gets propagated (broadcast) at each element of `images` list with the same value, 
-as if `confidence_threshold` was the following list: `[0.5, 0.5, 0.5, 0.5]`.
+You can probably spot the difference between `images` and `confidence_threshold`. 
+Former is batch of data to apply single operation (prediction from a model) and the latter is parameter 
+influencing the processing for all elements in the batch and this type of data we call **scalars**.
 
-As mentioned earlier, Workflow inputs can be of two types:
+!!! Tip "Nature of *batches* and *scalars*"
 
-- `WorkflowImage`: This is similar to the images parameter in our example.
+    What we call *scalar* in Workflows ecosystem is not 100% equivalent to the mathematical 
+    term which is usually associated to "a single value", but in Workflows we prefer slightly different 
+    definition.
 
-- `WorkflowParameters`: This works like the confidence_threshold.
+    In the Workflows ecosystem, a *scalar* is a piece of data that stays constant, regardless of how many 
+    elements are processed. There is nothing that prevents from having a list of objects as a *scalar* value.
+    For example, if you have a list of input images and a fixed list of reference images, 
+    the reference images remain unchanged as you process each input. Thus, the reference images are considered 
+    *scalar* data, while the list of input images is *batch-oriented*.
+
+To illustrate the distinction, Workflow definitions hold inputs of the two categories:
+
+- **Scalar inputs** - like `WorkflowParameter`
+
+- **Batch inputs** - like `WorkflowImage`, `WorkflowVideoMetadata` or `WorkflowBatchInput`
+
 
 When you provide a single image as a `WorkflowImage` input, it is automatically expanded to form a batch. 
 If your Workflow definition includes multiple `WorkflowImage` placeholders, the actual data you provide for 
 execution must have the same batch size for all these inputs. The only exception is when you submit a 
 single image; it will be broadcast to fit the batch size requirements of other inputs.
 
-Currently, `WorkflowImage` is the only type of batch-oriented input you can use in Workflows. 
-This was introduced because the ecosystem started in the Computer Vision field, where images are a key data type. 
-However, as the field evolves and expands to include multi-modal models (LMMs) and other types of data, 
-you can expect additional batch-oriented data types to be introduced in the future.
-
 
 ## Steps interactions with data
 
 If we asked you about the nature of step outputs in these scenarios:
 
-- **A**: The step receives non-batch-oriented parameters as input.
+- **A**: The step receives only scalar parameters as input.
 
 - **B**: The step receives batch-oriented data as input.
 
-- **C**: The step receives both non-batch-oriented parameters and batch-oriented data as input.
+- **C**: The step receives both scalar parameters and batch-oriented data as input.
 
 You would likely say:
 
@@ -141,8 +154,7 @@ You would likely say:
 - In options B and C, the output will be a batch. In option C, the non-batch-oriented parameters will be 
 broadcast to match the batch size of the data.
 
-And you’d be correct. If you understand that, you probably only have two more concepts to understand before
-you can comfortably say you understand everything needed to successfully build and run complex Workflows.
+And you’d be correct. Knowing that, you only have two more concepts to understand to become Workflows expert.
 
 
 Let’s say you want to create a Workflow with these steps:
@@ -159,7 +171,7 @@ Here’s what happens with the data in the cropping step:
 
 2. The object detection model finds a different number of objects in each image.
 
-3. The cropping step then creates new images for each detected object, resulting in a new batch of images 
+3. The cropping step then creates new image for each detected object, resulting in a new batch of images 
 for each original image.
 
 So, you end up with a nested list of images, with sizes like `[(k[1], ), (k[2], ), ... (k[n])]`, where each `k[i]` 
@@ -359,4 +371,4 @@ serialisation strategies:
     sv.Detections, which is our standard representation of detection-based predictions is treated specially 
     by output constructor. `JsonField` output definition can specify optionally `coordinates_system` property,
     which may enforce translation of detection coordinates into coordinates system of parent image in workflow.
-    See more in [docs page describing outputs definitions](/workflows/definitions/)
+    See more in [docs page describing outputs definitions](/workflows/definitions.md)

@@ -20,8 +20,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -29,7 +28,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Add custom metadata to Roboflow Model Monitoring dashboard"
+SHORT_DESCRIPTION = "Add custom metadata to the Roboflow Model Monitoring dashboard."
 
 LONG_DESCRIPTION = """
 Block allows users to add custom metadata to each inference result in Roboflow Model Monitoring dashboard.
@@ -52,10 +51,15 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-analytics",
+                "blockPriority": 8,
+            },
         }
     )
     type: Literal["roboflow_core/roboflow_custom_metadata@v1", "RoboflowCustomMetadata"]
-    predictions: StepOutputSelector(
+    predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -68,8 +72,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
     field_value: Union[
         str,
-        WorkflowParameterSelector(kind=[STRING_KIND]),
-        StepOutputSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(
         description="This is the name of the metadata field you are creating",
         examples=["toronto", "pass", "fail"],
@@ -78,14 +82,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Name of the field to be updated in Roboflow Customer Metadata",
         examples=["The name of the value of the field"],
     )
-    fire_and_forget: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
-        Field(
-            default=True,
-            description="Boolean flag dictating if sink is supposed to be executed in the background, "
-            "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-            "registration is needed, use `False` while debugging and if error handling is needed",
-            examples=[True],
-        )
+    fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Boolean flag dictating if sink is supposed to be executed in the background, "
+        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
+        "registration is needed, use `False` while debugging and if error handling is needed",
+        examples=[True],
     )
 
     @classmethod
@@ -97,7 +99,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class RoboflowCustomMetadataBlockV1(WorkflowBlock):
@@ -127,7 +129,7 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
         fire_and_forget: bool,
         field_name: str,
         field_value: str,
-        predictions: sv.Detections,
+        predictions: Union[sv.Detections, dict],
     ) -> BlockResult:
         if self._api_key is None:
             raise ValueError(
@@ -136,7 +138,11 @@ class RoboflowCustomMetadataBlockV1(WorkflowBlock):
                 "https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key to learn how to "
                 "retrieve one."
             )
-        inference_ids: List[str] = predictions.data.get(INFERENCE_ID_KEY, [])
+        inference_ids: List[str] = []
+        if isinstance(predictions, sv.Detections):
+            inference_ids = predictions.data.get(INFERENCE_ID_KEY, [])
+        elif INFERENCE_ID_KEY in predictions:
+            inference_ids: List[str] = [predictions[INFERENCE_ID_KEY]]
         if len(inference_ids) == 0:
             return {
                 "error_status": True,

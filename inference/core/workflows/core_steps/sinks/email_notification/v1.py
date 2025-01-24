@@ -28,9 +28,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     BYTES_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
+    SECRET_KIND,
     STRING_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -60,7 +60,7 @@ Content of the message can be parametrised with Workflow execution outcomes. Tak
 message using dynamic parameters:
 
 ```
-message = "This is example notification. Predicted classes: {{ $parameters.predicted_classes }}"
+message = "This is example notification. Predicted classes: {{ '{{' }} $parameters.predicted_classes {{ '}}' }}"
 ```
 
 Message parameters are delivered by Workflows Execution Engine by setting proper data selectors in
@@ -125,6 +125,12 @@ notifications. Please adjust it according to your needs, setting `0` indicate no
 During cooldown period, consecutive runs of the step will cause `throttling_status` output to be set `True`
 and no notification will be sent.
 
+!!! warning "Cooldown limitations"
+
+    Current implementation of cooldown is limited to video processing - using this block in context of a 
+    Workflow that is run behind HTTP service (Roboflow Hosted API, Dedicated Deployment or self-hosted 
+    `inference` server) will have no effect for processing HTTP requests.  
+
 
 ### Attachments
 
@@ -161,10 +167,16 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Email Notification",
             "version": "v1",
-            "short_description": "Send notification via E-Mail",
+            "short_description": "Send notification via e-mail.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-envelope",
+                "blockPriority": 0,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/email_notification@v1"]
@@ -178,14 +190,14 @@ class BlockManifest(WorkflowBlockManifest):
             "During last 5 minutes detected {{ $parameters.num_instances }} instances"
         ],
     )
-    sender_email: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
+    sender_email: Union[str, Selector(kind=[STRING_KIND])] = Field(
         description="E-mail to be used to send the message",
         examples=["sender@gmail.com"],
     )
     receiver_email: Union[
         str,
         List[str],
-        WorkflowParameterSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
+        Selector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
     ] = Field(
         description="Destination e-mail address",
         examples=["receiver@gmail.com"],
@@ -194,7 +206,7 @@ class BlockManifest(WorkflowBlockManifest):
         Union[
             str,
             List[str],
-            WorkflowParameterSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
+            Selector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
         ]
     ] = Field(
         default=None,
@@ -205,7 +217,7 @@ class BlockManifest(WorkflowBlockManifest):
         Union[
             str,
             List[str],
-            WorkflowParameterSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
+            Selector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
         ]
     ] = Field(
         default=None,
@@ -214,7 +226,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     message_parameters: Dict[
         str,
-        Union[WorkflowParameterSelector(), StepOutputSelector(), str, int, float, bool],
+        Union[Selector(), Selector(), str, int, float, bool],
     ] = Field(
         description="References data to be used to construct each and every column",
         examples=[
@@ -236,16 +248,16 @@ class BlockManifest(WorkflowBlockManifest):
         ],
         default_factory=dict,
     )
-    attachments: Dict[str, StepOutputSelector(kind=[STRING_KIND, BYTES_KIND])] = Field(
+    attachments: Dict[str, Selector(kind=[STRING_KIND, BYTES_KIND])] = Field(
         description="Attachments",
         default_factory=dict,
         examples=[{"report.cvs": "$steps.csv_formatter.csv_content"}],
     )
-    smtp_server: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
+    smtp_server: Union[str, Selector(kind=[STRING_KIND])] = Field(
         description="Custom SMTP server to be used",
         examples=["$inputs.smtp_server", "smtp.google.com"],
     )
-    sender_email_password: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = (
+    sender_email_password: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = (
         Field(
             description="Sender e-mail password be used when authenticating to SMTP server",
             private=True,
@@ -260,30 +272,26 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    fire_and_forget: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
-        Field(
-            default=True,
-            description="Boolean flag dictating if sink is supposed to be executed in the background, "
-            "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-            "registration is needed, use `False` while debugging and if error handling is needed",
-            examples=["$inputs.fire_and_forget", False],
-        )
+    fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Boolean flag dictating if sink is supposed to be executed in the background, "
+        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
+        "registration is needed, use `False` while debugging and if error handling is needed",
+        examples=["$inputs.fire_and_forget", False],
     )
-    disable_sink: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
+    disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         description="boolean flag that can be also reference to input - to arbitrarily disable "
         "data collection for specific request",
         examples=[False, "$inputs.disable_email_notifications"],
     )
-    cooldown_seconds: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            default=5,
-            description="Number of seconds to wait until follow-up notification can be sent",
-            examples=["$inputs.cooldown_seconds", 3],
-            json_schema_extra={
-                "always_visible": True,
-            },
-        )
+    cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
+        default=5,
+        description="Number of seconds to wait until follow-up notification can be sent",
+        examples=["$inputs.cooldown_seconds", 3],
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
 
     @field_validator("receiver_email")
@@ -305,7 +313,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class EmailNotificationBlockV1(WorkflowBlock):

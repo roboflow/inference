@@ -19,13 +19,12 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     FloatZeroToOne,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/halo_visualization@v1"
-SHORT_DESCRIPTION = "Paints a halo around detected objects in an image."
+SHORT_DESCRIPTION = "Paint a halo around detected objects in an image."
 LONG_DESCRIPTION = """
 The `HaloVisualization` block uses a detected polygon
 from an instance segmentation to draw a halo using
@@ -43,10 +42,23 @@ class HaloManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-lightbulb-on",
+                "blockPriority": 11,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 
-    predictions: StepOutputSelector(
+    predictions: Selector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
@@ -55,13 +67,13 @@ class HaloManifest(ColorableVisualizationManifest):
         examples=["$steps.instance_segmentation_model.predictions"],
     )
 
-    opacity: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the halo overlay.",
         default=0.8,
         examples=[0.8, "$inputs.opacity"],
     )
 
-    kernel_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    kernel_size: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Size of the average pooling kernel used for creating the halo.",
         default=40,
         examples=[40, "$inputs.kernel_size"],
@@ -69,7 +81,7 @@ class HaloManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class HaloVisualizationBlockV1(ColorableVisualizationBlock):

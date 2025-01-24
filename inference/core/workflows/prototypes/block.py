@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Type, Union
 
-from openai import BaseModel
-from pydantic import ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.workflows.errors import BlockInterfaceError
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
@@ -24,7 +23,9 @@ class WorkflowBlockManifest(BaseModel, ABC):
     )
 
     type: str
-    name: str = Field(title="Step Name", description="The unique name of this step.")
+    name: str = Field(
+        title="Step Name", description="Enter a unique identifier for this step."
+    )
 
     @classmethod
     @abstractmethod
@@ -55,7 +56,17 @@ class WorkflowBlockManifest(BaseModel, ABC):
 
     @classmethod
     def accepts_batch_input(cls) -> bool:
-        return False
+        return len(cls.get_parameters_accepting_batches()) > 0 or len(
+            cls.get_parameters_accepting_batches_and_scalars()
+        )
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return []
+
+    @classmethod
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return []
 
     @classmethod
     def accepts_empty_values(cls) -> bool:

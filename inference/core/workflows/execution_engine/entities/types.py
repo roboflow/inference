@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional, Union
 
 from pydantic import AliasChoices, BaseModel, Field, StringConstraints
 from typing_extensions import Annotated
@@ -35,6 +35,7 @@ SELECTED_ELEMENT_KEY = "selected_element"
 KIND_KEY = "kind"
 DIMENSIONALITY_OFFSET_KEY = "dimensionality_offset"
 DIMENSIONALITY_REFERENCE_PROPERTY_KEY = "dimensionality_reference_property"
+SELECTOR_POINTS_TO_BATCH_KEY = "selector_points_to_batch"
 
 WILDCARD_KIND_DOCS = """
 This is a special kind that represents Any value - which is to be used by default if 
@@ -65,7 +66,7 @@ external representation. As an input we support:
 * `np.ndarray` image when Workflows Execution Engine is used directly in `inference` python package (array can be
 provided in a form of dictionary presented below, if `video_metadata` is intended to be injected)
 
-* dictionary compatible with [inference image utils](https://inference.roboflow.com/docs/reference/inference/core/utils/image_utils/):
+* dictionary compatible with [inference image utils](https://inference.roboflow.com/reference/inference/core/utils/image_utils/):
 
 ```python
 {
@@ -77,6 +78,7 @@ provided in a form of dictionary presented below, if `video_metadata` is intende
         "video_identifier": "rtsp://some.com/stream1",
         "comes_from_video_file": False,
         "fps": 23.99,
+        "measured_fps": 20.05,
         "frame_number": 24,
         "frame_timestamp": "2024-08-21T11:13:44.313999", 
     }  
@@ -115,6 +117,7 @@ The kind has different internal end external representation. As input we support
     "video_identifier": "rtsp://some.com/stream1",
     "comes_from_video_file": False,
     "fps": 23.99,
+    "measured_fps": 20.05,
     "frame_number": 24,
     "frame_timestamp": "2024-08-21T11:13:44.313999", 
 }   
@@ -205,6 +208,22 @@ LIST_OF_VALUES_KIND = Kind(
     docs=LIST_OF_VALUES_KIND_DOCS,
     serialised_data_type="List[Any]",
     internal_data_type="List[Any]",
+)
+
+EMBEDDING_KIND_DOCS = """
+This kind represents a vector embedding. It is a list of floating point numbers.
+
+Embeddings are used in various machine learning tasks like clustering, classification,
+and similarity search. They are used to represent data in a continuous, low-dimensional space.
+
+Typically, vectors that are close to each other in the embedding space are considered similar.
+"""
+EMBEDDING_KIND = Kind(
+    name="embedding",
+    description="A list of floating point numbers representing a vector embedding.",
+    docs=EMBEDDING_KIND_DOCS,
+    serialised_data_type="List[float]",
+    internal_data_type="List[float]",
 )
 
 RGB_COLOR_KIND_DOCS = """
@@ -1019,9 +1038,38 @@ LANGUAGE_MODEL_OUTPUT_KIND = Kind(
     internal_data_type="str",
 )
 
+INFERENCE_ID_KIND_DOCS = """
+This kind represents identifier of inference process, which is usually opaque string used as correlation
+identifier for external systems (like Roboflow Model Monitoring).
+
+Examples:
+```
+b1851e3d-a145-4540-a39e-875f21f6cd84
+```
+"""
+
+INFERENCE_ID_KIND = Kind(
+    name="inference_id",
+    description="Inference identifier",
+    docs=INFERENCE_ID_KIND_DOCS,
+    serialised_data_type="str",
+    internal_data_type="str",
+)
+
+SECRET_KIND = Kind(
+    name="secret",
+    description="Secret value",
+    docs="This kind represents a secret - password or other credential that should remain confidential.",
+    serialised_data_type="str",
+    internal_data_type="str",
+)
+
 
 STEP_AS_SELECTED_ELEMENT = "step"
 STEP_OUTPUT_AS_SELECTED_ELEMENT = "step_output"
+BATCH_AS_SELECTED_ELEMENT = "batch"
+SCALAR_AS_SELECTED_ELEMENT = "scalar"
+ANY_DATA_AS_SELECTED_ELEMENT = "any_data"
 
 StepSelector = Annotated[
     str,
@@ -1055,6 +1103,7 @@ def StepOutputSelector(kind: Optional[List[Kind]] = None):
         REFERENCE_KEY: True,
         SELECTED_ELEMENT_KEY: STEP_OUTPUT_AS_SELECTED_ELEMENT,
         KIND_KEY: [k.dict() for k in kind],
+        SELECTOR_POINTS_TO_BATCH_KEY: True,
     }
     return Annotated[
         str,
@@ -1086,6 +1135,7 @@ WorkflowImageSelector = Annotated[
             REFERENCE_KEY: True,
             SELECTED_ELEMENT_KEY: "workflow_image",
             KIND_KEY: [IMAGE_KIND.dict()],
+            SELECTOR_POINTS_TO_BATCH_KEY: True,
         }
     ),
 ]
@@ -1098,6 +1148,7 @@ StepOutputImageSelector = Annotated[
             REFERENCE_KEY: True,
             SELECTED_ELEMENT_KEY: STEP_OUTPUT_AS_SELECTED_ELEMENT,
             KIND_KEY: [IMAGE_KIND.dict()],
+            SELECTOR_POINTS_TO_BATCH_KEY: True,
         }
     ),
 ]
@@ -1113,6 +1164,27 @@ WorkflowVideoMetadataSelector = Annotated[
             REFERENCE_KEY: True,
             SELECTED_ELEMENT_KEY: "workflow_video_metadata",
             KIND_KEY: [VIDEO_METADATA_KIND.dict()],
+            SELECTOR_POINTS_TO_BATCH_KEY: True,
         }
     ),
 ]
+
+
+def Selector(
+    kind: Optional[List[Kind]] = None,
+):
+    if kind is None:
+        kind = [WILDCARD_KIND]
+    json_schema_extra = {
+        REFERENCE_KEY: True,
+        SELECTED_ELEMENT_KEY: ANY_DATA_AS_SELECTED_ELEMENT,
+        KIND_KEY: [k.dict() for k in kind],
+        SELECTOR_POINTS_TO_BATCH_KEY: "dynamic",
+    }
+    return Annotated[
+        str,
+        StringConstraints(
+            pattern=r"(^\$steps\.[A-Za-z_\-0-9]+\.[A-Za-z_*0-9\-]+$)|(^\$inputs.[A-Za-z_0-9\-]+$)"
+        ),
+        Field(json_schema_extra=json_schema_extra),
+    ]

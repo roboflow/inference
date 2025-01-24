@@ -10,6 +10,16 @@ def resize_opencv_image(
     max_height: Optional[int],
     max_width: Optional[int],
 ) -> Tuple[np.ndarray, Optional[float]]:
+    """Resize an OpenCV image.
+
+    Args:
+        image: The image to resize.
+        max_height: The maximum height of the image.
+        max_width: The maximum width of the image.
+
+    Returns:
+        The resized image and the scaling factor.
+    """
     if max_width is None or max_height is None:
         return image, None
     height, width = image.shape[:2]
@@ -32,6 +42,16 @@ def resize_pillow_image(
     max_height: Optional[int],
     max_width: Optional[int],
 ) -> Tuple[Image.Image, Optional[float]]:
+    """Resize a Pillow image.
+
+    Args:
+        image: The image to resize.
+        max_height: The maximum height of the image.
+        max_width: The maximum width of the image.
+
+    Returns:
+        The resized image and the scaling factor.
+    """
     if max_width is None or max_height is None:
         return image, None
     width, height = image.size
@@ -54,6 +74,17 @@ def determine_scaling_aspect_ratio(
     max_height: int,
     max_width: int,
 ) -> Optional[float]:
+    """Determine the scaling aspect ratio.
+
+    Args:
+        image_height: The height of the image.
+        image_width: The width of the image.
+        max_height: The maximum height of the image.
+        max_width: The maximum width of the image.
+
+    Returns:
+        The scaling aspect ratio.
+    """
     height_scaling_ratio = max_height / image_height
     width_scaling_ratio = max_width / image_width
     min_scaling_ratio = min(height_scaling_ratio, width_scaling_ratio)

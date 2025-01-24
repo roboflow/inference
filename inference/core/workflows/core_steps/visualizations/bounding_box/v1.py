@@ -15,12 +15,12 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
     FloatZeroToOne,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/bounding_box_visualization@v1"
-SHORT_DESCRIPTION = "Draws a box around detected objects in an image."
+SHORT_DESCRIPTION = "Draw a box around detected objects in an image."
 LONG_DESCRIPTION = """
 The `BoundingBoxVisualization` block draws a box around detected
 objects in an image using Supervision's `sv.RoundBoxAnnotator`.
@@ -37,24 +37,38 @@ class BoundingBoxManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-object-group",
+                "blockPriority": 0,
+                "supervision": True,
+                "popular": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
-        description="Thickness of the bounding box in pixels.",
+    thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+        description="Set the thickness of the bounding box edges.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
 
-    roundness: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
-        description="Roundness of the corners of the bounding box.",
+    roundness: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+        description="Define the roundness of the bounding box corners.",
         default=0.0,
         examples=[0.0, "$inputs.roundness"],
     )
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class BoundingBoxVisualizationBlockV1(ColorableVisualizationBlock):

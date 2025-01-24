@@ -27,8 +27,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
     TOP_CLASS_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -113,6 +112,13 @@ notifications. Please adjust it according to your needs, setting `0` indicate no
 During cooldown period, consecutive runs of the step will cause `throttling_status` output to be set `True`
 and no notification will be sent.
 
+!!! warning "Cooldown limitations"
+
+    Current implementation of cooldown is limited to video processing - using this block in context of a 
+    Workflow that is run behind HTTP service (Roboflow Hosted API, Dedicated Deployment or self-hosted 
+    `inference` server) will have no effect for processing HTTP requests.  
+    
+
 ### Async execution
 
 Configure the `fire_and_forget` property. Set it to True if you want the request to be sent in the background, 
@@ -157,14 +163,20 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Webhook Sink",
             "version": "v1",
-            "short_description": "Sends the request to remote API with results of Workflow results",
+            "short_description": "Send a request to a remote API with Workflow results.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "data_storage",
+                "icon": "fal fa-webhook",
+                "blockPriority": 1,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/webhook_sink@v1"]
-    url: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    url: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="URL of the resource to make request",
     )
     method: Literal["GET", "POST", "PUT"] = Field(
@@ -173,8 +185,8 @@ class BlockManifest(WorkflowBlockManifest):
     query_parameters: Dict[
         str,
         Union[
-            WorkflowParameterSelector(kind=QUERY_PARAMS_KIND),
-            StepOutputSelector(kind=QUERY_PARAMS_KIND),
+            Selector(kind=QUERY_PARAMS_KIND),
+            Selector(kind=QUERY_PARAMS_KIND),
             str,
             float,
             bool,
@@ -189,8 +201,8 @@ class BlockManifest(WorkflowBlockManifest):
     headers: Dict[
         str,
         Union[
-            WorkflowParameterSelector(kind=HEADER_KIND),
-            StepOutputSelector(kind=HEADER_KIND),
+            Selector(kind=HEADER_KIND),
+            Selector(kind=HEADER_KIND),
             str,
             float,
             bool,
@@ -204,8 +216,8 @@ class BlockManifest(WorkflowBlockManifest):
     json_payload: Dict[
         str,
         Union[
-            WorkflowParameterSelector(),
-            StepOutputSelector(),
+            Selector(),
+            Selector(),
             str,
             float,
             bool,
@@ -233,8 +245,8 @@ class BlockManifest(WorkflowBlockManifest):
     multi_part_encoded_files: Dict[
         str,
         Union[
-            WorkflowParameterSelector(),
-            StepOutputSelector(),
+            Selector(),
+            Selector(),
             str,
             float,
             bool,
@@ -265,8 +277,8 @@ class BlockManifest(WorkflowBlockManifest):
     form_data: Dict[
         str,
         Union[
-            WorkflowParameterSelector(),
-            StepOutputSelector(),
+            Selector(),
+            Selector(),
             str,
             float,
             bool,
@@ -291,35 +303,31 @@ class BlockManifest(WorkflowBlockManifest):
         ],
         default_factory=dict,
     )
-    request_timeout: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+    request_timeout: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=2,
         description="Number of seconds to wait for remote API response",
         examples=["$inputs.request_timeout", 10],
     )
-    fire_and_forget: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
-        Field(
-            default=True,
-            description="Boolean flag dictating if sink is supposed to be executed in the background, "
-            "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-            "registration is needed, use `False` while debugging and if error handling is needed",
-            examples=["$inputs.fire_and_forget", True],
-        )
+    fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Boolean flag dictating if sink is supposed to be executed in the background, "
+        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
+        "registration is needed, use `False` while debugging and if error handling is needed",
+        examples=["$inputs.fire_and_forget", True],
     )
-    disable_sink: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
+    disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         description="boolean flag that can be also reference to input - to arbitrarily disable "
         "data collection for specific request",
         examples=[False, "$inputs.disable_email_notifications"],
     )
-    cooldown_seconds: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            default=5,
-            description="Number of seconds to wait until follow-up notification can be sent",
-            json_schema_extra={
-                "always_visible": True,
-            },
-            examples=["$inputs.cooldown_seconds", 10],
-        )
+    cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
+        default=5,
+        description="Number of seconds to wait until follow-up notification can be sent",
+        json_schema_extra={
+            "always_visible": True,
+        },
+        examples=["$inputs.cooldown_seconds", 10],
     )
 
     @classmethod
@@ -332,7 +340,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class WebhookSinkBlockV1(WorkflowBlock):

@@ -8,7 +8,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
-    StepOutputSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -26,7 +26,7 @@ Useful in scenarios like:
 """
 
 SHORT_DESCRIPTION = (
-    "Collapses dimensionality level by aggregation of nested data into list"
+    "Collapse dimensionality by aggregating nested data into a single list."
 )
 
 
@@ -39,10 +39,16 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "fusion",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-layer-minus",
+                "blockPriority": 6,
+                "inDevelopment": True,
+            },
         }
     )
     type: Literal["roboflow_core/dimension_collapse@v1", "DimensionCollapse"]
-    data: StepOutputSelector() = Field(
+    data: Selector() = Field(
         description="Reference to step outputs at depth level n to be concatenated and moved into level n-1.",
         examples=["$steps.ocr_step.results"],
     )
@@ -64,7 +70,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class DimensionCollapseBlockV1(WorkflowBlock):

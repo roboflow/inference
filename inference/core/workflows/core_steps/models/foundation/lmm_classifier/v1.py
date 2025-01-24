@@ -23,16 +23,16 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     IMAGE_METADATA_KIND,
     LIST_OF_VALUES_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
+    SECRET_KIND,
     STRING_KIND,
     TOP_CLASS_KIND,
     ImageInputField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -65,20 +65,20 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "deprecated": True,
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-chart-network",
+            },
         }
     )
     type: Literal["roboflow_core/lmm_for_classification@v1", "LMMForClassification"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    lmm_type: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
-    ] = Field(
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    lmm_type: Union[Selector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]] = Field(
         description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
     )
-    classes: Union[List[str], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = (
-        Field(
-            description="List of classes that LMM shall classify against",
-            examples=[["a", "b"], "$inputs.classes"],
-        )
+    classes: Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])] = Field(
+        description="List of classes that LMM shall classify against",
+        examples=[["a", "b"], "$inputs.classes"],
     )
     lmm_config: LMMConfig = Field(
         default_factory=lambda: LMMConfig(),
@@ -91,18 +91,18 @@ class BlockManifest(WorkflowBlockManifest):
             }
         ],
     )
-    remote_api_key: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]
-    ] = Field(
-        default=None,
-        description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
-        examples=["xxx-xxx", "$inputs.api_key"],
-        private=True,
+    remote_api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), Optional[str]] = (
+        Field(
+            default=None,
+            description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
+            examples=["xxx-xxx", "$inputs.api_key"],
+            private=True,
+        )
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -117,7 +117,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class LMMForClassificationBlockV1(WorkflowBlock):

@@ -16,13 +16,12 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/keypoint_visualization@v1"
-SHORT_DESCRIPTION = "Draws keypoints on detected objects in an image."
+SHORT_DESCRIPTION = "Draw keypoints on detected objects in an image."
 LONG_DESCRIPTION = """
 The `KeypointVisualization` block uses a detections from an
 keypoint detection model to draw keypoints on objects using
@@ -48,7 +47,7 @@ class KeypointManifest(VisualizationManifest):
         }
     )
 
-    predictions: StepOutputSelector(
+    predictions: Selector(
         kind=[
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
@@ -63,13 +62,13 @@ class KeypointManifest(VisualizationManifest):
         json_schema_extra={"always_visible": True},
     )
 
-    color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the keypoint.",
         default="#A351FB",
         examples=["#A351FB", "green", "$inputs.color"],
     )
 
-    text_color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    text_color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Text color of the keypoint.",
         default="black",
         examples=["black", "$inputs.text_color"],
@@ -81,7 +80,7 @@ class KeypointManifest(VisualizationManifest):
             },
         },
     )
-    text_scale: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+    text_scale: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         description="Scale of the text.",
         default=0.5,
         examples=[0.5, "$inputs.text_scale"],
@@ -94,7 +93,7 @@ class KeypointManifest(VisualizationManifest):
         },
     )
 
-    text_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    text_thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the text characters.",
         default=1,
         examples=[1, "$inputs.text_thickness"],
@@ -107,7 +106,7 @@ class KeypointManifest(VisualizationManifest):
         },
     )
 
-    text_padding: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    text_padding: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Padding around the text in pixels.",
         default=10,
         examples=[10, "$inputs.text_padding"],
@@ -120,7 +119,7 @@ class KeypointManifest(VisualizationManifest):
         },
     )
 
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the outline in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],
@@ -133,7 +132,7 @@ class KeypointManifest(VisualizationManifest):
         },
     )
 
-    radius: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    radius: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Radius of the keypoint in pixels.",
         default=10,
         examples=[10, "$inputs.radius"],

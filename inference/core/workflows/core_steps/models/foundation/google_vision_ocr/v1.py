@@ -20,11 +20,11 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    SECRET_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -61,7 +61,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["roboflow_core/google_vision_ocr@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         description="Image to run OCR",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
@@ -80,7 +80,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
         description="Your Google Vision API key",
         examples=["xxx-xxx", "$inputs.google_api_key"],
         private=True,
@@ -98,7 +98,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class GoogleVisionOCRBlockV1(WorkflowBlock):
@@ -162,10 +162,10 @@ class GoogleVisionOCRBlockV1(WorkflowBlock):
             for block in page["blocks"]:
                 # Get bounding box coordinates
                 box = block["boundingBox"]["vertices"]
-                x_min = min(v["x"] for v in box)
-                y_min = min(v["y"] for v in box)
-                x_max = max(v["x"] for v in box)
-                y_max = max(v["y"] for v in box)
+                x_min = min(v.get("x", 0) for v in box)
+                y_min = min(v.get("y", 0) for v in box)
+                x_max = max(v.get("x", 0) for v in box)
+                y_max = max(v.get("y", 0) for v in box)
                 xyxy.append([x_min, y_min, x_max, y_max])
 
                 # Only DOCUMENT_TEXT_DETECTION provides confidence score, use 1.0 otherwise

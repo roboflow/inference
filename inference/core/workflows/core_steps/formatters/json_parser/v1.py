@@ -10,7 +10,7 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
-    StepOutputSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -39,7 +39,7 @@ Accepted formats:
 `error_status` will remain `False`
 """
 
-SHORT_DESCRIPTION = "Parses raw string into JSON."
+SHORT_DESCRIPTION = "Parse raw string into JSON."
 
 
 def validate_reserved_fields(expected_fields: List[str]) -> List[str]:
@@ -60,10 +60,15 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "formatter",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-table-tree",
+                "blockPriority": 5,
+            },
         }
     )
     type: Literal["roboflow_core/json_parser@v1"]
-    raw_json: StepOutputSelector(kind=[LANGUAGE_MODEL_OUTPUT_KIND]) = Field(
+    raw_json: Selector(kind=[LANGUAGE_MODEL_OUTPUT_KIND]) = Field(
         description="The string with raw JSON to parse.",
         examples=[["$steps.lmm.output"]],
     )
@@ -91,7 +96,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class JSONParserBlockV1(WorkflowBlock):

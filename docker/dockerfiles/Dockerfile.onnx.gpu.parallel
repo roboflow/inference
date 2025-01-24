@@ -31,6 +31,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.waf.txt \
     -r requirements.gaze.txt \
     -r requirements.parallel.txt \
+    "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -47,7 +48,7 @@ WORKDIR /build
 COPY . .
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN /bin/make create_wheels_for_gpu_notebook
-RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl
+RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
 
 WORKDIR /notebooks
 COPY examples/notebooks .

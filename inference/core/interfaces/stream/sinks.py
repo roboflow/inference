@@ -18,7 +18,7 @@ from inference.core.interfaces.stream.utils import wrap_in_list
 from inference.core.utils.drawing import create_tiles
 from inference.core.utils.preprocess import letterbox_image
 
-DEFAULT_BBOX_ANNOTATOR = sv.BoundingBoxAnnotator()
+DEFAULT_BBOX_ANNOTATOR = sv.BoxAnnotator()
 DEFAULT_LABEL_ANNOTATOR = sv.LabelAnnotator()
 DEFAULT_FPS_MONITOR = sv.FPSMonitor()
 
@@ -50,8 +50,8 @@ def render_boxes(
 ) -> None:
     """
     Helper tool to render object detection predictions on top of video frame. It is designed
-    to be used with `InferencePipeline`, as sink for predictions. By default it uses
-    standard `sv.BoundingBoxAnnotator()` chained with `sv.LabelAnnotator()`
+    to be used with `InferencePipeline`, as sink for predictions. By default, it uses
+    standard `sv.BoxAnnotator()` chained with `sv.LabelAnnotator()`
     to draw bounding boxes and resizes prediction to 1280x720 (keeping aspect ratio and adding black padding).
     One may configure default behaviour, for instance to display latency and throughput statistics.
     In batch mode it will display tiles of frames and overlay predictions.
@@ -70,7 +70,7 @@ def render_boxes(
             by `VideoSource` or list of frames from (it is possible for empty batch frames at corresponding positions
             to `predictions` list). Order is expected to match with `predictions`
         annotator (Union[BaseAnnotator, List[BaseAnnotator]]): instance of class inheriting from supervision BaseAnnotator
-            or list of such instances. If nothing is passed chain of `sv.BoundingBoxAnnotator()` and `sv.LabelAnnotator()` is used.
+            or list of such instances. If nothing is passed chain of `sv.BoxAnnotator()` and `sv.LabelAnnotator()` is used.
         display_size (Tuple[int, int]): tuple in format (width, height) to resize visualisation output
         fps_monitor (Optional[sv.FPSMonitor]): FPS monitor used to monitor throughput
         display_statistics (bool): Flag to decide if throughput and latency can be displayed in the result image,
@@ -362,7 +362,7 @@ def multi_sink(
             sink(predictions, video_frame)
         except Exception as error:
             logger.error(
-                f"Could not sent prediction with to sink due to error: {error}."
+                f"Could not send prediction and/or frame to sink due to error: {error}."
             )
 
 
@@ -424,7 +424,7 @@ class VideoFileSink:
         Args:
             video_file_name (str): name of the video file to save predictions
             annotator (Union[BaseAnnotator, List[BaseAnnotator]]): instance of class inheriting from supervision BaseAnnotator
-                or list of such instances. If nothing is passed chain of `sv.BoundingBoxAnnotator()` and `sv.LabelAnnotator()` is used.
+                or list of such instances. If nothing is passed chain of `sv.BoxAnnotator()` and `sv.LabelAnnotator()` is used.
             display_size (Tuple[int, int]): tuple in format (width, height) to resize visualisation output. Should
                 be set to the same value as `display_size` for InferencePipeline with single video source, otherwise
                 it represents the size of single visualisation tile (whole tiles mosaic will be scaled to

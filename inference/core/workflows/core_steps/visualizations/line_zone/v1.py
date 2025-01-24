@@ -20,13 +20,12 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     STRING_KIND,
     FloatZeroToOne,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/line_counter_visualization@v1"
-SHORT_DESCRIPTION = "Paints a mask over line zone in an image."
+SHORT_DESCRIPTION = "Apply a mask over a line zone in an image."
 LONG_DESCRIPTION = """
 The `LineCounterZoneVisualization` block draws line
 in an image with a specified color and opacity.
@@ -45,45 +44,58 @@ class LineCounterZoneVisualizationManifest(VisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-arrow-down-up-across-line",
+                "blockPriority": 15,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
-    zone: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    zone: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Line in the format [[x1, y1], [x2, y2]] consisting of exactly two points.",
         examples=[[[0, 50], [500, 50]], "$inputs.zones"],
     )
-    color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the zone.",
         default="#5bb573",
         examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
     )
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the lines in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
-    text_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    text_thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the text in pixels.",
         default=1,
         examples=[1, "$inputs.text_thickness"],
     )
-    text_scale: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+    text_scale: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         description="Scale of the text.",
         default=1.0,
         examples=[1.0, "$inputs.text_scale"],
     )
-    count_in: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND]), StepOutputSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    count_in: Union[int, Selector(kind=[INTEGER_KIND]), Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Reference to the number of objects that crossed into the line zone.",
         default=0,
         examples=["$steps.line_counter.count_in"],
         json_schema_extra={"always_visible": True},
     )
-    count_out: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND]), StepOutputSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    count_out: Union[int, Selector(kind=[INTEGER_KIND]), Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Reference to the number of objects that crossed out of the line zone.",
         default=0,
         examples=["$steps.line_counter.count_out"],
         json_schema_extra={"always_visible": True},
     )
-    opacity: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the Mask overlay.",
         default=0.3,
         examples=[0.3, "$inputs.opacity"],
@@ -91,7 +103,7 @@ class LineCounterZoneVisualizationManifest(VisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class LineCounterZoneVisualizationBlockV1(VisualizationBlock):

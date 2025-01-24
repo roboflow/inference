@@ -1,7 +1,9 @@
 import hashlib
 import os
+import pickle
+import weakref
 from collections import defaultdict
-from typing import Any, Dict, List, Literal, NewType, Tuple
+from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -10,19 +12,39 @@ import torchvision
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import box_iou
 
-from inference.core.entities.requests.owlv2 import TrainingImage
+from inference.core.cache.model_artifacts import save_bytes_in_cache
+from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import DEVICE, MAX_DETECTIONS
+from inference.core.env import (
+    DEVICE,
+    MAX_DETECTIONS,
+    MODEL_CACHE_DIR,
+    OWLV2_IMAGE_CACHE_SIZE,
+    OWLV2_MODEL_CACHE_SIZE,
+    OWLV2_VERSION_ID,
+)
+from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
 from inference.core.models.roboflow import (
     DEFAULT_COLOR_PALETTE,
     RoboflowCoreModel,
+    RoboflowInferenceModel,
     draw_detection_predictions,
 )
-from inference.core.utils.image_utils import load_image_rgb
+from inference.core.roboflow_api import (
+    ModelEndpointType,
+    get_from_url,
+    get_roboflow_instant_model_data,
+    get_roboflow_model_data,
+)
+from inference.core.utils.image_utils import (
+    ImageType,
+    extract_image_payload_and_type,
+    load_image_rgb,
+)
 
 # TYPES
 Hash = NewType("Hash", str)
@@ -59,6 +81,26 @@ class LimitedSizeDict(OrderedDict):
         if self.size_limit is not None:
             while len(self) > self.size_limit:
                 self.popitem(last=False)
+
+
+class Owlv2Singleton:
+    _instances = weakref.WeakValueDictionary()
+
+    def __new__(cls, huggingface_id: str):
+        if huggingface_id not in cls._instances:
+            instance = super().__new__(cls)
+            instance.huggingface_id = huggingface_id
+            # Load model directly in the instance
+            model = (
+                Owlv2ForObjectDetection.from_pretrained(huggingface_id)
+                .eval()
+                .to(DEVICE)
+            )
+            torch._dynamo.config.suppress_errors = True
+            model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
+            instance.model = model
+            cls._instances[huggingface_id] = instance
+        return cls._instances[huggingface_id]
 
 
 def preprocess_image(
@@ -196,12 +238,71 @@ def make_class_map(
     return class_map, class_names
 
 
-class OwlV2(RoboflowCoreModel):
+def hash_function(value: Any) -> Hash:
+    # wrapper so we can change the hashing function in the future
+    return hashlib.sha1(value).hexdigest()
+
+
+class LazyImageRetrievalWrapper:
+    def __init__(self, image: Any):
+        self.image = image
+
+        self._image_as_numpy = None
+        self._image_hash = None
+
+    @property
+    def image_as_numpy(self) -> np.ndarray:
+        if self._image_as_numpy is None:
+            self._image_as_numpy = load_image_rgb(self.image)
+        return self._image_as_numpy
+
+    @property
+    def image_hash(self) -> Hash:
+        if self._image_hash is None:
+            image_payload, image_type = extract_image_payload_and_type(self.image)
+            if image_type is ImageType.URL:
+                # we can use the url as the hash
+                self._image_hash = image_payload
+            elif image_type is ImageType.BASE64:
+                # this is presumably the compressed image bytes
+                # hashing this directly is faster than loading the raw image through numpy
+                # we have to make sure we're passing a buffer, so we encode to bytes if necessary
+                # see load_image_base64 in image_utils.py for more details about the base64 encoding
+                if type(image_payload) is str:
+                    image_payload = image_payload.encode("utf-8")
+                self._image_hash = hash_function(image_payload)
+            else:
+                # not clear that there is something safe or faster to do than just loading the numpy array
+                # and hashing that
+                self._image_hash = hash_function(self.image_as_numpy.tobytes())
+        return self._image_hash
+
+
+def hash_wrapped_training_data(wrapped_training_data: List[Dict[str, Any]]) -> Hash:
+    just_hash_relevant_data = [
+        [
+            d["image"].image_hash,
+            d["boxes"],
+        ]
+        for d in wrapped_training_data
+    ]
+    # we dump to pickle to serialize the data as a single object
+    return hash_function(pickle.dumps(just_hash_relevant_data))
+
+
+class OwlV2(RoboflowInferenceModel):
     task_type = "object-detection"
     box_format = "xywh"
 
-    def __init__(self, *args, model_id="owlv2/owlv2-base-patch16-ensemble", **kwargs):
-        super().__init__(*args, model_id=model_id, **kwargs)
+    def __init__(self, model_id=f"owlv2/{OWLV2_VERSION_ID}", *args, **kwargs):
+        super().__init__(model_id, *args, **kwargs)
+        # TODO: owlv2 makes use of version_id - version_id is being dropped so this class needs to be refactored
+        if self.version_id is None:
+            owlv2_model_id_chunks = model_id.split("/")
+            if len(owlv2_model_id_chunks) != 2:
+                raise InvalidModelIDError(f"Model ID: `{model_id}` is invalid.")
+            self.dataset_id = owlv2_model_id_chunks[0]
+            self.version_id = owlv2_model_id_chunks[1]
         hf_id = os.path.join("google", self.version_id)
         processor = Owlv2Processor.from_pretrained(hf_id)
         self.image_size = tuple(processor.image_processor.size.values())
@@ -211,22 +312,18 @@ class OwlV2(RoboflowCoreModel):
         self.image_std = torch.tensor(
             processor.image_processor.image_std, device=DEVICE
         ).view(1, 3, 1, 1)
-        self.model = Owlv2ForObjectDetection.from_pretrained(hf_id).eval().to(DEVICE)
+        self.model = Owlv2Singleton(hf_id).model
         self.reset_cache()
 
-        # compile forward pass of the visual backbone of the model
-        # NOTE that this is able to fix the manual attention implementation used in OWLv2
-        # so we don't have to force in flash attention by ourselves
-        # however that is only true if torch version 2.4 or later is used
-        # for torch < 2.4, this is a LOT slower and using flash attention by ourselves is faster
-        # this also breaks in torch < 2.1 so we supress torch._dynamo errors
-        torch._dynamo.config.suppress_errors = True
-        self.model.owlv2.vision_model = torch.compile(self.model.owlv2.vision_model)
-
     def reset_cache(self):
-        self.image_embed_cache = LimitedSizeDict(
-            size_limit=1000
-        )  # NOTE: this should have a max size
+        # each entry should be on the order of 300*4KB, so 1000 is 400MB of CUDA memory
+        self.image_embed_cache = LimitedSizeDict(size_limit=OWLV2_IMAGE_CACHE_SIZE)
+        # no need for limit here, as we're only storing on CPU
+        self.cpu_image_embed_cache = dict()
+        # each entry should be on the order of 10 bytes, so 1000 is 10KB
+        self.image_size_cache = LimitedSizeDict(size_limit=OWLV2_IMAGE_CACHE_SIZE)
+        # entry size will vary depending on the number of samples, but 10 should be safe
+        self.class_embeddings_cache = LimitedSizeDict(size_limit=OWLV2_MODEL_CACHE_SIZE)
 
     def draw_predictions(
         self,
@@ -258,15 +355,45 @@ class OwlV2(RoboflowCoreModel):
         # Download from huggingface
         pass
 
-    @torch.no_grad()
-    def embed_image(self, image: np.ndarray) -> Hash:
-        image_hash = hashlib.sha256(image.tobytes()).hexdigest()
+    def get_image_embeds(self, image_hash: Hash) -> Optional[torch.Tensor]:
+        if image_hash in self.image_embed_cache:
+            return self.image_embed_cache[image_hash]
+        elif image_hash in self.cpu_image_embed_cache:
+            tensors = self.cpu_image_embed_cache[image_hash]
+            tensors = tuple(t.to(DEVICE) for t in tensors)
+            return tensors
+        else:
+            return None
 
-        if (image_embeds := self.image_embed_cache.get(image_hash)) is not None:
+    def compute_image_size(
+        self, image: Union[np.ndarray, LazyImageRetrievalWrapper]
+    ) -> Tuple[int, int]:
+        # we build this in hopes of avoiding having to load the image solely for the purpose of getting its size
+        if isinstance(image, LazyImageRetrievalWrapper):
+            if (image_size := self.image_size_cache.get(image.image_hash)) is None:
+                image_size = image.image_as_numpy.shape[:2][::-1]
+                self.image_size_cache[image.image_hash] = image_size
+        else:
+            image_size = image.shape[:2][::-1]
+        return image_size
+
+    @torch.no_grad()
+    def embed_image(self, image: Union[np.ndarray, LazyImageRetrievalWrapper]) -> Hash:
+        if isinstance(image, LazyImageRetrievalWrapper):
+            image_hash = image.image_hash
+        else:
+            image_hash = hash_function(image.tobytes())
+
+        if (image_embeds := self.get_image_embeds(image_hash)) is not None:
             return image_hash
 
+        np_image = (
+            image.image_as_numpy
+            if isinstance(image, LazyImageRetrievalWrapper)
+            else image
+        )
         pixel_values = preprocess_image(
-            image, self.image_size, self.image_mean, self.image_std
+            np_image, self.image_size, self.image_mean, self.image_std
         )
 
         # torch 2.4 lets you use "cuda:0" as device_type
@@ -317,12 +444,10 @@ class OwlV2(RoboflowCoreModel):
         # NOTE: for now we're handling each image seperately
         query_embeds = []
         for image_hash, query_boxes in query_spec.items():
-            try:
-                _objectness, image_boxes, image_class_embeds, _, _ = (
-                    self.image_embed_cache[image_hash]
-                )
-            except KeyError as error:
-                raise KeyError("We didn't embed the image first!") from error
+            image_embeds = self.get_image_embeds(image_hash)
+            if image_embeds is None:
+                raise KeyError("We didn't embed the image first!")
+            _objectness, image_boxes, image_class_embeds, _, _ = image_embeds
 
             query_boxes_tensor = torch.tensor(
                 query_boxes, dtype=image_boxes.dtype, device=image_boxes.device
@@ -353,7 +478,10 @@ class OwlV2(RoboflowCoreModel):
         confidence: float,
         iou_threshold: float,
     ) -> List[Dict]:
-        _, image_boxes, image_class_embeds, _, _ = self.image_embed_cache[image_hash]
+        image_embeds = self.get_image_embeds(image_hash)
+        if image_embeds is None:
+            raise KeyError("We didn't embed the image first!")
+        _, image_boxes, image_class_embeds, _, _ = image_embeds
         class_map, class_names = make_class_map(query_embeddings)
         all_predicted_boxes, all_predicted_classes, all_predicted_scores = [], [], []
         for class_name, pos_neg_embedding_dict in query_embeddings.items():
@@ -409,25 +537,40 @@ class OwlV2(RoboflowCoreModel):
         self,
         image: Any,
         training_data: Dict,
-        confidence=0.99,
-        iou_threshold=0.3,
+        confidence: float = 0.99,
+        iou_threshold: float = 0.3,
         **kwargs,
     ):
         class_embeddings_dict = self.make_class_embeddings_dict(
             training_data, iou_threshold
         )
+        return self.infer_from_embedding_dict(
+            image, class_embeddings_dict, confidence, iou_threshold
+        )
 
+    def infer_from_embedding_dict(
+        self,
+        image: Any,
+        class_embeddings_dict: Dict[str, PosNegDictType],
+        confidence: float,
+        iou_threshold: float,
+        **kwargs,
+    ):
         if not isinstance(image, list):
             images = [image]
         else:
             images = image
 
+        images = [LazyImageRetrievalWrapper(image) for image in images]
+
         results = []
         image_sizes = []
-        for image in images:
-            image = load_image_rgb(image)
-            image_sizes.append(image.shape[:2][::-1])
-            image_hash = self.embed_image(image)
+        for image_wrapper in images:
+            # happy path here is that both image size and image embeddings are cached
+            # in which case we avoid loading the image at all
+            image_size = self.compute_image_size(image_wrapper)
+            image_sizes.append(image_size)
+            image_hash = self.embed_image(image_wrapper)
             result = self.infer_from_embed(
                 image_hash, class_embeddings_dict, confidence, iou_threshold
             )
@@ -437,22 +580,46 @@ class OwlV2(RoboflowCoreModel):
         )
 
     def make_class_embeddings_dict(
-        self, training_data: List[Any], iou_threshold: float
+        self,
+        training_data: List[Any],
+        iou_threshold: float,
+        return_image_embeds: bool = False,
     ) -> Dict[str, PosNegDictType]:
+        wrapped_training_data = [
+            {
+                "image": LazyImageRetrievalWrapper(train_image["image"]),
+                "boxes": train_image["boxes"],
+            }
+            for train_image in training_data
+        ]
+
+        wrapped_training_data_hash = hash_wrapped_training_data(wrapped_training_data)
+        if (
+            class_embeddings_dict := self.class_embeddings_cache.get(
+                wrapped_training_data_hash
+            )
+        ) is not None:
+            return class_embeddings_dict
+
         class_embeddings_dict = defaultdict(lambda: {"positive": [], "negative": []})
 
         bool_to_literal = {True: "positive", False: "negative"}
-        for train_image in training_data:
+        return_image_embeds_dict = dict()
+        for train_image in wrapped_training_data:
             # grab and embed image
-            image = load_image_rgb(train_image["image"])
-            image_hash = self.embed_image(image)
+            image_hash = self.embed_image(train_image["image"])
+            if return_image_embeds:
+                if (image_embeds := self.get_image_embeds(image_hash)) is None:
+                    raise KeyError("We didn't embed the image first!")
+                return_image_embeds_dict[image_hash] = tuple(
+                    t.to("cpu") for t in image_embeds
+                )
 
             # grab and normalize box prompts for this image
+            image_size = self.compute_image_size(train_image["image"])
             boxes = train_image["boxes"]
             coords = [[box["x"], box["y"], box["w"], box["h"]] for box in boxes]
-            coords = [
-                tuple([c / max(image.shape[:2]) for c in coord]) for coord in coords
-            ]
+            coords = [tuple([c / max(image_size) for c in coord]) for coord in coords]
             classes = [box["cls"] for box in boxes]
             is_positive = [not box["negative"] for box in boxes]
 
@@ -482,6 +649,10 @@ class OwlV2(RoboflowCoreModel):
             for k, v in class_embeddings_dict.items()
         }
 
+        self.class_embeddings_cache[wrapped_training_data_hash] = class_embeddings_dict
+        if return_image_embeds:
+            return class_embeddings_dict, return_image_embeds_dict
+
         return class_embeddings_dict
 
     def make_response(self, predictions, image_sizes, class_names):
@@ -509,3 +680,157 @@ class OwlV2(RoboflowCoreModel):
             for ind, batch_predictions in enumerate(predictions)
         ]
         return responses
+
+
+class SerializedOwlV2(RoboflowInferenceModel):
+    task_type = "object-detection"
+    box_format = "xywh"
+
+    @classmethod
+    def serialize_training_data(
+        cls,
+        training_data: List[Any],
+        hf_id: str = f"google/{OWLV2_VERSION_ID}",
+        iou_threshold: float = 0.3,
+        save_dir: str = os.path.join(MODEL_CACHE_DIR, "owl-v2-serialized-data"),
+    ):
+        roboflow_id = hf_id.replace("google/", "owlv2/")
+        owlv2 = OwlV2(model_id=roboflow_id)
+        train_data_dict, image_embeds = owlv2.make_class_embeddings_dict(
+            training_data, iou_threshold, return_image_embeds=True
+        )
+
+        return cls.save_model(
+            hf_id, roboflow_id, train_data_dict, image_embeds, save_dir
+        )
+
+    @classmethod
+    def save_model(
+        cls,
+        hf_id: str,
+        roboflow_id: str,
+        train_data_dict: Dict,
+        image_embeds: Dict,
+        save_dir: str,
+    ):
+        train_data_dict = {
+            "huggingface_id": hf_id,
+            "train_data_dict": train_data_dict,
+            "class_names": list(train_data_dict.keys()),
+            "roboflow_id": roboflow_id,
+            "image_embeds": image_embeds,
+        }
+        train_data_path = os.path.join(save_dir, cls.weights_file_path)
+        os.makedirs(save_dir, exist_ok=True)
+        torch.save(train_data_dict, train_data_path)
+        return train_data_path
+
+    def infer_from_request(
+        self,
+        request: ObjectDetectionInferenceRequest,
+    ) -> Union[
+        List[ObjectDetectionInferenceResponse], ObjectDetectionInferenceResponse
+    ]:
+        return super().infer_from_request(request)
+
+    def __init__(self, model_id, *args, **kwargs):
+        super().__init__(model_id, *args, **kwargs)
+        self.get_model_artifacts()
+
+    def get_infer_bucket_file_list(self):
+        return []
+
+    def download_model_artefacts_from_s3(self):
+        raise NotImplementedError("Owlv2 not currently supported on hosted inference")
+
+    def download_model_artifacts_from_roboflow_api(self):
+        if self.version_id is not None:
+            api_data = get_roboflow_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.OWLV2,
+                device_id=self.device_id,
+            )
+            api_data = api_data["owlv2"]
+            if "model" not in api_data:
+                raise ModelArtefactError(
+                    "Could not find `model` key in roboflow API model description response."
+                )
+            model_weights_response = get_from_url(
+                api_data["model"], json_response=False
+            )
+        else:
+            api_data = get_roboflow_instant_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+            )
+            if (
+                "modelFiles" not in api_data
+                or "owlv2" not in api_data["modelFiles"]
+                or "model" not in api_data["modelFiles"]["owlv2"]
+            ):
+                raise ModelArtefactError(
+                    "Could not find `modelFiles` key or `modelFiles`.`owlv2` or `modelFiles`.`owlv2`.`model` key in roboflow API model description response."
+                )
+            model_weights_response = get_from_url(
+                api_data["modelFiles"]["owlv2"]["model"], json_response=False
+            )
+        save_bytes_in_cache(
+            content=model_weights_response.content,
+            file=self.weights_file,
+            model_id=self.endpoint,
+        )
+
+    def load_model_artifacts_from_cache(self):
+        if DEVICE == "cpu":
+            self.model_data = torch.load(
+                self.cache_file(self.weights_file), map_location="cpu"
+            )
+        else:
+            self.model_data = torch.load(self.cache_file(self.weights_file))
+        self.class_names = self.model_data["class_names"]
+        self.train_data_dict = self.model_data["train_data_dict"]
+        self.huggingface_id = self.model_data["huggingface_id"]
+        self.roboflow_id = self.model_data["roboflow_id"]
+        # each model can have its own OwlV2 instance because we use a singleton
+        self.owlv2 = OwlV2(model_id=self.roboflow_id)
+        self.owlv2.cpu_image_embed_cache = self.model_data["image_embeds"]
+
+    weights_file_path = "weights.pt"
+
+    @property
+    def weights_file(self):
+        return self.weights_file_path
+
+    def infer(
+        self, image, confidence: float = 0.99, iou_threshold: float = 0.3, **kwargs
+    ):
+        return self.owlv2.infer_from_embedding_dict(
+            image,
+            self.train_data_dict,
+            confidence=confidence,
+            iou_threshold=iou_threshold,
+            **kwargs,
+        )
+
+    def draw_predictions(
+        self,
+        inference_request: ObjectDetectionInferenceRequest,
+        inference_response: ObjectDetectionInferenceResponse,
+    ):
+        return self.owlv2.draw_predictions(
+            inference_request,
+            inference_response,
+        )
+
+    def save_small_model_without_image_embeds(
+        self, save_dir: str = os.path.join(MODEL_CACHE_DIR, "owl-v2-serialized-data")
+    ):
+        self.owlv2.cpu_image_embed_cache = dict()
+        return self.save_model(
+            self.huggingface_id,
+            self.roboflow_id,
+            self.train_data_dict,
+            self.owlv2.cpu_image_embed_cache,
+            save_dir,
+        )

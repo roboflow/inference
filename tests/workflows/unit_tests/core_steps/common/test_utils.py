@@ -222,8 +222,8 @@ def test_add_inference_keypoints_to_sv_detections() -> None:
     inference_prediction = [
         {
             "keypoints": [
-                {"x": 10, "y": 20, "class_name": "a", "confidence": 0.3, "class_id": 1},
-                {"x": 20, "y": 30, "class_name": "b", "confidence": 0.4, "class_id": 0},
+                {"x": 10, "y": 20, "class": "a", "confidence": 0.3, "class_id": 1},
+                {"x": 20, "y": 30, "class": "b", "confidence": 0.4, "class_id": 0},
             ]
         },
         {

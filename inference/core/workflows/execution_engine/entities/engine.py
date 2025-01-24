@@ -25,5 +25,6 @@ class BaseExecutionEngine(ABC):
         runtime_parameters: Dict[str, Any],
         fps: float = 0,
         _is_preview: bool = False,
+        serialize_results: bool = False,
     ) -> List[Dict[str, Any]]:
         pass

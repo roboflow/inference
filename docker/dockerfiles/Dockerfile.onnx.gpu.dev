@@ -49,6 +49,7 @@ RUN python3 -m pip install \
     -r requirements.sdk.http.txt \
     -r requirements.cli.txt \
     jupyterlab \
+    "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -77,7 +78,9 @@ ENV API_LOGGING_ENABLED=True
 ENV LMM_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
 ENV CORE_MODEL_OWLV2_ENABLED=True
+ENV ENABLE_STREAM_API=True
 ENV ENABLE_WORKFLOWS_PROFILING=True
 ENV ENABLE_PROMETHEUS=True
+ENV STREAM_API_PRELOADED_PROCESSES=2
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

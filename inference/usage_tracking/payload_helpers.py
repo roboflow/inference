@@ -3,6 +3,8 @@ from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
 
 import requests
 
+from inference.core.roboflow_api import build_roboflow_api_headers
+
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
 ResourceUsage = Union[DefaultDict[ResourceID, Usage], Dict[ResourceID, Usage]]
@@ -82,17 +84,13 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                 resource_usage_exec_session_id = (
                     api_key_usage_by_exec_session_id.setdefault(resource_usage_key, {})
                 )
-                if not resource_usage_payload.get("fps"):
-                    resource_usage_exec_session_id.setdefault("", []).append(
-                        resource_usage_payload
-                    )
-                    continue
                 exec_session_id = resource_usage_payload.get("exec_session_id", "")
                 resource_usage_exec_session_id.setdefault(exec_session_id, []).append(
                     resource_usage_payload
                 )
 
-    merged_exec_session_id_usage_payloads: Dict[str, APIKeyUsage] = {}
+    merged_exec_session_id_streams_usage_payloads: Dict[str, APIKeyUsage] = {}
+    merged_exec_session_id_photos_usage_payloads: Dict[str, APIKeyUsage] = {}
     for (
         api_key_hash,
         api_key_usage_by_exec_session_id,
@@ -105,15 +103,22 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                 exec_session_id,
                 usage_payloads,
             ) in resource_usage_exec_session_id.items():
-                merged_api_key_usage_payloads = (
-                    merged_exec_session_id_usage_payloads.setdefault(
-                        exec_session_id, {}
-                    )
-                )
-                merged_api_key_payload = merged_api_key_usage_payloads.setdefault(
-                    api_key_hash, {}
-                )
                 for resource_usage_payload in usage_payloads:
+                    if resource_usage_payload.get("fps"):
+                        merged_api_key_usage_payloads = (
+                            merged_exec_session_id_streams_usage_payloads.setdefault(
+                                exec_session_id, {}
+                            )
+                        )
+                    else:
+                        merged_api_key_usage_payloads = (
+                            merged_exec_session_id_photos_usage_payloads.setdefault(
+                                exec_session_id, {}
+                            )
+                        )
+                    merged_api_key_payload = merged_api_key_usage_payloads.setdefault(
+                        api_key_hash, {}
+                    )
                     merged_resource_payload = merged_api_key_payload.setdefault(
                         resource_usage_key, {}
                     )
@@ -122,7 +127,9 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                         resource_usage_payload,
                     )
 
-    zipped_payloads = list(merged_exec_session_id_usage_payloads.values())
+    zipped_payloads = list(
+        merged_exec_session_id_streams_usage_payloads.values()
+    ) + list(merged_exec_session_id_photos_usage_payloads.values())
     if system_info_payload:
         system_info_api_key_hash = next(iter(system_info_payload.values()))[
             "api_key_hash"
@@ -155,11 +162,14 @@ def send_usage_payload(
                 if "api_key_hash" in workflow_payload:
                     del workflow_payload["api_key_hash"]
                 workflow_payload["api_key"] = api_key
+            headers = build_roboflow_api_headers(
+                explicit_headers={"Authorization": f"Bearer {api_key}"}
+            )
             response = requests.post(
                 api_usage_endpoint_url,
                 json=complete_workflow_payloads,
                 verify=ssl_verify,
-                headers={"Authorization": f"Bearer {api_key}"},
+                headers=headers,
                 timeout=1,
             )
         except Exception:

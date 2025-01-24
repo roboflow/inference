@@ -16,6 +16,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
@@ -23,10 +24,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     ImageInputField,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -36,6 +34,14 @@ from inference.core.workflows.prototypes.block import (
 
 T = TypeVar("T")
 K = TypeVar("K")
+
+FLORENCE_TASKS_METADATA = {
+    "custom": {
+        "name": "Custom Prompt",
+        "description": "Use free-form prompt to generate a response. Useful with finetuned models.",
+    },
+    **VLM_TASKS_METADATA,
+}
 
 DETECTIONS_CLASS_NAME_FIELD = "class_name"
 DETECTION_ID_FIELD = "detection_id"
@@ -77,12 +83,13 @@ SUPPORTED_TASK_TYPES_LIST = [
     },
     {"task_type": "detection-grounded-ocr", "florence_task": "<REGION_TO_OCR>"},
     {"task_type": "region-proposal", "florence_task": "<REGION_PROPOSAL>"},
+    {"task_type": "custom", "florence_task": None},
 ]
 TASK_TYPE_TO_FLORENCE_TASK = {
     task["task_type"]: task["florence_task"] for task in SUPPORTED_TASK_TYPES_LIST
 }
 RELEVANT_TASKS_METADATA = {
-    k: v for k, v in VLM_TASKS_METADATA.items() if k in TASK_TYPE_TO_FLORENCE_TASK
+    k: v for k, v in FLORENCE_TASKS_METADATA.items() if k in TASK_TYPE_TO_FLORENCE_TASK
 }
 RELEVANT_TASKS_DOCS_DESCRIPTION = "\n\n".join(
     f"* **{v['name']}** (`{k}`) - {v['description']}"
@@ -127,6 +134,7 @@ GroundingSelectionMode = Literal[
 TASKS_REQUIRING_PROMPT = {
     "phrase-grounded-object-detection",
     "phrase-grounded-instance-segmentation",
+    "custom",
 }
 TASKS_REQUIRING_CLASSES = {
     "open-vocabulary-object-detection",
@@ -147,31 +155,8 @@ TASKS_TO_EXTRACT_LABELS_AS_CLASSES = {
 }
 
 
-class BlockManifest(WorkflowBlockManifest):
-    model_config = ConfigDict(
-        json_schema_extra={
-            "name": "Florence-2 Model",
-            "version": "v1",
-            "short_description": "Run Florence-2 on an image",
-            "long_description": LONG_DESCRIPTION,
-            "license": "Apache-2.0",
-            "block_type": "model",
-            "search_keywords": ["Florence", "Florence-2", "Microsoft"],
-            "is_vlm_block": True,
-            "task_type_property": "task_type",
-        },
-        protected_namespaces=(),
-    )
-    type: Literal["roboflow_core/florence_2@v1"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    model_version: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
-        Literal["florence-2-base", "florence-2-large"],
-    ] = Field(
-        default="florence-2-base",
-        description="Model to be used",
-        examples=["florence-2-base"],
-    )
+class BaseManifest(WorkflowBlockManifest):
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="open-vocabulary-object-detection",
         description="Task type to be performed by model. "
@@ -189,7 +174,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
+    prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Text prompt to the Florence-2 model",
         examples=["my prompt", "$inputs.prompt"],
@@ -199,9 +184,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    classes: Optional[
-        Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]
-    ] = Field(
+    classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
         default=None,
         description="List of classes to be used",
         examples=[["class-a", "class-b"], "$inputs.classes"],
@@ -218,14 +201,14 @@ class BlockManifest(WorkflowBlockManifest):
         Union[
             List[int],
             List[float],
-            StepOutputSelector(
+            Selector(
                 kind=[
                     OBJECT_DETECTION_PREDICTION_KIND,
                     INSTANCE_SEGMENTATION_PREDICTION_KIND,
                     KEYPOINT_DETECTION_PREDICTION_KIND,
                 ]
             ),
-            WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]),
+            Selector(kind=[LIST_OF_VALUES_KIND]),
         ]
     ] = Field(
         default=None,
@@ -257,8 +240,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
+
+    @classmethod
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return ["grounding_detection"]
 
     @model_validator(mode="after")
     def validate(self) -> "BlockManifest":
@@ -291,7 +278,38 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
+
+
+class BlockManifest(BaseManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "Florence-2 Model",
+            "version": "v1",
+            "short_description": "Run Florence-2 on an image",
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
+            "block_type": "model",
+            "search_keywords": ["Florence", "Florence-2", "Microsoft"],
+            "is_vlm_block": True,
+            "task_type_property": "task_type",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 5.5,
+            },
+        },
+        protected_namespaces=(),
+    )
+    type: Literal["roboflow_core/florence_2@v1"]
+    model_version: Union[
+        Selector(kind=[STRING_KIND]),
+        Literal["florence-2-base", "florence-2-large"],
+    ] = Field(
+        default="florence-2-base",
+        description="Model to be used",
+        examples=["florence-2-base"],
+    )
 
 
 class Florence2BlockV1(WorkflowBlock):
@@ -358,6 +376,8 @@ class Florence2BlockV1(WorkflowBlock):
         grounding_selection_mode: GroundingSelectionMode,
     ) -> BlockResult:
         requires_detection_grounding = task_type in TASKS_REQUIRING_DETECTION_GROUNDING
+
+        is_not_florence_task = task_type == "custom"
         task_type = TASK_TYPE_TO_FLORENCE_TASK[task_type]
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
@@ -385,17 +405,27 @@ class Florence2BlockV1(WorkflowBlock):
                     {"raw_output": None, "parsed_output": None, "classes": None}
                 )
                 continue
+            if is_not_florence_task:
+                prompt = single_prompt or ""
+            else:
+                prompt = task_type + (single_prompt or "")
+
             request = LMMInferenceRequest(
                 api_key=self._api_key,
                 model_id=model_version,
                 image=image,
                 source="workflow-execution",
-                prompt=task_type + (single_prompt or ""),
+                prompt=prompt,
             )
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
-            prediction_data = prediction.response[task_type]
+            if is_not_florence_task:
+                prediction_data = prediction.response[
+                    list(prediction.response.keys())[0]
+                ]
+            else:
+                prediction_data = prediction.response[task_type]
             if task_type in TASKS_TO_EXTRACT_LABELS_AS_CLASSES:
                 classes = prediction_data.get("labels", [])
             predictions.append(

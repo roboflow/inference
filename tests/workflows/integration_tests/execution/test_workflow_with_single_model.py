@@ -171,6 +171,58 @@ def test_object_detection_workflow_when_batch_input_provided(
     ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
 
 
+def test_object_detection_workflow_when_batch_input_provided_and_serialization_requested(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=OBJECT_DETECTION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [crowd_image, crowd_image],
+            "model_id": "yolov8n-640",
+        },
+        serialize_results=True,
+    )
+
+    # then
+    assert isinstance(result, list), "Expected result to be list"
+    assert len(result) == 2, "Two images provided - two outputs expected"
+    detections_1 = sv.Detections.from_inference(result[0]["result"]["predictions"])
+    detections_2 = sv.Detections.from_inference(result[1]["result"]["predictions"])
+    assert np.allclose(
+        detections_1.xyxy,
+        EXPECTED_OBJECT_DETECTION_BBOXES,
+        atol=1,
+    ), "Expected bboxes for first image to match what was validated manually as workflow outcome"
+    assert np.allclose(
+        detections_1.confidence,
+        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
+        atol=0.01,
+    ), "Expected confidences for first image to match what was validated manually as workflow outcome"
+    assert np.allclose(
+        detections_2.xyxy,
+        EXPECTED_OBJECT_DETECTION_BBOXES,
+        atol=1,
+    ), "Expected bboxes for 2nd image to match what was validated manually as workflow outcome"
+    assert np.allclose(
+        detections_2.confidence,
+        EXPECTED_OBJECT_DETECTION_CONFIDENCES,
+        atol=0.01,
+    ), "Expected confidences for 2nd image to match what was validated manually as workflow outcome"
+
+
 def test_object_detection_workflow_when_confidence_is_restricted_by_input_parameter(
     model_manager: ModelManager,
     crowd_image: np.ndarray,

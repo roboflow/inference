@@ -396,7 +396,6 @@ Some other comment
     assert result == [{"field_a": 1, "field_b": 37}, {"field_a": 2, "field_b": 47}]
 
 
-@mock.patch.object(v1, "WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS", 2)
 @mock.patch.object(v1, "WORKFLOWS_REMOTE_API_TARGET", "self-hosted")
 @mock.patch.object(v1.InferenceHTTPClient, "init")
 def test_get_cogvlm_generations_from_remote_api(

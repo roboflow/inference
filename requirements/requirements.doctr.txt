@@ -1,2 +1,2 @@
-python-doctr[torch]
-tf2onnx
+python-doctr[torch]>=0.7.0,<=0.10.0
+tf2onnx~=1.16.0

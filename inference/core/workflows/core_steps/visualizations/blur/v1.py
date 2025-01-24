@@ -11,12 +11,12 @@ from inference.core.workflows.core_steps.visualizations.common.base import (
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/blur_visualization@v1"
-SHORT_DESCRIPTION = "Blurs detected objects in an image."
+SHORT_DESCRIPTION = "Blur detected objects in an image."
 LONG_DESCRIPTION = """
 The `BlurVisualization` block blurs detected
 objects in an image using Supervision's `sv.BlurAnnotator`.
@@ -33,10 +33,23 @@ class BlurManifest(PredictionsVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "fad fa-glasses",
+                "blockPriority": 4,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 
-    kernel_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    kernel_size: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Size of the average pooling kernel used for blurring.",
         default=15,
         examples=[15, "$inputs.kernel_size"],
@@ -44,7 +57,7 @@ class BlurManifest(PredictionsVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class BlurVisualizationBlockV1(PredictionsVisualizationBlock):

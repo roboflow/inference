@@ -5,14 +5,14 @@ video-specific blocks (e.g., the ByteTracker block) and continue to dedicate eff
 their performance and robustness. The current state of this work is as follows:
 
 * We've introduced the `WorkflowVideoMetadata` input to store metadata related to video frames, 
-including FPS, timestamp, video source identifier, and file/stream flags. While this may not be the final approach 
+including declared FPS, measured FPS, timestamp, video source identifier, and file/stream flags. While this may not be the final approach 
 for handling video metadata, it allows us to build stateful video-processing blocks at this stage. 
 If your Workflow includes any blocks requiring input of kind `video_metadata`, you must define this input in 
 your Workflow. The metadata functions as a batch-oriented parameter, treated by the Execution Engine in the same
 way as `WorkflowImage`.
 
 * The `InferencePipeline` supports 
-[video processing with Workflows](/using_inference/inference_pipeline/#inferencepipeline-and-roboflow-workflows) 
+[video processing with Workflows](/using_inference/inference_pipeline.md#inferencepipeline-and-roboflow-workflows) 
 by automatically injecting `WorkflowVideoMetadata` into the `video_metadata` field. This allows you to seamlessly run
 your Workflow using the `InferencePipeline` within the `inference` Python package.
 

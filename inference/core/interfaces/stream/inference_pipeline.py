@@ -16,6 +16,7 @@ from inference.core.env import (
     ACTIVE_LEARNING_ENABLED,
     API_KEY,
     DISABLE_PREPROC_AUTO_ORIENT,
+    ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING,
     ENABLE_WORKFLOWS_PROFILING,
     MAX_ACTIVE_MODELS,
     PREDICTIONS_QUEUE_SIZE,
@@ -154,9 +155,14 @@ class InferencePipeline:
             api_key (Optional[str]): Roboflow API key - if not passed - will be looked in env under "ROBOFLOW_API_KEY"
                 and "API_KEY" variables. API key, passed in some form is required.
             max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
-                dictate max FPS of processing. It can be useful if we wanted to run concurrent inference pipelines
-                on single machine making tradeoff between number of frames and number of streams handled. Disabled
-                by default.
+                dictate max FPS of each video source.
+                The implementation details of this option has been changed in release `v0.26.0`. Prior to the release
+                this value, when applied to video files caused the processing to wait `1 / max_fps` seconds before next
+                frame is processed - the new implementation drops the intermediate frames, which seems to be more
+                aligned with peoples expectations.
+                New behaviour is now enabled in experimental mode, by setting environmental variable flag
+                `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING=True`. Please note that the new behaviour will
+                be the default one end of Q4 2024!
             watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
                 inference pipeline - if not given null implementation (doing nothing) will be used.
             status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
@@ -166,10 +172,10 @@ class InferencePipeline:
                 without re-raising. Default: None.
             source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
                 video stream decoding behaviour. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             class_agnostic_nms (Optional[bool]): Parameter of model post-processing. If not given - value checked in
                 env variable "CLASS_AGNOSTIC_NMS" with default "False"
             confidence (Optional[float]): Parameter of model post-processing. If not given - value checked in
@@ -276,7 +282,7 @@ class InferencePipeline:
             on_prediction = partial(multi_sink, sinks=[on_prediction, al_sink])
         on_pipeline_start = active_learning_middleware.start_registration_thread
         on_pipeline_end = active_learning_middleware.stop_registration_thread
-        return InferencePipeline.init_with_custom_logic(
+        return cls.init_with_custom_logic(
             video_reference=video_reference,
             on_video_frame=on_video_frame,
             on_prediction=on_prediction,
@@ -330,9 +336,14 @@ class InferencePipeline:
                 once prediction is ready - passing both decoded frame, their metadata and dict with standard
                 Roboflow Object Detection prediction.
             max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
-                dictate max FPS of processing. It can be useful if we wanted to run concurrent inference pipelines
-                on single machine making tradeoff between number of frames and number of streams handled. Disabled
-                by default.
+                dictate max FPS of each video source.
+                The implementation details of this option has been changed in release `v0.26.0`. Prior to the release
+                this value, when applied to video files caused the processing to wait `1 / max_fps` seconds before next
+                frame is processed - the new implementation drops the intermediate frames, which seems to be more
+                aligned with peoples expectations.
+                New behaviour is now enabled in experimental mode, by setting environmental variable flag
+                `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING=True`. Please note that the new behaviour will
+                be the default one end of Q4 2024!
             watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
                 inference pipeline - if not given null implementation (doing nothing) will be used.
             status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
@@ -342,10 +353,10 @@ class InferencePipeline:
                 without re-raising. Default: None.
             source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
                 video stream decoding behaviour. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             class_agnostic_nms (Optional[bool]): Parameter of model post-processing. If not given - value checked in
                 env variable "CLASS_AGNOSTIC_NMS" with default "False"
             confidence (Optional[float]): Parameter of model post-processing. If not given - value checked in
@@ -379,7 +390,6 @@ class InferencePipeline:
                 old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
                 prediction element.
 
-
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
         * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
@@ -412,7 +422,7 @@ class InferencePipeline:
                 f"Could not initialise yolo_world/{model_size} due to lack of sufficient dependencies. "
                 f"Use pip install inference[yolo-world] to install missing dependencies and try again."
             ) from error
-        return InferencePipeline.init_with_custom_logic(
+        return cls.init_with_custom_logic(
             video_reference=video_reference,
             on_video_frame=on_video_frame,
             on_prediction=on_prediction,
@@ -456,6 +466,7 @@ class InferencePipeline:
         batch_collection_timeout: Optional[float] = None,
         profiling_directory: str = "./inference_profiling",
         use_workflow_definition_cache: bool = True,
+        serialize_results: bool = False,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -483,9 +494,14 @@ class InferencePipeline:
             on_prediction (Callable[AnyPrediction, VideoFrame], None]): Function to be called
                 once prediction is ready - passing both decoded frame, their metadata and dict with workflow output.
             max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
-                dictate max FPS of processing. It can be useful if we wanted to run concurrent inference pipelines
-                on single machine making tradeoff between number of frames and number of streams handled. Disabled
-                by default.
+                dictate max FPS of each video source.
+                The implementation details of this option has been changed in release `v0.26.0`. Prior to the release
+                this value, when applied to video files caused the processing to wait `1 / max_fps` seconds before next
+                frame is processed - the new implementation drops the intermediate frames, which seems to be more
+                aligned with peoples expectations.
+                New behaviour is now enabled in experimental mode, by setting environmental variable flag
+                `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING=True`. Please note that the new behaviour will
+                be the default one end of Q4 2024!
             watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
                 inference pipeline - if not given null implementation (doing nothing) will be used.
             status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
@@ -495,10 +511,10 @@ class InferencePipeline:
                 without re-raising. Default: None.
             source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
                 video stream decoding behaviour. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             video_source_properties (Optional[dict[str, float]]): Optional source properties to set up the video source,
                 corresponding to cv2 VideoCapture properties cv2.CAP_PROP_*. If not given, defaults for the video source
                 will be used.
@@ -525,6 +541,9 @@ class InferencePipeline:
             use_workflow_definition_cache (bool): Controls usage of cache for workflow definitions. Set this to False
                 when you frequently modify definition saved in Roboflow app and want to fetch the
                 newest version for the request. Only applies for Workflows definitions saved on Roboflow platform.
+            serialize_results (bool): Boolean flag to decide if ExecutionEngine run should serialize workflow
+                results for each frame. If that is set true, sinks will receive serialized workflow responses.
+
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
         * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
@@ -588,8 +607,6 @@ class InferencePipeline:
                 model_manager,
                 max_size=MAX_ACTIVE_MODELS,
             )
-            if api_key is None:
-                api_key = API_KEY
             if workflow_init_parameters is None:
                 workflow_init_parameters = {}
             thread_pool_executor = ThreadPoolExecutor(
@@ -613,6 +630,7 @@ class InferencePipeline:
                 execution_engine=execution_engine,
                 image_input_name=image_input_name,
                 video_metadata_input_name=video_metadata_input_name,
+                serialize_results=serialize_results,
             )
         except ImportError as error:
             raise CannotInitialiseModelError(
@@ -626,7 +644,7 @@ class InferencePipeline:
             profiler=profiler,
             profiling_directory=profiling_directory,
         )
-        return InferencePipeline.init_with_custom_logic(
+        return cls.init_with_custom_logic(
             video_reference=video_reference,
             on_video_frame=on_video_frame,
             on_prediction=on_prediction,
@@ -680,9 +698,14 @@ class InferencePipeline:
             on_pipeline_end (Optional[Callable[[], None]]): Optional (parameter-free) function to be called
                 whenever pipeline ends
             max_fps (Optional[Union[float, int]]): Specific value passed as this parameter will be used to
-                dictate max FPS of processing. It can be useful if we wanted to run concurrent inference pipelines
-                on single machine making tradeoff between number of frames and number of streams handled. Disabled
-                by default.
+                dictate max FPS of each video source.
+                The implementation details of this option has been changed in release `v0.26.0`. Prior to the release
+                this value, when applied to video files caused the processing to wait `1 / max_fps` seconds before next
+                frame is processed - the new implementation drops the intermediate frames, which seems to be more
+                aligned with peoples expectations.
+                New behaviour is now enabled in experimental mode, by setting environmental variable flag
+                `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING=True`. Please note that the new behaviour will
+                be the default one end of Q4 2024!
             watchdog (Optional[PipelineWatchDog]): Implementation of class that allows profiling of
                 inference pipeline - if not given null implementation (doing nothing) will be used.
             status_update_handlers (Optional[List[Callable[[StatusUpdate], None]]]): List of handlers to intercept
@@ -692,10 +715,10 @@ class InferencePipeline:
                 without re-raising. Default: None.
             source_buffer_filling_strategy (Optional[BufferFillingStrategy]): Parameter dictating strategy for
                 video stream decoding behaviour. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             source_buffer_consumption_strategy (Optional[BufferConsumptionStrategy]): Parameter dictating strategy for
                 video stream frames consumption. By default - tweaked to the type of source given.
-                Please find detailed explanation in docs of [`VideoSource`](/docs/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
+                Please find detailed explanation in docs of [`VideoSource`](/reference/inference/core/interfaces/camera/video_source/#inference.core.interfaces.camera.video_source.VideoSource)
             video_source_properties (Optional[Union[Dict[str, float], List[Optional[Dict[str, float]]]]]):
                 Optional source properties to set up the video source, corresponding to cv2 VideoCapture properties
                 cv2.CAP_PROP_*. If not given, defaults for the video source will be used.
@@ -719,7 +742,6 @@ class InferencePipeline:
                 old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
                 prediction element.
 
-
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
         * INFERENCE_PIPELINE_RESTART_ATTEMPT_DELAY - delay for restarts on stream connection drop
@@ -735,12 +757,16 @@ class InferencePipeline:
         if status_update_handlers is None:
             status_update_handlers = []
         status_update_handlers.append(watchdog.on_status_update)
+        desired_source_fps = None
+        if ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING:
+            desired_source_fps = max_fps
         video_sources = prepare_video_sources(
             video_reference=video_reference,
             video_source_properties=video_source_properties,
             status_update_handlers=status_update_handlers,
             source_buffer_filling_strategy=source_buffer_filling_strategy,
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
+            desired_source_fps=desired_source_fps,
         )
         watchdog.register_video_sources(video_sources=video_sources)
         predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
@@ -963,9 +989,12 @@ class InferencePipeline:
     ) -> Generator[List[VideoFrame], None, None]:
         for video_source in self._video_sources:
             video_source.start()
+        max_fps = None
+        if not ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING:
+            max_fps = self._max_fps
         yield from multiplex_videos(
             videos=self._video_sources,
-            max_fps=self._max_fps,
+            max_fps=max_fps,
             batch_collection_timeout=self._batch_collection_timeout,
             should_stop=lambda: self._stop,
         )

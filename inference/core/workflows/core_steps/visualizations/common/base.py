@@ -14,10 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -35,14 +32,14 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
             "block_type": "visualization",
         }
     )
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
-        description="The input image for this step.",
+        description="Select the input image to visualize on.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
-    copy_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
-        description="Duplicate the image contents (vs overwriting the image in place). Deselect for chained visualizations that should stack on previous ones where the intermediate state is not needed.",
+    copy_image: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+        description="Enable this option to create a copy of the input image for visualization, preserving the original. Use this when stacking multiple visualizations.",
         default=True,
         examples=[True, False],
     )
@@ -80,7 +77,7 @@ class VisualizationBlock(WorkflowBlock, ABC):
 
 
 class PredictionsVisualizationManifest(VisualizationManifest, ABC):
-    predictions: StepOutputSelector(
+    predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,

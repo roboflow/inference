@@ -17,10 +17,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     NUMPY_ARRAY_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -46,35 +43,29 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
+            "ui_manifest": {
+                "section": "classical_cv",
+                "icon": "far fa-magnifying-glass-arrows-rotate",
+                "blockPriority": 3,
+                "opencv": True,
+            },
         }
     )
     type: Literal["roboflow_core/sift_comparison@v2"]
-    input_1: Union[
-        WorkflowImageSelector,
-        StepOutputImageSelector,
-        StepOutputSelector(kind=[NUMPY_ARRAY_KIND]),
-    ] = Field(
+    input_1: Union[Selector(kind=[IMAGE_KIND, NUMPY_ARRAY_KIND]),] = Field(
         description="Reference to Image or SIFT descriptors from the first image to compare",
         examples=["$inputs.image1", "$steps.sift.descriptors"],
     )
-    input_2: Union[
-        WorkflowImageSelector,
-        StepOutputImageSelector,
-        StepOutputSelector(kind=[NUMPY_ARRAY_KIND]),
-    ] = Field(
+    input_2: Union[Selector(kind=[IMAGE_KIND, NUMPY_ARRAY_KIND]),] = Field(
         description="Reference to Image or SIFT descriptors from the second image to compare",
         examples=["$inputs.image2", "$steps.sift.descriptors"],
     )
-    good_matches_threshold: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
+    good_matches_threshold: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
         default=50,
         description="Threshold for the number of good matches to consider the images as matching",
         examples=[50, "$inputs.good_matches_threshold"],
     )
-    ratio_threshold: Union[
-        float, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
+    ratio_threshold: Union[float, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
         default=0.7,
         description="Ratio threshold for the ratio test, which is used to filter out poor matches by comparing "
         "the distance of the closest match to the distance of the second closest match. A lower "
@@ -83,13 +74,13 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
     )
     matcher: Union[
         Literal["FlannBasedMatcher", "BFMatcher"],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="FlannBasedMatcher",
         description="Matcher to use for comparing the SIFT descriptors",
         examples=["FlannBasedMatcher", "$inputs.matcher"],
     )
-    visualize: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
+    visualize: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
         description="Whether to visualize the keypoints and matches between the two images",
         examples=[True, "$inputs.visualize"],
@@ -97,7 +88,7 @@ class SIFTComparisonBlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

@@ -1,6 +1,6 @@
 # Workflows Execution Engine in details
 
-The [compilation process](/workflows/workflows_compiler) creates a Workflow Execution graph, which 
+The [compilation process](/workflows/workflows_compiler.md) creates a Workflow Execution graph, which 
 holds all the necessary details to run a Workflow definition. In this section, we'll explain the details 
 of the execution process.
 
@@ -19,7 +19,7 @@ for future use.
 ## Validation of runtime input
 
 The Workflow definition specifies the expected inputs for Workflow execution. As discussed 
-[earlier](/workflows/definitions), inputs can be either batch-oriented data to be processed by steps or parameters that 
+[earlier](/workflows/definitions.md), inputs can be either batch-oriented data to be processed by steps or parameters that 
 configure the step execution. This distinction is crucial to how the Workflow runs and will be explored throughout 
 this page.
 
@@ -77,7 +77,7 @@ As the definition suggests, a SIMD (Single Instruction, Multiple Data) step proc
 same operation is applied to each data point, potentially using non-batch-oriented parameters for configuration. 
 The output from such a step is expected to be a batch of elements, preserving the order of the input batch elements. 
 This applies to both regular processing steps and flow-control steps (see 
-[blocks development guide](/workflows/create_workflow_block/)), where flow-control decisions 
+[blocks development guide](/workflows/create_workflow_block.md)), where flow-control decisions 
 affect each batch element individually.
 
 In essence, the type of data fed into the step determines whether it's SIMD or non-SIMD. If a step requests any 
@@ -207,6 +207,6 @@ tracking of data across steps.
 
 
 For details on how outputs are constructed, please refer to the information provided on the 
-[Workflows Definitions](/workflows/definitions/) page and the 
-[Output Construction](/workflows/workflow_execution/#output-construction) section of the Workflow Execution 
+[Workflows Definitions](/workflows/definitions.md) page and the 
+[Output Construction](/workflows/workflow_execution.md#output-construction) section of the Workflow Execution 
 documentation.

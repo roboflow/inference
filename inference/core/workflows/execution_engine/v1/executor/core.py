@@ -1,6 +1,6 @@
 from datetime import datetime
 from functools import partial
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from inference.core import logger
 from inference.core.workflows.errors import (
@@ -44,6 +44,8 @@ def run_workflow(
     workflow: CompiledWorkflow,
     runtime_parameters: Dict[str, Any],
     max_concurrent_steps: int,
+    kinds_serializers: Optional[Dict[str, Callable[[Any], Any]]],
+    serialize_results: bool = False,
     profiler: Optional[WorkflowsProfiler] = None,
 ) -> List[Dict[str, Any]]:
     execution_data_manager = ExecutionDataManager.init(
@@ -71,6 +73,8 @@ def run_workflow(
             workflow_outputs=workflow.workflow_definition.outputs,
             execution_graph=workflow.execution_graph,
             execution_data_manager=execution_data_manager,
+            serialize_results=serialize_results,
+            kinds_serializers=kinds_serializers,
         )
 
 
@@ -194,7 +198,7 @@ def run_simd_step_in_batch_mode(
         metadata={"step": step_selector},
     ):
         step_input = execution_data_manager.get_simd_step_input(
-            step_selector=step_selector
+            step_selector=step_selector,
         )
     with profiler.profile_execution_phase(
         name="step_code_execution",
@@ -275,7 +279,7 @@ def run_non_simd_step(
             step_selector=step_selector
         )
     if step_input is None:
-        # discarded by conditional execution
+        # discarded by conditional execution or empty value from upstream step
         return None
     step_name = get_last_chunk_of_selector(selector=step_selector)
     step_instance = workflow.steps[step_name].step

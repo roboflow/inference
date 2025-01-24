@@ -15,11 +15,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
     build_operations_chain,
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
-from inference.core.workflows.execution_engine.entities.types import (
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
-)
+from inference.core.workflows.execution_engine.entities.types import Selector
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
@@ -35,7 +31,7 @@ save it as variables and evaluate switch-case like statements to get the final r
 """
 
 SHORT_DESCRIPTION = (
-    "Creates specific output based on defined input variables and configured rules."
+    "Create a specific output based on defined input variables and configured rules."
 )
 
 
@@ -104,12 +100,18 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "formatter",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-code",
+                "blockPriority": 1,
+                "inDevelopment": True,
+            },
         }
     )
     type: Literal["roboflow_core/expression@v1", "Expression"]
     data: Dict[
         str,
-        Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
+        Union[Selector()],
     ] = Field(
         description="References data to be used to construct results",
         examples=[
@@ -142,7 +144,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class ExpressionBlockV1(WorkflowBlock):

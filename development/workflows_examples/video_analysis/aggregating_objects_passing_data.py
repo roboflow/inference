@@ -122,7 +122,7 @@ WORKFLOW_DEFINITION = {
 }
 
 STOP = False
-ANNOTATOR = sv.BoundingBoxAnnotator()
+ANNOTATOR = sv.BoxAnnotator()
 fps_monitor = sv.FPSMonitor()
 
 
@@ -134,13 +134,12 @@ def main() -> None:
         workflow_specification=WORKFLOW_DEFINITION,
         watchdog=watchdog,
         on_prediction=workflows_sink,
-        source_buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
-        source_buffer_consumption_strategy=BufferConsumptionStrategy.EAGER,
         workflows_parameters={
             "line": [[100, 900], [1900, 900]],
             "email": os.environ["EMAIL"],
             "email_password": os.environ["EMAIL_PASSWORD"],
-        }
+        },
+        max_fps=1,
     )
     control_thread = Thread(target=command_thread, args=(pipeline, watchdog))
     control_thread.start()

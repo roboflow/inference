@@ -6,7 +6,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
 )
-from inference.core.workflows.execution_engine.entities.types import StepOutputSelector
+from inference.core.workflows.execution_engine.entities.types import Selector
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
@@ -18,7 +18,9 @@ Takes input data which may not be present due to filtering or conditional execut
 fills with default value to make it compliant with further processing.
 """
 
-SHORT_DESCRIPTION = "Takes first non-empty data element or default"
+SHORT_DESCRIPTION = (
+    "Take the first non-empty data element or the configured default value."
+)
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -30,12 +32,18 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "formatter",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-empty-set",
+                "blockPriority": 7,
+                "inDevelopment": True,
+            },
         }
     )
     type: Literal[
         "roboflow_core/first_non_empty_or_default@v1", "FirstNonEmptyOrDefault"
     ]
-    data: List[StepOutputSelector()] = Field(
+    data: List[Selector()] = Field(
         description="Reference data to replace empty values",
         examples=["$steps.my_step.predictions"],
         min_items=1,
@@ -56,7 +64,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class FirstNonEmptyOrDefaultBlockV1(WorkflowBlock):

@@ -27,6 +27,7 @@ def prepare_video_sources(
     status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]],
     source_buffer_filling_strategy: Optional[BufferFillingStrategy],
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
+    desired_source_fps: Optional[Union[float, int]] = None,
 ) -> List[VideoSource]:
     video_reference = wrap_in_list(element=video_reference)
     if len(video_reference) < 1:
@@ -46,6 +47,7 @@ def prepare_video_sources(
         status_update_handlers=status_update_handlers,
         source_buffer_filling_strategy=source_buffer_filling_strategy,
         source_buffer_consumption_strategy=source_buffer_consumption_strategy,
+        desired_source_fps=desired_source_fps,
     )
 
 
@@ -73,6 +75,7 @@ def initialise_video_sources(
     status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]],
     source_buffer_filling_strategy: Optional[BufferFillingStrategy],
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
+    desired_source_fps: Optional[Union[float, int]] = None,
 ) -> List[VideoSource]:
     return [
         VideoSource.init(
@@ -82,6 +85,7 @@ def initialise_video_sources(
             buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=source_properties,
             source_id=i,
+            desired_fps=desired_source_fps,
         )
         for i, (reference, source_properties) in enumerate(
             zip(video_reference, video_source_properties)

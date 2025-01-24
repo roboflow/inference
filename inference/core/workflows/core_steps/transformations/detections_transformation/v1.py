@@ -24,9 +24,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -80,12 +78,17 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "transformation",
+                "icon": "fal fa-expand",
+                "blockPriority": 4,
+            },
         }
     )
     type: Literal[
         "roboflow_core/detections_transformation@v1", "DetectionsTransformation"
     ]
-    predictions: StepOutputSelector(
+    predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -101,7 +104,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     operations_parameters: Dict[
         str,
-        Union[WorkflowImageSelector, WorkflowParameterSelector(), StepOutputSelector()],
+        Selector(),
     ] = Field(
         description="References to additional parameters that may be provided in runtime to parameterize operations",
         examples=[
@@ -113,8 +116,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["predictions"]
+
+    @classmethod
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return ["operations_parameters"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -131,7 +138,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class DetectionsTransformationBlockV1(WorkflowBlock):

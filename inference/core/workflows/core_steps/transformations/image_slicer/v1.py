@@ -8,8 +8,6 @@ from supervision import crop_image
 from typing_extensions import Annotated
 
 from inference.core.workflows.execution_engine.entities.base import (
-    ImageParentMetadata,
-    OriginCoordinatesSystem,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -17,9 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     INTEGER_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -53,36 +49,38 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Image Slicer",
             "version": "v1",
-            "short_description": "Splits input image into series of smaller images to perform accurate prediction.",
+            "short_description": "Tile the input image into a list of smaller images to perform small object detection.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-scissors",
+                "blockPriority": 9,
+                "opencv": True,
+            },
         }
     )
     type: Literal["roboflow_core/image_slicer@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image to slice",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
-    slice_width: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            default=640,
-            description="Width of each slice, in pixels",
-            examples=[320, "$inputs.slice_width"],
-        )
+    slice_width: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
+        default=640,
+        description="Width of each slice, in pixels",
+        examples=[320, "$inputs.slice_width"],
     )
-    slice_height: Union[PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            default=640,
-            description="Height of each slice, in pixels",
-            examples=[320, "$inputs.slice_height"],
-        )
+    slice_height: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
+        default=640,
+        description="Height of each slice, in pixels",
+        examples=[320, "$inputs.slice_height"],
     )
     overlap_ratio_width: Union[
         Annotated[float, Field(ge=0.0, lt=1.0)],
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.2,
         description="Overlap ratio between consecutive slices in the width dimension",
@@ -90,7 +88,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     overlap_ratio_height: Union[
         Annotated[float, Field(ge=0.0, lt=1.0)],
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.2,
         description="Overlap ratio between consecutive slices in the height dimension",
@@ -109,7 +107,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class ImageSlicerBlockV1(WorkflowBlock):

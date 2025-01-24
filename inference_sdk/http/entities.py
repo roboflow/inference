@@ -30,6 +30,14 @@ ALL_ROBOFLOW_API_URLS = {
 
 @dataclass(frozen=True)
 class ServerInfo(DataClassJsonMixin):
+    """Dataclass for Information about the inference server.
+
+    Attributes:
+        name: The name of the inference server.
+        version: The version of the inference server.
+        uuid: The unique identifier of the inference server instance.
+    """
+
     name: str
     version: str
     uuid: str
@@ -37,6 +45,16 @@ class ServerInfo(DataClassJsonMixin):
 
 @dataclass(frozen=True)
 class ModelDescription(DataClassJsonMixin):
+    """Dataclass for model description.
+
+    Attributes:
+        model_id: The unique identifier of the model.
+        task_type: The type of task the model is designed for.
+        batch_size: The batch size for the model.
+        input_height: The height of the input image.
+        input_width: The width of the input image.
+    """
+
     model_id: str
     task_type: TaskType
     batch_size: Optional[Union[int, str]] = None
@@ -46,15 +64,36 @@ class ModelDescription(DataClassJsonMixin):
 
 @dataclass(frozen=True)
 class RegisteredModels(DataClassJsonMixin):
+    """Dataclass for registered models.
+
+    Attributes:
+        models: A list of model descriptions.
+    """
+
     models: List[ModelDescription]
 
 
 class HTTPClientMode(str, Enum):
+    """Enum for the HTTP client mode.
+
+    Attributes:
+        V0: The version 0 of the HTTP client.
+        V1: The version 1 of the HTTP client.
+    """
+
     V0 = "v0"
     V1 = "v1"
 
 
 class VisualisationResponseFormat(str, Enum):
+    """Enum for the visualisation response format.
+
+    Attributes:
+        BASE64: The base64 format.
+        NUMPY: The numpy format.
+        PILLOW: The pillow format.
+    """
+
     BASE64 = "base64"
     NUMPY = "numpy"
     PILLOW = "pillow"
@@ -62,6 +101,20 @@ class VisualisationResponseFormat(str, Enum):
 
 @dataclass(frozen=True)
 class InferenceConfiguration:
+    """Dataclass for inference configuration.
+
+    Attributes:
+        confidence_threshold: The confidence threshold for the inference.
+        keypoint_confidence_threshold: The keypoint confidence threshold for the inference.
+        format: The format for the inference.
+        mask_decode_mode: The mask decode mode for the inference.
+        tradeoff_factor: The tradeoff factor for the inference.
+        max_candidates: The maximum number of candidates for the inference.
+        max_detections: The maximum number of detections for the inference.
+        iou_threshold: The intersection over union threshold for the inference.
+        stroke_width: The stroke width for the inference.
+    """
+
     confidence_threshold: Optional[float] = None
     keypoint_confidence_threshold: Optional[float] = None
     format: Optional[str] = None
@@ -105,6 +158,15 @@ class InferenceConfiguration:
     def to_api_call_parameters(
         self, client_mode: HTTPClientMode, task_type: TaskType
     ) -> Dict[str, Any]:
+        """Convert the current configuration to API call parameters.
+
+        Args:
+            client_mode: The HTTP client mode.
+            task_type: The type of task the model is designed for.
+
+        Returns:
+            Dict[str, Any]: The API call parameters.
+        """
         if client_mode is HTTPClientMode.V0:
             return self.to_legacy_call_parameters()
         if task_type == OBJECT_DETECTION_TASK:
@@ -120,6 +182,11 @@ class InferenceConfiguration:
         )
 
     def to_object_detection_parameters(self) -> Dict[str, Any]:
+        """Convert the current configuration to object detection parameters.
+
+        Returns:
+            Dict[str, Any]: The object detection parameters.
+        """
         parameters_specs = [
             ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
@@ -146,11 +213,21 @@ class InferenceConfiguration:
         )
 
     def to_keypoints_detection_parameters(self) -> Dict[str, Any]:
+        """Convert the current configuration to keypoints detection parameters.
+
+        Returns:
+            Dict[str, Any]: The keypoints detection parameters.
+        """
         parameters = self.to_object_detection_parameters()
         parameters["keypoint_confidence"] = self.keypoint_confidence_threshold
         return remove_empty_values(dictionary=parameters)
 
     def to_instance_segmentation_parameters(self) -> Dict[str, Any]:
+        """Convert the current configuration to instance segmentation parameters.
+
+        Returns:
+            Dict[str, Any]: The instance segmentation parameters.
+        """
         parameters = self.to_object_detection_parameters()
         parameters_specs = [
             ("mask_decode_mode", "mask_decode_mode"),
@@ -161,6 +238,11 @@ class InferenceConfiguration:
         return remove_empty_values(dictionary=parameters)
 
     def to_classification_parameters(self) -> Dict[str, Any]:
+        """Convert the current configuration to classification parameters.
+
+        Returns:
+            Dict[str, Any]: The classification parameters.
+        """
         parameters_specs = [
             ("disable_preproc_auto_orientation", "disable_preproc_auto_orient"),
             ("disable_preproc_contrast", "disable_preproc_contrast"),
@@ -180,6 +262,11 @@ class InferenceConfiguration:
         )
 
     def to_legacy_call_parameters(self) -> Dict[str, Any]:
+        """Convert the current configuration to legacy call parameters.
+
+        Returns:
+            Dict[str, Any]: The legacy call parameters.
+        """
         parameters_specs = [
             ("confidence_threshold", "confidence"),
             ("keypoint_confidence_threshold", "keypoint_confidence"),
@@ -210,6 +297,15 @@ class InferenceConfiguration:
 def get_non_empty_attributes(
     source_object: object, specification: List[Tuple[str, str]]
 ) -> Dict[str, Any]:
+    """Get non-empty attributes from the source object.
+
+    Args:
+        source_object: The source object.
+        specification: The specification of the attributes.
+
+    Returns:
+        Dict[str, Any]: The non-empty attributes.
+    """
     attributes = {
         external_name: getattr(source_object, internal_name)
         for internal_name, external_name in specification

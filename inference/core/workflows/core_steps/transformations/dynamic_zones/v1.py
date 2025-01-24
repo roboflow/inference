@@ -13,8 +13,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -26,7 +25,7 @@ OUTPUT_KEY: str = "zones"
 TYPE: str = "roboflow_core/dynamic_zone@v1"
 SHORT_DESCRIPTION = (
     "Simplify polygons so they are geometrically convex "
-    "and simplify them to contain only requested amount of vertices"
+    "and contain only the requested amount of vertices."
 )
 LONG_DESCRIPTION = """
 The `DynamicZoneBlock` is a transformer block designed to simplify polygon
@@ -46,10 +45,16 @@ class DynamicZonesManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-square-dashed",
+                "blockPriority": 3,
+                "opencv": True,
+            },
         }
     )
     type: Literal[f"{TYPE}", "DynamicZone"]
-    predictions: StepOutputSelector(
+    predictions: Selector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
@@ -57,14 +62,14 @@ class DynamicZonesManifest(WorkflowBlockManifest):
         description="",
         examples=["$segmentation.predictions"],
     )
-    required_number_of_vertices: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    required_number_of_vertices: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Keep simplifying polygon until number of vertices matches this number",
         examples=[4, "$inputs.vertices"],
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["predictions"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -74,7 +79,7 @@ class DynamicZonesManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 def calculate_simplified_polygon(

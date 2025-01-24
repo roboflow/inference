@@ -242,6 +242,7 @@ class InferencePipelineManager(Process):
             t.start()
 
             webrtc_offer = parsed_payload.webrtc_offer
+            webrtc_turn_config = parsed_payload.webrtc_turn_config
             webcam_fps = parsed_payload.webcam_fps
             to_inference_queue = SyncAsyncQueue(loop=loop)
             from_inference_queue = SyncAsyncQueue(loop=loop)
@@ -251,6 +252,7 @@ class InferencePipelineManager(Process):
             future = asyncio.run_coroutine_threadsafe(
                 init_rtc_peer_connection(
                     webrtc_offer=webrtc_offer,
+                    webrtc_turn_config=webrtc_turn_config,
                     to_inference_queue=to_inference_queue,
                     from_inference_queue=from_inference_queue,
                     webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
@@ -273,6 +275,12 @@ class InferencePipelineManager(Process):
             def webrtc_sink(
                 prediction: Dict[str, WorkflowImageData], video_frame: VideoFrame
             ) -> None:
+                if parsed_payload.stream_output[0] not in prediction:
+                    from_inference_queue.sync_put(video_frame.image)
+                    return
+                if prediction[parsed_payload.stream_output[0]] is None:
+                    from_inference_queue.sync_put(video_frame.image)
+                    return
                 from_inference_queue.sync_put(
                     prediction[parsed_payload.stream_output[0]].numpy_image
                 )
@@ -430,7 +438,8 @@ class InferencePipelineManager(Process):
             return self._handle_error(
                 request_id=request_id,
                 error_type=ErrorType.OPERATION_ERROR,
-                public_error_message="Cannot retrieve InferencePipeline status. Internal Error. Service misconfigured.",
+                public_error_message="Cannot retrieve InferencePipeline status. "
+                "Try again later - Inference Pipeline not initialised.",
             )
         try:
             report = self._watchdog.get_report()
@@ -512,7 +521,8 @@ class InferencePipelineManager(Process):
         error_type: ErrorType = ErrorType.INTERNAL_ERROR,
     ):
         logger.exception(
-            f"Could not handle Command. request_id={request_id}, error={error}, error_type={error_type}"
+            f"Could not handle Command. request_id={request_id}, "
+            f"error={error}, error_type={error_type}, public_error_message={public_error_message}"
         )
         response_payload = describe_error(
             error, error_type=error_type, public_error_message=public_error_message

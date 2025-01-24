@@ -236,7 +236,7 @@ def on_prediction(
 The arguments are:
 
 - `predictions`: A dictionary that is the response object resulting from a call to a model's `infer(...)` method.
-- `video_frame`: A [VideoFrame object](../../docs/reference/inference/core/interfaces/camera/entities/#inference.core.interfaces.camera.entities.VideoFrame) containing metadata and pixel data from the video frame.
+- `video_frame`: A [VideoFrame object](../../reference/inference/core/interfaces/camera/entities/#inference.core.interfaces.camera.entities.VideoFrame) containing metadata and pixel data from the video frame.
 
 ### After `v0.9.18`
 ```python
@@ -372,7 +372,20 @@ pipeline = InferencePipeline.init(
 )
 ```
 
-See the reference docs for the [full list of Inference Pipeline parameters](../../docs/reference/inference/core/interfaces/stream/inference_pipeline/#inference.core.interfaces.stream.inference_pipeline.InferencePipeline).
+See the reference docs for the [full list of Inference Pipeline parameters](../../reference/inference/core/interfaces/stream/inference_pipeline/#inference.core.interfaces.stream.inference_pipeline.InferencePipeline).
+
+!!! Warning "Breaking change planned at the **end of Q4 2024**"
+
+    We've discovered that the behaviour of `max_fps` parameter is not in line with `inference` clients expectations
+    regarding processing of video files. Current implementation for vides waits before processing the next 
+    video frame, instead droping the frames to *modulate* video FPS. 
+
+    We have added a way to change this suboptimal behaviour in release `v0.26.0` - new behaviour of 
+    `InferencePipeline` can be enabled setting environmental variable flag 
+    `ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING=True`. 
+
+    Please note that the new behaviour will be the default one end of Q4 2024!
+    
 
 ## Performance
 

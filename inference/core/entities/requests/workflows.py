@@ -8,7 +8,8 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
 
 
 class WorkflowInferenceRequest(BaseModel):
-    api_key: str = Field(
+    api_key: Optional[str] = Field(
+        default=None,
         description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
     )
     inputs: Dict[str, Any] = Field(
@@ -23,6 +24,9 @@ class WorkflowInferenceRequest(BaseModel):
         description="Flag to request Workflow run profiling. Enables Workflow profiler only when server settings "
         "allow profiling traces to be exported to clients. Only applies for Workflows definitions saved "
         "on Roboflow platform.",
+    )
+    workflow_id: Optional[str] = Field(
+        default=None, description="Optional identifier of workflow"
     )
 
 

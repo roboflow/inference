@@ -14,6 +14,7 @@ from inference.core.cache import cache
 from inference.core.cache.base import BaseCache
 from inference.core.entities.types import (
     DatasetID,
+    ModelID,
     ModelType,
     TaskType,
     VersionID,
@@ -22,6 +23,7 @@ from inference.core.entities.types import (
 from inference.core.env import (
     API_BASE_URL,
     MODEL_CACHE_DIR,
+    ROBOFLOW_API_EXTRA_HEADERS,
     USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS,
     WORKFLOWS_DEFINITION_CACHE_EXPIRY,
 )
@@ -147,6 +149,7 @@ def add_custom_metadata(
                 }
             ]
         },
+        headers=build_roboflow_api_headers(),
     )
     api_key_safe_raise_for_status(response=response)
 
@@ -205,6 +208,7 @@ def get_roboflow_model_type(
 class ModelEndpointType(Enum):
     ORT = "ort"
     CORE_MODEL = "core_model"
+    OWLV2 = "owlv2"
 
 
 @wrap_roboflow_api_errors()
@@ -229,6 +233,39 @@ def get_roboflow_model_data(
             params.append(("api_key", api_key))
         api_url = _add_params_to_url(
             url=f"{API_BASE_URL}/{endpoint_type.value}/{model_id}",
+            params=params,
+        )
+        api_data = _get_from_url(url=api_url)
+        cache.set(
+            api_data_cache_key,
+            api_data,
+            expire=10,
+        )
+        logger.debug(
+            f"Loaded model data from Roboflow API and saved to cache with key: {api_data_cache_key}."
+        )
+        return api_data
+
+
+@wrap_roboflow_api_errors()
+def get_roboflow_instant_model_data(
+    api_key: str,
+    model_id: ModelID,
+    cache_prefix: str = "roboflow_api_data",
+) -> dict:
+    api_data_cache_key = f"{cache_prefix}:{model_id}"
+    api_data = cache.get(api_data_cache_key)
+    if api_data is not None:
+        logger.debug(f"Loaded model data from cache with key: {api_data_cache_key}.")
+        return api_data
+    else:
+        params = [
+            ("model", model_id),
+        ]
+        if api_key is not None:
+            params.append(("api_key", api_key))
+        api_url = _add_params_to_url(
+            url=f"{API_BASE_URL}/getWeights",
             params=params,
         )
         api_data = _get_from_url(url=api_url)
@@ -317,10 +354,13 @@ def register_image_at_roboflow(
             "file": ("imageToUpload", image_bytes, "image/jpeg"),
         }
     )
+    headers = build_roboflow_api_headers(
+        explicit_headers={"Content-Type": m.content_type},
+    )
     response = requests.post(
         url=wrapped_url,
         data=m,
-        headers={"Content-Type": m.content_type},
+        headers=headers,
     )
     api_key_safe_raise_for_status(response=response)
     parsed_response = response.json()
@@ -356,10 +396,13 @@ def annotate_image_at_roboflow(
         ("prediction", str(is_prediction).lower()),
     ]
     wrapped_url = wrap_url(_add_params_to_url(url=url, params=params))
+    headers = build_roboflow_api_headers(
+        explicit_headers={"Content-Type": "text/plain"},
+    )
     response = requests.post(
         wrapped_url,
         data=annotation_content,
-        headers={"Content-Type": "text/plain"},
+        headers=headers,
     )
     api_key_safe_raise_for_status(response=response)
     parsed_response = response.json()
@@ -393,11 +436,15 @@ def get_roboflow_labeling_jobs(
 
 
 def get_workflow_cache_file(
-    workspace_id: WorkspaceID, workflow_id: str, api_key: str
+    workspace_id: WorkspaceID, workflow_id: str, api_key: Optional[str]
 ) -> str:
     sanitized_workspace_id = sanitize_path_segment(workspace_id)
     sanitized_workflow_id = sanitize_path_segment(workflow_id)
-    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    api_key_hash = (
+        hashlib.md5(api_key.encode("utf-8")).hexdigest()
+        if api_key is not None
+        else "None"
+    )
     prefix = os.path.abspath(os.path.join(MODEL_CACHE_DIR, "workflow"))
     result = os.path.abspath(
         os.path.join(
@@ -414,7 +461,7 @@ def get_workflow_cache_file(
 
 
 def cache_workflow_response(
-    workspace_id: WorkspaceID, workflow_id: str, api_key: str, response: dict
+    workspace_id: WorkspaceID, workflow_id: str, api_key: Optional[str], response: dict
 ):
     workflow_cache_file = get_workflow_cache_file(
         workspace_id=workspace_id,
@@ -431,7 +478,7 @@ def cache_workflow_response(
 def delete_cached_workflow_response_if_exists(
     workspace_id: WorkspaceID,
     workflow_id: str,
-    api_key: str,
+    api_key: Optional[str],
 ) -> None:
     workflow_cache_file = get_workflow_cache_file(
         workspace_id=workspace_id,
@@ -445,7 +492,7 @@ def delete_cached_workflow_response_if_exists(
 def load_cached_workflow_response(
     workspace_id: WorkspaceID,
     workflow_id: str,
-    api_key: str,
+    api_key: Optional[str],
 ) -> Optional[dict]:
     workflow_cache_file = get_workflow_cache_file(
         workspace_id=workspace_id,
@@ -467,7 +514,7 @@ def load_cached_workflow_response(
 
 @wrap_roboflow_api_errors()
 def get_workflow_specification(
-    api_key: str,
+    api_key: Optional[str],
     workspace_id: WorkspaceID,
     workflow_id: str,
     use_cache: bool = True,
@@ -483,9 +530,12 @@ def get_workflow_specification(
         )
         if cached_entry:
             return cached_entry
+    params = []
+    if api_key is not None:
+        params.append(("api_key", api_key))
     api_url = _add_params_to_url(
         url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_id}",
-        params=[("api_key", api_key)],
+        params=params,
     )
     try:
         response = _get_from_url(url=api_url)
@@ -513,6 +563,8 @@ def get_workflow_specification(
     try:
         workflow_config = json.loads(response["workflow"]["config"])
         specification = workflow_config["specification"]
+        if isinstance(specification, dict):
+            specification["id"] = response["workflow"].get("id")
         if use_cache:
             _cache_workflow_specification_in_ephemeral_cache(
                 api_key=api_key,
@@ -533,7 +585,7 @@ def get_workflow_specification(
 
 
 def _retrieve_workflow_specification_from_ephemeral_cache(
-    api_key: str,
+    api_key: Optional[str],
     workspace_id: WorkspaceID,
     workflow_id: str,
     ephemeral_cache: BaseCache,
@@ -547,7 +599,7 @@ def _retrieve_workflow_specification_from_ephemeral_cache(
 
 
 def _cache_workflow_specification_in_ephemeral_cache(
-    api_key: str,
+    api_key: Optional[str],
     workspace_id: WorkspaceID,
     workflow_id: str,
     specification: dict,
@@ -566,11 +618,15 @@ def _cache_workflow_specification_in_ephemeral_cache(
 
 
 def _prepare_workflow_response_cache_key(
-    api_key: str,
+    api_key: Optional[str],
     workspace_id: WorkspaceID,
     workflow_id: str,
 ) -> str:
-    api_key_hash = hashlib.md5(api_key.encode("utf-8")).hexdigest()
+    api_key_hash = (
+        hashlib.md5(api_key.encode("utf-8")).hexdigest()
+        if api_key is not None
+        else "None"
+    )
     return f"workflow_definition:{workspace_id}:{workflow_id}:{api_key_hash}"
 
 
@@ -583,7 +639,10 @@ def get_from_url(
 
 
 def _get_from_url(url: str, json_response: bool = True) -> Union[Response, dict]:
-    response = requests.get(wrap_url(url))
+    response = requests.get(
+        wrap_url(url),
+        headers=build_roboflow_api_headers(),
+    )
     api_key_safe_raise_for_status(response=response)
     if json_response:
         return response.json()
@@ -598,3 +657,36 @@ def _add_params_to_url(url: str, params: List[Tuple[str, str]]) -> str:
     ]
     parameters_string = "&".join(params_chunks)
     return f"{url}?{parameters_string}"
+
+
+@wrap_roboflow_api_errors()
+def send_inference_results_to_model_monitoring(
+    api_key: str,
+    workspace_id: WorkspaceID,
+    inference_data: dict,
+):
+    api_url = _add_params_to_url(
+        url=f"{API_BASE_URL}/{workspace_id}/inference-stats",
+        params=[("api_key", api_key)],
+    )
+    response = requests.post(
+        url=api_url,
+        json=inference_data,
+        headers=build_roboflow_api_headers(),
+    )
+    api_key_safe_raise_for_status(response=response)
+
+
+def build_roboflow_api_headers(
+    explicit_headers: Optional[Dict[str, Union[str, List[str]]]] = None,
+) -> Optional[Dict[str, Union[List[str]]]]:
+    if not ROBOFLOW_API_EXTRA_HEADERS:
+        return explicit_headers
+    try:
+        extra_headers: dict = json.loads(ROBOFLOW_API_EXTRA_HEADERS)
+        if explicit_headers:
+            extra_headers.update(explicit_headers)
+        return extra_headers
+    except ValueError:
+        logger.warning("Could not decode ROBOFLOW_API_EXTRA_HEADERS")
+        return explicit_headers

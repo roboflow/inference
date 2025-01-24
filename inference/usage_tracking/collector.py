@@ -1,8 +1,8 @@
 import asyncio
 import atexit
-import datetime
 import json
 import mimetypes
+import numbers
 import socket
 import sys
 import time
@@ -15,7 +15,14 @@ from uuid import uuid4
 
 from typing_extensions import ParamSpec
 
-from inference.core.env import API_KEY, DEDICATED_DEPLOYMENT_ID, LAMBDA, REDIS_HOST
+from inference.core.env import (
+    API_KEY,
+    DEDICATED_DEPLOYMENT_ID,
+    LAMBDA,
+    REDIS_HOST,
+    ROBOFLOW_INTERNAL_SERVICE_NAME,
+    ROBOFLOW_INTERNAL_SERVICE_SECRET,
+)
 from inference.core.logger import logger
 from inference.core.version import __version__ as inference_version
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
@@ -130,28 +137,32 @@ class UsageCollector:
 
     @staticmethod
     def empty_usage_dict(exec_session_id: str) -> APIKeyUsage:
+        usage_dict = {
+            "timestamp_start": None,
+            "timestamp_stop": None,
+            "exec_session_id": exec_session_id,
+            "hostname": "",
+            "ip_address_hash": "",
+            "processed_frames": 0,
+            "fps": 0,
+            "source_duration": 0,
+            "category": "",
+            "resource_id": "",
+            "resource_details": "{}",
+            "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID),
+            "api_key_hash": "",
+            "is_gpu_available": False,
+            "python_version": sys.version.split()[0],
+            "inference_version": inference_version,
+            "enterprise": False,
+        }
+        if ROBOFLOW_INTERNAL_SERVICE_SECRET:
+            usage_dict["roboflow_internal_secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
+        if ROBOFLOW_INTERNAL_SERVICE_NAME:
+            usage_dict["roboflow_service_name"] = ROBOFLOW_INTERNAL_SERVICE_NAME
+
         return defaultdict(  # api_key_hash
-            lambda: defaultdict(  # category:resource_id
-                lambda: {
-                    "timestamp_start": None,
-                    "timestamp_stop": None,
-                    "exec_session_id": exec_session_id,
-                    "hostname": "",
-                    "ip_address_hash": "",
-                    "processed_frames": 0,
-                    "fps": 0,
-                    "source_duration": 0,
-                    "category": "",
-                    "resource_id": "",
-                    "resource_details": "{}",
-                    "hosted": LAMBDA,
-                    "api_key_hash": "",
-                    "is_gpu_available": False,
-                    "python_version": sys.version.split()[0],
-                    "inference_version": inference_version,
-                    "enterprise": False,
-                }
-            )
+            lambda: defaultdict(lambda: {**usage_dict})  # category:resource_id
         )
 
     def _dump_usage_queue_no_lock(self) -> List[APIKeyUsage]:
@@ -246,9 +257,10 @@ class UsageCollector:
                 hostname = ""
         if dedicated_deployment_id:
             hostname = f"{dedicated_deployment_id}:{hostname}"
-        if ip_address:
-            ip_address_hash_hex = sha256_hash(ip_address)
         else:
+            hostname = sha256_hash(hostname)
+
+        if not ip_address:
             try:
                 ip_address: str = socket.gethostbyname(socket.gethostname())
             except Exception as exc:
@@ -263,8 +275,7 @@ class UsageCollector:
 
                 if s:
                     s.close()
-
-            ip_address_hash_hex = sha256_hash(ip_address)
+        ip_address_hash_hex = sha256_hash(ip_address)
 
         return {
             "hostname": hostname,
@@ -316,6 +327,10 @@ class UsageCollector:
         fps: float = 0,
     ):
         source = str(source) if source else ""
+        try:
+            frames = int(frames)
+        except Exception:
+            frames = 0
         api_key_hash = self._calculate_api_key_hash(api_key=api_key)
         if not resource_id and resource_details:
             resource_id = UsageCollector._calculate_resource_hash(resource_details)
@@ -333,10 +348,10 @@ class UsageCollector:
                 source_usage["timestamp_start"] = time.time_ns()
             source_usage["timestamp_stop"] = time.time_ns()
             source_usage["processed_frames"] += frames if not inference_test_run else 0
-            source_usage["fps"] = round(fps, 2)
             source_usage["source_duration"] += (
                 frames / fps if fps and not inference_test_run else 0
             )
+            source_usage["fps"] = fps if isinstance(fps, numbers.Number) else 0
             source_usage["category"] = category
             source_usage["resource_id"] = resource_id
             source_usage["resource_details"] = json.dumps(resource_details)
@@ -356,7 +371,7 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
-    ) -> DefaultDict[str, Any]:
+    ):
         if not api_key:
             return
         if self._settings.opt_out and not api_key:
@@ -389,7 +404,7 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
-    ) -> DefaultDict[str, Any]:
+    ):
         if self._async_lock:
             async with self._async_lock:
                 self.record_usage(
@@ -505,14 +520,12 @@ class UsageCollector:
     @staticmethod
     def _resource_details_from_workflow_json(
         workflow_json: Dict[str, Any]
-    ) -> ResourceDetails:
-        return {
-            "steps": [
-                f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"
-                for step in workflow_json.get("steps", [])
-                if isinstance(step, dict)
-            ]
-        }
+    ) -> List[str]:
+        return [
+            f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"
+            for step in workflow_json.get("steps", [])
+            if isinstance(step, dict)
+        ]
 
     @staticmethod
     def _extract_usage_params_from_func_kwargs(
@@ -530,6 +543,8 @@ class UsageCollector:
         resource_details = {
             "billable": usage_billable,
         }
+        if DEDICATED_DEPLOYMENT_ID:
+            resource_details["dedicated_deployment_id"] = DEDICATED_DEPLOYMENT_ID
         resource_id = ""
         category = None
         # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
@@ -547,10 +562,11 @@ class UsageCollector:
                     logger.debug(
                         "Got non-dict workflow JSON, '%s'", workflow.workflow_json
                     )
-            new_resource_details = UsageCollector._resource_details_from_workflow_json(
-                workflow_json=workflow_json,
+            resource_details["steps"] = (
+                UsageCollector._resource_details_from_workflow_json(
+                    workflow_json=workflow_json,
+                )
             )
-            resource_details.update(new_resource_details)
             resource_details["is_preview"] = usage_workflow_preview
             resource_id = usage_workflow_id
             if not resource_id and resource_details:
@@ -561,7 +577,9 @@ class UsageCollector:
         elif "self" in func_kwargs:
             _self = func_kwargs["self"]
             if hasattr(_self, "dataset_id") and hasattr(_self, "version_id"):
-                model_id = f"{_self.dataset_id}/{_self.version_id}"
+                model_id = str(_self.dataset_id)
+                if _self.version_id:
+                    model_id += f"/{_self.version_id}"
                 category = "model"
                 resource_id = model_id
             elif isinstance(kwargs, dict) and "model_id" in kwargs:
@@ -632,6 +650,7 @@ class UsageCollector:
             usage_billable: bool = True,
             **kwargs: P.kwargs,
         ) -> T:
+            res = func(*args, **kwargs)
             self.record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
@@ -645,7 +664,7 @@ class UsageCollector:
                     kwargs=kwargs,
                 )
             )
-            return func(*args, **kwargs)
+            return res
 
         @wraps(func)
         async def async_wrapper(
@@ -658,6 +677,7 @@ class UsageCollector:
             usage_billable: bool = True,
             **kwargs: P.kwargs,
         ) -> T:
+            res = await func(*args, **kwargs)
             await self.async_record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
@@ -671,7 +691,7 @@ class UsageCollector:
                     kwargs=kwargs,
                 )
             )
-            return await func(*args, **kwargs)
+            return res
 
         if asyncio.iscoroutinefunction(func):
             return async_wrapper

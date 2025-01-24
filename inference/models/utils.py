@@ -11,6 +11,7 @@ from inference.core.registries.roboflow import get_model_type
 from inference.core.utils.function import deprecated
 from inference.models import (
     YOLACT,
+    ResNetClassification,
     VitClassification,
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
@@ -32,6 +33,10 @@ from inference.models.yolov11.yolov11_keypoints_detection import (
 ROBOFLOW_MODEL_TYPES = {
     ("classification", "stub"): ClassificationModelStub,
     ("classification", "vit"): VitClassification,
+    ("classification", "resnet18"): ResNetClassification,
+    ("classification", "resnet34"): ResNetClassification,
+    ("classification", "resnet50"): ResNetClassification,
+    ("classification", "resnet101"): ResNetClassification,
     ("classification", "yolov8"): YOLOv8Classification,
     ("classification", "yolov8n"): YOLOv8Classification,
     ("classification", "yolov8s"): YOLOv8Classification,
@@ -244,6 +249,12 @@ try:
         ): LoRAPaliGemma,  # TODO: change when we have a new project type
         ("instance-segmentation", "paligemma-3b-pt-448-peft"): LoRAPaliGemma,
         ("instance-segmentation", "paligemma-3b-pt-896-peft"): LoRAPaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-224"): PaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-448"): PaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-896"): PaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-224-peft"): LoRAPaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-448-peft"): LoRAPaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-896-peft"): LoRAPaliGemma,
     }
     ROBOFLOW_MODEL_TYPES.update(paligemma_models)
 except:
@@ -267,12 +278,22 @@ try:
             "object-detection",
             "florence-2-base-peft",
         ): LoRAFlorence2,  # TODO: change when we have a new project type
+        (
+            "text-image-pairs",
+            "florence-2-base",
+        ): Florence2,  # TODO: change when we have a new project type
+        ("text-image-pairs", "florence-2-large"): Florence2,
         ("object-detection", "florence-2-large-peft"): LoRAFlorence2,
         (
             "instance-segmentation",
             "florence-2-base-peft",
         ): LoRAFlorence2,  # TODO: change when we have a new project type
         ("instance-segmentation", "florence-2-large-peft"): LoRAFlorence2,
+        (
+            "text-image-pairs",
+            "florence-2-base-peft",
+        ): LoRAFlorence2,
+        ("text-image-pairs", "florence-2-large-peft"): LoRAFlorence2,
     }
     ROBOFLOW_MODEL_TYPES.update(florence2_models)
 except:
@@ -298,9 +319,10 @@ except:
     pass
 
 try:
-    from inference.models.owlv2.owlv2 import OwlV2
+    from inference.models.owlv2.owlv2 import OwlV2, SerializedOwlV2
 
     ROBOFLOW_MODEL_TYPES[("object-detection", "owlv2")] = OwlV2
+    ROBOFLOW_MODEL_TYPES[("object-detection", "owlv2-finetuned")] = SerializedOwlV2
 except:
     pass
 

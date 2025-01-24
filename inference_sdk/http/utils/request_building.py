@@ -14,6 +14,18 @@ class ImagePlacement(Enum):
 
 @dataclass(frozen=True)
 class RequestData:
+    """Data class for request data.
+
+    Attributes:
+        url: The URL of the request.
+        request_elements: The number of request elements.
+        headers: The headers of the request.
+        parameters: The parameters of the request.
+        data: The data of the request.
+        payload: The payload of the request.
+        image_scaling_factors: The scaling factors of the images.
+    """
+
     url: str
     request_elements: int
     headers: Optional[Dict[str, str]]
@@ -32,6 +44,20 @@ def prepare_requests_data(
     max_batch_size: int,
     image_placement: ImagePlacement,
 ) -> List[RequestData]:
+    """Prepare requests data.
+
+    Args:
+        url: The URL of the request.
+        encoded_inference_inputs: The encoded inference inputs.
+        headers: The headers of the request.
+        parameters: The parameters of the request.
+        payload: The payload of the request.
+        max_batch_size: The maximum batch size.
+        image_placement: The image placement.
+
+    Returns:
+        The list of request data.
+    """
     batches = list(
         make_batches(
             iterable=encoded_inference_inputs,
@@ -60,6 +86,19 @@ def assembly_request_data(
     payload: Optional[Dict[str, Any]],
     image_placement: ImagePlacement,
 ) -> RequestData:
+    """Assemble request data.
+
+    Args:
+        url: The URL of the request.
+        batch_inference_inputs: The batch inference inputs.
+        headers: The headers of the request.
+        parameters: The parameters of the request.
+        payload: The payload of the request.
+        image_placement: The image placement.
+
+    Returns:
+        The request data.
+    """
     data = None
     if image_placement is ImagePlacement.DATA and len(batch_inference_inputs) != 1:
         raise ValueError("Only single image can be placed in request `data`")

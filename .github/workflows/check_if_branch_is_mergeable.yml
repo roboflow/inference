@@ -1,0 +1,62 @@
+name: mergeable
+on:
+  workflow_call:
+    outputs:
+      mergeable_state:
+        description: "Set to 'clean' if branch is mergeable, otherwise set to 'not_clean'"
+        value: ${{ jobs.check_if_branch_is_mergeable.outputs.mergeable_state }}
+jobs:
+  check_if_branch_is_mergeable:
+    name: Check if branch is mergeable
+    runs-on: ubuntu-latest
+    outputs:
+      mergeable_state: ${{ steps.mergeable_check.outputs.mergeable_state }}
+    steps:
+      - name: Check if branch contains all commits from main via GitHub CLI
+        id: mergeable_check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "main" = "${{ github.head_ref || github.ref_name }}" ]; then
+            echo "ℹ️ Branch is main, proceeding"
+            exit 0
+          fi
+
+          # Sanitize and escape input values
+          sanitize() {
+            local input="$1"
+            printf "%s" "$input" | jq -sRr @uri
+          }
+
+          # Extract and sanitize repository information
+          target_repo="${{ github.repository }}"
+          source_owner=$(sanitize "${{ github.event.pull_request.head.user.login || github.repository_owner }}")
+          target_repo_name=$(echo "$target_repo" | cut -d'/' -f2)
+          target_repo_name=$(sanitize "$target_repo_name")
+          target_branch=$(sanitize "main")
+          source_branch=$(sanitize "${{ github.head_ref || github.ref_name }}")
+
+          # Construct and execute API request
+          api_url="/repos/$target_repo/compare/$target_branch...$source_owner:$target_repo_name:$source_branch"
+          echo "ℹ️ Comparing branches..."
+
+          response=$(gh api "$api_url" || echo '{"status": "error"}')
+          status=$(echo "$response" | jq -r '.status')
+
+          if [ "$status" = "ahead" ]; then
+            echo "✅ Branch is ahead of main and can be merged"
+            echo "mergeable_state=clean" >> "$GITHUB_OUTPUT"
+            exit 0
+          elif [ "$status" = "behind" ]; then
+            echo "❌ Branch is behind main and needs to be updated"
+            echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
+            exit 1
+          elif [ "$status" = "diverged" ]; then
+            echo "❌ Branch has diverged from main and needs to be rebased"
+            echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
+            exit 1
+          else
+            echo "❌ Branch comparison failed with status: $status"
+            echo "mergeable_state=not_clean" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi

@@ -47,6 +47,7 @@ RUN pip3 install \
     -r requirements.sdk.http.txt \
     -r requirements.yolo_world.txt \
     mangum \
+    "setuptools<=75.5.0" \
     --upgrade \
     --target "${LAMBDA_TASK_ROOT}" \
     && rm -rf ~/.cache/pip
@@ -73,6 +74,8 @@ ENV ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False
 ENV CORE_MODEL_TROCR_ENABLED=false
 ENV USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS=False
 ENV ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=False
+ENV ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES=False
+ENV ALLOW_LOADING_IMAGES_FROM_LOCAL_FILESYSTEM=False
 
 WORKDIR ${LAMBDA_TASK_ROOT}
 RUN rm -rf /build

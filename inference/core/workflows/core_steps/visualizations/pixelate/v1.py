@@ -11,12 +11,12 @@ from inference.core.workflows.core_steps.visualizations.common.base import (
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/pixelate_visualization@v1"
-SHORT_DESCRIPTION = "Pixelates detected objects in an image."
+SHORT_DESCRIPTION = "Pixelate detected objects in an image."
 LONG_DESCRIPTION = """
 The `PixelateVisualization` block pixelates detected
 objects in an image using Supervision's `sv.PixelateAnnotator`.
@@ -33,10 +33,23 @@ class PixelateManifest(PredictionsVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "fad fa-grid",
+                "blockPriority": 13,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 
-    pixel_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    pixel_size: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Size of the pixelation.",
         default=20,
         examples=[20, "$inputs.pixel_size"],
@@ -44,7 +57,7 @@ class PixelateManifest(PredictionsVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class PixelateVisualizationBlockV1(PredictionsVisualizationBlock):

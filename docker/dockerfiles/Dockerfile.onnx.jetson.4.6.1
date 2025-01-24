@@ -57,6 +57,7 @@ RUN python3.9 -m pip install --upgrade pip "h5py<=3.10.0" && python3.9 -m pip in
     -r requirements.sdk.http.txt \
     -r requirements.yolo_world.txt \
     jupyterlab \
+    "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -86,8 +87,9 @@ ENV WORKFLOWS_MAX_CONCURRENT_STEPS=2
 ENV API_LOGGING_ENABLED=True
 ENV CORE_MODEL_TROCR_ENABLED=false
 ENV RUNS_ON_JETSON=True
-ENV ENABLE_STREAM_API=True
 ENV ENABLE_WORKFLOWS_PROFILING=True
 ENV ENABLE_PROMETHEUS=True
+ENV ENABLE_STREAM_API=True
+ENV STREAM_API_PRELOADED_PROCESSES=2
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

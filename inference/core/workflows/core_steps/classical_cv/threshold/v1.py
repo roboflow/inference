@@ -15,9 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -41,10 +39,16 @@ class ImageThresholdManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
+            "ui_manifest": {
+                "section": "classical_cv",
+                "icon": "far fa-circle-half-stroke",
+                "blockPriority": 6,
+                "opencv": True,
+            },
         }
     )
 
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
@@ -52,7 +56,7 @@ class ImageThresholdManifest(WorkflowBlockManifest):
     )
 
     threshold_type: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
         Literal[
             "binary",
             "binary_inv",
@@ -69,12 +73,12 @@ class ImageThresholdManifest(WorkflowBlockManifest):
         examples=["binary", "$inputs.threshold_type"],
     )
 
-    thresh_value: Union[WorkflowParameterSelector(kind=[INTEGER_KIND]), int] = Field(
+    thresh_value: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         description="Threshold value.",
         examples=[127, "$inputs.thresh_value"],
     )
 
-    max_value: Union[WorkflowParameterSelector(kind=[INTEGER_KIND]), int] = Field(
+    max_value: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         description="Maximum value for thresholding",
         default=255,
         examples=[255, "$inputs.max_value"],
@@ -93,7 +97,7 @@ class ImageThresholdManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class ImageThresholdBlockV1(WorkflowBlock):
