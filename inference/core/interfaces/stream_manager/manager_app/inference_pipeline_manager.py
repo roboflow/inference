@@ -281,6 +281,12 @@ class InferencePipelineManager(Process):
                 if prediction[parsed_payload.stream_output[0]] is None:
                     from_inference_queue.sync_put(video_frame.image)
                     return
+                print("#################################")
+                print(type(prediction[parsed_payload.stream_output[0]]))
+                print("------")
+                for k, v in prediction.items():
+                    print(f"{k}: {type(v)}")
+                print("#################################")
                 from_inference_queue.sync_put(
                     prediction[parsed_payload.stream_output[0]].numpy_image
                 )

@@ -1410,6 +1410,9 @@ class HttpInterface(BaseInterface):
             async def initialise_webrtc_inference_pipeline(
                 request: InitialiseWebRTCPipelinePayload,
             ) -> CommandResponse:
+                print("#################################")
+                print(request.json())
+                print("#################################")
                 resp = await self.stream_manager_client.initialise_webrtc_pipeline(
                     initialisation_request=request
                 )
