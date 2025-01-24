@@ -30,6 +30,9 @@ The `VelocityBlock` computes the velocity and speed of objects tracked across vi
 It includes options to smooth the velocity and speed measurements over time and to convert units from pixels per second to meters per second.
 It requires detections from Byte Track with unique `tracker_id` assigned to each object, which persists between frames.
 The velocities are calculated based on the displacement of object centers over time.
+
+Note: due to perspective and camera distortions calculated velocity will be different depending on object position in relation to the camera.
+
 """
 
 
