@@ -30,7 +30,7 @@ def run_video_processing_with_workflows(
 
     from inference_cli.lib.workflows.video_adapter import process_video_with_workflow
 
-    process_video_with_workflow(
+    _ = process_video_with_workflow(
         input_video_path=input_video_path,
         output_directory=output_directory,
         output_file_type=output_file_type,

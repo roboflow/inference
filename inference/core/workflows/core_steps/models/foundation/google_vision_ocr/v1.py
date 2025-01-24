@@ -162,10 +162,10 @@ class GoogleVisionOCRBlockV1(WorkflowBlock):
             for block in page["blocks"]:
                 # Get bounding box coordinates
                 box = block["boundingBox"]["vertices"]
-                x_min = min(v["x"] for v in box)
-                y_min = min(v["y"] for v in box)
-                x_max = max(v["x"] for v in box)
-                y_max = max(v["y"] for v in box)
+                x_min = min(v.get("x", 0) for v in box)
+                y_min = min(v.get("y", 0) for v in box)
+                x_max = max(v.get("x", 0) for v in box)
+                y_max = max(v.get("y", 0) for v in box)
                 xyxy.append([x_min, y_min, x_max, y_max])
 
                 # Only DOCUMENT_TEXT_DETECTION provides confidence score, use 1.0 otherwise
