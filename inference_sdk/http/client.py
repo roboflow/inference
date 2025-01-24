@@ -821,7 +821,9 @@ class InferenceHTTPClient:
             HTTPClientError: If there is an error with the server connection.
         """
         self.__ensure_v1_client_mode()
-        response = requests.get(f"{self.__api_url}/model/registry?api_key={self.__api_key}")
+        response = requests.get(
+            f"{self.__api_url}/model/registry?api_key={self.__api_key}"
+        )
         response.raise_for_status()
         response_payload = response.json()
         return RegisteredModels.from_dict(response_payload)
@@ -840,7 +842,9 @@ class InferenceHTTPClient:
         """
         self.__ensure_v1_client_mode()
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{self.__api_url}/model/registry?api_key={self.__api_key}") as response:
+            async with session.get(
+                f"{self.__api_url}/model/registry?api_key={self.__api_key}"
+            ) as response:
                 response.raise_for_status()
                 response_payload = await response.json()
                 return RegisteredModels.from_dict(response_payload)
