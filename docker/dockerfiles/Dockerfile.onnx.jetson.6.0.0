@@ -15,9 +15,9 @@ RUN apt-get update -y && \
     libxext6 \
     wget \
     gdal-bin \
-    libgdal-dev && \
+    libgdal-dev \
     rustc \
-    rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy all requirements files
 COPY requirements/ ./requirements/
