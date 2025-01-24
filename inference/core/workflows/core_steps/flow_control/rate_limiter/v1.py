@@ -60,7 +60,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Rate Limiter",
             "version": "v1",
-            "short_description": "Limits the rate at which a branch of the Workflow will fire.",
+            "short_description": "Limits the rate at which a branch of the Workflow will run.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "flow_control",
