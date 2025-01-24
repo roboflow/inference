@@ -7,17 +7,15 @@ from typing_extensions import Literal, Type
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
-    VideoMetadata,
+    WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputImageSelector,
+    Selector,
     StepOutputSelector,
     WorkflowImageSelector,
-    WorkflowParameterSelector,
-    WorkflowVideoMetadataSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -47,7 +45,7 @@ class VelocityManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/velocity@v1"]
-    metadata: WorkflowVideoMetadataSelector
+    image: WorkflowImageSelector
     detections: StepOutputSelector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
@@ -57,12 +55,12 @@ class VelocityManifest(WorkflowBlockManifest):
         description="Predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
-    smoothing_alpha: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+    smoothing_alpha: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         default=0.5,
         description="Smoothing factor (alpha) for exponential moving average (0 < alpha <= 1). Lower alpha means more smoothing.",
         examples=[0.5],
     )
-    pixels_per_meter: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+    pixels_per_meter: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         default=1.0,
         description="Conversion from pixels to meters. Velocity will be converted to meters per second using this value.",
         examples=[0.01],  # Example: 1 pixel = 0.01 meters
@@ -100,8 +98,8 @@ class VelocityBlockV1(WorkflowBlock):
 
     def run(
         self,
+        image: WorkflowImageData,
         detections: sv.Detections,
-        metadata: VideoMetadata,
         smoothing_alpha: float,
         pixels_per_meter: float,
     ) -> BlockResult:
@@ -116,12 +114,12 @@ class VelocityBlockV1(WorkflowBlock):
         if not (pixels_per_meter > 0):
             raise ValueError("pixels_per_meter must be greater than 0")
 
-        if metadata.comes_from_video_file and metadata.fps != 0:
-            ts_current = metadata.frame_number / metadata.fps
+        if image.video_metadata.comes_from_video_file and image.video_metadata.fps != 0:
+            ts_current = image.video_metadata.frame_number / image.video_metadata.fps
         else:
-            ts_current = metadata.frame_timestamp.timestamp()
+            ts_current = image.video_metadata.frame_timestamp.timestamp()
 
-        video_id = metadata.video_identifier
+        video_id = image.video_metadata.video_identifier
         previous_positions = self._previous_positions.setdefault(video_id, {})
         smoothed_velocities = self._smoothed_velocities.setdefault(video_id, {})
 
