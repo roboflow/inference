@@ -384,7 +384,7 @@ def _pick_detections_by_parent_class(
     parent_class: str,
 ) -> sv.Detections:
     class_names = detections.data.get("class_name")
-    if not class_names:
+    if class_names is None or len(class_names) == 0:
         return sv.Detections.empty()
     if not isinstance(class_names, np.ndarray):
         class_names = np.array(class_names)

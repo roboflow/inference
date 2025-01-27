@@ -143,7 +143,7 @@ def test_picking_detections_by_parent_class_when_parent_class_not_fond() -> None
         ),
         class_id=np.array([0, 1]),
         confidence=np.array([0.3, 0.4]),
-        data={"class_name": ["c", "d"]},
+        data={"class_name": np.array(["c", "d"])},
     )
 
     # when
@@ -166,7 +166,7 @@ def test_picking_detections_by_parent_class_when_no_child_detections_matching() 
         ),
         class_id=np.array([0, 0, 1]),
         confidence=np.array([0.3, 0.4, 0.5]),
-        data={"class_name": ["a", "a", "b"]},
+        data={"class_name": np.array(["a", "a", "b"])},
     )
 
     # when
@@ -191,7 +191,7 @@ def test_picking_detections_by_parent_class_when_there_are_child_detections_matc
         ),
         class_id=np.array([0, 1, 1]),
         confidence=np.array([0.3, 0.4, 0.5]),
-        data={"class_name": ["a", "b", "b"]},
+        data={"class_name": np.array(["a", "b", "b"])},
     )
 
     # when
@@ -220,7 +220,7 @@ def test_picking_detections_by_parent_class_when_there_are_child_detections_matc
         ),
         class_id=np.array([0, 1, 1, 0, 2]),
         confidence=np.array([0.3, 0.4, 0.5, 0.6, 0.7]),
-        data={"class_name": ["a", "b", "b", "a", "c"]},
+        data={"class_name": np.array(["a", "b", "b", "a", "c"])},
     )
 
     # when
