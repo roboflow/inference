@@ -49,8 +49,8 @@ from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     init_rtc_peer_connection,
 )
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.errors import WorkflowSyntaxError
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 
 def ignore_signal(signal_number: int, frame: FrameType) -> None:
