@@ -80,6 +80,12 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
+    language_hints: Optional[List[str]] = Field(
+        default=None,
+        description="Optional list of language codes to pass to the OCR API. If not provided, the API will attempt to detect the language automatically."
+        "If provided, language codes must be supported by the OCR API, visit https://cloud.google.com/vision/docs/languages for list of supported language codes.",
+        examples=[["en", "fr"], ["de"]],
+    )
     api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
         description="Your Google Vision API key",
         examples=["xxx-xxx", "$inputs.google_api_key"],
@@ -111,6 +117,7 @@ class GoogleVisionOCRBlockV1(WorkflowBlock):
         self,
         image: WorkflowImageData,
         ocr_type: Literal["text_detection", "ocr_text_detection"],
+        language_hints: Optional[List[str]],
         api_key: str,
     ) -> BlockResult:
         # Decide which type of OCR to use and make the request to Google Vision API
@@ -121,17 +128,23 @@ class GoogleVisionOCRBlockV1(WorkflowBlock):
         else:
             raise ValueError(f"Invalid ocr_type: {ocr_type}")
 
+        request_json = {
+            "requests": [
+                {
+                    "image": {"content": image.base64_image},
+                    "features": [{"type": type}],
+                    "imageContext": {},
+                }
+            ]
+        }
+
+        if language_hints is not None:
+            for r in request_json["requests"]:
+                r["imageContext"] = {"languageHints": language_hints}
         response = requests.post(
             "https://vision.googleapis.com/v1/images:annotate",
             params={"key": api_key},
-            json={
-                "requests": [
-                    {
-                        "image": {"content": image.base64_image},
-                        "features": [{"type": type}],
-                    }
-                ]
-            },
+            json=request_json,
         )
 
         if response.status_code != 200:
