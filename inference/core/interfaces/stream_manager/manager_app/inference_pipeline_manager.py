@@ -286,15 +286,6 @@ class InferencePipelineManager(Process):
                         "Please try to adjust the scene so models detect objects"
                     )
                     errors.append("or stop preview, update workflow and try again.")
-                elif parsed_payload.stream_output[0] not in prediction:
-                    if not parsed_payload.stream_output[0]:
-                        errors.append("No stream output selected to show")
-                    else:
-                        errors.append(
-                            f"{parsed_payload.stream_output[0]} not available in results"
-                        )
-                    errors.append("Please stop, update outputs and try again")
-                if errors:
                     result_frame = video_frame.image.copy()
                     for row, error in enumerate(errors):
                         result_frame = cv.putText(
@@ -308,6 +299,13 @@ class InferencePipelineManager(Process):
                         )
                     from_inference_queue.sync_put(result_frame)
                     return
+                if not isinstance(
+                    prediction[parsed_payload.stream_output[0]], WorkflowImageData
+                ):
+                    for output in prediction.values():
+                        if isinstance(output, WorkflowImageData):
+                            from_inference_queue.sync_put(output.numpy_image)
+                            return
                 from_inference_queue.sync_put(
                     prediction[parsed_payload.stream_output[0]].numpy_image
                 )
