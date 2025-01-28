@@ -62,7 +62,7 @@ def list_jobs(
 
 
 @batch_processing_app.command(help="Get job details.")
-def describe_job(
+def show_job_details(
     job_id: Annotated[
         str,
         typer.Option(
