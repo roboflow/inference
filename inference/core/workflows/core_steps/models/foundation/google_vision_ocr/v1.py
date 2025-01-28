@@ -133,7 +133,6 @@ class GoogleVisionOCRBlockV1(WorkflowBlock):
                 {
                     "image": {"content": image.base64_image},
                     "features": [{"type": type}],
-                    "imageContext": {},
                 }
             ]
         }
