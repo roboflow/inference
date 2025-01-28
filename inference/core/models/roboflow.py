@@ -415,7 +415,7 @@ class RoboflowInferenceModel(Model):
                     preprocessed_image, (self.img_size_w, self.img_size_h), cv2.INTER_CUBIC
                 )
             else:
-                resized = torch.nn.functional.interpolate(preprocessed_image, size=(self.img_size_w, self.img_size_h), mode="bicubic")
+                resized = torch.nn.functional.interpolate(preprocessed_image.float(), size=(self.img_size_w, self.img_size_h), mode="bicubic")
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
                 preprocessed_image, (self.img_size_w, self.img_size_h)
