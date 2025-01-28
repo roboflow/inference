@@ -299,7 +299,7 @@ class InferencePipelineManager(Process):
                         )
                     from_inference_queue.sync_put(result_frame)
                     return
-                if not isinstance(
+                if parsed_payload.stream_output[0] not in prediction or not isinstance(
                     prediction[parsed_payload.stream_output[0]], WorkflowImageData
                 ):
                     for output in prediction.values():
