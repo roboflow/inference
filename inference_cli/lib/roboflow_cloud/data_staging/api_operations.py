@@ -363,8 +363,8 @@ def upload_video(
     try:
         response_data = response.json()
         upload_url, extension_headers = (
-            response_data["uploadURL"],
-            response_data["extensionHeaders"],
+            response_data["signedURLDetails"]["uploadURL"],
+            response_data["signedURLDetails"]["extensionHeaders"],
         )
     except (ValueError, KeyError) as error:
         raise RFAPICallError("Could not decode Roboflow API response.") from error
