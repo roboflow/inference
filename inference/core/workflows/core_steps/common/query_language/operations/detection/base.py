@@ -1,5 +1,25 @@
 from typing import Any
 
+from inference.core.workflows.core_steps.analytics.line_counter.v2 import (
+    DETECTIONS_IN_OUT_PARAM,
+)
+from inference.core.workflows.core_steps.analytics.velocity.v1 import (
+    VELOCITY_KEY_IN_SV_DETECTIONS,
+    SPEED_KEY_IN_SV_DETECTIONS,
+    SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
+    SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS,
+)
+from inference.core.workflows.execution_engine.constants import (
+    PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
+    TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
+    IMAGE_DIMENSIONS_KEY,
+    PREDICTION_TYPE_KEY,
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
+)
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
 )
@@ -29,6 +49,39 @@ DETECTION_PROPERTY_EXTRACTION = {
     DetectionsProperty.TOP_RIGHT: lambda xyxy: (xyxy[2], xyxy[1]),
     DetectionsProperty.BOTTOM_LEFT: lambda xyxy: (xyxy[0], xyxy[3]),
     DetectionsProperty.BOTTOM_RIGHT: lambda xyxy: (xyxy[2], xyxy[3]),
+    DetectionsProperty.IN_OUT: lambda x: x[5].get(DETECTIONS_IN_OUT_PARAM),
+    DetectionsProperty.PATH_DEVIATION: lambda x: x[5].get(
+        PATH_DEVIATION_KEY_IN_SV_DETECTIONS
+    ),
+    DetectionsProperty.TIME_IN_ZONE: lambda x: x[5].get(
+        TIME_IN_ZONE_KEY_IN_SV_DETECTIONS
+    ),
+    DetectionsProperty.TRACKER_ID: lambda x: x[5].get("tracker_id"),
+    DetectionsProperty.VELOCITY: lambda x: x[5].get(VELOCITY_KEY_IN_SV_DETECTIONS),
+    DetectionsProperty.SPEED: lambda x: x[5].get(SPEED_KEY_IN_SV_DETECTIONS),
+    DetectionsProperty.SMOOTHED_VELOCITY: lambda x: x[5].get(
+        SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS
+    ),
+    DetectionsProperty.SMOOTHED_SPEED: lambda x: x[5].get(
+        SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS
+    ),
+    DetectionsProperty.DIMENSIONS: lambda x: x[5].get(IMAGE_DIMENSIONS_KEY),
+    DetectionsProperty.PREDICTION_TYPE: lambda x: x[5].get(PREDICTION_TYPE_KEY),
+    DetectionsProperty.KEYPOINTS_XY: lambda x: x[5].get(
+        KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
+    ),
+    DetectionsProperty.BOUNDING_RECT: lambda x: x[5].get(
+        BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS
+    ),
+    DetectionsProperty.BOUNDING_RECT_WIDTH: lambda x: x[5].get(
+        BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS
+    ),
+    DetectionsProperty.BOUNDING_RECT_HEIGHT: lambda x: x[5].get(
+        BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS
+    ),
+    DetectionsProperty.BOUNDING_RECT_ANGLE: lambda x: x[5].get(
+        BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS
+    ),
 }
 
 
