@@ -216,12 +216,18 @@ class TransformerModel(RoboflowInferenceModel):
                 logger.debug(
                     "Weights download took longer than 120 seconds, refreshing API request"
                 )
-                api_data = get_roboflow_model_data(
-                    api_key=self.api_key,
-                    model_id=self.endpoint,
-                    endpoint_type=ModelEndpointType.ORT,
-                    device_id=self.device_id,
-                )
+                if self.version_id is not None:
+                    api_data = get_roboflow_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                        endpoint_type=ModelEndpointType.ORT,
+                        device_id=self.device_id,
+                    )
+                else:
+                    api_data = get_roboflow_instant_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                    )
 
     @property
     def weights_file(self) -> None:
