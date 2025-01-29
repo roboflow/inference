@@ -4,21 +4,10 @@ from inference.core.workflows.core_steps.analytics.line_counter.v2 import (
     DETECTIONS_IN_OUT_PARAM,
 )
 from inference.core.workflows.core_steps.analytics.velocity.v1 import (
-    VELOCITY_KEY_IN_SV_DETECTIONS,
-    SPEED_KEY_IN_SV_DETECTIONS,
-    SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
     SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS,
-)
-from inference.core.workflows.execution_engine.constants import (
-    PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
-    TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
-    IMAGE_DIMENSIONS_KEY,
-    PREDICTION_TYPE_KEY,
-    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
-    BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
-    BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
-    BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
-    BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
+    SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS,
+    SPEED_KEY_IN_SV_DETECTIONS,
+    VELOCITY_KEY_IN_SV_DETECTIONS,
 )
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
@@ -28,6 +17,17 @@ from inference.core.workflows.core_steps.common.query_language.errors import (
 )
 from inference.core.workflows.core_steps.common.query_language.operations.utils import (
     safe_stringify,
+)
+from inference.core.workflows.execution_engine.constants import (
+    BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
+    IMAGE_DIMENSIONS_KEY,
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+    PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
+    PREDICTION_TYPE_KEY,
+    TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
 )
 
 DETECTION_PROPERTY_EXTRACTION = {
