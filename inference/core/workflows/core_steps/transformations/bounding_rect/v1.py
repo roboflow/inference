@@ -111,6 +111,18 @@ class BoundingRectBlockV1(WorkflowBlock):
                 det.mask[0]
             )
 
+            det.mask = np.array(
+                [
+                    sv.polygon_to_mask(
+                        polygon=np.around(rect).astype(np.int32),
+                        resolution_wh=det.mask[0].shape,
+                    ).astype(bool)
+                ]
+            )
+            det.xyxy = np.array(
+                [sv.polygon_to_xyxy(polygon=np.around(rect).astype(np.int32))]
+            )
+
             det[BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS] = np.array(
                 [rect], dtype=np.float16
             )
