@@ -196,6 +196,7 @@ from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
     get_roboflow_dataset_type,
+    get_roboflow_instant_model_data,
     get_roboflow_workspace,
     get_workflow_specification,
 )
@@ -648,8 +649,21 @@ class HttpInterface(BaseInterface):
                     except RoboflowAPINotAuthorizedError as e:
                         return _unauthorized_response("Unauthorized api_key")
 
-                # check project_url
                 model_id = json_params.get("model_id", "")
+
+                # check if model was obtained through getWeights
+                try:
+                    _, model_version = model_id.split("/")
+                    model_version = int(model_version)
+                    # Below throws HTTPError if model is not found
+                    _ = get_roboflow_instant_model_data(
+                        api_key, DEDICATED_DEPLOYMENT_WORKSPACE_URL, model_id
+                    )
+                    return await call_next(request)
+                except (TypeError, ValueError):
+                    pass
+
+                # check project_url
                 project_url = (
                     req_params.get("project", None)
                     or json_params.get("project", None)
