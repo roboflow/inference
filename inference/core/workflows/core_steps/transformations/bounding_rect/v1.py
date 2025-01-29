@@ -115,7 +115,7 @@ class BoundingRectBlockV1(WorkflowBlock):
                 [
                     sv.polygon_to_mask(
                         polygon=np.around(rect).astype(np.int32),
-                        resolution_wh=det.mask[0].shape,
+                        resolution_wh=(det.mask[0].shape[1], det.mask[0].shape[0]),
                     ).astype(bool)
                 ]
             )
