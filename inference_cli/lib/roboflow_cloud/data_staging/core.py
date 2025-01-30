@@ -13,7 +13,7 @@ from inference_cli.lib.roboflow_cloud.data_staging.api_operations import (
 )
 
 data_staging_app = typer.Typer(
-    help="Commands for interacting with Roboflow Data Staging"
+    help="Commands for interacting with Roboflow Data Staging. THIS IS ALPHA PREVIEW OF THE FEATURE."
 )
 
 

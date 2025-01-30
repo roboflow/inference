@@ -17,7 +17,7 @@ from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
 )
 
 batch_processing_app = typer.Typer(
-    help="Commands for interacting with Roboflow Batch Processing"
+    help="Commands for interacting with Roboflow Batch Processing. THIS IS ALPHA PREVIEW OF THE FEATURE."
 )
 
 
