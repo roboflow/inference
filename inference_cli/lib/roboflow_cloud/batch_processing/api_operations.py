@@ -57,7 +57,7 @@ def display_batch_jobs(
         max_pages=max_pages,
     )
     if len(batch_jobs) == 0:
-        print("No batches found")
+        print("No jobs found")
         return None
     console = Console()
     table = Table(title="Batch Jobs Overview", show_lines=True)
