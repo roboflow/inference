@@ -49,6 +49,7 @@ from inference.core.interfaces.stream_manager.manager_app.webrtc import (
     init_rtc_peer_connection,
 )
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
+from inference.core.workflows.errors import WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 
@@ -167,8 +168,8 @@ class InferencePipelineManager(Process):
 
     def _initialise_pipeline(self, request_id: str, payload: dict) -> None:
         try:
+            self._watchdog = BasePipelineWatchDog()
             parsed_payload = InitialisePipelinePayload.model_validate(payload)
-            watchdog = BasePipelineWatchDog()
             buffer_sink = InMemoryBufferSink.init(
                 queue_size=parsed_payload.sink_configuration.results_buffer_size,
             )
@@ -183,7 +184,7 @@ class InferencePipelineManager(Process):
                 workflows_parameters=parsed_payload.processing_configuration.workflows_parameters,
                 on_prediction=self._buffer_sink.on_prediction,
                 max_fps=parsed_payload.video_configuration.max_fps,
-                watchdog=watchdog,
+                watchdog=self._watchdog,
                 source_buffer_filling_strategy=parsed_payload.video_configuration.source_buffer_filling_strategy,
                 source_buffer_consumption_strategy=parsed_payload.video_configuration.source_buffer_consumption_strategy,
                 video_source_properties=parsed_payload.video_configuration.video_source_properties,
@@ -192,7 +193,6 @@ class InferencePipelineManager(Process):
                 video_metadata_input_name=parsed_payload.processing_configuration.video_metadata_input_name,
                 batch_collection_timeout=parsed_payload.video_configuration.batch_collection_timeout,
             )
-            self._watchdog = watchdog
             self._consumption_timeout = parsed_payload.consumption_timeout
             self._last_consume_time = time.monotonic()
             self._inference_pipeline.start(use_main_thread=False)
@@ -228,11 +228,18 @@ class InferencePipelineManager(Process):
                 "wrong API key used.",
                 error_type=ErrorType.NOT_FOUND,
             )
+        except WorkflowSyntaxError as error:
+            self._handle_error(
+                request_id=request_id,
+                error=error,
+                public_error_message="Provided workflow configuration is not valid.",
+                error_type=ErrorType.INVALID_PAYLOAD,
+            )
 
     def _start_webrtc(self, request_id: str, payload: dict):
         try:
+            self._watchdog = BasePipelineWatchDog()
             parsed_payload = InitialiseWebRTCPipelinePayload.model_validate(payload)
-            watchdog = BasePipelineWatchDog()
 
             def start_loop(loop: asyncio.AbstractEventLoop):
                 asyncio.set_event_loop(loop)
@@ -286,15 +293,6 @@ class InferencePipelineManager(Process):
                         "Please try to adjust the scene so models detect objects"
                     )
                     errors.append("or stop preview, update workflow and try again.")
-                elif parsed_payload.stream_output[0] not in prediction:
-                    if not parsed_payload.stream_output[0]:
-                        errors.append("No stream output selected to show")
-                    else:
-                        errors.append(
-                            f"{parsed_payload.stream_output[0]} not available in results"
-                        )
-                    errors.append("Please stop, update outputs and try again")
-                if errors:
                     result_frame = video_frame.image.copy()
                     for row, error in enumerate(errors):
                         result_frame = cv.putText(
@@ -308,6 +306,13 @@ class InferencePipelineManager(Process):
                         )
                     from_inference_queue.sync_put(result_frame)
                     return
+                if parsed_payload.stream_output[0] not in prediction or not isinstance(
+                    prediction[parsed_payload.stream_output[0]], WorkflowImageData
+                ):
+                    for output in prediction.values():
+                        if isinstance(output, WorkflowImageData):
+                            from_inference_queue.sync_put(output.numpy_image)
+                            return
                 from_inference_queue.sync_put(
                     prediction[parsed_payload.stream_output[0]].numpy_image
                 )
@@ -330,7 +335,7 @@ class InferencePipelineManager(Process):
                 workflows_parameters=parsed_payload.processing_configuration.workflows_parameters,
                 on_prediction=chained_sink,
                 max_fps=parsed_payload.video_configuration.max_fps,
-                watchdog=watchdog,
+                watchdog=self._watchdog,
                 source_buffer_filling_strategy=parsed_payload.video_configuration.source_buffer_filling_strategy,
                 source_buffer_consumption_strategy=parsed_payload.video_configuration.source_buffer_consumption_strategy,
                 video_source_properties=parsed_payload.video_configuration.video_source_properties,
@@ -339,7 +344,6 @@ class InferencePipelineManager(Process):
                 video_metadata_input_name=parsed_payload.processing_configuration.video_metadata_input_name,
                 batch_collection_timeout=parsed_payload.video_configuration.batch_collection_timeout,
             )
-            self._watchdog = watchdog
             self._inference_pipeline.start(use_main_thread=False)
             self._responses_queue.put(
                 (
@@ -379,6 +383,13 @@ class InferencePipelineManager(Process):
                 public_error_message="Requested Roboflow resources (models / workflows etc.) not available or "
                 "wrong API key used.",
                 error_type=ErrorType.NOT_FOUND,
+            )
+        except WorkflowSyntaxError as error:
+            self._handle_error(
+                request_id=request_id,
+                error=error,
+                public_error_message="Provided workflow configuration is not valid.",
+                error_type=ErrorType.INVALID_PAYLOAD,
             )
 
     def _terminate_pipeline(self, request_id: str) -> None:

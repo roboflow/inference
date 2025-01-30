@@ -34,6 +34,10 @@ The velocities are calculated based on the displacement of object centers over t
 Note: due to perspective and camera distortions calculated velocity will be different depending on object position in relation to the camera.
 
 """
+VELOCITY_KEY_IN_SV_DETECTIONS = "velocity"
+SPEED_KEY_IN_SV_DETECTIONS = "speed"
+SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS = "smoothed_velocity"
+SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS = "smoothed_speed"
 
 
 class VelocityManifest(WorkflowBlockManifest):
@@ -197,21 +201,27 @@ class VelocityBlockV1(WorkflowBlock):
                 detections.data = {}
 
             # Initialize dictionaries if not present
-            if "velocity" not in detections.data:
-                detections.data["velocity"] = {}
-            if "speed" not in detections.data:
-                detections.data["speed"] = {}
-            if "smoothed_velocity" not in detections.data:
-                detections.data["smoothed_velocity"] = {}
-            if "smoothed_speed" not in detections.data:
-                detections.data["smoothed_speed"] = {}
+            if VELOCITY_KEY_IN_SV_DETECTIONS not in detections.data:
+                detections.data[VELOCITY_KEY_IN_SV_DETECTIONS] = {}
+            if SPEED_KEY_IN_SV_DETECTIONS not in detections.data:
+                detections.data[SPEED_KEY_IN_SV_DETECTIONS] = {}
+            if SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS not in detections.data:
+                detections.data[SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS] = {}
+            if SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS not in detections.data:
+                detections.data[SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS] = {}
 
             # Assign velocity data to the corresponding tracker_id
-            detections.data["velocity"][tracker_id] = velocity_m_s.tolist()  # [vx, vy]
-            detections.data["speed"][tracker_id] = speed_m_s  # Scalar
-            detections.data["smoothed_velocity"][
+            detections.data[VELOCITY_KEY_IN_SV_DETECTIONS][
+                tracker_id
+            ] = velocity_m_s.tolist()  # [vx, vy]
+            detections.data[SPEED_KEY_IN_SV_DETECTIONS][
+                tracker_id
+            ] = speed_m_s  # Scalar
+            detections.data[SMOOTHED_VELOCITY_KEY_IN_SV_DETECTIONS][
                 tracker_id
             ] = smoothed_velocity_m_s.tolist()  # [vx, vy]
-            detections.data["smoothed_speed"][tracker_id] = smoothed_speed_m_s  # Scalar
+            detections.data[SMOOTHED_SPEED_KEY_IN_SV_DETECTIONS][
+                tracker_id
+            ] = smoothed_speed_m_s  # Scalar
 
         return {OUTPUT_KEY: detections}
