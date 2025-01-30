@@ -20,12 +20,12 @@ from inference.core.workflows.execution_engine.profiling.core import (
 )
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 from inference_cli.lib.logger import CLI_LOGGER
+from inference_cli.lib.utils import get_all_images_in_directory
 from inference_cli.lib.workflows.common import (
     WorkflowsImagesProcessingIndex,
     aggregate_batch_processing_results,
     denote_image_processed,
     dump_image_processing_results,
-    get_all_images_in_directory,
     open_progress_log,
     report_failed_files,
 )
