@@ -591,7 +591,6 @@ class HttpInterface(BaseInterface):
 
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
             cached_api_keys = dict()
-            cached_projects = dict()
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -601,6 +600,8 @@ class HttpInterface(BaseInterface):
                     or request.url.path
                     in [
                         "/",
+                        "/docs",
+                        "/redoc",
                         "/info",
                         "/workflows/blocks/describe",
                         "/workflows/definition/schema",
@@ -648,42 +649,6 @@ class HttpInterface(BaseInterface):
                         )  # expired after 1 hour
                     except RoboflowAPINotAuthorizedError as e:
                         return _unauthorized_response("Unauthorized api_key")
-
-                model_id = json_params.get("model_id", "")
-
-                # check if model was obtained through getWeights
-                try:
-                    _, model_version = model_id.split("/")
-                    model_version = int(model_version)
-                    # Below throws HTTPError if model is not found
-                    _ = get_roboflow_instant_model_data(
-                        api_key, DEDICATED_DEPLOYMENT_WORKSPACE_URL, model_id
-                    )
-                    return await call_next(request)
-                except (TypeError, ValueError):
-                    pass
-
-                # check project_url
-                project_url = (
-                    req_params.get("project", None)
-                    or json_params.get("project", None)
-                    or model_id.split("/")[0]
-                )
-                # only check when project_url is not None
-                if (
-                    project_url is not None
-                    and cached_projects.get(project_url, 0) < time.time()
-                ):
-                    try:
-                        _ = get_roboflow_dataset_type(
-                            api_key, DEDICATED_DEPLOYMENT_WORKSPACE_URL, project_url
-                        )
-
-                        cached_projects[project_url] = (
-                            time.time() + 3600
-                        )  # expired after 1 hour
-                    except RoboflowAPINotNotFoundError as e:
-                        return _unauthorized_response("Unauthorized project")
 
                 return await call_next(request)
 
