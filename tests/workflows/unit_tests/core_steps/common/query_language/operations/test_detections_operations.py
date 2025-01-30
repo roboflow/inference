@@ -86,3 +86,150 @@ def test_detections_to_dictionary_when_malformed_input_is_provided() -> None:
     # when
     with pytest.raises(OperationError):
         _ = execute_operations(value=detections, operations=operations)
+
+
+def test_picking_detections_by_parent_class_when_invalid_input_provided() -> None:
+    # given
+    operations = [{"type": "PickDetectionsByParentClass", "parent_class": "a"}]
+
+    # when
+    with pytest.raises(InvalidInputTypeError):
+        _ = execute_operations(value="FOR SURE NOT DETECTIONS", operations=operations)
+
+
+def test_picking_detections_by_parent_class_when_empty_detections_provided() -> None:
+    # given
+    operations = [{"type": "PickDetectionsByParentClass", "parent_class": "a"}]
+    detections = sv.Detections.empty()
+
+    # when
+    result = execute_operations(value=detections, operations=operations)
+
+    # then
+    assert result is not detections
+    assert len(result) == 0
+
+
+def test_picking_detections_by_parent_class_when_class_name_field_not_defined() -> None:
+    # given
+    operations = [{"type": "PickDetectionsByParentClass", "parent_class": "a"}]
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [0, 1, 2, 3],
+                [4, 5, 6, 7],
+            ]
+        ),
+        class_id=np.array([0, 1]),
+        confidence=np.array([0.3, 0.4]),
+    )
+
+    # when
+    result = execute_operations(value=detections, operations=operations)
+
+    # then
+    assert len(result) == 0
+
+
+def test_picking_detections_by_parent_class_when_parent_class_not_fond() -> None:
+    # given
+    operations = [{"type": "PickDetectionsByParentClass", "parent_class": "a"}]
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [0, 1, 2, 3],
+                [4, 5, 6, 7],
+            ]
+        ),
+        class_id=np.array([0, 1]),
+        confidence=np.array([0.3, 0.4]),
+        data={"class_name": np.array(["c", "d"])},
+    )
+
+    # when
+    result = execute_operations(value=detections, operations=operations)
+
+    # then
+    assert len(result) == 0
+
+
+def test_picking_detections_by_parent_class_when_no_child_detections_matching() -> None:
+    # given
+    operations = [{"type": "PickDetectionsByParentClass", "parent_class": "a"}]
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [0, 0, 10, 10],
+                [20, 20, 30, 30],
+                [40, 40, 50, 50],
+            ]
+        ),
+        class_id=np.array([0, 0, 1]),
+        confidence=np.array([0.3, 0.4, 0.5]),
+        data={"class_name": np.array(["a", "a", "b"])},
+    )
+
+    # when
+    result = execute_operations(value=detections, operations=operations)
+
+    # then
+    assert len(result) == 0
+
+
+def test_picking_detections_by_parent_class_when_there_are_child_detections_matching() -> (
+    None
+):
+    # given
+    operations = [{"type": "PickDetectionsByParentClass", "parent_class": "a"}]
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [0, 0, 50, 50],
+                [20, 20, 30, 30],
+                [40, 40, 50, 50],
+            ]
+        ),
+        class_id=np.array([0, 1, 1]),
+        confidence=np.array([0.3, 0.4, 0.5]),
+        data={"class_name": np.array(["a", "b", "b"])},
+    )
+
+    # when
+    result = execute_operations(value=detections, operations=operations)
+
+    # then
+    assert len(result) == 2
+    assert np.allclose(result.xyxy, np.array([[20, 20, 30, 30], [40, 40, 50, 50]]))
+    assert np.allclose(result.confidence, [0.4, 0.5])
+
+
+def test_picking_detections_by_parent_class_when_there_are_child_detections_matching_different_parents() -> (
+    None
+):
+    # given
+    operations = [{"type": "PickDetectionsByParentClass", "parent_class": "a"}]
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [0, 0, 50, 50],
+                [20, 20, 30, 30],
+                [40, 40, 50, 50],
+                [100, 100, 200, 200],
+                [150, 100, 250, 200],
+            ]
+        ),
+        class_id=np.array([0, 1, 1, 0, 2]),
+        confidence=np.array([0.3, 0.4, 0.5, 0.6, 0.7]),
+        data={"class_name": np.array(["a", "b", "b", "a", "c"])},
+    )
+
+    # when
+    result = execute_operations(value=detections, operations=operations)
+
+    # then
+    assert len(result) == 3
+    assert np.allclose(
+        result.xyxy,
+        np.array([[20, 20, 30, 30], [40, 40, 50, 50], [150, 100, 250, 200]]),
+    )
+    assert np.allclose(result.confidence, [0.4, 0.5, 0.7])

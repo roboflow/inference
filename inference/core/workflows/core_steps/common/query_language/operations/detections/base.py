@@ -351,3 +351,62 @@ def detections_to_dictionary(
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=error,
         )
+
+
+def pick_detections_by_parent_class(
+    detections: Any,
+    parent_class: str,
+    execution_context: str,
+    **kwargs,
+) -> sv.Detections:
+    if not isinstance(detections, sv.Detections):
+        value_as_str = safe_stringify(value=detections)
+        raise InvalidInputTypeError(
+            public_message=f"Executing pick_detections_by_parent_class(...) in context {execution_context}, "
+            f"expected sv.Detections object as value, got {value_as_str} of type {type(detections)}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+        )
+    try:
+        return _pick_detections_by_parent_class(
+            detections=detections, parent_class=parent_class
+        )
+    except Exception as error:
+        raise OperationError(
+            public_message=f"While Using operation pick_detections_by_parent_class(...) in context {execution_context} "
+            f"encountered error: {error}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+            inner_error=error,
+        )
+
+
+def _pick_detections_by_parent_class(
+    detections: sv.Detections,
+    parent_class: str,
+) -> sv.Detections:
+    class_names = detections.data.get("class_name")
+    if class_names is None or len(class_names) == 0:
+        return sv.Detections.empty()
+    if not isinstance(class_names, np.ndarray):
+        class_names = np.array(class_names)
+    parent_mask = class_names == parent_class
+    parent_detections = detections[parent_mask]
+    if len(parent_detections) == 0:
+        return sv.Detections.empty()
+    dependent_detections = detections[~parent_mask]
+    dependent_detections_anchors = dependent_detections.get_anchors_coordinates(
+        anchor=Position.CENTER
+    )
+    dependent_detections_to_keep = set()
+    for detection_idx, anchor in enumerate(dependent_detections_anchors):
+        for parent_detection_box in parent_detections.xyxy:
+            if _is_point_within_box(point=anchor, box=parent_detection_box):
+                dependent_detections_to_keep.add(detection_idx)
+                continue
+    detections_to_keep_list = sorted(list(dependent_detections_to_keep))
+    return dependent_detections[detections_to_keep_list]
+
+
+def _is_point_within_box(point: np.ndarray, box: np.ndarray) -> bool:
+    px, py = point
+    x1, y1, x2, y2 = box
+    return x1 <= px <= x2 and y1 <= py <= y2

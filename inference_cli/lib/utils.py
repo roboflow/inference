@@ -1,14 +1,72 @@
 import json
 import os.path
 import subprocess
-from typing import Dict, Iterable, List, Optional, Union
+from functools import lru_cache
+from typing import Dict, Generator, Iterable, List, Optional, TypeVar, Union
 
+import supervision as sv
 from supervision.utils.file import read_yaml_file
 
 from inference_cli.lib.env import ROBOFLOW_API_KEY
 from inference_cli.lib.exceptions import InferencePackageMissingError
 from inference_cli.lib.logger import CLI_LOGGER
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+
+IMAGES_EXTENSIONS = [
+    "bmp",
+    "BMP",
+    "dib",
+    "DIB",
+    "jpeg",
+    "JPEG",
+    "jpg",
+    "JPG",
+    "jpe",
+    "JPE",
+    "jp2",
+    "JP2",
+    "png",
+    "PNG",
+    "webp",
+    "WEBP",
+]
+
+VIDEOS_EXTENSIONS = [
+    "mp4",
+    "m4a",
+    "m4p",
+    "m4b",
+    "m4r",
+    "m4v",
+    "MP$",
+    "M4A",
+    "M4P",
+    "M4B",
+    "M4R",
+    "M4V",
+    "avi",
+    "AVI",
+    "mov",
+    "MOV",
+    "mkv",
+    "MKV",
+    "flv",
+    "FLV",
+    "wmv",
+    "WMV",
+    "mpeg",
+    "MPEG",
+    "mpg",
+    "MPG",
+    "3gp",
+    "3GP",
+    "webm",
+    "WEBM",
+    "ogg",
+    "OGG",
+]
+
+B = TypeVar("B")
 
 
 def ensure_inference_is_installed() -> None:
@@ -114,3 +172,67 @@ def ensure_target_directory_is_empty(
             f"Detected content in output directory: {output_directory}. "
             f"Command cannot run, as content override is forbidden. Use `--allow_override` to proceed."
         )
+
+
+def get_all_images_in_directory(input_directory: str) -> List[str]:
+    file_system_is_case_sensitive = _is_file_system_case_sensitive()
+    if file_system_is_case_sensitive:
+        return [
+            path.as_posix()
+            for path in sv.list_files_with_extensions(
+                directory=input_directory,
+                extensions=IMAGES_EXTENSIONS,
+            )
+        ]
+    return list(
+        {
+            path.as_posix().lower()
+            for path in sv.list_files_with_extensions(
+                directory=input_directory,
+                extensions=IMAGES_EXTENSIONS,
+            )
+        }
+    )
+
+
+def get_all_videos_in_directory(input_directory: str) -> List[str]:
+    file_system_is_case_sensitive = _is_file_system_case_sensitive()
+    if file_system_is_case_sensitive:
+        return [
+            path.as_posix()
+            for path in sv.list_files_with_extensions(
+                directory=input_directory,
+                extensions=VIDEOS_EXTENSIONS,
+            )
+        ]
+    return list(
+        {
+            path.as_posix().lower()
+            for path in sv.list_files_with_extensions(
+                directory=input_directory,
+                extensions=VIDEOS_EXTENSIONS,
+            )
+        }
+    )
+
+
+@lru_cache()
+def _is_file_system_case_sensitive() -> bool:
+    fs_is_case_insensitive = os.path.exists(__file__.upper()) and os.path.exists(
+        __file__.lower()
+    )
+    return not fs_is_case_insensitive
+
+
+def create_batches(
+    sequence: Iterable[B], batch_size: int
+) -> Generator[List[B], None, None]:
+    batch_size = max(batch_size, 1)
+    current_batch = []
+    for element in sequence:
+        if len(current_batch) == batch_size:
+            yield current_batch
+            current_batch = []
+        current_batch.append(element)
+    if len(current_batch) > 0:
+        yield current_batch

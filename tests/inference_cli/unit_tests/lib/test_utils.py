@@ -1,11 +1,14 @@
 import json
 import os.path
+from pathlib import Path
 
 import pytest
 
 from inference_cli.lib.utils import (
+    IMAGES_EXTENSIONS,
     dump_json,
     ensure_target_directory_is_empty,
+    get_all_images_in_directory,
     read_env_file,
     read_file_lines,
 )
@@ -113,3 +116,24 @@ def test_ensure_target_directory_is_empty_when_directory_with_sub_dir_provided_b
     )
 
     # then - no errors
+
+
+def test_get_all_images_in_directory(empty_directory: str) -> None:
+    # given
+    for extension in IMAGES_EXTENSIONS:
+        _create_empty_file(directory=empty_directory, file_name=f"image.{extension}")
+    _create_empty_file(directory=empty_directory, file_name=f".tmp")
+    _create_empty_file(directory=empty_directory, file_name=f".bin")
+    expected_files = len(os.listdir(empty_directory)) - 2
+
+    # when
+    result = get_all_images_in_directory(input_directory=empty_directory)
+
+    # then
+    assert len(result) == expected_files
+
+
+def _create_empty_file(directory: str, file_name: str) -> None:
+    file_path = os.path.join(directory, file_name)
+    path = Path(file_path)
+    path.touch(exist_ok=True)
