@@ -17,6 +17,8 @@ class TestMQTTWriterSinkBlockV1(unittest.TestCase):
         mock_client.publish.return_value.is_published.return_value = True
 
         block = MQTTWriterSinkBlockV1()
+        block._connected = MagicMock()
+        block._connected.wait.return_value = True
 
         # Act
         result = block.run(
@@ -67,6 +69,8 @@ class TestMQTTWriterSinkBlockV1(unittest.TestCase):
         mock_client.publish.return_value.is_published.return_value = False
 
         block = MQTTWriterSinkBlockV1()
+        block._connected = MagicMock()
+        block._connected.wait.return_value = True
 
         # Act
         result = block.run(

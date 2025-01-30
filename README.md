@@ -30,10 +30,10 @@ Inference turns any computer or edge device into a command center for your compu
 
 * 🛠️ Self-host [your own fine-tuned models](https://inference.roboflow.com/quickstart/explore_models/)
 * 🧠 Access the latest and greatest foundation models (like [Florence-2](https://blog.roboflow.com/florence-2/), [CLIP](https://blog.roboflow.com/openai-clip/), and [SAM2](https://blog.roboflow.com/what-is-segment-anything-2/))
-* 🤝 Use Workflows to track, count, time, measure, and visualize
+* 🤝 Use [Workflows](https://inference.roboflow.com/workflows/about/) to track, count, time, measure, and visualize
 * 👁️ Combine ML with traditional CV methods (like OCR, Barcode Reading, QR, and template matching)
 * 📈 Monitor, record, and analyze predictions
-* 🎥 Manage cameras and video streams
+* 🎥 [Manage](https://inference.roboflow.com/workflows/video_processing/overview/) cameras and video streams
 * 📬 Send notifications when events happen
 * 🛜 Connect with external systems and APIs
 * 🔗 [Extend](https://inference.roboflow.com/workflows/create_workflow_block/) with your own code and models
@@ -81,17 +81,52 @@ With Workflows, you can:
 Workflows allow you to extend simple model predictions to build computer vision micro-services that fit into a larger application or fully self-contained visual agents that run on a video stream.
 
 [Learn more](https://roboflow.com/workflows), read [the Workflows docs](https://inference.roboflow.com/workflows/about/), or [start building](https://app.roboflow.com/workflows).
-<br /><br />
-<p align="left">
-<a href="https://youtu.be/VCbcC5OEGRU" title="Live Video Analytics | Build a Traffic Monitoring Application with Workflows"><img src="https://img.youtube.com/vi/VCbcC5OEGRU/0.jpg" alt="Workflows Tutorial" width="300px" align="left" /></a>
-<a href="https://youtu.be/VCbcC5OEGRU" title="Live Video Analytics | Build a Traffic Monitoring Application with Workflows"><strong>Tutorial: Build a Traffic Monitoring Application with Workflows</strong></a>
-<div><strong>Created: 22 Oct 2024</strong></div>
-<br/>Learn how to build and deploy Workflows for common use-cases like detecting vehicles, filtering detections, visualizing results, and calculating dwell time on a live video stream.</p>
-<br /><br />
+
+<table border="0" cellspacing="0" cellpadding="0" role="presentation">
+  <tr>
+    <!-- Left cell (thumbnail) -->
+    <td width="300" valign="top">
+      <a href="https://youtu.be/tZa-QgFn7jg">
+        <img src="https://img.youtube.com/vi/tZa-QgFn7jg/0.jpg" 
+             alt="Smart Parking with AI" width="300" />
+      </a>
+    </td>
+    <!-- Right cell (title, date, description) -->
+    <td valign="middle">
+      <strong>
+        <a href="https://youtu.be/tZa-QgFn7jg">Tutorial: Build a Smart Parking System</a>
+      </strong><br />
+      <strong>Created: 27 Nov 2024</strong><br /><br />
+      Build a smart parking lot management system using Roboflow Workflows!
+      This tutorial covers license plate detection with YOLOv8, object tracking
+      with ByteTrack, and real-time notifications with a Telegram bot.
+    </td>
+  </tr>
+
+  <tr>
+    <td width="300" valign="top">
+      <a href="https://youtu.be/VCbcC5OEGRU">
+        <img src="https://img.youtube.com/vi/VCbcC5OEGRU/0.jpg" 
+             alt="Workflows Tutorial" width="300" />
+      </a>
+    </td>
+    <td valign="middle">
+      <strong>
+        <a href="https://youtu.be/VCbcC5OEGRU">
+          Tutorial: Build a Traffic Monitoring Application with Workflows
+        </a>
+      </strong><br />
+      <strong>Created: 22 Oct 2024</strong><br /><br />
+      Learn how to build and deploy Workflows for common use-cases like detecting
+      vehicles, filtering detections, visualizing results, and calculating dwell 
+      time on a live video stream.
+    </td>
+  </tr>
+</table>
 
 ## 📟 connecting via api
   
-Once you've installed Infernece, your machine is a fully-featured CV center.
+Once you've installed Inference, your machine is a fully-featured CV center.
 You can use its API to run models and workflows on images and video streams.
 By default, the server is running locally on
 [`localhost:9001`](http://localhost:9001).
@@ -201,9 +236,11 @@ via the Roboflow UI.
 
 ## 🔑 connect to the cloud
 
-Without an API Key, you can access a wide range of pre-trained and foundational models and run Workflows via our JSON API.
+Without an API Key, you can access a wide range of pre-trained and foundational models and run public Workflows.
 
-Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to the `inference_sdk` or API to access additional features.
+Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to the `inference_sdk` or API to access additional features enhanced by Roboflow's Cloud
+platform. When running with an API Key, usage is metered according to
+Roboflow's [pricing tiers](https://roboflow.com/pricing).
 
 |                         | Open Access | With API Key |
 |-------------------------|-------------|--------------|
@@ -232,144 +269,19 @@ We offer a [generous free-tier](https://roboflow.com/pricing) to get started.
 
 Inference is designed to run on a wide range of hardware from beefy cloud servers to tiny edge devices. This lets you easily develop against your local machine or our cloud infrastructure and then seamlessly switch to another device for production deployment.
 
-`inference server start` attempts to automatically choose the optimal container to optimize performance on your machine, special installation notes and performance tips by device are listed below.
+`inference server start` attempts to automatically choose the optimal container to optimize performance on your machine (including with GPU acceleration via NVIDIA CUDA when available). Special installation notes and performance tips by device are listed below:
 
-<details>
-<summary><b>CPU</b></summary>
-<br />
-The core docker image includes support for OpenVINO acceleration on x64 CPUs via onnxruntime. Heavy models like SAM2 and CogVLM may run too slowly (dozens of seconds per image) to be practical. The primary use-cases for CPU inference are processing still images (eg for NSFW classification of uploads or document verification) or infrequent sampling of frames on a video (eg for occupancy tracking of a parking lot).
-<br /><br />
-You may also want to consider using our <a href="https://docs.roboflow.com/deploy/hosted-api">serverless Hosted API</a> for light or spiky load.
-<br /><br />
-To start the container manually, run
-
-```
-sudo docker run -p 9001:9001 -v ~/.inference/cache:/tmp/cache roboflow/roboflow-inference-server-cpu:latest
-```
-
-To install the python package natively, install via PyPi
-
-```
-pip install inference
-```
-<br />
-</details>
-<details>
-<summary><b>Mac / Apple Silicon (MPS)</b></summary>
-<br />
-Apple does not yet support <a href="https://github.com/pytorch/pytorch/issues/81224">passing the Metal Performance Shader device to Docker</a> so hardware acceleration is not possible inside the container.
-<br /><br />
-We recommend starting with the CPU Docker via <code>inference server start</code> but, if you need more speed, the <code>inference</code> Python package supports hardware acceleration via the <a href="https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html">onnxruntime CoreMLExecutionProvider</a> and the <a href="https://pytorch.org/docs/stable/notes/mps.html">PyTorch <code>mps</code> device backend</a>. By using these, inference gets a big boost when running outside of Docker on Apple Silicon.
-<br /><br />
-To install outside of Docker, clone the repo then install the dependencies in a new virtual environment:
-
-```
-git clone https://github.com/roboflow/inference.git
-cd inference
-python3 -m venv inf
-source inf/bin/activate
-pip install .
-cp docker/config/cpu_http.py .
-```
-
-Then start the server by running `uvicorn` with the `cpu_http` module in your virtual environment:
-```
-# source inf/bin/activate
-uvicorn cpu_http:app --port 9001 --host 0.0.0.0
-```
-
-Your server is now running at [`localhost:9001`](http://localhost:9001) with MPS acceleration.
-
-To run natively in python, `pip install inference` will automatically pull in the CoreMLExecutionProvider on Mac.
-<br />
-</details>
-<details>
-<summary><b>NVIDIA GPU (Linux)</b></summary>
-<br />
-By default, <code>inference server start</code> should run the right container automatically.
-<br /><br />
-To start the server manually, use the <code>roboflow/roboflow-inference-server-gpu:latest</code> docker container with NVIDIA Container Runtime:
-
-```
-sudo docker run --gpus all --net=host -v ~/.inference/cache:/tmp/cache roboflow/roboflow-inference-server-gpu:latest
-```
-
-Or `pip install inference-gpu` to run the python package natively.
-
-You can enable TensorRT by adding `TensorrtExecutionProvider` to the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable.
-<br /><br />
-<b>⚠️ Note:</b> TensorRT is not enabled by default due to long (15+ minute) compilation times each time a new model is initialized. We cache the TensorRT engine in `/tmp/cache`, which is a Docker volume mounted from `~/.inference/cache` by default.
-
-```
-export ONNXRUNTIME_EXECUTION_PROVIDERS="[TensorrtExecutionProvider,CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider]"
-```
-<br />
-</details>
-<details>
-<summary><b>NVIDIA GPU (Windows/WSL)</b></summary>
-<br />
-To get GPU acceleration on Windows, you need WSL2 with NVIDIA Container Toolkit. <a href="https://docs.nvidia.com/cuda/wsl-user-guide/index.html">Follow the guide here</a> then use the instructions for <code>NVIDIA GPU (Linux)</code> above.
-<br />
-</details>
-<details>
-<summary><b>NVIDIA Jetson / JetPack</b></summary>
-<br />
-We have specialized containers built with support for hardware acceleration on JetPack 4, 5, and 6. <code>inference server start</code> will automatically detect your JetPack version and use the right container.
-<br /><br />
-To start the server manually, use the container for your JetPack version with the nvidia runtime. For example, on JetPack 6:
-
-```
-sudo docker run --runtime=nvidia --net=host -v ~/.inference/cache:/tmp/cache roboflow/roboflow-inference-server-jetson-6.0.0:latest
-```
-
-You can enable TensorRT by adding `TensorrtExecutionProvider` to the `ONNXRUNTIME_EXECUTION_PROVIDERS` environment variable.
-<br /><br />
-<b>⚠️ Note:</b> TensorRT is not enabled by default due to long (15+ minute) compilation times each time a new model is initialized. We cache the TensorRT engine in `/tmp/cache`, which is a Docker volume mounted from `~/.inference/cache` by default.
-
-```
-sudo docker run \
-  --runtime=nvidia \
-  --net=host \
-  -e ONNXRUNTIME_EXECUTION_PROVIDERS="[TensorrtExecutionProvider,CUDAExecutionProvider,OpenVINOExecutionProvider,CoreMLExecutionProvider,CPUExecutionProvider]" \
-  -v ~/.inference/cache:/tmp/cache \
-  roboflow/roboflow-inference-server-jetson-6.0.0:latest
-```
-<br />
-</details>
-<details>
-<summary><b>Raspberry Pi</b></summary>
-<br />
-The CPU container works on Raspberry Pi 4 Model B and Raspberry Pi 5 so long as you are using <a href="https://www.raspberrypi.com/software/operating-systems/#raspberry-pi-os-64-bit">the 64-bit version of the operating system</a>. Simply run <code>inference server start</code> and you'll be all set.
-<br /><br />
-Expect about 1fps on Pi 4 and 4fps on Pi 5 for a "Roboflow 3.0 Fast" object detection model (equivalent to a "nano" sized YOLO model).
-<br />
-</details>
-<details>
-<summary><b>Other GPUs</b></summary>
-<br />
-We do not currently support hardware acceleration on other GPUs besides those listed here but ONNX Runtime has <a href="https://onnxruntime.ai/docs/execution-providers/">additional execution providers</a> for AMD/ROCm, Arm NN, Rockchip, and others. If you install one of these runtimes, you can enable it via the <code>ONNXRUNTIME_EXECUTION_PROVIDERS</code> environment variable.
-<br /><br />
-For example:
-
-```
-export ONNXRUNTIME_EXECUTION_PROVIDERS="[ROCMExecutionProvider,OpenVINOExecutionProvider,CPUExecutionProvider]"
-```
-
-This is untested and performance improvements are not guaranteed.
-<br />
-</details>
-<details>
-<summary><b>Other Edge Devices</b></summary>
-<br />
-Roboflow has <a href="https://docs.roboflow.com/deploy/supported-deployment-devices">SDKs for running object detection natively</a> on other deployment targets like <a href="https://docs.roboflow.com/deploy/sdks/web-browser">Tensorflow.js in a web browser</a>, <a href="https://docs.roboflow.com/deploy/sdks/mobile-ios-on-device">Native Swift on iOS</a> via CoreML, and <a href="https://docs.roboflow.com/deploy/sdks/luxonis-oak">Luxonis OpenCV AI Kit (OAK)</a>.
-<br /><br />
-Connect to an Inference Server via its API for additional functionality beyond object detection (like running Workflows).
-<br />
-</details>
+* [Linux](https://inference.roboflow.com/install/linux/)
+* [Windows](https://inference.roboflow.com/install/windows/)
+* [Mac](https://inference.roboflow.com/install/mac/)
+* [NVIDIA Jetson](https://inference.roboflow.com/install/jetson/)
+* [Raspberry Pi](https://inference.roboflow.com/install/raspberry-pi/)
+* [Your Own Cloud](https://inference.roboflow.com/install/cloud/)
+* [Other Devices](https://inference.roboflow.com/install/other/)
 
 ### ⭐️ New: Enterprise Hardware
 
-For manufacturing and logistics use-cases Roboflow now offers [the Flowbox](https://roboflow.com/industries/manufacturing/box), a ruggedized CV center pre-configured with Inference and optimized for running in secure networks. It has integrated support for machine vision cameras like Basler and Lucid over GigE, supports interfacing with PLCs and HMIs via OPC or MQTT, enables enterprise device management through a DMZ, and comes with the support of our team of computer vision experts to ensure your project is a success.
+For manufacturing and logistics use-cases Roboflow now offers [the NVIDIA Jetson-based Flowbox](https://roboflow.com/industries/manufacturing/box), a ruggedized CV center pre-configured with Inference and optimized for running in secure networks. It has integrated support for machine vision cameras like Basler and Lucid over GigE, supports interfacing with PLCs and HMIs via OPC or MQTT, enables enterprise device management through a DMZ, and comes with the support of our team of computer vision experts to ensure your project is a success.
 
 ## 📚 documentation
 

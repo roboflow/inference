@@ -47,6 +47,15 @@ class ModelComparisonManifest(VisualizationManifest):
             "ui_manifest": {
                 "section": "visualization",
                 "icon": "far fa-not-equal",
+                "blockPriority": 16,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
             },
         }
     )

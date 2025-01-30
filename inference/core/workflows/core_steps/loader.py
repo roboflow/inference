@@ -28,6 +28,7 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
 from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
     TimeInZoneBlockV2,
 )
+from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
@@ -191,6 +192,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen.v1 import (
+    StabilityAIImageGenBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1 import (
     StabilityAIInpaintingBlockV1,
@@ -572,6 +576,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SIFTComparisonBlockV2,
         SegmentAnything2BlockV1,
         StabilityAIInpaintingBlockV1,
+        StabilityAIImageGenBlockV1,
         StabilizeTrackedDetectionsBlockV1,
         StitchImagesBlockV1,
         StitchOCRDetectionsBlockV1,
@@ -591,6 +596,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
         WebhookSinkBlockV1,
+        VelocityBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
         RoboflowKeypointDetectionModelBlockV2,
         RoboflowClassificationModelBlockV2,

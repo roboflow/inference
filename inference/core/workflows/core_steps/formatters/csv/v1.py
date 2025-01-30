@@ -130,6 +130,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "formatter",
+            "ui_manifest": {
+                "section": "data_storage",
+                "icon": "fal fa-file-csv",
+                "blockPriority": 2,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/csv_formatter@v1"]

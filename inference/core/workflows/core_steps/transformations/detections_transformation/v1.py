@@ -78,6 +78,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "transformation",
+                "icon": "fal fa-expand",
+                "blockPriority": 4,
+            },
         }
     )
     type: Literal[

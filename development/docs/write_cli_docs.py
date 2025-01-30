@@ -24,7 +24,6 @@ def write_file(path: str, content: str) -> None:
 def main():
     cmd = f"typer inference_cli.main utils docs --name inference"
     result = subprocess.run(cmd.split(), capture_output=True, text=True)
-    print(result.stdout)
     write_file(FILENAME, result.stdout)
 
 

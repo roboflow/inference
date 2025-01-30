@@ -45,6 +45,11 @@ class LineCounterManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "analytics",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "far fa-arrow-down-up-across-line",
+                "blockPriority": 2,
+            },
         }
     )
     type: Literal["roboflow_core/line_counter@v1"]

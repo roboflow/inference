@@ -11,6 +11,7 @@ mkdocs-swagger-ui-tag
 mkdocs
 mkdocstrings[python]
 pillow
+jinja2
 
 # Pin due to a compatibility issue between
 # nbconvert, mistune, and the mkdocs-jupyter plugin.

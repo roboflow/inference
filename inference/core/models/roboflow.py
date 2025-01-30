@@ -59,6 +59,7 @@ from inference.core.roboflow_api import (
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import letterbox_image, prepare
+from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
 
@@ -116,7 +117,7 @@ class RoboflowInferenceModel(Model):
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
         model_id = resolve_roboflow_model_alias(model_id=model_id)
-        self.dataset_id, self.version_id = model_id.split("/")
+        self.dataset_id, self.version_id = get_model_id_chunks(model_id=model_id)
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
         self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
@@ -704,6 +705,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
             try:
                 session_options = onnxruntime.SessionOptions()
+                session_options.log_severity_level = 3
                 # TensorRT does better graph optimization for its EP than onnx
                 if has_trt(providers):
                     session_options.graph_optimization_level = (
