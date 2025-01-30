@@ -115,7 +115,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         title="Reading Direction",
         description="The direction of the text in the image.",
-        examples=["right_to_left", "auto"],
+        examples=["right_to_left"],
         json_schema_extra={
             "values_metadata": {
                 "left_to_right": {
