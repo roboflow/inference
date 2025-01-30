@@ -3,12 +3,14 @@ import numpy as np
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
-    OUTPUT_DETECTIONS_KEY as PERSPECTIVE_CORRECTION_OUTPUT_DETECTIONS_KEY,
-    OUTPUT_IMAGE_KEY as PERSPECTIVE_CORRECTION_OUTPUT_IMAGE_KEY,
-)
 from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import (
     OUTPUT_KEY as DYNAMIC_ZONES_OUTPUT_KEY,
+)
+from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
+    OUTPUT_DETECTIONS_KEY as PERSPECTIVE_CORRECTION_OUTPUT_DETECTIONS_KEY,
+)
+from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
+    OUTPUT_IMAGE_KEY as PERSPECTIVE_CORRECTION_OUTPUT_IMAGE_KEY,
 )
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (

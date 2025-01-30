@@ -5,7 +5,10 @@ import pytest
 import supervision as sv
 
 from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
-from inference.core.workflows.execution_engine.entities.base import VideoMetadata, WorkflowImageData
+from inference.core.workflows.execution_engine.entities.base import (
+    VideoMetadata,
+    WorkflowImageData,
+)
 
 
 def test_velocity_block_basic_calculation() -> None:
