@@ -1515,6 +1515,7 @@ class HttpInterface(BaseInterface):
 
             @app.on_event("shutdown")
             async def startup_model_init():
+                logger.warning("Shutting down")
                 await usage_collector.async_push_usage_payloads()
 
             @app.get("/readiness", status_code=200)
