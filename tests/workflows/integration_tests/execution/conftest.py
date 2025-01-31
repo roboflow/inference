@@ -31,6 +31,11 @@ def dogs_image() -> np.ndarray:
 
 
 @pytest.fixture(scope="function")
+def car_image() -> np.ndarray:
+    return cv2.imread(os.path.join(ASSETS_DIR, "car.jpg"))
+
+
+@pytest.fixture(scope="function")
 def red_image() -> np.ndarray:
     return cv2.imread(os.path.join(ASSETS_DIR, "red_image.png"))
 
