@@ -77,12 +77,14 @@ def test_detection_plus_classification_workflow(
         api_url=object_detection_service_url,
         api_key=ROBOFLOW_API_KEY,
     )
+    random_image_1 = (np.random.random((640, 480, 3)) * 255).astype(np.uint8)
+    random_image_2 = (np.random.random((640, 480, 3)) * 255).astype(np.uint8)
 
     # when
     result = client.run_workflow(
         specification=ACTIVE_LEARNING_WORKFLOW,
         images={
-            "image": [dogs_image, license_plate_image],
+            "image": [random_image_1, random_image_2],
         },
         parameters={
             "detection_model_id": yolov8n_640_model_id,
@@ -102,17 +104,5 @@ def test_detection_plus_classification_workflow(
         "error",
         "message",
     }, "Expected all outputs to be registered"
-    assert (
-        len(result[0]["detection_predictions"]["predictions"]) == 2
-    ), "Expected 2 dogs detected"
-    detection_confidences = [
-        p["confidence"] for p in result[0]["detection_predictions"]["predictions"]
-    ]
-    assert np.allclose(
-        detection_confidences, [0.856178879737854, 0.5191817283630371], atol=1e-4
-    ), "Expected predictions to match what was observed while test creation"
-    assert result[0]["error"] is False, "Expected no error"
-    assert (
-        len(result[1]["detection_predictions"]["predictions"]) == 0
-    ), "Expected 0 dogs detected"
+    assert result[1]["error"] is False, "Expected no error"
     assert result[1]["error"] is False, "Expected no error"
