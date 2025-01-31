@@ -72,10 +72,6 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
-        return ["data"]
-
-    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [OutputDefinition(name="output")]
 
