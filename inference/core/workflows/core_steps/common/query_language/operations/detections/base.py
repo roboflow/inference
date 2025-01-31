@@ -403,7 +403,8 @@ def _pick_detections_by_parent_class(
                 dependent_detections_to_keep.add(detection_idx)
                 continue
     detections_to_keep_list = sorted(list(dependent_detections_to_keep))
-    return dependent_detections[detections_to_keep_list]
+    filtered_dependent_detections = dependent_detections[detections_to_keep_list]
+    return sv.Detections.merge([parent_detections, filtered_dependent_detections])
 
 
 def _is_point_within_box(point: np.ndarray, box: np.ndarray) -> bool:
