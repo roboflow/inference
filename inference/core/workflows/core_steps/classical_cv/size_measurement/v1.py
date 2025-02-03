@@ -271,7 +271,14 @@ class SizeMeasurementBlockV1(WorkflowBlock):
             if obj_w_pixels > 0 and obj_h_pixels > 0:
                 obj_w_actual = obj_w_pixels * width_scale
                 obj_h_actual = obj_h_pixels * height_scale
-                dimensions.append({"width": obj_w_actual, "height": obj_h_actual})
+                dimensions.append(
+                    {
+                        "width": obj_w_actual,
+                        "height": obj_h_actual,
+                        "longer": max(obj_w_actual, obj_h_actual),
+                        "shorter": min(obj_w_actual, obj_h_actual),
+                    }
+                )
             else:
                 dimensions.append(None)
 

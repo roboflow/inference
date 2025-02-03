@@ -105,6 +105,10 @@ class BlockManifest(WorkflowBlockManifest):
         return ["predictions"]
 
     @classmethod
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return ["operations_parameters"]
+
+    @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(

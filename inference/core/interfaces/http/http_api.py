@@ -196,6 +196,7 @@ from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
     get_roboflow_dataset_type,
+    get_roboflow_instant_model_data,
     get_roboflow_workspace,
     get_workflow_specification,
 )
@@ -590,7 +591,6 @@ class HttpInterface(BaseInterface):
 
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
             cached_api_keys = dict()
-            cached_projects = dict()
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -600,6 +600,8 @@ class HttpInterface(BaseInterface):
                     or request.url.path
                     in [
                         "/",
+                        "/docs",
+                        "/redoc",
                         "/info",
                         "/workflows/blocks/describe",
                         "/workflows/definition/schema",
@@ -647,29 +649,6 @@ class HttpInterface(BaseInterface):
                         )  # expired after 1 hour
                     except RoboflowAPINotAuthorizedError as e:
                         return _unauthorized_response("Unauthorized api_key")
-
-                # check project_url
-                model_id = json_params.get("model_id", "")
-                project_url = (
-                    req_params.get("project", None)
-                    or json_params.get("project", None)
-                    or model_id.split("/")[0]
-                )
-                # only check when project_url is not None
-                if (
-                    project_url is not None
-                    and cached_projects.get(project_url, 0) < time.time()
-                ):
-                    try:
-                        _ = get_roboflow_dataset_type(
-                            api_key, DEDICATED_DEPLOYMENT_WORKSPACE_URL, project_url
-                        )
-
-                        cached_projects[project_url] = (
-                            time.time() + 3600
-                        )  # expired after 1 hour
-                    except RoboflowAPINotNotFoundError as e:
-                        return _unauthorized_response("Unauthorized project")
 
                 return await call_next(request)
 

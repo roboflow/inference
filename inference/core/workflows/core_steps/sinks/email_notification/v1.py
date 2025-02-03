@@ -172,7 +172,7 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "sink",
             "ui_manifest": {
-                "section": "model",
+                "section": "notifications",
                 "icon": "far fa-envelope",
                 "blockPriority": 0,
                 "popular": True,

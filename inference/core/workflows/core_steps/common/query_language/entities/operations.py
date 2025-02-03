@@ -536,6 +536,28 @@ class DetectionsRename(OperationDefinition):
     )
 
 
+class PickDetectionsByParentClass(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Picks only those detections which are located inside "
+            "parent detections of specific class",
+            "compound": False,
+            "input_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+            "output_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+        },
+    )
+    type: Literal["PickDetectionsByParentClass"]
+    parent_class: str = Field(description="Class of parent detections")
+
+
 AllOperationsType = Annotated[
     Union[
         StringToLowerCase,
@@ -569,6 +591,7 @@ AllOperationsType = Annotated[
         ConvertImageToBase64,
         DetectionsToDictionary,
         ConvertDictionaryToJSON,
+        PickDetectionsByParentClass,
     ],
     Field(discriminator="type"),
 ]
