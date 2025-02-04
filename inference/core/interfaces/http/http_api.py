@@ -1,6 +1,8 @@
 import asyncio
 import base64
+from contextlib import asynccontextmanager
 import os
+import signal
 import traceback
 from functools import partial, wraps
 from time import sleep
@@ -494,8 +496,17 @@ class HttpInterface(BaseInterface):
         Description:
             Deploy Roboflow trained models to nearly any compute environment!
         """
+
         description = "Roboflow inference server"
+
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            yield
+            logger.info("Shutting down %s", description)
+            await usage_collector.async_push_usage_payloads()
+
         app = FastAPI(
+            lifespan=lifespan,
             title="Roboflow Inference Server",
             description=description,
             version=__version__,
@@ -1512,10 +1523,6 @@ class HttpInterface(BaseInterface):
                 """Initialize the models on startup."""
                 asyncio.create_task(initialize_models(model_init_state))
                 logger.info("Model initialization started in the background.")
-
-            @app.on_event("shutdown")
-            async def on_shutdown():
-                await usage_collector.async_push_usage_payloads()
 
             @app.get("/readiness", status_code=200)
             async def readiness(
