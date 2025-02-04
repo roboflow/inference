@@ -14,7 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
-from pydantic import BaseModel
 from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -54,7 +53,6 @@ from inference.core.entities.requests.server_state import (
 from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
-    DescribeInterfaceRequest,
     PredefinedWorkflowDescribeInterfaceRequest,
     PredefinedWorkflowInferenceRequest,
     WorkflowInferenceRequest,
@@ -196,8 +194,6 @@ from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
-    get_roboflow_dataset_type,
-    get_roboflow_instant_model_data,
     get_roboflow_workspace,
     get_workflow_specification,
 )
@@ -323,20 +319,20 @@ def with_route_exceptions(route):
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
+            content = {
+                "message": error.public_message,
+                "error_type": error.__class__.__name__,
+                "context": error.context,
+                "inner_error_type": error.inner_error_type,
+                "inner_error_message": str(error.inner_error),
+                "blocks_errors": [
+                    e.__dict__ for e in getattr(error, "_blocks_syntax_errors", [])
+                ],
+            }
             resp = JSONResponse(
                 status_code=400,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "context": error.context,
-                    "inner_error_type": error.inner_error_type,
-                    "inner_error_message": str(error.inner_error),
-                },
+                content=content,
             )
-            if hasattr(error, "_blocks_syntax_errors"):
-                resp["content"]["blocks_syntax_errors"] = error._blocks_syntax_errors
-            if hasattr(error, "_outputs_syntax_errors"):
-                resp["content"]["outputs_syntax_errors"] = error._outputs_syntax_errors
         except (
             ProcessesManagerInvalidPayload,
             MalformedPayloadError,
@@ -433,18 +429,21 @@ def with_route_exceptions(route):
             )
             traceback.print_exc()
         except WorkflowError as error:
+            content = {
+                "message": error.public_message,
+                "error_type": error.__class__.__name__,
+                "context": error.context,
+                "inner_error_type": error.inner_error_type,
+                "inner_error_message": str(error.inner_error),
+                "blocks_errors": [],
+                "outputs_errors": [],
+            }
+            if hasattr(error, "_block_id"):
+                content["blocks_errors"].append(error._block_id)
             resp = JSONResponse(
                 status_code=500,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "context": error.context,
-                    "inner_error_type": error.inner_error_type,
-                    "inner_error_message": str(error.inner_error),
-                },
+                content=content,
             )
-            if hasattr(error, "_block_id"):
-                resp["content"]["block_id"] = error._block_id
             traceback.print_exc()
         except (
             ProcessesManagerClientError,

@@ -1,4 +1,12 @@
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+
+
+@dataclass(frozen=True)
+class WorkflowBlockError:
+    block_id: str
+    block_type: str
+    property_name: Optional[str] = field(default=None)
 
 
 class WorkflowError(Exception):
@@ -69,13 +77,11 @@ class WorkflowSyntaxError(WorkflowDefinitionError):
     def __init__(
         self,
         *args,
-        blocks_syntax_errors: Optional[List[Dict[str, str]]] = None,
-        outputs_syntax_errors: Optional[List[str]] = None,
+        blocks_syntax_errors: Optional[List[WorkflowBlockError]] = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self._blocks_syntax_errors = blocks_syntax_errors
-        self._outputs_syntax_errors = outputs_syntax_errors
 
 
 class DuplicatedNameError(WorkflowDefinitionError):

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, create_model
 from typing_extensions import Annotated
 
 from inference.core.entities.responses.workflows import WorkflowsBlocksSchemaDescription
-from inference.core.workflows.errors import WorkflowSyntaxError
+from inference.core.workflows.errors import WorkflowBlockError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import InputType, JsonField
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_workflow_blocks,
@@ -61,35 +61,25 @@ def parse_workflow_definition(
         blocks_syntax_errors = []
         outputs_syntax_errors = []
         for error in e.errors():
-            location = error["loc"]
-            if location:
-                section = location[0]
-
-                element_name = None
-                if len(location) > 1 and isinstance(location[1], int):
-                    try:
-                        element = raw_workflow_definition.get(section, [])[location[1]]
-                        if isinstance(element, dict):
-                            element_name = element.get("name")
-                    except (IndexError, KeyError):
-                        pass
+            loc = error["loc"]
+            if loc:
+                section = loc[0]
+                element_name = error["input"].get("name")
+                element_type = error["input"].get("type")
 
                 if section == "steps":
-                    block_error = {
-                        "block_name": element_name,
-                    }
-                    if len(location) >= 4 and location[-1]:
-                        block_error["property_name"] = location[-1]
+                    block_error = WorkflowBlockError(
+                        block_id=element_name,
+                        block_type=element_type,
+                        property_name=loc[-1],
+                    )
                     blocks_syntax_errors.append(block_error)
-                elif section == "outputs":
-                    outputs_syntax_errors.append(element_name)
 
         raise WorkflowSyntaxError(
             public_message="Could not parse workflow definition. Details provided in inner error.",
             context="workflow_compilation | workflow_definition_parsing",
             inner_error=e,
             blocks_syntax_errors=blocks_syntax_errors,
-            outputs_syntax_errors=outputs_syntax_errors,
         ) from e
 
 
