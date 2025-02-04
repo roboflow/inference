@@ -78,9 +78,9 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/slack_notification@v1"]
     slack_token: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = Field(
-        description="Visit "
-        "https://api.slack.com/tutorials/tracks/getting-a-token "
-        "to find out how to generate a Slack API token.",
+        description="View the [Roboflow Blog](https://blog.roboflow.com/slack-notification-workflows/) or "
+        "[Slack Documentation](https://api.slack.com/tutorials/tracks/getting-a-token) "
+        "to learn how to generate a Slack API token.",
         private=True,
         examples=["$inputs.slack_token"],
     )
@@ -111,7 +111,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     message_parameters_operations: Dict[str, List[AllOperationsType]] = Field(
-        description="UQL definitions of operations to be performed on defined data w.r.t. each message parameter",
+        description="Preprocessing operations to be performed on message parameters.",
         examples=[
             {
                 "predictions": [
@@ -128,7 +128,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Boolean flag to run the block asynchronously (True) for faster workflows or synchronously (False) for debugging and error handling.",
+        description="Boolean flag to run the block asynchronously (True) for faster workflows or  "
+        "synchronously (False) for debugging and error handling.",
         examples=["$inputs.fire_and_forget", False],
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
@@ -138,7 +139,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=5,
-        description="Number of seconds to wait until follow-up notification can be sent. "
+        description="Number of seconds until a follow-up notification can be sent. "
         f"Maximum value: {CACHE_EXPIRE_TIME} seconds (15 minutes)",
         examples=["$inputs.cooldown_seconds", 3],
         json_schema_extra={

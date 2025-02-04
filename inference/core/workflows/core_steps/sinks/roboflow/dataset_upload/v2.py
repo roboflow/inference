@@ -21,13 +21,11 @@ from inference.core.workflows.execution_engine.entities.types import (
     CLASSIFICATION_PREDICTION_KIND,
     FLOAT_KIND,
     IMAGE_KIND,
-    IMAGE_SIZE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
-    ImageInputField,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
