@@ -70,7 +70,7 @@ def parse_workflow_definition(
                     block_error = WorkflowBlockError(
                         block_id=element_name,
                         block_type=element_type,
-                        property_name=loc[-1],
+                        property_name=str(loc[-1]),
                     )
                     blocks_errors.append(block_error)
 
