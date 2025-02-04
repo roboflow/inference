@@ -63,20 +63,26 @@ def parse_workflow_definition(
             loc = error["loc"]
             if loc:
                 section = loc[0]
+                if section != "steps":
+                    continue
                 if len(loc) < 2:
                     continue
+
                 index = loc[1]
                 element = raw_workflow_definition[section][index]
                 element_name = element.get("name")
                 element_type = element.get("type")
 
-                if section == "steps":
-                    block_error = WorkflowBlockError(
-                        block_id=element_name,
-                        block_type=element_type,
-                        property_name=str(loc[-1]),
-                    )
-                    blocks_errors[element_name] = block_error
+                property_name = None
+                if len(loc) > 3 and loc[2] == element_type:
+                    property_name = str(loc[3])
+
+                block_error = WorkflowBlockError(
+                    block_id=element_name,
+                    block_type=element_type,
+                    property_name=property_name,
+                )
+                blocks_errors[element_name] = block_error
 
         raise WorkflowSyntaxError(
             public_message="Could not parse workflow definition. Details provided in inner error.",
