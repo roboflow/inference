@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import os
-import signal
 import traceback
 from contextlib import asynccontextmanager
 from functools import partial, wraps
