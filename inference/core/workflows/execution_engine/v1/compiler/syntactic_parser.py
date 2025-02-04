@@ -58,13 +58,17 @@ def parse_workflow_definition(
             outputs=workflow_definition.outputs,
         )
     except pydantic.ValidationError as e:
-        blocks_errors = []
+        blocks_errors = {}
         for error in e.errors():
             loc = error["loc"]
             if loc:
                 section = loc[0]
-                element_name = error["input"].get("name")
-                element_type = error["input"].get("type")
+                if len(loc) < 2:
+                    continue
+                index = loc[1]
+                element = raw_workflow_definition[section][index]
+                element_name = element.get("name")
+                element_type = element.get("type")
 
                 if section == "steps":
                     block_error = WorkflowBlockError(
@@ -72,13 +76,13 @@ def parse_workflow_definition(
                         block_type=element_type,
                         property_name=str(loc[-1]),
                     )
-                    blocks_errors.append(block_error)
+                    blocks_errors[element_name] = block_error
 
         raise WorkflowSyntaxError(
             public_message="Could not parse workflow definition. Details provided in inner error.",
             context="workflow_compilation | workflow_definition_parsing",
             inner_error=e,
-            blocks_errors=blocks_errors,
+            blocks_errors=list(blocks_errors.values()),
         ) from e
 
 
