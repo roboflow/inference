@@ -6,12 +6,13 @@ from contextlib import asynccontextmanager
 from functools import partial, wraps
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
+from pathlib import Path as Pathlib
 
 import asgi_correlation_id
 import uvicorn
 from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 from pydantic import BaseModel
@@ -117,6 +118,7 @@ from inference.core.env import (
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
     DOCKER_SOCKET_PATH,
+    ENABLE_BUILDER,
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
@@ -2145,6 +2147,49 @@ class HttpInterface(BaseInterface):
                         }
                     else:
                         return RedirectResponse(f"/notebook-instructions.html")
+
+        if ENABLE_BUILDER:
+
+            @app.get(
+                "/build",
+                summary="Workflow Builder List",
+                description="Loads the list of Workflows available for editing",
+            )
+            @with_route_exceptions
+            async def builder_browse():
+                """
+                Loads the list of Workflows available for editing.
+
+                Returns:
+                    FileResponse: The HTML file containing the list of workflows.
+                """
+                logger.debug(f"Reached /build")
+                base_path = Pathlib(__file__).parent
+                file_path = base_path / "builder" / "list.html"
+                return FileResponse(file_path)
+            
+            @app.get(
+                "/build/{workflow_id}",
+                summary="Workflow Builder",
+                description="Loads a specific workflow for editing",
+            )
+            @with_route_exceptions
+            async def builder_edit(workflow_id: str):
+                """
+                Loads a specific workflow for editing.
+
+                Args:
+                    workflow_id (str): The ID of the workflow to be edited.
+
+                Returns:
+                    FileResponse: The HTML file containing the workflow editor.
+                """
+                logger.debug(f"Reached /build/{workflow_id}")
+                base_path = Pathlib(__file__).parent
+                file_path = base_path / "builder" / "build.html"
+                return FileResponse(file_path)
+            
+            
 
         if LEGACY_ROUTE_ENABLED:
 

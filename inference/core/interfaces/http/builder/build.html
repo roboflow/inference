@@ -1,0 +1,15 @@
+<html>
+    <head>
+        <script>
+            document.addEventListener("DOMContentLoaded", function(event) {
+                const workflow_id = window.location.pathname.split("/").pop();
+                document.getElementById("content").innerHTML = `Workflow ${workflow_id}`;
+            });
+        </script>
+    </head>
+    <body>
+        <a href="/build">Go Back</a><br /><br />
+
+        <span id="content">Loading...</span>
+    </body>
+</html>
