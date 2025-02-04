@@ -78,7 +78,7 @@ def parse_workflow_definition(
                     block_error = {
                         "block_name": element_name,
                     }
-                    if location >= 4 and location[-1]:
+                    if len(location) >= 4 and location[-1]:
                         block_error["property_name"] = location[-1]
                     blocks_syntax_errors.append(block_error)
                 elif section == "outputs":
