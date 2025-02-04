@@ -332,6 +332,10 @@ def with_route_exceptions(route):
                     "inner_error_message": str(error.inner_error),
                 },
             )
+            if hasattr(error, "_blocks_syntax_errors"):
+                resp["content"]["blocks_syntax_errors"] = error._blocks_syntax_errors
+            if hasattr(error, "_outputs_syntax_errors"):
+                resp["content"]["outputs_syntax_errors"] = error._outputs_syntax_errors
         except (
             ProcessesManagerInvalidPayload,
             MalformedPayloadError,
@@ -438,6 +442,8 @@ def with_route_exceptions(route):
                     "inner_error_message": str(error.inner_error),
                 },
             )
+            if hasattr(error, "_block_id"):
+                resp["content"]["block_id"] = error._block_id
             traceback.print_exc()
         except (
             ProcessesManagerClientError,

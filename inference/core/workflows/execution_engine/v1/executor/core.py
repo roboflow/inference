@@ -135,6 +135,7 @@ def safe_execute_step(
     except Exception as error:
         logger.exception(f"Execution of step {step_selector} encountered error.")
         raise StepExecutionError(
+            block_id=step_selector,
             public_message=f"Error during execution of step: {step_selector}. Details: {error}",
             context="workflow_execution | step_execution",
             inner_error=error,

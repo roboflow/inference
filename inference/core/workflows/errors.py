@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Dict, List, Optional
 
 
 class WorkflowError(Exception):
@@ -66,7 +66,15 @@ class WorkflowDefinitionError(WorkflowCompilerError):
 
 
 class WorkflowSyntaxError(WorkflowDefinitionError):
-    pass
+    def __init__(
+        *args,
+        blocks_syntax_errors: Optional[List[Dict[str, str]]] = None,
+        outputs_syntax_errors: Optional[List[str]] = None,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._blocks_syntax_errors = blocks_syntax_errors
+        self._outputs_syntax_errors = outputs_syntax_errors
 
 
 class DuplicatedNameError(WorkflowDefinitionError):
@@ -122,7 +130,14 @@ class InvalidBlockBehaviourError(WorkflowExecutionEngineError):
 
 
 class StepExecutionError(WorkflowExecutionEngineError):
-    pass
+    def __init__(
+        self,
+        *args,
+        block_id: str,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._block_id = block_id
 
 
 class ExecutionEngineRuntimeError(WorkflowExecutionEngineError):
