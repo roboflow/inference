@@ -501,6 +501,8 @@ class HttpInterface(BaseInterface):
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
+            asyncio.create_task(initialize_models(model_init_state))
+            logger.info("Model initialization started in the background.")
             yield
             logger.info("Shutting down %s", description)
             await usage_collector.async_push_usage_payloads()
@@ -1517,12 +1519,6 @@ class HttpInterface(BaseInterface):
                 # Update the readiness state in a thread-safe manner
                 async with state.lock:
                     state.is_ready = True
-
-            @app.on_event("startup")
-            async def startup_model_init():
-                """Initialize the models on startup."""
-                asyncio.create_task(initialize_models(model_init_state))
-                logger.info("Model initialization started in the background.")
 
             @app.get("/readiness", status_code=200)
             async def readiness(
