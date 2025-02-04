@@ -67,6 +67,7 @@ class WorkflowDefinitionError(WorkflowCompilerError):
 
 class WorkflowSyntaxError(WorkflowDefinitionError):
     def __init__(
+        self,
         *args,
         blocks_syntax_errors: Optional[List[Dict[str, str]]] = None,
         outputs_syntax_errors: Optional[List[str]] = None,
