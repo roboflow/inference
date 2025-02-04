@@ -93,6 +93,7 @@ from inference.core.entities.responses.server_state import (
 from inference.core.entities.responses.workflows import (
     DescribeInterfaceResponse,
     ExecutionEngineVersions,
+    WorkflowErrorResponse,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
     WorkflowsBlocksSchemaDescription,
@@ -211,6 +212,7 @@ from inference.core.workflows.errors import (
     NotSupportedExecutionEngineError,
     ReferenceTypeError,
     RuntimeInputError,
+    WorkflowBlockError,
     WorkflowDefinitionError,
     WorkflowError,
     WorkflowExecutionEngineVersionError,
@@ -319,19 +321,17 @@ def with_route_exceptions(route):
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
-            content = {
-                "message": error.public_message,
-                "error_type": error.__class__.__name__,
-                "context": error.context,
-                "inner_error_type": error.inner_error_type,
-                "inner_error_message": str(error.inner_error),
-                "blocks_errors": [
-                    e.__dict__ for e in getattr(error, "_blocks_syntax_errors", [])
-                ],
-            }
+            content = WorkflowErrorResponse(
+                message=error.public_message,
+                error_type=error.__class__.__name__,
+                context=error.context,
+                inner_error_type=error.inner_error_type,
+                inner_error_message=str(error.inner_error),
+                blocks_errors=error._blocks_errors,
+            )
             resp = JSONResponse(
                 status_code=400,
-                content=content,
+                content=content.model_dump(),
             )
         except (
             ProcessesManagerInvalidPayload,
@@ -429,20 +429,24 @@ def with_route_exceptions(route):
             )
             traceback.print_exc()
         except WorkflowError as error:
-            content = {
-                "message": error.public_message,
-                "error_type": error.__class__.__name__,
-                "context": error.context,
-                "inner_error_type": error.inner_error_type,
-                "inner_error_message": str(error.inner_error),
-                "blocks_errors": [],
-                "outputs_errors": [],
-            }
+            content = WorkflowErrorResponse(
+                message=error.public_message,
+                error_type=error.__class__.__name__,
+                context=error.context,
+                inner_error_type=error.inner_error_type,
+                inner_error_message=str(error.inner_error),
+                blocks_errors=[],
+            )
             if hasattr(error, "_block_id"):
-                content["blocks_errors"].append(error._block_id)
+                content.blocks_errors.append(
+                    WorkflowBlockError(
+                        block_id=error._block_id,
+                        block_type=error._block_type,
+                    )
+                )
             resp = JSONResponse(
                 status_code=500,
-                content=content,
+                content=content.model_dump(),
             )
             traceback.print_exc()
         except (

@@ -1,12 +1,12 @@
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
 
 
-@dataclass(frozen=True)
-class WorkflowBlockError:
+class WorkflowBlockError(BaseModel):
     block_id: str
     block_type: str
-    property_name: Optional[str] = field(default=None)
+    property_name: Optional[str] = None
 
 
 class WorkflowError(Exception):
@@ -77,11 +77,11 @@ class WorkflowSyntaxError(WorkflowDefinitionError):
     def __init__(
         self,
         *args,
-        blocks_syntax_errors: Optional[List[WorkflowBlockError]] = None,
+        blocks_errors: Optional[List[WorkflowBlockError]] = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self._blocks_syntax_errors = blocks_syntax_errors
+        self._blocks_errors = blocks_errors
 
 
 class DuplicatedNameError(WorkflowDefinitionError):
@@ -141,10 +141,12 @@ class StepExecutionError(WorkflowExecutionEngineError):
         self,
         *args,
         block_id: str,
+        block_type: str,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self._block_id = block_id
+        self._block_type = block_type
 
 
 class ExecutionEngineRuntimeError(WorkflowExecutionEngineError):
