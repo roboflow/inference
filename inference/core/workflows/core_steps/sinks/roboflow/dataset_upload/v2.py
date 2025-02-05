@@ -72,10 +72,10 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/roboflow_dataset_upload@v2"]
     images: Selector(kind=[IMAGE_KIND]) = Field(
-        title="Input Image",
-        description="Image to upload.",
+        title="Image",
+        description="The image to upload.",
         examples=["$inputs.image", "$steps.cropping.crops"],
-        validation_alias=AliasChoices("image", "images"),
+        validation_alias=AliasChoices("images", "image"),
     )
     target_project: Union[Selector(kind=[ROBOFLOW_PROJECT_KIND]), str] = Field(
         description="Roboflow project where data will be saved.",
