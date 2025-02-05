@@ -2165,7 +2165,7 @@ class HttpInterface(BaseInterface):
                 """
                 logger.debug(f"Reached /build")
                 base_path = Pathlib(__file__).parent
-                file_path = base_path / "builder" / "list.html"
+                file_path = base_path / "builder" / "editor.html"
                 return FileResponse(file_path)
             
             @app.get(
@@ -2186,7 +2186,7 @@ class HttpInterface(BaseInterface):
                 """
                 logger.debug(f"Reached /build/{workflow_id}")
                 base_path = Pathlib(__file__).parent
-                file_path = base_path / "builder" / "edit.html"
+                file_path = base_path / "builder" / "editor.html"
                 return FileResponse(file_path)
             
             
