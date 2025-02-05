@@ -2169,7 +2169,7 @@ class HttpInterface(BaseInterface):
                 return FileResponse(file_path)
             
             @app.get(
-                "/build/{workflow_id}",
+                "/build/edit/{workflow_id}",
                 summary="Workflow Builder",
                 description="Loads a specific workflow for editing",
             )
@@ -2186,7 +2186,7 @@ class HttpInterface(BaseInterface):
                 """
                 logger.debug(f"Reached /build/{workflow_id}")
                 base_path = Pathlib(__file__).parent
-                file_path = base_path / "builder" / "build.html"
+                file_path = base_path / "builder" / "edit.html"
                 return FileResponse(file_path)
             
             
