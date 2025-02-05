@@ -71,8 +71,11 @@ class LabelManifest(ColorableVisualizationManifest):
         Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="Class",
-        description="The type of text to display.",
+        description="The data to display in the text labels.",
         examples=["LABEL", "$inputs.text"],
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
 
     text_position: Union[

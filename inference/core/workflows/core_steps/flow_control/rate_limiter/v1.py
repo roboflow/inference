@@ -79,11 +79,11 @@ class RateLimiterManifest(WorkflowBlockManifest):
         ge=0.0,
     )
     depends_on: Selector() = Field(
-        description="Reference to any output of the the step which immediately preceeds this branch.",
+        description="Step immediately preceding this block.",
         examples=["$steps.model"],
     )
     next_steps: List[StepSelector] = Field(
-        description="Reference to steps which shall be executed if rate limit allows.",
+        description="Steps to execute if allowed by the rate limit.",
         examples=[["$steps.upload"]],
     )
     video_reference_image: Optional[WorkflowImageSelector] = Field(
