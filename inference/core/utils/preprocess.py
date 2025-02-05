@@ -211,6 +211,7 @@ def letterbox_image(
         )
     else:
         return torch.nn.functional.pad(resized_img, (left_padding, right_padding, top_padding, bottom_padding), "constant", color[0])
+        # return torch.nn.functional.pad(resized_img, (right_padding, left_padding, top_padding, bottom_padding), "constant", color[0])
 
 
 def downscale_image_keeping_aspect_ratio(
@@ -251,7 +252,7 @@ def resize_image_keeping_aspect_ratio(
     if isinstance(image, np.ndarray):
         return cv2.resize(image, (new_width, new_height))
     else:
-        return torch.nn.functional.interpolate(image, size=(new_width, new_height))
+        return torch.nn.functional.interpolate(image, size=(new_height, new_width), mode="bilinear")
     # print(image.shape)
     # image = torch.from_numpy(image).cuda()
     # return torch.nn.functional.interpolate(image.permute(2, 0, 1).unsqueeze(0), size=(new_width, new_height)).squeeze(0).permute(1, 2, 0).cpu().numpy()

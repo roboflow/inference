@@ -92,7 +92,7 @@ class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
         # predictions = predictions.cpu().numpy()
 
-        predictions = run_session_via_iobinding(self.onnx_session, self.input_name, img_in)
+        predictions = run_session_via_iobinding(self.onnx_session, self.input_name, img_in)[0]
 
         # predictions = self.onnx_session.run(None, {self.input_name: img_in})
         # print(predictions)

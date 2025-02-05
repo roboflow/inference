@@ -27,15 +27,33 @@ def get_onnxruntime_execution_providers(value: str) -> List[str]:
 def run_session_via_iobinding(session: ort.InferenceSession, input_name: str, input_data: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
     binding = session.io_binding()
 
-    output_metadata = session.get_outputs()[0]
+    # output_metadata = session.get_outputs()
 
-    print(output_metadata.type)
-    print(type(output_metadata.type))
+    # print(output_metadata.type)
+    # print(type(output_metadata.type))
 
-    if "16" in output_metadata.type:
-        dtype = np.float16
-    else:
-        dtype = np.float32
+    print(session.get_providers())
+
+    if "CUDAExecutionProvider" not in session.get_providers():
+        # ensure we're using CPU because the ONNX runtime used doesn't support CUDA
+        if isinstance(input_data, torch.Tensor):
+            input_data = input_data.cpu()
+
+    predictions = []
+    dtype = None
+    for output in session.get_outputs():
+        if dtype is None:
+            dtype = np.float16 if "16" in output.type else np.float32
+        prediction = np.empty(output.shape, dtype=dtype)
+        binding.bind_output(
+            name=output.name,
+            device_type="cpu",
+            device_id=0,
+            element_type=dtype,
+            shape=output.shape,
+            buffer_ptr=prediction.ctypes.data,
+        )
+        predictions.append(prediction)
     
     if isinstance(input_data, np.ndarray):
         binding.bind_input(
@@ -47,39 +65,42 @@ def run_session_via_iobinding(session: ort.InferenceSession, input_name: str, in
             buffer_ptr=input_data.ctypes.data,
         )
         
-        predictions = np.empty(output_metadata.shape, dtype=dtype)
-        binding.bind_output(
-            name=output_metadata.name,
-            device_type="cpu",
-            device_id=0,
-            element_type=dtype,
-            shape=output_metadata.shape,
-            buffer_ptr=predictions.ctypes.data,
-        )
+        # predictions = np.empty(output_metadata.shape, dtype=dtype)
+        # binding.bind_output(
+        #     name=output_metadata.name,
+        #     device_type="cpu",
+        #     device_id=0,
+        #     element_type=dtype,
+        #     shape=output_metadata.shape,
+        #     buffer_ptr=predictions.ctypes.data,
+        # )
     elif isinstance(input_data, torch.Tensor):
         input_data = input_data.contiguous()
         binding.bind_input(
             name=input_name,
             device_type=input_data.device.type,
-            device_id=input_data.device.index,
+            device_id=input_data.device.index if input_data.device.index is not None else 0,
             element_type=dtype,
             shape=input_data.shape,
             buffer_ptr=input_data.data_ptr(),
         )
 
-        predictions = torch.empty(output_metadata.shape, dtype=torch.float16 if "16" in output_metadata.type else torch.float32, device=input_data.device).contiguous()
-        binding.bind_output(
-            name=output_metadata.name,
-            device_type=input_data.device.type,
-            device_id=input_data.device.index,
-            element_type=dtype,
-            shape=output_metadata.shape,
-            buffer_ptr=predictions.data_ptr(),
-        )
+        # predictions = torch.empty(output_metadata.shape, dtype=torch.float16 if "16" in output_metadata.type else torch.float32, device=input_data.device).contiguous()
+        # binding.bind_output(
+        #     name=output_metadata.name,
+        #     device_type=input_data.device.type,
+        #     device_id=input_data.device.index if input_data.device.index is not None else 0,
+        #     element_type=dtype,
+        #     shape=output_metadata.shape,
+        #     buffer_ptr=predictions.data_ptr(),
+        # )
 
     session.run_with_iobinding(binding)
 
-    if isinstance(input_data, np.ndarray):
-        return predictions.astype(np.float32)
-    elif isinstance(input_data, torch.Tensor):
-        return predictions.float().cpu().numpy()
+    # if isinstance(input_data, np.ndarray):
+    #     return predictions.astype(np.float32)
+    # elif isinstance(input_data, torch.Tensor):
+    #     return predictions.float().cpu().numpy()
+
+    predictions = [prediction.astype(np.float32) for prediction in predictions]
+    return predictions

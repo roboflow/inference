@@ -3,6 +3,7 @@ from time import perf_counter
 from typing import Any, List, Tuple, Union
 
 import numpy as np
+import torch
 from PIL import Image, ImageDraw, ImageFont
 
 from inference.core.entities.requests.inference import ClassificationInferenceRequest
@@ -204,7 +205,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 for i in image
             ]
             imgs, img_dims = zip(*imgs_with_dims)
-            img_in = np.concatenate(imgs, axis=0)
+            img_in = np.concatenate(imgs, axis=0) if isinstance(imgs[0], np.ndarray) else torch.cat(imgs, dim=0)
         else:
             img_in, img_dims = self.preproc_image(
                 image,
@@ -226,7 +227,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         mean = (0.5, 0.5, 0.5)
         std = (0.5, 0.5, 0.5)
 
-        img_in = img_in.astype(np.float32)
+        img_in = img_in.astype(np.float32) if isinstance(img_in, np.ndarray) else img_in.float()
 
         img_in[:, 0, :, :] = (img_in[:, 0, :, :] - mean[0]) / std[0]
         img_in[:, 1, :, :] = (img_in[:, 1, :, :] - mean[1]) / std[1]

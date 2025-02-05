@@ -404,7 +404,7 @@ class RoboflowInferenceModel(Model):
 
         t0 = time.time()
         preprocessed_image = torch.from_numpy(preprocessed_image).cuda()
-        preprocessed_image = preprocessed_image.permute(2, 0, 1).unsqueeze(0)
+        preprocessed_image = preprocessed_image.permute(2, 0, 1).unsqueeze(0).float()
         print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
 
         print(self.resize_method)
@@ -415,7 +415,7 @@ class RoboflowInferenceModel(Model):
                     preprocessed_image, (self.img_size_w, self.img_size_h), cv2.INTER_CUBIC
                 )
             else:
-                resized = torch.nn.functional.interpolate(preprocessed_image.float(), size=(self.img_size_w, self.img_size_h), mode="bicubic")
+                resized = torch.nn.functional.interpolate(preprocessed_image, size=(self.img_size_w, self.img_size_h), mode="bicubic")
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
                 preprocessed_image, (self.img_size_w, self.img_size_h)
@@ -433,7 +433,12 @@ class RoboflowInferenceModel(Model):
                 color=(114, 114, 114),
             )
 
+        # t0 = time.time()
+        # resized = torch.from_numpy(resized).cuda().permute(2, 0, 1).unsqueeze(0)
+        # print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
+
         if is_bgr:
+            print("is_bgr")
             if isinstance(resized, np.ndarray):
                 resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
             else:
@@ -445,7 +450,7 @@ class RoboflowInferenceModel(Model):
             img_in = np.expand_dims(img_in, axis=0)
         else:
             # we assume a torch tensor is already in the correct format
-            img_in = resized.float()
+            img_in = resized
         
         # if is_bgr:
         #     img_in = img_in[:, [2, 1, 0], :, :]
@@ -692,6 +697,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         try:
             self.run_test_inference()
         except Exception as e:
+            raise e
             raise ModelArtefactError(f"Unable to run test inference. Cause: {e}") from e
         try:
             self.validate_model_classes()
@@ -739,18 +745,18 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
 
             weights_file = self.weights_file
 
-            try:
-                # convert to fp16
-                fp16_weights_file = self.weights_file.replace(".onnx", "_fp16.onnx")
-                model_name = self.cache_file(self.weights_file)
-                import onnx
-                loaded_model = onnx.load(model_name)
-                from onnxconverter_common.float16 import convert_float_to_float16
-                loaded_fp16_model = convert_float_to_float16(loaded_model)
-                onnx.save(loaded_fp16_model, self.cache_file(fp16_weights_file))
-                weights_file = fp16_weights_file
-            except Exception as e:
-                logger.error(f"Unable to convert model to fp16: {e}")
+            # try:
+            #     # convert to fp16
+            #     fp16_weights_file = self.weights_file.replace(".onnx", "_fp16.onnx")
+            #     model_name = self.cache_file(self.weights_file)
+            #     import onnx
+            #     loaded_model = onnx.load(model_name)
+            #     from onnxconverter_common.float16 import convert_float_to_float16
+            #     loaded_fp16_model = convert_float_to_float16(loaded_model)
+            #     onnx.save(loaded_fp16_model, self.cache_file(fp16_weights_file))
+            #     weights_file = fp16_weights_file
+            # except Exception as e:
+            #     logger.error(f"Unable to convert model to fp16: {e}")
 
             if not self.load_weights:
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
