@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, create_model
 from typing_extensions import Annotated
 
 from inference.core.entities.responses.workflows import WorkflowsBlocksSchemaDescription
-from inference.core.workflows.errors import WorkflowSyntaxError
+from inference.core.workflows.errors import WorkflowBlockError, WorkflowSyntaxError
 from inference.core.workflows.execution_engine.entities.base import InputType, JsonField
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     load_workflow_blocks,
@@ -58,10 +58,37 @@ def parse_workflow_definition(
             outputs=workflow_definition.outputs,
         )
     except pydantic.ValidationError as e:
+        blocks_errors = {}
+        for error in e.errors():
+            loc = error["loc"]
+            if loc:
+                section = loc[0]
+                if section != "steps":
+                    continue
+                if len(loc) < 2:
+                    continue
+
+                index = loc[1]
+                element = raw_workflow_definition[section][index]
+                element_name = element.get("name")
+                element_type = element.get("type")
+
+                property_name = None
+                if len(loc) > 3 and loc[2] == element_type:
+                    property_name = str(loc[3])
+
+                block_error = WorkflowBlockError(
+                    block_id=element_name,
+                    block_type=element_type,
+                    property_name=property_name,
+                )
+                blocks_errors[element_name] = block_error
+
         raise WorkflowSyntaxError(
             public_message="Could not parse workflow definition. Details provided in inner error.",
             context="workflow_compilation | workflow_definition_parsing",
             inner_error=e,
+            blocks_errors=list(blocks_errors.values()),
         ) from e
 
 

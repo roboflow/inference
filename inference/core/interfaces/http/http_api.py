@@ -14,7 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
-from pydantic import BaseModel
 from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -54,7 +53,6 @@ from inference.core.entities.requests.server_state import (
 from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
-    DescribeInterfaceRequest,
     PredefinedWorkflowDescribeInterfaceRequest,
     PredefinedWorkflowInferenceRequest,
     WorkflowInferenceRequest,
@@ -95,6 +93,7 @@ from inference.core.entities.responses.server_state import (
 from inference.core.entities.responses.workflows import (
     DescribeInterfaceResponse,
     ExecutionEngineVersions,
+    WorkflowErrorResponse,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
     WorkflowsBlocksSchemaDescription,
@@ -196,8 +195,6 @@ from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
-    get_roboflow_dataset_type,
-    get_roboflow_instant_model_data,
     get_roboflow_workspace,
     get_workflow_specification,
 )
@@ -215,6 +212,8 @@ from inference.core.workflows.errors import (
     NotSupportedExecutionEngineError,
     ReferenceTypeError,
     RuntimeInputError,
+    StepExecutionError,
+    WorkflowBlockError,
     WorkflowDefinitionError,
     WorkflowError,
     WorkflowExecutionEngineVersionError,
@@ -323,15 +322,17 @@ def with_route_exceptions(route):
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
+            content = WorkflowErrorResponse(
+                message=error.public_message,
+                error_type=error.__class__.__name__,
+                context=error.context,
+                inner_error_type=error.inner_error_type,
+                inner_error_message=str(error.inner_error),
+                blocks_errors=error._blocks_errors,
+            )
             resp = JSONResponse(
                 status_code=400,
-                content={
-                    "message": error.public_message,
-                    "error_type": error.__class__.__name__,
-                    "context": error.context,
-                    "inner_error_type": error.inner_error_type,
-                    "inner_error_message": str(error.inner_error),
-                },
+                content=content.model_dump(),
             )
         except (
             ProcessesManagerInvalidPayload,
@@ -426,6 +427,25 @@ def with_route_exceptions(route):
                 content={
                     "message": "Internal error. Could not connect to Roboflow API."
                 },
+            )
+            traceback.print_exc()
+        except StepExecutionError as error:
+            content = WorkflowErrorResponse(
+                message=error.public_message,
+                error_type=error.__class__.__name__,
+                context=error.context,
+                inner_error_type=error.inner_error_type,
+                inner_error_message=str(error.inner_error),
+                blocks_errors=[
+                    WorkflowBlockError(
+                        block_id=error._block_id,
+                        block_type=error._block_type,
+                    ),
+                ],
+            )
+            resp = JSONResponse(
+                status_code=500,
+                content=content.model_dump(),
             )
             traceback.print_exc()
         except WorkflowError as error:
