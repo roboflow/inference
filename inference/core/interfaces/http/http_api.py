@@ -212,6 +212,7 @@ from inference.core.workflows.errors import (
     NotSupportedExecutionEngineError,
     ReferenceTypeError,
     RuntimeInputError,
+    StepExecutionError,
     WorkflowBlockError,
     WorkflowDefinitionError,
     WorkflowError,
@@ -428,25 +429,35 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
-        except WorkflowError as error:
+        except StepExecutionError as error:
             content = WorkflowErrorResponse(
                 message=error.public_message,
                 error_type=error.__class__.__name__,
                 context=error.context,
                 inner_error_type=error.inner_error_type,
                 inner_error_message=str(error.inner_error),
-                blocks_errors=[],
-            )
-            if hasattr(error, "_block_id"):
-                content.blocks_errors.append(
+                blocks_errors=[
                     WorkflowBlockError(
                         block_id=error._block_id,
                         block_type=error._block_type,
-                    )
-                )
+                    ),
+                ],
+            )
             resp = JSONResponse(
                 status_code=500,
                 content=content.model_dump(),
+            )
+            traceback.print_exc()
+        except WorkflowError as error:
+            resp = JSONResponse(
+                status_code=500,
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "context": error.context,
+                    "inner_error_type": error.inner_error_type,
+                    "inner_error_message": str(error.inner_error),
+                },
             )
             traceback.print_exc()
         except (
