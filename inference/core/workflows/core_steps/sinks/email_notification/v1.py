@@ -181,54 +181,45 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/email_notification@v1"]
     subject: str = Field(
-        description="Subject of the message",
+        description="Subject of the message.",
         examples=["Workflow alert"],
-    )
-    message: str = Field(
-        description="Content of the message to be send",
-        examples=[
-            "During last 5 minutes detected {{ $parameters.num_instances }} instances"
-        ],
+        json_schema_extra={
+            "hide_description": True,
+        },
     )
     sender_email: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        description="E-mail to be used to send the message",
+        description="E-mail to be used to send the message.",
         examples=["sender@gmail.com"],
+        json_schema_extra={
+            "hide_description": True,
+        },
     )
     receiver_email: Union[
         str,
         List[str],
         Selector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
     ] = Field(
-        description="Destination e-mail address",
+        description="Destination e-mail address.",
         examples=["receiver@gmail.com"],
+        json_schema_extra={
+            "hide_description": True,
+        },
     )
-    cc_receiver_email: Optional[
-        Union[
-            str,
-            List[str],
-            Selector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
-        ]
-    ] = Field(
-        default=None,
-        description="Destination e-mail address",
-        examples=["cc-receiver@gmail.com"],
-    )
-    bcc_receiver_email: Optional[
-        Union[
-            str,
-            List[str],
-            Selector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
-        ]
-    ] = Field(
-        default=None,
-        description="Destination e-mail address",
-        examples=["bcc-receiver@gmail.com"],
+    message: str = Field(
+        description="Content of the message to be send.",
+        examples=[
+            "During last 5 minutes detected {{ $parameters.num_instances }} instances"
+        ],
+        json_schema_extra={
+            "hide_description": True,
+            "multiline": True,
+        },
     )
     message_parameters: Dict[
         str,
         Union[Selector(), Selector(), str, int, float, bool],
     ] = Field(
-        description="References data to be used to construct each and every column",
+        description="Data to be used inside the message.",
         examples=[
             {
                 "predictions": "$steps.model.predictions",
@@ -236,9 +227,12 @@ class BlockManifest(WorkflowBlockManifest):
             }
         ],
         default_factory=dict,
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     message_parameters_operations: Dict[str, List[AllOperationsType]] = Field(
-        description="UQL definitions of operations to be performed on defined data w.r.t. each message parameter",
+        description="Preprocessing operations to be performed on message parameters.",
         examples=[
             {
                 "predictions": [
@@ -248,46 +242,72 @@ class BlockManifest(WorkflowBlockManifest):
         ],
         default_factory=dict,
     )
+    cc_receiver_email: Optional[
+        Union[
+            str,
+            List[str],
+            Selector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
+        ]
+    ] = Field(
+        default=None,
+        description="Destination e-mail address.",
+        examples=["cc-receiver@gmail.com"],
+        json_schema_extra={
+            "hide_description": True,
+        },
+    )
+    bcc_receiver_email: Optional[
+        Union[
+            str,
+            List[str],
+            Selector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
+        ]
+    ] = Field(
+        default=None,
+        description="Destination e-mail address.",
+        examples=["bcc-receiver@gmail.com"],
+        json_schema_extra={
+            "hide_description": True,
+        },
+    )
     attachments: Dict[str, Selector(kind=[STRING_KIND, BYTES_KIND])] = Field(
         description="Attachments",
         default_factory=dict,
         examples=[{"report.cvs": "$steps.csv_formatter.csv_content"}],
+        json_schema_extra={
+            "hide_description": True,
+        },
     )
     smtp_server: Union[str, Selector(kind=[STRING_KIND])] = Field(
-        description="Custom SMTP server to be used",
+        description="Custom SMTP server to be used.",
         examples=["$inputs.smtp_server", "smtp.google.com"],
     )
     sender_email_password: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = (
         Field(
-            description="Sender e-mail password be used when authenticating to SMTP server",
+            description="Sender e-mail password be used when authenticating to SMTP server.",
             private=True,
             examples=["$inputs.email_password"],
         )
     )
     smtp_port: int = Field(
         default=465,
-        description="SMTP server port",
+        description="SMTP server port.",
         examples=[465],
-        json_schema_extra={
-            "always_visible": True,
-        },
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Boolean flag dictating if sink is supposed to be executed in the background, "
-        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-        "registration is needed, use `False` while debugging and if error handling is needed",
+        description="Boolean flag to run the block asynchronously (True) for faster workflows or  "
+        "synchronously (False) for debugging and error handling.",
         examples=["$inputs.fire_and_forget", False],
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="boolean flag that can be also reference to input - to arbitrarily disable "
-        "data collection for specific request",
+        description="Boolean flag to disable block execution.",
         examples=[False, "$inputs.disable_email_notifications"],
     )
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=5,
-        description="Number of seconds to wait until follow-up notification can be sent",
+        description="Number of seconds until a follow-up notification can be sent. ",
         examples=["$inputs.cooldown_seconds", 3],
         json_schema_extra={
             "always_visible": True,

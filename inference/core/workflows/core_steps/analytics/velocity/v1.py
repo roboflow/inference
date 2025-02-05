@@ -49,6 +49,11 @@ class VelocityManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "analytics",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "far fa-gauge",
+                "blockPriority": 2.5,
+            },
         }
     )
     type: Literal["roboflow_core/velocity@v1"]
@@ -59,7 +64,7 @@ class VelocityManifest(WorkflowBlockManifest):
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
-        description="Predictions",
+        description="Model predictions to calculate the velocity for.",
         examples=["$steps.object_detection_model.predictions"],
     )
     smoothing_alpha: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore

@@ -166,14 +166,13 @@ class BlockManifest(WorkflowBlockManifest):
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Determines if the block should execute asynchronously. Set to `True` for best-effort updates "
-        "where the Workflow continues without waiting for confirmation. Use `False` during debugging or when error "
-        "handling is required.",
+        description="Boolean flag to run the block asynchronously (True) for faster workflows or  "
+        "synchronously (False) for debugging and error handling.",
         examples=[True, "$inputs.fire_and_forget"],
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="Boolean flag to disable the block for specific requests. Can be dynamically linked to a Workflow input.",
+        description="Boolean flag to disable block execution.",
         examples=[False, "$inputs.disable_opc_writers"],
     )
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
