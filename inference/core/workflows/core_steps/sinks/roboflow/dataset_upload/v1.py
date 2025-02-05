@@ -27,7 +27,7 @@ from uuid import uuid4
 
 import supervision as sv
 from fastapi import BackgroundTasks
-from pydantic import ConfigDict, Field, AliasChoices
+from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.active_learning.cache_operations import (
     return_strategy_credit,
