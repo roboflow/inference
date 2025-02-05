@@ -217,6 +217,7 @@ from inference.core.workflows.errors import (
     WorkflowDefinitionError,
     WorkflowError,
     WorkflowExecutionEngineVersionError,
+    WorkflowSyntaxError,
 )
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
@@ -310,6 +311,15 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
+        except WorkflowSyntaxError as error:
+            content = WorkflowErrorResponse(
+                message=error.public_message,
+                error_type=error.__class__.__name__,
+                context=error.context,
+                inner_error_type=error.inner_error_type,
+                inner_error_message=str(error.inner_error),
+            )
+            resp = JSONResponse(status_code=400, content=content)
         except (
             WorkflowDefinitionError,
             ExecutionGraphStructureError,
@@ -322,17 +332,15 @@ def with_route_exceptions(route):
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
-            content = WorkflowErrorResponse(
-                message=error.public_message,
-                error_type=error.__class__.__name__,
-                context=error.context,
-                inner_error_type=error.inner_error_type,
-                inner_error_message=str(error.inner_error),
-                blocks_errors=error._blocks_errors,
-            )
             resp = JSONResponse(
                 status_code=400,
-                content=content.model_dump(),
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "context": error.context,
+                    "inner_error_type": error.inner_error_type,
+                    "inner_error_message": str(error.inner_error),
+                },
             )
         except (
             ProcessesManagerInvalidPayload,
