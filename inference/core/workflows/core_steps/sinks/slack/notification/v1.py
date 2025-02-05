@@ -93,6 +93,9 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[
             "During last 5 minutes detected {{ $parameters.num_instances }} instances"
         ],
+        json_schema_extra={
+            "multiline": True,
+        },
     )
     message_parameters: Dict[
         str,

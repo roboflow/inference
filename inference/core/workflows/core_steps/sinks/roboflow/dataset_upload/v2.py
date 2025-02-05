@@ -4,7 +4,7 @@ from typing import List, Literal, Optional, Tuple, Type, Union
 
 import supervision as sv
 from fastapi import BackgroundTasks
-from pydantic import ConfigDict, Field, AliasChoices
+from pydantic import AliasChoices, ConfigDict, Field
 from typing_extensions import Annotated
 
 from inference.core.cache.base import BaseCache
