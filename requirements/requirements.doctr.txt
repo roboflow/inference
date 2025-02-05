@@ -1,3 +1,2 @@
-pypdfium2<5.0.0
 python-doctr[torch]>=0.7.0,<=0.10.0
 tf2onnx~=1.16.0
