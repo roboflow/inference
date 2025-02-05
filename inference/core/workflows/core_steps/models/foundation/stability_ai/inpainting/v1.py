@@ -79,6 +79,9 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         description="Prompt to inpainting model (what you wish to see).",
         examples=["my prompt", "$inputs.prompt"],
+        json_schema_extra={
+            "multiline": True,
+        },
     )
     negative_prompt: Optional[
         Union[

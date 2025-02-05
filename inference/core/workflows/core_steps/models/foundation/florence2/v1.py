@@ -182,6 +182,7 @@ class BaseManifest(WorkflowBlockManifest):
             "relevant_for": {
                 "task_type": {"values": TASKS_REQUIRING_PROMPT, "required": True},
             },
+            "multiline": True,
         },
     )
     classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
