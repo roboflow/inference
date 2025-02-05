@@ -24,7 +24,7 @@ def get_onnxruntime_execution_providers(value: str) -> List[str]:
     return value.split(",")
 
 
-def run_session_via_iobinding(session: ort.InferenceSession, input_name: str, input_data: Union[np.ndarray, torch.Tensor]) -> np.ndarray:
+def run_session_via_iobinding(session: ort.InferenceSession, input_name: str, input_data: Union[np.ndarray, torch.Tensor]) -> List[np.ndarray]:
     binding = session.io_binding()
 
     # output_metadata = session.get_outputs()
@@ -56,6 +56,7 @@ def run_session_via_iobinding(session: ort.InferenceSession, input_name: str, in
         predictions.append(prediction)
     
     if isinstance(input_data, np.ndarray):
+        input_data = np.ascontiguousarray(input_data.astype(dtype))
         binding.bind_input(
             name=input_name,
             device_type="cpu",

@@ -234,8 +234,7 @@ def resize_image_keeping_aspect_ratio(
     - image: numpy array representing the image.
     - desired_size: tuple (width, height) representing the target dimensions.
     """
-    img_dims = image.shape[:2] if isinstance(image, np.ndarray) else image.shape[-2:]
-    img_ratio = img_dims[1] / img_dims[0]
+    img_ratio = image.shape[1] / image.shape[0] if isinstance(image, np.ndarray) else image.shape[-1] / image.shape[-2]
     desired_ratio = desired_size[0] / desired_size[1]
 
     # Determine the new dimensions
