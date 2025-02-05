@@ -73,6 +73,9 @@ class BlockManifest(WorkflowBlockManifest):
     prompt: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Text prompt to the CogVLM model",
         examples=["my prompt", "$inputs.prompt"],
+        json_schema_extra={
+            "multiline": True,
+        },
     )
     json_output_format: Optional[Dict[str, str]] = Field(
         default=None,

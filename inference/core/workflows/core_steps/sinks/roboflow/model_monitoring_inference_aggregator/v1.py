@@ -109,11 +109,11 @@ class BlockManifest(WorkflowBlockManifest):
             CLASSIFICATION_PREDICTION_KIND,
         ]
     ) = Field(
-        description="Reference data to extract property from",
+        description="Model predictions to report to Roboflow Model Monitoring.",
         examples=["$steps.my_step.predictions"],
     )
     model_id: Selector(kind=[ROBOFLOW_MODEL_ID_KIND]) = Field(
-        description="Model ID to report to Roboflow Model Monitoring",
+        description="Model ID to report to Roboflow Model Monitoring.",
         examples=["my_project/3"],
     )
     frequency: Union[
@@ -133,9 +133,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Boolean flag dictating if sink is supposed to be executed in the background, "
-        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-        "registration is needed, use `False` while debugging and if error handling is needed",
+        description="Boolean flag to run the block asynchronously (True) for faster workflows or  "
+        "synchronously (False) for debugging and error handling.",
         examples=[True],
     )
 

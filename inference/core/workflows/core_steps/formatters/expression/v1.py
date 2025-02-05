@@ -134,7 +134,8 @@ class BlockManifest(WorkflowBlockManifest):
         default_factory=lambda: {},
     )
     switch: CasesDefinition = Field(
-        description="Definition of switch-case statement",
+        title="Logic Definition",
+        description="Define the logic to be executed.",
         examples=[SWITCH_STATEMENT_EXAMPLE],
     )
 

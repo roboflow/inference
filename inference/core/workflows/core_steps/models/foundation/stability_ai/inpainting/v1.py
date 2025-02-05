@@ -64,12 +64,12 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/stability_ai_inpainting@v1"]
     image: Selector(kind=[IMAGE_KIND]) = Field(
-        description="The image which was the base to generate VLM prediction",
+        description="The image to inpaint.",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
     segmentation_mask: Selector(kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]) = Field(
         name="Segmentation Mask",
-        description="Segmentation masks",
+        description="Model predictions from segmentation model.",
         examples=["$steps.model.predictions"],
     )
     prompt: Union[
@@ -77,8 +77,11 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[STRING_KIND]),
         str,
     ] = Field(
-        description="Prompt to inpainting model (what you wish to see)",
+        description="Prompt to inpainting model (what you wish to see).",
         examples=["my prompt", "$inputs.prompt"],
+        json_schema_extra={
+            "multiline": True,
+        },
     )
     negative_prompt: Optional[
         Union[
@@ -88,11 +91,11 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ] = Field(
         default=None,
-        description="Negative prompt to inpainting model (what you do not wish to see)",
+        description="Negative prompt to inpainting model (what you do not wish to see).",
         examples=["my prompt", "$inputs.prompt"],
     )
     api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
-        description="Your Stability AI API key",
+        description="Your Stability AI API key.",
         examples=["xxx-xxx", "$inputs.stability_ai_api_key"],
         private=True,
     )
