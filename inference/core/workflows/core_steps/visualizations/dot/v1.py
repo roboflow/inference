@@ -38,8 +38,9 @@ class DotManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "search_keywords": ["annotator"],
             "ui_manifest": {
-                "section": "classical_cv",
+                "section": "visualization",
                 "icon": "far fa-palette",
                 "blockPriority": 1,
                 "opencv": True,

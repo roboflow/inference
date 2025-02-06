@@ -64,7 +64,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/detections_stitch@v1"]
     reference_image: Selector(kind=[IMAGE_KIND]) = Field(
-        description="Image that was origin to take crops that yielded predictions.",
+        description="Original image that was cropped to produce the predictions.",
         examples=["$inputs.image"],
     )
     predictions: Selector(
@@ -73,7 +73,7 @@ class BlockManifest(WorkflowBlockManifest):
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(
-        description="The output of a detection model describing the bounding boxes to be merged.",
+        description="Model predictions to be merged into the original image.",
         examples=["$steps.my_object_detection_model.predictions"],
     )
     overlap_filtering_strategy: Union[
@@ -82,7 +82,7 @@ class BlockManifest(WorkflowBlockManifest):
     ] = Field(
         default="nms",
         description="Which strategy to employ when filtering overlapping boxes. "
-        "None does nothing, NMS discards surplus detections, NMM merges them.",
+        "None does nothing, NMS discards lower-confidence detections, NMM combines them.",
         examples=["nms", "$inputs.overlap_filtering_strategy"],
     )
     iou_threshold: Union[
@@ -90,8 +90,8 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.3,
-        description="Parameter of overlap filtering strategy. If box intersection over union is above this "
-        " ratio, discard or merge the lower confidence box.",
+        description="Minimum overlap threshold between boxes. If intersection over union (IoU) is above this "
+        "ratio, discard or merge the lower confidence box.",
         examples=[0.4, "$inputs.iou_threshold"],
     )
 

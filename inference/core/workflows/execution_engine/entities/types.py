@@ -1084,14 +1084,14 @@ StepSelector = Annotated[
 
 ImageInputField = Field(
     title="Image",
-    description="The image to infer on",
+    description="The image to infer on.",
     examples=["$inputs.image", "$steps.cropping.crops"],
     validation_alias=AliasChoices("images", "image"),
 )
 
 RoboflowModelField = Field(
     title="Model",
-    description="Roboflow model identifier",
+    description="Roboflow model identifier.",
     examples=["my_project/3", "$inputs.model"],
 )
 

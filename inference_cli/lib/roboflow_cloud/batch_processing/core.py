@@ -35,7 +35,7 @@ def list_jobs(
         Optional[int],
         typer.Option(
             "--max-pages",
-            "-m",
+            "-p",
             help="Number of pagination pages with batch jobs to display",
         ),
     ] = 1,

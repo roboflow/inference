@@ -81,11 +81,11 @@ class BlockManifest(WorkflowBlockManifest):
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(
-        description="Reference to detection-like predictions",
+        description="Model predictions to filter.",
         examples=["$steps.object_detection_model.predictions"],
     )
     operations: List[AllOperationsType] = Field(
-        description="Definition of filtering operations", examples=[OPERATIONS_EXAMPLE]
+        description="Definition of filtering logic.", examples=[OPERATIONS_EXAMPLE]
     )
     operations_parameters: Dict[
         str,

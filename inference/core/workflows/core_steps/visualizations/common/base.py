@@ -34,7 +34,7 @@ class VisualizationManifest(WorkflowBlockManifest, ABC):
     )
     image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
-        description="Select the input image to visualize on.",
+        description="The image to visualize on.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
@@ -84,7 +84,7 @@ class PredictionsVisualizationManifest(VisualizationManifest, ABC):
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
-        description="Predictions",
+        description="Model predictions to visualize.",
         examples=["$steps.object_detection_model.predictions"],
     )
 

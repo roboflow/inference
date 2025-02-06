@@ -61,11 +61,11 @@ class BlockManifest(WorkflowBlockManifest):
         "PropertyExtraction",
     ]
     data: Selector() = Field(
-        description="Reference data to extract property from",
+        description="Data to extract property from.",
         examples=["$steps.my_step.predictions"],
     )
     operations: List[AllOperationsType] = Field(
-        description="List of operations to perform on data to generate output",
+        description="List of operations to perform on the data.",
         examples=[
             [{"type": "DetectionsPropertyExtract", "property_name": "class_name"}]
         ],

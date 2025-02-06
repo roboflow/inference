@@ -81,6 +81,9 @@ class BlockManifest(WorkflowBlockManifest):
     prompt: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Text prompt to the OpenAI model",
         examples=["my prompt", "$inputs.prompt"],
+        json_schema_extra={
+            "multiline": True,
+        },
     )
     openai_api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), Optional[str]] = (
         Field(
