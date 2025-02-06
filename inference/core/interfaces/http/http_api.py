@@ -526,14 +526,14 @@ class HttpInterface(BaseInterface):
 
         description = "Roboflow inference server"
 
-        # @asynccontextmanager
-        # async def lifespan(app: FastAPI):
-        #     yield
-        #     logger.info("Shutting down %s", description)
-        #     await usage_collector.async_push_usage_payloads()
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            yield
+            logger.info("Shutting down %s", description)
+            # await usage_collector.async_push_usage_payloads()
 
         app = FastAPI(
-            # lifespan=lifespan,
+            lifespan=lifespan,
             title="Roboflow Inference Server",
             description=description,
             version=__version__,
