@@ -2,7 +2,6 @@ import asyncio
 import base64
 import os
 import traceback
-from contextlib import asynccontextmanager
 from functools import partial, wraps
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
@@ -526,14 +525,7 @@ class HttpInterface(BaseInterface):
 
         description = "Roboflow inference server"
 
-        @asynccontextmanager
-        async def lifespan(app: FastAPI):
-            yield
-            logger.info("Shutting down %s", description)
-            # await usage_collector.async_push_usage_payloads()
-
         app = FastAPI(
-            lifespan=lifespan,
             title="Roboflow Inference Server",
             description=description,
             version=__version__,
@@ -549,6 +541,11 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
+
+        @app.on_event("shutdown")
+        async def on_shutdown():
+            logger.info("Shutting down %s", description)
+            await usage_collector.async_push_usage_payloads()
 
         if ENABLE_PROMETHEUS:
             InferenceInstrumentator(
