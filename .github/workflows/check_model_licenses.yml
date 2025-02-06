@@ -1,0 +1,59 @@
+name: "Validate Model License Listings"
+
+on:
+  pull_request:
+    paths:
+      - "inference/models/**"    # Run only if files in inference/models/ have changed
+      - ".github/workflows/check_model_licenses.yml"
+
+jobs:
+  validate-models:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v3
+
+      - name: "Validate model directories"
+        run: |
+          set -e  # Exit immediately if a command exits with a non-zero status
+
+          README_FILE="inference/models/README.md"
+          if [ ! -f "$README_FILE" ]; then
+            echo "ERROR: $README_FILE does not exist."
+            exit 1
+          fi
+
+          # Flag to track overall failure
+          error_found=0
+
+          # Iterate over each subdirectory in inference/models/
+          for model_dir in inference/models/*/; do
+            # Remove trailing slash and get the basename (e.g., "modelA")
+            dir_name=$(basename "${model_dir%/}")
+
+            echo "Checking directory: inference/models/$dir_name"
+
+            # Check 1: Look for a file starting with LICENSE in this directory
+            # The glob LICENSE* will match files like LICENSE, LICENSE.txt, etc.
+            shopt -s nullglob
+            license_files=( "$model_dir"/LICENSE* )
+            shopt -u nullglob
+
+            if [ ${#license_files[@]} -eq 0 ]; then
+              echo "::error ::Directory 'inference/models/$dir_name' is missing a LICENSE file."
+              error_found=1
+            fi
+
+            # Check 2: Verify that README contains an entry for this directory.
+            if ! grep -q "inference/models/$dir_name" "$README_FILE"; then
+              echo "::error ::Directory 'inference/models/$dir_name' is not referenced in $README_FILE."
+              error_found=1
+            fi
+          done
+
+          if [ "$error_found" -ne 0 ]; then
+            echo "Validation failed. Please address the above errors."
+            exit 1
+          else
+            echo "All model directories passed the validation."
+          fi
