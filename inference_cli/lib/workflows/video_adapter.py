@@ -1,7 +1,6 @@
 import os.path
 from collections import defaultdict
 from functools import partial
-from glob import glob
 from typing import Any, Dict, List, Optional, Union
 
 import cv2
@@ -12,6 +11,7 @@ from rich.progress import Progress, TaskID
 
 from inference import InferencePipeline
 from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.stream.entities import SinkHandler
 from inference.core.interfaces.stream.sinks import multi_sink
 from inference.core.utils.image_utils import load_image_bgr
 from inference_cli.lib.utils import dump_jsonl
@@ -31,6 +31,7 @@ def process_video_with_workflow(
     max_fps: Optional[float] = None,
     save_image_outputs_as_video: bool = True,
     api_key: Optional[str] = None,
+    on_prediction: Optional[SinkHandler] = None,
 ) -> VideoProcessingDetails:
     structured_sink = WorkflowsStructuredDataSink(
         output_directory=output_directory,
@@ -39,6 +40,8 @@ def process_video_with_workflow(
     )
     progress_sink = ProgressSink.init(input_video_path=input_video_path)
     sinks = [structured_sink.on_prediction, progress_sink.on_prediction]
+    if on_prediction:
+        sinks.append(on_prediction)
     video_sink: Optional[WorkflowsVideoSink] = None
     if save_image_outputs_as_video:
         video_sink = WorkflowsVideoSink.init(
