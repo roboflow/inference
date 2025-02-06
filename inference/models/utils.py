@@ -254,7 +254,7 @@ try:
         ("text-image-pairs", "paligemma2-3b-pt-896"): PaliGemma,
         ("text-image-pairs", "paligemma2-3b-pt-224-peft"): LoRAPaliGemma,
         ("text-image-pairs", "paligemma2-3b-pt-448-peft"): LoRAPaliGemma,
-        ("text-image-pairs", "paligemma2-3b-pt-896-peft"): LoRAPaliGemma,
+        ("text-image-pairs", "paligemma2-3b-pt-896-peft"): LoRAPaliGemma
     }
     ROBOFLOW_MODEL_TYPES.update(paligemma_models)
 except:
@@ -298,6 +298,20 @@ try:
     ROBOFLOW_MODEL_TYPES.update(florence2_models)
 except:
     pass
+
+try:
+    from inference.models import LoRAQwen25VL, Qwen25VL 
+
+    qwen25vl_models = {
+        ("text-image-pairs", "qwen25-vl-3b"): Qwen25VL,
+        ("text-image-pairs", "qwen25-vl-7b"): Qwen25VL,
+        ("text-image-pairs", "qwen25-vl-3b-peft"): LoRAQwen25VL,
+        ("text-image-pairs", "qwen25-vl-7b-peft"): LoRAQwen25VL,
+    }
+    ROBOFLOW_MODEL_TYPES.update(qwen25vl_models)
+except:
+    pass
+
 try:
     from inference.models import SegmentAnything
 
