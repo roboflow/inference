@@ -155,6 +155,19 @@ async def create_or_overwrite_workflow(workflow_id: str, request_body: dict = Bo
     file_path = workflow_local_dir / f"{workflow_id}.json"
     workflow_local_dir.mkdir(parents=True, exist_ok=True)
 
+    # if the body's id isn't {workflow_id} then we're renaming
+    # delete the old one & update the id in the json to the new one
+    if request_body.get("id") != workflow_id:
+        old_file_path = workflow_local_dir / f"{request_body['id']}.json"
+        if old_file_path.exists():
+            try:
+                old_file_path.unlink()
+            except Exception as e:
+                logger.error(f"Error deleting {old_file_path}: {e}")
+                return JSONResponse({"error": "unable to delete file"}, status_code=500)
+        
+        request_body["id"] = workflow_id
+
     try:
         with file_path.open("w", encoding="utf-8") as f:
             json.dump(request_body, f, indent=2)
@@ -163,6 +176,24 @@ async def create_or_overwrite_workflow(workflow_id: str, request_body: dict = Bo
         return JSONResponse({"error": "unable to write file"}, status_code=500)
 
     return JSONResponse({"message": f"Workflow '{workflow_id}' created/updated successfully."}, status_code=HTTP_201_CREATED)
+
+@router.delete("/api/{workflow_id}")
+@with_route_exceptions
+async def delete_workflow(workflow_id: str):
+    if not re.match(r'^[\w\-]+$', workflow_id):
+        return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
+
+    file_path = workflow_local_dir / f"{workflow_id}.json"
+    if not file_path.exists():
+        return JSONResponse({"error": "not found"}, status_code=HTTP_404_NOT_FOUND)
+
+    try:
+        file_path.unlink()
+    except Exception as e:
+        logger.error(f"Error deleting {file_path}: {e}")
+        return JSONResponse({"error": "unable to delete file"}, status_code=500)
+
+    return JSONResponse({"message": f"Workflow '{workflow_id}' deleted successfully."}, status_code=200)
 
 # ------------------------
 # FALLBACK REDIRECT HELPER
