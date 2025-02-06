@@ -152,6 +152,7 @@ from inference.core.exceptions import (
     RoboflowAPIConnectionError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     ServiceConfigurationError,
     WorkspaceLoadError,
@@ -433,6 +434,14 @@ def with_route_exceptions(route):
                 status_code=503,
                 content={
                     "message": "Internal error. Could not connect to Roboflow API."
+                },
+            )
+            traceback.print_exc()
+        except RoboflowAPITimeoutError:
+            resp = JSONResponse(
+                status_code=504,
+                content={
+                    "message": "Timeout when attempting to connect to Roboflow API."
                 },
             )
             traceback.print_exc()

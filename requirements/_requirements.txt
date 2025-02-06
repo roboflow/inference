@@ -40,3 +40,4 @@ twilio~=9.3.7
 httpx>=0.25.1,<0.28.0  # must be pinned as bc in 0.28.0 is causing Anthropics to fail
 pylogix==1.0.5
 pymodbus>=3.6.9,<=3.8.3
+backoff~=2.2.0
