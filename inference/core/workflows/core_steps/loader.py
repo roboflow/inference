@@ -303,6 +303,9 @@ from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import
 from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
     ImageSlicerBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.image_slicer.v2 import (
+    ImageSlicerBlockV2,
+)
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
 )
@@ -611,6 +614,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TwilioSMSNotificationBlockV1,
         GazeBlockV1,
         LlamaVisionBlockV1,
+        ImageSlicerBlockV2,
     ]
 
 
