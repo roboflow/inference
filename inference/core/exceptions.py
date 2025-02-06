@@ -1,3 +1,6 @@
+from typing import Optional
+
+
 class ContentTypeInvalid(Exception):
     """Raised when the content type is invalid.
 
@@ -152,6 +155,10 @@ class RoboflowAPIConnectionError(RoboflowAPIRequestError):
     pass
 
 
+class RoboflowAPITimeoutError(RoboflowAPIRequestError):
+    pass
+
+
 class RoboflowAPIImageUploadRejectionError(RoboflowAPIRequestError):
     pass
 
@@ -190,3 +197,14 @@ class ActiveLearningConfigurationError(ActiveLearningError):
 
 class CannotInitialiseModelError(Exception):
     pass
+
+
+class RetryRequestError(Exception):
+
+    def __init__(self, message: str, inner_error: Exception):
+        super().__init__(message)
+        self._inner_error = inner_error
+
+    @property
+    def inner_error(self) -> Exception:
+        return self._inner_error
