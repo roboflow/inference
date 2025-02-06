@@ -402,10 +402,10 @@ class RoboflowInferenceModel(Model):
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
 
-        # t0 = time.time()
-        # preprocessed_image = torch.from_numpy(preprocessed_image).cuda()
-        # preprocessed_image = preprocessed_image.permute(2, 0, 1).unsqueeze(0).float()
-        # print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
+        t0 = time.time()
+        preprocessed_image = torch.from_numpy(preprocessed_image).cuda()
+        preprocessed_image = preprocessed_image.permute(2, 0, 1).unsqueeze(0).float()
+        print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
 
         print(self.resize_method)
 

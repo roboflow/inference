@@ -1,5 +1,7 @@
 import numpy as np
 import pytest
+import json
+import supervision as sv
 
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -241,9 +243,36 @@ def assert_yolov8_segmentation_prediction_matches_reference(
     assert np.allclose(
         xywh, [343.0, 214.5, 584.0, 417.0], atol=1.0
     ), "while test creation, box coordinates was [343.0, 214.5, 584.0, 417.0]"
-    assert (
-        len(prediction.predictions[0].points) == 673
-    ), "while test creation, mask had 673 points"
+    
+    
+    sv_prediction = sv.Detections.from_inference(prediction)
+    
+    
+    print(type(json.loads(prediction.model_dump_json())))
+    # with open("yolov8_reference_prediction.json", "w") as f:
+    #     # json.dump(json.loads(prediction.model_dump_json())['predictions'][0], f)
+    #     json.dump(prediction.model_dump(by_alias=True), f)
+    with open("yolov8_reference_prediction.json", "r") as f:
+        reference_prediction = InstanceSegmentationInferenceResponse.model_validate(json.load(f))
+    print(reference_prediction)
+    print(type(reference_prediction))
+    reference_prediction_sv = sv.Detections.from_inference(reference_prediction)
+    print(reference_prediction_sv.mask)
+    prediction_sv = sv.Detections.from_inference(prediction)
+    print(prediction_sv.mask)
+
+    reference_mask_np = np.array(reference_prediction_sv.mask)
+    mask_np = np.array(prediction_sv.mask)
+    print(reference_mask_np.shape)
+    print(mask_np.shape)
+
+    iou = np.sum(reference_mask_np & mask_np) / np.sum(reference_mask_np | mask_np)
+    print(iou)
+
+    assert iou > 0.99, "IOU is too low"
+    # assert (
+    #     len(prediction.predictions[0].points) == 673
+    # ), "while test creation, mask had 673 points"
 
 
 @pytest.mark.slow

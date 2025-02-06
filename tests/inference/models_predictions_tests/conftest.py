@@ -117,7 +117,7 @@ def yolov8_cls_model() -> Generator[str, None, None]:
         model_package_url="https://storage.googleapis.com/roboflow-tests-assets/yolov8_cls.zip",
     )
     yield model_id
-    # shutil.rmtree(model_cache_dir)
+    shutil.rmtree(model_cache_dir)
 
 
 @pytest.fixture(scope="function")
@@ -128,7 +128,7 @@ def yolov8_det_model() -> Generator[str, None, None]:
         model_package_url="https://storage.googleapis.com/roboflow-tests-assets/yolov8_det.zip",
     )
     yield model_id
-    # shutil.rmtree(model_cache_dir)
+    shutil.rmtree(model_cache_dir)
 
 
 @pytest.fixture(scope="function")
@@ -139,7 +139,7 @@ def yolov8_pose_model() -> Generator[str, None, None]:
         model_package_url="https://storage.googleapis.com/roboflow-tests-assets/yolov8_pose.zip",
     )
     yield model_id
-    # shutil.rmtree(model_cache_dir)
+    shutil.rmtree(model_cache_dir)
 
 
 @pytest.fixture(scope="function")
@@ -150,7 +150,7 @@ def yolov8_seg_model() -> Generator[str, None, None]:
         model_package_url="https://storage.googleapis.com/roboflow-tests-assets/yolov8_seg.zip",
     )
     yield model_id
-    # shutil.rmtree(model_cache_dir)
+    shutil.rmtree(model_cache_dir)
 
 
 @pytest.fixture(scope="function")
