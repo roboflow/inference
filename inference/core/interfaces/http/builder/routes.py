@@ -157,7 +157,7 @@ async def create_or_overwrite_workflow(workflow_id: str, request_body: dict = Bo
 
     # if the body's id isn't {workflow_id} then we're renaming
     # delete the old one & update the id in the json to the new one
-    if request_body.get("id") != workflow_id:
+    if request_body.get("id") and request_body.get("id") != workflow_id:
         old_file_path = workflow_local_dir / f"{request_body['id']}.json"
         if old_file_path.exists():
             try:
