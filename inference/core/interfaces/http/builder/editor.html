@@ -41,6 +41,12 @@
                     iframeSrc += `/${workflowId}`;
                 }
 
+                // add query string params
+                let params = {};
+                params.serverUrl = window.location.protocol + "//" + window.location.host;
+
+                iframeSrc += "?" + new URLSearchParams(params).toString();
+
                 const iframeEl = document.getElementById("workflow-iframe");
                 iframeEl.src = iframeSrc;
 
