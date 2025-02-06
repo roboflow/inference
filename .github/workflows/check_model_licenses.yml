@@ -5,6 +5,7 @@ on:
     paths:
       - "inference/models/**"    # Run only if files in inference/models/ have changed
       - ".github/workflows/check_model_licenses.yml"
+  workflow_dispatch:
 
 jobs:
   validate-models:
