@@ -2177,46 +2177,9 @@ class HttpInterface(BaseInterface):
                         return RedirectResponse(f"/notebook-instructions.html")
 
         if ENABLE_BUILDER:
-
-            @app.get(
-                "/build",
-                summary="Workflow Builder List",
-                description="Loads the list of Workflows available for editing",
-            )
-            @with_route_exceptions
-            async def builder_browse():
-                """
-                Loads the list of Workflows available for editing.
-
-                Returns:
-                    FileResponse: The HTML file containing the list of workflows.
-                """
-                logger.debug(f"Reached /build")
-                base_path = Pathlib(__file__).parent
-                file_path = base_path / "builder" / "editor.html"
-                return FileResponse(file_path)
-            
-            @app.get(
-                "/build/edit/{workflow_id}",
-                summary="Workflow Builder",
-                description="Loads a specific workflow for editing",
-            )
-            @with_route_exceptions
-            async def builder_edit(workflow_id: str):
-                """
-                Loads a specific workflow for editing.
-
-                Args:
-                    workflow_id (str): The ID of the workflow to be edited.
-
-                Returns:
-                    FileResponse: The HTML file containing the workflow editor.
-                """
-                logger.debug(f"Reached /build/{workflow_id}")
-                base_path = Pathlib(__file__).parent
-                file_path = base_path / "builder" / "editor.html"
-                return FileResponse(file_path)
-            
+            from inference.core.interfaces.http.builder.routes import router as builder_router
+            # Attach all routes from builder to the /build prefix
+            app.include_router(builder_router, prefix="/build", tags=["builder"])            
             
 
         if LEGACY_ROUTE_ENABLED:
