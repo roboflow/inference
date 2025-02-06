@@ -4,7 +4,6 @@ import re
 from collections import defaultdict
 from copy import copy
 from datetime import datetime
-from functools import lru_cache
 from threading import Lock
 from typing import Any, Dict, List, Optional, Set, TextIO, Tuple
 
@@ -12,7 +11,6 @@ import cv2
 import numpy as np
 import pandas as pd
 import pybase64
-import supervision as sv
 from rich.progress import track
 
 from inference_cli.lib.utils import dump_json, dump_jsonl, read_json
@@ -30,25 +28,6 @@ TYPE_KEY = "type"
 BASE_64_TYPE = "base64"
 VALUE_KEY = "value"
 DEDUCTED_IMAGE = "<deducted_image>"
-
-IMAGES_EXTENSIONS = [
-    "bmp",
-    "BMP",
-    "dib",
-    "DIB",
-    "jpeg",
-    "JPEG",
-    "jpg",
-    "JPG",
-    "jpe",
-    "JPE",
-    "jp2",
-    "JP2",
-    "png",
-    "PNG",
-    "webp",
-    "WEBP",
-]
 
 
 def open_progress_log(output_directory: str) -> Tuple[TextIO, Set[str]]:
@@ -190,35 +169,6 @@ def decode_base64_image(payload: str) -> np.ndarray:
     if result is None:
         raise ValueError("Could not decode image")
     return result
-
-
-def get_all_images_in_directory(input_directory: str) -> List[str]:
-    file_system_is_case_sensitive = _is_file_system_case_sensitive()
-    if file_system_is_case_sensitive:
-        return [
-            path.as_posix()
-            for path in sv.list_files_with_extensions(
-                directory=input_directory,
-                extensions=IMAGES_EXTENSIONS,
-            )
-        ]
-    return list(
-        {
-            path.as_posix().lower()
-            for path in sv.list_files_with_extensions(
-                directory=input_directory,
-                extensions=IMAGES_EXTENSIONS,
-            )
-        }
-    )
-
-
-@lru_cache()
-def _is_file_system_case_sensitive() -> bool:
-    fs_is_case_insensitive = os.path.exists(__file__.upper()) and os.path.exists(
-        __file__.lower()
-    )
-    return not fs_is_case_insensitive
 
 
 def report_failed_files(

@@ -50,6 +50,8 @@ A higher tolerance will group detections that are further apart vertically.
   
     * **"vertical_bottom_to_top"**: Vertical reading from bottom to top ⬆️
 
+    * **"auto"**: Automatically detects the reading direction based on the spatial arrangement of text elements.
+
 #### Why Use This Transformation?
 
 This is especially useful for:
@@ -109,6 +111,7 @@ class BlockManifest(WorkflowBlockManifest):
         "right_to_left",
         "vertical_top_to_bottom",
         "vertical_bottom_to_top",
+        "auto",
     ] = Field(
         title="Reading Direction",
         description="The direction of the text in the image.",
@@ -130,6 +133,10 @@ class BlockManifest(WorkflowBlockManifest):
                 "vertical_bottom_to_top": {
                     "name": "Bottom To Top (Vertical)",
                     "description": "Vertical reading from bottom to top",
+                },
+                "auto": {
+                    "name": "Auto",
+                    "description": "Automatically detect the reading direction based on text arrangement.",
                 },
             }
         },
@@ -167,6 +174,23 @@ class BlockManifest(WorkflowBlockManifest):
         return ">=1.0.0,<2.0.0"
 
 
+def detect_reading_direction(detections: sv.Detections) -> str:
+    if len(detections) == 0:
+        return "left_to_right"
+
+    xyxy = detections.xyxy
+    widths = xyxy[:, 2] - xyxy[:, 0]
+    heights = xyxy[:, 3] - xyxy[:, 1]
+
+    avg_width = np.mean(widths)
+    avg_height = np.mean(heights)
+
+    if avg_width > avg_height:
+        return "left_to_right"
+    else:
+        return "vertical_top_to_bottom"
+
+
 class StitchOCRDetectionsBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -178,6 +202,8 @@ class StitchOCRDetectionsBlockV1(WorkflowBlock):
         reading_direction: str,
         tolerance: int,
     ) -> BlockResult:
+        if reading_direction == "auto":
+            reading_direction = detect_reading_direction(predictions[0])
         return [
             stitch_ocr_detections(
                 detections=detections,

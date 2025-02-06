@@ -1,4 +1,12 @@
-from typing import Optional
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
+
+class WorkflowBlockError(BaseModel):
+    block_id: str
+    block_type: str
+    property_name: Optional[str] = None
 
 
 class WorkflowError(Exception):
@@ -66,7 +74,14 @@ class WorkflowDefinitionError(WorkflowCompilerError):
 
 
 class WorkflowSyntaxError(WorkflowDefinitionError):
-    pass
+    def __init__(
+        self,
+        *args,
+        blocks_errors: Optional[List[WorkflowBlockError]] = None,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._blocks_errors = blocks_errors
 
 
 class DuplicatedNameError(WorkflowDefinitionError):
@@ -122,7 +137,16 @@ class InvalidBlockBehaviourError(WorkflowExecutionEngineError):
 
 
 class StepExecutionError(WorkflowExecutionEngineError):
-    pass
+    def __init__(
+        self,
+        *args,
+        block_id: str,
+        block_type: str,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._block_id = block_id
+        self._block_type = block_type
 
 
 class ExecutionEngineRuntimeError(WorkflowExecutionEngineError):

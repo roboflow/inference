@@ -137,6 +137,7 @@ class BlockManifest(WorkflowBlockManifest):
             "relevant_for": {
                 "task_type": {"values": TASKS_REQUIRING_PROMPT, "required": True},
             },
+            "multiline": True,
         },
     )
     output_structure: Optional[Dict[str, str]] = Field(

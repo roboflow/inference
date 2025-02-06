@@ -2,6 +2,7 @@ import asyncio
 import base64
 import os
 import traceback
+from contextlib import asynccontextmanager
 from functools import partial, wraps
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
@@ -13,7 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
-from pydantic import BaseModel
 from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -53,7 +53,6 @@ from inference.core.entities.requests.server_state import (
 from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
-    DescribeInterfaceRequest,
     PredefinedWorkflowDescribeInterfaceRequest,
     PredefinedWorkflowInferenceRequest,
     WorkflowInferenceRequest,
@@ -94,6 +93,7 @@ from inference.core.entities.responses.server_state import (
 from inference.core.entities.responses.workflows import (
     DescribeInterfaceResponse,
     ExecutionEngineVersions,
+    WorkflowErrorResponse,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
     WorkflowsBlocksSchemaDescription,
@@ -195,7 +195,6 @@ from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
-    get_roboflow_dataset_type,
     get_roboflow_workspace,
     get_workflow_specification,
 )
@@ -213,9 +212,12 @@ from inference.core.workflows.errors import (
     NotSupportedExecutionEngineError,
     ReferenceTypeError,
     RuntimeInputError,
+    StepExecutionError,
+    WorkflowBlockError,
     WorkflowDefinitionError,
     WorkflowError,
     WorkflowExecutionEngineVersionError,
+    WorkflowSyntaxError,
 )
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
@@ -309,6 +311,15 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
+        except WorkflowSyntaxError as error:
+            content = WorkflowErrorResponse(
+                message=error.public_message,
+                error_type=error.__class__.__name__,
+                context=error.context,
+                inner_error_type=error.inner_error_type,
+                inner_error_message=str(error.inner_error),
+            )
+            resp = JSONResponse(status_code=400, content=content)
         except (
             WorkflowDefinitionError,
             ExecutionGraphStructureError,
@@ -426,6 +437,25 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
+        except StepExecutionError as error:
+            content = WorkflowErrorResponse(
+                message=error.public_message,
+                error_type=error.__class__.__name__,
+                context=error.context,
+                inner_error_type=error.inner_error_type,
+                inner_error_message=str(error.inner_error),
+                blocks_errors=[
+                    WorkflowBlockError(
+                        block_id=error._block_id,
+                        block_type=error._block_type,
+                    ),
+                ],
+            )
+            resp = JSONResponse(
+                status_code=500,
+                content=content.model_dump(),
+            )
+            traceback.print_exc()
         except WorkflowError as error:
             resp = JSONResponse(
                 status_code=500,
@@ -493,8 +523,17 @@ class HttpInterface(BaseInterface):
         Description:
             Deploy Roboflow trained models to nearly any compute environment!
         """
+
         description = "Roboflow inference server"
+
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            yield
+            logger.info("Shutting down %s", description)
+            await usage_collector.async_push_usage_payloads()
+
         app = FastAPI(
+            lifespan=lifespan,
             title="Roboflow Inference Server",
             description=description,
             version=__version__,
@@ -590,7 +629,6 @@ class HttpInterface(BaseInterface):
 
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
             cached_api_keys = dict()
-            cached_projects = dict()
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -600,6 +638,8 @@ class HttpInterface(BaseInterface):
                     or request.url.path
                     in [
                         "/",
+                        "/docs",
+                        "/redoc",
                         "/info",
                         "/workflows/blocks/describe",
                         "/workflows/definition/schema",
@@ -647,29 +687,6 @@ class HttpInterface(BaseInterface):
                         )  # expired after 1 hour
                     except RoboflowAPINotAuthorizedError as e:
                         return _unauthorized_response("Unauthorized api_key")
-
-                # check project_url
-                model_id = json_params.get("model_id", "")
-                project_url = (
-                    req_params.get("project", None)
-                    or json_params.get("project", None)
-                    or model_id.split("/")[0]
-                )
-                # only check when project_url is not None
-                if (
-                    project_url is not None
-                    and cached_projects.get(project_url, 0) < time.time()
-                ):
-                    try:
-                        _ = get_roboflow_dataset_type(
-                            api_key, DEDICATED_DEPLOYMENT_WORKSPACE_URL, project_url
-                        )
-
-                        cached_projects[project_url] = (
-                            time.time() + 3600
-                        )  # expired after 1 hour
-                    except RoboflowAPINotNotFoundError as e:
-                        return _unauthorized_response("Unauthorized project")
 
                 return await call_next(request)
 

@@ -100,8 +100,8 @@ class WebRTCTURNConfig(BaseModel):
 class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
     webrtc_offer: WebRTCOffer
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None
-    stream_output: Optional[List[str]] = Field(default_factory=list)
-    data_output: Optional[List[str]] = Field(default_factory=list)
+    stream_output: Optional[List[Optional[str]]] = Field(default_factory=list)
+    data_output: Optional[List[Optional[str]]] = Field(default_factory=list)
     webrtc_peer_timeout: float = 1
     webcam_fps: Optional[float] = None
 

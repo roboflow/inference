@@ -77,39 +77,51 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/twilio_sms_notification@v1"]
     twilio_account_sid: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = Field(
         title="Twilio Account SID",
-        description="Twilio Account SID. Visit "
-        "https://twilio.com/console "
-        "to set up SMS service and fetch the value.",
+        description="Twilio Account SID. Visit the "
+        "[Twilio Console](https://twilio.com/console) "
+        "to configure the SMS service and retrieve the value.",
         private=True,
         examples=["$inputs.twilio_account_sid"],
     )
     twilio_auth_token: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = Field(
         title="Twilio Auth Token",
-        description="Twilio Auth Token. Visit "
-        "<a href='https://twilio.com/console'>Twilio Console</a> "
-        "to set up SMS service and fetch the value.",
+        description="Twilio Auth Token. Visit the "
+        "[Twilio Console](https://twilio.com/console) "
+        "to configure the SMS service and retrieve the value.",
         private=True,
         examples=["$inputs.twilio_auth_token"],
-    )
-    message: str = Field(
-        description="Content of the message to be send",
-        examples=[
-            "During last 5 minutes detected {{ $parameters.num_instances }} instances"
-        ],
+        json_schema_extra={
+            "hide_description": True,
+        },
     )
     sender_number: Union[str, Selector(kind=[STRING_KIND])] = Field(
         description="Sender phone number",
-        examples=["$inputs.sender_number"],
+        examples=["+1234567890", "$inputs.sender_number"],
+        json_schema_extra={
+            "hide_description": True,
+        },
     )
     receiver_number: Union[str, Selector(kind=[STRING_KIND])] = Field(
         description="Receiver phone number",
-        examples=["$inputs.receiver_number"],
+        examples=["+1234567890", "$inputs.receiver_number"],
+        json_schema_extra={
+            "hide_description": True,
+        },
+    )
+    message: str = Field(
+        description="Content of the message to be sent.",
+        examples=[
+            "During last 5 minutes detected {{ $parameters.num_instances }} instances"
+        ],
+        json_schema_extra={
+            "multiline": True,
+        },
     )
     message_parameters: Dict[
         str,
         Union[Selector(), Selector(), str, int, float, bool],
     ] = Field(
-        description="References data to be used to construct each and every column",
+        description="Data to be used in the message content.",
         examples=[
             {
                 "predictions": "$steps.model.predictions",
@@ -117,9 +129,12 @@ class BlockManifest(WorkflowBlockManifest):
             }
         ],
         default_factory=dict,
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     message_parameters_operations: Dict[str, List[AllOperationsType]] = Field(
-        description="UQL definitions of operations to be performed on defined data w.r.t. each message parameter",
+        description="Preprocessing operations to be performed on message parameters.",
         examples=[
             {
                 "predictions": [
@@ -131,20 +146,17 @@ class BlockManifest(WorkflowBlockManifest):
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Boolean flag dictating if sink is supposed to be executed in the background, "
-        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-        "registration is needed, use `False` while debugging and if error handling is needed",
+        description="Boolean flag to run the block asynchronously (True) for faster workflows or synchronously (False) for debugging and error handling.",
         examples=["$inputs.fire_and_forget", False],
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="boolean flag that can be also reference to input - to arbitrarily disable "
-        "data collection for specific request",
+        description="Boolean flag to disable block execution.",
         examples=[False, "$inputs.disable_slack_notifications"],
     )
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=5,
-        description="Number of seconds to wait until follow-up notification can be sent. "
+        description="Number of seconds until a follow-up notification can be sent. "
         f"Maximum value: {CACHE_EXPIRE_TIME} seconds (15 minutes)",
         examples=["$inputs.cooldown_seconds", 3],
         json_schema_extra={
