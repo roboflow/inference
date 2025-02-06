@@ -18,6 +18,7 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.models.utils.validate import (
     get_num_classes_from_model_prediction_shape,
 )
+from inference.core.utils.onnx import run_session_via_iobinding
 from inference.core.utils.image_utils import load_image_rgb
 
 
@@ -179,7 +180,8 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         )
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
-        predictions = self.onnx_session.run(None, {self.input_name: img_in})
+        # predictions = self.onnx_session.run(None, {self.input_name: img_in})
+        predictions = run_session_via_iobinding(self.onnx_session, self.input_name, img_in)
         return (predictions,)
 
     def preprocess(
