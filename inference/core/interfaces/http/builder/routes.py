@@ -106,7 +106,7 @@ async def get_workflow(workflow_id: str):
     """
     Return JSON for workflow_id.json, or { "error": "not found" } with 404 if missing.
     """
-    if not re.match(r'^[\w\-.]+$', workflow_id):
+    if not re.match(r'^[\w\-]+$', workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
 
     file_path = workflow_local_dir / f"{workflow_id}.json"
@@ -141,7 +141,7 @@ async def get_workflow(workflow_id: str):
 @router.post("/api/{workflow_id}")
 @with_route_exceptions
 async def create_or_overwrite_workflow(workflow_id: str, request_body: dict = Body(...)):
-    if not re.match(r'^[\w\-.]+$', workflow_id):
+    if not re.match(r'^[\w\-]+$', workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
 
     file_path = workflow_local_dir / f"{workflow_id}.json"
@@ -168,7 +168,7 @@ async def builder_maybe_redirect(workflow_id: str):
     Otherwise, redirect back to /build.
     """
     # Sanitize workflow_id to prevent path traversal
-    if not re.match(r'^[\w\-.]+$', workflow_id):
+    if not re.match(r'^[\w\-]+$', workflow_id):
         # If it's invalid, just redirect home (or raise 400)
         return RedirectResponse(url="/build", status_code=302)
 
