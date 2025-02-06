@@ -1,20 +1,84 @@
+<!DOCTYPE html>
 <html>
     <head>
-        <script>
-            document.addEventListener("DOMContentLoaded", function(event) {
-                const workflow_id = window.location.pathname.split("/").pop();
-                document.getElementById("content").innerHTML = `Workflow ${workflow_id}`;
-            });
-        </script>
+        <meta charset="UTF-8" />
+        <title>Workflow Editor</title>
         <style>
-            html, body {
+            html,
+            body {
                 height: 100%;
                 margin: 0;
                 padding: 0;
+                overflow: hidden;
+            }
+            iframe {
+                width: 100%;
+                height: 100%;
+                border: 0;
             }
         </style>
+        <script>
+            const BUILDER_ORIGIN = "{{BUILDER_ORIGIN}}";
+
+            document.addEventListener("DOMContentLoaded", function () {
+                // We'll parse the URL path. For example:
+                //   /build -> parts = ["", "build"]
+                //   /build/edit/foo -> parts = ["", "build", "edit", "foo"]
+                const parts = window.location.pathname
+                    .split("/")
+                    .filter(Boolean);
+
+                // Decide if it's /build/edit/:id or just /build
+                let workflowId = null;
+                if (parts.length >= 3 && parts[1] === "edit") {
+                    workflowId = parts[2];
+                }
+
+                // If we have an ID => /workflows/local/:id
+                // Else => /workflows/local
+                let iframeSrc = `${BUILDER_ORIGIN}/workflows/local`;
+                if (workflowId) {
+                    iframeSrc += `/${workflowId}`;
+                }
+
+                const iframeEl = document.getElementById("workflow-iframe");
+                iframeEl.src = iframeSrc;
+
+                // Listen for messages from the iframe
+                window.addEventListener(
+                    "message",
+                    function (event) {
+                        const message = event.data;
+                        if (typeof message === "object" && message !== null) {
+                            switch (message.type) {
+                                case "navigate": {
+                                    // e.g. { type: "navigate", id: "foobar" }
+                                    let path = message.path || "";
+                                    if(path.indexOf("/") == 0) path = path.substring(1);
+                                    const newUrl = path ? `/build/${path}` : "/build";
+                                    history.pushState({}, "", newUrl);
+                                    break;
+                                }
+                                case "setTitle": {
+                                    // e.g. { type: "setTitle", title: "Now editing 'foobar'" }
+                                    if (typeof message.title === "string") {
+                                        document.title = message.title;
+                                    }
+                                    break;
+                                }
+                                default:
+                                    // Ignore or handle other message types
+                                    break;
+                            }
+                        }
+                    },
+                    false
+                );
+            });
+        </script>
     </head>
     <body>
-        <iframe src="https://localhost.roboflow.one/workflows/local" width="100%" height="100%" frameborder="0"></iframe>
+        <!-- The iframe where we load /workflows/local or /workflows/local/:id -->
+        <iframe id="workflow-iframe"></iframe>
     </body>
 </html>

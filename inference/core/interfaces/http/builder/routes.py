@@ -4,12 +4,13 @@ import json
 import logging
 from pathlib import Path
 from fastapi import APIRouter, Body, HTTPException
-from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response, HTMLResponse
 from starlette.status import HTTP_201_CREATED, HTTP_404_NOT_FOUND, HTTP_400_BAD_REQUEST
 from inference.core.interfaces.http.http_api import with_route_exceptions
 
 from inference.core.env import (
-    MODEL_CACHE_DIR
+    MODEL_CACHE_DIR,
+    BUILDER_ORIGIN
 )
 
 logger = logging.getLogger(__name__)
@@ -36,11 +37,16 @@ async def builder_browse():
     Returns:
         FileResponse: The HTML file containing the list of workflows.
     """
-    logger.debug(f"Reached /build")
     base_path = Path(__file__).parent
-    # Adjust path if needed (might be builder/ next to routes.py, or some other path)
     file_path = base_path / "editor.html"
-    return FileResponse(file_path)
+    content = file_path.read_text(encoding="utf-8")
+    content = content.replace("{{BUILDER_ORIGIN}}", BUILDER_ORIGIN)
+
+    return HTMLResponse(content)
+
+@router.get("/", include_in_schema=False)
+async def builder_redirect():
+    return RedirectResponse(url="/build", status_code=302)
 
 @router.get(
     "/edit/{workflow_id}",
@@ -58,10 +64,12 @@ async def builder_edit(workflow_id: str):
     Returns:
         FileResponse: The HTML file containing the workflow editor.
     """
-    logger.debug(f"Reached /build/{workflow_id}")
     base_path = Path(__file__).parent
     file_path = base_path / "editor.html"
-    return FileResponse(file_path)
+    content = file_path.read_text(encoding="utf-8")
+    content = content.replace("{{BUILDER_ORIGIN}}", BUILDER_ORIGIN)
+
+    return HTMLResponse(content)
 
 # ----------------------
 # BACKEND JSON API ROUTES
