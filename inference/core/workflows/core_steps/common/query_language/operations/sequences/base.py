@@ -1,5 +1,5 @@
 from collections import Counter
-from typing import Any, List
+from typing import Any, Dict, List
 
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     SequenceAggregationFunction,
@@ -7,6 +7,9 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
 )
 from inference.core.workflows.core_steps.common.query_language.errors import (
     InvalidInputTypeError,
+)
+from inference.core.workflows.core_steps.common.query_language.operations.utils import (
+    safe_stringify,
 )
 
 
@@ -111,6 +114,22 @@ def get_sequence_length(value: Any, execution_context: str, **kwargs) -> int:
     except TypeError as e:
         raise InvalidInputTypeError(
             public_message=f"While executing get_sequence_length(...) in context {execution_context}, encountered "
+            f"value of type {type(value)} which is not suited to execute operation. Details: {e}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+            inner_error=e,
+        )
+
+
+def get_sequence_elements_count(value: Any, execution_context: str, **kwargs) -> Dict[Any, int]:
+    try:
+        res = {}
+        for v in value:
+            value_as_str = safe_stringify(value=v)
+            res[value_as_str] = res.setdefault(value_as_str, 0) + 1
+        return res
+    except (TypeError, ValueError) as e:
+        raise InvalidInputTypeError(
+            public_message=f"While executing get_sequence_elements_count(...) in context {execution_context}, encountered "
             f"value of type {type(value)} which is not suited to execute operation. Details: {e}",
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=e,

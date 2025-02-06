@@ -57,6 +57,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.sequen
     aggregate_numeric_sequence,
     aggregate_sequence,
     get_sequence_length,
+    get_sequence_elements_count,
     sequence_apply,
     sequence_map,
 )
@@ -189,6 +190,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "RandomNumber": generate_random_number,
     "StringMatches": string_matches,
     "SequenceLength": get_sequence_length,
+    "SequenceElementsCount": get_sequence_elements_count,
     "ExtractImageProperty": extract_image_property,
     "Multiply": multiply,
     "Divide": divide,

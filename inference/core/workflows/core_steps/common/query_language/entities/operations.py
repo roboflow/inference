@@ -460,6 +460,20 @@ class SequenceLength(OperationDefinition):
     type: Literal["SequenceLength"]
 
 
+class SequenceElementsCount(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Operation counts unique elements of input sequence",
+            "compound": False,
+            "input_kind": [
+                LIST_OF_VALUES_KIND,
+            ],
+            "output_kind": [DICTIONARY_KIND],
+        },
+    )
+    type: Literal["SequenceElementsCount"]
+
+
 class SequenceApply(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -582,6 +596,7 @@ AllOperationsType = Annotated[
         StringMatches,
         ExtractImageProperty,
         SequenceLength,
+        SequenceElementsCount,
         Multiply,
         Divide,
         DetectionsSelection,
