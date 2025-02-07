@@ -120,7 +120,9 @@ def get_sequence_length(value: Any, execution_context: str, **kwargs) -> int:
         )
 
 
-def get_sequence_elements_count(value: Any, execution_context: str, **kwargs) -> Dict[Any, int]:
+def get_sequence_elements_count(
+    value: Any, execution_context: str, **kwargs
+) -> Dict[Any, int]:
     try:
         res = {}
         for v in value:
