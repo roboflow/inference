@@ -12,6 +12,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
+    FLOAT_KIND,
     LIST_OF_VALUES_KIND,
     Selector,
 )
@@ -66,6 +67,11 @@ class DynamicZonesManifest(WorkflowBlockManifest):
         description="Keep simplifying polygon until number of vertices matches this number",
         examples=[4, "$inputs.vertices"],
     )
+    scale_ratio: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+        default=1,
+        description="Expand resulting polygon along imaginary line from centroid to edge by this ratio",
+        examples=[1.05, "$inputs.scale_ratio"],
+    )
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -119,6 +125,21 @@ def calculate_simplified_polygon(
     return simplified_polygon
 
 
+def scale_polygon(polygon: np.ndarray, scale: float) -> np.ndarray:
+    if scale == 1:
+        return polygon
+
+    M = cv.moments(polygon)
+    centroid_x = int(round(M["m10"] / M["m00"]))
+    centroid_y = int(round(M["m01"] / M["m00"]))
+
+    norm = polygon - [centroid_x, centroid_y]
+    scaled = norm * scale
+    result = scaled + [centroid_x, centroid_y]
+
+    return result.round().astype(np.int32)
+
+
 class DynamicZonesBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -128,6 +149,7 @@ class DynamicZonesBlockV1(WorkflowBlock):
         self,
         predictions: Batch[sv.Detections],
         required_number_of_vertices: int,
+        scale_ratio: float,
     ) -> BlockResult:
         result = []
         for detections in predictions:
@@ -145,6 +167,10 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 )
                 if len(simplified_polygon) != required_number_of_vertices:
                     continue
+                simplified_polygon = scale_polygon(
+                    polygon=simplified_polygon,
+                    scale=scale_ratio,
+                )
                 simplified_polygons.append(simplified_polygon)
             result.append({OUTPUT_KEY: simplified_polygons})
         return result
