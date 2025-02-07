@@ -318,8 +318,9 @@ def with_route_exceptions(route):
                 context=error.context,
                 inner_error_type=error.inner_error_type,
                 inner_error_message=str(error.inner_error),
+                blocks_errors=error._blocks_errors,
             )
-            resp = JSONResponse(status_code=400, content=content)
+            resp = JSONResponse(status_code=400, content=content.model_dump())
         except (
             WorkflowDefinitionError,
             ExecutionGraphStructureError,
