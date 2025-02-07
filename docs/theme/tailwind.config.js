@@ -21,20 +21,7 @@ export default {
         '580/205': '580 / 205',
         '548/230': '548 / 230',
       },
-      // fontSize: {
-      //   xs: "0.6rem",
-      //   sm: "0.7rem",
-      //   base: "0.8rem",
-      //   lg: "0.9rem",
-      //   xl: "1rem",
-      //   "2xl": "1.2rem",
-      //   "3xl": "1.5rem",
-      //   "4xl": "1.8rem",
-      //   "5xl": "2.4rem",
-      //   "6xl": "3rem",
-      //   "7xl": "3.6rem",
-      // },
-      fontSize: {
+      fontSize: { // using px becasue html fontsize is set to 125% for some reason
         xs: "12px", // 0.75rem
         sm: "14px", // 0.875rem
         base: "16px", // 1rem
@@ -47,22 +34,7 @@ export default {
         "6xl": "60px", // 3.75rem
         "7xl": "72px", // 4.5rem
       },
-      // spacing: {
-      //   px: "0.05rem",
-      //   0: "0rem",
-      //   1: "0.2rem",
-      //   2: "0.4rem",
-      //   3: "0.6rem",
-      //   4: "0.8rem",
-      //   5: "1rem",
-      //   6: "1.2rem",
-      //   8: "1.6rem",
-      //   10: "2rem",
-      //   12: "2.4rem",
-      //   16: "3.2rem",
-      //   20: "4rem",
-      // },
-      spacing: {
+      spacing: { // using px becasue html fontsize is set to 125% for some reason
         px: "1px", // 1px
         0: "0px", // 0px
         1: "4px", // 0.25rem
@@ -77,14 +49,7 @@ export default {
         16: "64px", // 4rem
         20: "80px", // 5rem
       },
-      // screens: {
-      //   sm: "40rem",
-      //   md: "51.2rem",
-      //   lg: "64rem",
-      //   xl: "80rem",
-      //   "2xl": "96rem",
-      // },
-      screens: {
+      screens: { // using px becasue html fontsize is set to 125% for some reason
         sm: "640px", // 40rem
         md: "768px", // 51.2rem
         lg: "1024px", // 64rem
