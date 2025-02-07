@@ -18,6 +18,7 @@ from inference.core.utils.postprocess import (
     post_process_bboxes,
     post_process_polygons,
 )
+from inference.core.utils.onnx import run_session_via_iobinding
 
 
 class YOLACT(OnnxRoboflowInferenceModel):
@@ -122,7 +123,7 @@ class YOLACT(OnnxRoboflowInferenceModel):
     def predict(
         self, img_in: np.ndarray, **kwargs
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        return self.onnx_session.run(None, {self.input_name: img_in})
+        return run_session_via_iobinding(self.onnx_session, self.input_name, img_in)
 
     def postprocess(
         self,
