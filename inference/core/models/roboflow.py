@@ -7,8 +7,6 @@ from functools import partial
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import torch
-
 import time
 
 import cv2
@@ -49,6 +47,7 @@ from inference.core.env import (
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
+    USE_PYTORCH_FOR_PREPROCESSING,
 )
 from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
 from inference.core.logger import logger
@@ -65,6 +64,13 @@ from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
+
+if USE_PYTORCH_FOR_PREPROCESSING:
+    try:
+        import torch
+    except:
+        logger.warning("PyTorch is not available, using NumPy for preprocessing")
+        USE_PYTORCH_FOR_PREPROCESSING = False
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
@@ -403,9 +409,14 @@ class RoboflowInferenceModel(Model):
         )
 
         t0 = time.time()
-        preprocessed_image = torch.from_numpy(preprocessed_image).cuda()
-        preprocessed_image = preprocessed_image.permute(2, 0, 1).unsqueeze(0).float()
-        print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
+        if USE_PYTORCH_FOR_PREPROCESSING:
+            preprocessed_image = torch.from_numpy(preprocessed_image)
+            if torch.cuda.is_available():
+                preprocessed_image = preprocessed_image.cuda()
+            preprocessed_image = preprocessed_image.permute(2, 0, 1).unsqueeze(0).float()
+            print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
+        
+        print(f"image is of type {type(preprocessed_image)}")
 
         print(self.resize_method)
 
