@@ -99,6 +99,7 @@ def process_image_directory_with_workflow_using_inference_package(
     aggregate_structured_results: bool = True,
     aggregation_format: OutputFileType = OutputFileType.JSONL,
     debug_mode: bool = False,
+    max_failures: Optional[int] = None,
 ) -> ImagesDirectoryProcessingDetails:
     if api_key is None:
         api_key = API_KEY
@@ -125,6 +126,7 @@ def process_image_directory_with_workflow_using_inference_package(
             save_image_outputs=save_image_outputs,
             log_file=log_file,
             debug_mode=debug_mode,
+            max_failures=max_failures,
         )
     finally:
         log_file.close()
@@ -163,6 +165,7 @@ def _process_images_within_directory(
     save_image_outputs: bool,
     log_file: TextIO,
     debug_mode: bool = False,
+    max_failures: Optional[int] = None,
 ) -> List[Tuple[str, str]]:
     workflow_specification = _get_workflow_specification(
         workflow_specification=workflow_specification,
@@ -176,6 +179,8 @@ def _process_images_within_directory(
         description="Processing images...",
         total=len(files_to_process),
     )
+    if max_failures is None:
+        max_failures = len(files_to_process) + 1
     failed_files = []
     on_success = partial(
         _on_success,
@@ -204,9 +209,28 @@ def _process_images_within_directory(
         on_failure=on_failure,
         debug_mode=debug_mode,
     )
+    failures = 0
+    succeeded_files = set()
     with progress_bar:
         for image_path in files_to_process:
-            processing_fun(image_path)
+            success = processing_fun(image_path)
+            if not success:
+                failures += 1
+            else:
+                succeeded_files.add(image_path)
+            if failures >= max_failures:
+                break
+    failed_files_lookup = {f[0] for f in failed_files}
+    aborted_files = [
+        f
+        for f in files_to_process
+        if f not in succeeded_files and f not in failed_files_lookup
+    ]
+    for file in aborted_files:
+        on_failure(
+            file,
+            "Aborted processing due to exceeding max failures of Workflows executions.",
+        )
     return failed_files
 
 
@@ -247,7 +271,7 @@ def _process_single_image_from_directory(
     on_failure: Callable[[ImagePath, str], None],
     log_file_lock: Optional[Lock] = None,
     debug_mode: bool = False,
-) -> None:
+) -> bool:
     try:
         result = _run_workflow_for_single_image_with_inference(
             model_manager=model_manager,
@@ -268,11 +292,13 @@ def _process_single_image_from_directory(
             log_file=log_file, image_path=image_path, lock=log_file_lock
         )
         on_success(image_path, index_entry)
+        return True
     except Exception as error:
         error_summary = f"Error in processing {image_path}. Error type: {error.__class__.__name__} - {error}"
         if debug_mode:
             CLI_LOGGER.exception(error_summary)
         on_failure(image_path, error_summary)
+        return False
 
 
 def _get_workflow_specification(
