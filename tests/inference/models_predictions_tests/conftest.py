@@ -116,6 +116,12 @@ def yolov7_seg_model() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function")
+def yolov7_seg_reference_prediction() -> InstanceSegmentationInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "yolov7_seg_reference_prediction.json"), "r") as f:
+        return InstanceSegmentationInferenceResponse.model_validate(json.load(f))
+
+
+@pytest.fixture(scope="function")
 def yolov8_cls_model() -> Generator[str, None, None]:
     model_id = "yolov8_cls/1"
     model_cache_dir = fetch_and_place_model_in_cache(
