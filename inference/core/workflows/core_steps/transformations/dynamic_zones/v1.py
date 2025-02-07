@@ -10,9 +10,9 @@ from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
-    FLOAT_KIND,
     LIST_OF_VALUES_KIND,
     Selector,
 )
@@ -130,11 +130,15 @@ def scale_polygon(polygon: np.ndarray, scale: float) -> np.ndarray:
         return polygon
 
     M = cv.moments(polygon)
-    centroid_x = int(round(M["m10"] / M["m00"]))
-    centroid_y = int(round(M["m01"] / M["m00"]))
 
-    norm = polygon - [centroid_x, centroid_y]
-    scaled = norm * scale
+    if M["m00"] == 0:
+        return polygon
+
+    centroid_x = M["m10"] / M["m00"]
+    centroid_y = M["m01"] / M["m00"]
+
+    shifted = polygon - [centroid_x, centroid_y]
+    scaled = shifted * scale
     result = scaled + [centroid_x, centroid_y]
 
     return result.round().astype(np.int32)
