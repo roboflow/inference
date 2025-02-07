@@ -1,6 +1,7 @@
 import json
 import random
 import string
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Union
@@ -11,6 +12,15 @@ from requests import Timeout
 from rich.console import Console
 from rich.json import JSON
 from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    Progress,
+    ProgressSample,
+    Task,
+    TaskID,
+    TaskProgressColumn,
+    TextColumn,
+)
 from rich.table import Table
 from rich.text import Text
 
@@ -200,6 +210,13 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
         most_recent_task_update_time = stage.start_timestamp
         if job_tasks:
             most_recent_task_update_time = max([t.event_timestamp for t in job_tasks])
+        single_task_progress = 1 / stage.tasks_number
+        accumulated_progress = 0.0
+        for task in job_tasks:
+            if task.is_terminal:
+                accumulated_progress += single_task_progress
+            else:
+                accumulated_progress += task.progress * single_task_progress
         succeeded_tasks = [t for t in job_tasks if "success" in t.status_type.lower()]
         failed_tasks = [t for t in job_tasks if "error" in t.status_type.lower()]
         failed_tasks_statuses = Counter([t.status_name for t in failed_tasks])
@@ -259,6 +276,16 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
             f"⏳️: {tasks_waiting_for_processing}, 🏃: {running_tasks}, 🏁: {terminated_tasks} "
             f"(out of {expected_tasks})",
         )
+        progress = Progress(BarColumn(), TaskProgressColumn())
+        completed = round(accumulated_progress * 100, 2)
+        _ = progress.add_task(
+            description="Stage Progress",
+            total=100.0,
+            start=completed > 0,
+            completed=completed,
+        )
+
+        details_table.add_row("Progress", progress.get_renderable())
         details_table.add_row(
             "Completed Tasks Status",
             f"✅: {len(succeeded_tasks)}, ❌: {len(failed_tasks)}",

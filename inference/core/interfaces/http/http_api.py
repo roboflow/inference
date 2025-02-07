@@ -2,7 +2,6 @@ import asyncio
 import base64
 import os
 import traceback
-from contextlib import asynccontextmanager
 from functools import partial, wraps
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
@@ -153,6 +152,7 @@ from inference.core.exceptions import (
     RoboflowAPIConnectionError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     ServiceConfigurationError,
     WorkspaceLoadError,
@@ -217,6 +217,7 @@ from inference.core.workflows.errors import (
     WorkflowDefinitionError,
     WorkflowError,
     WorkflowExecutionEngineVersionError,
+    WorkflowSyntaxError,
 )
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
@@ -310,6 +311,15 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
+        except WorkflowSyntaxError as error:
+            content = WorkflowErrorResponse(
+                message=error.public_message,
+                error_type=error.__class__.__name__,
+                context=error.context,
+                inner_error_type=error.inner_error_type,
+                inner_error_message=str(error.inner_error),
+            )
+            resp = JSONResponse(status_code=400, content=content)
         except (
             WorkflowDefinitionError,
             ExecutionGraphStructureError,
@@ -322,17 +332,15 @@ def with_route_exceptions(route):
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
-            content = WorkflowErrorResponse(
-                message=error.public_message,
-                error_type=error.__class__.__name__,
-                context=error.context,
-                inner_error_type=error.inner_error_type,
-                inner_error_message=str(error.inner_error),
-                blocks_errors=error._blocks_errors,
-            )
             resp = JSONResponse(
                 status_code=400,
-                content=content.model_dump(),
+                content={
+                    "message": error.public_message,
+                    "error_type": error.__class__.__name__,
+                    "context": error.context,
+                    "inner_error_type": error.inner_error_type,
+                    "inner_error_message": str(error.inner_error),
+                },
             )
         except (
             ProcessesManagerInvalidPayload,
@@ -429,6 +437,14 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
+        except RoboflowAPITimeoutError:
+            resp = JSONResponse(
+                status_code=504,
+                content={
+                    "message": "Timeout when attempting to connect to Roboflow API."
+                },
+            )
+            traceback.print_exc()
         except StepExecutionError as error:
             content = WorkflowErrorResponse(
                 message=error.public_message,
@@ -518,14 +534,7 @@ class HttpInterface(BaseInterface):
 
         description = "Roboflow inference server"
 
-        @asynccontextmanager
-        async def lifespan(app: FastAPI):
-            yield
-            logger.info("Shutting down %s", description)
-            await usage_collector.async_push_usage_payloads()
-
         app = FastAPI(
-            lifespan=lifespan,
             title="Roboflow Inference Server",
             description=description,
             version=__version__,
@@ -541,6 +550,11 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
+
+        @app.on_event("shutdown")
+        async def on_shutdown():
+            logger.info("Shutting down %s", description)
+            await usage_collector.async_push_usage_payloads()
 
         if ENABLE_PROMETHEUS:
             InferenceInstrumentator(
