@@ -36,7 +36,8 @@ def run_session_via_iobinding(session: ort.InferenceSession, input_name: str, in
 
     if "CUDAExecutionProvider" not in session.get_providers():
         # ensure we're using CPU because the ONNX runtime used doesn't support CUDA
-        if isinstance(input_data, torch.Tensor):
+        if not isinstance(input_data, np.ndarray):
+            # data is a torch tensor that is potentially on the GPU, so we just move it to the CPU
             input_data = input_data.cpu()
 
     predictions = []
