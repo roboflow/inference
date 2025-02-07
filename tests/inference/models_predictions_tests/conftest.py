@@ -12,6 +12,7 @@ import requests
 from inference.core.env import MODEL_CACHE_DIR
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
+    MultiLabelClassificationInferenceResponse,
     InstanceSegmentationInferenceResponse,
     KeypointsDetectionInferenceResponse,
     ObjectDetectionInferenceResponse,
@@ -72,6 +73,12 @@ def vit_multi_class_model() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function")
+def vit_multi_class_reference_prediction() -> ClassificationInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "vit_multi_class_reference_prediction.json"), "r") as f:
+        return ClassificationInferenceResponse.model_validate(json.load(f))
+
+
+@pytest.fixture(scope="function")
 def vit_multi_label_model() -> Generator[str, None, None]:
     model_id = "vit_multi_label/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -80,6 +87,12 @@ def vit_multi_label_model() -> Generator[str, None, None]:
     )
     yield model_id
     shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def vit_multi_label_reference_prediction() -> MultiLabelClassificationInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "vit_multi_label_reference_prediction.json"), "r") as f:
+        return MultiLabelClassificationInferenceResponse.model_validate(json.load(f))
 
 
 @pytest.fixture(scope="function")

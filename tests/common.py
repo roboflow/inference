@@ -3,6 +3,7 @@ from typing import Union
 import numpy as np
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
+    MultiLabelClassificationInferenceResponse,
     InstanceSegmentationInferenceResponse,
     KeypointsDetectionInferenceResponse,
     ObjectDetectionInferenceResponse,
@@ -65,10 +66,18 @@ def assert_localized_predictions_match(
 
 
 def assert_classification_predictions_match(
-    prediction_1: ClassificationInferenceResponse,
-    prediction_2: ClassificationInferenceResponse,
+    prediction_1: Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse],
+    prediction_2: Union[ClassificationInferenceResponse, MultiLabelClassificationInferenceResponse],
     confidence_tolerance: float = 1e-5,
 ) -> None:
+    assert type(prediction_1) == type(prediction_2), "Predictions must be of the same type"
+
     assert len(prediction_1.predictions) == len(prediction_2.predictions), "Predictions must have the same number of predictions"
-    assert prediction_1.top == prediction_2.top, "Top class must match"
-    assert np.allclose(prediction_1.confidence, prediction_2.confidence, atol=confidence_tolerance), f"Confidence must match with a tolerance of {confidence_tolerance}"
+
+    if isinstance(prediction_1, MultiLabelClassificationInferenceResponse):
+        assert sorted(prediction_1.predicted_classes) == sorted(prediction_2.predicted_classes), "Predicted classes must match"
+
+    if isinstance(prediction_1, ClassificationInferenceResponse):
+        assert prediction_1.top == prediction_2.top, "Top prediction must match"
+        assert np.allclose(prediction_1.confidence, prediction_2.confidence, atol=confidence_tolerance), f"Confidences must match with a tolerance of {confidence_tolerance}"
+
