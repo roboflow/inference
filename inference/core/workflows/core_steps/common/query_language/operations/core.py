@@ -56,8 +56,8 @@ from inference.core.workflows.core_steps.common.query_language.operations.number
 from inference.core.workflows.core_steps.common.query_language.operations.sequences.base import (
     aggregate_numeric_sequence,
     aggregate_sequence,
-    get_sequence_length,
     get_sequence_elements_count,
+    get_sequence_length,
     sequence_apply,
     sequence_map,
 )
