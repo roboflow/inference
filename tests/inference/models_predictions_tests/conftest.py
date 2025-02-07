@@ -213,6 +213,12 @@ def yolonas_det_model() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function")
+def yolonas_det_reference_prediction() -> ObjectDetectionInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "yolonas_det_reference_prediction.json"), "r") as f:
+        return ObjectDetectionInferenceResponse.model_validate(json.load(f))
+
+
+@pytest.fixture(scope="function")
 def yolov10_det_model() -> Generator[str, None, None]:
     model_id = "yolov10_det/1"
     model_cache_dir = fetch_and_place_model_in_cache(
