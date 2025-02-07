@@ -410,7 +410,7 @@ class RoboflowInferenceModel(Model):
 
         t0 = time.time()
         if USE_PYTORCH_FOR_PREPROCESSING:
-            preprocessed_image = torch.from_numpy(preprocessed_image)
+            preprocessed_image = torch.from_numpy(np.ascontiguousarray(preprocessed_image))
             if torch.cuda.is_available():
                 preprocessed_image = preprocessed_image.cuda()
             preprocessed_image = preprocessed_image.permute(2, 0, 1).unsqueeze(0).float()

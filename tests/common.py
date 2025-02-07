@@ -35,7 +35,6 @@ def assert_localized_predictions_match(
     assert np.allclose(sv_prediction_1.xyxy, sv_prediction_2.xyxy, atol=box_pixel_tolerance), f"Bounding boxes must match with a tolerance of {box_pixel_tolerance} pixels"
 
     if sv_prediction_1.confidence is not None:
-        print(sv_prediction_1.confidence, sv_prediction_2.confidence)
         assert np.allclose(sv_prediction_1.confidence, sv_prediction_2.confidence, atol=box_confidence_tolerance), f"Confidence must match with a tolerance of {box_confidence_tolerance}"
 
     if sv_prediction_1.class_id is not None:
