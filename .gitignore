@@ -33,6 +33,14 @@ _classes.csv
 node_modules/
 
 
+# Build directories
+docs/theme/node_modules/
+docs/theme/assets/dist/
+docs/theme/assets/styles.css
+
+# Vite
+.vite/
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -179,3 +187,11 @@ docs/openapi.json
 tests/inference_cli/integration_tests/assets/test_images/
 inference_profiling
 tests/inference_sdk/unit_tests/http/inference_profiling
+
+# Environment
+.env.*
+!.env.example
+
+# System files
+.DS_Store
+*.pem

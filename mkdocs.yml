@@ -23,6 +23,8 @@ extra:
       link: https://twitter.com/roboflow
   version:
     default: 1.0
+  exclude:
+    - node_modules/**
 
 extra_css:
   - styles/cookbooks.css
