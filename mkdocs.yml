@@ -244,3 +244,6 @@ extra_javascript:
   - 'javascript/init_kapa_widget.js'
   - 'javascript/cookbooks.js'
   - 'javascript/workflows.js'
+
+hooks:
+  - docs/theme/build.py
