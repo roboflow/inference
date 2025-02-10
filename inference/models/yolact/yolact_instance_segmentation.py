@@ -3,6 +3,10 @@ from typing import Any, List, Tuple
 
 import cv2
 import numpy as np
+try:
+    import torch
+except ImportError:
+    torch = None
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -95,7 +99,8 @@ class YOLACT(OnnxRoboflowInferenceModel):
         if isinstance(image, list):
             imgs_with_dims = [self.preproc_image(i) for i in image]
             imgs, img_dims = zip(*imgs_with_dims)
-            img_in = np.concatenate(imgs, axis=0)
+            assert isinstance(imgs[0], np.ndarray) or torch is not None, "Received a list of images as torch tensors but torch is not installed"
+            img_in = np.concatenate(imgs, axis=0) if isinstance(imgs[0], np.ndarray) else torch.cat(imgs, dim=0)
             unwrap = False
         else:
             img_in, img_dims = self.preproc_image(image)
@@ -106,7 +111,7 @@ class YOLACT(OnnxRoboflowInferenceModel):
         mean = (103.94, 116.78, 123.68)
         std = (57.38, 57.12, 58.40)
 
-        img_in = img_in.astype(np.float32)
+        img_in = img_in.astype(np.float32) if isinstance(img_in, np.ndarray) else img_in.float()
 
         # Our channels are RGB, so apply mean and std accordingly
         img_in[:, 0, :, :] = (img_in[:, 0, :, :] - mean[2]) / std[2]
