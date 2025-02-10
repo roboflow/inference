@@ -85,6 +85,45 @@ Workflows allow you to extend simple model predictions to build computer vision 
   <tr>
     <!-- Left cell (thumbnail) -->
     <td width="300" valign="top">
+      <a href="https://youtu.be/aPxlImNxj5A">
+        <img src="https://img.youtube.com/vi/aPxlImNxj5A/0.jpg" 
+             alt="Self Checkout with Workflows" width="300" />
+      </a>
+    </td>
+    <!-- Right cell (title, date, description) -->
+    <td valign="middle">
+      <strong>
+        <a href="https://youtu.be/aPxlImNxj5A">Tutorial: Build an AI-Powered Self-Serve Checkout</a>
+      </strong><br />
+      <strong>Created: 2 Feb 2025</strong><br /><br />
+      Make a computer vision app that identifies different pieces of hardware, calculates
+      the total cost, and records the results to a database.
+    </td>
+  </tr>
+
+  <tr>
+    <td width="300" valign="top">
+      <a href="https://youtu.be/r3Ke7ZEh2Qo">
+        <img src="https://img.youtube.com/vi/r3Ke7ZEh2Qo/0.jpg" 
+             alt="Workflows Tutorial" width="300" />
+      </a>
+    </td>
+    <td valign="middle">
+      <strong>
+        <a href="https://youtu.be/r3Ke7ZEh2Qo">
+          Tutorial: Intro to Workflows
+        </a>
+      </strong><br />
+      <strong>Created: 6 Jan 2025</strong><br /><br />
+      Learn how to build and deploy Workflows for common use-cases like detecting
+      vehicles, filtering detections, visualizing results, and calculating dwell 
+      time on a live video stream.
+    </td>
+  </tr>
+
+  <tr>
+    <!-- Left cell (thumbnail) -->
+    <td width="300" valign="top">
       <a href="https://youtu.be/tZa-QgFn7jg">
         <img src="https://img.youtube.com/vi/tZa-QgFn7jg/0.jpg" 
              alt="Smart Parking with AI" width="300" />
@@ -99,26 +138,6 @@ Workflows allow you to extend simple model predictions to build computer vision 
       Build a smart parking lot management system using Roboflow Workflows!
       This tutorial covers license plate detection with YOLOv8, object tracking
       with ByteTrack, and real-time notifications with a Telegram bot.
-    </td>
-  </tr>
-
-  <tr>
-    <td width="300" valign="top">
-      <a href="https://youtu.be/VCbcC5OEGRU">
-        <img src="https://img.youtube.com/vi/VCbcC5OEGRU/0.jpg" 
-             alt="Workflows Tutorial" width="300" />
-      </a>
-    </td>
-    <td valign="middle">
-      <strong>
-        <a href="https://youtu.be/VCbcC5OEGRU">
-          Tutorial: Build a Traffic Monitoring Application with Workflows
-        </a>
-      </strong><br />
-      <strong>Created: 22 Oct 2024</strong><br /><br />
-      Learn how to build and deploy Workflows for common use-cases like detecting
-      vehicles, filtering detections, visualizing results, and calculating dwell 
-      time on a live video stream.
     </td>
   </tr>
 </table>
