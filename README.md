@@ -18,7 +18,6 @@
 [![downloads](https://img.shields.io/pypi/dm/inference)](https://pypistats.org/packages/inference)
 [![docker pulls](https://img.shields.io/docker/pulls/roboflow/roboflow-inference-server-cpu)](https://hub.docker.com/u/roboflow)
 [![license](https://img.shields.io/pypi/l/inference)](https://github.com/roboflow/inference/blob/main/LICENSE.core)
-[![discord](https://img.shields.io/discord/1159501506232451173?logo=discord&label=discord&labelColor=fff&color=5865f2&link=https%3A%2F%2Fdiscord.gg%2FGbfgXGJ8Bk)](https://discord.gg/GbfgXGJ8Bk)
 
 <!-- [![huggingface](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/Roboflow/workflows) -->
 

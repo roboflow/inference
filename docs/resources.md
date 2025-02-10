@@ -34,14 +34,6 @@ hide:
 
     [:fontawesome-regular-comment: Go to Forum](https://discuss.roboflow.com)
 
-- **Roboflow Discord**
-
-    ---
-
-    Chat with the Roboflow Community and Team
-
-    [:fontawesome-brands-discord: Go to Chat](https://discord.gg/GbfgXGJ8Bk)
-
 - **Roboflow YouTube**
 
     ---
