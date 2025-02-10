@@ -21,13 +21,31 @@ With Workflows, you can:
 - Introduce elements of business logic to translate model predictions into your domain language
 
 <div class="button-holder">
-<a href="/workflows/blocks/" class="button half-button">Explore all Workflows blocks</a>
+<a href="/workflows/blocks/" class="button half-button">Explore all Workflow blocks</a>
 <a href="https://app.roboflow.com/workflows" class="button half-button">Begin building with Workflows</a>
 </div>
 
 ![A license plate detection workflow implemented in Workflows](https://media.roboflow.com/inference/workflow-example.png)
 
 
-In this section of documentation, we walk through what you need to know to create and run workflows. Let’s get started! 
+In this section of documentation, we walk through what you need to know to create and run workflows. Let’s get started!
 
-[Create and run a workflow.](/workflows/create_and_run.md)
+Next, [create and run a workflow](/workflows/create_and_run.md) or
+[browse example Workflows](/workflows/gallery/).
+
+<style>
+.button-holder {
+  margin-bottom: 1.5rem;
+}
+
+.button {
+  background-color: var(--md-primary-fg-color);
+  display: flex;
+  padding: 10px;
+  color: white !important;
+  border-radius: 5px;
+  text-align: center;
+  align-items: center;
+  justify-content: center;
+}
+</style>
