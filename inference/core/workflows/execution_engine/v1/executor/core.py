@@ -139,7 +139,7 @@ def safe_execute_step(
             block_type=workflow.steps[step_selector.split(".")[-1]].manifest.type,
             public_message=str(error),
             context="workflow_execution | step_execution",
-            inner_error=error,
+            inner_error=str(error),
         ) from error
 
 
