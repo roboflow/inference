@@ -447,6 +447,10 @@ def with_route_exceptions(route):
             )
             traceback.print_exc()
         except StepExecutionError as error:
+            logger.error("#######################")
+            logger.error(error.public_message)
+            logger.error(type(error.public_message))
+            logger.error("#######################")
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
