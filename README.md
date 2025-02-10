@@ -260,7 +260,7 @@ Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to th
 platform. When running with an API Key, usage is metered according to
 Roboflow's [pricing tiers](https://roboflow.com/pricing).
 
-|                         | Open Access | With API Key |
+|                         | Open Access | With API Key (Metered) |
 |-------------------------|-------------|--------------|
 | [Pre-Trained Models](https://inference.roboflow.com/quickstart/aliases/#supported-pre-trained-models) | ✅ | ✅
 | [Foundation Models](https://inference.roboflow.com/foundation/about/) | ✅ | ✅
