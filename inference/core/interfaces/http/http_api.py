@@ -318,7 +318,7 @@ def with_route_exceptions(route):
                 context=error.context,
                 inner_error_type=error.inner_error_type,
                 inner_error_message=str(error.inner_error),
-                blocks_errors=error._blocks_errors,
+                blocks_errors=error.blocks_errors,
             )
             resp = JSONResponse(status_code=400, content=content.model_dump())
         except (
@@ -447,15 +447,6 @@ def with_route_exceptions(route):
             )
             traceback.print_exc()
         except StepExecutionError as error:
-            logger.error("#######################################")
-            logger.error(error.public_message)
-            logger.error(error.__class__.__name__)
-            logger.error(error.context)
-            logger.error(error.inner_error_type)
-            logger.error(str(error.inner_error))
-            logger.error(error._block_id)
-            logger.error(error._block_type)
-            logger.error("#######################################")
             content = WorkflowErrorResponse(
                 message=error.public_message,
                 error_type=error.__class__.__name__,
@@ -464,8 +455,8 @@ def with_route_exceptions(route):
                 inner_error_message=str(error.inner_error),
                 blocks_errors=[
                     WorkflowBlockError(
-                        block_id=error._block_id,
-                        block_type=error._block_type,
+                        block_id=error.block_id,
+                        block_type=error.block_type,
                     ),
                 ],
             )
