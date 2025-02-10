@@ -14,7 +14,10 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     libffi-dev \
     curl \
     libbz2-dev \
-    software-properties-common
+    software-properties-common \
+    rustc \
+    cargo \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN wget https://www.python.org/ftp/python/3.9.0/Python-3.9.0.tar.xz && tar -xf Python-3.9.0.tar.xz && rm Python-3.9.0.tar.xz
 WORKDIR ./Python-3.9.0
