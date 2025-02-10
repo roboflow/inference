@@ -2,6 +2,7 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import (
+    ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     API_KEY,
     WORKFLOW_BLOCKS_WRITE_DIRECTORY,
@@ -441,7 +442,7 @@ REGISTERED_INITIALIZERS = {
     "thread_pool_executor": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
-    "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
+    "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
 }
 
 KINDS_SERIALIZERS = {
