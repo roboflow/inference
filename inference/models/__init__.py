@@ -1,6 +1,5 @@
 from inference.core.env import (
     CORE_MODEL_CLIP_ENABLED,
-    CORE_MODEL_COGVLM_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
@@ -47,12 +46,6 @@ if CORE_MODELS_ENABLED:
         except:
             pass
 
-    if CORE_MODEL_COGVLM_ENABLED:
-        try:
-            from inference.models.cogvlm import CogVLM
-        except:
-            pass
-
     if CORE_MODEL_YOLO_WORLD_ENABLED:
         try:
             from inference.models.yolo_world import YOLOWorld
@@ -69,10 +62,8 @@ try:
 except:
     pass
 
-try:
-    from inference.models.qwen25vl import LoRAQwen25VL, Qwen25VL 
-except:
-    pass
+from inference.models.qwen25vl import LoRAQwen25VL, Qwen25VL 
+
 
 try:
     from inference.models.trocr import TrOCR

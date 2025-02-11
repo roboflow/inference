@@ -6,9 +6,8 @@ from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import (
     GPT_4V_MODEL_TYPE,
+    COG_VLM_MODEL_TYPE,
     LMMConfig,
-    get_cogvlm_generations_from_remote_api,
-    get_cogvlm_generations_locally,
     run_gpt_4v_llm_prompting,
     turn_raw_lmm_output_into_structured,
 )
@@ -47,11 +46,9 @@ You can specify arbitrary classes to an LMMBlock.
 
 The LLMBlock supports two LMMs:
 
-- OpenAI's GPT-4 with Vision, and;
-- CogVLM.
+- OpenAI's GPT-4 with Vision;
 
-You need to provide your OpenAI API key to use the GPT-4 with Vision model. You do not 
-need to provide an API key to use CogVLM.
+You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
 """
 
 
@@ -60,7 +57,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "LMM For Classification",
             "version": "v1",
-            "short_description": "Run a large multimodal model such as ChatGPT-4v or CogVLM for classification.",
+            "short_description": "Run a large multimodal model such as ChatGPT-4v for classification.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -94,7 +91,7 @@ class BlockManifest(WorkflowBlockManifest):
     remote_api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), Optional[str]] = (
         Field(
             default=None,
-            description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
+            description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v`.",
             examples=["xxx-xxx", "$inputs.api_key"],
             private=True,
         )
@@ -192,13 +189,8 @@ class LMMForClassificationBlockV1(WorkflowBlock):
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
-        else:
-            raw_output = get_cogvlm_generations_locally(
-                image=images_prepared_for_processing,
-                prompt=prompt,
-                model_manager=self._model_manager,
-                api_key=self._api_key,
-            )
+        elif lmm_type == COG_VLM_MODEL_TYPE:
+            raise NotImplementedError("CogVLM has been discontinued in favor of newer models, sorry for inconvenience!")
         structured_output = turn_raw_lmm_output_into_structured(
             raw_output=raw_output,
             expected_output={"top": "name of the class"},
@@ -242,12 +234,8 @@ class LMMForClassificationBlockV1(WorkflowBlock):
                 remote_api_key=remote_api_key,
                 lmm_config=lmm_config,
             )
-        else:
-            raw_output = get_cogvlm_generations_from_remote_api(
-                image=images_prepared_for_processing,
-                prompt=prompt,
-                api_key=self._api_key,
-            )
+        elif lmm_type == COG_VLM_MODEL_TYPE:
+            raise NotImplementedError("CogVLM has been discontinued in favor of newer models, sorry for inconvenience!")
         structured_output = turn_raw_lmm_output_into_structured(
             raw_output=raw_output,
             expected_output={"top": "name of the class"},

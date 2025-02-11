@@ -225,10 +225,10 @@ class LoRAQwen25VL(LoRATransformerModel):
             chat_template = json.load(f)["chat_template"]
 
         self.processor = self.processor_class.from_pretrained(
-            model_load_id, revision=revision, cache_dir=cache_dir, token=token, chat_template=chat_template
+            model_load_id, revision=revision, cache_dir=cache_dir, token=token, chat_template=chat_template, min_pixels=256 * 28 * 28, max_pixels=412 * 28 * 28
         )
 
-    def predict(self, image_in: Image.Image, prompt=""):
+    def predict(self, image_in: Image.Image, prompt="", **kwargs):
         conversation = [
             {
                 "role": "system",

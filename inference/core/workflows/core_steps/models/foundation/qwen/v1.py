@@ -1,6 +1,8 @@
-from typing import List, Literal, Optional, Type
-from pydantic import ConfigDict, Field
+import json
+from typing import List, Optional, Type, Literal, Union
 
+import supervision as sv
+from pydantic import ConfigDict, Field
 from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
@@ -10,6 +12,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    DICTIONARY_KIND,
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     STRING_KIND,
@@ -22,72 +25,75 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-LONG_DESCRIPTION = """
-**Dedicated inference server required (GPU recommended) - you may want to use dedicated deployment**
-
-This Workflow block introduces **Qwen 2.5 VL**, a Visual Language Model (VLM) capable of understanding
-and answering questions about images. The model can:
-
-* Generate natural language descriptions of images
-* Answer questions about image content
-* Understand and reason about visual information
-"""
-
-class BaseManifest(WorkflowBlockManifest):
+##########################################################################
+# Qwen2.5-VL Workflow Block Manifest
+##########################################################################
+class BlockManifest(WorkflowBlockManifest):
+    # Qwen2.5-VL only needs an image and an optional text prompt.
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
-        default=None,
-        description="Text prompt/question for the Qwen model",
-        examples=["What is in this image?", "$inputs.prompt"],
+    prompt: Optional[str] = Field(
+        default="",
+        description="Optional text prompt to provide additional context to Qwen2.5-VL.",
+        examples=["What is in this image?"],
     )
-
-    @classmethod
-    def get_parameters_accepting_batches(cls) -> List[str]:
-        return ["images"]
+    
+    # Standard model configuration for UI, schema, etc.
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "Qwen2.5-VL Model",
+            "version": "v1",
+            "short_description": "Run Qwen2.5-VL on an image",
+            "long_description": (
+                "This workflow block runs Qwen2.5-VL—a visual language model that accepts an image "
+                "and an optional text prompt—and returns a text answer based on a conversation template."
+            ),
+            "license": "Apache-2.0",
+            "block_type": "model",
+            "search_keywords": ["Qwen2.5", "qwen2.5-vl", "visual language model"],
+            "is_vlm_block": True,
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 5.5,
+            },
+        },
+        protected_namespaces=()
+    )
+    type: Literal["roboflow_core/qwen25vl@v1"]
+    # The version (or model id) of Qwen2.5-VL to use.
+    model_version: Union[
+        Selector(kind=[STRING_KIND]),
+        str
+    ] = Field(
+        default="qwen25-vl-3b-peft",
+        description="The Qwen2.5-VL model to be used for inference.",
+        examples=["qwen25-vl-3b-peft"],
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="raw_output", 
-                kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND]
+                name="raw_output",
+                kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND],
+                description="The raw text output from Qwen2.5-VL.",
+            ),
+            OutputDefinition(
+                name="parsed_output",
+                kind=[DICTIONARY_KIND],
+                description="A parsed version of the output, provided as a dictionary containing the text.",
             ),
         ]
-
+    
     @classmethod
-    def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        # Only images can be passed in as a list/batch
+        return ["images"]
 
-class BlockManifest(BaseManifest):
-    model_config = ConfigDict(
-        json_schema_extra={
-            "name": "Qwen 2.5 VL Model",
-            "version": "v1",
-            "short_description": "Run Qwen 2.5 VL on an image",
-            "long_description": LONG_DESCRIPTION,
-            "license": "Apache-2.0",
-            "block_type": "model",
-            "search_keywords": ["Qwen", "Qwen-VL", "VLM"],
-            "is_vlm_block": True,
-            "ui_manifest": {
-                "section": "model",
-                "icon": "fal fa-brain",
-                "blockPriority": 5.5,
-            },
-        },
-        protected_namespaces=(),
-    )
-    type: Literal["roboflow_core/qwen_vl@v1"]
-    model_version: Union[
-        Selector(kind=[STRING_KIND]),
-        Literal["qwen25vl-3b"],
-    ] = Field(
-        default="qwen25vl-3b",
-        description="Model to be used",
-        examples=["qwen25vl-3b"],
-    )
-
-class QwenBlockV1(WorkflowBlock):
+##########################################################################
+# Qwen2.5-VL Workflow Block
+##########################################################################
+class Qwen25VLBlockV1(WorkflowBlock):
     def __init__(
         self,
         model_manager: ModelManager,
@@ -112,20 +118,16 @@ class QwenBlockV1(WorkflowBlock):
         model_version: str,
         prompt: Optional[str],
     ) -> BlockResult:
-        if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return self.run_locally(
-                images=images,
-                model_version=model_version,
-                prompt=prompt,
-            )
-        elif self._step_execution_mode is StepExecutionMode.REMOTE:
+        print("Running Qwen2.5-VL block")
+        if self._step_execution_mode == StepExecutionMode.LOCAL:
+            print("Running locally")
+            return self.run_locally(images=images, model_version=model_version, prompt=prompt)
+        elif self._step_execution_mode == StepExecutionMode.REMOTE:
             raise NotImplementedError(
-                "Remote execution is not supported for Qwen. Run a local or dedicated inference server to use this block (GPU recommended)."
+                "Remote execution is not supported for Qwen2.5-VL. Please use a local or dedicated inference server."
             )
         else:
-            raise ValueError(
-                f"Unknown step execution mode: {self._step_execution_mode}"
-            )
+            raise ValueError(f"Unknown step execution mode: {self._step_execution_mode}")
 
     def run_locally(
         self,
@@ -133,18 +135,18 @@ class QwenBlockV1(WorkflowBlock):
         model_version: str,
         prompt: Optional[str],
     ) -> BlockResult:
-        inference_images = [
-            i.to_inference_format(numpy_preferred=False) for i in images
-        ]
-        prompts = [prompt or "Describe this image"] * len(images)
-        
-        self._model_manager.add_model(
-            model_id=model_version,
-            api_key=self._api_key,
-        )
-        
+        # Convert each image to the format required by the model.
+        inference_images = [i.to_inference_format(numpy_preferred=False) for i in images]
+        # Use the provided prompt (or an empty string if None) for every image.
+        prompts = [prompt or ""] * len(inference_images)
+
+        # Register Qwen2.5-VL with the model manager.
+        self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
+
         predictions = []
         for image, single_prompt in zip(inference_images, prompts):
+            print("Running inference")
+            # Build an LMMInferenceRequest with both prompt and image.
             request = LMMInferenceRequest(
                 api_key=self._api_key,
                 model_id=model_version,
@@ -152,12 +154,23 @@ class QwenBlockV1(WorkflowBlock):
                 source="workflow-execution",
                 prompt=single_prompt,
             )
+            print("Request built")
+            # Run inference.
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
+            print("Inference complete")
+            print(prediction)
+
+            # Qwen2.5-VL typically returns one key in the response dictionary.
+            response_text = prediction.response #prediction.response[key]
+            print("Response text extracted")
             predictions.append(
                 {
-                    "raw_output": prediction.response,
+                    "raw_output": response_text,
+                    "parsed_output": {"text": response_text},
                 }
             )
+            print(predictions)
+            print("Returning predictions")
         return predictions

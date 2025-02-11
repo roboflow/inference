@@ -39,10 +39,6 @@ jobs:
       - name: 🔋 Start Test Docker - GPU
         run: |
           PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
-      - name: 🧪 Regression CogVLM - GPU
-        id: cog_vlm_tests
-        run: |
-          PORT=9101 API_KEY=${{ secrets.API_KEY }} python3 -m pytest tests/inference/integration_tests/test_cogvlm.py
       - name: 🧹 Cleanup Test Docker - GPU
         run: make stop_test_docker
       - name: 🔋 Start Test Docker - GPU

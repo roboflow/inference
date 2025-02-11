@@ -369,13 +369,6 @@ except:
     pass
 
 try:
-    from inference.models import CogVLM
-
-    ROBOFLOW_MODEL_TYPES[("llm", "cogvlm")] = CogVLM
-except:
-    pass
-
-try:
     from inference.models import YOLOWorld
 
     ROBOFLOW_MODEL_TYPES[("object-detection", "yolo-world")] = YOLOWorld

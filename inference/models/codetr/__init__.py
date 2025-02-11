@@ -1,0 +1,1 @@
+from inference.models.codetr.codetr_object_detection import LocalCODETRObjectDetection

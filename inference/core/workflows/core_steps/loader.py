@@ -160,14 +160,14 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison.v1 im
 from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 import (
     ClipComparisonBlockV2,
 )
-from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
-    CogVLMBlockV1,
-)
 from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
     Florence2BlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
     Florence2BlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
+    Qwen25VLBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
@@ -521,7 +521,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ClipComparisonBlockV1,
         ClipComparisonBlockV2,
         ClipModelBlockV1,
-        CogVLMBlockV1,
         ColorVisualizationBlockV1,
         ConvertGrayscaleBlockV1,
         CornerVisualizationBlockV1,
@@ -534,6 +533,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         EllipseVisualizationBlockV1,
         Florence2BlockV1,
         Florence2BlockV2,
+        Qwen25VLBlockV1,
         GoogleGeminiBlockV1,
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,

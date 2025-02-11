@@ -257,23 +257,6 @@ CLIENT.clip_compare(
       )
     ```
 
-### CogVLM
-
-```python
-from inference_sdk import InferenceHTTPClient
-
-CLIENT = InferenceHTTPClient(
-    api_url="http://localhost:9001",  # only local hosting supported
-    api_key="ROBOFLOW_API_KEY"
-)
-
-CLIENT.prompt_cogvlm(
-    visual_prompt="./my_image.jpg",
-    text_prompt="So - what is your final judgement about the content of the picture?",
-    chat_history=[("I think the image shows XXX", "You are wrong - the image shows YYY")], # optional parameter
-)
-```
-
 ### DocTR
 
 ```python

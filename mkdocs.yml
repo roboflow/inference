@@ -92,7 +92,6 @@ nav:
       - 'Foundation Models':
           - foundation/about.md
           - CLIP (Classification, Embeddings): foundation/clip.md
-          - CogVLM (Multimodal Language Model): foundation/cogvlm.md
           - DocTR (OCR): foundation/doctr.md
           - Florence-2: foundation/florence2.md
           - TrOCR (OCR): foundation/trocr.md

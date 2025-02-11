@@ -21,7 +21,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
-    requirements/requirements.cogvlm.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
     requirements/requirements.transformers.txt \
@@ -43,7 +42,6 @@ RUN python3 -m pip install \
     -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.doctr.txt \
-    -r requirements.cogvlm.txt \
     -r requirements.yolo_world.txt \
     -r requirements.transformers.txt \
     -r requirements.sdk.http.txt \

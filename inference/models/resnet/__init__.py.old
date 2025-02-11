@@ -1,0 +1,1 @@
+from inference.models.resnet.resnet_classification import ResNetClassification
