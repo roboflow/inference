@@ -362,7 +362,7 @@ def multi_sink(
             sink(predictions, video_frame)
         except Exception as error:
             logger.error(
-                f"Could not sent prediction with to sink due to error: {error}."
+                f"Could not send prediction and/or frame to sink due to error: {error}."
             )
 
 

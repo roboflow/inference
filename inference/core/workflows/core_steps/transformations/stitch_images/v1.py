@@ -42,6 +42,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "section": "transformation",
                 "icon": "far fa-object-union",
                 "opencv": True,
+                "blockPriority": 6,
             },
         }
     )

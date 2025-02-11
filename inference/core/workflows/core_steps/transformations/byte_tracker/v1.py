@@ -46,6 +46,11 @@ class ByteTrackerBlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "far fa-location-crosshairs",
+                "blockPriority": 0,
+            },
         },
         protected_namespaces=(),
     )
@@ -57,7 +62,7 @@ class ByteTrackerBlockManifest(WorkflowBlockManifest):
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
-        description="Objects to be tracked",
+        description="Objects to be tracked.",
         examples=["$steps.object_detection_model.predictions"],
     )
     track_activation_threshold: Union[Optional[float], Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore

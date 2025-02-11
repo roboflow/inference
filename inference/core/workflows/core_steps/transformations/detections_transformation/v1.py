@@ -78,6 +78,11 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "transformation",
+                "icon": "fal fa-expand",
+                "blockPriority": 4,
+            },
         }
     )
     type: Literal[
@@ -90,11 +95,11 @@ class BlockManifest(WorkflowBlockManifest):
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(
-        description="Reference to detection-like predictions",
+        description="Model predictions to transform.",
         examples=["$steps.object_detection_model.predictions"],
     )
     operations: List[AllOperationsType] = Field(
-        description="Definition of transformations to be applied on detections",
+        description="Transformations to be applied on the predictions.",
         examples=[OPERATIONS_EXAMPLE],
     )
     operations_parameters: Dict[

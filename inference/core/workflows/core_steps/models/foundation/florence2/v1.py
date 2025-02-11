@@ -182,6 +182,7 @@ class BaseManifest(WorkflowBlockManifest):
             "relevant_for": {
                 "task_type": {"values": TASKS_REQUIRING_PROMPT, "required": True},
             },
+            "multiline": True,
         },
     )
     classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
@@ -293,6 +294,11 @@ class BlockManifest(BaseManifest):
             "search_keywords": ["Florence", "Florence-2", "Microsoft"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 5.5,
+            },
         },
         protected_namespaces=(),
     )

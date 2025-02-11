@@ -39,6 +39,12 @@ class ImageThresholdManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
+            "ui_manifest": {
+                "section": "classical_cv",
+                "icon": "far fa-circle-half-stroke",
+                "blockPriority": 6,
+                "opencv": True,
+            },
         }
     )
 

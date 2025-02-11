@@ -68,11 +68,22 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
             "ui_manifest": {
                 "section": "classical_cv",
                 "icon": "far fa-ruler",
+                "blockPriority": 10,
                 "opencv": True,
             },
         }
     )
     type: Literal["roboflow_core/size_measurement@v1"]
+
+    object_predictions: Selector(
+        kind=[
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            OBJECT_DETECTION_PREDICTION_KIND,
+        ]
+    ) = Field(
+        description="Model predictions to measure the dimensions of.",
+        examples=["$segmentation.object_predictions"],
+    )
 
     reference_predictions: Selector(
         kind=[
@@ -80,17 +91,8 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
             OBJECT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(
-        description="Predictions from the reference object model",
+        description="Reference object used to calculate the dimensions of the specified objects. If multiple objects are provided, the highest confidence prediction will be used.",
         examples=["$segmentation.reference_predictions"],
-    )
-    object_predictions: Selector(
-        kind=[
-            INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            OBJECT_DETECTION_PREDICTION_KIND,
-        ]
-    ) = Field(
-        description="Predictions from the model that detects the object to measure",
-        examples=["$segmentation.object_predictions"],
     )
     reference_dimensions: Union[
         str,
@@ -100,8 +102,8 @@ class SizeMeasurementManifest(WorkflowBlockManifest):
             kind=[STRING_KIND, LIST_OF_VALUES_KIND],
         ),
     ] = Field(
-        description="Dimensions of the reference object (width, height) in desired units (e.g., inches) as a string in the format 'width,height' or as a tuple (width, height)",
-        examples=["5.0,5.0", (5.0, 5.0), "$inputs.reference_dimensions"],
+        description="Dimensions of the reference object in desired units, (e.g. inches). Will be used to convert the pixel dimensions of the other objects to real-world units.",
+        examples=[(4.5, 3.0), "5.0,5.0", "$inputs.reference_dimensions"],
     )
 
     @classmethod
@@ -270,7 +272,14 @@ class SizeMeasurementBlockV1(WorkflowBlock):
             if obj_w_pixels > 0 and obj_h_pixels > 0:
                 obj_w_actual = obj_w_pixels * width_scale
                 obj_h_actual = obj_h_pixels * height_scale
-                dimensions.append({"width": obj_w_actual, "height": obj_h_actual})
+                dimensions.append(
+                    {
+                        "width": obj_w_actual,
+                        "height": obj_h_actual,
+                        "longer": max(obj_w_actual, obj_h_actual),
+                        "shorter": min(obj_w_actual, obj_h_actual),
+                    }
+                )
             else:
                 dimensions.append(None)
 

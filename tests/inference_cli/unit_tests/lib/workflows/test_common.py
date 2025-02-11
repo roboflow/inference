@@ -11,7 +11,7 @@ import pytest
 from pandas.errors import EmptyDataError
 
 from inference_cli.lib.workflows.common import (
-    IMAGES_EXTENSIONS,
+    WorkflowsImagesProcessingIndex,
     aggregate_batch_processing_results,
     decode_base64_image,
     deduct_images,
@@ -20,11 +20,10 @@ from inference_cli.lib.workflows.common import (
     dump_images_outputs,
     dump_objects_to_json,
     extract_images_from_result,
-    get_all_images_in_directory,
     open_progress_log,
     report_failed_files,
 )
-from inference_cli.lib.workflows.entities import OutputFileType
+from inference_cli.lib.workflows.entities import ImageResultsIndexEntry, OutputFileType
 
 
 @pytest.mark.parametrize("value", [3, 3.5, "some", True])
@@ -72,15 +71,14 @@ def test_aggregate_batch_processing_results_when_json_output_is_expected_and_res
     denote_image_processed(log_file=file_descriptor, image_path="/my/path/some.jpg")
     denote_image_processed(log_file=file_descriptor, image_path="/my/path/other.jpg")
     file_descriptor.close()
-    aggregate_batch_processing_results(
+    aggregation_path = aggregate_batch_processing_results(
         output_directory=empty_directory,
         aggregation_format=OutputFileType.JSONL,
     )
 
     # then
-    expected_output_path = os.path.join(empty_directory, "aggregated_results.jsonl")
     decoded_results = []
-    with open(expected_output_path, "r") as f:
+    with open(aggregation_path, "r") as f:
         for line in f.readlines():
             if len(line.strip()) == 0:
                 continue
@@ -108,15 +106,14 @@ def test_aggregate_batch_processing_results_when_json_output_is_expected_and_res
     empty_directory: str,
 ) -> None:
     # when
-    aggregate_batch_processing_results(
+    aggregation_path = aggregate_batch_processing_results(
         output_directory=empty_directory,
         aggregation_format=OutputFileType.JSONL,
     )
 
     # then
-    expected_output_path = os.path.join(empty_directory, "aggregated_results.jsonl")
     decoded_results = []
-    with open(expected_output_path, "r") as f:
+    with open(aggregation_path, "r") as f:
         for line in f.readlines():
             if len(line.strip()) == 0:
                 continue
@@ -136,14 +133,13 @@ def test_aggregate_batch_processing_results_when_csv_output_is_expected_and_resu
     denote_image_processed(log_file=file_descriptor, image_path="/my/path/some.jpg")
     denote_image_processed(log_file=file_descriptor, image_path="/my/path/other.jpg")
     file_descriptor.close()
-    aggregate_batch_processing_results(
+    aggregation_path = aggregate_batch_processing_results(
         output_directory=empty_directory,
         aggregation_format=OutputFileType.CSV,
     )
 
     # then
-    expected_output_path = os.path.join(empty_directory, "aggregated_results.csv")
-    df = pd.read_csv(expected_output_path)
+    df = pd.read_csv(aggregation_path)
     assert len(df) == 2, "Expected 2 records"
     assert df.iloc[0].some == "value"
     assert df.iloc[0].other == 3.0
@@ -171,14 +167,13 @@ def test_aggregate_batch_processing_results_when_csv_output_is_expected_and_resu
     denote_image_processed(log_file=file_descriptor, image_path="/my/path/some.jpg")
     denote_image_processed(log_file=file_descriptor, image_path="/my/path/other.jpg")
     file_descriptor.close()
-    aggregate_batch_processing_results(
+    aggregation_path = aggregate_batch_processing_results(
         output_directory=empty_directory,
         aggregation_format=OutputFileType.CSV,
     )
 
     # then
-    expected_output_path = os.path.join(empty_directory, "aggregated_results.csv")
-    df = pd.read_csv(expected_output_path)
+    df = pd.read_csv(aggregation_path)
     assert len(df) == 2, "Expected 2 records"
     assert df.iloc[0].some == "value"
     assert df.iloc[0].other == 3.0
@@ -199,15 +194,14 @@ def test_aggregate_batch_processing_results_when_csv_output_is_expected_and_resu
     empty_directory: str,
 ) -> None:
     # when
-    aggregate_batch_processing_results(
+    aggregation_path = aggregate_batch_processing_results(
         output_directory=empty_directory,
         aggregation_format=OutputFileType.CSV,
     )
 
     # then
-    expected_output_path = os.path.join(empty_directory, "aggregated_results.csv")
     with pytest.raises(EmptyDataError):
-        _ = pd.read_csv(expected_output_path)
+        _ = pd.read_csv(aggregation_path)
 
 
 def _prepare_dummy_results(
@@ -233,24 +227,22 @@ def _prepare_dummy_results(
 
 def test_report_failed_files_when_no_errors_detected(empty_directory: str) -> None:
     # when
-    report_failed_files(failed_files=[], output_directory=empty_directory)
+    report_file = report_failed_files(failed_files=[], output_directory=empty_directory)
 
     # then
+    assert report_file is None
     assert len(os.listdir(empty_directory)) == 0
 
 
 def test_report_failed_files_when_errors_detected(empty_directory: str) -> None:
     # when
-    report_failed_files(
+    report_file = report_failed_files(
         failed_files=[("some.jpg", "some"), ("other.jpg", "other")],
         output_directory=empty_directory,
     )
 
     # then
-    dir_content = os.listdir(empty_directory)
-    assert len(dir_content) == 1
-    file_path = os.path.join(empty_directory, dir_content[0])
-    with open(file_path, "r") as f:
+    with open(report_file, "r") as f:
         decoded_file = [
             json.loads(line) for line in f.readlines() if len(line.strip()) > 0
         ]
@@ -258,27 +250,6 @@ def test_report_failed_files_when_errors_detected(empty_directory: str) -> None:
         {"file_path": "some.jpg", "cause": "some"},
         {"file_path": "other.jpg", "cause": "other"},
     ]
-
-
-def test_get_all_images_in_directory(empty_directory: str) -> None:
-    # given
-    for extension in IMAGES_EXTENSIONS:
-        _create_empty_file(directory=empty_directory, file_name=f"image.{extension}")
-    _create_empty_file(directory=empty_directory, file_name=f".tmp")
-    _create_empty_file(directory=empty_directory, file_name=f".bin")
-    expected_files = len(os.listdir(empty_directory)) - 2
-
-    # when
-    result = get_all_images_in_directory(input_directory=empty_directory)
-
-    # then
-    assert len(result) == expected_files
-
-
-def _create_empty_file(directory: str, file_name: str) -> None:
-    file_path = os.path.join(directory, file_name)
-    path = Path(file_path)
-    path.touch(exist_ok=True)
 
 
 def test_decode_base64_image_when_base64_header_present() -> None:
@@ -369,15 +340,19 @@ def test_dump_images_outputs(empty_directory: str) -> None:
     ]
 
     # when
-    dump_images_outputs(
+    results = dump_images_outputs(
         image_results_dir=empty_directory,
         images_in_result=images_in_result,
     )
 
     # then
-    visualization_image = cv2.imread(os.path.join(empty_directory, "visualization.jpg"))
+    visualization_image_path = os.path.join(empty_directory, "visualization.jpg")
+    visualization_image = cv2.imread(visualization_image_path)
+    crop_path = os.path.join(empty_directory, "some/crops/1.jpg")
+    crop_image = cv2.imread(crop_path)
+
+    assert results == {"visualization": [visualization_image_path], "some": [crop_path]}
     assert visualization_image.shape == (168, 168, 3)
-    crop_image = cv2.imread(os.path.join(empty_directory, "some/crops/1.jpg"))
     assert crop_image.shape == (192, 192, 3)
 
 
@@ -396,11 +371,15 @@ def test_dump_image_processing_results_when_images_are_to_be_saved(
             "b": 2,
             "c": [np.zeros((192, 192, 3), dtype=np.uint8), 1, "some"],
         },
-        "list": [["a", "b"], ["c", np.zeros((168, 168, 3), dtype=np.uint8)]],
+        "list": [
+            ["a", "b"],
+            ["c", np.zeros((168, 168, 3), dtype=np.uint8)],
+            [np.zeros((168, 168, 3), dtype=np.uint8)],
+        ],
     }
 
     # when
-    dump_image_processing_results(
+    result = dump_image_processing_results(
         result=result,
         image_path="/some/directory/my_image.jpeg",
         output_directory=empty_directory,
@@ -408,6 +387,21 @@ def test_dump_image_processing_results_when_images_are_to_be_saved(
     )
 
     # then
+    assert result == ImageResultsIndexEntry(
+        metadata_output_path=os.path.join(
+            empty_directory, "my_image.jpeg", "results.json"
+        ),
+        image_outputs={
+            "other": [os.path.join(empty_directory, "my_image.jpeg", "other.jpg")],
+            "dict": [
+                os.path.join(empty_directory, "my_image.jpeg", "dict", "c", "0.jpg")
+            ],
+            "list": [
+                os.path.join(empty_directory, "my_image.jpeg", "list", "1", "1.jpg"),
+                os.path.join(empty_directory, "my_image.jpeg", "list", "2", "0.jpg"),
+            ],
+        },
+    )
     assert os.path.isdir(os.path.join(empty_directory, "my_image.jpeg"))
     structured_results_path = os.path.join(
         empty_directory, "my_image.jpeg", "results.json"
@@ -418,7 +412,7 @@ def test_dump_image_processing_results_when_images_are_to_be_saved(
         "some": "value",
         "other": "<deducted_image>",
         "dict": {"a": 1, "b": 2, "c": ["<deducted_image>", 1, "some"]},
-        "list": [["a", "b"], ["c", "<deducted_image>"]],
+        "list": [["a", "b"], ["c", "<deducted_image>"], ["<deducted_image>"]],
     }
     other_image = cv2.imread(
         os.path.join(empty_directory, "my_image.jpeg", "other.jpg")
@@ -428,10 +422,14 @@ def test_dump_image_processing_results_when_images_are_to_be_saved(
         os.path.join(empty_directory, "my_image.jpeg", "dict", "c", "0.jpg")
     )
     assert dict_nested_image.shape == (192, 192, 3)
-    list_nested_image = cv2.imread(
+    list_nested_image_1 = cv2.imread(
         os.path.join(empty_directory, "my_image.jpeg", "list", "1", "1.jpg")
     )
-    assert list_nested_image.shape == (168, 168, 3)
+    assert list_nested_image_1.shape == (168, 168, 3)
+    list_nested_image_2 = cv2.imread(
+        os.path.join(empty_directory, "my_image.jpeg", "list", "2", "0.jpg")
+    )
+    assert list_nested_image_2.shape == (168, 168, 3)
 
 
 def test_dump_image_processing_results_when_images_not_to_be_saved(
@@ -488,3 +486,58 @@ def _encode_image_to_base64(image: np.ndarray) -> str:
     _, img_encoded = cv2.imencode(".jpg", image)
     image_bytes = np.array(img_encoded).tobytes()
     return base64.b64encode(image_bytes).decode("utf-8")
+
+
+def test_workflows_images_processor_index() -> None:
+    # given
+    index = WorkflowsImagesProcessingIndex.init()
+
+    # when
+    entry_1 = ImageResultsIndexEntry(
+        metadata_output_path="/some/image_1.jpg/results.json",
+        image_outputs={
+            "visualization": ["/some/image_1.jpg/visualization.jpg"],
+            "crops": ["/some/image_1.jpg/crops/0.jpg", "/some/image_1.jpg/crops/1.jpg"],
+        },
+    )
+    index.collect_entry(image_path="/inputs/image_1.jpg", entry=entry_1)
+    entry_2 = ImageResultsIndexEntry(
+        metadata_output_path="/some/image_2.jpg/results.json",
+        image_outputs={
+            "visualization": ["/some/image_2.jpg/visualization.jpg"],
+            "crops": ["/some/image_2.jpg/crops/0.jpg"],
+        },
+    )
+    index.collect_entry(image_path="/inputs/image_2.jpg", entry=entry_2)
+    entry_3 = ImageResultsIndexEntry(
+        metadata_output_path="/some/image_3.jpg/results.json",
+        image_outputs={
+            "visualization": ["/some/image_3.jpg/visualization.jpg"],
+        },
+    )
+    index.collect_entry(image_path="/inputs/image_3.jpg", entry=entry_3)
+
+    # then
+    metadata = index.export_metadata()
+    assert sorted(metadata, key=lambda e: e[0]) == [
+        ("/inputs/image_1.jpg", "/some/image_1.jpg/results.json"),
+        ("/inputs/image_2.jpg", "/some/image_2.jpg/results.json"),
+        ("/inputs/image_3.jpg", "/some/image_3.jpg/results.json"),
+    ], "Expected metadata to be indexed correctly"
+    assert index.registered_output_images == {
+        "visualization",
+        "crops",
+    }, "Expected to report all images outputs, including ones that were not registered for all images"
+    exported_images = index.export_images()
+    assert sorted(exported_images["visualization"], key=lambda e: e[0]) == [
+        ("/inputs/image_1.jpg", ["/some/image_1.jpg/visualization.jpg"]),
+        ("/inputs/image_2.jpg", ["/some/image_2.jpg/visualization.jpg"]),
+        ("/inputs/image_3.jpg", ["/some/image_3.jpg/visualization.jpg"]),
+    ], "Expected all visualization field outputs to be indexed"
+    assert sorted(exported_images["crops"], key=lambda e: e[0]) == [
+        (
+            "/inputs/image_1.jpg",
+            ["/some/image_1.jpg/crops/0.jpg", "/some/image_1.jpg/crops/1.jpg"],
+        ),
+        ("/inputs/image_2.jpg", ["/some/image_2.jpg/crops/0.jpg"]),
+    ], "Expected all crops outputs to be indexed"

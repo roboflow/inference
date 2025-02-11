@@ -52,23 +52,30 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "flow_control",
+            "ui_manifest": {
+                "section": "flow_control",
+                "icon": "fak fa-branching",
+                "blockPriority": 0,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/continue_if@v1", "ContinueIf"]
     condition_statement: StatementGroup = Field(
-        description="Workflows UQL definition of conditional logic.",
+        title="Conditional Statement",
+        description="Define the conditional logic.",
         examples=[CONDITION_STATEMENT_EXAMPLE],
     )
     evaluation_parameters: Dict[
         str,
         Selector(),
     ] = Field(
-        description="References to additional parameters that may be provided in runtime to parametrise operations",
+        description="Data to be used in the conditional logic.",
         examples=[{"left": "$inputs.some"}],
         default_factory=lambda: {},
     )
     next_steps: List[StepSelector] = Field(
-        description="Reference to step which shall be executed if expression evaluates to true",
+        description="Steps to execute if the condition evaluates to true.",
         examples=[["$steps.on_true"]],
     )
 

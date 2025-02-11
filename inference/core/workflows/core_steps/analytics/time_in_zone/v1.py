@@ -47,6 +47,11 @@ class TimeInZoneManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "analytics",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "far fa-timer",
+                "blockPriority": 1,
+            },
         }
     )
     type: Literal["roboflow_core/time_in_zone@v1"]
@@ -62,25 +67,25 @@ class TimeInZoneManifest(WorkflowBlockManifest):
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
-        description="Predictions",
+        description="Model predictions to calculate the time spent in zone for.",
         examples=["$steps.object_detection_model.predictions"],
     )
     zone: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Zones (one for each batch) in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
+        description="Coordinates of the target zone.",
         examples=["$inputs.zones"],
     )
-    triggering_anchor: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description=f"Triggering anchor. Allowed values: {', '.join(sv.Position.list())}",
+    triggering_anchor: Union[str, Selector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
+        description=f"The point on the detection that must be inside the zone.",
         default="CENTER",
         examples=["CENTER"],
     )
     remove_out_of_zone_detections: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
-        description=f"If true, detections found outside of zone will be filtered out",
+        description=f"If true, detections found outside of zone will be filtered out.",
         default=True,
         examples=[True, False],
     )
     reset_out_of_zone_detections: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
-        description=f"If true, detections found outside of zone will have time reset",
+        description=f"If true, detections found outside of zone will have time reset.",
         default=True,
         examples=[True, False],
     )

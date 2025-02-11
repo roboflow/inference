@@ -31,6 +31,11 @@ def dogs_image() -> np.ndarray:
 
 
 @pytest.fixture(scope="function")
+def car_image() -> np.ndarray:
+    return cv2.imread(os.path.join(ASSETS_DIR, "car.jpg"))
+
+
+@pytest.fixture(scope="function")
 def red_image() -> np.ndarray:
     return cv2.imread(os.path.join(ASSETS_DIR, "red_image.png"))
 
@@ -125,11 +130,19 @@ class FakeMQTTBroker:
         if self._conn is not None:
             raise ValueError("Connection is already open")
 
+        (conn, address) = self._sock.accept()
+        conn.settimeout(1)
+        self._conn = conn
         while len(self.messages) < self.messages_count_to_wait_for:
-            (conn, address) = self._sock.accept()
-            conn.settimeout(1)
-            self._conn = conn
-            self.messages.append(self.receive_packet(1000))
+            packet = self.receive_packet(1000)
+            print(f"Received {packet}")
+            if not packet:
+                continue
+            if packet.startswith(b"\x10"):
+                print("sending CONNACK")
+                self._conn.send(b"\x20\x02\x00\x00")
+                continue
+            self.messages.append(packet)
 
     def finish(self):
         if self._conn is not None:

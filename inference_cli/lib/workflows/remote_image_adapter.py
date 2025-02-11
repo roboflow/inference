@@ -9,15 +9,21 @@ import backoff
 from rich.progress import Progress, TaskID
 
 from inference_cli.lib.logger import CLI_LOGGER
+from inference_cli.lib.utils import get_all_images_in_directory
 from inference_cli.lib.workflows.common import (
+    WorkflowsImagesProcessingIndex,
     aggregate_batch_processing_results,
     denote_image_processed,
     dump_image_processing_results,
-    get_all_images_in_directory,
     open_progress_log,
     report_failed_files,
 )
-from inference_cli.lib.workflows.entities import OutputFileType
+from inference_cli.lib.workflows.entities import (
+    ImagePath,
+    ImageResultsIndexEntry,
+    ImagesDirectoryProcessingDetails,
+    OutputFileType,
+)
 from inference_sdk import (
     InferenceConfiguration,
     InferenceHTTPClient,
@@ -96,7 +102,8 @@ def process_image_directory_with_workflow_using_api(
     aggregation_format: OutputFileType = OutputFileType.JSONL,
     debug_mode: bool = False,
     processing_threads: Optional[int] = None,
-) -> None:
+    max_failures: Optional[int] = None,
+) -> ImagesDirectoryProcessingDetails:
     if api_key is None:
         api_key = _get_api_key_from_env()
     if processing_threads is None:
@@ -104,6 +111,7 @@ def process_image_directory_with_workflow_using_api(
             processing_threads = 32
         else:
             processing_threads = 1
+    processing_index = WorkflowsImagesProcessingIndex.init()
     files_to_process = get_all_images_in_directory(input_directory=input_directory)
     log_file, log_content = open_progress_log(output_directory=output_directory)
     try:
@@ -116,6 +124,7 @@ def process_image_directory_with_workflow_using_api(
         failed_files = _process_images_within_directory_with_api(
             files_to_process=remaining_files,
             output_directory=output_directory,
+            processing_index=processing_index,
             workflow_specification=workflow_specification,
             workspace_name=workspace_name,
             workflow_id=workflow_id,
@@ -127,21 +136,36 @@ def process_image_directory_with_workflow_using_api(
             api_url=api_url,
             processing_threads=processing_threads,
             debug_mode=debug_mode,
+            max_failures=max_failures,
         )
     finally:
         log_file.close()
-    report_failed_files(failed_files=failed_files, output_directory=output_directory)
-    if not aggregate_structured_results:
-        return None
-    aggregate_batch_processing_results(
+    failures_report_path = report_failed_files(
+        failed_files=failed_files, output_directory=output_directory
+    )
+    aggregated_results_path = None
+    if aggregate_structured_results:
+        aggregate_batch_processing_results(
+            output_directory=output_directory,
+            aggregation_format=aggregation_format,
+        )
+    result_metadata_paths = processing_index.export_metadata()
+    result_images_paths = processing_index.export_images()
+    return ImagesDirectoryProcessingDetails(
         output_directory=output_directory,
-        aggregation_format=aggregation_format,
+        processed_images=len(remaining_files),
+        failures=len(failed_files),
+        result_metadata_paths=result_metadata_paths,
+        result_images_paths=result_images_paths,
+        aggregated_results_path=aggregated_results_path,
+        failures_report_path=failures_report_path,
     )
 
 
 def _process_images_within_directory_with_api(
     files_to_process: List[str],
     output_directory: str,
+    processing_index: WorkflowsImagesProcessingIndex,
     workflow_specification: Dict[str, Any],
     workspace_name: Optional[str],
     workflow_id: Optional[str],
@@ -153,15 +177,21 @@ def _process_images_within_directory_with_api(
     api_url: str,
     processing_threads: int,
     debug_mode: bool = False,
+    max_failures: Optional[int] = None,
 ) -> List[Tuple[str, str]]:
     progress_bar = Progress()
     processing_task = progress_bar.add_task(
         description="Processing images...",
         total=len(files_to_process),
     )
+    if max_failures is None:
+        max_failures = len(files_to_process) + 1
     failed_files = []
     on_success = partial(
-        _on_success, progress_bar=progress_bar, task_id=processing_task
+        _on_success,
+        progress_bar=progress_bar,
+        task_id=processing_task,
+        processing_index=processing_index,
     )
     on_failure = partial(
         _on_failure,
@@ -187,21 +217,40 @@ def _process_images_within_directory_with_api(
         log_file_lock=log_file_lock,
         debug_mode=debug_mode,
     )
+    failures = 0
+    succeeded_files = set()
     with progress_bar:
         with ThreadPool(processes=processing_threads) as pool:
-            _ = pool.map(
-                processing_fun,
-                files_to_process,
-            )
+            for file, is_success in pool.imap(processing_fun, files_to_process):
+                if not is_success:
+                    failures += 1
+                else:
+                    succeeded_files.add(file)
+                if failures >= max_failures:
+                    break
+    failed_files_lookup = {f[0] for f in failed_files}
+    aborted_files = [
+        f
+        for f in files_to_process
+        if f not in succeeded_files and f not in failed_files_lookup
+    ]
+    for file in aborted_files:
+        on_failure(
+            file,
+            "Aborted processing due to exceeding max failures of Workflows executions.",
+        )
     return failed_files
 
 
 def _on_success(
     path: str,
+    index_entry: ImageResultsIndexEntry,
     progress_bar: Progress,
     task_id: TaskID,
+    processing_index: WorkflowsImagesProcessingIndex,
 ) -> None:
     progress_bar.update(task_id, advance=1)
+    processing_index.collect_entry(image_path=path, entry=index_entry)
 
 
 def _on_failure(
@@ -216,7 +265,7 @@ def _on_failure(
 
 
 def _process_single_image_from_directory(
-    image_path: str,
+    image_path: ImagePath,
     workflow_specification: Dict[str, Any],
     workspace_name: Optional[str],
     workflow_id: Optional[str],
@@ -227,11 +276,11 @@ def _process_single_image_from_directory(
     output_directory: str,
     save_image_outputs: bool,
     log_file: TextIO,
-    on_success: Callable[[str], None],
-    on_failure: Callable[[str, str], None],
+    on_success: Callable[[ImagePath, ImageResultsIndexEntry], None],
+    on_failure: Callable[[ImagePath, str], None],
     log_file_lock: Optional[Lock] = None,
     debug_mode: bool = False,
-) -> None:
+) -> Tuple[str, bool]:
     try:
         result = _run_workflow_for_single_image_through_api(
             image_path=image_path,
@@ -243,7 +292,7 @@ def _process_single_image_from_directory(
             api_key=api_key,
             api_url=api_url,
         )
-        dump_image_processing_results(
+        index_entry = dump_image_processing_results(
             result=result,
             image_path=image_path,
             output_directory=output_directory,
@@ -252,12 +301,14 @@ def _process_single_image_from_directory(
         denote_image_processed(
             log_file=log_file, image_path=image_path, lock=log_file_lock
         )
-        on_success(image_path)
+        on_success(image_path, index_entry)
+        return image_path, True
     except Exception as error:
         error_summary = f"Error in processing {image_path}. Error type: {error.__class__.__name__} - {error}"
         if debug_mode:
             CLI_LOGGER.exception(error_summary)
         on_failure(image_path, error_summary)
+        return image_path, False
 
 
 @backoff.on_exception(

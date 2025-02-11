@@ -44,6 +44,11 @@ class BoundingRectManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "transformation",
+                "icon": "fal fa-rectangles-mixed",
+                "blockPriority": 5,
+            },
         }
     )
     type: Literal["roboflow_core/bounding_rect@v1"]
@@ -104,6 +109,18 @@ class BoundingRectBlockV1(WorkflowBlock):
 
             rect, width, height, angle = calculate_minimum_bounding_rectangle(
                 det.mask[0]
+            )
+
+            det.mask = np.array(
+                [
+                    sv.polygon_to_mask(
+                        polygon=np.around(rect).astype(np.int32),
+                        resolution_wh=(det.mask[0].shape[1], det.mask[0].shape[0]),
+                    ).astype(bool)
+                ]
+            )
+            det.xyxy = np.array(
+                [sv.polygon_to_xyxy(polygon=np.around(rect).astype(np.int32))]
             )
 
             det[BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS] = np.array(

@@ -68,6 +68,12 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM", "ChatGPT"],
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 5,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/open_ai@v1", "OpenAI"]
@@ -75,6 +81,9 @@ class BlockManifest(WorkflowBlockManifest):
     prompt: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Text prompt to the OpenAI model",
         examples=["my prompt", "$inputs.prompt"],
+        json_schema_extra={
+            "multiline": True,
+        },
     )
     openai_api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), Optional[str]] = (
         Field(

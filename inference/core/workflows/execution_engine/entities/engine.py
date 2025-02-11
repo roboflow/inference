@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 from inference.core.workflows.execution_engine.profiling.core import WorkflowsProfiler
@@ -16,6 +17,7 @@ class BaseExecutionEngine(ABC):
         prevent_local_images_loading: bool = False,
         workflow_id: Optional[str] = None,
         profiler: Optional[WorkflowsProfiler] = None,
+        executor: Optional[ThreadPoolExecutor] = None,
     ) -> "BaseExecutionEngine":
         pass
 

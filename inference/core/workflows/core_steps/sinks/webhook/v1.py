@@ -167,6 +167,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "data_storage",
+                "icon": "fal fa-webhook",
+                "blockPriority": 1,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/webhook_sink@v1"]
@@ -304,20 +310,18 @@ class BlockManifest(WorkflowBlockManifest):
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Boolean flag dictating if sink is supposed to be executed in the background, "
-        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-        "registration is needed, use `False` while debugging and if error handling is needed",
+        description="Boolean flag to run the block asynchronously (True) for faster workflows or  "
+        "synchronously (False) for debugging and error handling.",
         examples=["$inputs.fire_and_forget", True],
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="boolean flag that can be also reference to input - to arbitrarily disable "
-        "data collection for specific request",
+        description="Boolean flag to disable block execution.",
         examples=[False, "$inputs.disable_email_notifications"],
     )
     cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         default=5,
-        description="Number of seconds to wait until follow-up notification can be sent",
+        description="Number of seconds to wait until follow-up notification can be sent.",
         json_schema_extra={
             "always_visible": True,
         },

@@ -59,6 +59,13 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM"],
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 9,
+                "needsGPU": True,
+                "inference": True,
+            },
         }
     )
     type: Literal["roboflow_core/cog_vlm@v1", "CogVLM"]
@@ -66,6 +73,9 @@ class BlockManifest(WorkflowBlockManifest):
     prompt: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Text prompt to the CogVLM model",
         examples=["my prompt", "$inputs.prompt"],
+        json_schema_extra={
+            "multiline": True,
+        },
     )
     json_output_format: Optional[Dict[str, str]] = Field(
         default=None,

@@ -13,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
-from pydantic import BaseModel
 from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -53,7 +52,6 @@ from inference.core.entities.requests.server_state import (
 from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
-    DescribeInterfaceRequest,
     PredefinedWorkflowDescribeInterfaceRequest,
     PredefinedWorkflowInferenceRequest,
     WorkflowInferenceRequest,
@@ -94,6 +92,7 @@ from inference.core.entities.responses.server_state import (
 from inference.core.entities.responses.workflows import (
     DescribeInterfaceResponse,
     ExecutionEngineVersions,
+    WorkflowErrorResponse,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
     WorkflowsBlocksSchemaDescription,
@@ -153,6 +152,7 @@ from inference.core.exceptions import (
     RoboflowAPIConnectionError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     ServiceConfigurationError,
     WorkspaceLoadError,
@@ -195,7 +195,6 @@ from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
-    get_roboflow_dataset_type,
     get_roboflow_workspace,
     get_workflow_specification,
 )
@@ -213,9 +212,12 @@ from inference.core.workflows.errors import (
     NotSupportedExecutionEngineError,
     ReferenceTypeError,
     RuntimeInputError,
+    StepExecutionError,
+    WorkflowBlockError,
     WorkflowDefinitionError,
     WorkflowError,
     WorkflowExecutionEngineVersionError,
+    WorkflowSyntaxError,
 )
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
@@ -309,6 +311,16 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
+        except WorkflowSyntaxError as error:
+            content = WorkflowErrorResponse(
+                message=str(error.public_message),
+                error_type=error.__class__.__name__,
+                context=str(error.context),
+                inner_error_type=str(error.inner_error_type),
+                inner_error_message=str(error.inner_error),
+                blocks_errors=error.blocks_errors,
+            )
+            resp = JSONResponse(status_code=400, content=content.model_dump())
         except (
             WorkflowDefinitionError,
             ExecutionGraphStructureError,
@@ -426,6 +438,33 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
+        except RoboflowAPITimeoutError:
+            resp = JSONResponse(
+                status_code=504,
+                content={
+                    "message": "Timeout when attempting to connect to Roboflow API."
+                },
+            )
+            traceback.print_exc()
+        except StepExecutionError as error:
+            content = WorkflowErrorResponse(
+                message=str(error.public_message),
+                error_type=error.__class__.__name__,
+                context=str(error.context),
+                inner_error_type=str(error.inner_error_type),
+                inner_error_message=str(error.inner_error),
+                blocks_errors=[
+                    WorkflowBlockError(
+                        block_id=error.block_id,
+                        block_type=error.block_type,
+                    ),
+                ],
+            )
+            resp = JSONResponse(
+                status_code=500,
+                content=content.model_dump(),
+            )
+            traceback.print_exc()
         except WorkflowError as error:
             resp = JSONResponse(
                 status_code=500,
@@ -493,7 +532,9 @@ class HttpInterface(BaseInterface):
         Description:
             Deploy Roboflow trained models to nearly any compute environment!
         """
+
         description = "Roboflow inference server"
+
         app = FastAPI(
             title="Roboflow Inference Server",
             description=description,
@@ -510,6 +551,11 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
+
+        @app.on_event("shutdown")
+        async def on_shutdown():
+            logger.info("Shutting down %s", description)
+            await usage_collector.async_push_usage_payloads()
 
         if ENABLE_PROMETHEUS:
             InferenceInstrumentator(
@@ -590,7 +636,6 @@ class HttpInterface(BaseInterface):
 
         if DEDICATED_DEPLOYMENT_WORKSPACE_URL:
             cached_api_keys = dict()
-            cached_projects = dict()
 
             @app.middleware("http")
             async def check_authorization(request: Request, call_next):
@@ -600,6 +645,8 @@ class HttpInterface(BaseInterface):
                     or request.url.path
                     in [
                         "/",
+                        "/docs",
+                        "/redoc",
                         "/info",
                         "/workflows/blocks/describe",
                         "/workflows/definition/schema",
@@ -647,29 +694,6 @@ class HttpInterface(BaseInterface):
                         )  # expired after 1 hour
                     except RoboflowAPINotAuthorizedError as e:
                         return _unauthorized_response("Unauthorized api_key")
-
-                # check project_url
-                model_id = json_params.get("model_id", "")
-                project_url = (
-                    req_params.get("project", None)
-                    or json_params.get("project", None)
-                    or model_id.split("/")[0]
-                )
-                # only check when project_url is not None
-                if (
-                    project_url is not None
-                    and cached_projects.get(project_url, 0) < time.time()
-                ):
-                    try:
-                        _ = get_roboflow_dataset_type(
-                            api_key, DEDICATED_DEPLOYMENT_WORKSPACE_URL, project_url
-                        )
-
-                        cached_projects[project_url] = (
-                            time.time() + 3600
-                        )  # expired after 1 hour
-                    except RoboflowAPINotNotFoundError as e:
-                        return _unauthorized_response("Unauthorized project")
 
                 return await call_next(request)
 
@@ -724,10 +748,15 @@ class HttpInterface(BaseInterface):
                 max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
                 prevent_local_images_loading=True,
                 profiler=profiler,
+                workflow_id=workflow_request.workflow_id,
             )
+            is_preview = False
+            if hasattr(workflow_request, "is_preview"):
+                is_preview = workflow_request.is_preview
             workflow_results = execution_engine.run(
                 runtime_parameters=workflow_request.inputs,
                 serialize_results=True,
+                _is_preview=is_preview,
             )
             with profiler.profile_execution_phase(
                 name="workflow_results_filtering",
@@ -1188,6 +1217,13 @@ class HttpInterface(BaseInterface):
                         workspace_id=workspace_name,
                         workflow_id=workflow_id,
                         use_cache=workflow_request.use_cache,
+                    )
+                if not workflow_request.workflow_id:
+                    workflow_request.workflow_id = workflow_id
+                if not workflow_specification.get("id"):
+                    logger.warning(
+                        "Internal workflow ID missing in specification for '%s'",
+                        workflow_id,
                     )
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,

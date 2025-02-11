@@ -1,4 +1,4 @@
-# Parallel Robofolow Inference server
+# Parallel Roboflow Inference server
 
 The Roboflow Inference Server supports concurrent processing. This version of the server accepts and processes requests asynchronously, running the web server, preprocessing, auto batching, inference, and post processing all in separate threads to increase server FPS throughput. Separate requests to the same model will be batched on the fly as allowed by `$MAX_BATCH_SIZE`, and then response handling will occurr independently. Images are passed via Python's SharedMemory module to maximize throughput.
 

@@ -91,6 +91,10 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "deprecated": True,
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-chart-network",
+            },
         }
     )
     type: Literal["roboflow_core/lmm@v1", "LMM"]
@@ -98,6 +102,9 @@ class BlockManifest(WorkflowBlockManifest):
     prompt: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Holds unconstrained text prompt to LMM mode",
         examples=["my prompt", "$inputs.prompt"],
+        json_schema_extra={
+            "multiline": True,
+        },
     )
     lmm_type: Union[Selector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]] = Field(
         description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]

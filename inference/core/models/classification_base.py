@@ -40,6 +40,9 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
 
     task_type = "classification"
 
+    preprocess_means = [0.5, 0.5, 0.5]
+    preprocess_stds = [0.5, 0.5, 0.5]
+
     def __init__(self, *args, **kwargs):
         """Initialize the model, setting whether it is multiclass or not."""
         super().__init__(*args, **kwargs)
@@ -229,9 +232,8 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
 
         img_in /= 255.0
 
-        mean = (0.5, 0.5, 0.5)
-        std = (0.5, 0.5, 0.5)
-
+        mean = self.preprocess_means
+        std = self.preprocess_stds
         img_in = img_in.astype(np.float32) if isinstance(img_in, np.ndarray) else img_in.float()
 
         img_in[:, 0, :, :] = (img_in[:, 0, :, :] - mean[0]) / std[0]

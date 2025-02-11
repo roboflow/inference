@@ -4,7 +4,7 @@ from typing import List, Literal, Optional, Tuple, Type, Union
 
 import supervision as sv
 from fastapi import BackgroundTasks
-from pydantic import ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field
 from typing_extensions import Annotated
 
 from inference.core.cache.base import BaseCache
@@ -26,7 +26,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
-    ImageInputField,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -63,19 +62,24 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "data_storage",
+                "icon": "fal fa-upload",
+                "blockPriority": 0,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/roboflow_dataset_upload@v2"]
-    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    target_project: Union[Selector(kind=[ROBOFLOW_PROJECT_KIND]), str] = Field(
-        description="name of Roboflow dataset / project to be used as target for collected data",
-        examples=["my_dataset", "$inputs.target_al_dataset"],
+    images: Selector(kind=[IMAGE_KIND]) = Field(
+        title="Image",
+        description="The image to upload.",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("images", "image"),
     )
-    usage_quota_name: str = Field(
-        description="Unique name for Roboflow project pointed by `target_project` parameter, that identifies "
-        "usage quota applied for this block.",
-        examples=["quota-for-data-sampling-1"],
-        json_schema_extra={"hidden": True},
+    target_project: Union[Selector(kind=[ROBOFLOW_PROJECT_KIND]), str] = Field(
+        description="Roboflow project where data will be saved.",
+        examples=["my_dataset", "$inputs.target_al_dataset"],
     )
     predictions: Optional[
         Selector(
@@ -88,78 +92,76 @@ class BlockManifest(WorkflowBlockManifest):
         )
     ] = Field(
         default=None,
-        description="Model predictions to be saved",
+        description="Model predictions to be uploaded.",
         examples=["$steps.object_detection_model.predictions"],
         json_schema_extra={"always_visible": True},
     )
     data_percentage: Union[FloatZeroToHundred, Selector(kind=[FLOAT_KIND])] = Field(
         default=100,
-        description="Percent of data that will be saved (in range [0.0, 100.0])",
-        examples=[True, False, "$inputs.persist_predictions"],
-    )
-    persist_predictions: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
-        default=True,
-        description="Boolean flag to decide if predictions should be registered along with images",
+        description="Percent of data that will be saved (0.0 to 100.0).",
         examples=[True, False, "$inputs.persist_predictions"],
     )
     minutely_usage_limit: int = Field(
         default=10,
-        description="Maximum number of data registration requests per minute accounted in scope of "
-        "single server or whole Roboflow platform, depending on context of usage.",
+        description="Maximum number of image uploads allowed per minute.",
         examples=[10, 60],
     )
     hourly_usage_limit: int = Field(
         default=100,
-        description="Maximum number of data registration requests per hour accounted in scope of "
-        "single server or whole Roboflow platform, depending on context of usage.",
+        description="Maximum number of image uploads allowed per hour.",
         examples=[10, 60],
     )
     daily_usage_limit: int = Field(
         default=1000,
-        description="Maximum number of data registration requests per day accounted in scope of "
-        "single server or whole Roboflow platform, depending on context of usage.",
+        description="Maximum number of image uploads allowed per day.",
         examples=[10, 60],
+    )
+    usage_quota_name: str = Field(
+        description="A unique identifier for tracking usage quotas (minutely, hourly, daily limits).",
+        examples=["quota-for-data-sampling-1"],
+        json_schema_extra={"hidden": True},
     )
     max_image_size: Tuple[int, int] = Field(
         default=(1920, 1080),
-        description="Maximum size of the image to be registered - bigger images will be "
-        "downsized preserving aspect ratio. Format of data: `(width, height)`",
+        description="Maximum size of the image to be saved. Bigger images will be "
+        "downsized preserving aspect ratio.",
         examples=[(1920, 1080), (512, 512)],
     )
     compression_level: int = Field(
         default=95,
         gt=0,
         le=100,
-        description="Compression level for images registered",
+        description="Compression level for the registered image.",
         examples=[95, 75],
     )
     registration_tags: List[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default_factory=list,
-        description="Tags to be attached to registered datapoints",
+        description="Tags to be attached to the registered image.",
         examples=[["location-florida", "factory-name", "$inputs.dynamic_tag"]],
+    )
+    persist_predictions: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Boolean flag to specify if model predictions should be saved along with the image.",
+        examples=[True, False, "$inputs.persist_predictions"],
     )
     disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=False,
-        description="boolean flag that can be also reference to input - to arbitrarily disable "
-        "data collection for specific request",
+        description="Boolean flag to disable block execution.",
         examples=[True, "$inputs.disable_active_learning"],
     )
     fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Boolean flag dictating if sink is supposed to be executed in the background, "
-        "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-        "registration is needed, use `False` while debugging and if error handling is needed",
+        description="Boolean flag to run the block asynchronously (True) for faster workflows or  "
+        "synchronously (False) for debugging and error handling.",
     )
     labeling_batch_prefix: Union[str, Selector(kind=[STRING_KIND])] = Field(
         default="workflows_data_collector",
-        description="Prefix of the name for labeling batches that will be registered in Roboflow app",
+        description="Target batch name for the registered image.",
         examples=["my_labeling_batch_name"],
     )
     labeling_batches_recreation_frequency: BatchCreationFrequency = Field(
         default="never",
-        description="Frequency in which new labeling batches are created in Roboflow app. New batches "
-        "are created with name prefix provided in `labeling_batch_prefix` in given time intervals."
-        "Useful in organising labeling flow.",
+        description="Frequency in which new labeling batches are created for uploaded images.",
         examples=["never", "daily"],
     )
 

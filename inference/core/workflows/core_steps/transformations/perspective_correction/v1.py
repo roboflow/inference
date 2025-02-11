@@ -55,6 +55,12 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-toolbox",
+                "blockPriority": 2,
+                "opencv": True,
+            },
         }
     )
     type: Literal["roboflow_core/perspective_correction@v1", "PerspectiveCorrection"]
@@ -76,7 +82,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    perspective_polygons: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    perspective_polygons: Union[list, Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Perspective polygons (for each batch at least one must be consisting of 4 vertices)",
         examples=["$steps.perspective_wrap.zones"],
     )
@@ -100,6 +106,10 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images", "predictions"]
+
+    @classmethod
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return ["perspective_polygons"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

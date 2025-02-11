@@ -100,6 +100,12 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "formatter",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-code",
+                "blockPriority": 1,
+                "inDevelopment": True,
+            },
         }
     )
     type: Literal["roboflow_core/expression@v1", "Expression"]
@@ -128,7 +134,8 @@ class BlockManifest(WorkflowBlockManifest):
         default_factory=lambda: {},
     )
     switch: CasesDefinition = Field(
-        description="Definition of switch-case statement",
+        title="Logic Definition",
+        description="Define the logic to be executed.",
         examples=[SWITCH_STATEMENT_EXAMPLE],
     )
 

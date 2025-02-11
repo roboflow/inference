@@ -14,19 +14,23 @@ from inference.core.exceptions import (
     MalformedRoboflowAPIResponseError,
     MalformedWorkflowResponseError,
     MissingDefaultModelError,
+    RetryRequestError,
     RoboflowAPIConnectionError,
     RoboflowAPIIAlreadyAnnotatedError,
     RoboflowAPIIAnnotationRejectionError,
     RoboflowAPIImageUploadRejectionError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     WorkspaceLoadError,
 )
 from inference.core.roboflow_api import (
     ModelEndpointType,
     annotate_image_at_roboflow,
+    build_roboflow_api_headers,
     delete_cached_workflow_response_if_exists,
+    get_from_url,
     get_roboflow_active_learning_configuration,
     get_roboflow_dataset_type,
     get_roboflow_labeling_batches,
@@ -37,7 +41,7 @@ from inference.core.roboflow_api import (
     get_workflow_specification,
     raise_from_lambda,
     register_image_at_roboflow,
-    wrap_roboflow_api_errors, build_roboflow_api_headers,
+    wrap_roboflow_api_errors,
 )
 from inference.core.utils.url_utils import wrap_url
 
@@ -60,6 +64,34 @@ def test_wrap_roboflow_api_errors_when_no_error_occurs() -> None:
     assert result == 5
 
 
+def test_wrap_roboflow_api_errors_when_given_up_on_timeout_error() -> None:
+    # given
+
+    @wrap_roboflow_api_errors()
+    def my_fun(a: int, b: int) -> int:
+        raise RetryRequestError("some", inner_error=requests.Timeout())
+
+    # when
+    with pytest.raises(RoboflowAPITimeoutError):
+        _ = my_fun(2, 3)
+
+
+def test_wrap_roboflow_api_errors_when_given_up_on_http_error() -> None:
+    # given
+
+    @wrap_roboflow_api_errors()
+    def my_fun(a: int, b: int) -> int:
+        response = requests.Response()
+        response.status_code = 404
+        raise RetryRequestError(
+            "some", inner_error=requests.exceptions.HTTPError(response=response)
+        )
+
+    # when
+    with pytest.raises(RoboflowAPINotNotFoundError):
+        _ = my_fun(2, 3)
+
+
 @pytest.mark.parametrize(
     "exception_class", [ConnectionError, requests.exceptions.ConnectionError]
 )
@@ -72,6 +104,16 @@ def test_wrap_roboflow_api_errors_when_connection_error_occurs(
 
     # when
     with pytest.raises(RoboflowAPIConnectionError):
+        _ = my_fun(2, 3)
+
+
+def test_wrap_roboflow_api_errors_when_timeout_error_is_raised() -> None:
+    @wrap_roboflow_api_errors()
+    def my_fun(a: int, b: int) -> int:
+        raise requests.Timeout("some")
+
+    # when
+    with pytest.raises(RoboflowAPITimeoutError):
         _ = my_fun(2, 3)
 
 
@@ -225,9 +267,7 @@ def test_get_roboflow_workspace_when_workspace_id_is_empty(
 
 
 @mock.patch.object(
-    roboflow_api,
-    "ROBOFLOW_API_EXTRA_HEADERS",
-    json.dumps({"extra": "header"})
+    roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", json.dumps({"extra": "header"})
 )
 def test_get_roboflow_workspace_when_response_is_valid(requests_mock: Mocker) -> None:
     # given
@@ -2196,7 +2236,9 @@ def test_build_roboflow_api_headers_when_no_extra_headers() -> None:
 
 
 @mock.patch.object(roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", None)
-def test_build_roboflow_api_headers_when_no_extra_headers_but_explicit_headers_given() -> None:
+def test_build_roboflow_api_headers_when_no_extra_headers_but_explicit_headers_given() -> (
+    None
+):
     # when
     result = build_roboflow_api_headers(explicit_headers={"my": "header"})
 
@@ -2207,22 +2249,27 @@ def test_build_roboflow_api_headers_when_no_extra_headers_but_explicit_headers_g
 @mock.patch.object(
     roboflow_api,
     "ROBOFLOW_API_EXTRA_HEADERS",
-    json.dumps({"extra": "header", "another": "extra"})
+    json.dumps({"extra": "header", "another": "extra"}),
 )
 def test_build_roboflow_api_headers_when_extra_headers_given() -> None:
     # when
     result = build_roboflow_api_headers()
 
     # then
-    assert result == {"extra": "header", "another": "extra"}, "Expected extra headers to be decoded"
+    assert result == {
+        "extra": "header",
+        "another": "extra",
+    }, "Expected extra headers to be decoded"
 
 
 @mock.patch.object(
     roboflow_api,
     "ROBOFLOW_API_EXTRA_HEADERS",
-    json.dumps({"extra": "header", "another": "extra"})
+    json.dumps({"extra": "header", "another": "extra"}),
 )
-def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_headers_present() -> None:
+def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_headers_present() -> (
+    None
+):
     # when
     result = build_roboflow_api_headers(explicit_headers={"my": "header"})
 
@@ -2234,11 +2281,7 @@ def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_header
     }, "Expected extra headers to be decoded and shipped along with explicit headers"
 
 
-@mock.patch.object(
-    roboflow_api,
-    "ROBOFLOW_API_EXTRA_HEADERS",
-    "For sure not a JSON :)"
-)
+@mock.patch.object(roboflow_api, "ROBOFLOW_API_EXTRA_HEADERS", "For sure not a JSON :)")
 def test_build_roboflow_api_headers_when_extra_headers_given_as_invalid_json() -> None:
     # when
     result = build_roboflow_api_headers(explicit_headers={"my": "header"})
@@ -2252,14 +2295,18 @@ def test_build_roboflow_api_headers_when_extra_headers_given_as_invalid_json() -
 @mock.patch.object(
     roboflow_api,
     "ROBOFLOW_API_EXTRA_HEADERS",
-    json.dumps({"extra": "header", "another": "extra"})
+    json.dumps({"extra": "header", "another": "extra"}),
 )
-def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_headers_collide_with_extras() -> None:
+def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_headers_collide_with_extras() -> (
+    None
+):
     # when
-    result = build_roboflow_api_headers(explicit_headers={
-        "extra": "explicit-is-better",
-        "my": "header",
-    })
+    result = build_roboflow_api_headers(
+        explicit_headers={
+            "extra": "explicit-is-better",
+            "my": "header",
+        }
+    )
 
     # then
     assert result == {
@@ -2267,3 +2314,60 @@ def test_build_roboflow_api_headers_when_extra_headers_given_and_explicit_header
         "extra": "explicit-is-better",
         "my": "header",
     }, "Expected extra headers to be decoded and explicit header to override implicit one"
+
+
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", False)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", set())
+def test_get_from_url_when_no_retires_possible(
+    requests_mock: Mocker,
+) -> None:
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/some"),
+        json={
+            "status": "fail",
+        },
+        status_code=500,
+    )
+
+    # when
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        _ = get_from_url(url=wrap_url(f"{API_BASE_URL}/some"), json_response=True)
+
+
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", True)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", {503})
+def test_get_from_url_when_retires_possible(
+    requests_mock: Mocker,
+) -> None:
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/some"),
+        response_list=[
+            {"json": {"status": "fail"}, "status_code": 503},
+            {"json": {"status": "ok"}, "status_code": 200},
+        ],
+    )
+
+    # when
+    result = get_from_url(url=wrap_url(f"{API_BASE_URL}/some"), json_response=True)
+
+    # then
+    assert result == {"status": "ok"}
+
+
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS_RETRIES", 1)
+@mock.patch.object(roboflow_api, "RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API", True)
+@mock.patch.object(roboflow_api, "TRANSIENT_ROBOFLOW_API_ERRORS", {503})
+def test_get_from_url_when_retires_possible_but_given_up(
+    requests_mock: Mocker,
+) -> None:
+    requests_mock.get(
+        url=wrap_url(f"{API_BASE_URL}/some"),
+        response_list=[
+            {"json": {"status": "fail"}, "status_code": 503},
+            {"json": {"status": "fail"}, "status_code": 503},
+        ],
+    )
+
+    # when
+    with pytest.raises(RoboflowAPIUnsuccessfulRequestError):
+        _ = get_from_url(url=wrap_url(f"{API_BASE_URL}/some"), json_response=True)

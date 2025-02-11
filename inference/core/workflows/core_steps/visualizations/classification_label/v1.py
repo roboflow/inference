@@ -89,6 +89,20 @@ class ClassificationLabelManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "search_keywords": ["annotator"],
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-tags",
+                "blockPriority": 2.5,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 
@@ -97,8 +111,11 @@ class ClassificationLabelManifest(ColorableVisualizationManifest):
         WorkflowParameterSelector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="Class",
-        description="The type of text to display.",
+        description="The data to display in the text labels.",
         examples=["LABEL", "$inputs.text"],
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
 
     text_position: Union[

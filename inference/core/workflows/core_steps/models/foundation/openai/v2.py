@@ -94,6 +94,12 @@ class BlockManifest(WorkflowBlockManifest):
             "search_keywords": ["LMM", "VLM", "ChatGPT", "GPT", "OpenAI"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 5,
+                "popular": True,
+            },
         },
         protected_namespaces=(),
     )
@@ -120,6 +126,7 @@ class BlockManifest(WorkflowBlockManifest):
             "relevant_for": {
                 "task_type": {"values": TASKS_REQUIRING_PROMPT, "required": True},
             },
+            "multiline": True,
         },
     )
     output_structure: Optional[Dict[str, str]] = Field(

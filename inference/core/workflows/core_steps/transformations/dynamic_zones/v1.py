@@ -10,6 +10,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
@@ -45,6 +46,12 @@ class DynamicZonesManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-square-dashed",
+                "blockPriority": 3,
+                "opencv": True,
+            },
         }
     )
     type: Literal[f"{TYPE}", "DynamicZone"]
@@ -59,6 +66,11 @@ class DynamicZonesManifest(WorkflowBlockManifest):
     required_number_of_vertices: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Keep simplifying polygon until number of vertices matches this number",
         examples=[4, "$inputs.vertices"],
+    )
+    scale_ratio: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+        default=1,
+        description="Expand resulting polygon along imaginary line from centroid to edge by this ratio",
+        examples=[1.05, "$inputs.scale_ratio"],
     )
 
     @classmethod
@@ -113,6 +125,25 @@ def calculate_simplified_polygon(
     return simplified_polygon
 
 
+def scale_polygon(polygon: np.ndarray, scale: float) -> np.ndarray:
+    if scale == 1:
+        return polygon
+
+    M = cv.moments(polygon)
+
+    if M["m00"] == 0:
+        return polygon
+
+    centroid_x = M["m10"] / M["m00"]
+    centroid_y = M["m01"] / M["m00"]
+
+    shifted = polygon - [centroid_x, centroid_y]
+    scaled = shifted * scale
+    result = scaled + [centroid_x, centroid_y]
+
+    return result.round().astype(np.int32)
+
+
 class DynamicZonesBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -122,6 +153,7 @@ class DynamicZonesBlockV1(WorkflowBlock):
         self,
         predictions: Batch[sv.Detections],
         required_number_of_vertices: int,
+        scale_ratio: float,
     ) -> BlockResult:
         result = []
         for detections in predictions:
@@ -139,6 +171,10 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 )
                 if len(simplified_polygon) != required_number_of_vertices:
                     continue
+                simplified_polygon = scale_polygon(
+                    polygon=simplified_polygon,
+                    scale=scale_ratio,
+                )
                 simplified_polygons.append(simplified_polygon)
             result.append({OUTPUT_KEY: simplified_polygons})
         return result

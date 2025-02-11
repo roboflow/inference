@@ -1,11 +1,12 @@
-aiortc>=1.9.0,<2.0.0
+aiortc~=1.9.0
 APScheduler>=3.10.1,<4.0.0
 asyncua~=1.1.5
 cython~=3.0.0
 python-dotenv~=1.0.0
-fastapi>=0.100,<0.111
+fastapi>=0.100,<0.111  # be careful with upper pin - fastapi might remove support for on_event
 numpy<=1.26.4
 opencv-python>=4.8.1.78,<=4.10.0.84
+opencv-contrib-python>=4.8.1.78,<=4.10.0.84  # Note: opencv-python considers this as a bad practice, but since our dependencies rely on both we pin both here
 pillow<11.0
 prometheus-fastapi-instrumentator<=6.0.0
 redis~=5.0.0
@@ -39,3 +40,5 @@ slack-sdk~=3.33.4
 twilio~=9.3.7
 httpx>=0.25.1,<0.28.0  # must be pinned as bc in 0.28.0 is causing Anthropics to fail
 pylogix==1.0.5
+pymodbus>=3.6.9,<=3.8.3
+backoff~=2.2.0
