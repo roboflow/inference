@@ -7,6 +7,7 @@ class WorkflowBlockError(BaseModel):
     block_id: str
     block_type: str
     property_name: Optional[str] = None
+    property_details: Optional[str] = None
 
 
 class WorkflowError(Exception):

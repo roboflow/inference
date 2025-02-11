@@ -72,6 +72,7 @@ def parse_workflow_definition(
                 element = raw_workflow_definition[section][index]
                 element_name = element.get("name")
                 element_type = element.get("type")
+                property_details = error.get("msg")
 
                 property_name = None
                 if len(loc) > 3 and loc[2] == element_type:
@@ -81,6 +82,7 @@ def parse_workflow_definition(
                     block_id=element_name,
                     block_type=element_type,
                     property_name=property_name,
+                    property_details=property_details,
                 )
                 blocks_errors[element_name] = block_error
 
