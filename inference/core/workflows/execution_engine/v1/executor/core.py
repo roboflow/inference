@@ -134,9 +134,10 @@ def safe_execute_step(
         raise error
     except Exception as error:
         logger.exception(f"Execution of step {step_selector} encountered error.")
+        step_name = get_last_chunk_of_selector(selector=step_selector)
         raise StepExecutionError(
-            block_id=step_selector,
-            block_type=workflow.steps[step_selector.split(".")[-1]].manifest.type,
+            block_id=step_name,
+            block_type=workflow.steps[step_name].manifest.type,
             public_message=str(error),
             context="workflow_execution | step_execution",
             inner_error=error,
