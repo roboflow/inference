@@ -164,7 +164,7 @@ nav:
           - Install "bare metal" Inference GPU on Windows: quickstart/inference_gpu_windows.md
       - Contribute to Inference: contributing.md
       - Changelog: https://github.com/roboflow/inference/releases
-  - Cookbooks: cookbooks.md
+  - Examples: workflows/gallery/
 
 theme:
   name: 'material'

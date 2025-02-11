@@ -81,7 +81,7 @@ as starting a Docker container.
 !!! info "Self-Hosted Pricing"
     Basic usage of self-hosted Inference Servers is completely free.
     
-    Workflows that require
+    Workflows and Models that require
     [a Roboflow API Key](https://docs.roboflow.com/api-reference/authentication#retrieve-an-api-key)
     to access Roboflow Cloud powered features (for example: the private model repository)
     are [metered and consume credits](https://roboflow.com/pricing)
