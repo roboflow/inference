@@ -65,10 +65,13 @@ from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
 
-if USE_PYTORCH_FOR_PREPROCESSING:
-    try:
-        import torch
-    except:
+try:
+    import torch
+    import torchvision
+except ImportError:
+    torch = None
+    torchvision = None
+    if USE_PYTORCH_FOR_PREPROCESSING:
         logger.warning("PyTorch is not available, using NumPy for preprocessing")
         USE_PYTORCH_FOR_PREPROCESSING = False
 
@@ -401,6 +404,7 @@ class RoboflowInferenceModel(Model):
             or DISABLE_PREPROC_AUTO_ORIENT,
         )
         print(self.preproc)
+        print(type(self))
         preprocessed_image, img_dims = self.preprocess_image(
             np_image,
             disable_preproc_contrast=disable_preproc_contrast,
@@ -413,20 +417,24 @@ class RoboflowInferenceModel(Model):
             preprocessed_image = torch.from_numpy(np.ascontiguousarray(preprocessed_image))
             if torch.cuda.is_available():
                 preprocessed_image = preprocessed_image.cuda()
-            preprocessed_image = preprocessed_image.permute(2, 0, 1).unsqueeze(0).float()
+            preprocessed_image = preprocessed_image.permute(2, 0, 1).unsqueeze(0).contiguous().float()  # .to(torch.uint8)
             print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
         
         print(f"image is of type {type(preprocessed_image)}")
+
+        print(preprocessed_image.shape, preprocessed_image.dtype)
 
         print(self.resize_method)
 
         if self.resize_method == "Stretch to":
             if isinstance(preprocessed_image, np.ndarray):
+                preprocessed_image = preprocessed_image.astype(np.float32)
                 resized = cv2.resize(
-                    preprocessed_image, (self.img_size_w, self.img_size_h), cv2.INTER_CUBIC
+                    preprocessed_image, (self.img_size_w, self.img_size_h),
                 )
             else:
-                resized = torch.nn.functional.interpolate(preprocessed_image, size=(self.img_size_w, self.img_size_h), mode="bicubic")
+                resized = torch.nn.functional.interpolate(preprocessed_image, size=(self.img_size_h, self.img_size_w), mode="bilinear")
+                # resized = torchvision.transforms.functional.resize(preprocessed_image, size=(self.img_size_h, self.img_size_w), interpolation=torchvision.transforms.InterpolationMode.BICUBIC, antialias=True)
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
                 preprocessed_image, (self.img_size_w, self.img_size_h)
@@ -444,9 +452,12 @@ class RoboflowInferenceModel(Model):
                 color=(114, 114, 114),
             )
 
-        # t0 = time.time()
-        # resized = torch.from_numpy(resized).cuda().permute(2, 0, 1).unsqueeze(0)
-        # print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
+        print(resized.shape, resized.dtype)
+
+        # if USE_PYTORCH_FOR_PREPROCESSING:
+        #     t0 = time.time()
+        #     resized = torch.from_numpy(resized).cuda().permute(2, 0, 1).unsqueeze(0).float()
+        #     print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
 
         if is_bgr:
             print("is_bgr")
@@ -461,7 +472,7 @@ class RoboflowInferenceModel(Model):
             img_in = np.expand_dims(img_in, axis=0)
         else:
             # we assume a torch tensor is already in the correct format
-            img_in = resized
+            img_in = resized.float()
         
         # if is_bgr:
         #     img_in = img_in[:, [2, 1, 0], :, :]
@@ -472,9 +483,15 @@ class RoboflowInferenceModel(Model):
 
         print(f"Preprocessing time taken: {time.time() - t0} seconds")
 
-        # t0 = time.time()
-        # img_in = torch.from_numpy(img_in).cuda()
-        # print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
+        # if USE_PYTORCH_FOR_PREPROCESSING:
+        #     t0 = time.time()
+        #     img_in = torch.from_numpy(img_in).cuda()
+        #     print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
+
+        print(f"img_in is of type {type(img_in)}")
+        print(img_in.shape)
+        print(img_in.dtype)
+        print(img_dims)
 
         return img_in, img_dims
 
@@ -883,10 +900,8 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             )
             imgs_with_dims = self.image_loader_threadpool.map(preproc_image, image)
             imgs, img_dims = zip(*imgs_with_dims)
-            if isinstance(imgs[0], np.ndarray):
-                img_in = np.concatenate(imgs, axis=0)
-            else:
-                img_in = torch.cat(imgs, dim=0)
+            assert isinstance(imgs[0], np.ndarray) or torch is not None, "Received a list of images as torch tensors but torch is not installed"
+            img_in = np.concatenate(imgs, axis=0) if isinstance(imgs[0], np.ndarray) else torch.cat(imgs, dim=0)
         else:
             img_in, img_dims = self.preproc_image(
                 image,

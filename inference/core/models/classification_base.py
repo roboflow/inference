@@ -3,7 +3,10 @@ from time import perf_counter
 from typing import Any, List, Tuple, Union
 
 import numpy as np
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 from PIL import Image, ImageDraw, ImageFont
 
 from inference.core.entities.requests.inference import ClassificationInferenceRequest
@@ -206,6 +209,7 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 for i in image
             ]
             imgs, img_dims = zip(*imgs_with_dims)
+            assert isinstance(imgs[0], np.ndarray) or torch is not None, "Received a list of images as torch tensors but torch is not installed"
             img_in = np.concatenate(imgs, axis=0) if isinstance(imgs[0], np.ndarray) else torch.cat(imgs, dim=0)
         else:
             img_in, img_dims = self.preproc_image(
