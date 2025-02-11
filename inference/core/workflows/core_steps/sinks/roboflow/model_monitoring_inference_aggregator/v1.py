@@ -97,6 +97,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "section": "advanced",
                 "icon": "fal fa-chart-line",
                 "blockPriority": 8.5,
+                "requires_rf_key": True
             },
         }
     )
