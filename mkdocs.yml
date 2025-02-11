@@ -244,6 +244,11 @@ extra_javascript:
   - 'javascript/init_kapa_widget.js'
   - 'javascript/cookbooks.js'
   - 'javascript/workflows.js'
+  - 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js'
+  - 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js'
+  - 'https://unpkg.com/@rive-app/canvas'
+  - 'https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js'
+  - 'theme/assets/home.js'
 
 hooks:
   - docs/theme/build.py

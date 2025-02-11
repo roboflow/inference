@@ -6,7 +6,7 @@ export default {
     files: [
       "./home.html",
       "./main.html",
-      "./assets/**/*.{js,html}",
+      "./assets/**/*.{js,html,css}",
       "!./assets/dist/**",
       "!./node_modules/**"
     ],
@@ -20,6 +20,7 @@ export default {
         '593/230': '593 / 230',
         '580/205': '580 / 205',
         '548/230': '548 / 230',
+        '3/2': '3 / 2',
       },
       fontSize: { // using px becasue html fontsize is set to 125% for some reason
         xs: "12px", // 0.75rem

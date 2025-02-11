@@ -19,6 +19,7 @@
   "dependencies": {
     "@rive-app/canvas": "^2.25.7",
     "@tailwindcss/line-clamp": "^0.4.4",
-    "gsap": "^3.12.7"
+    "gsap": "^3.12.7",
+    "swiper": "^11.2.2"
   }
 }
