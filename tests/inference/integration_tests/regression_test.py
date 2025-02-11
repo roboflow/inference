@@ -205,8 +205,6 @@ def compare_detection_response(
         response_type = ClassificationInferenceResponse if not multilabel else MultiLabelClassificationInferenceResponse
         response_rf_typed = response_type.model_validate(response)
         expected_response_rf_typed = response_type.model_validate(expected_response)
-        print(response_rf_typed)
-        print(expected_response_rf_typed)
         assert_classification_predictions_match(
             response_rf_typed,
             expected_response_rf_typed,
@@ -318,7 +316,6 @@ def test_visualization(test, res_function, clean_loaded_models_fixture):
         try:
             data = base64.b64decode(response.json()["visualization"])
         except KeyError:
-            print(response.json())
             raise ValueError("Response json lacks visualization key")
         except json.JSONDecodeError:
             data = response.content

@@ -7,8 +7,6 @@ from functools import partial
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import time
-
 import cv2
 import numpy as np
 import onnxruntime
@@ -396,15 +394,12 @@ class RoboflowInferenceModel(Model):
         Returns:
             Tuple[np.ndarray, Tuple[int, int]]: A tuple containing a numpy array of the preprocessed image pixel data and a tuple of the images original size.
         """
-        t0 = time.time()
         np_image, is_bgr = load_image(
             image,
             disable_preproc_auto_orient=disable_preproc_auto_orient
             or "auto-orient" not in self.preproc.keys()
             or DISABLE_PREPROC_AUTO_ORIENT,
         )
-        print(self.preproc)
-        print(type(self))
         preprocessed_image, img_dims = self.preprocess_image(
             np_image,
             disable_preproc_contrast=disable_preproc_contrast,
@@ -412,19 +407,11 @@ class RoboflowInferenceModel(Model):
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
 
-        t0 = time.time()
         if USE_PYTORCH_FOR_PREPROCESSING:
             preprocessed_image = torch.from_numpy(np.ascontiguousarray(preprocessed_image))
             if torch.cuda.is_available():
                 preprocessed_image = preprocessed_image.cuda()
-            preprocessed_image = preprocessed_image.permute(2, 0, 1).unsqueeze(0).contiguous().float()  # .to(torch.uint8)
-            print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
-        
-        print(f"image is of type {type(preprocessed_image)}")
-
-        print(preprocessed_image.shape, preprocessed_image.dtype)
-
-        print(self.resize_method)
+            preprocessed_image = preprocessed_image.permute(2, 0, 1).unsqueeze(0).contiguous().float()
 
         if self.resize_method == "Stretch to":
             if isinstance(preprocessed_image, np.ndarray):
@@ -434,7 +421,6 @@ class RoboflowInferenceModel(Model):
                 )
             else:
                 resized = torch.nn.functional.interpolate(preprocessed_image, size=(self.img_size_h, self.img_size_w), mode="bilinear")
-                # resized = torchvision.transforms.functional.resize(preprocessed_image, size=(self.img_size_h, self.img_size_w), interpolation=torchvision.transforms.InterpolationMode.BICUBIC, antialias=True)
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
                 preprocessed_image, (self.img_size_w, self.img_size_h)
@@ -452,15 +438,7 @@ class RoboflowInferenceModel(Model):
                 color=(114, 114, 114),
             )
 
-        print(resized.shape, resized.dtype)
-
-        # if USE_PYTORCH_FOR_PREPROCESSING:
-        #     t0 = time.time()
-        #     resized = torch.from_numpy(resized).cuda().permute(2, 0, 1).unsqueeze(0).float()
-        #     print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
-
         if is_bgr:
-            print("is_bgr")
             if isinstance(resized, np.ndarray):
                 resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
             else:
@@ -473,25 +451,6 @@ class RoboflowInferenceModel(Model):
         else:
             # we assume a torch tensor is already in the correct format
             img_in = resized.float()
-        
-        # if is_bgr:
-        #     img_in = img_in[:, [2, 1, 0], :, :]
-
-        print("finished preproc")
-
-        # img_in = img_in.cpu().numpy()
-
-        print(f"Preprocessing time taken: {time.time() - t0} seconds")
-
-        # if USE_PYTORCH_FOR_PREPROCESSING:
-        #     t0 = time.time()
-        #     img_in = torch.from_numpy(img_in).cuda()
-        #     print(f"Time taken to convert to tensor: {time.time() - t0} seconds")
-
-        print(f"img_in is of type {type(img_in)}")
-        print(img_in.shape)
-        print(img_in.dtype)
-        print(img_dims)
 
         return img_in, img_dims
 
@@ -725,7 +684,6 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         try:
             self.run_test_inference()
         except Exception as e:
-            raise e
             raise ModelArtefactError(f"Unable to run test inference. Cause: {e}") from e
         try:
             self.validate_model_classes()
@@ -771,21 +729,6 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
             providers = self.onnxruntime_execution_providers
 
-            weights_file = self.weights_file
-
-            # try:
-            #     # convert to fp16
-            #     fp16_weights_file = self.weights_file.replace(".onnx", "_fp16.onnx")
-            #     model_name = self.cache_file(self.weights_file)
-            #     import onnx
-            #     loaded_model = onnx.load(model_name)
-            #     from onnxconverter_common.float16 import convert_float_to_float16
-            #     loaded_fp16_model = convert_float_to_float16(loaded_model)
-            #     onnx.save(loaded_fp16_model, self.cache_file(fp16_weights_file))
-            #     weights_file = fp16_weights_file
-            # except Exception as e:
-            #     logger.error(f"Unable to convert model to fp16: {e}")
-
             if not self.load_weights:
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
             try:
@@ -795,9 +738,8 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     session_options.graph_optimization_level = (
                         onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
                     )
-                print(self.cache_file(weights_file))
                 self.onnx_session = onnxruntime.InferenceSession(
-                    self.cache_file(weights_file),
+                    self.cache_file(self.weights_file),
                     providers=providers,
                     sess_options=session_options,
                 )
@@ -874,12 +816,6 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
         
-        # try:
-        #     # convert to fp16
-        #     from onnxconverter_common.float16 import convert_float_to_float16
-        #     convert_float_to_float16(self.onnx_session.get_model())
-        # except Exception as e:
-        #     logger.error(f"Unable to convert model to fp16: {e}")
         logger.debug("Model initialisation finished.")
 
     def load_image(

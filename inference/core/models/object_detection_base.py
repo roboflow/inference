@@ -194,7 +194,6 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 "disable_preproc_static_crop"
             ],
         )
-        print(f"found {len(predictions)} predictions")
         return self.make_response(predictions, img_dims, **kwargs)
 
     def preprocess(

@@ -1,13 +1,17 @@
 from enum import Enum
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Union, TYPE_CHECKING
 
 import cv2
 import numpy as np
 from skimage.exposure import rescale_intensity
 
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 
-from typing import Union
+if TYPE_CHECKING:
+    import torch
 
 from inference.core.env import (
     DISABLE_PREPROC_CONTRAST,
@@ -21,6 +25,9 @@ CONTRAST_KEY = "contrast"
 GRAYSCALE_KEY = "grayscale"
 ENABLED_KEY = "enabled"
 TYPE_KEY = "type"
+
+
+ImageMetaType = Union[np.ndarray, "torch.Tensor"]
 
 
 class ContrastAdjustmentType(Enum):
@@ -175,10 +182,10 @@ def apply_grayscale_conversion(image: np.ndarray) -> np.ndarray:
 
 
 def letterbox_image(
-    image: Union[np.ndarray, torch.Tensor],
+    image: ImageMetaType,
     desired_size: Tuple[int, int],
     color: Tuple[int, int, int] = (0, 0, 0),
-) -> Union[np.ndarray, torch.Tensor]:
+) -> ImageMetaType:
     """
     Resize and pad image to fit the desired size, preserving its aspect ratio.
 
@@ -211,22 +218,21 @@ def letterbox_image(
         )
     else:
         return torch.nn.functional.pad(resized_img, (left_padding, right_padding, top_padding, bottom_padding), "constant", color[0])
-        # return torch.nn.functional.pad(resized_img, (right_padding, left_padding, top_padding, bottom_padding), "constant", color[0])
 
 
 def downscale_image_keeping_aspect_ratio(
-    image: np.ndarray,
+    image: ImageMetaType,
     desired_size: Tuple[int, int],
-) -> np.ndarray:
+) -> ImageMetaType:
     if image.shape[0] <= desired_size[1] and image.shape[1] <= desired_size[0]:
         return image
     return resize_image_keeping_aspect_ratio(image=image, desired_size=desired_size)
 
 
 def resize_image_keeping_aspect_ratio(
-    image: Union[np.ndarray, torch.Tensor],
+    image: ImageMetaType,
     desired_size: Tuple[int, int],
-) -> Union[np.ndarray, torch.Tensor]:
+) -> ImageMetaType:
     """
     Resize reserving its aspect ratio.
 
@@ -252,6 +258,3 @@ def resize_image_keeping_aspect_ratio(
         return cv2.resize(image, (new_width, new_height))
     else:
         return torch.nn.functional.interpolate(image, size=(new_height, new_width), mode="bilinear")
-    # print(image.shape)
-    # image = torch.from_numpy(image).cuda()
-    # return torch.nn.functional.interpolate(image.permute(2, 0, 1).unsqueeze(0), size=(new_width, new_height)).squeeze(0).permute(1, 2, 0).cpu().numpy()
