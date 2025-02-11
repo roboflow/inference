@@ -1,6 +1,41 @@
 <div class="tutorial-list">
   <!-- Tutorial 1 -->
   <div class="tutorial-item">
+    <a href="https://youtu.be/aPxlImNxj5A">
+      <img src="https://img.youtube.com/vi/aPxlImNxj5A/0.jpg" alt="Workflows Tutorial" />
+    </a>
+    <div class="tutorial-content">
+      <a href="https://youtu.be/aPxlImNxj5A">
+        <strong>Tutorial: Build an AI-Powered Self-Serve Checkout</strong>
+      </a>
+      <div><strong>Created: 2 Feb 2025</strong></div>
+      <p>
+        Make a computer vision app that identifies different pieces of hardware, calculates
+      the total cost, and records the results to a database.
+      </p>
+    </div>
+  </div>
+  
+  <!-- Tutorial 2 -->
+  <div class="tutorial-item">
+    <a href="https://youtu.be/r3Ke7ZEh2Qo">
+      <img src="https://img.youtube.com/vi/r3Ke7ZEh2Qo/0.jpg" alt="Workflows Tutorial" />
+    </a>
+    <div class="tutorial-content">
+      <a href="https://youtu.be/r3Ke7ZEh2Qo">
+        <strong>Tutorial: Intro to Workflows</strong>
+      </a>
+      <div><strong>Created: 6 Jan 2025</strong></div>
+      <p>
+        Learn how to build and deploy Workflows for common use-cases like detecting 
+        vehicles, filtering detections, visualizing results, and calculating dwell 
+        time on a live video stream.
+      </p>
+    </div>
+  </div>
+
+  <!-- Tutorial 3 -->
+  <div class="tutorial-item">
     <a href="https://youtu.be/tZa-QgFn7jg">
       <img src="https://img.youtube.com/vi/tZa-QgFn7jg/0.jpg" alt="Smart Parking with AI" />
     </a>
@@ -13,24 +48,6 @@
         Build a smart parking lot management system using Roboflow Workflows!
         This tutorial covers license plate detection with YOLOv8, object tracking
         with ByteTrack, and real-time notifications with a Telegram bot.
-      </p>
-    </div>
-  </div>
-
-  <!-- Tutorial 2 -->
-  <div class="tutorial-item">
-    <a href="https://youtu.be/VCbcC5OEGRU">
-      <img src="https://img.youtube.com/vi/VCbcC5OEGRU/0.jpg" alt="Workflows Tutorial" />
-    </a>
-    <div class="tutorial-content">
-      <a href="https://youtu.be/VCbcC5OEGRU">
-        <strong>Tutorial: Build a Traffic Monitoring Application with Workflows</strong>
-      </a>
-      <div><strong>Created: 22 Oct 2024</strong></div>
-      <p>
-        Learn how to build and deploy Workflows for common use-cases like detecting 
-        vehicles, filtering detections, visualizing results, and calculating dwell 
-        time on a live video stream.
       </p>
     </div>
   </div>

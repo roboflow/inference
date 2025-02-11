@@ -315,12 +315,12 @@ def with_route_exceptions(route):
             traceback.print_exc()
         except WorkflowSyntaxError as error:
             content = WorkflowErrorResponse(
-                message=error.public_message,
+                message=str(error.public_message),
                 error_type=error.__class__.__name__,
-                context=error.context,
-                inner_error_type=error.inner_error_type,
+                context=str(error.context),
+                inner_error_type=str(error.inner_error_type),
                 inner_error_message=str(error.inner_error),
-                blocks_errors=error._blocks_errors,
+                blocks_errors=error.blocks_errors,
             )
             resp = JSONResponse(status_code=400, content=content.model_dump())
         except (
@@ -450,15 +450,15 @@ def with_route_exceptions(route):
             traceback.print_exc()
         except StepExecutionError as error:
             content = WorkflowErrorResponse(
-                message=error.public_message,
+                message=str(error.public_message),
                 error_type=error.__class__.__name__,
-                context=error.context,
-                inner_error_type=error.inner_error_type,
+                context=str(error.context),
+                inner_error_type=str(error.inner_error_type),
                 inner_error_message=str(error.inner_error),
                 blocks_errors=[
                     WorkflowBlockError(
-                        block_id=error._block_id,
-                        block_type=error._block_type,
+                        block_id=error.block_id,
+                        block_type=error.block_type,
                     ),
                 ],
             )
