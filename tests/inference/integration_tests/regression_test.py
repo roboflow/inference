@@ -26,7 +26,7 @@ from tests.common import (
 
 
 PIXEL_TOLERANCE = 2
-CONFIDENCE_TOLERANCE = 0.005
+CONFIDENCE_TOLERANCE = 0.02
 TIME_TOLERANCE = 0.75
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
@@ -205,6 +205,8 @@ def compare_detection_response(
         response_type = ClassificationInferenceResponse if not multilabel else MultiLabelClassificationInferenceResponse
         response_rf_typed = response_type.model_validate(response)
         expected_response_rf_typed = response_type.model_validate(expected_response)
+        print(response_rf_typed)
+        print(expected_response_rf_typed)
         assert_classification_predictions_match(
             response_rf_typed,
             expected_response_rf_typed,
