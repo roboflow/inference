@@ -1,14 +1,6 @@
-// // Initialize Rive animation
-// import { Rive } from '@rive-app/canvas';
-// import { gsap } from "gsap";
-// import { ScrollTrigger } from "gsap/ScrollTrigger";
-// import Swiper from 'swiper';
-// import { Pagination } from 'swiper/modules';
-
 gsap.registerPlugin(ScrollTrigger);
 
 function runHomeScript() {
-    console.log("Home.js loaded"); // Debug log
 
     // Wait for DOM to be fully loaded
     setTimeout(() => {
