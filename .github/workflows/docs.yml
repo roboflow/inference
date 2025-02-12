@@ -50,12 +50,22 @@ jobs:
           owner: roboflow
           repositories: mkdocs-material-insiders
 
+      - name: Set up Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: "22"
+
+      - name: Install Docs Theme
+        run: |
+          npm ci
+        working-directory: ./inference_repo/docs/theme
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           check-latest: true
-
+        
       - name: Install Python dependencies
         run: |
           # Upgrade pip and setuptools
