@@ -3,12 +3,11 @@ from typing import Tuple, Union
 
 import numpy as np
 import onnxruntime as ort
-import torch
 
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
-from inference.core.utils.onnx import run_session_via_iobinding
+from inference.core.utils.onnx import run_session_via_iobinding, ImageMetaType
 
 
 class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
@@ -34,7 +33,7 @@ class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         return "weights.onnx"
 
     def predict(
-        self, img_in: Union[np.ndarray, torch.Tensor], **kwargs
+        self, img_in: ImageMetaType, **kwargs
     ) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session.
 
