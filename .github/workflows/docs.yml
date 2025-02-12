@@ -112,5 +112,5 @@ jobs:
       - name: Deploy docs
         # Only deploy if release event OR if deploy input was set to true
         if: ${{ github.event_name == 'release' || github.event.inputs.deploy == 'true' }}
-        run: mkdocs gh-deploy --force
+        run: mkdocs gh-deploy --force --verbose
         working-directory: ./inference_repo
