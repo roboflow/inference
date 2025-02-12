@@ -337,6 +337,7 @@ def trigger_job_with_workflows_images_processing(
     max_parallel_tasks: Optional[int],
     aggregation_format: Optional[AggregationFormat],
     job_id: Optional[str],
+    notifications_url: Optional[str],
     api_key: Optional[str],
 ) -> str:
     workspace = get_workspace(api_key=api_key)
@@ -369,6 +370,7 @@ def trigger_job_with_workflows_images_processing(
         processing_timeout_seconds=max_runtime_seconds,
         max_parallel_tasks=max_parallel_tasks,
         processing_specification=processing_specification,
+        notifications_url=notifications_url,
     )
     create_batch_job(
         workspace=workspace,
@@ -394,6 +396,7 @@ def trigger_job_with_workflows_videos_processing(
     aggregation_format: Optional[AggregationFormat],
     max_video_fps: Optional[Union[float, int]],
     job_id: Optional[str],
+    notifications_url: Optional[str],
     api_key: Optional[str],
 ) -> str:
     workspace = get_workspace(api_key=api_key)
@@ -427,6 +430,7 @@ def trigger_job_with_workflows_videos_processing(
         processing_timeout_seconds=max_runtime_seconds,
         max_parallel_tasks=max_parallel_tasks,
         processing_specification=processing_specification,
+        notifications_url=notifications_url,
     )
     create_batch_job(
         workspace=workspace,
