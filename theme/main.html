@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block content %}
+  {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
+    {% include 'home.html' %}
+  {% else %}
+    <div class="md-content" data-md-component="content">
+      <div class="md-content__inner md-typeset">
+        {{ super() }}
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block extrahead %}
+  {{ super() }}
+  {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
+    <link href="{{ 'https://cdn.jsdelivr.net/npm/swiper/swiper-bundle.min.css'|url }}" rel="stylesheet">
+    <link href="{{ 'static/styles.css'|url }}" rel="stylesheet">
+    <script type="module" src="{{ 'static/dist/home.js'|url }}"></script>
+  {% endif %}
+{% endblock %}
