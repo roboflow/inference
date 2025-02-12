@@ -30,6 +30,14 @@ share/python-wheels/
 *.egg
 MANIFEST
 _classes.csv
+node_modules/
+
+
+# Build directories
+theme/node_modules/
+theme/assets/dist/
+theme/assets/styles.css
+docs/static/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -177,3 +185,11 @@ docs/openapi.json
 tests/inference_cli/integration_tests/assets/test_images/
 inference_profiling
 tests/inference_sdk/unit_tests/http/inference_profiling
+
+# Environment
+.env.*
+!.env.example
+
+# System files
+.DS_Store
+*.pem
