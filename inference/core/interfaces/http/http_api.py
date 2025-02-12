@@ -213,6 +213,7 @@ from inference.core.workflows.errors import (
     ReferenceTypeError,
     RuntimeInputError,
     StepExecutionError,
+    StepInputDimensionalityError,
     WorkflowBlockError,
     WorkflowDefinitionError,
     WorkflowError,
@@ -311,7 +312,12 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
-        except WorkflowSyntaxError as error:
+        except (
+            WorkflowSyntaxError,
+            InvalidReferenceTargetError,
+            ExecutionGraphStructureError,
+            StepInputDimensionalityError,
+        ) as error:
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
@@ -323,9 +329,7 @@ def with_route_exceptions(route):
             resp = JSONResponse(status_code=400, content=content.model_dump())
         except (
             WorkflowDefinitionError,
-            ExecutionGraphStructureError,
             ReferenceTypeError,
-            InvalidReferenceTargetError,
             RuntimeInputError,
             InvalidInputTypeError,
             OperationTypeNotRecognisedError,
