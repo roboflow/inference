@@ -287,6 +287,11 @@
         {% endif %}
       {% endblock %}
 
+      {% if page.is_homepage or page.template == "home.html" %}
+        <main data-md-component="main">
+            {% include "home.html" %}
+        </main>
+      {% else %}
       <!-- Main area -->
       <main class="md-main" data-md-component="main">
         <div class="md-main__inner md-grid">
@@ -353,6 +358,7 @@
           {% include "partials/top.html" %}
         {% endif %}
       </main>
+      {% endif %}
 
       <!-- Footer -->
       {% block footer %}
