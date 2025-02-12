@@ -93,6 +93,7 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+
 ##########################################################################
 # Qwen2.5-VL Workflow Block
 ##########################################################################
