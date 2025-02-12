@@ -415,7 +415,7 @@ def get_kind_of_value_provided_in_step_output(
         matched_property = True
         actual_kind.extend(output.kind)
     if not matched_property:
-        property_name = get_property_name_from_invalid_selector(
+        property_name = get_property_with_invalid_selector(
             manifest=source_step_manifest,
             step_property=step_property,
         )
@@ -500,71 +500,46 @@ def verify_edge_is_created_between_existing_nodes(
     start: str,
     end: str,
 ) -> None:
-    if not execution_graph.has_node(start):
-        # Get step type and property name from graph if available
-        step_type = ""
+    if not execution_graph.has_node(start) or not execution_graph.has_node(end):
+        invalid_block = start if not execution_graph.has_node(start) else end
+        referencing_block = end if invalid_block == start else start
+
+        step_type = None
         property_name = None
-        if execution_graph.has_node(end):
-            node_data = execution_graph.nodes[end]
-            if NODE_COMPILATION_OUTPUT_PROPERTY in node_data:
-                step_manifest = node_data[NODE_COMPILATION_OUTPUT_PROPERTY]
-                if hasattr(step_manifest, "step_manifest"):
-                    step_type = step_manifest.step_manifest.type
-                    property_name = get_property_name_from_invalid_selector(
-                        manifest=step_manifest.step_manifest,
-                        step_property=start,
-                    )
+        if execution_graph.has_node(referencing_block):
+            if is_step_node(execution_graph, referencing_block):
+                step_manifest = node_as(
+                    execution_graph=execution_graph,
+                    node=referencing_block,
+                    expected_type=StepNode,
+                ).step_manifest
+                step_type = step_manifest.type
+                property_name = get_property_with_invalid_selector(
+                    manifest=step_manifest,
+                    step_property=invalid_block,
+                )
 
         block_id = (
             "$outputs"
-            if end.startswith("$outputs.")
-            else get_last_chunk_of_selector(selector=end)
+            if referencing_block.startswith("$outputs.")
+            else get_last_chunk_of_selector(selector=referencing_block)
         )
         property_name = (
-            get_last_chunk_of_selector(selector=end)
-            if end.startswith("$outputs.")
+            get_last_chunk_of_selector(selector=referencing_block)
+            if referencing_block.startswith("$outputs.")
             else property_name
         )
 
-        is_input = is_input_selector(selector_or_value=start)
+        is_input = is_input_selector(selector_or_value=invalid_block)
         raise InvalidReferenceTargetError(
-            public_message=f"Workflow references '{start}' which points to a non-existent {is_input and 'input parameter' or 'block'}.",
+            public_message=f"Workflow references '{invalid_block}' which points to a non-existent {is_input and 'input parameter' or 'block'}.",
             context="workflow_compilation | execution_graph_construction",
             blocks_errors=[
                 WorkflowBlockError(
                     block_id=block_id,
                     block_type=step_type,
                     property_name=property_name,
-                    property_details=f"Invalid reference to {start}",
-                ),
-            ],
-        )
-    if not execution_graph.has_node(end):
-
-        step_type = ""
-        property_name = None
-        if execution_graph.has_node(start):
-            node_data = execution_graph.nodes[start]
-            if NODE_COMPILATION_OUTPUT_PROPERTY in node_data:
-                step_manifest = node_data[NODE_COMPILATION_OUTPUT_PROPERTY]
-                if hasattr(step_manifest, "step_manifest"):
-                    print("step_manifest", step_manifest)
-                    step_type = step_manifest.step_manifest.type
-                    property_name = get_property_name_from_invalid_selector(
-                        manifest=step_manifest.step_manifest,
-                        step_property=end,
-                    )
-
-        is_input = is_input_selector(selector_or_value=end)
-        raise InvalidReferenceTargetError(
-            public_message=f"Workflow references '{end}' which points to a non-existent {is_input and 'input parameter' or 'block'}.",
-            context="workflow_compilation | execution_graph_construction",
-            blocks_errors=[
-                WorkflowBlockError(
-                    block_id=get_last_chunk_of_selector(selector=start),
-                    block_type=step_type,
-                    property_name=property_name,
-                    property_details=f"Invalid reference to {end}",
+                    property_details=f"Invalid reference to {invalid_block}",
                 ),
             ],
         )
@@ -590,7 +565,6 @@ def denote_output_node_kind_based_on_step_outputs(
             blocks_errors=[
                 WorkflowBlockError(
                     block_id="$outputs",
-                    block_type="$outputs",
                     property_name=output_name,
                     property_details=f"Invalid reference to {output_selector}",
                 ),
@@ -1697,9 +1671,9 @@ def get_reference_lineage(
     return copy(property_data.data_lineage)
 
 
-def get_property_name_from_invalid_selector(
+def get_property_with_invalid_selector(
     manifest: WorkflowBlockManifest, step_property: str
-) -> str:
+) -> Optional[str]:
     property_name = None
     for key, value in manifest.__dict__.items():
         if isinstance(value, str) and step_property in value:
