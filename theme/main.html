@@ -16,7 +16,7 @@
   {{ super() }}
   {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
     <link href="{{ 'https://cdn.jsdelivr.net/npm/swiper/swiper-bundle.min.css'|url }}" rel="stylesheet">
-    <link href="{{ 'theme/assets/styles.css'|url }}" rel="stylesheet">
-    <script type="module" src="{{ 'theme/assets/dist/home.js'|url }}"></script>
+    <link href="{{ 'static/styles.css'|url }}" rel="stylesheet">
+    <script type="module" src="{{ 'static/dist/home.js'|url }}"></script>
   {% endif %}
 {% endblock %}

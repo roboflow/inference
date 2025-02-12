@@ -34,9 +34,10 @@ node_modules/
 
 
 # Build directories
-docs/theme/node_modules/
-docs/theme/assets/dist/
-docs/theme/assets/styles.css
+theme/node_modules/
+theme/assets/dist/
+theme/assets/styles.css
+docs/static/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

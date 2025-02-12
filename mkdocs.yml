@@ -170,7 +170,7 @@ theme:
   name: 'material'
   logo: roboflow-logomark-white.svg
   favicon: favicon.png
-  custom_dir: docs/theme
+  custom_dir: theme
   font:
     text: Inter
     code: ui-monospace
@@ -251,4 +251,4 @@ extra_javascript:
   - 'theme/assets/home.js'
 
 hooks:
-  - docs/theme/build.py
+  - theme/build.py
