@@ -4,42 +4,20 @@ This directory contains the custom theme for the Inference documentation site.
 
 ## Development Setup
 
-1. Install Node.js dependencies
-   ```bash
-   npm install
-   ```
-2. Build the theme assets
-   ```bash
-   npm run build
-   ```
-3. Start the development server
-   ```bash
-   npm run dev
-   ```
+Install Node.js dependencies
+```bash
+npm install
+```
 
-This will:
-- Watch and compile Tailwind CSS
-- Watch and bundle JavaScript with esbuild
-
-3. In another terminal, start MkDocs:
+Then, start MkDocs:
 ```bash
 # In the project root
-mkdocs serve
+python -m mkdocs serve
 ```
 
 ## Homepage-Specific Assets
 
-The Tailwind CSS and JavaScript are only loaded on the homepage. This is controlled in `main.html`:
-
-```html
-{% block extrahead %}
-  {{ super() }}
-  {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
-    <link href="{{ 'theme/assets/styles.css'|url }}" rel="stylesheet">
-    <script type="module" src="{{ 'theme/assets/dist/home.js'|url }}"></script>
-  {% endif %}
-{% endblock %}
-```
+The Tailwind CSS and JavaScript are only loaded on the homepage. This is controlled in `main.html`.
 
 - `styles.css` - Tailwind styles for homepage components
 - `home.js` - JavaScript for homepage animations and interactions
