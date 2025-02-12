@@ -58,7 +58,7 @@ jobs:
       - name: Install Docs Theme
         run: |
           npm ci
-        working-directory: ./inference_repo/docs/theme
+        working-directory: ./inference_repo/theme
 
       - name: Set up Python
         uses: actions/setup-python@v5
