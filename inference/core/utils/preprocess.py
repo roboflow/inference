@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Dict, Tuple, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, Tuple, Union
 
 import cv2
 import numpy as np
@@ -10,24 +10,19 @@ try:
 except ImportError:
     torch = None
 
-if TYPE_CHECKING:
-    import torch
-
 from inference.core.env import (
     DISABLE_PREPROC_CONTRAST,
     DISABLE_PREPROC_GRAYSCALE,
     DISABLE_PREPROC_STATIC_CROP,
 )
 from inference.core.exceptions import PreProcessingError
+from inference.core.utils.onnx import ImageMetaType
 
 STATIC_CROP_KEY = "static-crop"
 CONTRAST_KEY = "contrast"
 GRAYSCALE_KEY = "grayscale"
 ENABLED_KEY = "enabled"
 TYPE_KEY = "type"
-
-
-ImageMetaType = Union[np.ndarray, "torch.Tensor"]
 
 
 class ContrastAdjustmentType(Enum):
@@ -201,7 +196,11 @@ def letterbox_image(
         image=image,
         desired_size=desired_size,
     )
-    new_height, new_width = resized_img.shape[:2] if isinstance(resized_img, np.ndarray) else resized_img.shape[-2:]
+    new_height, new_width = (
+        resized_img.shape[:2]
+        if isinstance(resized_img, np.ndarray)
+        else resized_img.shape[-2:]
+    )
     top_padding = (desired_size[1] - new_height) // 2
     bottom_padding = desired_size[1] - new_height - top_padding
     left_padding = (desired_size[0] - new_width) // 2
@@ -217,7 +216,12 @@ def letterbox_image(
             value=color,
         )
     else:
-        return torch.nn.functional.pad(resized_img, (left_padding, right_padding, top_padding, bottom_padding), "constant", color[0])
+        return torch.nn.functional.pad(
+            resized_img,
+            (left_padding, right_padding, top_padding, bottom_padding),
+            "constant",
+            color[0],
+        )
 
 
 def downscale_image_keeping_aspect_ratio(
@@ -240,7 +244,11 @@ def resize_image_keeping_aspect_ratio(
     - image: numpy array representing the image.
     - desired_size: tuple (width, height) representing the target dimensions.
     """
-    img_ratio = image.shape[1] / image.shape[0] if isinstance(image, np.ndarray) else image.shape[-1] / image.shape[-2]
+    img_ratio = (
+        image.shape[1] / image.shape[0]
+        if isinstance(image, np.ndarray)
+        else image.shape[-1] / image.shape[-2]
+    )
     desired_ratio = desired_size[0] / desired_size[1]
 
     # Determine the new dimensions
@@ -257,4 +265,6 @@ def resize_image_keeping_aspect_ratio(
     if isinstance(image, np.ndarray):
         return cv2.resize(image, (new_width, new_height))
     else:
-        return torch.nn.functional.interpolate(image, size=(new_height, new_width), mode="bilinear")
+        return torch.nn.functional.interpolate(
+            image, size=(new_height, new_width), mode="bilinear"
+        )

@@ -1,9 +1,12 @@
-from typing import List, Union
+from typing import TYPE_CHECKING, List, Union
 
-import onnxruntime as ort
 import numpy as np
+import onnxruntime as ort
 
-import torch
+if TYPE_CHECKING:
+    import torch
+
+ImageMetaType = Union[np.ndarray, "torch.Tensor"]
 
 
 def get_onnxruntime_execution_providers(value: str) -> List[str]:
@@ -24,7 +27,9 @@ def get_onnxruntime_execution_providers(value: str) -> List[str]:
     return value.split(",")
 
 
-def run_session_via_iobinding(session: ort.InferenceSession, input_name: str, input_data: Union[np.ndarray, torch.Tensor]) -> List[np.ndarray]:
+def run_session_via_iobinding(
+    session: ort.InferenceSession, input_name: str, input_data: ImageMetaType
+) -> List[np.ndarray]:
     binding = session.io_binding()
 
     if "CUDAExecutionProvider" not in session.get_providers():
@@ -49,7 +54,7 @@ def run_session_via_iobinding(session: ort.InferenceSession, input_name: str, in
             buffer_ptr=prediction.ctypes.data,
         )
         predictions.append(prediction)
-    
+
     if isinstance(input_data, np.ndarray):
         input_data = np.ascontiguousarray(input_data.astype(dtype))
         binding.bind_input(
@@ -60,12 +65,16 @@ def run_session_via_iobinding(session: ort.InferenceSession, input_name: str, in
             shape=input_data.shape,
             buffer_ptr=input_data.ctypes.data,
         )
-    elif isinstance(input_data, torch.Tensor):
+    else:
+        # we assume that the input data is a torch tensor
+        # but don't explicitly check for torch here so we don't require a torch import
         input_data = input_data.contiguous()
         binding.bind_input(
             name=input_name,
             device_type=input_data.device.type,
-            device_id=input_data.device.index if input_data.device.index is not None else 0,
+            device_id=(
+                input_data.device.index if input_data.device.index is not None else 0
+            ),
             element_type=dtype,
             shape=input_data.shape,
             buffer_ptr=input_data.data_ptr(),

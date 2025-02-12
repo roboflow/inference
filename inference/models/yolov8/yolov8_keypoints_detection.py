@@ -6,8 +6,8 @@ from inference.core.exceptions import ModelArtefactError
 from inference.core.models.keypoints_detection_base import (
     KeypointsDetectionBaseOnnxRoboflowInferenceModel,
 )
-from inference.core.utils.onnx import run_session_via_iobinding
 from inference.core.models.utils.keypoints import superset_keypoints_count
+from inference.core.utils.onnx import run_session_via_iobinding
 
 
 class YOLOv8KeypointsDetection(KeypointsDetectionBaseOnnxRoboflowInferenceModel):
@@ -41,7 +41,9 @@ class YOLOv8KeypointsDetection(KeypointsDetectionBaseOnnxRoboflowInferenceModel)
         Returns:
             Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class confidence scores.
         """
-        predictions = run_session_via_iobinding(self.onnx_session, self.input_name, img_in)[0]
+        predictions = run_session_via_iobinding(
+            self.onnx_session, self.input_name, img_in
+        )[0]
         predictions = predictions.transpose(0, 2, 1)
         boxes = predictions[:, :, :4]
         number_of_classes = len(self.get_class_names)

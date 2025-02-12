@@ -1,14 +1,9 @@
-from typing import Tuple
+import time
+from typing import Tuple, Union
 
 import numpy as np
-
-import torch
-
 import onnxruntime as ort
-
-from typing import Union
-
-import time
+import torch
 
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
@@ -38,7 +33,9 @@ class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         """
         return "weights.onnx"
 
-    def predict(self, img_in: Union[np.ndarray, torch.Tensor], **kwargs) -> Tuple[np.ndarray]:
+    def predict(
+        self, img_in: Union[np.ndarray, torch.Tensor], **kwargs
+    ) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session.
 
         Args:
@@ -47,7 +44,9 @@ class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         Returns:
             Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class confidence scores.
         """
-        predictions = run_session_via_iobinding(self.onnx_session, self.input_name, img_in)[0]
+        predictions = run_session_via_iobinding(
+            self.onnx_session, self.input_name, img_in
+        )[0]
         predictions = predictions.transpose(0, 2, 1)
         boxes = predictions[:, :, :4]
         class_confs = predictions[:, :, 4:]

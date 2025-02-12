@@ -8,7 +8,6 @@ from inference.core.models.object_detection_base import (
 from inference.core.utils.onnx import run_session_via_iobinding
 
 
-
 class YOLOv5ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection model (Implements an object detection specific infer method).
 
@@ -37,5 +36,7 @@ class YOLOv5ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         Returns:
             Tuple[np.ndarray]: NumPy array representing the predictions.
         """
-        predictions = run_session_via_iobinding(self.onnx_session, self.input_name, img_in)[0]
+        predictions = run_session_via_iobinding(
+            self.onnx_session, self.input_name, img_in
+        )[0]
         return (predictions,)

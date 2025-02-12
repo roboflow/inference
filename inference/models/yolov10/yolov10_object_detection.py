@@ -8,8 +8,8 @@ from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.utils.postprocess import post_process_bboxes
 from inference.core.utils.onnx import run_session_via_iobinding
+from inference.core.utils.postprocess import post_process_bboxes
 
 
 class YOLOv10ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
@@ -45,7 +45,9 @@ class YOLOv10ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         Returns:
             Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class confidence scores.
         """
-        predictions = run_session_via_iobinding(self.onnx_session, self.input_name, img_in)[0]
+        predictions = run_session_via_iobinding(
+            self.onnx_session, self.input_name, img_in
+        )[0]
 
         return (predictions,)
 

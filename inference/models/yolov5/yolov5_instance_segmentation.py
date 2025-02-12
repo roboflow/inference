@@ -36,5 +36,7 @@ class YOLOv5InstanceSegmentation(InstanceSegmentationBaseOnnxRoboflowInferenceMo
         Returns:
             Tuple[np.ndarray, np.ndarray]: Tuple containing two NumPy arrays representing the predictions.
         """
-        predictions = run_session_via_iobinding(self.onnx_session, self.input_name, img_in)
+        predictions = run_session_via_iobinding(
+            self.onnx_session, self.input_name, img_in
+        )
         return predictions[0], predictions[1]

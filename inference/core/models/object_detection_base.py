@@ -1,6 +1,7 @@
 from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
+
 try:
     import torch
 except ImportError:
@@ -255,19 +256,32 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             if isinstance(img_in, np.ndarray):
                 img_in = np.pad(
                     img_in,
-                    ((0, batch_padding), (0, 0), (0, width_padding), (0, height_padding)),
+                    (
+                        (0, batch_padding),
+                        (0, 0),
+                        (0, width_padding),
+                        (0, height_padding),
+                    ),
                     "constant",
                 )
             else:
-                assert torch is not None, "Received a non-numpy image but torch is not installed"
+                assert (
+                    torch is not None
+                ), "Received a non-numpy image but torch is not installed"
                 img_in = torch.nn.functional.pad(
                     img_in,
-                    (0, height_padding,  # height padding
-                     0, width_padding,   # width padding
-                     0, 0,               # channels
-                     0, batch_padding),  # batch
-                    mode='constant',
-                    value=0
+                    (
+                        0,
+                        height_padding,  # height padding
+                        0,
+                        width_padding,  # width padding
+                        0,
+                        0,  # channels
+                        0,
+                        batch_padding,
+                    ),  # batch
+                    mode="constant",
+                    value=0,
                 )
 
         return img_in, PreprocessReturnMetadata(
