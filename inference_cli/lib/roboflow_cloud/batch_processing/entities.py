@@ -139,3 +139,7 @@ class WorkflowProcessingJobV1(BaseModel):
     processing_specification: WorkflowsProcessingSpecificationV1 = Field(
         serialization_alias="processingSpecification"
     )
+    notifications_url: Optional[str] = Field(
+        serialization_alias="notificationsURL",
+        default=None,
+    )
