@@ -773,4 +773,4 @@ def test_workflow_with_aspect_ratio_extraction_with_valid_input(
     assert set(result[0].keys()) == {
         "aspect_ratio",
     }, "Expected all declared outputs to be delivered"
-    assert result[0]["aspect_ratio"] == 1.5, "Expected aspect ratio to be 1.0"
+    assert result[0]["aspect_ratio"] == 1.5, "Expected aspect ratio to be 1.5"
