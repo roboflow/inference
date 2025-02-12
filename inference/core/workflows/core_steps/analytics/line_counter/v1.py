@@ -65,11 +65,11 @@ class LineCounterManifest(WorkflowBlockManifest):
     )
 
     line_segment: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Line in the format [[x1, y1], [x2, y2]] consisting of exactly two points. For line [[0, 100], [100, 100]] line will count objects entering from the bottom as IN",
+        description="Line consisting of exactly two points. For line [[0, 100], [100, 100]], objects entering from the bottom will count as IN.",
         examples=[[[0, 50], [500, 50]], "$inputs.zones"],
     )
     triggering_anchor: Union[str, Selector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
-        description=f"Point from the detection for triggering line crossing.",
+        description=f"The point on the detection that must cross the line to be counted.",
         default="CENTER",
         examples=["CENTER"],
     )

@@ -43,7 +43,6 @@ RUN wget https://storage.googleapis.com/roboflow-tests-assets/zxing_cpp_library_
     && rm zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz
 
 RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
-    git+https://github.com/pypdfium2-team/pypdfium2 \
     -r _requirements.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \

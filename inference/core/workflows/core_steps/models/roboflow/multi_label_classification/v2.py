@@ -81,20 +81,19 @@ class BlockManifest(WorkflowBlockManifest):
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
-        description="Confidence threshold for predictions",
+        description="Confidence threshold for predictions.",
         examples=[0.3, "$inputs.confidence_threshold"],
     )
     disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Parameter to decide if Active Learning data sampling is disabled for the model",
+        description="Boolean flag to disable project-level active learning for this block.",
         examples=[True, "$inputs.disable_active_learning"],
     )
     active_learning_target_dataset: Union[
         Selector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
     ] = Field(
         default=None,
-        description="Target dataset for Active Learning data sampling - see Roboflow Active Learning "
-        "docs for more information",
+        description="Target dataset for active learning, if enabled.",
         examples=["my_project", "$inputs.al_target_project"],
     )
 

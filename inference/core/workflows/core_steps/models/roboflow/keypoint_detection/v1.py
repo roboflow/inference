@@ -86,63 +86,62 @@ class BlockManifest(WorkflowBlockManifest):
     ]
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
-    class_agnostic_nms: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
-        default=False,
-        description="Value to decide if NMS is to be used in class-agnostic mode.",
-        examples=[True, "$inputs.class_agnostic_nms"],
-    )
-    class_filter: Union[Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])] = (
-        Field(
-            default=None,
-            description="List of classes to retrieve from predictions (to define subset of those which was used while model training)",
-            examples=[["a", "b", "c"], "$inputs.class_filter"],
-        )
-    )
     confidence: Union[
         FloatZeroToOne,
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
-        description="Confidence threshold for predictions",
+        description="Confidence threshold for predictions.",
         examples=[0.3, "$inputs.confidence_threshold"],
-    )
-    iou_threshold: Union[
-        FloatZeroToOne,
-        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
-    ] = Field(
-        default=0.3,
-        description="Parameter of NMS, to decide on minimum box intersection over union to merge boxes",
-        examples=[0.4, "$inputs.iou_threshold"],
-    )
-    max_detections: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
-        default=300,
-        description="Maximum number of detections to return",
-        examples=[300, "$inputs.max_detections"],
-    )
-    max_candidates: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
-        default=3000,
-        description="Maximum number of candidates as NMS input to be taken into account.",
-        examples=[3000, "$inputs.max_candidates"],
     )
     keypoint_confidence: Union[
         FloatZeroToOne,
         Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.0,
-        description="Confidence threshold to predict keypoint as visible.",
+        description="Confidence threshold to predict a keypoint as visible.",
         examples=[0.3, "$inputs.keypoint_confidence"],
+    )
+    class_filter: Union[Optional[List[str]], Selector(kind=[LIST_OF_VALUES_KIND])] = (
+        Field(
+            default=None,
+            description="List of accepted classes. Classes must exist in the model's training set.",
+            examples=[["a", "b", "c"], "$inputs.class_filter"],
+        )
+    )
+    iou_threshold: Union[
+        FloatZeroToOne,
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+    ] = Field(
+        default=0.3,
+        description="Minimum overlap threshold between boxes to combine them into a single detection, used in NMS. [Learn more](https://blog.roboflow.com/how-to-code-non-maximum-suppression-nms-in-plain-numpy/).",
+        examples=[0.4, "$inputs.iou_threshold"],
+    )
+    max_detections: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
+        default=300,
+        description="Maximum number of detections to return.",
+        examples=[300, "$inputs.max_detections"],
+    )
+    class_agnostic_nms: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=False,
+        description="Boolean flag to specify if NMS is to be used in class-agnostic mode.",
+        examples=[True, "$inputs.class_agnostic_nms"],
+    )
+    max_candidates: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
+        default=3000,
+        description="Maximum number of candidates as NMS input to be taken into account.",
+        examples=[3000, "$inputs.max_candidates"],
     )
     disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Parameter to decide if Active Learning data sampling is disabled for the model",
+        description="Boolean flag to disable project-level active learning for this block.",
         examples=[True, "$inputs.disable_active_learning"],
     )
     active_learning_target_dataset: Union[
         Selector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
     ] = Field(
         default=None,
-        description="Target dataset for Active Learning data sampling - see Roboflow Active Learning "
-        "docs for more information",
+        description="Target dataset for active learning, if enabled.",
         examples=["my_project", "$inputs.al_target_project"],
     )
 

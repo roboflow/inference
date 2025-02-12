@@ -1,4 +1,4 @@
-uvicorn[standard]<=0.22.0
+uvicorn[standard]<=0.34.0
 python-multipart==0.0.19
 fastapi-cprofile<=0.0.2
 orjson>=3.9.10,<=3.10.11

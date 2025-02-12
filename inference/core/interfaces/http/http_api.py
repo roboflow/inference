@@ -13,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
-from pydantic import BaseModel
 from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -53,7 +52,6 @@ from inference.core.entities.requests.server_state import (
 from inference.core.entities.requests.trocr import TrOCRInferenceRequest
 from inference.core.entities.requests.workflows import (
     DescribeBlocksRequest,
-    DescribeInterfaceRequest,
     PredefinedWorkflowDescribeInterfaceRequest,
     PredefinedWorkflowInferenceRequest,
     WorkflowInferenceRequest,
@@ -94,6 +92,7 @@ from inference.core.entities.responses.server_state import (
 from inference.core.entities.responses.workflows import (
     DescribeInterfaceResponse,
     ExecutionEngineVersions,
+    WorkflowErrorResponse,
     WorkflowInferenceResponse,
     WorkflowsBlocksDescription,
     WorkflowsBlocksSchemaDescription,
@@ -153,6 +152,7 @@ from inference.core.exceptions import (
     RoboflowAPIConnectionError,
     RoboflowAPINotAuthorizedError,
     RoboflowAPINotNotFoundError,
+    RoboflowAPITimeoutError,
     RoboflowAPIUnsuccessfulRequestError,
     ServiceConfigurationError,
     WorkspaceLoadError,
@@ -195,8 +195,6 @@ from inference.core.managers.base import ModelManager
 from inference.core.managers.metrics import get_container_stats
 from inference.core.managers.prometheus import InferenceInstrumentator
 from inference.core.roboflow_api import (
-    get_roboflow_dataset_type,
-    get_roboflow_instant_model_data,
     get_roboflow_workspace,
     get_workflow_specification,
 )
@@ -214,9 +212,12 @@ from inference.core.workflows.errors import (
     NotSupportedExecutionEngineError,
     ReferenceTypeError,
     RuntimeInputError,
+    StepExecutionError,
+    WorkflowBlockError,
     WorkflowDefinitionError,
     WorkflowError,
     WorkflowExecutionEngineVersionError,
+    WorkflowSyntaxError,
 )
 from inference.core.workflows.execution_engine.core import (
     ExecutionEngine,
@@ -310,6 +311,16 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
+        except WorkflowSyntaxError as error:
+            content = WorkflowErrorResponse(
+                message=str(error.public_message),
+                error_type=error.__class__.__name__,
+                context=str(error.context),
+                inner_error_type=str(error.inner_error_type),
+                inner_error_message=str(error.inner_error),
+                blocks_errors=error.blocks_errors,
+            )
+            resp = JSONResponse(status_code=400, content=content.model_dump())
         except (
             WorkflowDefinitionError,
             ExecutionGraphStructureError,
@@ -427,6 +438,33 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
+        except RoboflowAPITimeoutError:
+            resp = JSONResponse(
+                status_code=504,
+                content={
+                    "message": "Timeout when attempting to connect to Roboflow API."
+                },
+            )
+            traceback.print_exc()
+        except StepExecutionError as error:
+            content = WorkflowErrorResponse(
+                message=str(error.public_message),
+                error_type=error.__class__.__name__,
+                context=str(error.context),
+                inner_error_type=str(error.inner_error_type),
+                inner_error_message=str(error.inner_error),
+                blocks_errors=[
+                    WorkflowBlockError(
+                        block_id=error.block_id,
+                        block_type=error.block_type,
+                    ),
+                ],
+            )
+            resp = JSONResponse(
+                status_code=500,
+                content=content.model_dump(),
+            )
+            traceback.print_exc()
         except WorkflowError as error:
             resp = JSONResponse(
                 status_code=500,
@@ -494,7 +532,9 @@ class HttpInterface(BaseInterface):
         Description:
             Deploy Roboflow trained models to nearly any compute environment!
         """
+
         description = "Roboflow inference server"
+
         app = FastAPI(
             title="Roboflow Inference Server",
             description=description,
@@ -511,6 +551,11 @@ class HttpInterface(BaseInterface):
             },
             root_path=root_path,
         )
+
+        @app.on_event("shutdown")
+        async def on_shutdown():
+            logger.info("Shutting down %s", description)
+            await usage_collector.async_push_usage_payloads()
 
         if ENABLE_PROMETHEUS:
             InferenceInstrumentator(

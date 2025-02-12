@@ -18,7 +18,6 @@
 [![downloads](https://img.shields.io/pypi/dm/inference)](https://pypistats.org/packages/inference)
 [![docker pulls](https://img.shields.io/docker/pulls/roboflow/roboflow-inference-server-cpu)](https://hub.docker.com/u/roboflow)
 [![license](https://img.shields.io/pypi/l/inference)](https://github.com/roboflow/inference/blob/main/LICENSE.core)
-[![discord](https://img.shields.io/discord/1159501506232451173?logo=discord&label=discord&labelColor=fff&color=5865f2&link=https%3A%2F%2Fdiscord.gg%2FGbfgXGJ8Bk)](https://discord.gg/GbfgXGJ8Bk)
 
 <!-- [![huggingface](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/Roboflow/workflows) -->
 
@@ -86,6 +85,45 @@ Workflows allow you to extend simple model predictions to build computer vision 
   <tr>
     <!-- Left cell (thumbnail) -->
     <td width="300" valign="top">
+      <a href="https://youtu.be/aPxlImNxj5A">
+        <img src="https://img.youtube.com/vi/aPxlImNxj5A/0.jpg" 
+             alt="Self Checkout with Workflows" width="300" />
+      </a>
+    </td>
+    <!-- Right cell (title, date, description) -->
+    <td valign="middle">
+      <strong>
+        <a href="https://youtu.be/aPxlImNxj5A">Tutorial: Build an AI-Powered Self-Serve Checkout</a>
+      </strong><br />
+      <strong>Created: 2 Feb 2025</strong><br /><br />
+      Make a computer vision app that identifies different pieces of hardware, calculates
+      the total cost, and records the results to a database.
+    </td>
+  </tr>
+
+  <tr>
+    <td width="300" valign="top">
+      <a href="https://youtu.be/r3Ke7ZEh2Qo">
+        <img src="https://img.youtube.com/vi/r3Ke7ZEh2Qo/0.jpg" 
+             alt="Workflows Tutorial" width="300" />
+      </a>
+    </td>
+    <td valign="middle">
+      <strong>
+        <a href="https://youtu.be/r3Ke7ZEh2Qo">
+          Tutorial: Intro to Workflows
+        </a>
+      </strong><br />
+      <strong>Created: 6 Jan 2025</strong><br /><br />
+      Learn how to build and deploy Workflows for common use-cases like detecting
+      vehicles, filtering detections, visualizing results, and calculating dwell 
+      time on a live video stream.
+    </td>
+  </tr>
+
+  <tr>
+    <!-- Left cell (thumbnail) -->
+    <td width="300" valign="top">
       <a href="https://youtu.be/tZa-QgFn7jg">
         <img src="https://img.youtube.com/vi/tZa-QgFn7jg/0.jpg" 
              alt="Smart Parking with AI" width="300" />
@@ -100,26 +138,6 @@ Workflows allow you to extend simple model predictions to build computer vision 
       Build a smart parking lot management system using Roboflow Workflows!
       This tutorial covers license plate detection with YOLOv8, object tracking
       with ByteTrack, and real-time notifications with a Telegram bot.
-    </td>
-  </tr>
-
-  <tr>
-    <td width="300" valign="top">
-      <a href="https://youtu.be/VCbcC5OEGRU">
-        <img src="https://img.youtube.com/vi/VCbcC5OEGRU/0.jpg" 
-             alt="Workflows Tutorial" width="300" />
-      </a>
-    </td>
-    <td valign="middle">
-      <strong>
-        <a href="https://youtu.be/VCbcC5OEGRU">
-          Tutorial: Build a Traffic Monitoring Application with Workflows
-        </a>
-      </strong><br />
-      <strong>Created: 22 Oct 2024</strong><br /><br />
-      Learn how to build and deploy Workflows for common use-cases like detecting
-      vehicles, filtering detections, visualizing results, and calculating dwell 
-      time on a live video stream.
     </td>
   </tr>
 </table>
@@ -242,7 +260,7 @@ Pass an optional [Roboflow API Key](https://app.roboflow.com/settings/api) to th
 platform. When running with an API Key, usage is metered according to
 Roboflow's [pricing tiers](https://roboflow.com/pricing).
 
-|                         | Open Access | With API Key |
+|                         | Open Access | With API Key (Metered) |
 |-------------------------|-------------|--------------|
 | [Pre-Trained Models](https://inference.roboflow.com/quickstart/aliases/#supported-pre-trained-models) | ✅ | ✅
 | [Foundation Models](https://inference.roboflow.com/foundation/about/) | ✅ | ✅
