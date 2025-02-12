@@ -7,12 +7,14 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.env import MAX_BATCH_SIZE
 from inference.models import YOLOv5InstanceSegmentation, YOLOv5ObjectDetection
+from tests.common import assert_localized_predictions_match
 
 
 @pytest.mark.slow
 def test_yolov5_detection_single_image_inference(
     yolov5_det_model: str,
     example_image: np.ndarray,
+    yolov5_det_reference_prediction: ObjectDetectionInferenceResponse,
 ) -> None:
     # given
     model = YOLOv5ObjectDetection(model_id=yolov5_det_model, api_key="DUMMY")
@@ -22,13 +24,14 @@ def test_yolov5_detection_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_yolov5_detection_prediction_matches_reference(prediction=result[0])
+    assert_localized_predictions_match(prediction_1=result[0], prediction_2=yolov5_det_reference_prediction, box_confidence_tolerance=5e-3)
 
 
 @pytest.mark.slow
 def test_yolov5_detection_batch_inference_when_batch_size_smaller_than_max_batch_size(
     yolov5_det_model: str,
     example_image: np.ndarray,
+    yolov5_det_reference_prediction: ObjectDetectionInferenceResponse,
 ) -> None:
     # given
     batch_size = min(4, MAX_BATCH_SIZE)
@@ -40,7 +43,7 @@ def test_yolov5_detection_batch_inference_when_batch_size_smaller_than_max_batch
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov5_detection_prediction_matches_reference(prediction=prediction)
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolov5_det_reference_prediction, box_confidence_tolerance=5e-3)
 
 
 @pytest.mark.slow
@@ -51,6 +54,7 @@ def test_yolov5_detection_batch_inference_when_batch_size_smaller_than_max_batch
 def test_yolov5_detection_batch_inference_when_batch_size_larger_then_max_batch_size(
     yolov5_det_model: str,
     example_image: np.ndarray,
+    yolov5_det_reference_prediction: ObjectDetectionInferenceResponse,
 ) -> None:
     # given
     batch_size = MAX_BATCH_SIZE + 2
@@ -62,36 +66,14 @@ def test_yolov5_detection_batch_inference_when_batch_size_larger_then_max_batch_
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov5_detection_prediction_matches_reference(prediction=prediction)
-
-
-def assert_yolov5_detection_prediction_matches_reference(
-    prediction: ObjectDetectionInferenceResponse,
-) -> None:
-    assert (
-        len(prediction.predictions) == 1
-    ), "Only one bbox predicted by the model while test creation"
-    assert (
-        prediction.predictions[0].class_name == "dog"
-    ), "while test creation, dog was the bbox class"
-    assert (
-        abs(prediction.predictions[0].confidence - 0.58558) < 1e-4
-    ), "while test creation, confidence was 0.58558"
-    xywh = [
-        prediction.predictions[0].x,
-        prediction.predictions[0].y,
-        prediction.predictions[0].width,
-        prediction.predictions[0].height,
-    ]
-    assert np.allclose(
-        xywh, [309.5, 220.5, 619.0, 407.0], atol=0.6
-    ), "while test creation, box coordinates was [309.5, 220.5, 619.0, 407.0]"
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolov5_det_reference_prediction, box_confidence_tolerance=5e-3)
 
 
 @pytest.mark.slow
 def test_yolov5_segmentation_single_image_inference(
     yolov5_seg_model: str,
     example_image: np.ndarray,
+    yolov5_seg_reference_prediction: InstanceSegmentationInferenceResponse,
 ) -> None:
     # given
     model = YOLOv5InstanceSegmentation(model_id=yolov5_seg_model, api_key="DUMMY")
@@ -103,13 +85,14 @@ def test_yolov5_segmentation_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_yolov5_segmentation_prediction_matches_reference(prediction=result[0])
+    assert_localized_predictions_match(prediction_1=result[0], prediction_2=yolov5_seg_reference_prediction, mask_iou_threshold=0.998)
 
 
 @pytest.mark.slow
 def test_yolov5_segmentation_batch_inference_when_batch_size_smaller_than_max_batch_size(
     yolov5_seg_model: str,
     example_image: np.ndarray,
+    yolov5_seg_reference_prediction: InstanceSegmentationInferenceResponse,
 ) -> None:
     # given
     batch_size = min(4, MAX_BATCH_SIZE)
@@ -123,7 +106,7 @@ def test_yolov5_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov5_segmentation_prediction_matches_reference(prediction=prediction)
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolov5_seg_reference_prediction, mask_iou_threshold=0.998)
 
 
 @pytest.mark.slow
@@ -134,6 +117,7 @@ def test_yolov5_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
 def test_yolov5_segmentation_batch_inference_when_batch_size_larger_then_max_batch_size(
     yolov5_seg_model: str,
     example_image: np.ndarray,
+    yolov5_seg_reference_prediction: InstanceSegmentationInferenceResponse,
 ) -> None:
     # given
     batch_size = MAX_BATCH_SIZE + 2
@@ -147,30 +131,4 @@ def test_yolov5_segmentation_batch_inference_when_batch_size_larger_then_max_bat
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov5_segmentation_prediction_matches_reference(prediction=prediction)
-
-
-def assert_yolov5_segmentation_prediction_matches_reference(
-    prediction: InstanceSegmentationInferenceResponse,
-) -> None:
-    assert (
-        len(prediction.predictions) == 1
-    ), "Only one instance predicted by the model while test creation"
-    assert (
-        prediction.predictions[0].class_name == "dog"
-    ), "while test creation, dog was the bbox class"
-    assert (
-        abs(prediction.predictions[0].confidence - 0.53377) < 1e-4
-    ), "while test creation, confidence was 0.53377"
-    xywh = [
-        prediction.predictions[0].x,
-        prediction.predictions[0].y,
-        prediction.predictions[0].width,
-        prediction.predictions[0].height,
-    ]
-    assert np.allclose(
-        xywh, [365.5, 212.0, 527.0, 412.0], atol=0.6
-    ), "while test creation, box coordinates was [365.5, 212.0, 527.0, 412.0]"
-    assert (
-        len(prediction.predictions[0].points) == 579
-    ), "while test creation, mask had 579 points"
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolov5_seg_reference_prediction, mask_iou_threshold=0.998)

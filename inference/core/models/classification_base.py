@@ -3,6 +3,11 @@ from time import perf_counter
 from typing import Any, List, Tuple, Union
 
 import numpy as np
+
+try:
+    import torch
+except ImportError:
+    torch = None
 from PIL import Image, ImageDraw, ImageFont
 
 from inference.core.entities.requests.inference import ClassificationInferenceRequest
@@ -18,6 +23,7 @@ from inference.core.models.utils.validate import (
     get_num_classes_from_model_prediction_shape,
 )
 from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.onnx import run_session_via_iobinding
 
 
 class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
@@ -181,7 +187,9 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         )
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
-        predictions = self.onnx_session.run(None, {self.input_name: img_in})
+        predictions = run_session_via_iobinding(
+            self.onnx_session, self.input_name, img_in
+        )
         return (predictions,)
 
     def preprocess(
@@ -207,7 +215,14 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 for i in image
             ]
             imgs, img_dims = zip(*imgs_with_dims)
-            img_in = np.concatenate(imgs, axis=0)
+            assert (
+                isinstance(imgs[0], np.ndarray) or torch is not None
+            ), "Received a list of images as torch tensors but torch is not installed"
+            img_in = (
+                np.concatenate(imgs, axis=0)
+                if isinstance(imgs[0], np.ndarray)
+                else torch.cat(imgs, dim=0)
+            )
         else:
             img_in, img_dims = self.preproc_image(
                 image,
@@ -228,7 +243,11 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
 
         mean = self.preprocess_means
         std = self.preprocess_stds
-        img_in = img_in.astype(np.float32)
+        img_in = (
+            img_in.astype(np.float32)
+            if isinstance(img_in, np.ndarray)
+            else img_in.float()
+        )
 
         img_in[:, 0, :, :] = (img_in[:, 0, :, :] - mean[0]) / std[0]
         img_in[:, 1, :, :] = (img_in[:, 1, :, :] - mean[1]) / std[1]

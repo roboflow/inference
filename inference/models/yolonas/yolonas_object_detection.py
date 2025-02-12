@@ -5,6 +5,7 @@ import numpy as np
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
+from inference.core.utils.onnx import run_session_via_iobinding
 
 
 class YOLONASObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
@@ -28,7 +29,9 @@ class YOLONASObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         Returns:
             Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class confidence scores.
         """
-        predictions = self.onnx_session.run(None, {self.input_name: img_in})
+        predictions = run_session_via_iobinding(
+            self.onnx_session, self.input_name, img_in
+        )
         boxes = predictions[0]
         class_confs = predictions[1]
         confs = np.expand_dims(np.max(class_confs, axis=2), axis=2)

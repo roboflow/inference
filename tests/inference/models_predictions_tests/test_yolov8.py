@@ -1,5 +1,7 @@
 import numpy as np
 import pytest
+import json
+import supervision as sv
 
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -14,12 +16,17 @@ from inference.models import (
     YOLOv8KeypointsDetection,
     YOLOv8ObjectDetection,
 )
+from tests.common import (
+    assert_localized_predictions_match,
+    assert_classification_predictions_match,
+)
 
 
 @pytest.mark.slow
 def test_yolov8_classification_single_image_inference(
     yolov8_cls_model: str,
     example_image: np.ndarray,
+    yolov8_cls_reference_prediction: ClassificationInferenceResponse,
 ) -> None:
     # given
     model = YOLOv8Classification(model_id=yolov8_cls_model, api_key="DUMMY")
@@ -29,13 +36,14 @@ def test_yolov8_classification_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_yolov8_classification_prediction_matches_reference(prediction=result[0])
+    assert_classification_predictions_match(prediction_1=result[0], prediction_2=yolov8_cls_reference_prediction)
 
 
 @pytest.mark.slow
 def test_yolov8_classification_batch_inference_when_batch_size_smaller_than_max_batch_size(
     yolov8_cls_model: str,
     example_image: np.ndarray,
+    yolov8_cls_reference_prediction: ClassificationInferenceResponse,
 ) -> None:
     # given
     batch_size = min(4, MAX_BATCH_SIZE)
@@ -47,7 +55,7 @@ def test_yolov8_classification_batch_inference_when_batch_size_smaller_than_max_
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov8_classification_prediction_matches_reference(prediction=prediction)
+        assert_classification_predictions_match(prediction_1=prediction, prediction_2=yolov8_cls_reference_prediction)
 
 
 @pytest.mark.slow
@@ -58,6 +66,7 @@ def test_yolov8_classification_batch_inference_when_batch_size_smaller_than_max_
 def test_yolov8_classification_batch_inference_when_batch_size_larger_than_max_batch_size(
     yolov8_cls_model: str,
     example_image: np.ndarray,
+    yolov8_cls_reference_prediction: ClassificationInferenceResponse,
 ) -> None:
     # given
     batch_size = MAX_BATCH_SIZE + 2
@@ -69,25 +78,14 @@ def test_yolov8_classification_batch_inference_when_batch_size_larger_than_max_b
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov8_classification_prediction_matches_reference(prediction=prediction)
-
-
-def assert_yolov8_classification_prediction_matches_reference(
-    prediction: ClassificationInferenceResponse,
-) -> None:
-    assert (
-        len(prediction.predictions) == 1000
-    ), "Example model is expected to predict across 1000 classes"
-    assert prediction.top == "golden_retriever", "Golden retriever should be predicted"
-    assert (
-        abs(prediction.confidence - 0.0018) < 1e-5
-    ), "Confidence while test creation was 0.0018"
+        assert_classification_predictions_match(prediction_1=prediction, prediction_2=yolov8_cls_reference_prediction)
 
 
 @pytest.mark.slow
 def test_yolov8_detection_single_image_inference(
     yolov8_det_model: str,
     example_image: np.ndarray,
+    yolov8_det_reference_prediction: ObjectDetectionInferenceResponse,
 ) -> None:
     # given
     model = YOLOv8ObjectDetection(model_id=yolov8_det_model, api_key="DUMMY")
@@ -97,13 +95,14 @@ def test_yolov8_detection_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_yolov8_detection_prediction_matches_reference(prediction=result[0])
+    assert_localized_predictions_match(prediction_1=result[0], prediction_2=yolov8_det_reference_prediction)
 
 
 @pytest.mark.slow
 def test_yolov8_detection_batch_inference_when_batch_size_smaller_than_max_batch_size(
     yolov8_det_model: str,
     example_image: np.ndarray,
+    yolov8_det_reference_prediction: ObjectDetectionInferenceResponse,
 ) -> None:
     # given
     batch_size = min(4, MAX_BATCH_SIZE)
@@ -115,7 +114,7 @@ def test_yolov8_detection_batch_inference_when_batch_size_smaller_than_max_batch
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov8_detection_prediction_matches_reference(prediction=prediction)
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolov8_det_reference_prediction)
 
 
 @pytest.mark.slow
@@ -126,6 +125,7 @@ def test_yolov8_detection_batch_inference_when_batch_size_smaller_than_max_batch
 def test_yolov8_detection_batch_inference_when_batch_size_larger_than_max_batch_size(
     yolov8_det_model: str,
     example_image: np.ndarray,
+    yolov8_det_reference_prediction: ObjectDetectionInferenceResponse,
 ) -> None:
     # given
     batch_size = MAX_BATCH_SIZE + 2
@@ -137,36 +137,14 @@ def test_yolov8_detection_batch_inference_when_batch_size_larger_than_max_batch_
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov8_detection_prediction_matches_reference(prediction=prediction)
-
-
-def assert_yolov8_detection_prediction_matches_reference(
-    prediction: ObjectDetectionInferenceResponse,
-) -> None:
-    assert (
-        len(prediction.predictions) == 1
-    ), "Example model is expected to predict 1 bbox, as this is the result obtained while test creation"
-    assert (
-        prediction.predictions[0].class_name == "dog"
-    ), "Dog class was predicted by exported model"
-    assert (
-        abs(prediction.predictions[0].confidence - 0.892430) < 1e-3
-    ), "Confidence while test creation was 0.892430"
-    xywh = [
-        prediction.predictions[0].x,
-        prediction.predictions[0].y,
-        prediction.predictions[0].width,
-        prediction.predictions[0].height,
-    ]
-    assert np.allclose(
-        xywh, [360.0, 215.5, 558.0, 411.0], atol=0.6
-    ), "while test creation, box coordinates was [360.0, 215.5, 558.0, 411.0]"
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolov8_det_reference_prediction)
 
 
 @pytest.mark.slow
 def test_yolov8_segmentation_single_image_inference(
     yolov8_seg_model: str,
     example_image: np.ndarray,
+    yolov8_seg_reference_prediction: InstanceSegmentationInferenceResponse,
 ) -> None:
     # given
     model = YOLOv8InstanceSegmentation(model_id=yolov8_seg_model, api_key="DUMMY")
@@ -176,13 +154,14 @@ def test_yolov8_segmentation_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_yolov8_segmentation_prediction_matches_reference(prediction=result[0])
+    assert_localized_predictions_match(prediction_1=result[0], prediction_2=yolov8_seg_reference_prediction)
 
 
 @pytest.mark.slow
 def test_yolov8_segmentation_batch_inference_when_batch_size_smaller_than_max_batch_size(
     yolov8_seg_model: str,
     example_image: np.ndarray,
+    yolov8_seg_reference_prediction: InstanceSegmentationInferenceResponse,
 ) -> None:
     # given
     batch_size = min(4, MAX_BATCH_SIZE)
@@ -194,7 +173,7 @@ def test_yolov8_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov8_segmentation_prediction_matches_reference(prediction=prediction)
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolov8_seg_reference_prediction)
 
 
 @pytest.mark.slow
@@ -205,6 +184,7 @@ def test_yolov8_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
 def test_yolov8_segmentation_batch_inference_when_batch_size_larger_than_max_batch_size(
     yolov8_seg_model: str,
     example_image: np.ndarray,
+    yolov8_seg_reference_prediction: InstanceSegmentationInferenceResponse,
 ) -> None:
     # given
     batch_size = MAX_BATCH_SIZE + 2
@@ -216,39 +196,14 @@ def test_yolov8_segmentation_batch_inference_when_batch_size_larger_than_max_bat
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov8_segmentation_prediction_matches_reference(prediction=prediction)
-
-
-def assert_yolov8_segmentation_prediction_matches_reference(
-    prediction: InstanceSegmentationInferenceResponse,
-) -> None:
-    assert (
-        len(prediction.predictions) == 1
-    ), "Example model is expected to predict 1 instance, as this is the result obtained while test creation"
-    assert (
-        prediction.predictions[0].class_name == "dog"
-    ), "Dog class was predicted by exported model"
-    assert (
-        abs(prediction.predictions[0].confidence - 0.9011) < 1e-3
-    ), "Confidence while test creation was 0.9011"
-    xywh = [
-        prediction.predictions[0].x,
-        prediction.predictions[0].y,
-        prediction.predictions[0].width,
-        prediction.predictions[0].height,
-    ]
-    assert np.allclose(
-        xywh, [343.0, 214.5, 584.0, 417.0], atol=0.6
-    ), "while test creation, box coordinates was [343.0, 214.5, 584.0, 417.0]"
-    assert (
-        len(prediction.predictions[0].points) == 673
-    ), "while test creation, mask had 673 points"
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolov8_seg_reference_prediction)
 
 
 @pytest.mark.slow
 def test_yolov8_pose_single_image_inference(
     yolov8_pose_model: str,
     person_image: np.ndarray,
+    yolov8_pose_reference_prediction: KeypointsDetectionInferenceResponse,
 ) -> None:
     # given
     model = YOLOv8KeypointsDetection(model_id=yolov8_pose_model, api_key="DUMMY")
@@ -258,13 +213,14 @@ def test_yolov8_pose_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_yolov8_pose_prediction_matches_reference(prediction=result[0])
+    assert_localized_predictions_match(prediction_1=result[0], prediction_2=yolov8_pose_reference_prediction)
 
 
 @pytest.mark.slow
 def test_yolov8_pose_batch_inference_when_batch_size_smaller_than_max_batch_size(
     yolov8_pose_model: str,
     person_image: np.ndarray,
+    yolov8_pose_reference_prediction: KeypointsDetectionInferenceResponse,
 ) -> None:
     # given
     batch_size = min(4, MAX_BATCH_SIZE)
@@ -276,7 +232,7 @@ def test_yolov8_pose_batch_inference_when_batch_size_smaller_than_max_batch_size
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov8_pose_prediction_matches_reference(prediction=prediction)
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolov8_pose_reference_prediction)
 
 
 @pytest.mark.slow
@@ -287,6 +243,7 @@ def test_yolov8_pose_batch_inference_when_batch_size_smaller_than_max_batch_size
 def test_yolov8_pose_batch_inference_when_batch_size_larger_than_max_batch_size(
     yolov8_pose_model: str,
     person_image: np.ndarray,
+    yolov8_pose_reference_prediction: KeypointsDetectionInferenceResponse,
 ) -> None:
     # given
     batch_size = MAX_BATCH_SIZE + 2
@@ -298,40 +255,4 @@ def test_yolov8_pose_batch_inference_when_batch_size_larger_than_max_batch_size(
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov8_pose_prediction_matches_reference(prediction=prediction)
-
-
-def assert_yolov8_pose_prediction_matches_reference(
-    prediction: KeypointsDetectionInferenceResponse,
-) -> None:
-    assert (
-        len(prediction.predictions) == 1
-    ), "Example model is expected to predict 1 instance, as this is the result obtained while test creation"
-    assert (
-        prediction.predictions[0].class_name == "person"
-    ), "Person class was predicted by exported model"
-    assert (
-        abs(prediction.predictions[0].confidence - 0.88805) < 1e-3
-    ), "Confidence while test creation was 0.88805"
-    xywh = [
-        prediction.predictions[0].x,
-        prediction.predictions[0].y,
-        prediction.predictions[0].width,
-        prediction.predictions[0].height,
-    ]
-    assert np.allclose(
-        xywh, [314.5, 268.5, 81.0, 215.0], atol=0.6
-    ), "while test creation, box coordinates was [314.5, 268.5, 81.0, 215.0]"
-    assert (
-        len(prediction.predictions[0].keypoints) == 17
-    ), "Reference model has 17 keypoints defined"
-    assert (
-        prediction.predictions[0].keypoints[0].class_name == "nose"
-    ), "First keypoint was nose, when test was created"
-    kp_xy = [
-        prediction.predictions[0].keypoints[0].x,
-        prediction.predictions[0].keypoints[0].y,
-    ]
-    assert np.allclose(
-        kp_xy, [322.0, 182.0], atol=0.6
-    ), "while test creation, nose keypoint was at [322.0, 182.0]"
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolov8_pose_reference_prediction)

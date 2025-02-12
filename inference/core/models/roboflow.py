@@ -45,6 +45,7 @@ from inference.core.env import (
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
+    USE_PYTORCH_FOR_PREPROCESSING,
 )
 from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
 from inference.core.logger import logger
@@ -62,6 +63,16 @@ from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
+
+try:
+    import torch
+    import torchvision
+except ImportError:
+    torch = None
+    torchvision = None
+    if USE_PYTORCH_FOR_PREPROCESSING:
+        logger.warning("PyTorch is not available, using NumPy for preprocessing")
+        USE_PYTORCH_FOR_PREPROCESSING = False
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
@@ -397,10 +408,29 @@ class RoboflowInferenceModel(Model):
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
 
-        if self.resize_method == "Stretch to":
-            resized = cv2.resize(
-                preprocessed_image, (self.img_size_w, self.img_size_h), cv2.INTER_CUBIC
+        if USE_PYTORCH_FOR_PREPROCESSING:
+            preprocessed_image = torch.from_numpy(
+                np.ascontiguousarray(preprocessed_image)
             )
+            if torch.cuda.is_available():
+                preprocessed_image = preprocessed_image.cuda()
+            preprocessed_image = (
+                preprocessed_image.permute(2, 0, 1).unsqueeze(0).contiguous().float()
+            )
+
+        if self.resize_method == "Stretch to":
+            if isinstance(preprocessed_image, np.ndarray):
+                preprocessed_image = preprocessed_image.astype(np.float32)
+                resized = cv2.resize(
+                    preprocessed_image,
+                    (self.img_size_w, self.img_size_h),
+                )
+            else:
+                resized = torch.nn.functional.interpolate(
+                    preprocessed_image,
+                    size=(self.img_size_h, self.img_size_w),
+                    mode="bilinear",
+                )
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
                 preprocessed_image, (self.img_size_w, self.img_size_h)
@@ -419,10 +449,18 @@ class RoboflowInferenceModel(Model):
             )
 
         if is_bgr:
-            resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        img_in = np.transpose(resized, (2, 0, 1))
-        img_in = img_in.astype(np.float32)
-        img_in = np.expand_dims(img_in, axis=0)
+            if isinstance(resized, np.ndarray):
+                resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+            else:
+                resized = resized[:, [2, 1, 0], :, :]
+
+        if isinstance(resized, np.ndarray):
+            img_in = np.transpose(resized, (2, 0, 1))
+            img_in = img_in.astype(np.float32)
+            img_in = np.expand_dims(img_in, axis=0)
+        else:
+            # we assume a torch tensor is already in the correct format
+            img_in = resized.float()
 
         return img_in, img_dims
 
@@ -788,6 +826,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
+
         logger.debug("Model initialisation finished.")
 
     def load_image(
@@ -808,7 +847,14 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             )
             imgs_with_dims = self.image_loader_threadpool.map(preproc_image, image)
             imgs, img_dims = zip(*imgs_with_dims)
-            img_in = np.concatenate(imgs, axis=0)
+            assert (
+                isinstance(imgs[0], np.ndarray) or torch is not None
+            ), "Received a list of images as torch tensors but torch is not installed"
+            img_in = (
+                np.concatenate(imgs, axis=0)
+                if isinstance(imgs[0], np.ndarray)
+                else torch.cat(imgs, dim=0)
+            )
         else:
             img_in, img_dims = self.preproc_image(
                 image,

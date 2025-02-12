@@ -5,6 +5,7 @@ import numpy as np
 from inference.core.models.instance_segmentation_base import (
     InstanceSegmentationBaseOnnxRoboflowInferenceModel,
 )
+from inference.core.utils.onnx import run_session_via_iobinding
 
 
 class YOLOv7InstanceSegmentation(InstanceSegmentationBaseOnnxRoboflowInferenceModel):
@@ -26,7 +27,9 @@ class YOLOv7InstanceSegmentation(InstanceSegmentationBaseOnnxRoboflowInferenceMo
         Returns:
             Tuple[np.ndarray, np.ndarray]: Tuple containing two NumPy arrays representing the predictions and protos.
         """
-        predictions = self.onnx_session.run(None, {self.input_name: img_in})
+        predictions = run_session_via_iobinding(
+            self.onnx_session, self.input_name, img_in
+        )
         protos = predictions[4]
         predictions = predictions[0]
         return predictions, protos
