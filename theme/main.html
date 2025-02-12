@@ -1,14 +1,28 @@
 {% extends "base.html" %}
 
-{% block content %}
+{% block tabs %}
+  {{ super() }}
   {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
     {% include 'home.html' %}
+    <style>
+      main.md-main {
+        display: none;
+      }
+    </style>
+  {% endif %}
+{% endblock %}
+
+{% block site_nav %}
+  {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
   {% else %}
-    <div class="md-content" data-md-component="content">
-      <div class="md-content__inner md-typeset">
-        {{ super() }}
-      </div>
-    </div>
+    {{ super() }}
+  {% endif %}
+{% endblock %}
+
+{% block container %}
+  {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
+  {% else %}
+    {{ super() }}
   {% endif %}
 {% endblock %}
 
