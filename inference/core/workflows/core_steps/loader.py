@@ -177,9 +177,6 @@ from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 impo
 from inference.core.workflows.core_steps.models.foundation.google_vision_ocr.v1 import (
     GoogleVisionOCRBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
-    Qwen25VLBlockV1,
-)
 from inference.core.workflows.core_steps.models.foundation.llama_vision.v1 import (
     LlamaVisionBlockV1,
 )
@@ -193,6 +190,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
 )
 from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
     OpenAIBlockV2,
+)
+from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
+    Qwen25VLBlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,

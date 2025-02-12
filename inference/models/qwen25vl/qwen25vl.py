@@ -1,18 +1,18 @@
+import json
 import os
 from typing import Any, Dict
 
 import torch
+import transformers
+from peft import LoraConfig, PeftModel
 from PIL import Image
 from transformers import AutoModelForCausalLM
-from inference.models.florence2.utils import import_class_from_file
 
 from inference.core.entities.responses.inference import LMMInferenceResponse
+from inference.core.env import DEVICE, MODEL_CACHE_DIR
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.models.transformers import TransformerModel, LoRATransformerModel
-from inference.core.env import MODEL_CACHE_DIR, DEVICE
-from peft import LoraConfig, PeftModel
-import json
-import transformers
+from inference.models.florence2.utils import import_class_from_file
+from inference.models.transformers import LoRATransformerModel, TransformerModel
 
 
 class Qwen25VL(TransformerModel):

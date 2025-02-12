@@ -1,8 +1,9 @@
 import json
-from typing import List, Optional, Type, Literal, Union
+from typing import List, Literal, Optional, Type, Union
 
 import supervision as sv
 from pydantic import ConfigDict, Field
+
 from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
