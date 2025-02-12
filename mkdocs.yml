@@ -248,7 +248,7 @@ extra_javascript:
   - 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js'
   - 'https://unpkg.com/@rive-app/canvas'
   - 'https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js'
-  - 'theme/assets/home.js'
+  - 'assets/home.js'
 
 hooks:
   - theme/build.py
