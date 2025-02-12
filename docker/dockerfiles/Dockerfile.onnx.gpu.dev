@@ -21,7 +21,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
-    requirements/requirements.cogvlm.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
     requirements/requirements.transformers.txt \
@@ -29,6 +28,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.sdk.http.txt \
     requirements/requirements.cli.txt \
     ./
+# requirements/requirements.cogvlm.txt \
 
 RUN python3 -m pip install -U pip
 RUN python3 -m pip install \
@@ -43,7 +43,6 @@ RUN python3 -m pip install \
     -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.doctr.txt \
-    -r requirements.cogvlm.txt \
     -r requirements.yolo_world.txt \
     -r requirements.transformers.txt \
     -r requirements.sdk.http.txt \
@@ -52,12 +51,13 @@ RUN python3 -m pip install \
     "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
+#    -r requirements.cogvlm.txt \
 
 # Install setup.py requirements for flash_attn
 RUN python3 -m pip install packaging==24.1  && rm -rf ~/.cache/pip
 
 # Install flash_attn required for Paligemma and Florence2
-RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-build-isolation && rm -rf ~/.cache/pip
+RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
 
 WORKDIR /app/
 COPY inference inference
