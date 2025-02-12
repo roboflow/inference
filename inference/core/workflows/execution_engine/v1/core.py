@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 from packaging.version import Version
@@ -36,6 +37,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         prevent_local_images_loading: bool = False,
         workflow_id: Optional[str] = None,
         profiler: Optional[WorkflowsProfiler] = None,
+        executor: Optional[ThreadPoolExecutor] = None,
     ) -> "ExecutionEngineV1":
         if init_parameters is None:
             init_parameters = {}
@@ -54,6 +56,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             profiler=profiler,
             workflow_id=workflow_id,
             internal_id=workflow_definition.get("id"),
+            executor=executor,
         )
 
     def __init__(
@@ -64,6 +67,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         profiler: WorkflowsProfiler,
         workflow_id: Optional[str] = None,
         internal_id: Optional[str] = None,
+        executor: Optional[ThreadPoolExecutor] = None,
     ):
         self._compiled_workflow = compiled_workflow
         self._max_concurrent_steps = max_concurrent_steps
@@ -71,6 +75,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
         self._workflow_id = workflow_id
         self._profiler = profiler
         self._internal_id = internal_id
+        self._executor = executor
 
     def run(
         self,
@@ -109,6 +114,7 @@ class ExecutionEngineV1(BaseExecutionEngine):
             kinds_serializers=self._compiled_workflow.kinds_serializers,
             serialize_results=serialize_results,
             profiler=self._profiler,
+            executor=self._executor,
         )
         self._profiler.end_workflow_run()
         return result
