@@ -25,6 +25,7 @@ from inference.core.env import (
     MODEL_CACHE_DIR,
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
+    OWLV2_CPU_IMAGE_CACHE_SIZE,
     OWLV2_VERSION_ID,
 )
 from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
@@ -46,7 +47,7 @@ from inference.core.utils.image_utils import (
     load_image_rgb,
 )
 
-CPU_IMAGE_EMBED_CACHE_SIZE = 10000
+CPU_IMAGE_EMBED_CACHE_SIZE = OWLV2_CPU_IMAGE_CACHE_SIZE
 
 # TYPES
 Hash = NewType("Hash", str)
@@ -265,6 +266,8 @@ class LazyImageRetrievalWrapper:
             if image_type is ImageType.URL:
                 # we can use the url as the hash
                 self._image_hash = image_payload
+            elif image_type is ImageType.FILE:
+                self._image_hash = hash_function(image_payload)
             elif image_type is ImageType.BASE64:
                 # this is presumably the compressed image bytes
                 # hashing this directly is faster than loading the raw image through numpy
