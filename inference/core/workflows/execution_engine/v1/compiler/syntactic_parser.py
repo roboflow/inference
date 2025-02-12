@@ -84,7 +84,10 @@ def parse_workflow_definition(
                     property_name=property_name,
                     property_details=property_details,
                 )
-                blocks_errors[element_name] = block_error
+
+                error_key = element_name + property_name
+                if not blocks_errors.get(error_key):
+                    blocks_errors[error_key] = block_error
 
         raise WorkflowSyntaxError(
             public_message="Could not parse workflow definition. Details provided in inner error.",
