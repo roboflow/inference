@@ -98,7 +98,7 @@ class ExecutionGraphStructureError(WorkflowCompilerError):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self._blocks_errors = blocks_errors
+        self.blocks_errors = blocks_errors
 
 
 class ReferenceTypeError(WorkflowCompilerError):
@@ -113,7 +113,7 @@ class InvalidReferenceTargetError(WorkflowCompilerError):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self._blocks_errors = blocks_errors
+        self.blocks_errors = blocks_errors
 
 
 class UnknownManifestType(WorkflowCompilerError):
@@ -133,7 +133,7 @@ class StepInputDimensionalityError(WorkflowCompilerError):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self._blocks_errors = blocks_errors
+        self.blocks_errors = blocks_errors
 
 
 class StepInputLineageError(WorkflowCompilerError):
