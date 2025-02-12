@@ -7,7 +7,7 @@ import onnxruntime as ort
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
 )
-from inference.core.utils.onnx import run_session_via_iobinding, ImageMetaType
+from inference.core.utils.onnx import ImageMetaType, run_session_via_iobinding
 
 
 class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
@@ -32,9 +32,7 @@ class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         """
         return "weights.onnx"
 
-    def predict(
-        self, img_in: ImageMetaType, **kwargs
-    ) -> Tuple[np.ndarray]:
+    def predict(self, img_in: ImageMetaType, **kwargs) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session.
 
         Args:
