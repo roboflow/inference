@@ -214,7 +214,7 @@ def get_detection_dimensions(
 
 
 def parse_reference_dimensions(
-    reference_dimensions: Union[str, Tuple[float, float], List[float]]
+    reference_dimensions: Union[str, Tuple[float, float], List[float]],
 ) -> Tuple[float, float]:
     """Parse reference dimensions from various input formats."""
     if isinstance(reference_dimensions, str):

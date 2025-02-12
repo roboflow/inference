@@ -300,7 +300,7 @@ except:
     pass
 
 try:
-    from inference.models import LoRAQwen25VL, Qwen25VL 
+    from inference.models import LoRAQwen25VL, Qwen25VL
 
     qwen25vl_models = {
         ("text-image-pairs", "qwen25-vl-3b"): Qwen25VL,

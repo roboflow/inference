@@ -14,13 +14,16 @@ from peft import LoraConfig, PeftModel
 import json
 import transformers
 
+
 class Qwen25VL(TransformerModel):
     generation_includes_input = True
     transformers_class = AutoModelForCausalLM
     default_dtype = torch.float32
     skip_special_tokens = False
 
-    system_message = "You are a Qwen2.5-VL model that can answer questions about any image."
+    system_message = (
+        "You are a Qwen2.5-VL model that can answer questions about any image."
+    )
 
     def initialize_model(self):
         self.transformers_class = import_class_from_file(
@@ -34,20 +37,20 @@ class Qwen25VL(TransformerModel):
         self.image_processor_class = import_class_from_file(
             os.path.join(self.cache_dir, "image_processing_qwen2_5_vl.py"),
             "Qwen2_5_VLImageProcessor",
-            "transformers.Qwen2_5_VLImageProcessor"
+            "transformers.Qwen2_5_VLImageProcessor",
         )
         transformers.Qwen2_5_VLImageProcessor = self.image_processor_class
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
-        with open(config_file, 'r') as file:
+        with open(config_file, "r") as file:
             config = json.load(file)
 
-        keys_to_remove = ['eva_config', 'lora_bias', 'exclude_modules']
+        keys_to_remove = ["eva_config", "lora_bias", "exclude_modules"]
 
         for key in keys_to_remove:
             config.pop(key, None)
 
-        with open(config_file, 'w') as file:
+        with open(config_file, "w") as file:
             json.dump(config, file, indent=2)
 
         lora_config = LoraConfig(**config)
@@ -87,7 +90,11 @@ class Qwen25VL(TransformerModel):
             chat_template = json.load(f)["chat_template"]
 
         self.processor = self.processor_class.from_pretrained(
-            model_load_id, revision=revision, cache_dir=cache_dir, token=token, chat_template=chat_template
+            model_load_id,
+            revision=revision,
+            cache_dir=cache_dir,
+            token=token,
+            chat_template=chat_template,
         )
 
     def predict(self, image_in: Image.Image, prompt="", **kwargs):
@@ -104,7 +111,7 @@ class Qwen25VL(TransformerModel):
                 ],
             },
         ]
-        
+
         text_input = self.processor.apply_chat_template(conversation, tokenize=False)
 
         model_inputs = self.processor(
@@ -116,11 +123,12 @@ class Qwen25VL(TransformerModel):
 
         model_inputs = {
             k: v.to(self.model.device)
-            for k, v in model_inputs.items() if isinstance(v, torch.Tensor)
+            for k, v in model_inputs.items()
+            if isinstance(v, torch.Tensor)
         }
 
         input_len = model_inputs["input_ids"].shape[-1]
-        
+
         with torch.inference_mode():
             generation = self.model.generate(
                 **model_inputs,
@@ -132,14 +140,14 @@ class Qwen25VL(TransformerModel):
 
         if not self.generation_includes_input:
             generation = generation[:, input_len:]
-        
+
         decoded = self.processor.decode(
             generation[0],
             skip_special_tokens=self.skip_special_tokens,
         )
 
         decoded = decoded.replace("assistant\n", "")
-        
+
         return (decoded,)
 
 
@@ -150,12 +158,14 @@ class LoRAQwen25VL(LoRATransformerModel):
     transformers_class = AutoModelForCausalLM
     default_dtype = torch.float32
 
-    system_message = "You are a Qwen2.5-VL model that can answer questions about any image."
+    system_message = (
+        "You are a Qwen2.5-VL model that can answer questions about any image."
+    )
 
     def get_lora_base_from_roboflow(self, model_id, revision):
         cache_dir = super().get_lora_base_from_roboflow(model_id, revision)
         return cache_dir
-    
+
     def initialize_model(self):
         self.transformers_class = import_class_from_file(
             os.path.join(self.cache_dir, "modeling_qwen2_5_vl.py"),
@@ -169,24 +179,24 @@ class LoRAQwen25VL(LoRATransformerModel):
         self.image_processor_class = import_class_from_file(
             os.path.join(self.cache_dir, "image_processing_qwen2_5_vl.py"),
             "Qwen2_5_VLImageProcessor",
-            "transformers.Qwen2_5_VLImageProcessor"
+            "transformers.Qwen2_5_VLImageProcessor",
         )
-        
+
         transformers.Qwen2_5_VLImageProcessor = self.image_processor_class
 
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
-        with open(config_file, 'r') as file:
+        with open(config_file, "r") as file:
             config = json.load(file)
 
-        keys_to_remove = ['eva_config', 'lora_bias', 'exclude_modules']
+        keys_to_remove = ["eva_config", "lora_bias", "exclude_modules"]
 
         for key in keys_to_remove:
             config.pop(key, None)
 
-        with open(config_file, 'w') as file:
+        with open(config_file, "w") as file:
             json.dump(config, file, indent=2)
-        
+
         lora_config = LoraConfig(**config)
         model_id = lora_config.base_model_name_or_path
         revision = lora_config.revision
@@ -225,7 +235,13 @@ class LoRAQwen25VL(LoRATransformerModel):
             chat_template = json.load(f)["chat_template"]
 
         self.processor = self.processor_class.from_pretrained(
-            model_load_id, revision=revision, cache_dir=cache_dir, token=token, chat_template=chat_template, min_pixels=256 * 28 * 28, max_pixels=1280 * 28 * 28
+            model_load_id,
+            revision=revision,
+            cache_dir=cache_dir,
+            token=token,
+            chat_template=chat_template,
+            min_pixels=256 * 28 * 28,
+            max_pixels=1280 * 28 * 28,
         )
 
     def predict(self, image_in: Image.Image, prompt="", **kwargs):
@@ -242,7 +258,7 @@ class LoRAQwen25VL(LoRATransformerModel):
                 ],
             },
         ]
-        
+
         text_input = self.processor.apply_chat_template(conversation, tokenize=False)
 
         model_inputs = self.processor(
@@ -254,11 +270,12 @@ class LoRAQwen25VL(LoRATransformerModel):
 
         model_inputs = {
             k: v.to(self.model.device)
-            for k, v in model_inputs.items() if isinstance(v, torch.Tensor)
+            for k, v in model_inputs.items()
+            if isinstance(v, torch.Tensor)
         }
 
         input_len = model_inputs["input_ids"].shape[-1]
-        
+
         with torch.inference_mode():
             generation = self.model.generate(
                 **model_inputs,
@@ -270,12 +287,12 @@ class LoRAQwen25VL(LoRATransformerModel):
 
         if self.generation_includes_input:
             generation = generation[:, input_len:]
-        
+
         decoded = self.processor.decode(
             generation[0],
             skip_special_tokens=self.skip_special_tokens,
         )
 
         decoded = decoded.replace("assistant\n", "")
-        
+
         return (decoded,)

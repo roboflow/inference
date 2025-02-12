@@ -1343,7 +1343,7 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def get_dynamic_block_outputs(
-                step_manifest: Dict[str, Any]
+                step_manifest: Dict[str, Any],
             ) -> List[OutputDefinition]:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 # Potentially TODO: dynamic blocks do not support dynamic outputs, but if it changes
