@@ -32,7 +32,7 @@ def default(obj: Any) -> JSON:
 
 
 def orjson_response(
-    response: Union[List[InferenceResponse], InferenceResponse, BaseModel]
+    response: Union[List[InferenceResponse], InferenceResponse, BaseModel],
 ) -> ORJSONResponseBytes:
     if isinstance(response, list):
         content = [r.model_dump(by_alias=True, exclude_none=True) for r in response]

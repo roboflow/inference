@@ -140,7 +140,7 @@ def pick_largest_perspective_polygons(
         List[List[np.ndarray]],
         List[List[List[int]]],
         List[List[List[List[int]]]],
-    ]
+    ],
 ) -> List[np.ndarray]:
     if not isinstance(perspective_polygons_batch, (list, Batch)):
         raise ValueError("Unexpected type of input")

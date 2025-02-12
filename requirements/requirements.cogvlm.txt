@@ -1,7 +1,0 @@
-# transformers 4.42 breaks CogVLM!
-transformers>=4.36.0,<=4.41.2
-sentencepiece<=0.1.99
-einops<=0.7.0
-xformers
-accelerate<=0.25.0
-bitsandbytes<=0.41.3

@@ -220,7 +220,7 @@ def overlay_crop_with_mask(
 
 
 def convert_color_to_bgr_tuple(
-    color: Union[str, Tuple[int, int, int]]
+    color: Union[str, Tuple[int, int, int]],
 ) -> Tuple[int, int, int]:
     if isinstance(color, str):
         return convert_string_color_to_bgr_tuple(color=color)

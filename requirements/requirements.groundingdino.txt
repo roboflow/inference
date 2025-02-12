@@ -1,2 +1,1 @@
-transformers>=4.36.0,<=4.42.2
 rf_groundingdino==0.2.0

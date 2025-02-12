@@ -191,6 +191,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
     OpenAIBlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
+    Qwen25VLBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
 )
@@ -539,6 +542,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Florence2BlockV1,
         Florence2BlockV2,
         GoogleGeminiBlockV1,
+        Qwen25VLBlockV1,
+        CogVLMBlockV1,
         GoogleVisionOCRBlockV1,
         GridVisualizationBlockV1,
         HaloVisualizationBlockV1,

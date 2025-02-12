@@ -135,7 +135,7 @@ def count_specific_color_pixels(
 
 
 def convert_color_to_bgr_tuple(
-    color: Union[str, Tuple[int, int, int]]
+    color: Union[str, Tuple[int, int, int]],
 ) -> Tuple[int, int, int]:
     if isinstance(color, str):
         return convert_string_color_to_bgr_tuple(color=color)

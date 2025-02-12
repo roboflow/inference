@@ -686,7 +686,7 @@ def remove_indices(value: Any, indices: Set[DynamicBatchIndex]) -> Any:
 
 
 def unfold_parameters(
-    parameters: Dict[str, Any]
+    parameters: Dict[str, Any],
 ) -> Generator[Dict[str, Any], None, None]:
     batch_parameters = get_batch_parameters(parameters=parameters)
     non_batch_parameters = {
@@ -718,7 +718,7 @@ def get_batch_parameters(parameters: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def iterate_over_batches(
-    batch_parameters: Dict[str, Any]
+    batch_parameters: Dict[str, Any],
 ) -> Generator[Dict[str, Any], None, None]:
     index = 0
     end = False

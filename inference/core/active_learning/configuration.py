@@ -261,7 +261,7 @@ def initialise_active_learning_configuration(
 
 
 def initialize_sampling_methods(
-    sampling_strategies_configs: List[Dict[str, Any]]
+    sampling_strategies_configs: List[Dict[str, Any]],
 ) -> List[SamplingMethod]:
     result = []
     for sampling_strategy_config in sampling_strategies_configs:

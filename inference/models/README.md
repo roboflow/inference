@@ -10,6 +10,7 @@ The models supported by Roboflow Inference have their own licenses. View the lic
 | `inference/models/grounding_dino` | [Apache 2.0](https://github.com/IDEA-Research/GroundingDINO/blob/main/LICENSE)       | 👍 |
 | `inference/models/owlv2`          | [Apache 2.0](https://github.com/google-research/scenic/blob/main/LICENSE)            | 👍 |
 | `inference/models/paligemma`      | [Apache 2.0](https://github.com/google-research/big_vision/blob/main/LICENSE), [Gemma](https://ai.google.dev/gemma/terms) | 👍 |
+| `inference/models/qwen25vl`        | [Apache 2.0](https://github.com/QwenLM/Qwen2.5-VL/blob/main/LICENSE)                | 👍 |
 | `inference/models/resnet`         | [Apache 2.0](https://github.com/huggingface/pytorch-image-models/blob/main/LICENSE)  | 👍 |
 | `inference/models/sam`            | [Apache 2.0](https://github.com/facebookresearch/segment-anything/blob/main/LICENSE) | 👍 |
 | `inference/models/sam2`           | [Apache 2.0](https://github.com/facebookresearch/sam2/blob/main/LICENSE)             | 👍 |

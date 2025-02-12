@@ -390,7 +390,7 @@ def ensure_idle_pipelines_warmed_up(expected_warmed_up_pipelines: int) -> None:
 
 
 def get_idle_pipelines_id(
-    processes_table: Dict[str, ManagedInferencePipeline]
+    processes_table: Dict[str, ManagedInferencePipeline],
 ) -> List[str]:
     return [
         pipeline_id
