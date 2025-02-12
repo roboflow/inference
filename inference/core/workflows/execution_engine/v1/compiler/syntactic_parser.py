@@ -85,7 +85,11 @@ def parse_workflow_definition(
                     property_details=property_details,
                 )
 
-                error_key = element_name + property_name
+                error_key = (
+                    element_name + property_name
+                    if property_name and element_name
+                    else element_name
+                )
                 if not blocks_errors.get(error_key):
                     blocks_errors[error_key] = block_error
 
