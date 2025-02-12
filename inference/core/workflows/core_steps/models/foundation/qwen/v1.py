@@ -42,7 +42,7 @@ class BlockManifest(WorkflowBlockManifest):
     # Standard model configuration for UI, schema, etc.
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Qwen2.5-VL Model",
+            "name": "Qwen2.5-VL",
             "version": "v1",
             "short_description": "Run Qwen2.5-VL on an image",
             "long_description": (
@@ -64,9 +64,9 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/qwen25vl@v1"]
     # The version (or model id) of Qwen2.5-VL to use.
     model_version: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        default="qwen25-vl-3b-peft",
+        default="qwen25-vl-7b-peft",
         description="The Qwen2.5-VL model to be used for inference.",
-        examples=["qwen25-vl-3b-peft"],
+        examples=["qwen25-vl-7b-peft"],
     )
 
     @classmethod
