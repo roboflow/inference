@@ -89,6 +89,9 @@ class BlockManifest(WorkflowBlockManifest):
         # Only images can be passed in as a list/batch
         return ["images"]
 
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
 
 ##########################################################################
 # Qwen2.5-VL Workflow Block
@@ -180,7 +183,3 @@ class Qwen25VLBlockV1(WorkflowBlock):
             print(predictions)
             print("Returning predictions")
         return predictions
-
-    @classmethod
-    def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.3.0,<2.0.0"
