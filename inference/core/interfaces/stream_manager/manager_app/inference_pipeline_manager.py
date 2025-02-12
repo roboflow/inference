@@ -192,6 +192,8 @@ class InferencePipelineManager(Process):
                 cancel_thread_pool_tasks_on_exit=parsed_payload.processing_configuration.cancel_thread_pool_tasks_on_exit,
                 video_metadata_input_name=parsed_payload.processing_configuration.video_metadata_input_name,
                 batch_collection_timeout=parsed_payload.video_configuration.batch_collection_timeout,
+                decoding_buffer_size=parsed_payload.decoding_buffer_size,
+                predictions_queue_size=parsed_payload.predictions_queue_size,
             )
             self._consumption_timeout = parsed_payload.consumption_timeout
             self._last_consume_time = time.monotonic()
@@ -343,6 +345,8 @@ class InferencePipelineManager(Process):
                 cancel_thread_pool_tasks_on_exit=parsed_payload.processing_configuration.cancel_thread_pool_tasks_on_exit,
                 video_metadata_input_name=parsed_payload.processing_configuration.video_metadata_input_name,
                 batch_collection_timeout=parsed_payload.video_configuration.batch_collection_timeout,
+                predictions_queue_size=parsed_payload.predictions_queue_size,
+                decoding_buffer_size=parsed_payload.decoding_buffer_size,
             )
             self._inference_pipeline.start(use_main_thread=False)
             self._responses_queue.put(
