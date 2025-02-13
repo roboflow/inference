@@ -207,8 +207,6 @@ def prepare_container_environment(
     development: bool = False,
 ) -> List[str]:
     environment = {}
-    if env_file_path is not None:
-        environment = read_env_file(path=env_file_path)
     environment["HOST"] = "0.0.0.0"
     environment["PORT"] = str(port)
     environment["PROJECT"] = project
@@ -220,7 +218,14 @@ def prepare_container_environment(
     environment["NUM_WORKERS"] = str(num_workers)
     if development:
         environment["NOTEBOOK_ENABLED"] = "True"
-    return [f"{key}={value}" for key, value in environment.items()]
+
+    env_file = {}
+    if env_file_path is not None:
+        env_file = read_env_file(path=env_file_path)
+
+    env = {**environment, **env_file}
+
+    return [f"{key}={value}" for key, value in env.items()]
 
 
 def stop_inference_containers() -> None:
