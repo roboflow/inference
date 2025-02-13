@@ -85,9 +85,9 @@ class LimitedSizeDict(OrderedDict):
 
 
 class OWLv2ModelManager:
-    _instances = {} 
+    _instances = {}
     _lock = threading.Lock()
-    
+
     def __new__(cls, vision_model, huggingface_id: str):
         if huggingface_id not in cls._instances:
             with cls._lock:
@@ -99,7 +99,7 @@ class OWLv2ModelManager:
                     instance._start_compilation()
                     cls._instances[huggingface_id] = instance
         return cls._instances[huggingface_id]
-    
+
     def get_vision_model(self):
         if self._vision_model is None:
             raise ValueError("No vision_model has been initialized")
@@ -135,8 +135,7 @@ class Owlv2Singleton:
                 .to(DEVICE)
             )
             owlv2_model_manager = OWLv2ModelManager(
-                vision_model=model.owlv2.vision_model,
-                huggingface_id=huggingface_id
+                vision_model=model.owlv2.vision_model, huggingface_id=huggingface_id
             )
             model.owlv2.vision_model = owlv2_model_manager.get_vision_model()
             instance.model = model
