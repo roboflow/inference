@@ -187,4 +187,4 @@ class WorkflowErrorResponse(BaseModel):
     context: str
     inner_error_type: str
     inner_error_message: str
-    blocks_errors: List[WorkflowBlockError]
+    blocks_errors: Optional[List[WorkflowBlockError]]
