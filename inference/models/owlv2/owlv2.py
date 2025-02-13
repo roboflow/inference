@@ -267,7 +267,7 @@ class LazyImageRetrievalWrapper:
                 # we can use the url as the hash
                 self._image_hash = image_payload
             elif image_type is ImageType.FILE:
-                self._image_hash = hash_function(image_payload)
+                self._image_hash =image_payload
             elif image_type is ImageType.BASE64:
                 # this is presumably the compressed image bytes
                 # hashing this directly is faster than loading the raw image through numpy
