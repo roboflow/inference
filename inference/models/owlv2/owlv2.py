@@ -27,6 +27,7 @@ from inference.core.env import (
     OWLV2_MODEL_CACHE_SIZE,
     OWLV2_CPU_IMAGE_CACHE_SIZE,
     OWLV2_VERSION_ID,
+    COMPILE_OWLV2_MODEL,
 )
 from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
 from inference.core.models.roboflow import (
@@ -100,7 +101,8 @@ class Owlv2Singleton:
                 .to(DEVICE)
             )
             torch._dynamo.config.suppress_errors = True
-            model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
+            if COMPILE_OWLV2_MODEL:
+                model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
             instance.model = model
             cls._instances[huggingface_id] = instance
         return cls._instances[huggingface_id]
