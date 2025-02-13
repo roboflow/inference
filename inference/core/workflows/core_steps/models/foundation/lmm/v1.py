@@ -380,6 +380,7 @@ def execute_gpt_4v_request(
     )
     return {"content": response.choices[0].message.content, "image": image_metadata}
 
+
 def turn_raw_lmm_output_into_structured(
     raw_output: List[Dict[str, Any]],
     expected_output: Optional[Dict[str, str]],

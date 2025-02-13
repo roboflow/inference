@@ -51,7 +51,13 @@ class BlockManifest(WorkflowBlockManifest):
             ),
             "license": "Apache-2.0",
             "block_type": "model",
-            "search_keywords": ["Qwen2.5", "qwen2.5-vl", "vision language model", "VLM", "Alibaba"],
+            "search_keywords": [
+                "Qwen2.5",
+                "qwen2.5-vl",
+                "vision language model",
+                "VLM",
+                "Alibaba",
+            ],
             "is_vlm_block": True,
             "ui_manifest": {
                 "section": "model",
@@ -126,7 +132,10 @@ class Qwen25VLBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if self._step_execution_mode == StepExecutionMode.LOCAL:
             return self.run_locally(
-                images=images, model_version=model_version, prompt=prompt, system_prompt=system_prompt
+                images=images,
+                model_version=model_version,
+                prompt=prompt,
+                system_prompt=system_prompt,
             )
         elif self._step_execution_mode == StepExecutionMode.REMOTE:
             raise NotImplementedError(
