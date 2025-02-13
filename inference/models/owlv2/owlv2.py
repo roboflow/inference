@@ -330,7 +330,7 @@ def hash_wrapped_training_data(wrapped_training_data: List[Dict[str, Any]]) -> H
     return hash_function(pickle.dumps(just_hash_relevant_data))
 
 
-class OWLv2(RoboflowInferenceModel):
+class OwlV2(RoboflowInferenceModel):
     task_type = "object-detection"
     box_format = "xywh"
 
@@ -735,7 +735,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         save_dir: str = os.path.join(MODEL_CACHE_DIR, "owl-v2-serialized-data"),
     ):
         roboflow_id = hf_id.replace("google/", "owlv2/")
-        owlv2 = OWLv2(model_id=roboflow_id)
+        owlv2 = OwlV2(model_id=roboflow_id)
         train_data_dict, image_embeds = owlv2.make_class_embeddings_dict(
             training_data, iou_threshold, return_image_embeds=True
         )
@@ -833,7 +833,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         self.huggingface_id = self.model_data["huggingface_id"]
         self.roboflow_id = self.model_data["roboflow_id"]
         # each model can have its own OWLv2 instance because we use a singleton
-        self.owlv2 = OWLv2(model_id=self.roboflow_id)
+        self.owlv2 = OwlV2(model_id=self.roboflow_id)
         self.owlv2.cpu_image_embed_cache = self.model_data["image_embeds"]
 
     weights_file_path = "weights.pt"
@@ -874,8 +874,3 @@ class SerializedOwlV2(RoboflowInferenceModel):
             self.owlv2.cpu_image_embed_cache,
             save_dir,
         )
-
-    @staticmethod
-    def get_instance():
-        """Método estático para obter a instância do modelo"""
-        return OWLv2ModelManager().get_vision_model()
