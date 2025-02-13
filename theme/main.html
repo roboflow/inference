@@ -6,16 +6,12 @@
     {% include 'home.html' %}
     <style>
       main.md-main {
-        display: none;
+        height: 0;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
       }
     </style>
-  {% endif %}
-{% endblock %}
-
-{% block site_nav %}
-  {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
-  {% else %}
-    {{ super() }}
   {% endif %}
 {% endblock %}
 
