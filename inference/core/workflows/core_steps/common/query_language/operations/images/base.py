@@ -21,6 +21,11 @@ PROPERTY_EXTRACTORS = {
     * image.numpy_image.shape[1],
     ImageProperty.HEIGHT: lambda image: image.numpy_image.shape[0],
     ImageProperty.WIDTH: lambda image: image.numpy_image.shape[1],
+    ImageProperty.ASPECT_RATIO: lambda image: (
+        image.numpy_image.shape[1] / image.numpy_image.shape[0]
+        if image.numpy_image.shape[0] != 0
+        else 0
+    ),
 }
 
 
