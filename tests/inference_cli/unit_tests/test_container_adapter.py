@@ -34,7 +34,7 @@ def test_prepare_container_environment_when_env_file_defined(
             "PORT=8080",
             "PROJECT=roboflow-platform",
             "METRICS_ENABLED=False",
-            "DEVICE_ID=other",
+            "DEVICE_ID=some",
             "NUM_WORKERS=3",
             "API_KEY=my_api_key",
             "SOME=VALUE",
