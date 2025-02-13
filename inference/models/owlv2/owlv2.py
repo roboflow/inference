@@ -1,3 +1,4 @@
+import threading
 import hashlib
 import os
 import pickle
@@ -83,6 +84,43 @@ class LimitedSizeDict(OrderedDict):
                 self.popitem(last=False)
 
 
+class OWLv2ModelManager:
+    _instances = {} 
+    _lock = threading.Lock()
+    
+    def __new__(cls, vision_model, huggingface_id: str):
+        if huggingface_id not in cls._instances:
+            with cls._lock:
+                if huggingface_id not in cls._instances:
+                    instance = super().__new__(cls)
+                    instance._vision_model = vision_model
+                    instance._is_compiling = False
+                    instance._compilation_done = False
+                    instance._start_compilation()
+                    cls._instances[huggingface_id] = instance
+        return cls._instances[huggingface_id]
+    
+    def get_vision_model(self):
+        if self._vision_model is None:
+            raise ValueError("No vision_model has been initialized")
+        return self._vision_model
+
+    def _start_compilation(self):
+        if not self._is_compiling and not self._compilation_done:
+            self._is_compiling = True
+            compilation_thread = threading.Thread(target=self._compile_model)
+            compilation_thread.daemon = True
+            compilation_thread.start()
+
+    def _compile_model(self):
+        try:
+            compiled_vision_model = torch.compile(self._vision_model)
+            self._vision_model = compiled_vision_model
+            self._compilation_done = True
+        finally:
+            self._is_compiling = False
+
+
 class Owlv2Singleton:
     _instances = weakref.WeakValueDictionary()
 
@@ -96,8 +134,11 @@ class Owlv2Singleton:
                 .eval()
                 .to(DEVICE)
             )
-            torch._dynamo.config.suppress_errors = True
-            model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
+            owlv2_model_manager = OWLv2ModelManager(
+                vision_model=model.owlv2.vision_model,
+                huggingface_id=huggingface_id
+            )
+            model.owlv2.vision_model = owlv2_model_manager.get_vision_model()
             instance.model = model
             cls._instances[huggingface_id] = instance
         return cls._instances[huggingface_id]
@@ -290,7 +331,7 @@ def hash_wrapped_training_data(wrapped_training_data: List[Dict[str, Any]]) -> H
     return hash_function(pickle.dumps(just_hash_relevant_data))
 
 
-class OwlV2(RoboflowInferenceModel):
+class OWLv2(RoboflowInferenceModel):
     task_type = "object-detection"
     box_format = "xywh"
 
@@ -695,7 +736,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         save_dir: str = os.path.join(MODEL_CACHE_DIR, "owl-v2-serialized-data"),
     ):
         roboflow_id = hf_id.replace("google/", "owlv2/")
-        owlv2 = OwlV2(model_id=roboflow_id)
+        owlv2 = OWLv2(model_id=roboflow_id)
         train_data_dict, image_embeds = owlv2.make_class_embeddings_dict(
             training_data, iou_threshold, return_image_embeds=True
         )
@@ -792,8 +833,8 @@ class SerializedOwlV2(RoboflowInferenceModel):
         self.train_data_dict = self.model_data["train_data_dict"]
         self.huggingface_id = self.model_data["huggingface_id"]
         self.roboflow_id = self.model_data["roboflow_id"]
-        # each model can have its own OwlV2 instance because we use a singleton
-        self.owlv2 = OwlV2(model_id=self.roboflow_id)
+        # each model can have its own OWLv2 instance because we use a singleton
+        self.owlv2 = OWLv2(model_id=self.roboflow_id)
         self.owlv2.cpu_image_embed_cache = self.model_data["image_embeds"]
 
     weights_file_path = "weights.pt"
@@ -834,3 +875,8 @@ class SerializedOwlV2(RoboflowInferenceModel):
             self.owlv2.cpu_image_embed_cache,
             save_dir,
         )
+
+    @staticmethod
+    def get_instance():
+        """Método estático para obter a instância do modelo"""
+        return OWLv2ModelManager().get_vision_model()
