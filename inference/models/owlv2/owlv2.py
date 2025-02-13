@@ -94,8 +94,6 @@ class OWLv2ModelManager:
                 if huggingface_id not in cls._instances:
                     instance = super().__new__(cls)
                     instance._vision_model = vision_model
-                    instance._is_compiling = False
-                    instance._compilation_done = False
                     instance._start_compilation()
                     cls._instances[huggingface_id] = instance
         return cls._instances[huggingface_id]
@@ -106,19 +104,12 @@ class OWLv2ModelManager:
         return self._vision_model
 
     def _start_compilation(self):
-        if not self._is_compiling and not self._compilation_done:
-            self._is_compiling = True
-            compilation_thread = threading.Thread(target=self._compile_model)
-            compilation_thread.daemon = True
-            compilation_thread.start()
+        compilation_thread = threading.Thread(target=self._compile_model)
+        compilation_thread.daemon = True
+        compilation_thread.start()
 
     def _compile_model(self):
-        try:
-            compiled_vision_model = torch.compile(self._vision_model)
-            self._vision_model = compiled_vision_model
-            self._compilation_done = True
-        finally:
-            self._is_compiling = False
+        self._vision_model = torch.compile(self._vision_model)
 
 
 class Owlv2Singleton:
