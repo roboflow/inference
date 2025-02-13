@@ -78,10 +78,18 @@ def start(
     use_local_images: Annotated[
         bool,
         typer.Option(
-            "--use-local-images/--not-use-local-images",
+            "--use-local-images/--metrics-disabled",
             help="Flag to allow using local images (if set False image is always attempted to be pulled)",
         ),
     ] = False,
+    metrics_enabled: Annotated[
+        bool,
+        typer.Option(
+            "--metrics-enabled/--not-metrics-enabled",
+            help="Flag controlling if metrics are enabled (default is True)",
+        ),
+    ] = True,
+
 ) -> None:
 
     try:
@@ -99,6 +107,7 @@ def start(
             development=development,
             api_key=api_key,
             use_local_images=use_local_images,
+            metrics_enabled=metrics_enabled,
         )
     except Exception as container_error:
         typer.echo(container_error)
