@@ -1,6 +1,5 @@
 from inference.core.env import (
     CORE_MODEL_CLIP_ENABLED,
-    CORE_MODEL_COGVLM_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
@@ -44,12 +43,6 @@ if CORE_MODELS_ENABLED:
     if CORE_MODEL_GROUNDINGDINO_ENABLED:
         try:
             from inference.models.grounding_dino import GroundingDINO
-        except:
-            pass
-
-    if CORE_MODEL_COGVLM_ENABLED:
-        try:
-            from inference.models.cogvlm import CogVLM
         except:
             pass
 

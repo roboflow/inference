@@ -23,7 +23,6 @@ from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
 )
-from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
@@ -63,7 +62,6 @@ from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
-from inference.core.entities.responses.cogvlm import CogVLMResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -102,7 +100,6 @@ from inference.core.env import (
     ALLOW_ORIGINS,
     API_KEY,
     CORE_MODEL_CLIP_ENABLED,
-    CORE_MODEL_COGVLM_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
@@ -850,7 +847,6 @@ class HttpInterface(BaseInterface):
         Returns:
         The DocTR model ID.
         """
-        load_cogvlm_model = partial(load_core_model, core_model="cogvlm")
         load_paligemma_model = partial(load_core_model, core_model="paligemma")
 
         load_grounding_dino_model = partial(
@@ -2057,46 +2053,6 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(gaze_model_id, actor)
-                    return response
-
-            if CORE_MODEL_COGVLM_ENABLED:
-
-                @app.post(
-                    "/llm/cogvlm",
-                    response_model=CogVLMResponse,
-                    summary="CogVLM",
-                    description="Run the CogVLM model to chat or describe an image.",
-                )
-                @with_route_exceptions
-                async def cog_vlm(
-                    inference_request: CogVLMInferenceRequest,
-                    request: Request,
-                    api_key: Optional[str] = Query(
-                        None,
-                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-                    ),
-                ):
-                    """
-                    Chat with CogVLM or ask it about an image. Multi-image requests not currently supported.
-
-                    Args:
-                        inference_request (M.CogVLMInferenceRequest): The request containing the prompt and image to be described.
-                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
-                        request (Request, default Body()): The HTTP request.
-
-                    Returns:
-                        M.CogVLMResponse: The model's text response
-                    """
-                    logger.debug(f"Reached /llm/cogvlm")
-                    cog_model_id = load_cogvlm_model(inference_request, api_key=api_key)
-                    response = await self.model_manager.infer_from_request(
-                        cog_model_id, inference_request
-                    )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(cog_model_id, actor)
                     return response
 
             if CORE_MODEL_TROCR_ENABLED:

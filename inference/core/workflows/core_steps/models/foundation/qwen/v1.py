@@ -34,8 +34,8 @@ class BlockManifest(WorkflowBlockManifest):
     # Qwen2.5-VL only needs an image and an optional text prompt.
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     prompt: Optional[str] = Field(
-        default="",
-        description="Optional text prompt to provide additional context to Qwen2.5-VL.",
+        default=None,
+        description="Optional text prompt to provide additional context to Qwen2.5-VL. If you don't provide a prompt and you're running a model trained in Roboflow, the prompt from your training data will be used, otherwise it will just be an empty string.",
         examples=["What is in this image?"],
     )
 
@@ -44,14 +44,14 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Qwen2.5-VL",
             "version": "v1",
-            "short_description": "Run Qwen2.5-VL on an image",
+            "short_description": "Run Qwen2.5-VL on an image.",
             "long_description": (
-                "This workflow block runs Qwen2.5-VL—a visual language model that accepts an image "
+                "This workflow block runs Qwen2.5-VL—a vision language model that accepts an image "
                 "and an optional text prompt—and returns a text answer based on a conversation template."
             ),
             "license": "Apache-2.0",
             "block_type": "model",
-            "search_keywords": ["Qwen2.5", "qwen2.5-vl", "visual language model"],
+            "search_keywords": ["Qwen2.5", "qwen2.5-vl", "vision language model", "VLM", "Alibaba"],
             "is_vlm_block": True,
             "ui_manifest": {
                 "section": "model",
@@ -62,21 +62,22 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["roboflow_core/qwen25vl@v1"]
-    # The version (or model id) of Qwen2.5-VL to use.
+
     model_version: Union[Selector(kind=[STRING_KIND]), str] = Field(
         default="qwen25-vl-7b-peft",
         description="The Qwen2.5-VL model to be used for inference.",
         examples=["qwen25-vl-7b-peft"],
     )
 
+    system_prompt: Optional[str] = Field(
+        default=None,
+        description="Optional system prompt to provide additional context to Qwen2.5-VL.",
+        examples=["You are a helpful assistant."],
+    )
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
-            OutputDefinition(
-                name="raw_output",
-                kind=[STRING_KIND, LANGUAGE_MODEL_OUTPUT_KIND],
-                description="The raw text output from Qwen2.5-VL.",
-            ),
             OutputDefinition(
                 name="parsed_output",
                 kind=[DICTIONARY_KIND],
@@ -121,12 +122,11 @@ class Qwen25VLBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_version: str,
         prompt: Optional[str],
+        system_prompt: Optional[str],
     ) -> BlockResult:
-        print("Running Qwen2.5-VL block")
         if self._step_execution_mode == StepExecutionMode.LOCAL:
-            print("Running locally")
             return self.run_locally(
-                images=images, model_version=model_version, prompt=prompt
+                images=images, model_version=model_version, prompt=prompt, system_prompt=system_prompt
             )
         elif self._step_execution_mode == StepExecutionMode.REMOTE:
             raise NotImplementedError(
@@ -142,20 +142,21 @@ class Qwen25VLBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_version: str,
         prompt: Optional[str],
+        system_prompt: Optional[str],
     ) -> BlockResult:
         # Convert each image to the format required by the model.
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
         ]
         # Use the provided prompt (or an empty string if None) for every image.
-        prompts = [prompt or ""] * len(inference_images)
-
+        prompt = prompt or ""
+        system_prompt = system_prompt or ""
+        prompts = [prompt + "<system_prompt>" + system_prompt] * len(inference_images)
         # Register Qwen2.5-VL with the model manager.
         self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
 
         predictions = []
         for image, single_prompt in zip(inference_images, prompts):
-            print("Running inference")
             # Build an LMMInferenceRequest with both prompt and image.
             request = LMMInferenceRequest(
                 api_key=self._api_key,
@@ -164,23 +165,15 @@ class Qwen25VLBlockV1(WorkflowBlock):
                 source="workflow-execution",
                 prompt=single_prompt,
             )
-            print("Request built")
             # Run inference.
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
-            print("Inference complete")
-            print(prediction)
-
             # Qwen2.5-VL typically returns one key in the response dictionary.
             response_text = prediction.response  # prediction.response[key]
-            print("Response text extracted")
             predictions.append(
                 {
-                    "raw_output": response_text,
-                    "parsed_output": {"text": response_text},
+                    "parsed_output": response_text,
                 }
             )
-            print(predictions)
-            print("Returning predictions")
         return predictions

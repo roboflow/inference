@@ -18,7 +18,7 @@ manually.
 
 === "CPU"
     The core CPU Docker image includes support for OpenVINO acceleration on
-    x64 CPUs via onnxruntime. Heavy models like SAM2 and CogVLM may run too
+    x64 CPUs via onnxruntime. Heavy models like SAM2 may run too
     slowly (dozens of seconds per image) to be practical (and you should
     look into getting a CUDA-capable GPU if you want to use them).
 

@@ -21,7 +21,7 @@ class Qwen25VL(TransformerModel):
     default_dtype = torch.float32
     skip_special_tokens = False
 
-    system_message = (
+    default_system_prompt = (
         "You are a Qwen2.5-VL model that can answer questions about any image."
     )
 
@@ -98,10 +98,18 @@ class Qwen25VL(TransformerModel):
         )
 
     def predict(self, image_in: Image.Image, prompt="", **kwargs):
+        split_prompt = prompt.split("<system_prompt>")
+        if len(split_prompt) == 1:
+            prompt = split_prompt[0]
+            system_prompt = self.default_system_prompt
+        else:
+            prompt = split_prompt[0]
+            system_prompt = split_prompt[1]
+
         conversation = [
             {
                 "role": "system",
-                "content": [{"type": "text", "text": self.system_message}],
+                "content": [{"type": "text", "text": system_prompt}],
             },
             {
                 "role": "user",
@@ -158,7 +166,7 @@ class LoRAQwen25VL(LoRATransformerModel):
     transformers_class = AutoModelForCausalLM
     default_dtype = torch.float32
 
-    system_message = (
+    default_system_prompt = (
         "You are a Qwen2.5-VL model that can answer questions about any image."
     )
 
@@ -245,10 +253,18 @@ class LoRAQwen25VL(LoRATransformerModel):
         )
 
     def predict(self, image_in: Image.Image, prompt="", **kwargs):
+        split_prompt = prompt.split("<system_prompt>")
+        if len(split_prompt) == 1:
+            prompt = split_prompt[0]
+            system_prompt = self.default_system_prompt
+        else:
+            prompt = split_prompt[0]
+            system_prompt = split_prompt[1]
+
         conversation = [
             {
                 "role": "system",
-                "content": [{"type": "text", "text": self.system_message}],
+                "content": [{"type": "text", "text": system_prompt}],
             },
             {
                 "role": "user",

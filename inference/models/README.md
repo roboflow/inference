@@ -3,7 +3,6 @@ The models supported by Roboflow Inference have their own licenses. View the lic
 | model                         |                                       license                                        | commercial license available |
 |:------------------------------|:------------------------------------------------------------------------------------:|:----------------------------:|
 | `inference/models/clip`           | [MIT](https://github.com/openai/CLIP/blob/main/LICENSE)                              | 👍 |
-| `inference/models/cogvlm`         | [Apache 2.0](https://github.com/THUDM/CogVLM/blob/main/LICENSE)                      | 👍 |
 | `inference/models/doctr`          | [Apache 2.0](https://github.com/mindee/doctr/blob/main/LICENSE)                      | 👍 |
 | `inference/models/florence2`      | [MIT](https://huggingface.co/microsoft/Florence-2-base/blob/main/LICENSE)            | 👍 |
 | `inference/models/gaze`           | [Apache 2.0 (Mediapipe)](https://github.com/google/mediapipe/blob/master/LICENSE), [MIT (L2Cs-Net)](https://github.com/Ahmednull/L2CS-Net/blob/main/LICENSE) | 👍 |
