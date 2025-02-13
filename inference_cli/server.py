@@ -78,14 +78,14 @@ def start(
     use_local_images: Annotated[
         bool,
         typer.Option(
-            "--use-local-images/--metrics-disabled",
+            "--use-local-images/--not-use-local-images",
             help="Flag to allow using local images (if set False image is always attempted to be pulled)",
         ),
     ] = False,
     metrics_enabled: Annotated[
         bool,
         typer.Option(
-            "--metrics-enabled/--not-metrics-enabled",
+            "--metrics-enabled/--metrics-disabled",
             help="Flag controlling if metrics are enabled (default is True)",
         ),
     ] = True,
