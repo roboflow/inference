@@ -252,6 +252,9 @@ class LazyImageRetrievalWrapper:
 
         self._image_as_numpy = None
         self._image_hash = None
+    
+    def unload_numpy_image(self):
+        self._image_as_numpy = None
 
     @property
     def image_as_numpy(self) -> np.ndarray:
@@ -267,7 +270,7 @@ class LazyImageRetrievalWrapper:
                 # we can use the url as the hash
                 self._image_hash = image_payload
             elif image_type is ImageType.FILE:
-                self._image_hash =image_payload
+                self._image_hash = image_payload
             elif image_type is ImageType.BASE64:
                 # this is presumably the compressed image bytes
                 # hashing this directly is faster than loading the raw image through numpy
@@ -399,6 +402,7 @@ class OwlV2(RoboflowInferenceModel):
             if isinstance(image, LazyImageRetrievalWrapper)
             else image
         )
+
         pixel_values = preprocess_image(
             np_image, self.image_size, self.image_mean, self.image_std
         )
@@ -578,6 +582,7 @@ class OwlV2(RoboflowInferenceModel):
             image_size = self.compute_image_size(image_wrapper)
             image_sizes.append(image_size)
             image_hash = self.embed_image(image_wrapper)
+            image_wrapper.unload_numpy_image()
             result = self.infer_from_embed(
                 image_hash, class_embeddings_dict, confidence, iou_threshold
             )
