@@ -832,7 +832,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         self.train_data_dict = self.model_data["train_data_dict"]
         self.huggingface_id = self.model_data["huggingface_id"]
         self.roboflow_id = self.model_data["roboflow_id"]
-        # each model can have its own OWLv2 instance because we use a singleton
+        # each model can have its own OwlV2 instance because we use a singleton
         self.owlv2 = OwlV2(model_id=self.roboflow_id)
         self.owlv2.cpu_image_embed_cache = self.model_data["image_embeds"]
 
