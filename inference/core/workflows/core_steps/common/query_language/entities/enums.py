@@ -98,6 +98,7 @@ class ImageProperty(Enum):
     SIZE = "size"
     HEIGHT = "height"
     WIDTH = "width"
+    ASPECT_RATIO = "aspect_ratio"
 
 
 class DetectionsSelectionMode(Enum):
