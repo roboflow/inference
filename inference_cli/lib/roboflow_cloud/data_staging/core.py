@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 
 import typer
 from typing_extensions import Annotated
@@ -65,11 +65,11 @@ def list_batch_content(
             help="Identifier of new batch (must be lower-cased letters with '-' and '_' allowed",
         ),
     ],
-    part_name: Annotated[
-        Optional[str],
+    part_names: Annotated[
+        Optional[List[str]],
         typer.Option(
             "--part-name",
-            "-bpn",
+            "-pn",
             help="Name of the part to be listed (if not given - all parts are presented). Invalid if batch is "
             "not multipart",
         ),
@@ -110,12 +110,17 @@ def list_batch_content(
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
+    if part_names:
+        part_names = set(part_names)
+    else:
+        # this is needed - just Typer things - part_names is empty list instead of node, and we need default
+        part_names = None
     try:
         ensure_api_key_is_set(api_key=api_key)
         api_operations.get_batch_content(
             batch_id=batch_id,
             api_key=api_key,
-            part_name=part_name,
+            part_names=part_names,
             limit=limit,
             output_file=output_file,
         )
@@ -312,6 +317,15 @@ def export_batch(
             help="Path to export directory",
         ),
     ],
+    part_names: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--part-name",
+            "-pn",
+            help="Name of the part to be exported (if not given - all parts are presented). Invalid if batch is "
+            "not multipart",
+        ),
+    ] = None,
     api_key: Annotated[
         Optional[str],
         typer.Option(
@@ -330,6 +344,11 @@ def export_batch(
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
+    if part_names:
+        part_names = set(part_names)
+    else:
+        # this is needed - just Typer things - part_names is empty list instead of node, and we need default
+        part_names = None
     try:
         ensure_api_key_is_set(api_key=api_key)
         api_operations.export_data(

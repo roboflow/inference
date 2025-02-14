@@ -41,7 +41,6 @@ from inference_cli.lib.roboflow_cloud.data_staging.entities import (
     ListBatchResponse,
     ListMultipartBatchPartsResponse,
     MultipartBatchPartMetadata,
-    ShardDetails,
 )
 from inference_cli.lib.roboflow_cloud.errors import (
     RetryError,
@@ -168,7 +167,7 @@ def get_workspace_batches_list_page(
 def get_batch_content(
     batch_id: str,
     api_key: str,
-    part_name: Optional[str] = None,
+    part_names: Optional[Set[str]] = None,
     limit: Optional[int] = None,
     output_file: Optional[str] = None,
 ) -> None:
@@ -181,13 +180,13 @@ def get_batch_content(
             workspace=workspace,
             batch_id=batch_id,
             api_key=api_key,
-            part_name=part_name,
+            part_names=part_names,
             limit=limit,
             output_file=output_file,
         )
-    if part_name is not None:
+    if part_names is not None:
         raise ValueError(
-            f"Requested listing of part {part_name}, but batch is not multipart-batch."
+            f"Requested listing of parts {part_names}, but batch is not multipart-batch."
         )
     return get_content_of_simple_or_sharded_batch(
         workspace=workspace,
@@ -223,7 +222,7 @@ def get_content_of_multipart_batch(
     workspace: str,
     batch_id: str,
     api_key: str,
-    part_name: Optional[str] = None,
+    part_names: Optional[Set[str]] = None,
     limit: Optional[int] = None,
     output_file: Optional[str] = None,
 ) -> None:
@@ -231,7 +230,7 @@ def get_content_of_multipart_batch(
         workspace=workspace, batch_id=batch_id, api_key=api_key
     )
     filtered_parts = (
-        parts if part_name is None else [p for p in parts if p.part_name == part_name]
+        parts if part_names is None else [p for p in parts if p.part_name in part_names]
     )
     if output_file:
         saver = MetadataSaver.init(file_path=output_file)
