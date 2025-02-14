@@ -54,9 +54,7 @@ DETECTION_PROPERTY_EXTRACTION = {
     DetectionsProperty.PATH_DEVIATION: lambda x: x[5].get(
         PATH_DEVIATION_KEY_IN_SV_DETECTIONS
     ),
-    DetectionsProperty.POLYGON: lambda x: x[5].get(
-        POLYGON_KEY_IN_SV_DETECTIONS
-    ),
+    DetectionsProperty.POLYGON: lambda x: x[5].get(POLYGON_KEY_IN_SV_DETECTIONS),
     DetectionsProperty.TIME_IN_ZONE: lambda x: x[5].get(
         TIME_IN_ZONE_KEY_IN_SV_DETECTIONS
     ),
