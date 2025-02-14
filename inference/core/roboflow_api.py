@@ -1,13 +1,13 @@
 import hashlib
 import json
 import os
+import re
 import urllib.parse
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import backoff
-import re
 import requests
 from requests import Response, Timeout
 from requests_toolbelt import MultipartEncoder
@@ -552,10 +552,12 @@ def get_workflow_specification(
             return cached_entry
 
     if workspace_id == "local":
-        if not re.match(r'^[\w\-]+$', workflow_id):
+        if not re.match(r"^[\w\-]+$", workflow_id):
             raise ValueError("Invalid workflow id")
 
-        local_file_path = Path(MODEL_CACHE_DIR) / "workflow" / "local" / f"{workflow_id}.json"
+        local_file_path = (
+            Path(MODEL_CACHE_DIR) / "workflow" / "local" / f"{workflow_id}.json"
+        )
         if not local_file_path.exists():
             raise FileNotFoundError(f"Local workflow file not found: {local_file_path}")
 
@@ -563,9 +565,7 @@ def get_workflow_specification(
             local_config = json.load(f)
 
         # Mimic the same shape as the cloud response:
-        response = {
-            "workflow": local_config
-        }
+        response = {"workflow": local_config}
     else:
         params = []
         if api_key is not None:

@@ -1,17 +1,21 @@
-import os
-import re
 import json
 import logging
+import os
+import re
 from pathlib import Path
-from fastapi import APIRouter, Body, HTTPException
-from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response, HTMLResponse
-from starlette.status import HTTP_201_CREATED, HTTP_404_NOT_FOUND, HTTP_400_BAD_REQUEST
-from inference.core.interfaces.http.http_api import with_route_exceptions
 
-from inference.core.env import (
-    MODEL_CACHE_DIR,
-    BUILDER_ORIGIN
+from fastapi import APIRouter, Body, HTTPException
+from starlette.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
 )
+from starlette.status import HTTP_201_CREATED, HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
+
+from inference.core.env import BUILDER_ORIGIN, MODEL_CACHE_DIR
+from inference.core.interfaces.http.http_api import with_route_exceptions
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +27,7 @@ router = APIRouter()
 # ---------------------
 # FRONTEND HTML ROUTES
 # ---------------------
+
 
 @router.get(
     "",
@@ -44,9 +49,11 @@ async def builder_browse():
 
     return HTMLResponse(content)
 
+
 @router.get("/", include_in_schema=False)
 async def builder_redirect():
     return RedirectResponse(url="/build", status_code=302)
+
 
 @router.get(
     "/edit/{workflow_id}",
@@ -71,9 +78,11 @@ async def builder_edit(workflow_id: str):
 
     return HTMLResponse(content)
 
+
 # ----------------------
 # BACKEND JSON API ROUTES
 # ----------------------
+
 
 @router.get("/api")
 @with_route_exceptions
@@ -98,15 +107,11 @@ async def get_all_workflows():
         }
 
     return Response(
-        content=json.dumps(
-            {
-                "data": data
-            },
-            indent=4
-        ),
+        content=json.dumps({"data": data}, indent=4),
         media_type="application/json",
-        status_code=200
+        status_code=200,
     )
+
 
 @router.get("/api/{workflow_id}")
 @with_route_exceptions
@@ -114,7 +119,7 @@ async def get_workflow(workflow_id: str):
     """
     Return JSON for workflow_id.json, or { "error": "not found" } with 404 if missing.
     """
-    if not re.match(r'^[\w\-]+$', workflow_id):
+    if not re.match(r"^[\w\-]+$", workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
 
     file_path = workflow_local_dir / f"{workflow_id}.json"
@@ -137,19 +142,22 @@ async def get_workflow(workflow_id: str):
                 "data": {
                     "createTime": int(stat_info.st_ctime),
                     "updateTime": int(stat_info.st_mtime),
-                    "config": config_contents
+                    "config": config_contents,
                 }
             },
-            indent=4
+            indent=4,
         ),
         media_type="application/json",
-        status_code=200
+        status_code=200,
     )
+
 
 @router.post("/api/{workflow_id}")
 @with_route_exceptions
-async def create_or_overwrite_workflow(workflow_id: str, request_body: dict = Body(...)):
-    if not re.match(r'^[\w\-]+$', workflow_id):
+async def create_or_overwrite_workflow(
+    workflow_id: str, request_body: dict = Body(...)
+):
+    if not re.match(r"^[\w\-]+$", workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
 
     file_path = workflow_local_dir / f"{workflow_id}.json"
@@ -165,7 +173,7 @@ async def create_or_overwrite_workflow(workflow_id: str, request_body: dict = Bo
             except Exception as e:
                 logger.error(f"Error deleting {old_file_path}: {e}")
                 return JSONResponse({"error": "unable to delete file"}, status_code=500)
-        
+
         request_body["id"] = workflow_id
 
     try:
@@ -175,12 +183,16 @@ async def create_or_overwrite_workflow(workflow_id: str, request_body: dict = Bo
         logger.error(f"Error writing JSON to {file_path}: {e}")
         return JSONResponse({"error": "unable to write file"}, status_code=500)
 
-    return JSONResponse({"message": f"Workflow '{workflow_id}' created/updated successfully."}, status_code=HTTP_201_CREATED)
+    return JSONResponse(
+        {"message": f"Workflow '{workflow_id}' created/updated successfully."},
+        status_code=HTTP_201_CREATED,
+    )
+
 
 @router.delete("/api/{workflow_id}")
 @with_route_exceptions
 async def delete_workflow(workflow_id: str):
-    if not re.match(r'^[\w\-]+$', workflow_id):
+    if not re.match(r"^[\w\-]+$", workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
 
     file_path = workflow_local_dir / f"{workflow_id}.json"
@@ -193,11 +205,15 @@ async def delete_workflow(workflow_id: str):
         logger.error(f"Error deleting {file_path}: {e}")
         return JSONResponse({"error": "unable to delete file"}, status_code=500)
 
-    return JSONResponse({"message": f"Workflow '{workflow_id}' deleted successfully."}, status_code=200)
+    return JSONResponse(
+        {"message": f"Workflow '{workflow_id}' deleted successfully."}, status_code=200
+    )
+
 
 # ------------------------
 # FALLBACK REDIRECT HELPER
 # ------------------------
+
 
 @router.get("/{workflow_id}")
 @with_route_exceptions
@@ -207,7 +223,7 @@ async def builder_maybe_redirect(workflow_id: str):
     Otherwise, redirect back to /build.
     """
     # Sanitize workflow_id to prevent path traversal
-    if not re.match(r'^[\w\-]+$', workflow_id):
+    if not re.match(r"^[\w\-]+$", workflow_id):
         # If it's invalid, just redirect home (or raise 400)
         return RedirectResponse(url="/build", status_code=302)
 
