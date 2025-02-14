@@ -321,7 +321,7 @@ def with_route_exceptions(route):
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
-                context=error.context,
+                context=str(error.context),
                 inner_error_type=str(error.inner_error_type),
                 inner_error_message=str(error.inner_error),
                 blocks_errors=error.blocks_errors,
