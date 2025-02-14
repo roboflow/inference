@@ -5,7 +5,7 @@ import tempfile
 from datetime import datetime, timedelta
 from functools import partial
 from multiprocessing.pool import Pool, ThreadPool
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Generator, List, Optional, Set, TextIO, Tuple
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -36,7 +36,9 @@ from inference_cli.lib.roboflow_cloud.config import (
 from inference_cli.lib.roboflow_cloud.data_staging.entities import (
     BatchExportResponse,
     BatchMetadata,
+    FileMetadata,
     ListBatchesResponse,
+    ListBatchResponse,
     ListMultipartBatchPartsResponse,
     MultipartBatchPartMetadata,
     ShardDetails,
@@ -53,9 +55,7 @@ from inference_cli.lib.utils import (
 )
 
 
-def display_batches(
-    api_key: Optional[str], pages: int, page_size: Optional[int]
-) -> None:
+def display_batches(api_key: str, pages: int, page_size: Optional[int]) -> None:
     workspace = get_workspace(api_key=api_key)
     batches = list_batches(
         workspace=workspace, api_key=api_key, pages=pages, page_size=page_size
@@ -91,28 +91,42 @@ def display_batches(
 
 def list_batches(
     workspace: str,
-    api_key: Optional[str],
+    api_key: str,
     pages: Optional[int],
     page_size: Optional[int],
 ) -> List[BatchMetadata]:
+    return list(
+        iterate_batches(
+            workspace=workspace,
+            api_key=api_key,
+            pages=pages,
+            page_size=page_size,
+        )
+    )
+
+
+def iterate_batches(
+    workspace: str,
+    api_key: str,
+    pages: Optional[int],
+    page_size: Optional[int],
+) -> Generator[BatchMetadata, None, None]:
     next_page_token = None
     pages_fetched = 0
-    results = []
     while True:
         if pages is not None and pages_fetched >= pages:
-            return results
+            break
         listing_page = get_workspace_batches_list_page(
             workspace=workspace,
             api_key=api_key,
             page_size=page_size,
             next_page_token=next_page_token,
         )
-        results.extend(listing_page.batches)
+        yield from listing_page.batches
         next_page_token = listing_page.next_page_token
         if next_page_token is None:
             break
         pages_fetched += 1
-    return results
 
 
 @backoff.on_exception(
@@ -123,7 +137,7 @@ def list_batches(
 )
 def get_workspace_batches_list_page(
     workspace: str,
-    api_key: Optional[str],
+    api_key: str,
     page_size: Optional[int],
     next_page_token: Optional[str] = None,
 ) -> ListBatchesResponse:
@@ -151,10 +165,206 @@ def get_workspace_batches_list_page(
         raise RFAPICallError("Could not decode Roboflow API response.") from error
 
 
+def get_batch_content(
+    batch_id: str,
+    api_key: str,
+    part_name: Optional[str] = None,
+    limit: Optional[int] = None,
+    output_file: Optional[str] = None,
+) -> None:
+    workspace = get_workspace(api_key=api_key)
+    metadata = get_batch_metadata(
+        workspace=workspace, batch_id=batch_id, api_key=api_key
+    )
+    if metadata.batch_type == "multipart-batch":
+        return get_content_of_multipart_batch(
+            workspace=workspace,
+            batch_id=batch_id,
+            api_key=api_key,
+            part_name=part_name,
+            limit=limit,
+            output_file=output_file,
+        )
+    if part_name is not None:
+        raise ValueError(
+            f"Requested listing of part {part_name}, but batch is not multipart-batch."
+        )
+    return get_content_of_simple_or_sharded_batch(
+        workspace=workspace,
+        batch_id=batch_id,
+        api_key=api_key,
+        limit=limit,
+        output_file=output_file,
+    )
+
+
+def get_content_of_simple_or_sharded_batch(
+    workspace: str,
+    batch_id: str,
+    api_key: str,
+    limit: Optional[int] = None,
+    output_file: Optional[str] = None,
+) -> None:
+    if output_file:
+        saver = MetadataSaver.init(file_path=output_file)
+        on_new_metadata = saver.save_metadata
+    else:
+        on_new_metadata = print
+    for metadata in iterate_batch_content(
+        workspace=workspace,
+        batch_id=batch_id,
+        api_key=api_key,
+        limit=limit,
+    ):
+        on_new_metadata(metadata.model_dump())
+
+
+def get_content_of_multipart_batch(
+    workspace: str,
+    batch_id: str,
+    api_key: str,
+    part_name: Optional[str] = None,
+    limit: Optional[int] = None,
+    output_file: Optional[str] = None,
+) -> None:
+    parts = list_multipart_batch_parts(
+        workspace=workspace, batch_id=batch_id, api_key=api_key
+    )
+    filtered_parts = (
+        parts if part_name is None else [p for p in parts if p.part_name == part_name]
+    )
+    if output_file:
+        saver = MetadataSaver.init(file_path=output_file)
+        on_new_metadata = saver.save_metadata
+    else:
+        on_new_metadata = print
+    for part in filtered_parts:
+        part_elements_listed = 0
+        for metadata in iterate_batch_content(
+            workspace=workspace,
+            batch_id=batch_id,
+            api_key=api_key,
+            part_name=part.part_name,
+            limit=limit,
+        ):
+            on_new_metadata(metadata.model_dump())
+            part_elements_listed += 1
+        if limit is not None:
+            limit = max(0, limit - part_elements_listed)
+
+
+class MetadataSaver:
+
+    @classmethod
+    def init(cls, file_path: str) -> "MetadataSaver":
+        abs_path = os.path.abspath(file_path)
+        parent_dir = os.path.dirname(abs_path)
+        os.makedirs(parent_dir, exist_ok=True)
+        file_handler = open(abs_path, "w")
+        return cls(file_handler=file_handler)
+
+    def __init__(self, file_handler: TextIO):
+        self._file_handler = file_handler
+
+    def save_metadata(self, metadata: dict) -> None:
+        serialized_metadata = json.dumps(metadata)
+        self._file_handler.write(f"{serialized_metadata}\n")
+
+    def __del__(self):
+        self._file_handler.close()
+
+
+def list_batch_content(
+    workspace: str,
+    batch_id: str,
+    api_key: str,
+    part_name: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> List[FileMetadata]:
+    return list(
+        iterate_batch_content(
+            workspace=workspace,
+            batch_id=batch_id,
+            api_key=api_key,
+            part_name=part_name,
+            limit=limit,
+        )
+    )
+
+
+def iterate_batch_content(
+    workspace: str,
+    batch_id: str,
+    api_key: str,
+    part_name: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> Generator[FileMetadata, None, None]:
+    if limit is not None and limit <= 0:
+        return None
+    items_listed = 0
+    next_page_token = None
+    while limit is None or items_listed < limit:
+        listing_page = get_one_page_of_batch_content(
+            workspace=workspace,
+            batch_id=batch_id,
+            api_key=api_key,
+            next_page_token=next_page_token,
+            part_name=part_name,
+        )
+        for element in listing_page.files_metadata:
+            if limit is not None and items_listed >= limit:
+                break
+            items_listed += 1
+            yield element
+        next_page_token = listing_page.next_page_token
+        if next_page_token is None:
+            break
+
+
+@backoff.on_exception(
+    backoff.constant,
+    exception=RetryError,
+    max_tries=3,
+    interval=1,
+)
+def get_one_page_of_batch_content(
+    workspace: str,
+    batch_id: str,
+    api_key: str,
+    page_size: Optional[int] = None,
+    next_page_token: Optional[str] = None,
+    part_name: Optional[str] = None,
+) -> ListBatchResponse:
+    params = {}
+    if api_key is not None:
+        params["api_key"] = api_key
+    if page_size is not None:
+        params["pageSize"] = page_size
+    if next_page_token is not None:
+        params["nextPageToken"] = next_page_token
+    if part_name is not None:
+        params["partName"] = part_name
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/list",
+            params=params,
+            timeout=REQUEST_TIMEOUT,
+        )
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
+        raise RetryError(
+            f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
+        )
+    handle_response_errors(response=response, operation_name="list batche")
+    try:
+        return ListBatchResponse.model_validate(response.json())
+    except ValueError as error:
+        raise RFAPICallError("Could not decode Roboflow API response.") from error
+
+
 def create_images_batch_from_directory(
     directory: str,
     batch_id: str,
-    api_key: Optional[str],
+    api_key: str,
     batch_name: Optional[str],
 ) -> None:
     workspace = get_workspace(api_key=api_key)
@@ -180,7 +390,7 @@ def create_images_batch_from_directory(
 def create_videos_batch_from_directory(
     directory: str,
     batch_id: str,
-    api_key: Optional[str],
+    api_key: str,
     batch_name: Optional[str],
 ) -> None:
     workspace = get_workspace(api_key=api_key)
@@ -216,7 +426,7 @@ def upload_images_to_simple_batch(
     images_paths: List[str],
     workspace: str,
     batch_id: str,
-    api_key: Optional[str],
+    api_key: str,
     batch_name: Optional[str],
 ) -> None:
     upload_image_closure = partial(
@@ -239,7 +449,7 @@ def upload_images_to_sharded_batch(
     images_paths: List[str],
     workspace: str,
     batch_id: str,
-    api_key: Optional[str],
+    api_key: str,
     batch_name: Optional[str],
 ) -> None:
     shards = list(create_batches(sequence=images_paths, batch_size=MAX_SHARD_SIZE))
@@ -263,7 +473,7 @@ def pack_and_upload_images_shard(
     images_paths: List[str],
     workspace: str,
     batch_id: str,
-    api_key: Optional[str],
+    api_key: str,
     batch_name: Optional[str],
 ) -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -296,7 +506,7 @@ def upload_image(
     image_path: str,
     workspace: str,
     batch_id: str,
-    api_key: Optional[str],
+    api_key: str,
     batch_name: Optional[str] = None,
 ) -> None:
     params = {}
@@ -339,7 +549,7 @@ def upload_video(
     video_path: str,
     workspace: str,
     batch_id: str,
-    api_key: Optional[str],
+    api_key: str,
     batch_name: Optional[str] = None,
 ) -> None:
     params = {}
@@ -385,7 +595,7 @@ def upload_images_shard(
     archive_path: str,
     workspace: str,
     batch_id: str,
-    api_key: Optional[str],
+    api_key: str,
     batch_name: Optional[str],
 ) -> None:
     # This flow is over-simplified - we should request shard at first and only then pack into archive
@@ -444,7 +654,7 @@ def upload_file_to_cloud(
 def get_batch_count(
     workspace: str,
     batch_id: str,
-    api_key: Optional[str],
+    api_key: str,
     part_name: Optional[str] = None,
 ) -> int:
     params = {}
@@ -565,7 +775,7 @@ def display_multipart_batch_details(
 def get_batch_metadata(
     workspace: str,
     batch_id: str,
-    api_key: Optional[str],
+    api_key: str,
 ) -> BatchMetadata:
     params = {}
     if api_key is not None:
@@ -596,7 +806,7 @@ def get_batch_metadata(
 def list_multipart_batch_parts(
     workspace: str,
     batch_id: str,
-    api_key: Optional[str],
+    api_key: str,
 ) -> List[MultipartBatchPartMetadata]:
     params = {}
     if api_key is not None:
@@ -622,7 +832,7 @@ def list_multipart_batch_parts(
         raise RFAPICallError("Could not decode Roboflow API response.") from error
 
 
-def export_data(batch_id: str, api_key: Optional[str], target_directory: str) -> None:
+def export_data(batch_id: str, api_key: str, target_directory: str) -> None:
     workspace = get_workspace(api_key=api_key)
     metadata = get_batch_metadata(
         workspace=workspace, batch_id=batch_id, api_key=api_key
@@ -891,7 +1101,7 @@ def download_and_unpack_archive(
 def export_batch_data(
     workspace: str,
     batch_id: str,
-    api_key: Optional[str],
+    api_key: str,
     page_size: Optional[int] = None,
     next_page_token: Optional[str] = None,
     part_name: Optional[str] = None,

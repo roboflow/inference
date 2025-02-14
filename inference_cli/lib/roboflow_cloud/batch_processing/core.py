@@ -15,6 +15,7 @@ from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     MachineSize,
     MachineType,
 )
+from inference_cli.lib.roboflow_cloud.common import ensure_api_key_is_set
 
 batch_processing_app = typer.Typer(
     help="Commands for interacting with Roboflow Batch Processing. THIS IS ALPHA PREVIEW OF THE FEATURE."
@@ -50,6 +51,7 @@ def list_jobs(
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
     try:
+        ensure_api_key_is_set(api_key=api_key)
         display_batch_jobs(api_key=api_key, max_pages=max_pages)
     except KeyboardInterrupt:
         print("Command interrupted.")
@@ -90,6 +92,7 @@ def show_job_details(
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
     try:
+        ensure_api_key_is_set(api_key=api_key)
         display_batch_job_details(job_id=job_id, api_key=api_key)
     except KeyboardInterrupt:
         print("Command interrupted.")
@@ -204,6 +207,7 @@ def process_images_with_workflow(
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
     try:
+        ensure_api_key_is_set(api_key=api_key)
         job_id = trigger_job_with_workflows_images_processing(
             batch_id=batch_id,
             workflow_id=workflow_id,
@@ -343,6 +347,7 @@ def process_videos_with_workflow(
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
     try:
+        ensure_api_key_is_set(api_key=api_key)
         job_id = trigger_job_with_workflows_videos_processing(
             batch_id=batch_id,
             workflow_id=workflow_id,

@@ -40,3 +40,18 @@ class ListMultipartBatchPartsResponse(BaseModel):
 class BatchExportResponse(BaseModel):
     urls: List[str]
     next_page_token: Optional[str] = Field(alias="nextPageToken", default=None)
+
+
+class FileMetadata(BaseModel):
+    access_token: str = Field(alias="accessToken")
+    export_handle: str = Field(alias="exportHandle")
+    file_name: str = Field(alias="fileName")
+    part_name: Optional[str] = Field(default=None, alias="partName")
+    shard_id: Optional[str] = Field(default=None, alias="shardId")
+    content_type: str = Field(alias="contentType")
+    nested_content_type: Optional[str] = Field(default=None, alias="nestedContentType")
+
+
+class ListBatchResponse(BaseModel):
+    files_metadata: List[FileMetadata] = Field(alias="filesMetadata")
+    next_page_token: Optional[str] = Field(alias="nextPageToken", default=None)
