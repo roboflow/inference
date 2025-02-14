@@ -33,7 +33,6 @@ from inference.core.env import (
 from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
 from inference.core.models.roboflow import (
     DEFAULT_COLOR_PALETTE,
-    RoboflowCoreModel,
     RoboflowInferenceModel,
     draw_detection_predictions,
 )
