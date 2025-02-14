@@ -433,6 +433,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     Kind,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.core.workflows.core_steps.sinks.microsoft_sql_server.v1 import (
+    MicrosoftSQLServerSinkBlockV1,
+)
 
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
@@ -556,6 +559,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LineCounterBlockV2,
         LineCounterZoneVisualizationBlockV1,
         MaskVisualizationBlockV1,
+        MicrosoftSQLServerSinkBlockV1,
         ModelComparisonVisualizationBlockV1,
         OCRModelBlockV1,
         OpenAIBlockV1,
