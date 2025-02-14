@@ -15,6 +15,7 @@ from inference.core.cache import cache
 from inference.core.env import (
     ACTIVE_LEARNING_ENABLED,
     API_KEY,
+    DEFAULT_BUFFER_SIZE,
     DISABLE_PREPROC_AUTO_ORIENT,
     ENABLE_FRAME_DROP_ON_VIDEO_FILE_RATE_LIMITING,
     ENABLE_WORKFLOWS_PROFILING,
@@ -108,6 +109,8 @@ class InferencePipeline:
         active_learning_target_dataset: Optional[str] = None,
         batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
+        predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
+        decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from Roboflow models against video stream.
@@ -220,6 +223,10 @@ class InferencePipeline:
                 `video_frame: List[Optional[VideoFrame]]`. It is also possible to process multiple videos using
                 old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
                 prediction element.
+            predictions_queue_size int: Size of buffer for predictions that are ready for dispatching
+                default value is taken from INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE env variable
+            decoding_buffer_size (int): size of video source decoding buffer
+                default value is taken from VIDEO_SOURCE_BUFFER_SIZE env variable
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -296,6 +303,8 @@ class InferencePipeline:
             video_source_properties=video_source_properties,
             batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
+            predictions_queue_size=predictions_queue_size,
+            decoding_buffer_size=decoding_buffer_size,
         )
 
     @classmethod
@@ -318,6 +327,8 @@ class InferencePipeline:
         video_source_properties: Optional[Dict[str, float]] = None,
         batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
+        predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
+        decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from YoloWorld against video stream.
@@ -389,6 +400,10 @@ class InferencePipeline:
                 `video_frame: List[Optional[VideoFrame]]`. It is also possible to process multiple videos using
                 old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
                 prediction element.
+            predictions_queue_size int: Size of buffer for predictions that are ready for dispatching
+                default value is taken from INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE env variable
+            decoding_buffer_size (int): size of video source decoding buffer
+                default value is taken from VIDEO_SOURCE_BUFFER_SIZE env variable
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -436,6 +451,8 @@ class InferencePipeline:
             video_source_properties=video_source_properties,
             batch_collection_timeout=batch_collection_timeout,
             sink_mode=sink_mode,
+            predictions_queue_size=predictions_queue_size,
+            decoding_buffer_size=decoding_buffer_size,
         )
 
     @classmethod
@@ -467,6 +484,8 @@ class InferencePipeline:
         profiling_directory: str = "./inference_profiling",
         use_workflow_definition_cache: bool = True,
         serialize_results: bool = False,
+        predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
+        decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -543,6 +562,10 @@ class InferencePipeline:
                 newest version for the request. Only applies for Workflows definitions saved on Roboflow platform.
             serialize_results (bool): Boolean flag to decide if ExecutionEngine run should serialize workflow
                 results for each frame. If that is set true, sinks will receive serialized workflow responses.
+            predictions_queue_size int: Size of buffer for predictions that are ready for dispatching
+                default value is taken from INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE env variable
+            decoding_buffer_size (int): size of video source decoding buffer
+                default value is taken from VIDEO_SOURCE_BUFFER_SIZE env variable
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -657,6 +680,8 @@ class InferencePipeline:
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=video_source_properties,
             batch_collection_timeout=batch_collection_timeout,
+            predictions_queue_size=predictions_queue_size,
+            decoding_buffer_size=decoding_buffer_size,
         )
 
     @classmethod
@@ -675,6 +700,8 @@ class InferencePipeline:
         video_source_properties: Optional[Dict[str, float]] = None,
         batch_collection_timeout: Optional[float] = None,
         sink_mode: SinkMode = SinkMode.ADAPTIVE,
+        predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE,
+        decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
     ) -> "InferencePipeline":
         """
         This class creates the abstraction for making inferences from given workflow against video stream.
@@ -741,6 +768,10 @@ class InferencePipeline:
                 `video_frame: List[Optional[VideoFrame]]`. It is also possible to process multiple videos using
                 old sinks - but then `SinkMode.SEQUENTIAL` is to be used, causing sink to be called on each
                 prediction element.
+            predictions_queue_size int: Size of buffer for predictions that are ready for dispatching
+                default value is taken from INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE env variable
+            decoding_buffer_size (int): size of video source decoding buffer
+                default value is taken from VIDEO_SOURCE_BUFFER_SIZE env variable
 
         Other ENV variables involved in low-level configuration:
         * INFERENCE_PIPELINE_PREDICTIONS_QUEUE_SIZE - size of buffer for predictions that are ready for dispatching
@@ -767,9 +798,14 @@ class InferencePipeline:
             source_buffer_filling_strategy=source_buffer_filling_strategy,
             source_buffer_consumption_strategy=source_buffer_consumption_strategy,
             desired_source_fps=desired_source_fps,
+            decoding_buffer_size=decoding_buffer_size,
         )
         watchdog.register_video_sources(video_sources=video_sources)
-        predictions_queue = Queue(maxsize=PREDICTIONS_QUEUE_SIZE)
+        try:
+            predictions_queue_size = int(predictions_queue_size)
+        except ValueError:
+            predictions_queue_size = 512
+        predictions_queue = Queue(maxsize=predictions_queue_size)
         return cls(
             on_video_frame=on_video_frame,
             video_sources=video_sources,
