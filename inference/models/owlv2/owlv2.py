@@ -79,11 +79,13 @@ def safe_repr(obj):
     except Exception as e:
         return f"<Error: {e}>"
 
+
 def debug_memory():
     all_objects = gc.get_objects()
     for obj in all_objects:
-        if hasattr(obj, '__class__'):
+        if hasattr(obj, "__class__"):
             print(type(obj), safe_repr(obj)[:100])
+
 
 class LimitedSizeDict(OrderedDict):
     def __init__(self, *args, **kwds):
@@ -261,12 +263,15 @@ def hash_function(value: Any) -> Hash:
     # wrapper so we can change the hashing function in the future
     return hashlib.sha1(value).hexdigest()
 
+
 class LazyImageRetrievalWrapper:
     def __init__(self, image: Any):
-        self.image = image  # Prefer passing a file path or URL to avoid large in‑memory arrays.
+        self.image = (
+            image  # Prefer passing a file path or URL to avoid large in‑memory arrays.
+        )
         self._image_as_numpy = None
         self._image_hash = None
-    
+
     def unload_numpy_image(self):
         self._image_as_numpy = None
 
@@ -294,6 +299,7 @@ class LazyImageRetrievalWrapper:
             else:
                 self._image_hash = hash_function(self.image_as_numpy.tobytes())
         return self._image_hash
+
 
 def hash_wrapped_training_data(wrapped_training_data: List[Dict[str, Any]]) -> Hash:
     just_hash_relevant_data = [
@@ -384,7 +390,9 @@ class OwlV2(RoboflowInferenceModel):
         else:
             return None
 
-    def compute_image_size(self, image: Union[np.ndarray, LazyImageRetrievalWrapper]) -> Tuple[int, int]:
+    def compute_image_size(
+        self, image: Union[np.ndarray, LazyImageRetrievalWrapper]
+    ) -> Tuple[int, int]:
         if isinstance(image, LazyImageRetrievalWrapper):
             if (image_size := self.image_size_cache.get(image.image_hash)) is None:
                 np_img = image.image_as_numpy
@@ -406,11 +414,19 @@ class OwlV2(RoboflowInferenceModel):
             return image_hash
 
         # Load and process image.
-        np_image = image.image_as_numpy if isinstance(image, LazyImageRetrievalWrapper) else image
-        pixel_values = preprocess_image(np_image, self.image_size, self.image_mean, self.image_std)
+        np_image = (
+            image.image_as_numpy
+            if isinstance(image, LazyImageRetrievalWrapper)
+            else image
+        )
+        pixel_values = preprocess_image(
+            np_image, self.image_size, self.image_mean, self.image_std
+        )
 
         device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
-        with torch.autocast(device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"):
+        with torch.autocast(
+            device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
+        ):
             image_embeds, _ = self.model.image_embedder(pixel_values=pixel_values)
             batch_size, h, w, dim = image_embeds.shape
             image_features = image_embeds.reshape(batch_size, h * w, dim)
@@ -418,17 +434,28 @@ class OwlV2(RoboflowInferenceModel):
             boxes = self.model.box_predictor(image_features, feature_map=image_embeds)
 
         image_class_embeds = self.model.class_head.dense0(image_features)
-        image_class_embeds /= (torch.linalg.norm(image_class_embeds, ord=2, dim=-1, keepdim=True) + 1e-6)
+        image_class_embeds /= (
+            torch.linalg.norm(image_class_embeds, ord=2, dim=-1, keepdim=True) + 1e-6
+        )
         logit_shift = self.model.class_head.logit_shift(image_features)
-        logit_scale = self.model.class_head.elu(self.model.class_head.logit_scale(image_features)) + 1
+        logit_scale = (
+            self.model.class_head.elu(self.model.class_head.logit_scale(image_features))
+            + 1
+        )
         objectness = objectness.sigmoid()
 
-        objectness, boxes, image_class_embeds, logit_shift, logit_scale = filter_tensors_by_objectness(
-            objectness, boxes, image_class_embeds, logit_shift, logit_scale
+        objectness, boxes, image_class_embeds, logit_shift, logit_scale = (
+            filter_tensors_by_objectness(
+                objectness, boxes, image_class_embeds, logit_shift, logit_scale
+            )
         )
 
         self.image_embed_cache[image_hash] = (
-            objectness, boxes, image_class_embeds, logit_shift, logit_scale
+            objectness,
+            boxes,
+            image_class_embeds,
+            logit_shift,
+            logit_scale,
         )
 
         # Explicitly delete temporary tensors to free memory.
@@ -438,6 +465,7 @@ class OwlV2(RoboflowInferenceModel):
             image.unload_numpy_image()  # Clears both _image_as_numpy and image if needed.
 
         return image_hash
+
     def get_query_embedding(
         self, query_spec: QuerySpecType, iou_threshold: float
     ) -> torch.Tensor:
@@ -607,7 +635,7 @@ class OwlV2(RoboflowInferenceModel):
 
         class_embeddings_dict = defaultdict(lambda: {"positive": [], "negative": []})
         bool_to_literal = {True: "positive", False: "negative"}
-        return_image_embeds_dict = dict()        
+        return_image_embeds_dict = dict()
 
         for train_image in enumerate(wrapped_training_data):
             image_hash = self.embed_image(train_image["image"])
@@ -631,11 +659,12 @@ class OwlV2(RoboflowInferenceModel):
                 continue
 
             for embedding, class_name, is_pos in zip(embeddings, classes, is_positive):
-                class_embeddings_dict[class_name][bool_to_literal[is_pos]].append(embedding)
+                class_embeddings_dict[class_name][bool_to_literal[is_pos]].append(
+                    embedding
+                )
 
             del train_image
             gc.collect()
-
 
         # Convert lists of embeddings to tensors.
         class_embeddings_dict = {
