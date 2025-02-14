@@ -68,6 +68,10 @@ jobs:
            PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_SAM2_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam2.py
       - name: 🧹 Cleanup Test Docker - SAM2
         run: make stop_test_docker
+      - name: 🧪 Regression Tests - Qwen2.5
+        id: qwen25_tests
+        run: |
+          PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_QWEN25_TESTS=False python3 -m pytest tests/inference/integration_tests/qwen_test.py
       - name: 🚨 Show server logs on error
         run: |
           docker logs inference-test
