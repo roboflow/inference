@@ -67,7 +67,9 @@ def to_corners(box):
     y2 = cy + h / 2
     return torch.stack([x1, y1, x2, y2], dim=-1)
 
+
 from collections import OrderedDict
+
 
 def safe_repr(obj):
     try:
@@ -420,7 +422,7 @@ class OwlV2(RoboflowInferenceModel):
         # so we parse DEVICE as a string to make it work in both 2.3 and 2.4
         # as we don't know a priori our torch version
         device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
-         # we disable autocast on CPU for stability, although it's possible using bfloat16 would work
+        # we disable autocast on CPU for stability, although it's possible using bfloat16 would work
         with torch.autocast(
             device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
         ):
