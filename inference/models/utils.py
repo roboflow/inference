@@ -299,16 +299,13 @@ try:
 except:
     pass
 
-try:
-    from inference.models import LoRAQwen25VL, Qwen25VL
+from inference.models import LoRAQwen25VL, Qwen25VL
 
-    qwen25vl_models = {
-        ("text-image-pairs", "qwen25-vl-7b"): Qwen25VL,
-        ("text-image-pairs", "qwen25-vl-7b-peft"): LoRAQwen25VL,
-    }
-    ROBOFLOW_MODEL_TYPES.update(qwen25vl_models)
-except:
-    pass
+qwen25vl_models = {
+    ("text-image-pairs", "qwen25-vl-7b"): Qwen25VL,
+    ("text-image-pairs", "qwen25-vl-7b-peft"): LoRAQwen25VL,
+}
+ROBOFLOW_MODEL_TYPES.update(qwen25vl_models)
 
 try:
     from inference.models import SegmentAnything

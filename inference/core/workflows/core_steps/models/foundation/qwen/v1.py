@@ -16,6 +16,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
+    ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
     ImageInputField,
     Selector,
@@ -35,7 +36,7 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     prompt: Optional[str] = Field(
         default=None,
-        description="Optional text prompt to provide additional context to Qwen2.5-VL. If you don't provide a prompt and you're running a model trained in Roboflow, the prompt from your training data will be used, otherwise it will just be an empty string.",
+        description="Optional text prompt to provide additional context to Qwen2.5-VL. Otherwise it will just be None",
         examples=["What is in this image?"],
     )
 
@@ -69,7 +70,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     type: Literal["roboflow_core/qwen25vl@v1"]
 
-    model_version: Union[Selector(kind=[STRING_KIND]), str] = Field(
+    model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
         default="qwen25-vl-7b-peft",
         description="The Qwen2.5-VL model to be used for inference.",
         examples=["qwen25-vl-7b-peft"],
@@ -178,8 +179,7 @@ class Qwen25VLBlockV1(WorkflowBlock):
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
-            # Qwen2.5-VL typically returns one key in the response dictionary.
-            response_text = prediction.response  # prediction.response[key]
+            response_text = prediction.response
             predictions.append(
                 {
                     "parsed_output": response_text,

@@ -13,12 +13,19 @@ from inference.core.env import DEVICE, MODEL_CACHE_DIR
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
+from transformers import BitsAndBytesConfig
 
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_quant_storage=torch.bfloat16,
+)
 
 class Qwen25VL(TransformerModel):
     generation_includes_input = True
     transformers_class = AutoModelForCausalLM
-    default_dtype = torch.float32
+    default_dtype = torch.bfloat16
     skip_special_tokens = False
 
     default_system_prompt = (
@@ -77,7 +84,8 @@ class Qwen25VL(TransformerModel):
             device_map=DEVICE,
             cache_dir=cache_dir,
             token=token,
-        ).to(self.dtype)
+            quantization_config=bnb_config,
+        )
         self.model = (
             PeftModel.from_pretrained(self.base_model, self.cache_dir)
             .eval()
@@ -97,7 +105,7 @@ class Qwen25VL(TransformerModel):
             chat_template=chat_template,
         )
 
-    def predict(self, image_in: Image.Image, prompt="", **kwargs):
+    def predict(self, image_in: Image.Image, prompt=None, **kwargs):
         split_prompt = prompt.split("<system_prompt>")
         if len(split_prompt) == 1:
             prompt = split_prompt[0]
@@ -115,7 +123,7 @@ class Qwen25VL(TransformerModel):
                 "role": "user",
                 "content": [
                     {"type": "image", "image": image_in},
-                    {"type": "text", "text": prompt},
+                    {"type": "text", "text": prompt or ""},
                 ],
             },
         ]
@@ -155,7 +163,7 @@ class Qwen25VL(TransformerModel):
         )
 
         decoded = decoded.replace("assistant\n", "")
-
+        decoded = decoded.replace(" addCriterion\n", "")
         return (decoded,)
 
 
@@ -164,7 +172,7 @@ class LoRAQwen25VL(LoRATransformerModel):
     generation_includes_input = True
     skip_special_tokens = True
     transformers_class = AutoModelForCausalLM
-    default_dtype = torch.float32
+    default_dtype = torch.bfloat16
 
     default_system_prompt = (
         "You are a Qwen2.5-VL model that can answer questions about any image."
@@ -229,7 +237,8 @@ class LoRAQwen25VL(LoRATransformerModel):
             device_map=DEVICE,
             cache_dir=cache_dir,
             token=token,
-        ).to(self.dtype)
+            quantization_config=bnb_config,
+        )
 
         self.model = (
             PeftModel.from_pretrained(self.base_model, self.cache_dir)
@@ -310,5 +319,6 @@ class LoRAQwen25VL(LoRATransformerModel):
         )
 
         decoded = decoded.replace("assistant\n", "")
+        decoded = decoded.replace(" addCriterion\n", "")
 
         return (decoded,)
