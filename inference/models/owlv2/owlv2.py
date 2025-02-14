@@ -1,10 +1,10 @@
+import gc
 import hashlib
 import os
 import pickle
 import weakref
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
-import gc
 
 import numpy as np
 import torch
@@ -21,14 +21,14 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.env import (
+    COMPILE_OWLV2_MODEL,
     DEVICE,
     MAX_DETECTIONS,
     MODEL_CACHE_DIR,
+    OWLV2_CPU_IMAGE_CACHE_SIZE,
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
-    OWLV2_CPU_IMAGE_CACHE_SIZE,
     OWLV2_VERSION_ID,
-    COMPILE_OWLV2_MODEL,
 )
 from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
 from inference.core.models.roboflow import (
@@ -68,9 +68,8 @@ def to_corners(box):
     return torch.stack([x1, y1, x2, y2], dim=-1)
 
 
-from collections import OrderedDict
-
 import gc
+from collections import OrderedDict
 
 
 def safe_repr(obj):
