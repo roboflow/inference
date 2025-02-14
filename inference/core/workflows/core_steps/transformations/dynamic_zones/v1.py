@@ -5,12 +5,12 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.execution_engine.constants import (
+    POLYGON_KEY_IN_SV_DETECTIONS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
-)
-from inference.core.workflows.execution_engine.constants import (
-    POLYGON_KEY_IN_SV_DETECTIONS,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
@@ -85,7 +85,9 @@ class DynamicZonesManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name=OUTPUT_KEY, kind=[LIST_OF_VALUES_KIND]),
-            OutputDefinition(name=OUTPUT_KEY_DETECTIONS, kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]),
+            OutputDefinition(
+                name=OUTPUT_KEY_DETECTIONS, kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
+            ),
         ]
 
     @classmethod
@@ -178,20 +180,28 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     mask=mask,
                     required_number_of_vertices=required_number_of_vertices,
                 )
-                updated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = np.array([simplified_polygon])
+                updated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(
+                    [simplified_polygon]
+                )
                 if len(simplified_polygon) == required_number_of_vertices:
                     simplified_polygon = scale_polygon(
                         polygon=simplified_polygon,
                         scale=scale_ratio,
                     )
                     simplified_polygons.append(simplified_polygon)
-                    updated_detection.mask = np.array([sv.polygon_to_mask(
-                        polygon=simplified_polygon,
-                        resolution_wh=mask.shape,
-                    )])
+                    updated_detection.mask = np.array(
+                        [
+                            sv.polygon_to_mask(
+                                polygon=simplified_polygon,
+                                resolution_wh=mask.shape,
+                            )
+                        ]
+                    )
                 updated_detections.append(updated_detection)
-            result.append({
-                OUTPUT_KEY: simplified_polygons,
-                OUTPUT_KEY_DETECTIONS: sv.Detections.merge(updated_detections),
-            })
+            result.append(
+                {
+                    OUTPUT_KEY: simplified_polygons,
+                    OUTPUT_KEY_DETECTIONS: sv.Detections.merge(updated_detections),
+                }
+            )
         return result
