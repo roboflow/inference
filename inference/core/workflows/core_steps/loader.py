@@ -393,6 +393,9 @@ from inference.core.workflows.core_steps.visualizations.trace.v1 import (
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
+from inference.core.workflows.core_steps.sinks.microsoft_sql_server.v1 import (
+    MicrosoftSQLServerSinkBlockV1,
+)
 from inference.core.workflows.execution_engine.entities.types import (
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
@@ -433,9 +436,6 @@ from inference.core.workflows.execution_engine.entities.types import (
     Kind,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
-from inference.core.workflows.core_steps.sinks.microsoft_sql_server.v1 import (
-    MicrosoftSQLServerSinkBlockV1,
-)
 
 REGISTERED_INITIALIZERS = {
     "api_key": API_KEY,
