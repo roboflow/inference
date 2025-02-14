@@ -4,6 +4,7 @@ import pickle
 import weakref
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
+import gc
 
 import numpy as np
 import torch
@@ -71,13 +72,6 @@ def to_corners(box):
 from collections import OrderedDict
 
 import gc
-import pprint
-
-import psutil
-
-def log_memory_usage(stage: str, logging_adapter):
-    mem_usage_gb = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3)
-    logging_adapter.info(f"{stage}: memory usage: {mem_usage_gb:.2f} GB")
 
 
 def safe_repr(obj):
@@ -595,8 +589,6 @@ class OwlV2(RoboflowInferenceModel):
         iou_threshold: float,
         return_image_embeds: bool = False,
     ) -> Dict[str, PosNegDictType]:
-        from adapters import logging_adapter
-        import time
 
         wrapped_training_data = [
             {
@@ -612,59 +604,20 @@ class OwlV2(RoboflowInferenceModel):
                 wrapped_training_data_hash
             )
         ) is not None:
-            logging_adapter.info("Using cached embeddings")
             return class_embeddings_dict
 
         class_embeddings_dict = defaultdict(lambda: {"positive": [], "negative": []})
         bool_to_literal = {True: "positive", False: "negative"}
-        return_image_embeds_dict = dict()
-        
-        total_images = len(wrapped_training_data)
-        start_time = time.time()
-        last_log_time = start_time
-        last_processed_images = 0
-        processed_images = 0
+        return_image_embeds_dict = dict()        
 
-        for idx, train_image in enumerate(wrapped_training_data):
-            # Log memory before embedding
-            mem_before = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3)
-            logging_adapter.info(
-                f"[make_class_embeddings_dict] Processing image {idx+1}/{total_images}: Memory before embedding: {mem_before:.2f} GB"
-            )
-            
+        for train_image in enumerate(wrapped_training_data):
             image_hash = self.embed_image(train_image["image"])
-            
-            # Log memory after embedding
-            mem_after = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3)
-            logging_adapter.info(
-                f"[make_class_embeddings_dict] Image {idx+1} embedded: Memory after embedding: {mem_after:.2f} GB (Delta: {mem_after - mem_before:.2f} GB)"
-            )
-            
-            processed_images += 1
-            current_time = time.time()
-            if current_time - last_log_time > 5 or processed_images % 100 == 0:
-                elapsed_interval = current_time - last_log_time
-                images_in_interval = processed_images - last_processed_images
-                interval_fps = images_in_interval / elapsed_interval if elapsed_interval > 0 else 0
-                progress = (processed_images / total_images) * 100
-                logging_adapter.info(
-                    f"Processing images: {progress:.1f}% complete ({processed_images}/{total_images}), {interval_fps:.2f} images/s"
-                )
-                last_log_time = current_time
-                last_processed_images = processed_images
-
             if return_image_embeds:
                 if (image_embeds := self.get_image_embeds(image_hash)) is None:
                     raise KeyError("We didn't embed the image first!")
                 return_image_embeds_dict[image_hash] = tuple(
                     t.to("cpu") for t in image_embeds
                 )
-
-            # Log memory before computing query embeddings
-            mem_before_query = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3)
-            logging_adapter.info(
-                f"[make_class_embeddings_dict] Before query embedding for image {idx+1}: {mem_before_query:.2f} GB"
-            )
 
             image_size = self.compute_image_size(train_image["image"])
             boxes = train_image["boxes"]
@@ -680,21 +633,10 @@ class OwlV2(RoboflowInferenceModel):
 
             for embedding, class_name, is_pos in zip(embeddings, classes, is_positive):
                 class_embeddings_dict[class_name][bool_to_literal[is_pos]].append(embedding)
-            
-            # Log memory after processing query embeddings
-            mem_after_query = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3)
-            logging_adapter.info(
-                f"[make_class_embeddings_dict] After query embedding for image {idx+1}: {mem_after_query:.2f} GB (Delta: {mem_after_query - mem_before_query:.2f} GB)"
-            )
-             
+
             del train_image
             gc.collect()
 
-        total_time = time.time() - start_time
-        avg_fps = processed_images / total_time
-        logging_adapter.info(
-            f"Finished processing {total_images} images in {total_time:.2f}s (average {avg_fps:.2f} images/s)"
-        )
 
         # Convert lists of embeddings to tensors.
         class_embeddings_dict = {
