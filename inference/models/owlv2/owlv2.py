@@ -398,6 +398,73 @@ class OwlV2(RoboflowInferenceModel):
         else:
             return image.shape[:2][::-1]
 
+    # @torch.no_grad()
+    # def embed_image(self, image: Union[np.ndarray, LazyImageRetrievalWrapper]) -> Hash:
+    #     if isinstance(image, LazyImageRetrievalWrapper):
+    #         image_hash = image.image_hash
+    #     else:
+    #         image_hash = hash_function(image.tobytes())
+
+    #     if (cached := self.get_image_embeds(image_hash)) is not None:
+    #         return image_hash
+
+    #     # Load and process image.
+    #     np_image = (
+    #         image.image_as_numpy
+    #         if isinstance(image, LazyImageRetrievalWrapper)
+    #         else image
+    #     )
+    #     pixel_values = preprocess_image(
+    #         np_image, self.image_size, self.image_mean, self.image_std
+    #     )
+    #     # torch 2.4 lets you use "cuda:0" as device_type
+    #     # but this crashes in 2.3
+    #     # so we parse DEVICE as a string to make it work in both 2.3 and 2.4
+    #     # as we don't know a priori our torch version
+    #     device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
+    #     # we disable autocast on CPU for stability, although it's possible using bfloat16 would work
+    #     with torch.autocast(
+    #         device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
+    #     ):
+    #         image_embeds, _ = self.model.image_embedder(pixel_values=pixel_values)
+    #         batch_size, h, w, dim = image_embeds.shape
+    #         image_features = image_embeds.reshape(batch_size, h * w, dim)
+    #         objectness = self.model.objectness_predictor(image_features)
+    #         boxes = self.model.box_predictor(image_features, feature_map=image_embeds)
+
+    #     image_class_embeds = self.model.class_head.dense0(image_features)
+    #     image_class_embeds /= (
+    #         torch.linalg.norm(image_class_embeds, ord=2, dim=-1, keepdim=True) + 1e-6
+    #     )
+    #     logit_shift = self.model.class_head.logit_shift(image_features)
+    #     logit_scale = (
+    #         self.model.class_head.elu(self.model.class_head.logit_scale(image_features))
+    #         + 1
+    #     )
+    #     objectness = objectness.sigmoid()
+
+    #     objectness, boxes, image_class_embeds, logit_shift, logit_scale = (
+    #         filter_tensors_by_objectness(
+    #             objectness, boxes, image_class_embeds, logit_shift, logit_scale
+    #         )
+    #     )
+
+    #     self.image_embed_cache[image_hash] = (
+    #         objectness,
+    #         boxes,
+    #         image_class_embeds,
+    #         logit_shift,
+    #         logit_scale,
+    #     )
+
+    #     # Explicitly delete temporary tensors to free memory.
+    #     del pixel_values, np_image, image_features, image_embeds
+
+    #     if isinstance(image, LazyImageRetrievalWrapper):
+    #         image.unload_numpy_image()  # Clears both _image_as_numpy and image if needed.
+
+    #     return image_hash
+
     @torch.no_grad()
     def embed_image(self, image: Union[np.ndarray, LazyImageRetrievalWrapper]) -> Hash:
         if isinstance(image, LazyImageRetrievalWrapper):
@@ -405,18 +472,19 @@ class OwlV2(RoboflowInferenceModel):
         else:
             image_hash = hash_function(image.tobytes())
 
-        if (cached := self.get_image_embeds(image_hash)) is not None:
+        if (image_embeds := self.get_image_embeds(image_hash)) is not None:
             return image_hash
 
-        # Load and process image.
         np_image = (
             image.image_as_numpy
             if isinstance(image, LazyImageRetrievalWrapper)
             else image
         )
+
         pixel_values = preprocess_image(
             np_image, self.image_size, self.image_mean, self.image_std
         )
+
         # torch 2.4 lets you use "cuda:0" as device_type
         # but this crashes in 2.3
         # so we parse DEVICE as a string to make it work in both 2.3 and 2.4
@@ -636,7 +704,7 @@ class OwlV2(RoboflowInferenceModel):
         bool_to_literal = {True: "positive", False: "negative"}
         return_image_embeds_dict = dict()
 
-        for train_image in enumerate(wrapped_training_data):
+        for train_image in wrapped_training_data:
             image_hash = self.embed_image(train_image["image"])
             if return_image_embeds:
                 if (image_embeds := self.get_image_embeds(image_hash)) is None:
