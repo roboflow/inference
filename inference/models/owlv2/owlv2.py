@@ -67,10 +67,7 @@ def to_corners(box):
     y2 = cy + h / 2
     return torch.stack([x1, y1, x2, y2], dim=-1)
 
-
-import gc
 from collections import OrderedDict
-
 
 def safe_repr(obj):
     try:
