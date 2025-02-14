@@ -6,14 +6,13 @@ import torch
 import transformers
 from peft import LoraConfig, PeftModel
 from PIL import Image
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, BitsAndBytesConfig
 
 from inference.core.entities.responses.inference import LMMInferenceResponse
 from inference.core.env import DEVICE, MODEL_CACHE_DIR
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
-from transformers import BitsAndBytesConfig
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -21,6 +20,7 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_quant_type="nf4",
     bnb_4bit_quant_storage=torch.bfloat16,
 )
+
 
 class Qwen25VL(TransformerModel):
     generation_includes_input = True
