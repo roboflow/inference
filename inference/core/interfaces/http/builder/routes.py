@@ -166,7 +166,11 @@ async def create_or_overwrite_workflow(
     # if the body's id isn't {workflow_id} then we're renaming
     # delete the old one & update the id in the json to the new one
     if request_body.get("id") and request_body.get("id") != workflow_id:
-        old_file_path = workflow_local_dir / f"{request_body['id']}.json"
+        old_id = request_body['id']
+        if not re.match(r"^[\w\-]+$", old_id):
+            return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
+
+        old_file_path = workflow_local_dir / f"{old_id}.json"
         if old_file_path.exists():
             try:
                 old_file_path.unlink()
