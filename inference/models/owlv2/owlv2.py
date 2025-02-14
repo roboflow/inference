@@ -70,6 +70,27 @@ def to_corners(box):
 
 from collections import OrderedDict
 
+import gc
+import pprint
+
+import psutil
+
+def log_memory_usage(stage: str, logging_adapter):
+    mem_usage_gb = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3)
+    logging_adapter.info(f"{stage}: memory usage: {mem_usage_gb:.2f} GB")
+
+
+def safe_repr(obj):
+    try:
+        return repr(obj)
+    except Exception as e:
+        return f"<Error: {e}>"
+
+def debug_memory():
+    all_objects = gc.get_objects()
+    for obj in all_objects:
+        if hasattr(obj, '__class__'):
+            print(type(obj), safe_repr(obj)[:100])
 
 class LimitedSizeDict(OrderedDict):
     def __init__(self, *args, **kwds):
@@ -247,16 +268,19 @@ def hash_function(value: Any) -> Hash:
     # wrapper so we can change the hashing function in the future
     return hashlib.sha1(value).hexdigest()
 
-
 class LazyImageRetrievalWrapper:
     def __init__(self, image: Any):
-        self.image = image
-
+        self.image = image  # Prefer passing a file path or URL to avoid large in‑memory arrays.
         self._image_as_numpy = None
         self._image_hash = None
     
     def unload_numpy_image(self):
         self._image_as_numpy = None
+
+    def unload_numpy_image(self):
+        self._image_as_numpy = None
+        if isinstance(self.image, np.ndarray):
+            self.image = None  # Clear large array reference.
 
     @property
     def image_as_numpy(self) -> np.ndarray:
@@ -268,25 +292,15 @@ class LazyImageRetrievalWrapper:
     def image_hash(self) -> Hash:
         if self._image_hash is None:
             image_payload, image_type = extract_image_payload_and_type(self.image)
-            if image_type is ImageType.URL:
-                # we can use the url as the hash
-                self._image_hash = image_payload
-            elif image_type is ImageType.FILE:
+            if image_type in (ImageType.URL, ImageType.FILE):
                 self._image_hash = image_payload
             elif image_type is ImageType.BASE64:
-                # this is presumably the compressed image bytes
-                # hashing this directly is faster than loading the raw image through numpy
-                # we have to make sure we're passing a buffer, so we encode to bytes if necessary
-                # see load_image_base64 in image_utils.py for more details about the base64 encoding
-                if type(image_payload) is str:
+                if isinstance(image_payload, str):
                     image_payload = image_payload.encode("utf-8")
                 self._image_hash = hash_function(image_payload)
             else:
-                # not clear that there is something safe or faster to do than just loading the numpy array
-                # and hashing that
                 self._image_hash = hash_function(self.image_as_numpy.tobytes())
         return self._image_hash
-
 
 def hash_wrapped_training_data(wrapped_training_data: List[Dict[str, Any]]) -> Hash:
     just_hash_relevant_data = [
@@ -377,17 +391,16 @@ class OwlV2(RoboflowInferenceModel):
         else:
             return None
 
-    def compute_image_size(
-        self, image: Union[np.ndarray, LazyImageRetrievalWrapper]
-    ) -> Tuple[int, int]:
-        # we build this in hopes of avoiding having to load the image solely for the purpose of getting its size
+    def compute_image_size(self, image: Union[np.ndarray, LazyImageRetrievalWrapper]) -> Tuple[int, int]:
         if isinstance(image, LazyImageRetrievalWrapper):
             if (image_size := self.image_size_cache.get(image.image_hash)) is None:
-                image_size = image.image_as_numpy.shape[:2][::-1]
+                np_img = image.image_as_numpy
+                image_size = np_img.shape[:2][::-1]
                 self.image_size_cache[image.image_hash] = image_size
+                image.unload_numpy_image()  # free the huge numpy array immediately
+            return image_size
         else:
-            image_size = image.shape[:2][::-1]
-        return image_size
+            return image.shape[:2][::-1]
 
     @torch.no_grad()
     def embed_image(self, image: Union[np.ndarray, LazyImageRetrievalWrapper]) -> Hash:
@@ -396,28 +409,15 @@ class OwlV2(RoboflowInferenceModel):
         else:
             image_hash = hash_function(image.tobytes())
 
-        if (image_embeds := self.get_image_embeds(image_hash)) is not None:
+        if (cached := self.get_image_embeds(image_hash)) is not None:
             return image_hash
 
-        np_image = (
-            image.image_as_numpy
-            if isinstance(image, LazyImageRetrievalWrapper)
-            else image
-        )
+        # Load and process image.
+        np_image = image.image_as_numpy if isinstance(image, LazyImageRetrievalWrapper) else image
+        pixel_values = preprocess_image(np_image, self.image_size, self.image_mean, self.image_std)
 
-        pixel_values = preprocess_image(
-            np_image, self.image_size, self.image_mean, self.image_std
-        )
-
-        # torch 2.4 lets you use "cuda:0" as device_type
-        # but this crashes in 2.3
-        # so we parse DEVICE as a string to make it work in both 2.3 and 2.4
-        # as we don't know a priori our torch version
         device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
-        # we disable autocast on CPU for stability, although it's possible using bfloat16 would work
-        with torch.autocast(
-            device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
-        ):
+        with torch.autocast(device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"):
             image_embeds, _ = self.model.image_embedder(pixel_values=pixel_values)
             batch_size, h, w, dim = image_embeds.shape
             image_features = image_embeds.reshape(batch_size, h * w, dim)
@@ -425,32 +425,26 @@ class OwlV2(RoboflowInferenceModel):
             boxes = self.model.box_predictor(image_features, feature_map=image_embeds)
 
         image_class_embeds = self.model.class_head.dense0(image_features)
-        image_class_embeds /= (
-            torch.linalg.norm(image_class_embeds, ord=2, dim=-1, keepdim=True) + 1e-6
-        )
+        image_class_embeds /= (torch.linalg.norm(image_class_embeds, ord=2, dim=-1, keepdim=True) + 1e-6)
         logit_shift = self.model.class_head.logit_shift(image_features)
-        logit_scale = (
-            self.model.class_head.elu(self.model.class_head.logit_scale(image_features))
-            + 1
-        )
+        logit_scale = self.model.class_head.elu(self.model.class_head.logit_scale(image_features)) + 1
         objectness = objectness.sigmoid()
 
-        objectness, boxes, image_class_embeds, logit_shift, logit_scale = (
-            filter_tensors_by_objectness(
-                objectness, boxes, image_class_embeds, logit_shift, logit_scale
-            )
+        objectness, boxes, image_class_embeds, logit_shift, logit_scale = filter_tensors_by_objectness(
+            objectness, boxes, image_class_embeds, logit_shift, logit_scale
         )
 
         self.image_embed_cache[image_hash] = (
-            objectness,
-            boxes,
-            image_class_embeds,
-            logit_shift,
-            logit_scale,
+            objectness, boxes, image_class_embeds, logit_shift, logit_scale
         )
 
-        return image_hash
+        # Explicitly delete temporary tensors to free memory.
+        del pixel_values, np_image, image_features, image_embeds
 
+        if isinstance(image, LazyImageRetrievalWrapper):
+            image.unload_numpy_image()  # Clears both _image_as_numpy and image if needed.
+
+        return image_hash
     def get_query_embedding(
         self, query_spec: QuerySpecType, iou_threshold: float
     ) -> torch.Tensor:
@@ -579,6 +573,7 @@ class OwlV2(RoboflowInferenceModel):
         results = []
         image_sizes = []
         for image_wrapper in images:
+
             # happy path here is that both image size and image embeddings are cached
             # in which case we avoid loading the image at all
             image_size = self.compute_image_size(image_wrapper)
@@ -589,6 +584,7 @@ class OwlV2(RoboflowInferenceModel):
                 image_hash, class_embeddings_dict, confidence, iou_threshold
             )
             results.append(result)
+
         return self.make_response(
             results, image_sizes, sorted(list(class_embeddings_dict.keys()))
         )
@@ -599,6 +595,9 @@ class OwlV2(RoboflowInferenceModel):
         iou_threshold: float,
         return_image_embeds: bool = False,
     ) -> Dict[str, PosNegDictType]:
+        from adapters import logging_adapter
+        import time
+
         wrapped_training_data = [
             {
                 "image": LazyImageRetrievalWrapper(train_image["image"]),
@@ -613,15 +612,47 @@ class OwlV2(RoboflowInferenceModel):
                 wrapped_training_data_hash
             )
         ) is not None:
+            logging_adapter.info("Using cached embeddings")
             return class_embeddings_dict
 
         class_embeddings_dict = defaultdict(lambda: {"positive": [], "negative": []})
-
         bool_to_literal = {True: "positive", False: "negative"}
         return_image_embeds_dict = dict()
-        for train_image in wrapped_training_data:
-            # grab and embed image
+        
+        total_images = len(wrapped_training_data)
+        start_time = time.time()
+        last_log_time = start_time
+        last_processed_images = 0
+        processed_images = 0
+
+        for idx, train_image in enumerate(wrapped_training_data):
+            # Log memory before embedding
+            mem_before = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3)
+            logging_adapter.info(
+                f"[make_class_embeddings_dict] Processing image {idx+1}/{total_images}: Memory before embedding: {mem_before:.2f} GB"
+            )
+            
             image_hash = self.embed_image(train_image["image"])
+            
+            # Log memory after embedding
+            mem_after = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3)
+            logging_adapter.info(
+                f"[make_class_embeddings_dict] Image {idx+1} embedded: Memory after embedding: {mem_after:.2f} GB (Delta: {mem_after - mem_before:.2f} GB)"
+            )
+            
+            processed_images += 1
+            current_time = time.time()
+            if current_time - last_log_time > 5 or processed_images % 100 == 0:
+                elapsed_interval = current_time - last_log_time
+                images_in_interval = processed_images - last_processed_images
+                interval_fps = images_in_interval / elapsed_interval if elapsed_interval > 0 else 0
+                progress = (processed_images / total_images) * 100
+                logging_adapter.info(
+                    f"Processing images: {progress:.1f}% complete ({processed_images}/{total_images}), {interval_fps:.2f} images/s"
+                )
+                last_log_time = current_time
+                last_processed_images = processed_images
+
             if return_image_embeds:
                 if (image_embeds := self.get_image_embeds(image_hash)) is None:
                     raise KeyError("We didn't embed the image first!")
@@ -629,7 +660,12 @@ class OwlV2(RoboflowInferenceModel):
                     t.to("cpu") for t in image_embeds
                 )
 
-            # grab and normalize box prompts for this image
+            # Log memory before computing query embeddings
+            mem_before_query = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3)
+            logging_adapter.info(
+                f"[make_class_embeddings_dict] Before query embedding for image {idx+1}: {mem_before_query:.2f} GB"
+            )
+
             image_size = self.compute_image_size(train_image["image"])
             boxes = train_image["boxes"]
             coords = [[box["x"], box["y"], box["w"], box["h"]] for box in boxes]
@@ -637,24 +673,30 @@ class OwlV2(RoboflowInferenceModel):
             classes = [box["cls"] for box in boxes]
             is_positive = [not box["negative"] for box in boxes]
 
-            # compute the embeddings for the box prompts
             query_spec = {image_hash: coords}
-            # NOTE: because we just computed the embedding for this image, this should never result in a KeyError
             embeddings = self.get_query_embedding(query_spec, iou_threshold)
-
             if embeddings is None:
                 continue
 
-            # add the embeddings to their appropriate class and positive/negative list
-            for embedding, class_name, is_positive in zip(
-                embeddings, classes, is_positive
-            ):
-                class_embeddings_dict[class_name][bool_to_literal[is_positive]].append(
-                    embedding
-                )
+            for embedding, class_name, is_pos in zip(embeddings, classes, is_positive):
+                class_embeddings_dict[class_name][bool_to_literal[is_pos]].append(embedding)
+            
+            # Log memory after processing query embeddings
+            mem_after_query = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3)
+            logging_adapter.info(
+                f"[make_class_embeddings_dict] After query embedding for image {idx+1}: {mem_after_query:.2f} GB (Delta: {mem_after_query - mem_before_query:.2f} GB)"
+            )
+             
+            del train_image
+            gc.collect()
 
-        # convert the lists of embeddings to tensors
+        total_time = time.time() - start_time
+        avg_fps = processed_images / total_time
+        logging_adapter.info(
+            f"Finished processing {total_images} images in {total_time:.2f}s (average {avg_fps:.2f} images/s)"
+        )
 
+        # Convert lists of embeddings to tensors.
         class_embeddings_dict = {
             k: {
                 "positive": torch.stack(v["positive"]) if v["positive"] else None,
