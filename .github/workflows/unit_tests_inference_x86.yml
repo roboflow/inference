@@ -41,7 +41,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade setuptools
           pip install -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.sdk.http.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.http.txt
-          pip install torch>=2.0.1,<=2.4.0 torchvision>=0.15.0
+          pip install torch
       - name: 🧪 Unit Tests of Inference
         timeout-minutes: 30
         run: python -m pytest tests/inference/unit_tests
