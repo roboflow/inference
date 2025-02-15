@@ -262,13 +262,17 @@ class LoRAQwen25VL(LoRATransformerModel):
         )
 
     def predict(self, image_in: Image.Image, prompt=None, **kwargs):
-        split_prompt = prompt.split("<system_prompt>")
-        if len(split_prompt) == 1:
-            prompt = split_prompt[0]
+        if prompt is None:
+            prompt = ""
             system_prompt = self.default_system_prompt
         else:
-            prompt = split_prompt[0]
-            system_prompt = split_prompt[1]
+            split_prompt = prompt.split("<system_prompt>")
+            if len(split_prompt) == 1:
+                prompt = split_prompt[0]
+                system_prompt = self.default_system_prompt
+            else:
+                prompt = split_prompt[0]
+                system_prompt = split_prompt[1]
 
         conversation = [
             {
@@ -279,7 +283,7 @@ class LoRAQwen25VL(LoRATransformerModel):
                 "role": "user",
                 "content": [
                     {"type": "image", "image": image_in},
-                    {"type": "text", "text": prompt or ""},
+                    {"type": "text", "text": prompt},
                 ],
             },
         ]
