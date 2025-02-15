@@ -261,7 +261,7 @@ class LoRAQwen25VL(LoRATransformerModel):
             max_pixels=1280 * 28 * 28,
         )
 
-    def predict(self, image_in: Image.Image, prompt="", **kwargs):
+    def predict(self, image_in: Image.Image, prompt=None, **kwargs):
         split_prompt = prompt.split("<system_prompt>")
         if len(split_prompt) == 1:
             prompt = split_prompt[0]
@@ -279,7 +279,7 @@ class LoRAQwen25VL(LoRATransformerModel):
                 "role": "user",
                 "content": [
                     {"type": "image", "image": image_in},
-                    {"type": "text", "text": prompt},
+                    {"type": "text", "text": prompt or ""},
                 ],
             },
         ]
