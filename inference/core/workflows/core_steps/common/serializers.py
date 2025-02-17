@@ -28,6 +28,8 @@ from inference.core.workflows.execution_engine.constants import (
     PATH_DEVIATION_KEY_IN_INFERENCE_RESPONSE,
     PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
     POLYGON_KEY,
+    POLYGON_KEY_IN_INFERENCE_RESPONSE,
+    POLYGON_KEY_IN_SV_DETECTIONS,
     TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE,
     TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
     TRACKER_ID_KEY,
@@ -80,6 +82,10 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
         if TIME_IN_ZONE_KEY_IN_SV_DETECTIONS in data:
             detection_dict[TIME_IN_ZONE_KEY_IN_INFERENCE_RESPONSE] = data[
                 TIME_IN_ZONE_KEY_IN_SV_DETECTIONS
+            ]
+        if POLYGON_KEY_IN_SV_DETECTIONS in data:
+            detection_dict[POLYGON_KEY_IN_INFERENCE_RESPONSE] = data[
+                POLYGON_KEY_IN_SV_DETECTIONS
             ]
         if (
             BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS in data

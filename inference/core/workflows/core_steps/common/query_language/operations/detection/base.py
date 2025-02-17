@@ -26,6 +26,7 @@ from inference.core.workflows.execution_engine.constants import (
     IMAGE_DIMENSIONS_KEY,
     KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
+    POLYGON_KEY_IN_SV_DETECTIONS,
     PREDICTION_TYPE_KEY,
     TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
 )
@@ -53,6 +54,7 @@ DETECTION_PROPERTY_EXTRACTION = {
     DetectionsProperty.PATH_DEVIATION: lambda x: x[5].get(
         PATH_DEVIATION_KEY_IN_SV_DETECTIONS
     ),
+    DetectionsProperty.POLYGON: lambda x: x[5].get(POLYGON_KEY_IN_SV_DETECTIONS),
     DetectionsProperty.TIME_IN_ZONE: lambda x: x[5].get(
         TIME_IN_ZONE_KEY_IN_SV_DETECTIONS
     ),
