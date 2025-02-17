@@ -65,6 +65,7 @@ from inference.core.models.utils.onnx import has_trt
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
+    get_roboflow_instant_model_data,
     get_roboflow_model_data,
 )
 from inference.core.utils.image_utils import load_image
@@ -264,33 +265,62 @@ class RoboflowInferenceModel(Model):
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
-        api_data = get_roboflow_model_data(
-            api_key=self.api_key,
-            model_id=self.endpoint,
-            endpoint_type=ModelEndpointType.ORT,
-            device_id=self.device_id,
-        )
-        if "ort" not in api_data.keys():
-            raise ModelArtefactError(
-                "Could not find `ort` key in roboflow API model description response."
+        if self.version_id is not None:
+            api_data = get_roboflow_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.ORT,
+                device_id=self.device_id,
             )
-        api_data = api_data["ort"]
-        if "classes" in api_data:
-            save_text_lines_in_cache(
-                content=api_data["classes"],
-                file="class_names.txt",
+            if "ort" not in api_data.keys():
+                raise ModelArtefactError(
+                    "Could not find `ort` key in roboflow API model description response."
+                )
+            api_data = api_data["ort"]
+            if "classes" in api_data:
+                save_text_lines_in_cache(
+                    content=api_data["classes"],
+                    file="class_names.txt",
+                    model_id=self.endpoint,
+                )
+            if "model" not in api_data:
+                raise ModelArtefactError(
+                    "Could not find `model` key in roboflow API model description response."
+                )
+            if "environment" not in api_data:
+                raise ModelArtefactError(
+                    "Could not find `environment` key in roboflow API model description response."
+                )
+            environment = get_from_url(api_data["environment"])
+            model_weights_response = get_from_url(
+                api_data["model"], json_response=False
+            )
+        else:
+            api_data = get_roboflow_instant_model_data(
+                api_key=self.api_key,
                 model_id=self.endpoint,
             )
-        if "model" not in api_data:
-            raise ModelArtefactError(
-                "Could not find `model` key in roboflow API model description response."
+            if (
+                "modelFiles" not in api_data
+                or "ort" not in api_data["modelFiles"]
+                or "model" not in api_data["modelFiles"]["ort"]
+            ):
+                raise ModelArtefactError(
+                    "Could not find `modelFiles` key or `modelFiles`.`ort` or `modelFiles`.`ort`.`model` key in roboflow API model description response."
+                )
+            model_weights_response = get_from_url(
+                api_data["modelFiles"]["ort"]["model"], json_response=False
             )
-        if "environment" not in api_data:
-            raise ModelArtefactError(
-                "Could not find `environment` key in roboflow API model description response."
-            )
-        environment = get_from_url(api_data["environment"])
-        model_weights_response = get_from_url(api_data["model"], json_response=False)
+            if "classes" in api_data["modelFiles"]["ort"]:
+                save_text_lines_in_cache(
+                    content=api_data["modelFiles"]["ort"]["classes"],
+                    file="class_names.txt",
+                    model_id=self.endpoint,
+                )
+            environment = {}
+            if "environment" in api_data["modelFiles"]["ort"]:
+                environment = get_from_url(api_data["modelFiles"]["ort"]["environment"])
+
         save_bytes_in_cache(
             content=model_weights_response.content,
             file=self.weights_file,
