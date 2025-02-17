@@ -264,7 +264,6 @@ def test_detection(test, res_function, clean_loaded_models_fixture):
                 data,
                 test["expected_response"][image_type],
                 prediction_type=test["type"],
-                multilabel=test.get("multi_label", False),
             )
         print(
             "\u2713"
