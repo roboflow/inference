@@ -38,3 +38,4 @@ ENV STREAM_MANAGER_HOST=127.0.0.1
 ENV STREAM_MANAGER_PORT=7070
 
 ENTRYPOINT ["python", "-m", "inference.enterprise.stream_management.api.app"]
+
