@@ -27,51 +27,51 @@ jobs:
       - name: �🔨 Build and Push Test Docker - GPU
         run: |
           docker build -t roboflow/roboflow-inference-server-gpu:test -f docker/dockerfiles/Dockerfile.onnx.gpu .
-#      - name: 🔋 Start Test Docker - GPU
-#        run: |
-#          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
-#      - name: 🧪 Regression Tests - GPU
-#        id: regression_tests
-#        run: |
-#          MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
-#      - name: 🧹 Cleanup Test Docker - GPU
-#        run: make stop_test_docker
-#      - name: 🔋 Start Test Docker - GPU
-#        run: |
-#          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
-#      - name: 🧪 Regression Paligemma - GPU
-#        id: paligemma_tests
-#        run: |
-#          PORT=9101 melee_API_KEY=${{ secrets.MELEE_API_KEY }} python3 -m pytest tests/inference/integration_tests/test_paligemma.py
-#      - name: 🧹 Cleanup Test Docker - GPU
-#        run: make stop_test_docker
-#      - name: 🔋 Start Test Docker - GPU
-#        run: |
-#          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
-#      - name: 🧪 Regression Florence - GPU
-#        id: florence_tests
-#        run: |
-#          PORT=9101 melee_API_KEY=${{ secrets.MELEE_API_KEY }} python3 -m pytest tests/inference/integration_tests/test_florence.py
-#      - name: 🧹 Cleanup Test Docker - GPU
-#        run: make stop_test_docker
-#      - name: 🔋 Start Test Docker - SAM2
-#        run: |
-#          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
-#      - name: 🧪 Regression Tests - SAM2
-#        id: sam2_tests
-#        run: |
-#           PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_SAM2_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam2.py
-#      - name: 🧹 Cleanup Test Docker - SAM2
-#        run: make stop_test_docker
       - name: 🔋 Start Test Docker - GPU
         run: |
           PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
-      - name: 🧪 Regression Tests - Qwen2.5
-        id: qwen25_tests
+      - name: 🧪 Regression Tests - GPU
+        id: regression_tests
         run: |
-          PORT=9101 API_KEY=${{ secrets.QWEN_API_KEY }} SKIP_QWEN25_TESTS=False python3 -m pytest tests/inference/integration_tests/qwen_test.py
-      - name: 🧹 Cleanup Test Docker - Qwen2.5
+          MINIMUM_FPS=25 FUNCTIONAL=true PORT=9101 SKIP_LMM_TEST=True API_KEY=${{ secrets.API_KEY }} asl_instance_segmentation_API_KEY=${{ secrets.ASL_INSTANCE_SEGMENTATION_API_KEY }} asl_poly_instance_seg_API_KEY=${{ secrets.ASL_POLY_INSTANCE_SEG_API_KEY }} bccd_favz3_API_KEY=${{ secrets.BCCD_FAVZ3_API_KEY }} bccd_i4nym_API_KEY=${{ secrets.BCCD_I4NYM_API_KEY }} cats_and_dogs_smnpl_API_KEY=${{ secrets.CATS_AND_DOGS_SMNPL_API_KEY }} coins_xaz9i_API_KEY=${{ secrets.COINS_XAZ9I_API_KEY }} melee_API_KEY=${{ secrets.MELEE_API_KEY }} yolonas_test_API_KEY=${{ secrets.YOLONAS_TEST_API_KEY }} python3 -m pytest tests/inference/integration_tests/
+      - name: 🧹 Cleanup Test Docker - GPU
         run: make stop_test_docker
+      - name: 🔋 Start Test Docker - GPU
+        run: |
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+      - name: 🧪 Regression Paligemma - GPU
+        id: paligemma_tests
+        run: |
+          PORT=9101 melee_API_KEY=${{ secrets.MELEE_API_KEY }} python3 -m pytest tests/inference/integration_tests/test_paligemma.py
+      - name: 🧹 Cleanup Test Docker - GPU
+        run: make stop_test_docker
+      - name: 🔋 Start Test Docker - GPU
+        run: |
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+      - name: 🧪 Regression Florence - GPU
+        id: florence_tests
+        run: |
+          PORT=9101 melee_API_KEY=${{ secrets.MELEE_API_KEY }} python3 -m pytest tests/inference/integration_tests/test_florence.py
+      - name: 🧹 Cleanup Test Docker - GPU
+        run: make stop_test_docker
+      - name: 🔋 Start Test Docker - SAM2
+        run: |
+          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+      - name: 🧪 Regression Tests - SAM2
+        id: sam2_tests
+        run: |
+           PORT=9101 API_KEY=${{ secrets.API_KEY }} SKIP_SAM2_TESTS=False python3 -m pytest tests/inference/integration_tests/test_sam2.py
+      - name: 🧹 Cleanup Test Docker - SAM2
+        run: make stop_test_docker
+#      - name: 🔋 Start Test Docker - GPU
+#        run: |
+#          PORT=9101 INFERENCE_SERVER_REPO=roboflow-inference-server-gpu make start_test_docker_gpu
+#      - name: 🧪 Regression Tests - Qwen2.5
+#        id: qwen25_tests
+#        run: |
+#          PORT=9101 API_KEY=${{ secrets.QWEN_API_KEY }} SKIP_QWEN25_TESTS=False python3 -m pytest tests/inference/integration_tests/qwen_test.py
+#      - name: 🧹 Cleanup Test Docker - Qwen2.5
+#        run: make stop_test_docker
       - name: 🚨 Show server logs on error
         run: |
           docker logs inference-test
