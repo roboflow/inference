@@ -6,7 +6,7 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
-from inference.core.warnings import InferenceDeprecationWarning
+from inference.core.warnings import InferenceDeprecationWarning, ModelDependencyMissing
 
 load_dotenv(os.getcwd() + "/.env")
 
@@ -490,3 +490,10 @@ TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL = int(
 ROBOFLOW_API_REQUEST_TIMEOUT = os.getenv("ROBOFLOW_API_REQUEST_TIMEOUT")
 if ROBOFLOW_API_REQUEST_TIMEOUT:
     ROBOFLOW_API_REQUEST_TIMEOUT = int(ROBOFLOW_API_REQUEST_TIMEOUT)
+
+
+IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
+    os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
+)
+if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
+    warnings.simplefilter("ignore", ModelDependencyMissing)

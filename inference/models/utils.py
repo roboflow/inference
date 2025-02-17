@@ -1,3 +1,5 @@
+import warnings
+
 from inference.core.env import API_KEY, API_KEY_ENV_NAMES
 from inference.core.exceptions import MissingApiKeyError
 from inference.core.models.base import Model
@@ -9,6 +11,7 @@ from inference.core.models.stubs import (
 )
 from inference.core.registries.roboflow import get_model_type
 from inference.core.utils.function import deprecated
+from inference.core.warnings import ModelDependencyMissing
 from inference.models import (
     YOLACT,
     ResNetClassification,
@@ -258,7 +261,11 @@ try:
     }
     ROBOFLOW_MODEL_TYPES.update(paligemma_models)
 except:
-    pass
+    warnings.warn(
+        f"Your `inference` configuration does not support PaliGemma model. "
+        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
 
 try:
     from inference.models import Florence2, LoRAFlorence2
@@ -297,35 +304,58 @@ try:
     }
     ROBOFLOW_MODEL_TYPES.update(florence2_models)
 except:
-    pass
+    warnings.warn(
+        f"Your `inference` configuration does not support Florence2 model. "
+        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
 
-from inference.models import LoRAQwen25VL, Qwen25VL
+try:
+    from inference.models import LoRAQwen25VL, Qwen25VL
 
-qwen25vl_models = {
-    ("text-image-pairs", "qwen25-vl-7b"): Qwen25VL,
-    ("text-image-pairs", "qwen25-vl-7b-peft"): LoRAQwen25VL,
-}
-ROBOFLOW_MODEL_TYPES.update(qwen25vl_models)
+    qwen25vl_models = {
+        ("text-image-pairs", "qwen25-vl-7b"): Qwen25VL,
+        ("text-image-pairs", "qwen25-vl-7b-peft"): LoRAQwen25VL,
+    }
+    ROBOFLOW_MODEL_TYPES.update(qwen25vl_models)
+except:
+    warnings.warn(
+        f"Your `inference` configuration does not support Qwen2.5-VL model. "
+        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
 
 try:
     from inference.models import SegmentAnything
 
     ROBOFLOW_MODEL_TYPES[("embed", "sam")] = SegmentAnything
 except:
-    pass
+    warnings.warn(
+        f"Your `inference` configuration does not support SAM model. "
+        f"Use pip install 'inference[sam]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
 try:
     from inference.models import SegmentAnything2
 
     ROBOFLOW_MODEL_TYPES[("embed", "sam2")] = SegmentAnything2
 except:
-    pass
+    warnings.warn(
+        f"Your `inference` configuration does not support SAM model. "
+        f"Use pip install 'inference[sam]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
 
 try:
     from inference.models import Clip
 
     ROBOFLOW_MODEL_TYPES[("embed", "clip")] = Clip
 except:
-    pass
+    warnings.warn(
+        f"Your `inference` configuration does not support SAM model. "
+        f"Use pip install 'inference[clip]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
 
 try:
     from inference.models.owlv2.owlv2 import OwlV2, SerializedOwlV2
@@ -333,14 +363,22 @@ try:
     ROBOFLOW_MODEL_TYPES[("object-detection", "owlv2")] = OwlV2
     ROBOFLOW_MODEL_TYPES[("object-detection", "owlv2-finetuned")] = SerializedOwlV2
 except:
-    pass
+    warnings.warn(
+        f"Your `inference` configuration does not support OWLv2 model. "
+        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
 
 try:
     from inference.models import Gaze
 
     ROBOFLOW_MODEL_TYPES[("gaze", "l2cs")] = Gaze
 except:
-    pass
+    warnings.warn(
+        f"Your `inference` configuration does not support Gaze Detection model. "
+        f"Use pip install 'inference[gaze]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
 
 try:
     from inference.models import DocTR
@@ -354,21 +392,33 @@ try:
 
     ROBOFLOW_MODEL_TYPES[("ocr", "trocr")] = TrOCR
 except:
-    pass
+    warnings.warn(
+        f"Your `inference` configuration does not support TrOCR model. "
+        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
 
 try:
     from inference.models import GroundingDINO
 
     ROBOFLOW_MODEL_TYPES[("object-detection", "grounding-dino")] = GroundingDINO
 except:
-    pass
+    warnings.warn(
+        f"Your `inference` configuration does not support GroundingDINO model. "
+        f"Use pip install 'inference[grounding-dino]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
 
 try:
     from inference.models import YOLOWorld
 
     ROBOFLOW_MODEL_TYPES[("object-detection", "yolo-world")] = YOLOWorld
 except:
-    pass
+    warnings.warn(
+        f"Your `inference` configuration does not support YoloWorld model. "
+        f"Use pip install 'inference[yolo-world]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
 
 
 def get_model(model_id, api_key=API_KEY, **kwargs) -> Model:

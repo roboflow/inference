@@ -62,7 +62,10 @@ try:
 except:
     pass
 
-from inference.models.qwen25vl import LoRAQwen25VL, Qwen25VL
+try:
+    from inference.models.qwen25vl import LoRAQwen25VL, Qwen25VL
+except:
+    pass
 
 try:
     from inference.models.trocr import TrOCR
