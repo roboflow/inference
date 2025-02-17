@@ -153,6 +153,7 @@ DEVICE_ID = os.getenv("DEVICE_ID", None)
 USE_PYTORCH_FOR_PREPROCESSING = str2bool(
     os.getenv("USE_PYTORCH_FOR_PREPROCESSING", False)
 )
+RUN_ONNX_FP16 = str2bool(os.getenv("RUN_ONNX_FP16", False))
 
 # Flag to disable inference cache, default is False
 DISABLE_INFERENCE_CACHE = str2bool(os.getenv("DISABLE_INFERENCE_CACHE", False))

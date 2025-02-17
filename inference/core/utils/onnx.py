@@ -2,6 +2,12 @@ from typing import TYPE_CHECKING, List, Union
 
 import numpy as np
 import onnxruntime as ort
+import time
+
+try:
+    import torch
+except ImportError:
+    torch = None
 
 if TYPE_CHECKING:
     import torch
@@ -67,8 +73,9 @@ def run_session_via_iobinding(
         )
     else:
         # we assume that the input data is a torch tensor
-        # but don't explicitly check for torch here so we don't require a torch import
-        input_data = input_data.contiguous()
+        assert torch is not None, "Torch is not installed but received torch.Tensor"
+        torch_dtype = torch.float16 if dtype == np.float16 else torch.float32
+        input_data = input_data.contiguous().to(dtype=torch_dtype)
         binding.bind_input(
             name=input_name,
             device_type=input_data.device.type,
@@ -80,7 +87,10 @@ def run_session_via_iobinding(
             buffer_ptr=input_data.data_ptr(),
         )
 
+    t0 = time.time()
     session.run_with_iobinding(binding)
+    t1 = time.time()
+    print(f"Model latency: {t1 - t0} seconds")
 
     # convert the output buffers to float32 as we may run mixed precision inference in the future
     predictions = [prediction.astype(np.float32) for prediction in predictions]

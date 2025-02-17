@@ -46,6 +46,7 @@ from inference.core.env import (
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
     USE_PYTORCH_FOR_PREPROCESSING,
+    RUN_ONNX_FP16,
 )
 from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
 from inference.core.logger import logger
@@ -663,6 +664,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         """
         input_elements = len(image) if isinstance(image, list) else 1
         max_batch_size = MAX_BATCH_SIZE if self.batching_enabled else self.batch_size
+        print(max_batch_size)
         if (input_elements == 1) or (max_batch_size == float("inf")):
             return super().infer(image, **kwargs)
         logger.debug(
@@ -739,18 +741,42 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
             providers = self.onnxruntime_execution_providers
 
+            weights_file = self.weights_file
+
+            if RUN_ONNX_FP16:
+                try:
+                    # convert to fp16
+                    fp16_weights_file = self.weights_file.replace(".onnx", "_fp16.onnx")
+                    model_name = self.cache_file(self.weights_file)
+                    import onnx
+                    loaded_model = onnx.load(model_name)
+                    from onnxconverter_common.float16 import convert_float_to_float16
+                    loaded_fp16_model = convert_float_to_float16(loaded_model, keep_io_types=True)
+                    onnx.save(loaded_fp16_model, self.cache_file(fp16_weights_file))
+                    weights_file = fp16_weights_file
+                    print(f"Converted model to fp16: {self.cache_file(fp16_weights_file)}")
+                except Exception as e:
+                    logger.error(f"Unable to convert model to fp16: {e}")
+
             if not self.load_weights:
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
             try:
                 session_options = onnxruntime.SessionOptions()
                 session_options.log_severity_level = 3
                 # TensorRT does better graph optimization for its EP than onnx
-                if has_trt(providers):
-                    session_options.graph_optimization_level = (
-                        onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
-                    )
+                # if has_trt(providers):
+                #     session_options.graph_optimization_level = (
+                #         onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
+                #     )
+                modified_providers = []
+                for provider in providers:
+                    if provider == "CUDAExecutionProvider":
+                        modified_providers.append(("CUDAExecutionProvider", {"cudnn_conv_use_max_workspace": '1'}))
+                    # else:
+                #     #     modified_providers.append(provider)
                 self.onnx_session = onnxruntime.InferenceSession(
-                    self.cache_file(self.weights_file),
+                    self.cache_file(weights_file),
+                    # providers=modified_providers
                     providers=providers,
                     sess_options=session_options,
                 )
