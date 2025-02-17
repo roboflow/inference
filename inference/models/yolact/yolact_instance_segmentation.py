@@ -4,10 +4,14 @@ from typing import Any, List, Tuple
 import cv2
 import numpy as np
 
-try:
-    import torch
-except ImportError:
-    torch = None
+from inference.core.env import USE_PYTORCH_FOR_PREPROCESSING
+from inference.core.logger import logger
+
+if USE_PYTORCH_FOR_PREPROCESSING:
+    try:
+        import torch
+    except ImportError:
+        logger.error("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -100,29 +104,34 @@ class YOLACT(OnnxRoboflowInferenceModel):
         if isinstance(image, list):
             imgs_with_dims = [self.preproc_image(i) for i in image]
             imgs, img_dims = zip(*imgs_with_dims)
-            assert (
-                isinstance(imgs[0], np.ndarray) or torch is not None
-            ), "Received a list of images as torch tensors but torch is not installed"
-            img_in = (
-                np.concatenate(imgs, axis=0)
-                if isinstance(imgs[0], np.ndarray)
-                else torch.cat(imgs, dim=0)
-            )
-            unwrap = False
+            if isinstance(imgs[0], np.ndarray):
+                img_in = np.concatenate(imgs, axis=0)
+            elif "torch" in dir():
+                img_in = torch.cat(imgs, dim=0)
+            else:
+                raise ValueError(
+                    f"Received a list of images of unknown type, {type(imgs[0])}; "
+                    "This is most likely a bug. Contact Roboflow team through github issues "
+                    "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+                )
         else:
             img_in, img_dims = self.preproc_image(image)
             img_dims = [img_dims]
-            unwrap = True
 
         # IN BGR order (for some reason)
         mean = (103.94, 116.78, 123.68)
         std = (57.38, 57.12, 58.40)
 
-        img_in = (
-            img_in.astype(np.float32)
-            if isinstance(img_in, np.ndarray)
-            else img_in.float()
-        )
+        if isinstance(img_in, np.ndarray):
+            img_in = img_in.astype(np.float32)
+        elif "torch" in dir():
+            img_in = img_in.float()
+        else:
+            raise ValueError(
+                f"Received an image of unknown type, {type(img_in)}; "
+                "This is most likely a bug. Contact Roboflow team through github issues "
+                "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+            )
 
         # Our channels are RGB, so apply mean and std accordingly
         img_in[:, 0, :, :] = (img_in[:, 0, :, :] - mean[2]) / std[2]

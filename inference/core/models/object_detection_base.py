@@ -2,18 +2,20 @@ from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 
-try:
-    import torch
-except ImportError:
-    torch = None
+from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE, USE_PYTORCH_FOR_PREPROCESSING
+from inference.core.logger import logger
+
+if USE_PYTORCH_FOR_PREPROCESSING:
+    try:
+        import torch
+    except ImportError:
+        logger.error("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE
-from inference.core.logger import logger
 from inference.core.models.defaults import (
     DEFAULT_CLASS_AGNOSTIC_NMS,
     DEFAULT_CONFIDENCE,
@@ -264,10 +266,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                     ),
                     "constant",
                 )
-            else:
-                assert (
-                    torch is not None
-                ), "Received a non-numpy image but torch is not installed"
+            elif "torch" in dir():
                 img_in = torch.nn.functional.pad(
                     img_in,
                     (
@@ -283,6 +282,13 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                     mode="constant",
                     value=0,
                 )
+            else:
+                raise ValueError(
+                    f"Received an image of unknown type, {type(img_in)}; "
+                    "This is most likely a bug. Contact Roboflow team through github issues "
+                    "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+                )
+
 
         return img_in, PreprocessReturnMetadata(
             {
