@@ -265,6 +265,10 @@ MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
 # Model ID, default is None
 MODEL_ID = os.getenv("MODEL_ID")
 
+# Enable the builder, default is False
+ENABLE_BUILDER = str2bool(os.getenv("ENABLE_BUILDER", False))
+BUILDER_ORIGIN = os.getenv("BUILDER_ORIGIN", "https://app.roboflow.com")
+
 # Enable jupyter notebook server route, default is False
 NOTEBOOK_ENABLED = str2bool(os.getenv("NOTEBOOK_ENABLED", False))
 
