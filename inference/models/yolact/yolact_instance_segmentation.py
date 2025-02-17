@@ -1,6 +1,6 @@
+import warnings
 from time import perf_counter
 from typing import Any, List, Tuple
-import warnings
 
 import cv2
 import numpy as np
@@ -11,7 +11,9 @@ if USE_PYTORCH_FOR_PREPROCESSING:
     try:
         import torch
     except ImportError:
-        warnings.warn("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
+        warnings.warn(
+            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
+        )
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,

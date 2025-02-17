@@ -1,6 +1,6 @@
+import warnings
 from enum import Enum
 from typing import Dict, Tuple
-import warnings
 
 import cv2
 import numpy as np
@@ -17,7 +17,9 @@ if USE_PYTORCH_FOR_PREPROCESSING:
     try:
         import torch
     except ImportError:
-        warnings.warn("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
+        warnings.warn(
+            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
+        )
 
 
 from inference.core.exceptions import PreProcessingError

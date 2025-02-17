@@ -1,16 +1,22 @@
-from typing import Any, List, Optional, Tuple, Union
 import warnings
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 
-from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE, USE_PYTORCH_FOR_PREPROCESSING
+from inference.core.env import (
+    FIX_BATCH_SIZE,
+    MAX_BATCH_SIZE,
+    USE_PYTORCH_FOR_PREPROCESSING,
+)
 from inference.core.logger import logger
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     try:
         import torch
     except ImportError:
-        warnings.warn("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
+        warnings.warn(
+            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
+        )
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -289,7 +295,6 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                     "This is most likely a bug. Contact Roboflow team through github issues "
                     "(https://github.com/roboflow/inference/issues) providing full context of the problem"
                 )
-
 
         return img_in, PreprocessReturnMetadata(
             {

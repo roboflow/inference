@@ -1,7 +1,7 @@
+import warnings
 from io import BytesIO
 from time import perf_counter
 from typing import Any, List, Tuple, Union
-import warnings
 
 import numpy as np
 
@@ -11,7 +11,9 @@ if USE_PYTORCH_FOR_PREPROCESSING:
     try:
         import torch
     except ImportError:
-        warnings.warn("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
+        warnings.warn(
+            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
+        )
 
 from PIL import Image, ImageDraw, ImageFont
 

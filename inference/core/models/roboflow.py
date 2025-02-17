@@ -1,12 +1,12 @@
 import itertools
 import json
 import os
+import warnings
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
-import warnings
 
 import cv2
 import numpy as np
@@ -35,7 +35,9 @@ if USE_PYTORCH_FOR_PREPROCESSING:
     try:
         import torch
     except ImportError:
-        warnings.warn("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
+        warnings.warn(
+            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
+        )
 
 from inference.core.cache import cache
 from inference.core.cache.model_artifacts import (
@@ -71,7 +73,6 @@ from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
-
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
