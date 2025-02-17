@@ -19,7 +19,7 @@ def test_qwen25_inference(server_url: str, clean_loaded_models_fixture) -> None:
             "value": "https://media.roboflow.com/dog.jpeg",
         },
         "prompt": "Tell me something about this dog!<system_prompt>You are a helpful assistant.",
-        "model_id": "pallet-load-manifest-json-2/3",
+        "model_id": "pallet-load-manifest-json-2/13",
     }
 
     # when
