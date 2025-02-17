@@ -257,7 +257,13 @@ CLIENT.clip_compare(
       )
     ```
 
-### CogVLM
+### CogVLM - *DEPRECATED in `inference 0.38.0`*
+
+
+!!! warning "Method deprecated"
+
+    CogVLM was deprecated in `inference 0.38.0` due to changes we need to apply to mitigate 
+    [CVE-2024-11393](https://nvd.nist.gov/vuln/detail/CVE-2024-11393).
 
 ```python
 from inference_sdk import InferenceHTTPClient
