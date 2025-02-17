@@ -10,6 +10,8 @@ RUN apt update -y && apt install -y \
     git \
     libgdal-dev \
     cmake \
+    rustc \
+    cargo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
