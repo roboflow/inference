@@ -102,6 +102,7 @@ def process_image_directory_with_workflow_using_api(
     aggregation_format: OutputFileType = OutputFileType.JSONL,
     debug_mode: bool = False,
     processing_threads: Optional[int] = None,
+    max_failures: Optional[int] = None,
 ) -> ImagesDirectoryProcessingDetails:
     if api_key is None:
         api_key = _get_api_key_from_env()
@@ -135,6 +136,7 @@ def process_image_directory_with_workflow_using_api(
             api_url=api_url,
             processing_threads=processing_threads,
             debug_mode=debug_mode,
+            max_failures=max_failures,
         )
     finally:
         log_file.close()
@@ -175,12 +177,15 @@ def _process_images_within_directory_with_api(
     api_url: str,
     processing_threads: int,
     debug_mode: bool = False,
+    max_failures: Optional[int] = None,
 ) -> List[Tuple[str, str]]:
     progress_bar = Progress()
     processing_task = progress_bar.add_task(
         description="Processing images...",
         total=len(files_to_process),
     )
+    if max_failures is None:
+        max_failures = len(files_to_process) + 1
     failed_files = []
     on_success = partial(
         _on_success,
@@ -212,12 +217,28 @@ def _process_images_within_directory_with_api(
         log_file_lock=log_file_lock,
         debug_mode=debug_mode,
     )
+    failures = 0
+    succeeded_files = set()
     with progress_bar:
         with ThreadPool(processes=processing_threads) as pool:
-            _ = pool.map(
-                processing_fun,
-                files_to_process,
-            )
+            for file, is_success in pool.imap(processing_fun, files_to_process):
+                if not is_success:
+                    failures += 1
+                else:
+                    succeeded_files.add(file)
+                if failures >= max_failures:
+                    break
+    failed_files_lookup = {f[0] for f in failed_files}
+    aborted_files = [
+        f
+        for f in files_to_process
+        if f not in succeeded_files and f not in failed_files_lookup
+    ]
+    for file in aborted_files:
+        on_failure(
+            file,
+            "Aborted processing due to exceeding max failures of Workflows executions.",
+        )
     return failed_files
 
 
@@ -259,7 +280,7 @@ def _process_single_image_from_directory(
     on_failure: Callable[[ImagePath, str], None],
     log_file_lock: Optional[Lock] = None,
     debug_mode: bool = False,
-) -> None:
+) -> Tuple[str, bool]:
     try:
         result = _run_workflow_for_single_image_through_api(
             image_path=image_path,
@@ -281,11 +302,13 @@ def _process_single_image_from_directory(
             log_file=log_file, image_path=image_path, lock=log_file_lock
         )
         on_success(image_path, index_entry)
+        return image_path, True
     except Exception as error:
         error_summary = f"Error in processing {image_path}. Error type: {error.__class__.__name__} - {error}"
         if debug_mode:
             CLI_LOGGER.exception(error_summary)
         on_failure(image_path, error_summary)
+        return image_path, False
 
 
 @backoff.on_exception(

@@ -456,6 +456,14 @@ def process_images_directory(
             help="Flag enabling errors stack traces to be displayed (helpful for debugging)",
         ),
     ] = False,
+    max_failures: Annotated[
+        Optional[int],
+        typer.Option(
+            "--max-failures",
+            help="Maximum number of Workflow executions for directory images which will be tolerated before give up. "
+            "If not set - unlimited.",
+        ),
+    ] = None,
 ) -> None:
     try:
         ensure_target_directory_is_empty(
@@ -487,6 +495,7 @@ def process_images_directory(
             aggregation_format=aggregation_format,
             processing_threads=processing_threads,
             debug_mode=debug_mode,
+            max_failures=max_failures,
         )
     except KeyboardInterrupt:
         print("Command interrupted - results may not be fully consistent.")

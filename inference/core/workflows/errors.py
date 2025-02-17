@@ -5,8 +5,10 @@ from pydantic import BaseModel, Field
 
 class WorkflowBlockError(BaseModel):
     block_id: str
-    block_type: str
+    block_type: Optional[str] = None
+    block_details: Optional[str] = None
     property_name: Optional[str] = None
+    property_details: Optional[str] = None
 
 
 class WorkflowError(Exception):
@@ -76,12 +78,12 @@ class WorkflowDefinitionError(WorkflowCompilerError):
 class WorkflowSyntaxError(WorkflowDefinitionError):
     def __init__(
         self,
-        *args,
         blocks_errors: Optional[List[WorkflowBlockError]] = None,
+        *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self._blocks_errors = blocks_errors
+        self.blocks_errors = blocks_errors
 
 
 class DuplicatedNameError(WorkflowDefinitionError):
@@ -89,7 +91,14 @@ class DuplicatedNameError(WorkflowDefinitionError):
 
 
 class ExecutionGraphStructureError(WorkflowCompilerError):
-    pass
+    def __init__(
+        self,
+        *args,
+        blocks_errors: Optional[List[WorkflowBlockError]] = None,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.blocks_errors = blocks_errors
 
 
 class ReferenceTypeError(WorkflowCompilerError):
@@ -97,7 +106,14 @@ class ReferenceTypeError(WorkflowCompilerError):
 
 
 class InvalidReferenceTargetError(WorkflowCompilerError):
-    pass
+    def __init__(
+        self,
+        *args,
+        blocks_errors: Optional[List[WorkflowBlockError]] = None,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.blocks_errors = blocks_errors
 
 
 class UnknownManifestType(WorkflowCompilerError):
@@ -109,7 +125,15 @@ class BlockInitParameterNotProvidedError(WorkflowCompilerError):
 
 
 class StepInputDimensionalityError(WorkflowCompilerError):
-    pass
+
+    def __init__(
+        self,
+        *args,
+        blocks_errors: Optional[List[WorkflowBlockError]] = None,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.blocks_errors = blocks_errors
 
 
 class StepInputLineageError(WorkflowCompilerError):
@@ -139,14 +163,14 @@ class InvalidBlockBehaviourError(WorkflowExecutionEngineError):
 class StepExecutionError(WorkflowExecutionEngineError):
     def __init__(
         self,
-        *args,
         block_id: str,
         block_type: str,
+        *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self._block_id = block_id
-        self._block_type = block_type
+        self.block_id = block_id
+        self.block_type = block_type
 
 
 class ExecutionEngineRuntimeError(WorkflowExecutionEngineError):

@@ -35,7 +35,7 @@ def list_jobs(
         Optional[int],
         typer.Option(
             "--max-pages",
-            "-m",
+            "-p",
             help="Number of pagination pages with batch jobs to display",
         ),
     ] = 1,
@@ -193,6 +193,13 @@ def process_images_with_workflow(
             help="Flag enabling errors stack traces to be displayed (helpful for debugging)",
         ),
     ] = False,
+    notifications_url: Annotated[
+        Optional[str],
+        typer.Option(
+            "--notifications-url",
+            help="URL of the Webhook to be used for job state notifications.",
+        ),
+    ] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -211,6 +218,7 @@ def process_images_with_workflow(
             max_parallel_tasks=max_parallel_tasks,
             aggregation_format=aggregation_format,
             job_id=job_id,
+            notifications_url=notifications_url,
             api_key=api_key,
         )
         print(f"Triggered job with ID: {job_id}")
@@ -324,6 +332,13 @@ def process_videos_with_workflow(
             help="Flag enabling errors stack traces to be displayed (helpful for debugging)",
         ),
     ] = False,
+    notifications_url: Annotated[
+        Optional[str],
+        typer.Option(
+            "--notifications-url",
+            help="URL of the Webhook to be used for job state notifications.",
+        ),
+    ] = None,
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
@@ -343,6 +358,7 @@ def process_videos_with_workflow(
             aggregation_format=aggregation_format,
             max_video_fps=max_video_fps,
             job_id=job_id,
+            notifications_url=notifications_url,
             api_key=api_key,
         )
         print(f"Triggered job with ID: {job_id}")

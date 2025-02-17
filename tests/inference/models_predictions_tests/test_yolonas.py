@@ -4,12 +4,14 @@ import pytest
 from inference.core.entities.responses.inference import ObjectDetectionInferenceResponse
 from inference.core.env import MAX_BATCH_SIZE
 from inference.models import YOLONASObjectDetection
+from tests.common import assert_localized_predictions_match
 
 
 @pytest.mark.slow
 def test_yolonas_detection_single_image_inference(
     yolonas_det_model: str,
     beer_image: np.ndarray,
+    yolonas_det_reference_prediction: ObjectDetectionInferenceResponse,
 ) -> None:
     # given
     model = YOLONASObjectDetection(model_id=yolonas_det_model, api_key="DUMMY")
@@ -19,13 +21,14 @@ def test_yolonas_detection_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_yolonas_detection_prediction_matches_reference(prediction=result[0])
+    assert_localized_predictions_match(prediction_1=result[0], prediction_2=yolonas_det_reference_prediction)
 
 
 @pytest.mark.slow
 def test_yolonas_detection_batch_inference_when_batch_size_smaller_than_max_batch_size(
     yolonas_det_model: str,
     beer_image: np.ndarray,
+    yolonas_det_reference_prediction: ObjectDetectionInferenceResponse,
 ) -> None:
     # given
     batch_size = min(4, MAX_BATCH_SIZE)
@@ -37,7 +40,7 @@ def test_yolonas_detection_batch_inference_when_batch_size_smaller_than_max_batc
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolonas_detection_prediction_matches_reference(prediction=prediction)
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolonas_det_reference_prediction)
 
 
 @pytest.mark.slow
@@ -48,6 +51,7 @@ def test_yolonas_detection_batch_inference_when_batch_size_smaller_than_max_batc
 def test_yolonas_detection_batch_inference_when_batch_size_larger_than_max_batch_size(
     yolonas_det_model: str,
     beer_image: np.ndarray,
+    yolonas_det_reference_prediction: ObjectDetectionInferenceResponse,
 ) -> None:
     # given
     batch_size = MAX_BATCH_SIZE + 2
@@ -59,27 +63,4 @@ def test_yolonas_detection_batch_inference_when_batch_size_larger_than_max_batch
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolonas_detection_prediction_matches_reference(prediction=prediction)
-
-
-def assert_yolonas_detection_prediction_matches_reference(
-    prediction: ObjectDetectionInferenceResponse,
-) -> None:
-    assert (
-        len(prediction.predictions) == 6
-    ), "Example model is expected to predict 1 bbox, as this is the result obtained while test creation"
-    assert (
-        prediction.predictions[0].class_name == "foam"
-    ), "foam class was predicted by exported model"
-    assert (
-        abs(prediction.predictions[0].confidence - 0.929440) < 1e-3
-    ), "Confidence while test creation was 0.892430"
-    xywh = [
-        prediction.predictions[0].x,
-        prediction.predictions[0].y,
-        prediction.predictions[0].width,
-        prediction.predictions[0].height,
-    ]
-    assert np.allclose(
-        xywh, [593.0, 355.5, 84.0, 43.0], atol=0.6
-    ), "while test creation, box coordinates was [360.0, 215.5, 558.0, 411.0]"
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolonas_det_reference_prediction)

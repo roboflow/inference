@@ -23,10 +23,12 @@ extra:
       link: https://twitter.com/roboflow
   version:
     default: 1.0
+  exclude:
+    - node_modules/**
 
 extra_css:
-  - styles.css
   - styles/cookbooks.css
+  - styles.css
 
 nav:
   - Start:
@@ -72,7 +74,7 @@ nav:
       #         - FLIR: inputs/industrial/flir.md
       - Next Steps: start/next.md
       - More Resources: resources.md
-          
+
   - Models:
       - Run a Model: quickstart/run_a_model.md
       - From Local Weights: models/from_local_weights.md
@@ -92,7 +94,6 @@ nav:
       - 'Foundation Models':
           - foundation/about.md
           - CLIP (Classification, Embeddings): foundation/clip.md
-          - CogVLM (Multimodal Language Model): foundation/cogvlm.md
           - DocTR (OCR): foundation/doctr.md
           - Florence-2: foundation/florence2.md
           - TrOCR (OCR): foundation/trocr.md
@@ -159,16 +160,16 @@ nav:
           - Environmental variables: server_configuration/environmental_variables.md
           - Security of input formats: server_configuration/accepted_input_formats.md
           - Service telemetry: server_configuration/service_telemetry.md
-          - Install “bare metal” Inference GPU on Windows: quickstart/inference_gpu_windows.md
+          - Install "bare metal" Inference GPU on Windows: quickstart/inference_gpu_windows.md
       - Contribute to Inference: contributing.md
       - Changelog: https://github.com/roboflow/inference/releases
-  - Cookbooks: cookbooks.md
+  - Examples: workflows/gallery/
 
 theme:
   name: 'material'
   logo: roboflow-logomark-white.svg
   favicon: favicon.png
-  custom_dir: docs/theme
+  custom_dir: theme
   font:
     text: Inter
     code: ui-monospace
@@ -203,13 +204,10 @@ plugins:
       handlers:
         python:
           paths: [.]
-          # options:
-          #   show_if_no_docstring: true
   - search
   - swagger-ui-tag
   - mkdocs-jupyter
-  - ezlinks
-  - social
+  # - social
   - gen-files:
       scripts:
         - docs/scripts/gen_ref_pages.py
@@ -218,7 +216,7 @@ plugins:
       implicit_index: True
   - macros:
       include_dir: docs/include
-  
+
 
 markdown_extensions:
   - admonition
@@ -238,10 +236,18 @@ markdown_extensions:
           case: lower
   - toc:
       permalink: true
-  
+
 
 extra_javascript:
   - "https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"
   - 'javascript/init_kapa_widget.js'
   - 'javascript/cookbooks.js'
   - 'javascript/workflows.js'
+  - 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js'
+  - 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js'
+  - 'https://unpkg.com/@rive-app/canvas'
+  - 'https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js'
+  - 'assets/home.js'
+
+hooks:
+  - theme/build.py
