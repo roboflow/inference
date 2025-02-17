@@ -219,6 +219,7 @@ def prepare_container_environment(
         environment["ROBOFLOW_API_KEY"] = api_key
     environment["NUM_WORKERS"] = str(num_workers)
     if development:
+        environment["ENABLE_BUILDER"] = "True"
         environment["NOTEBOOK_ENABLED"] = "True"
     return [f"{key}={value}" for key, value in environment.items()]
 

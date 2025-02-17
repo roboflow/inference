@@ -3,6 +3,7 @@ import base64
 import os
 import traceback
 from functools import partial, wraps
+from pathlib import Path as Pathlib
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
 
@@ -10,7 +11,7 @@ import asgi_correlation_id
 import uvicorn
 from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 from starlette.convertors import StringConvertor, register_url_convertor
@@ -112,6 +113,7 @@ from inference.core.env import (
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
     DOCKER_SOCKET_PATH,
+    ENABLE_BUILDER,
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
@@ -2140,6 +2142,14 @@ class HttpInterface(BaseInterface):
                         }
                     else:
                         return RedirectResponse(f"/notebook-instructions.html")
+
+        if ENABLE_BUILDER:
+            from inference.core.interfaces.http.builder.routes import (
+                router as builder_router,
+            )
+
+            # Attach all routes from builder to the /build prefix
+            app.include_router(builder_router, prefix="/build", tags=["builder"])
 
         if LEGACY_ROUTE_ENABLED:
 

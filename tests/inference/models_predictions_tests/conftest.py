@@ -10,6 +10,13 @@ import pytest
 import requests
 
 from inference.core.env import MODEL_CACHE_DIR
+from inference.core.entities.responses.inference import (
+    ClassificationInferenceResponse,
+    MultiLabelClassificationInferenceResponse,
+    InstanceSegmentationInferenceResponse,
+    KeypointsDetectionInferenceResponse,
+    ObjectDetectionInferenceResponse,
+)
 
 ASSETS_DIR = os.path.abspath(
     os.path.join(
@@ -66,6 +73,12 @@ def vit_multi_class_model() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function")
+def vit_multi_class_reference_prediction() -> ClassificationInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "vit_multi_class_reference_prediction.json"), "r") as f:
+        return ClassificationInferenceResponse.model_validate(json.load(f))
+
+
+@pytest.fixture(scope="function")
 def vit_multi_label_model() -> Generator[str, None, None]:
     model_id = "vit_multi_label/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -74,6 +87,12 @@ def vit_multi_label_model() -> Generator[str, None, None]:
     )
     yield model_id
     shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def vit_multi_label_reference_prediction() -> MultiLabelClassificationInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "vit_multi_label_reference_prediction.json"), "r") as f:
+        return MultiLabelClassificationInferenceResponse.model_validate(json.load(f))
 
 
 @pytest.fixture(scope="function")
@@ -88,6 +107,12 @@ def yolov5_det_model() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function")
+def yolov5_det_reference_prediction() -> ObjectDetectionInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "yolov5_det_reference_prediction.json"), "r") as f:
+        return ObjectDetectionInferenceResponse.model_validate(json.load(f))
+
+
+@pytest.fixture(scope="function")
 def yolov5_seg_model() -> Generator[str, None, None]:
     model_id = "yolov5_seg/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -96,6 +121,12 @@ def yolov5_seg_model() -> Generator[str, None, None]:
     )
     yield model_id
     shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def yolov5_seg_reference_prediction() -> InstanceSegmentationInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "yolov5_seg_reference_prediction.json"), "r") as f:
+        return InstanceSegmentationInferenceResponse.model_validate(json.load(f))
 
 
 @pytest.fixture(scope="function")
@@ -110,6 +141,12 @@ def yolov7_seg_model() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function")
+def yolov7_seg_reference_prediction() -> InstanceSegmentationInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "yolov7_seg_reference_prediction.json"), "r") as f:
+        return InstanceSegmentationInferenceResponse.model_validate(json.load(f))
+
+
+@pytest.fixture(scope="function")
 def yolov8_cls_model() -> Generator[str, None, None]:
     model_id = "yolov8_cls/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -118,6 +155,12 @@ def yolov8_cls_model() -> Generator[str, None, None]:
     )
     yield model_id
     shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def yolov8_cls_reference_prediction() -> ClassificationInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "yolov8_cls_reference_prediction.json"), "r") as f:
+        return ClassificationInferenceResponse.model_validate(json.load(f))
 
 
 @pytest.fixture(scope="function")
@@ -132,6 +175,12 @@ def yolov8_det_model() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function")
+def yolov8_det_reference_prediction() -> ObjectDetectionInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "yolov8_det_reference_prediction.json"), "r") as f:
+        return ObjectDetectionInferenceResponse.model_validate(json.load(f))
+
+
+@pytest.fixture(scope="function")
 def yolov8_pose_model() -> Generator[str, None, None]:
     model_id = "yolov8_pose/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -140,6 +189,12 @@ def yolov8_pose_model() -> Generator[str, None, None]:
     )
     yield model_id
     shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def yolov8_pose_reference_prediction() -> KeypointsDetectionInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "yolov8_pose_reference_prediction.json"), "r") as f:
+        return KeypointsDetectionInferenceResponse.model_validate(json.load(f))
 
 
 @pytest.fixture(scope="function")
@@ -154,6 +209,12 @@ def yolov8_seg_model() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function")
+def yolov8_seg_reference_prediction() -> InstanceSegmentationInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "yolov8_seg_reference_prediction.json"), "r") as f:
+        return InstanceSegmentationInferenceResponse.model_validate(json.load(f))
+
+
+@pytest.fixture(scope="function")
 def yolonas_det_model() -> Generator[str, None, None]:
     model_id = "yolonas/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -165,6 +226,12 @@ def yolonas_det_model() -> Generator[str, None, None]:
 
 
 @pytest.fixture(scope="function")
+def yolonas_det_reference_prediction() -> ObjectDetectionInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "yolonas_det_reference_prediction.json"), "r") as f:
+        return ObjectDetectionInferenceResponse.model_validate(json.load(f))
+
+
+@pytest.fixture(scope="function")
 def yolov10_det_model() -> Generator[str, None, None]:
     model_id = "yolov10_det/1"
     model_cache_dir = fetch_and_place_model_in_cache(
@@ -173,6 +240,12 @@ def yolov10_det_model() -> Generator[str, None, None]:
     )
     yield model_id
     shutil.rmtree(model_cache_dir)
+
+
+@pytest.fixture(scope="function")
+def yolov10_det_reference_prediction() -> ObjectDetectionInferenceResponse:
+    with open(os.path.join(ASSETS_DIR, "yolov10_det_reference_prediction.json"), "r") as f:
+        return ObjectDetectionInferenceResponse.model_validate(json.load(f))
 
 
 @pytest.fixture(scope="function")

@@ -143,6 +143,11 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 
+# Whether or not to use PyTorch for preprocessing, default is False
+USE_PYTORCH_FOR_PREPROCESSING = str2bool(
+    os.getenv("USE_PYTORCH_FOR_PREPROCESSING", False)
+)
+
 # Flag to disable inference cache, default is False
 DISABLE_INFERENCE_CACHE = str2bool(os.getenv("DISABLE_INFERENCE_CACHE", False))
 
@@ -253,6 +258,10 @@ MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
 
 # Model ID, default is None
 MODEL_ID = os.getenv("MODEL_ID")
+
+# Enable the builder, default is False
+ENABLE_BUILDER = str2bool(os.getenv("ENABLE_BUILDER", False))
+BUILDER_ORIGIN = os.getenv("BUILDER_ORIGIN", "https://app.roboflow.com")
 
 # Enable jupyter notebook server route, default is False
 NOTEBOOK_ENABLED = str2bool(os.getenv("NOTEBOOK_ENABLED", False))
