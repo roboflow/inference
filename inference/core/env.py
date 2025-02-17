@@ -149,6 +149,11 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
 
+# Whether or not to use PyTorch for preprocessing, default is False
+USE_PYTORCH_FOR_PREPROCESSING = str2bool(
+    os.getenv("USE_PYTORCH_FOR_PREPROCESSING", False)
+)
+
 # Flag to disable inference cache, default is False
 DISABLE_INFERENCE_CACHE = str2bool(os.getenv("DISABLE_INFERENCE_CACHE", False))
 
