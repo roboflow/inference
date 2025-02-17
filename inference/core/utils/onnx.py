@@ -36,7 +36,9 @@ def run_session_via_iobinding(
         predictions = session.run(None, {input_name: input_data})
     elif "CUDAExecutionProvider" not in session.get_providers():
         # no point in doing iobinding as the input must live on CPU anyway
-        input_data = input_data.cpu().numpy()  # since we must be a tensor but ONNX needs a numpy array
+        input_data = (
+            input_data.cpu().numpy()
+        )  # since we must be a tensor but ONNX needs a numpy array
         predictions = session.run(None, {input_name: input_data})
     else:
         # we live on GPU and we can use CUDA ONNX, so point to the input data directly
