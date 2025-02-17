@@ -12,8 +12,8 @@ You can deploy the following YOLOv5 model types with Inference:
 
 Click a link below to see instructions on how to run a YOLOv5 model on different inputs:
 
-- [Image](/quickstart/run_model_on_image.md)
-- [Video, Webcam, or RTSP Stream](/quickstart/run_model_on_rtsp_webcam.md)
+- [Image](/quickstart/run_model_on_image)
+- [Video, Webcam, or RTSP Stream](/quickstart/run_model_on_rtsp_webcam)
 
 ## Configure Your Deployment
 

@@ -30,8 +30,8 @@ With Workflows, you can:
 
 In this section of documentation, we walk through what you need to know to create and run workflows. Let’s get started!
 
-Next, [create and run a workflow](/workflows/create_and_run.md) or
-[browse example Workflows](/workflows/gallery/index.md).
+Next, [create and run a workflow](/workflows/create_and_run) or
+[browse example Workflows](/workflows/gallery/index).
 
 <style>
 .button-holder {

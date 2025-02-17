@@ -45,6 +45,6 @@ You can run any model that Inference supports, including object detection, segme
 # Next Steps
 
 Once you've decided on a deployment method and have a server running,
-[interfacing with it is easy](/start/next.md). 
+[interfacing with it is easy](/start/next). 
 
 Fill in your `api_url` with the IP address of your VM and the port (`9001` by default) your server is running on.

@@ -11,13 +11,13 @@ Roboflow Inference CLI is command-line interface for `inference` ecosystem, prov
 
 * run and manage [`inference` server](./cli_commands/server.md) locally
 
-* process data with [Workflows](/workflows/about.md)
+* process data with [Workflows](/workflows/about)
 
-* [benchmark](./cli_commands/benchmark.md) `inference` performance 
+* [benchmark](./cli_commands/benchmark) `inference` performance 
 
-* make [predictions](./cli_commands/infer.md) from your models
+* make [predictions](./cli_commands/infer) from your models
 
-* deploy `inference` server in [cloud](./cli_commands/cloud.md)
+* deploy `inference` server in [cloud](./cli_commands/cloud)
 
 ### Installation
 
@@ -38,4 +38,4 @@ Roboflow Inference CLI currently supports the following device targets:
 - ARM64 CPU
 - NVIDIA GPU
 
-For Jetson specific inference server images, check out the <a href="https://pypi.org/project/inference/" target="_blank">Roboflow Inference</a> package, or pull the images directly following instructions in the official [Roboflow Inference documentation](/quickstart/docker.md#pull-from-docker-hub).
+For Jetson specific inference server images, check out the <a href="https://pypi.org/project/inference/" target="_blank">Roboflow Inference</a> package, or pull the images directly following instructions in the official [Roboflow Inference documentation](/quickstart/docker#pull-from-docker-hub).

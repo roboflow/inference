@@ -10,8 +10,8 @@ You can deploy the following YOLOv10 model types with Inference:
 
 Click a link below to see instructions on how to run a YOLOv10 model on different inputs:
 
-- [Image](/quickstart/run_model_on_image.md)
-- [Video, Webcam, or RTSP Stream](/quickstart/run_model_on_rtsp_webcam.md)
+- [Image](/quickstart/run_model_on_image)
+- [Video, Webcam, or RTSP Stream](/quickstart/run_model_on_rtsp_webcam)
 
 ## License
 

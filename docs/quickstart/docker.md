@@ -16,7 +16,7 @@ Running the Inference Server is as simple as running the following command:
 inference server start
 ```
 
-This will pull the appropriate Docker image for your machine and start the Inference Server on port 9001. You can then send requests to the server to get predictions from your model, as described in [HTTP Inference](http_inference.md).
+This will pull the appropriate Docker image for your machine and start the Inference Server on port 9001. You can then send requests to the server to get predictions from your model, as described in [Quickstart Guide](/quickstart/run_model_on_image).
 
 Once you have your inference server running, you can check its status with the following command:
 
