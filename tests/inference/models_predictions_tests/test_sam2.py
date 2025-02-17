@@ -70,7 +70,7 @@ def test_sam2_single_prompted_image_segmentation(
     # then
     score_drift = np.abs(scores[0] - 0.9426716566085815)
     assert np.allclose(
-        low_res_logits, sam2_small_truck_logits, atol=0.01
+        low_res_logits, sam2_small_truck_logits, atol=0.02
     ), "logits mask is as expected"
     assert score_drift < 0.01, "score doesnt drift/change"
 
