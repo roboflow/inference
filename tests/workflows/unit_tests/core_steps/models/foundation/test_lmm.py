@@ -392,6 +392,7 @@ Some other comment
     # then
     assert result == [{"field_a": 1, "field_b": 37}, {"field_a": 2, "field_b": 47}]
 
+
 def test_execute_gpt_4v_request() -> None:
     # given
     client = MagicMock()
