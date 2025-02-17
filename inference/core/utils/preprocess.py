@@ -1,20 +1,27 @@
+import warnings
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, Tuple, Union
+from typing import Dict, Tuple
 
 import cv2
 import numpy as np
 from skimage.exposure import rescale_intensity
 
-try:
-    import torch
-except ImportError:
-    torch = None
-
 from inference.core.env import (
     DISABLE_PREPROC_CONTRAST,
     DISABLE_PREPROC_GRAYSCALE,
     DISABLE_PREPROC_STATIC_CROP,
+    USE_PYTORCH_FOR_PREPROCESSING,
 )
+
+if USE_PYTORCH_FOR_PREPROCESSING:
+    try:
+        import torch
+    except ImportError:
+        warnings.warn(
+            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
+        )
+
+
 from inference.core.exceptions import PreProcessingError
 from inference.core.utils.onnx import ImageMetaType
 
@@ -64,7 +71,17 @@ def prepare(
         to conditionally enable or disable certain preprocessing steps.
     """
     try:
-        h, w = image.shape[0:2] if isinstance(image, np.ndarray) else image.shape[-2:]
+        if isinstance(image, np.ndarray):
+            h, w = image.shape[0:2]
+        elif "torch" in dir():
+            h, w = image.shape[-2:]
+        else:
+            raise ValueError(
+                f"Received an image of unknown type, {type(image)}; "
+                "This is most likely a bug. Contact Roboflow team through github issues "
+                "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+            )
+
         img_dims = (h, w)
         if static_crop_should_be_applied(
             preprocessing_config=preproc,
@@ -215,12 +232,18 @@ def letterbox_image(
             cv2.BORDER_CONSTANT,
             value=color,
         )
-    else:
+    elif "torch" in dir():
         return torch.nn.functional.pad(
             resized_img,
             (left_padding, right_padding, top_padding, bottom_padding),
             "constant",
             color[0],
+        )
+    else:
+        raise ValueError(
+            f"Received an image of unknown type, {type(resized_img)}; "
+            "This is most likely a bug. Contact Roboflow team through github issues "
+            "(https://github.com/roboflow/inference/issues) providing full context of the problem"
         )
 
 
@@ -244,11 +267,16 @@ def resize_image_keeping_aspect_ratio(
     - image: numpy array representing the image.
     - desired_size: tuple (width, height) representing the target dimensions.
     """
-    img_ratio = (
-        image.shape[1] / image.shape[0]
-        if isinstance(image, np.ndarray)
-        else image.shape[-1] / image.shape[-2]
-    )
+    if isinstance(image, np.ndarray):
+        img_ratio = image.shape[1] / image.shape[0]
+    elif "torch" in dir():
+        img_ratio = image.shape[-1] / image.shape[-2]
+    else:
+        raise ValueError(
+            f"Received an image of unknown type, {type(image)}; "
+            "This is most likely a bug. Contact Roboflow team through github issues "
+            "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+        )
     desired_ratio = desired_size[0] / desired_size[1]
 
     # Determine the new dimensions
@@ -264,7 +292,13 @@ def resize_image_keeping_aspect_ratio(
     # Resize the image to new dimensions
     if isinstance(image, np.ndarray):
         return cv2.resize(image, (new_width, new_height))
-    else:
+    elif "torch" in dir():
         return torch.nn.functional.interpolate(
             image, size=(new_height, new_width), mode="bilinear"
+        )
+    else:
+        raise ValueError(
+            f"Received an image of unknown type, {type(image)}; "
+            "This is most likely a bug. Contact Roboflow team through github issues "
+            "(https://github.com/roboflow/inference/issues) providing full context of the problem"
         )

@@ -1,6 +1,7 @@
 import itertools
 import json
 import os
+import warnings
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -11,6 +12,32 @@ import cv2
 import numpy as np
 import onnxruntime
 from PIL import Image
+
+from inference.core.env import (
+    API_KEY,
+    AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY,
+    CORE_MODEL_BUCKET,
+    DISABLE_PREPROC_AUTO_ORIENT,
+    INFER_BUCKET,
+    LAMBDA,
+    MAX_BATCH_SIZE,
+    MODEL_CACHE_DIR,
+    MODEL_VALIDATION_DISABLED,
+    ONNXRUNTIME_EXECUTION_PROVIDERS,
+    REQUIRED_ONNX_PROVIDERS,
+    TENSORRT_CACHE_PATH,
+    USE_PYTORCH_FOR_PREPROCESSING,
+)
+from inference.core.logger import logger
+
+if USE_PYTORCH_FOR_PREPROCESSING:
+    try:
+        import torch
+    except ImportError:
+        warnings.warn(
+            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
+        )
 
 from inference.core.cache import cache
 from inference.core.cache.model_artifacts import (
@@ -31,24 +58,7 @@ from inference.core.entities.requests.inference import (
     InferenceRequestImage,
 )
 from inference.core.entities.responses.inference import InferenceResponse
-from inference.core.env import (
-    API_KEY,
-    AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY,
-    CORE_MODEL_BUCKET,
-    DISABLE_PREPROC_AUTO_ORIENT,
-    INFER_BUCKET,
-    LAMBDA,
-    MAX_BATCH_SIZE,
-    MODEL_CACHE_DIR,
-    MODEL_VALIDATION_DISABLED,
-    ONNXRUNTIME_EXECUTION_PROVIDERS,
-    REQUIRED_ONNX_PROVIDERS,
-    TENSORRT_CACHE_PATH,
-    USE_PYTORCH_FOR_PREPROCESSING,
-)
 from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
-from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.models.utils.batching import create_batches
 from inference.core.models.utils.onnx import has_trt
@@ -63,16 +73,6 @@ from inference.core.utils.preprocess import letterbox_image, prepare
 from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
-
-try:
-    import torch
-    import torchvision
-except ImportError:
-    torch = None
-    torchvision = None
-    if USE_PYTORCH_FOR_PREPROCESSING:
-        logger.warning("PyTorch is not available, using NumPy for preprocessing")
-        USE_PYTORCH_FOR_PREPROCESSING = False
 
 NUM_S3_RETRY = 5
 SLEEP_SECONDS_BETWEEN_RETRIES = 3
@@ -408,7 +408,7 @@ class RoboflowInferenceModel(Model):
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
 
-        if USE_PYTORCH_FOR_PREPROCESSING:
+        if USE_PYTORCH_FOR_PREPROCESSING and "torch" in dir():
             preprocessed_image = torch.from_numpy(
                 np.ascontiguousarray(preprocessed_image)
             )
@@ -425,12 +425,19 @@ class RoboflowInferenceModel(Model):
                     preprocessed_image,
                     (self.img_size_w, self.img_size_h),
                 )
-            else:
+            elif "torch" in dir():
                 resized = torch.nn.functional.interpolate(
                     preprocessed_image,
                     size=(self.img_size_h, self.img_size_w),
                     mode="bilinear",
                 )
+            else:
+                raise ValueError(
+                    f"Received an image of unknown type, {type(preprocessed_image)}; "
+                    "This is most likely a bug. Contact Roboflow team through github issues "
+                    "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+                )
+
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
                 preprocessed_image, (self.img_size_w, self.img_size_h)
@@ -458,9 +465,14 @@ class RoboflowInferenceModel(Model):
             img_in = np.transpose(resized, (2, 0, 1))
             img_in = img_in.astype(np.float32)
             img_in = np.expand_dims(img_in, axis=0)
-        else:
-            # we assume a torch tensor is already in the correct format
+        elif "torch" in dir():
             img_in = resized.float()
+        else:
+            raise ValueError(
+                f"Received an image of unknown type, {type(resized)}; "
+                "This is most likely a bug. Contact Roboflow team through github issues "
+                "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+            )
 
         return img_in, img_dims
 
@@ -847,14 +859,16 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             )
             imgs_with_dims = self.image_loader_threadpool.map(preproc_image, image)
             imgs, img_dims = zip(*imgs_with_dims)
-            assert (
-                isinstance(imgs[0], np.ndarray) or torch is not None
-            ), "Received a list of images as torch tensors but torch is not installed"
-            img_in = (
-                np.concatenate(imgs, axis=0)
-                if isinstance(imgs[0], np.ndarray)
-                else torch.cat(imgs, dim=0)
-            )
+            if isinstance(imgs[0], np.ndarray):
+                img_in = np.concatenate(imgs, axis=0)
+            elif "torch" in dir():
+                img_in = torch.cat(imgs, dim=0)
+            else:
+                raise ValueError(
+                    f"Received a list of images of unknown type, {type(imgs[0])}; "
+                    "This is most likely a bug. Contact Roboflow team through github issues "
+                    "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+                )
         else:
             img_in, img_dims = self.preproc_image(
                 image,
