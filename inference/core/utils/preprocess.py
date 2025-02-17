@@ -1,5 +1,6 @@
 from enum import Enum
 from typing import Dict, Tuple
+import warnings
 
 import cv2
 import numpy as np
@@ -11,13 +12,12 @@ from inference.core.env import (
     DISABLE_PREPROC_STATIC_CROP,
     USE_PYTORCH_FOR_PREPROCESSING,
 )
-from inference.core.logger import logger
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     try:
         import torch
     except ImportError:
-        logger.error("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
+        warnings.warn("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
 
 
 from inference.core.exceptions import PreProcessingError

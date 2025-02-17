@@ -1,17 +1,17 @@
 from io import BytesIO
 from time import perf_counter
 from typing import Any, List, Tuple, Union
+import warnings
 
 import numpy as np
 
 from inference.core.env import USE_PYTORCH_FOR_PREPROCESSING
-from inference.core.logger import logger
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     try:
         import torch
     except ImportError:
-        logger.error("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
+        warnings.warn("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
 
 from PIL import Image, ImageDraw, ImageFont
 

@@ -1,4 +1,5 @@
 from typing import Any, List, Optional, Tuple, Union
+import warnings
 
 import numpy as np
 
@@ -9,7 +10,7 @@ if USE_PYTORCH_FOR_PREPROCESSING:
     try:
         import torch
     except ImportError:
-        logger.error("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
+        warnings.warn("PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing.")
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -231,7 +232,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             batch_padding = 0
             if FIX_BATCH_SIZE or fix_batch_size:
                 if MAX_BATCH_SIZE == float("inf"):
-                    logger.warn(
+                    logger.warning(
                         "Requested fix_batch_size but MAX_BATCH_SIZE is not set. Using dynamic batching."
                     )
                     batch_padding = 0
