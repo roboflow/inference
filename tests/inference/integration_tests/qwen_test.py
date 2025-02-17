@@ -6,6 +6,7 @@ from tests.inference.integration_tests.regression_test import bool_env
 
 doc_api_key = os.environ.get("API_KEY")
 
+
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_QWEN25_TEST", False)) or bool_env(os.getenv("SKIP_LMM_TEST", False)),
     reason="Skipping Qwen2.5 test",
