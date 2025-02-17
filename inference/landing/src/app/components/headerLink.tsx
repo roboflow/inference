@@ -1,10 +1,11 @@
 import classNames from "classnames";
 
 type HeaderLinkProps = {
-  className: string;
+  className?: string;
   label: string;
   href: string;
   icon: string;
+  target?: string;
 };
 
 export default function HeaderLink({
@@ -12,6 +13,7 @@ export default function HeaderLink({
   label,
   href,
   icon,
+  target="_blank",
 }: HeaderLinkProps) {
   return (
     <a
@@ -20,7 +22,7 @@ export default function HeaderLink({
         "text-gray-700 w-full sm:w-96 bg-white p-3 border border-gray-300 hover:border-purple-400 hover:text-purple-600 group relative flex items-center gap-3 rounded-lg shadow hover:shadow-xl transition duration-200 text-left"
       )}
       href={href}
-      target="_blank"
+      target={target}
     >
       {/* TODO: Replace placeholder emoji & → with actual FontAwesome icons from mocks */}
 
