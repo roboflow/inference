@@ -95,7 +95,7 @@ def deploy(
 
 @cloud_app.command()
 def undeploy(
-    cluster_name: Annotated[str, typer.Argument(help="Name of cluster to undeploy.")]
+    cluster_name: Annotated[str, typer.Argument(help="Name of cluster to undeploy.")],
 ):
     try:
         cloud_undeploy(cluster_name)
@@ -115,7 +115,7 @@ def stop(cluster_name: Annotated[str, typer.Argument(help="Name of cluster to st
 
 @cloud_app.command()
 def start(
-    cluster_name: Annotated[str, typer.Argument(help="Name of cluster to start.")]
+    cluster_name: Annotated[str, typer.Argument(help="Name of cluster to start.")],
 ):
     try:
         cloud_start(cluster_name)

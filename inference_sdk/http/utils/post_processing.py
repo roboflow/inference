@@ -359,7 +359,7 @@ def adjust_points_coordinates_to_client_scaling_factor(
 
 
 def combine_gaze_detections(
-    detections: Union[dict, List[Union[dict, List[dict]]]]
+    detections: Union[dict, List[Union[dict, List[dict]]]],
 ) -> Union[dict, List[Dict]]:
     """Combine gaze detections.
 

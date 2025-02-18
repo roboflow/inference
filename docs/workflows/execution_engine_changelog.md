@@ -318,3 +318,37 @@ one non-SIMD step was feeding empty values to downstream blocks. Additionally, i
 thanks to which non-SIMD blocks can easily feed inputs for downstream SIMD steps - it is needed to check if 
 upstream non-SIMD block yielded non-empty results (as SIMD block may not accept empty results). This check was added.
 **No action needed** for existing blocks, but this fix may fix previously broken Workflows.
+
+
+## Execution Engine `v1.5.0` | inference `v0.38.0`
+
+!!! Note "Change does not require any action"
+  
+    This change does not require any change from Workflows users. This is just performance optimisation.
+
+* Exposed new parameter in the init method of `BaseExecutionEngine` class - `executor` which can accept instance of 
+Python `ThreadPoolExecutor` to be used by execution engine. Thanks to this change, processing should be faster, as 
+each `BaseExecutionEngine.run(...)` will not require dedicated instance of `ThreadPoolExecutor` as it was so far.
+Additionally, we are significantly limiting threads spawning which may also be a benefit in some installations.
+
+* Despite the change, Execution Engine maintains the limit of concurrently executed steps - by limiting the number of
+steps that run through the executor at a time (since  Execution Engine is no longer in control of `ThreadPoolExecutor` 
+creation, and it is possible for the pool to have more workers available).
+
+??? Hint "How to inject `ThreadPoolExecutor` to Execution Engine?"
+    
+    ```python
+    from concurrent.futures import ThreadPoolExecutor
+    workflow_init_parameters = { ... }
+    with ThreadPoolExecutor(max_workers=...) as thread_pool_executor:
+        execution_engine = ExecutionEngine.init(
+            init_parameters=workflow_init_parameters,
+            max_concurrent_steps=4,
+            workflow_id="your-workflow-id",
+            executor=thread_pool_executor,
+        )
+        runtime_parameters = {
+          "image": cv2.imread("your-image-path")
+        }
+        results = execution_engine.run(runtime_parameters=runtime_parameters)
+    ```

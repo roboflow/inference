@@ -67,6 +67,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "icon": "fal fa-upload",
                 "blockPriority": 0,
                 "popular": True,
+                "requires_rf_key": True,
             },
         }
     )

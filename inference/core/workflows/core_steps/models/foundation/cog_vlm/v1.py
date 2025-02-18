@@ -1,19 +1,10 @@
-import json
 import re
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Dict, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
-from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
-from inference.core.env import LOCAL_INFERENCE_API_URL, WORKFLOWS_REMOTE_API_TARGET
 from inference.core.managers.base import ModelManager
-from inference.core.utils.image_utils import load_image
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
-from inference.core.workflows.core_steps.common.utils import load_core_model
-from inference.core.workflows.execution_engine.constants import (
-    PARENT_ID_KEY,
-    ROOT_PARENT_ID_KEY,
-)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
@@ -34,13 +25,27 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference_sdk import InferenceHTTPClient
 
 NOT_DETECTED_VALUE = "not_detected"
 
 JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json\n([\s\S]*?)\n```")
 
 LONG_DESCRIPTION = """
+
+!!! Warning "CogVLM reached **End Of Life**"
+
+    Due to dependencies conflicts with newer models and security vulnerabilities discovered in `transformers`
+    library patched in the versions of library incompatible with the model we announced End Of Life for CogVLM
+    support in `inference`, effective since release `0.38.0`.
+    
+    We are leaving this block in ecosystem until release `0.42.0` for clients to get informed about change that 
+    was introduced.
+    
+    Starting as of now, all Workflows using the block stop being functional (runtime error will be raised), 
+    after inference release `0.42.0` - this block will be removed and Execution Engine will raise compilation 
+    error seeing the block in Workflow definition. 
+
+
 Ask a question to CogVLM, an open source vision-language model.
 
 This model requires a GPU and can only be run on self-hosted devices, and is not available on the Roboflow Hosted API.
@@ -54,7 +59,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "CogVLM",
             "version": "v1",
-            "short_description": "Run a self-hosted vision language model.",
+            "short_description": "DEPRECATED! Run a self-hosted vision language model.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -65,6 +70,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "blockPriority": 9,
                 "needsGPU": True,
                 "inference": True,
+                "deprecated": True,
             },
         }
     )
@@ -146,200 +152,9 @@ class CogVLMBlockV1(WorkflowBlock):
         prompt: str,
         json_output_format: Optional[Dict[str, str]],
     ) -> BlockResult:
-        if self._step_execution_mode is StepExecutionMode.LOCAL:
-            return self.run_locally(
-                images=images,
-                prompt=prompt,
-                json_output_format=json_output_format,
-            )
-        elif self._step_execution_mode is StepExecutionMode.REMOTE:
-            return self.run_remotely(
-                images=images,
-                prompt=prompt,
-                json_output_format=json_output_format,
-            )
-        else:
-            raise ValueError(
-                f"Unknown step execution mode: {self._step_execution_mode}"
-            )
-
-    def run_locally(
-        self,
-        images: Batch[WorkflowImageData],
-        prompt: str,
-        json_output_format: Optional[Dict[str, str]],
-    ) -> BlockResult:
-        if json_output_format:
-            prompt = (
-                f"{prompt}\n\nVALID response format is JSON:\n"
-                f"{json.dumps(json_output_format, indent=4)}"
-            )
-        images_prepared_for_processing = [
-            image.to_inference_format(numpy_preferred=True) for image in images
-        ]
-        raw_output = get_cogvlm_generations_locally(
-            image=images_prepared_for_processing,
-            prompt=prompt,
-            model_manager=self._model_manager,
-            api_key=self._api_key,
-        )
-        structured_output = turn_raw_lmm_output_into_structured(
-            raw_output=raw_output,
-            expected_output=json_output_format,
-        )
-        predictions = [
-            {
-                "raw_output": raw["content"],
-                "image": raw["image"],
-                "structured_output": structured,
-                **structured,
-            }
-            for raw, structured in zip(raw_output, structured_output)
-        ]
-        for prediction, image in zip(predictions, images):
-            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
-            prediction[ROOT_PARENT_ID_KEY] = (
-                image.workflow_root_ancestor_metadata.parent_id
-            )
-        return predictions
-
-    def run_remotely(
-        self,
-        images: Batch[WorkflowImageData],
-        prompt: str,
-        json_output_format: Optional[Dict[str, str]],
-    ) -> BlockResult:
-        if json_output_format:
-            prompt = (
-                f"{prompt}\n\nVALID response format is JSON:\n"
-                f"{json.dumps(json_output_format, indent=4)}"
-            )
-        inference_images = [i.to_inference_format() for i in images]
-        raw_output = get_cogvlm_generations_from_remote_api(
-            image=inference_images,
-            prompt=prompt,
-            api_key=self._api_key,
-        )
-        structured_output = turn_raw_lmm_output_into_structured(
-            raw_output=raw_output,
-            expected_output=json_output_format,
-        )
-        predictions = [
-            {
-                "raw_output": raw["content"],
-                "image": raw["image"],
-                "structured_output": structured,
-                **structured,
-            }
-            for raw, structured in zip(raw_output, structured_output)
-        ]
-        for prediction, image in zip(predictions, images):
-            prediction[PARENT_ID_KEY] = image.parent_metadata.parent_id
-            prediction[ROOT_PARENT_ID_KEY] = (
-                image.workflow_root_ancestor_metadata.parent_id
-            )
-        return predictions
-
-
-def get_cogvlm_generations_locally(
-    image: List[dict],
-    prompt: str,
-    model_manager: ModelManager,
-    api_key: Optional[str],
-) -> List[Dict[str, Any]]:
-    serialised_result = []
-    for single_image in image:
-        loaded_image, _ = load_image(single_image)
-        image_metadata = {
-            "width": loaded_image.shape[1],
-            "height": loaded_image.shape[0],
-        }
-        inference_request = CogVLMInferenceRequest(
-            image=single_image,
-            prompt=prompt,
-            api_key=api_key,
-        )
-        model_id = load_core_model(
-            model_manager=model_manager,
-            inference_request=inference_request,
-            core_model="cogvlm",
-        )
-        result = model_manager.infer_from_request_sync(model_id, inference_request)
-        serialised_result.append(
-            {
-                "content": result.response,
-                "image": image_metadata,
-            }
-        )
-    return serialised_result
-
-
-def get_cogvlm_generations_from_remote_api(
-    image: List[dict],
-    prompt: str,
-    api_key: Optional[str],
-) -> List[Dict[str, Any]]:
-    if WORKFLOWS_REMOTE_API_TARGET == "hosted":
         raise ValueError(
-            f"CogVLM requires a GPU and can only be executed remotely in self-hosted mode. "
-            f"It is not available on the Roboflow Hosted API."
+            "CogVLM reached End Of Life in `inference` and is no longer supported. "
+            "Removal was correlated with changes introduced by maintainers as a result of "
+            "the following security issue: https://nvd.nist.gov/vuln/detail/CVE-2024-11393. "
+            "This class will be removed in inference 0.54.0."
         )
-    client = InferenceHTTPClient.init(
-        api_url=LOCAL_INFERENCE_API_URL,
-        api_key=api_key,
-    )
-    serialised_result = []
-    for single_image in image:
-        loaded_image, _ = load_image(single_image)
-        image_metadata = {
-            "width": loaded_image.shape[1],
-            "height": loaded_image.shape[0],
-        }
-        result = client.prompt_cogvlm(
-            visual_prompt=single_image["value"],
-            text_prompt=prompt,
-        )
-        serialised_result.append(
-            {
-                "content": result["response"],
-                "image": image_metadata,
-            }
-        )
-    return serialised_result
-
-
-def turn_raw_lmm_output_into_structured(
-    raw_output: List[Dict[str, Any]],
-    expected_output: Optional[Dict[str, str]],
-) -> List[dict]:
-    if expected_output is None:
-        return [{} for _ in range(len(raw_output))]
-    return [
-        try_parse_lmm_output_to_json(
-            output=r["content"],
-            expected_output=expected_output,
-        )
-        for r in raw_output
-    ]
-
-
-def try_parse_lmm_output_to_json(
-    output: str, expected_output: Dict[str, str]
-) -> Union[list, dict]:
-    json_blocks_found = JSON_MARKDOWN_BLOCK_PATTERN.findall(output)
-    if len(json_blocks_found) == 0:
-        return try_parse_json(output, expected_output=expected_output)
-    result = []
-    for json_block in json_blocks_found:
-        result.append(
-            try_parse_json(content=json_block, expected_output=expected_output)
-        )
-    return result if len(result) > 1 else result[0]
-
-
-def try_parse_json(content: str, expected_output: Dict[str, str]) -> dict:
-    try:
-        data = json.loads(content)
-        return {key: data.get(key, NOT_DETECTED_VALUE) for key in expected_output}
-    except Exception:
-        return {key: NOT_DETECTED_VALUE for key in expected_output}

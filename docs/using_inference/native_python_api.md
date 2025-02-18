@@ -20,7 +20,7 @@ The `get_model` method is a utility function which will help us load a computer 
 
 !!! Hint
 
-    You can find your models project name and version number <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">in the Roboflow App</a>. You can also browse public models that are ready to use on <a href="https://universe.roboflow.com/" target="_blank">Roboflow Universe</a>. In this example, we are using a special model ID that is an alias of <a href="https://universe.roboflow.com/microsoft/coco/model/13" target="_blank">a COCO pretrained model on Roboflow Universe</a>. You can see the list of model aliases [here](/quickstart/aliases.md#supported-pre-trained-models).
+    You can find your models project name and version number <a href="https://docs.roboflow.com/api-reference/workspace-and-project-ids" target="_blank">in the Roboflow App</a>. You can also browse public models that are ready to use on <a href="https://universe.roboflow.com/" target="_blank">Roboflow Universe</a>. In this example, we are using a special model ID that is an alias of <a href="https://universe.roboflow.com/microsoft/coco/model/13" target="_blank">a COCO pretrained model on Roboflow Universe</a>. You can see the list of model aliases [here](../quickstart/aliases.md#supported-pre-trained-models).
 
 Next, we can run inference with our model by providing an input image:
 

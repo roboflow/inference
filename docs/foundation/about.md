@@ -13,7 +13,6 @@ Inference supports the following foundation models:
 - DocTR: Read characters in images.
 - Grounding DINO: Detect objects in images using text prompts.
 - Segment Anything (SAM): Segment objects in images.
-- CogVLM: A large multimodal model (LMM).
 
 All of these models can be used over a HTTP request with Inference. This means you don't need to spend time setting up and configuring each model.
 

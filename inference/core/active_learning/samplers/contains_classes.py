@@ -18,7 +18,7 @@ ELIGIBLE_PREDICTION_TYPES = {CLASSIFICATION_TASK}
 
 
 def initialize_classes_based_sampling(
-    strategy_config: Dict[str, Any]
+    strategy_config: Dict[str, Any],
 ) -> SamplingMethod:
     try:
         sample_function = partial(

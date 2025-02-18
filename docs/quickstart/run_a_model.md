@@ -85,4 +85,4 @@ sv.plot_image(annotated_image)
 
 ## Summary
 
-Huzzah! We used Inference to load a computer vision model, run inference on an image, then visualize the results! But this is just the start. There are many different ways to use Inference and how you use it is likely to depend on your specific use case and deployment environment. [Learn more about how to use inference here](/quickstart/inference_101.md).
+Huzzah! We used Inference to load a computer vision model, run inference on an image, then visualize the results! But this is just the start. There are many different ways to use Inference and how you use it is likely to depend on your specific use case and deployment environment. [Learn more about how to use inference here](../quickstart/inference_101.md).
