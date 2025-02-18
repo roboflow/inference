@@ -13,6 +13,7 @@ import torchvision
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import box_iou
 
+from inference.core import logger
 from inference.core.cache.model_artifacts import save_bytes_in_cache
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.responses.inference import (
@@ -46,7 +47,6 @@ from inference.core.utils.image_utils import (
     extract_image_payload_and_type,
     load_image_rgb,
 )
-from inference.core import logger
 
 # TYPES
 Hash = NewType("Hash", str)
@@ -114,6 +114,7 @@ class OWLv2ModelManager:
         logger.info("Compiling OWLv2 model in thread")
         self._vision_model = torch.compile(self._vision_model)
         logger.info("OWLv2 model compiled in thread")
+
 
 class Owlv2Singleton:
     _instances = weakref.WeakValueDictionary()
@@ -812,7 +813,9 @@ class SerializedOwlV2(RoboflowInferenceModel):
                 raise ModelArtefactError(
                     "Could not find `modelFiles` key or `modelFiles`.`owlv2` or `modelFiles`.`owlv2`.`model` key in roboflow API model description response."
                 )
-            logger.info(f"Downloading OWLv2 model weights from {api_data['modelFiles']['owlv2']['model']}")
+            logger.info(
+                f"Downloading OWLv2 model weights from {api_data['modelFiles']['owlv2']['model']}"
+            )
             model_weights_response = get_from_url(
                 api_data["modelFiles"]["owlv2"]["model"], json_response=False
             )
