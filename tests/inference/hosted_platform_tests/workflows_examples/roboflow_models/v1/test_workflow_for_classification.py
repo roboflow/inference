@@ -36,10 +36,7 @@ MULTI_CLASS_CLASSIFICATION_WORKFLOW = {
 }
 
 MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
-    PlatformEnvironment.ROBOFLOW_STAGING: [
-        0.3673,
-        0.593,
-    ],
+    PlatformEnvironment.ROBOFLOW_STAGING: [0.3667, 0.5917],
     PlatformEnvironment.ROBOFLOW_PLATFORM: [0.8252, 0.9962],
 }
 
