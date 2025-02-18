@@ -80,7 +80,7 @@ def test_llm_for_classification_step_validation_when_invalid_image_given(
         _ = BlockManifest.model_validate(specification)
 
 
-@pytest.mark.parametrize("value", ["$inputs.model", "gpt_4v", "cog_vlm"])
+@pytest.mark.parametrize("value", ["$inputs.model", "gpt_4v"])
 def test_llm_for_classification_step_validation_when_lmm_type_valid(
     value: Any,
 ) -> None:

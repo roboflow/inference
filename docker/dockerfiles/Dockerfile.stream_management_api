@@ -12,6 +12,8 @@ RUN apt update -y && apt install -y \
     git \
     libgdal-dev \
     cmake \
+    rustc \
+    cargo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.http.txt \
@@ -36,3 +38,4 @@ ENV STREAM_MANAGER_HOST=127.0.0.1
 ENV STREAM_MANAGER_PORT=7070
 
 ENTRYPOINT ["python", "-m", "inference.enterprise.stream_management.api.app"]
+

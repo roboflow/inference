@@ -261,7 +261,7 @@ def get_class_preds_from_embeds(
 
 
 def make_class_map(
-    query_embeddings: Dict[str, PosNegDictType]
+    query_embeddings: Dict[str, PosNegDictType],
 ) -> Tuple[Dict[Tuple[str, str], int], List[str]]:
     class_names = sorted(list(query_embeddings.keys()))
     class_map_positive = {
