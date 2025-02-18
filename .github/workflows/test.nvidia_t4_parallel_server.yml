@@ -29,7 +29,7 @@ jobs:
       - name: 🦾 Install dependencies
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install -r requirements/requirements.test.integration.txt
+          python3 -m pip install -r requirements/requirements.test.integration.txt -r requirements/requirements.test.unit.txt
       - name: 🔨 Build and Push Test Docker - Parallel GPU
         run: |
           docker build -t roboflow/roboflow-inference-server-gpu-parallel:test -f docker/dockerfiles/Dockerfile.onnx.gpu.parallel .

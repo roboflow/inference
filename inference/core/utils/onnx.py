@@ -30,7 +30,7 @@ def get_onnxruntime_execution_providers(value: str) -> List[str]:
 def run_session_via_iobinding(
     session: ort.InferenceSession, input_name: str, input_data: ImageMetaType
 ) -> List[np.ndarray]:
-    if isinstance(input_data, np.ndarray):
+    if isinstance(input_data, (np.ndarray, list)):
         # skip the iobinding and just run the session
         # we likely won't get any gains by pointing to the input data directly
         predictions = session.run(None, {input_name: input_data})
