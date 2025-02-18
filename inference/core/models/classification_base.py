@@ -365,8 +365,8 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                         width=img_dims[ind][1], height=img_dims[ind][0]
                     ),
                     predictions=results,
-                    top=results[0]["class"] if results else None,
-                    confidence=results[0]["confidence"] if results else None,
+                    top=results[0]["class"] if results else "",
+                    confidence=results[0]["confidence"] if results else 0.0,
                 )
             responses.append(response)
 

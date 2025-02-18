@@ -262,12 +262,10 @@ class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResp
     """
 
     predictions: List[ClassificationPrediction]
-    top: Optional[str] = Field(
-        description="The top predicted class label", default=None
-    )
-    confidence: Optional[float] = Field(
+    top: str = Field(description="The top predicted class label", default="")
+    confidence: float = Field(
         description="The confidence of the top predicted class label",
-        default=None,
+        default=0.0,
     )
     parent_id: Optional[str] = Field(
         description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",
