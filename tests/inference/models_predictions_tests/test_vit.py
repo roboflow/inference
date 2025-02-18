@@ -24,7 +24,13 @@ def test_vit_multi_class_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_classification_predictions_match(result_prediction=result[0], reference_prediction=vit_multi_class_reference_prediction, confidence_tolerance=1e-4)
+    assert_classification_predictions_match(
+        result_prediction=result[0].model_dump(by_alias=True, exclude_none=True),
+        reference_prediction=vit_multi_class_reference_prediction.model_dump(
+            by_alias=True, exclude_none=True
+        ),
+        confidence_tolerance=1e-4,
+    )
 
 
 @pytest.mark.slow
@@ -46,7 +52,13 @@ def test_vit_multi_class_batch_inference_when_batch_size_smaller_than_max_batch_
     assert all(
         p == reference_prediction for p in result
     ), "All predictions must be the same as input was re-used"
-    assert_classification_predictions_match(result_prediction=result[0], reference_prediction=vit_multi_class_reference_prediction, confidence_tolerance=1e-4)
+    assert_classification_predictions_match(
+        result_prediction=result[0].model_dump(by_alias=True, exclude_none=True),
+        reference_prediction=vit_multi_class_reference_prediction.model_dump(
+            by_alias=True, exclude_none=True
+        ),
+        confidence_tolerance=1e-4,
+    )
 
 
 @pytest.mark.slow
@@ -72,7 +84,13 @@ def test_vit_multi_class_batch_inference_when_batch_size_larger_then_max_batch_s
     assert all(
         p == reference_prediction for p in result
     ), "All predictions must be the same as input was re-used"
-    assert_classification_predictions_match(result_prediction=result[0], reference_prediction=vit_multi_class_reference_prediction, confidence_tolerance=1e-4)
+    assert_classification_predictions_match(
+        result_prediction=result[0].model_dump(by_alias=True, exclude_none=True),
+        reference_prediction=vit_multi_class_reference_prediction.model_dump(
+            by_alias=True, exclude_none=True
+        ),
+        confidence_tolerance=1e-4,
+    )
 
 
 @pytest.mark.slow
@@ -89,7 +107,12 @@ def test_vit_multi_label_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_classification_predictions_match(result_prediction=result[0], reference_prediction=vit_multi_label_reference_prediction)
+    assert_classification_predictions_match(
+        result_prediction=result[0].model_dump(by_alias=True, exclude_none=True),
+        reference_prediction=vit_multi_label_reference_prediction.model_dump(
+            by_alias=True, exclude_none=True
+        ),
+    )
 
 
 @pytest.mark.slow
@@ -111,7 +134,12 @@ def test_vit_multi_label_batch_inference_when_batch_size_smaller_than_max_batch_
     assert all(
         p == reference_prediction for p in result
     ), "All predictions must be the same as input was re-used"
-    assert_classification_predictions_match(result_prediction=result[0], reference_prediction=vit_multi_label_reference_prediction)
+    assert_classification_predictions_match(
+        result_prediction=result[0].model_dump(by_alias=True, exclude_none=True),
+        reference_prediction=vit_multi_label_reference_prediction.model_dump(
+            by_alias=True, exclude_none=True
+        ),
+    )
 
 
 @pytest.mark.slow
@@ -137,4 +165,9 @@ def test_vit_multi_label_batch_inference_when_batch_size_larger_then_max_batch_s
     assert all(
         p == reference_prediction for p in result
     ), "All predictions must be the same as input was re-used"
-    assert_classification_predictions_match(result_prediction=result[0], reference_prediction=vit_multi_label_reference_prediction)
+    assert_classification_predictions_match(
+        result_prediction=result[0].model_dump(by_alias=True, exclude_none=True),
+        reference_prediction=vit_multi_label_reference_prediction.model_dump(
+            by_alias=True, exclude_none=True
+        ),
+    )

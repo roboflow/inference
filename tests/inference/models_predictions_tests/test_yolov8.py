@@ -1,6 +1,7 @@
+import json
+
 import numpy as np
 import pytest
-import json
 import supervision as sv
 
 from inference.core.entities.responses.inference import (
@@ -17,8 +18,8 @@ from inference.models import (
     YOLOv8ObjectDetection,
 )
 from tests.common import (
-    assert_localized_predictions_match,
     assert_classification_predictions_match,
+    assert_localized_predictions_match,
 )
 
 
@@ -36,7 +37,12 @@ def test_yolov8_classification_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_classification_predictions_match(result_prediction=result[0], reference_prediction=yolov8_cls_reference_prediction)
+    assert_classification_predictions_match(
+        result_prediction=result[0].model_dump(by_alias=True, exclude_none=True),
+        reference_prediction=yolov8_cls_reference_prediction.model_dump(
+            by_alias=True, exclude_none=True
+        ),
+    )
 
 
 @pytest.mark.slow
@@ -55,7 +61,12 @@ def test_yolov8_classification_batch_inference_when_batch_size_smaller_than_max_
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_classification_predictions_match(result_prediction=prediction, reference_prediction=yolov8_cls_reference_prediction)
+        assert_classification_predictions_match(
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
+            reference_prediction=yolov8_cls_reference_prediction.model_dump(
+                by_alias=True, exclude_none=True
+            ),
+        )
 
 
 @pytest.mark.slow
@@ -78,7 +89,12 @@ def test_yolov8_classification_batch_inference_when_batch_size_larger_than_max_b
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_classification_predictions_match(result_prediction=prediction, reference_prediction=yolov8_cls_reference_prediction)
+        assert_classification_predictions_match(
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
+            reference_prediction=yolov8_cls_reference_prediction.model_dump(
+                by_alias=True, exclude_none=True
+            ),
+        )
 
 
 @pytest.mark.slow
@@ -95,7 +111,12 @@ def test_yolov8_detection_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_localized_predictions_match(result_prediction=result[0], reference_prediction=yolov8_det_reference_prediction)
+    assert_localized_predictions_match(
+        result_prediction=result[0].model_dump(by_alias=True, exclude_none=True),
+        reference_prediction=yolov8_det_reference_prediction.model_dump(
+            by_alias=True, exclude_none=True
+        ),
+    )
 
 
 @pytest.mark.slow
@@ -114,7 +135,12 @@ def test_yolov8_detection_batch_inference_when_batch_size_smaller_than_max_batch
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_localized_predictions_match(result_prediction=prediction, reference_prediction=yolov8_det_reference_prediction)
+        assert_localized_predictions_match(
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
+            reference_prediction=yolov8_det_reference_prediction.model_dump(
+                by_alias=True, exclude_none=True
+            ),
+        )
 
 
 @pytest.mark.slow
@@ -137,7 +163,12 @@ def test_yolov8_detection_batch_inference_when_batch_size_larger_than_max_batch_
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_localized_predictions_match(result_prediction=prediction, reference_prediction=yolov8_det_reference_prediction)
+        assert_localized_predictions_match(
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
+            reference_prediction=yolov8_det_reference_prediction.model_dump(
+                by_alias=True, exclude_none=True
+            ),
+        )
 
 
 @pytest.mark.slow
@@ -154,7 +185,12 @@ def test_yolov8_segmentation_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_localized_predictions_match(result_prediction=result[0], reference_prediction=yolov8_seg_reference_prediction)
+    assert_localized_predictions_match(
+        result_prediction=result[0].model_dump(by_alias=True, exclude_none=True),
+        reference_prediction=yolov8_seg_reference_prediction.model_dump(
+            by_alias=True, exclude_none=True
+        ),
+    )
 
 
 @pytest.mark.slow
@@ -173,7 +209,12 @@ def test_yolov8_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_localized_predictions_match(result_prediction=prediction, reference_prediction=yolov8_seg_reference_prediction)
+        assert_localized_predictions_match(
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
+            reference_prediction=yolov8_seg_reference_prediction.model_dump(
+                by_alias=True, exclude_none=True
+            ),
+        )
 
 
 @pytest.mark.slow
@@ -196,7 +237,12 @@ def test_yolov8_segmentation_batch_inference_when_batch_size_larger_than_max_bat
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_localized_predictions_match(result_prediction=prediction, reference_prediction=yolov8_seg_reference_prediction)
+        assert_localized_predictions_match(
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
+            reference_prediction=yolov8_seg_reference_prediction.model_dump(
+                by_alias=True, exclude_none=True
+            ),
+        )
 
 
 @pytest.mark.slow
@@ -213,7 +259,12 @@ def test_yolov8_pose_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_localized_predictions_match(result_prediction=result[0], reference_prediction=yolov8_pose_reference_prediction)
+    assert_localized_predictions_match(
+        result_prediction=result[0].model_dump(by_alias=True, exclude_none=True),
+        reference_prediction=yolov8_pose_reference_prediction.model_dump(
+            by_alias=True, exclude_none=True
+        ),
+    )
 
 
 @pytest.mark.slow
@@ -232,7 +283,12 @@ def test_yolov8_pose_batch_inference_when_batch_size_smaller_than_max_batch_size
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_localized_predictions_match(result_prediction=prediction, reference_prediction=yolov8_pose_reference_prediction)
+        assert_localized_predictions_match(
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
+            reference_prediction=yolov8_pose_reference_prediction.model_dump(
+                by_alias=True, exclude_none=True
+            ),
+        )
 
 
 @pytest.mark.slow
@@ -255,4 +311,9 @@ def test_yolov8_pose_batch_inference_when_batch_size_larger_than_max_batch_size(
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_localized_predictions_match(result_prediction=prediction, reference_prediction=yolov8_pose_reference_prediction)
+        assert_localized_predictions_match(
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
+            reference_prediction=yolov8_pose_reference_prediction.model_dump(
+                by_alias=True, exclude_none=True
+            ),
+        )
