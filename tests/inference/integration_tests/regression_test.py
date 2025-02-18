@@ -1,6 +1,8 @@
 import base64
 import json
 import os
+from typing import Literal
+
 import requests
 import time
 
@@ -12,13 +14,6 @@ from PIL import Image
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 from copy import deepcopy
 
-from inference.core.entities.responses.inference import (
-    ClassificationInferenceResponse,
-    MultiLabelClassificationInferenceResponse,
-    InstanceSegmentationInferenceResponse,
-    KeypointsDetectionInferenceResponse,
-    ObjectDetectionInferenceResponse,
-)
 from tests.common import (
     assert_classification_predictions_match,
     assert_localized_predictions_match,
@@ -176,38 +171,33 @@ def infer_request_with_base64_image(
     )
 
 
-def compare_detection_response(
-    response, expected_response, type="object_detection", multilabel=False
+def compare_prediction_response(
+    response: dict,
+    expected_response: dict,
+    prediction_type: Literal["object_detection", "instance_segmentation", "classification"] = "object_detection",
 ):
     # note that these casts do type checking internally via pydantic
-    if type == "object_detection":
-        response_rf_typed = ObjectDetectionInferenceResponse.model_validate(response)
-        expected_response_rf_typed = ObjectDetectionInferenceResponse.model_validate(expected_response)
+    if prediction_type == "object_detection":
         assert_localized_predictions_match(
-            response_rf_typed,
-            expected_response_rf_typed,
+            result_prediction=response,
+            reference_prediction=expected_response,
             box_pixel_tolerance=PIXEL_TOLERANCE,
             box_confidence_tolerance=CONFIDENCE_TOLERANCE,
         )
-    elif type == "instance_segmentation":
-        response_rf_typed = InstanceSegmentationInferenceResponse.model_validate(response)
-        expected_response_rf_typed = InstanceSegmentationInferenceResponse.model_validate(expected_response)
+    elif prediction_type == "instance_segmentation":
         # this test for YOLACT used to totally fail on GPU, setting a threshold of .95 passes but seems low
         # TODO: look into why YOLACT seems to be so impacted by GPU vs CPU deployment
         assert_localized_predictions_match(
-            response_rf_typed,
-            expected_response_rf_typed,
+            result_prediction=response,
+            reference_prediction=expected_response,
             mask_iou_threshold=0.95,
             box_pixel_tolerance=PIXEL_TOLERANCE,
             box_confidence_tolerance=CONFIDENCE_TOLERANCE,
         )
-    elif type == "classification":
-        response_type = ClassificationInferenceResponse if not multilabel else MultiLabelClassificationInferenceResponse
-        response_rf_typed = response_type.model_validate(response)
-        expected_response_rf_typed = response_type.model_validate(expected_response)
+    elif prediction_type == "classification":
         assert_classification_predictions_match(
-            response_rf_typed,
-            expected_response_rf_typed,
+            result_prediction=response,
+            reference_prediction=expected_response,
             confidence_tolerance=CONFIDENCE_TOLERANCE,
         )
 
@@ -270,11 +260,10 @@ def test_detection(test, res_function, clean_loaded_models_fixture):
                 f"Invalid test: {test}, Missing 'expected_response' field for image type {image_type}."
             )
         if not bool_env(os.getenv("FUNCTIONAL", False)):
-            compare_detection_response(
+            compare_prediction_response(
                 data,
                 test["expected_response"][image_type],
-                type=test["type"],
-                multilabel=test.get("multi_label", False),
+                prediction_type=test["type"],
             )
         print(
             "\u2713"
