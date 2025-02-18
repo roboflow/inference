@@ -217,7 +217,7 @@ def test_sam2_multi_poly(sam2_tiny_model: str, sam2_multipolygon_response: Dict)
     response = model.infer_from_request(request)
     try:
         sam2_multipolygon_response = deepcopy(sam2_multipolygon_response)
-        data = response.model_dump()
+        data = response.model_dump(by_alias=True, exclude_none=True)
         with open("test_multi.json", "w") as f:
             json.dump(data, f)
         response = requests.get(image_url)

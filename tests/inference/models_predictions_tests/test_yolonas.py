@@ -22,8 +22,10 @@ def test_yolonas_detection_single_image_inference(
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
     assert_localized_predictions_match(
-        result_prediction=result[0].model_dump(),
-        reference_prediction=yolonas_det_reference_prediction.model_dump(),
+        result_prediction=result[0].model_dump(by_alias=True, exclude_none=True),
+        reference_prediction=yolonas_det_reference_prediction.model_dump(
+            by_alias=True, exclude_none=True
+        ),
     )
 
 
@@ -44,8 +46,10 @@ def test_yolonas_detection_batch_inference_when_batch_size_smaller_than_max_batc
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
         assert_localized_predictions_match(
-            result_prediction=prediction.model_dump(),
-            reference_prediction=yolonas_det_reference_prediction.model_dump(),
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
+            reference_prediction=yolonas_det_reference_prediction.model_dump(
+                by_alias=True, exclude_none=True
+            ),
         )
 
 
@@ -70,6 +74,8 @@ def test_yolonas_detection_batch_inference_when_batch_size_larger_than_max_batch
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
         assert_localized_predictions_match(
-            result_prediction=prediction.model_dump(),
-            reference_prediction=yolonas_det_reference_prediction.model_dump(),
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
+            reference_prediction=yolonas_det_reference_prediction.model_dump(
+                by_alias=True, exclude_none=True
+            ),
         )

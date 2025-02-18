@@ -28,8 +28,10 @@ def test_yolov7_segmentation_single_image_inference(
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
     assert_localized_predictions_match(
-        result_prediction=result[0].model_dump(),
-        reference_prediction=yolov7_seg_reference_prediction.model_dump(),
+        result_prediction=result[0].model_dump(by_alias=True, exclude_none=True),
+        reference_prediction=yolov7_seg_reference_prediction.model_dump(
+            by_alias=True, exclude_none=True
+        ),
         box_confidence_tolerance=5e-3,
     )
 
@@ -55,8 +57,10 @@ def test_yolov7_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
         assert_localized_predictions_match(
-            result_prediction=prediction.model_dump(),
-            reference_prediction=yolov7_seg_reference_prediction.model_dump(),
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
+            reference_prediction=yolov7_seg_reference_prediction.model_dump(
+                by_alias=True, exclude_none=True
+            ),
             box_confidence_tolerance=5e-3,
         )
 
@@ -86,7 +90,9 @@ def test_yolov7_segmentation_batch_inference_when_batch_size_larger_than_max_bat
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
         assert_localized_predictions_match(
-            result_prediction=prediction.model_dump(),
-            reference_prediction=yolov7_seg_reference_prediction.model_dump(),
+            result_prediction=prediction.model_dump(by_alias=True, exclude_none=True),
+            reference_prediction=yolov7_seg_reference_prediction.model_dump(
+                by_alias=True, exclude_none=True
+            ),
             box_confidence_tolerance=5e-3,
         )
