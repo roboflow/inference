@@ -1,0 +1,1 @@
+{"visualization": null, "inference_id": null, "frame_id": null, "time": null, "image": {"width": 640, "height": 427}, "predictions": [{"x": 309.5, "y": 220.5, "width": 619.0, "height": 407.0, "confidence": 0.5855873823165894, "class": "dog", "class_confidence": null, "class_id": 16, "tracker_id": null, "detection_id": "ef882692-894c-44e9-9bbd-8b488daa6d63", "parent_id": null}]}

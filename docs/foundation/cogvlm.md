@@ -2,6 +2,20 @@
 
 You can ask CogVLM questions about the contents of an image and retrieve a text response.
 
+!!! Warning "CogVLM reached **End Of Life**"
+
+    Due to dependencies conflicts with newer models and security vulnerabilities discovered in `transformers`
+    library patched in the versions of library incompatible with the model we announced End Of Life for CogVLM
+    support in `inference`, effective since release `0.38.0`.
+
+    We are leaving this page only for future reference, explicitly marking the last version of `inference` 
+    supporting the feature (which is `0.37.1`). This tutorial should be treated as demonstration of 
+    capabilities of Visual Language Models and **should not** be reproduced in any production enviromnets 
+    (due to [security issues](https://nvd.nist.gov/vuln/detail/CVE-2024-11393)).
+
+    We encourage Roboflow clients to try another Visual Language Models supported by `inference`, including 
+    Qwen2.5-VL which is now available.
+
 ## Model Quantization
 
 You can run CogVLM through Roboflow Inference with three degrees of quantization. Quantization allows you to make a model smaller, but there is an accuracy trade-off. The three degrees of quantization are:
@@ -31,7 +45,7 @@ with our `inference-cli` tool. Run the following command to set up environment a
 
 
 ```bash
-pip install inference inference-cli inference-sdk
+pip install "inference==0.37.1"
 inference server start
 ```
 

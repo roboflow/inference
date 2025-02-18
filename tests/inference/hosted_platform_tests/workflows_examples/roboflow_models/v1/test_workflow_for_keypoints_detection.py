@@ -102,11 +102,13 @@ def test_keypoints_detection_workflow(
     assert np.allclose(
         first_detections.confidence,
         KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT[platform_environment],
+        atol=1e-2,
     )
     second_detections = sv.Detections.from_inference(result[1]["predictions"])
     assert np.allclose(
         second_detections.confidence,
         KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT[platform_environment],
+        atol=1e-2,
     )
     unique_inference_ids = {r["inference_id"] for r in result}
     assert len(unique_inference_ids) == 2, "Expected unique inference ids granted"

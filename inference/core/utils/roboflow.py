@@ -13,7 +13,6 @@ def get_model_id_chunks(
     dataset_id, version_id = model_id_chunks[0], model_id_chunks[1]
     if dataset_id.lower() in {
         "clip",
-        "cogvlm",
         "doctr",
         "doctr_rec",
         "doctr_det",
