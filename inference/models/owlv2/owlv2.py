@@ -853,7 +853,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         self, image, confidence: float = 0.99, iou_threshold: float = 0.3, **kwargs
     ):
         logger.info(f"Inferring OWLv2 model")
-        return self.owlv2.infer_from_embedding_dict(
+        result = self.owlv2.infer_from_embedding_dict(
             image,
             self.train_data_dict,
             confidence=confidence,
@@ -861,6 +861,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
             **kwargs,
         )
         logger.info(f"OWLv2 model inference complete")
+        return result
 
     def draw_predictions(
         self,
