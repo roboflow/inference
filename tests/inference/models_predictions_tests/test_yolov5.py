@@ -24,7 +24,11 @@ def test_yolov5_detection_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_localized_predictions_match(result_prediction=result[0], reference_prediction=yolov5_det_reference_prediction, box_confidence_tolerance=5e-3)
+    assert_localized_predictions_match(
+        result_prediction=result[0].model_dump(),
+        reference_prediction=yolov5_det_reference_prediction.model_dump(),
+        box_confidence_tolerance=5e-3,
+    )
 
 
 @pytest.mark.slow
@@ -43,7 +47,11 @@ def test_yolov5_detection_batch_inference_when_batch_size_smaller_than_max_batch
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_localized_predictions_match(result_prediction=prediction, reference_prediction=yolov5_det_reference_prediction, box_confidence_tolerance=5e-3)
+        assert_localized_predictions_match(
+            result_prediction=prediction.model_dump(),
+            reference_prediction=yolov5_det_reference_prediction.model_dump(),
+            box_confidence_tolerance=5e-3,
+        )
 
 
 @pytest.mark.slow
@@ -66,7 +74,11 @@ def test_yolov5_detection_batch_inference_when_batch_size_larger_then_max_batch_
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_localized_predictions_match(result_prediction=prediction, reference_prediction=yolov5_det_reference_prediction, box_confidence_tolerance=5e-3)
+        assert_localized_predictions_match(
+            result_prediction=prediction.model_dump(),
+            reference_prediction=yolov5_det_reference_prediction.model_dump(),
+            box_confidence_tolerance=5e-3,
+        )
 
 
 @pytest.mark.slow
@@ -85,7 +97,11 @@ def test_yolov5_segmentation_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_localized_predictions_match(result_prediction=result[0], reference_prediction=yolov5_seg_reference_prediction, mask_iou_threshold=0.998)
+    assert_localized_predictions_match(
+        result_prediction=result[0].model_dump(),
+        reference_prediction=yolov5_seg_reference_prediction.model_dump(),
+        mask_iou_threshold=0.998,
+    )
 
 
 @pytest.mark.slow
@@ -106,7 +122,11 @@ def test_yolov5_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_localized_predictions_match(result_prediction=prediction, reference_prediction=yolov5_seg_reference_prediction, mask_iou_threshold=0.998)
+        assert_localized_predictions_match(
+            result_prediction=prediction.model_dump(),
+            reference_prediction=yolov5_seg_reference_prediction.model_dump(),
+            mask_iou_threshold=0.998,
+        )
 
 
 @pytest.mark.slow
@@ -131,4 +151,8 @@ def test_yolov5_segmentation_batch_inference_when_batch_size_larger_then_max_bat
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_localized_predictions_match(result_prediction=prediction, reference_prediction=yolov5_seg_reference_prediction, mask_iou_threshold=0.998)
+        assert_localized_predictions_match(
+            result_prediction=prediction.model_dump(),
+            reference_prediction=yolov5_seg_reference_prediction.model_dump(),
+            mask_iou_threshold=0.998,
+        )
