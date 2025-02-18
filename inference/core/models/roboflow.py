@@ -704,6 +704,8 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             if not self.load_weights:
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
             try:
+                # check if a cached session exists for this hardware signature
+
                 session_options = onnxruntime.SessionOptions()
                 session_options.log_severity_level = 3
                 # TensorRT does better graph optimization for its EP than onnx
@@ -820,6 +822,18 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             img_dims = [img_dims]
         return img_in, img_dims
 
+    def get_cached_session(self) -> Optional[onnxruntime.InferenceSession]:
+        # fetch post request from '/downloadTrtEngineCache'
+        response = requests.post(
+            f"{self.endpoint}/downloadTrtEngineCache",
+            json={"signature": generate_hardware_signature_string()},
+        )
+        if response.status_code != 200:
+            return None
+        return response.json()["session"]
+
+
+
     @property
     def weights_file(self) -> str:
         """Returns the file containing the ONNX model weights.
@@ -890,3 +904,9 @@ def parse_keypoints_metadata(metadata: list) -> dict:
         e["object_class_id"]: {int(key): value for key, value in e["keypoints"].items()}
         for e in metadata
     }
+
+def generate_hardware_signature_string() -> str:
+    # use lshw 'product' field
+    lshw = subprocess.run(["lshw", "-json"], capture_output=True, text=True).stdout
+    lshw_json = json.loads(lshw)
+    return lshw_json["product"]
