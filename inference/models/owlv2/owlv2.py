@@ -13,6 +13,7 @@ import torchvision
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import box_iou
 
+from inference.core import logger
 from inference.core.cache.model_artifacts import save_bytes_in_cache
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.responses.inference import (
@@ -104,12 +105,15 @@ class OWLv2ModelManager:
         return self._vision_model
 
     def _start_compilation(self):
+        logger.info("Compiling OWLv2 model")
         compilation_thread = threading.Thread(target=self._compile_model)
         compilation_thread.daemon = True
         compilation_thread.start()
 
     def _compile_model(self):
+        logger.info("Compiling OWLv2 model in thread")
         self._vision_model = torch.compile(self._vision_model)
+        logger.info("OWLv2 model compiled in thread")
 
 
 class Owlv2Singleton:
@@ -117,14 +121,17 @@ class Owlv2Singleton:
 
     def __new__(cls, huggingface_id: str):
         if huggingface_id not in cls._instances:
+            logger.info(f"Creating new OWLv2 instance for {huggingface_id}")
             instance = super().__new__(cls)
             instance.huggingface_id = huggingface_id
             # Load model directly in the instance
+            logger.info(f"Loading OWLv2 model from {huggingface_id}")
             model = (
                 Owlv2ForObjectDetection.from_pretrained(huggingface_id)
                 .eval()
                 .to(DEVICE)
             )
+            logger.info(f"OWLv2 model loaded from {huggingface_id}")
             owlv2_model_manager = OWLv2ModelManager(
                 vision_model=model.owlv2.vision_model, huggingface_id=huggingface_id
             )
@@ -775,6 +782,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         raise NotImplementedError("Owlv2 not currently supported on hosted inference")
 
     def download_model_artifacts_from_roboflow_api(self):
+        logger.info(f"Downloading OWLv2 model artifacts")
         if self.version_id is not None:
             api_data = get_roboflow_model_data(
                 api_key=self.api_key,
@@ -787,10 +795,12 @@ class SerializedOwlV2(RoboflowInferenceModel):
                 raise ModelArtefactError(
                     "Could not find `model` key in roboflow API model description response."
                 )
+            logger.info(f"Downloading OWLv2 model weights from {api_data['model']}")
             model_weights_response = get_from_url(
                 api_data["model"], json_response=False
             )
         else:
+            logger.info(f"Getting OWLv2 model data for")
             api_data = get_roboflow_instant_model_data(
                 api_key=self.api_key,
                 model_id=self.endpoint,
@@ -803,6 +813,9 @@ class SerializedOwlV2(RoboflowInferenceModel):
                 raise ModelArtefactError(
                     "Could not find `modelFiles` key or `modelFiles`.`owlv2` or `modelFiles`.`owlv2`.`model` key in roboflow API model description response."
                 )
+            logger.info(
+                f"Downloading OWLv2 model weights from {api_data['modelFiles']['owlv2']['model']}"
+            )
             model_weights_response = get_from_url(
                 api_data["modelFiles"]["owlv2"]["model"], json_response=False
             )
@@ -811,8 +824,10 @@ class SerializedOwlV2(RoboflowInferenceModel):
             file=self.weights_file,
             model_id=self.endpoint,
         )
+        logger.info(f"OWLv2 model weights saved to cache")
 
     def load_model_artifacts_from_cache(self):
+        logger.info(f"Loading OWLv2 model artifacts from cache")
         if DEVICE == "cpu":
             self.model_data = torch.load(
                 self.cache_file(self.weights_file), map_location="cpu"
@@ -826,6 +841,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         # each model can have its own OwlV2 instance because we use a singleton
         self.owlv2 = OwlV2(model_id=self.roboflow_id)
         self.owlv2.cpu_image_embed_cache = self.model_data["image_embeds"]
+        logger.info(f"OWLv2 model artifacts loaded from cache")
 
     weights_file_path = "weights.pt"
 
@@ -836,6 +852,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
     def infer(
         self, image, confidence: float = 0.99, iou_threshold: float = 0.3, **kwargs
     ):
+        logger.info(f"Inferring OWLv2 model")
         return self.owlv2.infer_from_embedding_dict(
             image,
             self.train_data_dict,
@@ -843,6 +860,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
             iou_threshold=iou_threshold,
             **kwargs,
         )
+        logger.info(f"OWLv2 model inference complete")
 
     def draw_predictions(
         self,
