@@ -8,8 +8,8 @@ YOLOv7 is a computer vision model architecture introduced in the paper "[YOLOv7:
 
 Click a link below to see instructions on how to run a YOLOv8 model on different inputs:
 
-- [Image](/quickstart/run_model_on_image)
-- [Video, Webcam, or RTSP Stream](/quickstart/run_model_on_rtsp_webcam)
+- [Image](../quickstart/run_model_on_image.md)
+- [Video, Webcam, or RTSP Stream](../quickstart/run_model_on_rtsp_webcam.md)
 
 ## Configure Your Deployment
 

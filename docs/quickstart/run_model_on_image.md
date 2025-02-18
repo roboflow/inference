@@ -230,7 +230,7 @@ There are two generations of routes in a Roboflow inference server To see what r
         python app.py
         ```
 
-!!! tip "See [more docs on the inference-sdk](/inference_helpers/inference_sdk)"
+!!! tip "See [more docs on the inference-sdk](../inference_helpers/inference_sdk.md)"
 
 ### Run Inference on a v1 Route
 

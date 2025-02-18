@@ -76,4 +76,4 @@ inference server start
 ```
 
 For detailed instructions on various systems, see our [installation guide](/install/index)
-then see [next steps](/start/next) to connect to your new Inference Server.
+then see [next steps](./next.md) to connect to your new Inference Server.

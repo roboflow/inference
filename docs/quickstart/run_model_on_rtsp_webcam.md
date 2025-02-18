@@ -11,7 +11,7 @@ export ROBOFLOW_API_KEY=<your api key>
 
 ```
 
-[Learn more about using Roboflow API keys in Inference](/quickstart/configure_api_key)
+[Learn more about using Roboflow API keys in Inference](../quickstart/configure_api_key.md)
 
 Then, install Inference:
 
@@ -61,7 +61,7 @@ Your webcam will open and you can see the model running:
 
     When you run inference on an image, the same augmentations you applied when you generated a version in Roboflow will be applied at inference time. This helps improve model performance.
 
-Presto! We used an InferencePipeline to run inference on our webcam and learned how we could modify it to run on other video sources (like video files or RTSP streams). See the [Inference Pipeline docs](/using_inference/inference_pipeline) to learn more about other configurable parameters and built in sinks.
+Presto! We used an InferencePipeline to run inference on our webcam and learned how we could modify it to run on other video sources (like video files or RTSP streams). See the [Inference Pipeline docs](../using_inference/inference_pipeline.md) to learn more about other configurable parameters and built in sinks.
 
 ## Define Custom Prediction Logic
 

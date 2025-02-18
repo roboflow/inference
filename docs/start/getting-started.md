@@ -94,7 +94,7 @@ Detailed [installation instructions and device-specific performance tips are her
 
 Sometimes enterprise compliance policies regarding sensitive data requires running
 workloads on-premises. This is supported via
-[self-hosting on your own cloud](/install/cloud/index). Billing is the same
+[self-hosting on your own cloud](../install/cloud/index.md). Billing is the same
 as for self-hosting on an edge device.
 
 <br />
@@ -102,4 +102,4 @@ as for self-hosting on an edge device.
 # Next Steps
 
 Once you've decided on a deployment method and have a server running,
-[interfacing with it is easy](/start/next).
+[interfacing with it is easy](../start/next.md).

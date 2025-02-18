@@ -11,8 +11,8 @@ You can deploy the following YOLO-NAS model types with Inference:
 
 Click a link below to see instructions on how to run a YOLO-NAS model on different inputs:
 
-- [Image](/quickstart/run_model_on_image)
-- [Video, Webcam, or RTSP Stream](/quickstart/run_model_on_rtsp_webcam)
+- [Image](../quickstart/run_model_on_image.md)
+- [Video, Webcam, or RTSP Stream](../quickstart/run_model_on_rtsp_webcam.md)
 
 ## Configure Your Deployment
 
