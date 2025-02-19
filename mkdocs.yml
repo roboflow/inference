@@ -147,7 +147,7 @@ nav:
           - Benchmark Inference: inference_helpers/cli_commands/benchmark.md
           - Make Predictions: inference_helpers/cli_commands/infer.md
           - Deploy To Cloud: inference_helpers/cli_commands/cloud.md
-          - Reference: inference_helpers/cli_commands/cli_reference.md
+          - Reference: inference_helpers/cli_commands/reference.md
       - HTTP API:
         - OpenAPI Spec: api.md
       - inference Python Package: reference/inference/

@@ -16,9 +16,13 @@ def main():
     cmd = f"typer inference_cli.main utils docs --name inference"
     result = subprocess.run(cmd.split(), capture_output=True, text=True)
     content = result.stdout
-    print("NOT Writing CLI reference to ", filename)
-    #with open(filename, 'w') as f:
-    #    f.write(content)
+
+    print(content)
+    print(type(content))
+    print("Writing CLI reference to ", filename)
+    
+    with open(filename, 'w', encoding='utf-8') as f:
+       f.write(content)
 
 
 if __name__ == "__main__":
