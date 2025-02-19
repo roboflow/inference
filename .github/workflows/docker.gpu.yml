@@ -74,10 +74,6 @@ jobs:
       - name: Set up build variables
         id: set_up_build_variables
         run: |
-          echo "GITTAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "DATE=$(date '+%Y%m%d')" >> $GITHUB_ENV
-          echo "RANDOM_STRING=$(dd bs=512 if=/dev/urandom count=1 | tr -dc 'a-z0-9' | fold -w 6 | head -n 1)" >> $GITHUB_ENV
-          echo "Generated tag list ${{ steps.tags.outputs.image_tags }}"
           TAGS=""
           IFS=',' read -ra TAG_ARRAY <<< "${{ steps.tags.outputs.image_tags }}"
           for tag in "${TAG_ARRAY[@]}"; do
