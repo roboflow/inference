@@ -19,6 +19,7 @@ MULTI_CLASS_CLASSIFICATION_WORKFLOW = {
             "name": "classifier",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
+            "confidence": 0.09,
         }
     ],
     "outputs": [
@@ -98,6 +99,7 @@ MULTI_LABEL_CLASSIFICATION_WORKFLOW = {
             "name": "classifier",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
+            "confidence": 0.5,
         }
     ],
     "outputs": [
