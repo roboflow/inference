@@ -64,10 +64,11 @@ jobs:
         with:
           workload_identity_provider: 'projects/391662651862/locations/global/workloadIdentityPools/github-actions/providers/github'
           service_account: 'github-gcloud-deployer@roboflow-artifacts.iam.gserviceaccount.com'
-      - name: Login to GCR
+          token_format: 'access_token'
+      - name: Login to Google Artifact Registry
         uses: docker/login-action@v3
         with:
-          registry: "us-docker.pkg.dev"
+          registry: us-docker.pkg.dev
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
       - name: Set up build variables
