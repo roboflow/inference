@@ -19,6 +19,7 @@ MULTI_CLASS_CLASSIFICATION_WORKFLOW = {
             "name": "classifier",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
+            "confidence": 0.09,
         }
     ],
     "outputs": [
@@ -36,10 +37,7 @@ MULTI_CLASS_CLASSIFICATION_WORKFLOW = {
 }
 
 MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
-    PlatformEnvironment.ROBOFLOW_STAGING: [
-        0.3673,
-        0.593,
-    ],
+    PlatformEnvironment.ROBOFLOW_STAGING: [0.3667, 0.5917],
     PlatformEnvironment.ROBOFLOW_PLATFORM: [0.8252, 0.9962],
 }
 
@@ -101,6 +99,7 @@ MULTI_LABEL_CLASSIFICATION_WORKFLOW = {
             "name": "classifier",
             "image": "$inputs.image",
             "model_id": "$inputs.model_id",
+            "confidence": 0.5,
         }
     ],
     "outputs": [

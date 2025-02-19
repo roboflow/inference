@@ -63,9 +63,10 @@ annotated_image = label_annotator.annotate(
 sv.plot_image(annotated_image)
 ```
 
+
 !!! Tip
 
-    To see more models, check out the [Pre-Trained Models](/quickstart/aliases.md) page and [Roboflow Universe](https://universe.roboflow.com).
+    To see more models, check out the [Pre-Trained Models](../quickstart/aliases.md) page and [Roboflow Universe](https://universe.roboflow.com).
 
 The `people-walking.jpg` file is hosted <a href="https://media.roboflow.com/inference/people-walking.jpg" target="_blank">here</a>.
 

@@ -28,7 +28,7 @@ ELIGIBLE_PREDICTION_TYPES = {
 
 
 def initialize_detections_number_based_sampling(
-    strategy_config: Dict[str, Any]
+    strategy_config: Dict[str, Any],
 ) -> SamplingMethod:
     try:
         more_than = strategy_config.get("more_than")
