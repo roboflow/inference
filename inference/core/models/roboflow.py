@@ -308,18 +308,20 @@ class RoboflowInferenceModel(Model):
                 raise ModelArtefactError(
                     "Could not find `modelFiles` key or `modelFiles`.`ort` or `modelFiles`.`ort`.`model` key in roboflow API model description response."
                 )
+            if "environment" not in api_data:
+                raise ModelArtefactError(
+                    "Could not find `environment` key in roboflow API model description response."
+                )
             model_weights_response = get_from_url(
                 api_data["modelFiles"]["ort"]["model"], json_response=False
             )
-            if "classes" in api_data["modelFiles"]["ort"]:
+            environment = api_data["environment"]
+            if "classes" in api_data:
                 save_text_lines_in_cache(
-                    content=api_data["modelFiles"]["ort"]["classes"],
+                    content=api_data["classes"],
                     file="class_names.txt",
                     model_id=self.endpoint,
                 )
-            environment = {}
-            if "environment" in api_data["modelFiles"]["ort"]:
-                environment = get_from_url(api_data["modelFiles"]["ort"]["environment"])
 
         save_bytes_in_cache(
             content=model_weights_response.content,
