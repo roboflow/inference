@@ -262,7 +262,9 @@ class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResp
     """
 
     predictions: List[ClassificationPrediction]
-    top: str = Field(description="The top predicted class label", default="")
+    top: str = Field(
+        description="The top predicted class label", default=""
+    )  # Not making this field optional to avoid breaking change - in other parts of the codebase `model_dump` is called with `exclude_none=True`
     confidence: float = Field(
         description="The confidence of the top predicted class label",
         default=0.0,
