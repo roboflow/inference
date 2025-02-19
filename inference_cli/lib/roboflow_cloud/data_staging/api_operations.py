@@ -5,6 +5,7 @@ import tempfile
 from datetime import datetime, timedelta
 from functools import partial
 from multiprocessing.pool import Pool, ThreadPool
+from threading import Lock
 from typing import Dict, Generator, List, Optional, Set, TextIO, Tuple
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -36,6 +37,7 @@ from inference_cli.lib.roboflow_cloud.config import (
 from inference_cli.lib.roboflow_cloud.data_staging.entities import (
     BatchExportResponse,
     BatchMetadata,
+    DownloadLogEntry,
     FileMetadata,
     ListBatchesResponse,
     ListBatchResponse,
@@ -831,7 +833,74 @@ def list_multipart_batch_parts(
         raise RFAPICallError("Could not decode Roboflow API response.") from error
 
 
-def export_data(batch_id: str, api_key: str, target_directory: str) -> None:
+class DataExportLog:
+
+    @classmethod
+    def init(cls, export_dir: str) -> "DataExportLog":
+        file_path = os.path.join(export_dir, ".export_log.jsonl")
+        if not os.path.exists(file_path):
+            file_descriptor = open(file_path, "w+")
+        else:
+            file_descriptor = open(file_path, "r+")
+        log_content = [
+            DownloadLogEntry.model_validate(json.loads(line))
+            for line in file_descriptor.readlines()
+            if len(line.strip()) > 0
+        ]
+        return cls(log_file=file_descriptor, log_content=log_content)
+
+    def __init__(
+        self,
+        log_file: TextIO,
+        log_content: List[DownloadLogEntry],
+    ):
+        self._log_file = log_file
+        self._metadata_hash2log_entry: Dict[str, DownloadLogEntry] = {
+            _generate_file_metadata_hash(element.file_metadata): element
+            for element in log_content
+        }
+        self._lock = Lock()
+
+    def is_already_exported(
+        self, file_metadata: FileMetadata, override_existing: bool
+    ) -> bool:
+        with self._lock:
+            metadata_hash = _generate_file_metadata_hash(file_metadata)
+            if metadata_hash not in self._metadata_hash2log_entry:
+                return False
+            if override_existing:
+                return False
+            entry = self._metadata_hash2log_entry[metadata_hash]
+            return os.path.exists(entry.local_path)
+
+    def denote_export(self, file_metadata: FileMetadata, local_path: str) -> None:
+        with self._lock:
+            entry = DownloadLogEntry(
+                file_metadata=file_metadata,
+                local_path=local_path,
+            )
+            self._metadata_hash2log_entry[
+                _generate_file_metadata_hash(entry.file_metadata)
+            ] = entry
+            self._log_file.write(f"{json.dumps(entry.model_dump(by_alias=True))}\n")
+
+    def __del__(self) -> None:
+        self._log_file.close()
+
+
+def _generate_file_metadata_hash(file_metadata: FileMetadata) -> str:
+    return (
+        f"{file_metadata.file_name}-{file_metadata.part_name}-{file_metadata.shard_id}"
+    )
+
+
+def export_data(
+    batch_id: str,
+    api_key: str,
+    target_directory: str,
+    part_names: Optional[Set[str]] = None,
+    override_existing: bool = False,
+) -> None:
     workspace = get_workspace(api_key=api_key)
     metadata = get_batch_metadata(
         workspace=workspace, batch_id=batch_id, api_key=api_key
@@ -842,27 +911,40 @@ def export_data(batch_id: str, api_key: str, target_directory: str) -> None:
             batch_id=batch_id,
             api_key=api_key,
             target_directory=target_directory,
+            selected_part_names=part_names,
+            override_existing=override_existing,
+        )
+    if part_names is not None:
+        raise ValueError(
+            f"Requested listing of parts {part_names}, but batch is not multipart-batch."
         )
     return export_simple_batch(
         workspace=workspace,
         batch_id=batch_id,
         api_key=api_key,
         target_directory=target_directory,
+        override_existing=override_existing,
     )
 
 
 def export_multipart_batch(
-    workspace: str, batch_id: str, api_key: str, target_directory: str
+    workspace: str,
+    batch_id: str,
+    api_key: str,
+    target_directory: str,
+    selected_part_names: Optional[Set[str]] = None,
+    override_existing: bool = False,
 ) -> None:
     parts = list_multipart_batch_parts(
         workspace=workspace, batch_id=batch_id, api_key=api_key
     )
     os.makedirs(target_directory, exist_ok=True)
-    next_page_token, covered_parts = get_export_progress(
-        workspace=workspace, batch_id=batch_id, target_dir=target_directory
-    )
+    export_log = DataExportLog.init(export_dir=target_directory)
     for part in parts:
-        if part.part_name in covered_parts:
+        if (
+            selected_part_names is not None
+            and part.part_name not in selected_part_names
+        ):
             continue
         export_part(
             workspace=workspace,
@@ -870,55 +952,46 @@ def export_multipart_batch(
             api_key=api_key,
             target_directory=target_directory,
             part_name=part.part_name,
-            covered_parts=covered_parts,
-            next_page_token=next_page_token,
+            export_log=export_log,
+            override_existing=override_existing,
         )
-        covered_parts.add(part.part_name)
-        next_page_token = None
 
 
 def export_simple_batch(
-    workspace: str, batch_id: str, api_key: str, target_directory: str
+    workspace: str,
+    batch_id: str,
+    api_key: str,
+    target_directory: str,
+    override_existing: bool = False,
 ) -> None:
     os.makedirs(target_directory, exist_ok=True)
     total_files = get_batch_count(
         workspace=workspace, batch_id=batch_id, api_key=api_key
     )
-    next_page_token, _ = get_export_progress(
-        workspace=workspace, batch_id=batch_id, target_dir=target_directory
-    )
+    export_log = DataExportLog.init(export_dir=target_directory)
     with Progress() as progress_bar:
         task = progress_bar.add_task(
             f"Downloading {total_files} files...", total=total_files
         )
+        next_page_token = None
         while True:
-            export_response = export_batch_data(
+            listing_page = get_one_page_of_batch_content(
                 workspace=workspace,
                 batch_id=batch_id,
                 api_key=api_key,
                 next_page_token=next_page_token,
             )
-            next_page_token = export_response.next_page_token
-            pull_urls_to_directory(
-                urls=export_response.urls,
+            next_page_token = listing_page.next_page_token
+            pull_batch_elements_to_directory(
+                files_metadata=listing_page.files_metadata,
                 target_directory=target_directory,
                 progress_bar=progress_bar,
                 task=task,
+                export_log=export_log,
+                override_existing=override_existing,
             )
             if next_page_token is None:
                 break
-            denote_export_progress(
-                workspace=workspace,
-                batch_id=batch_id,
-                target_dir=target_directory,
-                next_page_token=next_page_token,
-            )
-    denote_export_progress(
-        workspace=workspace,
-        batch_id=batch_id,
-        target_dir=target_directory,
-        next_page_token="<END>",
-    )
     return None
 
 
@@ -928,8 +1001,8 @@ def export_part(
     api_key: str,
     target_directory: str,
     part_name: str,
-    covered_parts: Set[str],
-    next_page_token: Optional[str] = None,
+    export_log: DataExportLog,
+    override_existing: bool,
 ) -> None:
     part_target_directory = os.path.join(target_directory, part_name)
     os.makedirs(part_target_directory, exist_ok=True)
@@ -943,120 +1016,82 @@ def export_part(
         task = progress_bar.add_task(
             f"Downloading part {part_name} - {total_files} files...", total=total_files
         )
+        next_page_token = None
         while True:
-            export_response = export_batch_data(
+            listing_page = get_one_page_of_batch_content(
                 workspace=workspace,
                 batch_id=batch_id,
                 api_key=api_key,
-                part_name=part_name,
                 next_page_token=next_page_token,
+                part_name=part_name,
             )
-            next_page_token = export_response.next_page_token
-            pull_urls_to_directory(
-                urls=export_response.urls,
+            next_page_token = listing_page.next_page_token
+            pull_batch_elements_to_directory(
+                files_metadata=listing_page.files_metadata,
                 target_directory=part_target_directory,
                 progress_bar=progress_bar,
                 task=task,
+                export_log=export_log,
+                override_existing=override_existing,
             )
             if next_page_token is None:
                 break
-            denote_export_progress(
-                workspace=workspace,
-                batch_id=batch_id,
-                target_dir=target_directory,
-                next_page_token=next_page_token,
-                part_names=covered_parts,
-            )
-    denote_export_progress(
-        workspace=workspace,
-        batch_id=batch_id,
-        target_dir=target_directory,
-        next_page_token="<END>",
-        part_names=covered_parts,
-    )
     return None
 
 
-def pull_urls_to_directory(
-    urls: List[str],
+def pull_batch_elements_to_directory(
+    files_metadata: List[FileMetadata],
     target_directory: str,
     progress_bar: Progress,
     task: TaskID,
+    export_log: DataExportLog,
+    override_existing: bool,
 ) -> None:
-    pull_url_to_directory_closure = partial(
-        pull_url_to_directory,
+    pull_batch_element_to_directory_closure = partial(
+        pull_batch_element_to_directory,
         target_directory=target_directory,
+        export_log=export_log,
+        override_existing=override_existing,
     )
     with ThreadPool(processes=MAX_DOWNLOAD_THREADS) as pool:
-        for _ in pool.imap(pull_url_to_directory_closure, urls):
+        for _ in pool.imap(pull_batch_element_to_directory_closure, files_metadata):
             progress_bar.update(task, advance=1)
     return None
 
 
-def pull_url_to_directory(url: str, target_directory: str) -> None:
-    parsed_url = urlparse(url)
+def pull_batch_element_to_directory(
+    file_metadata: FileMetadata,
+    target_directory: str,
+    export_log: DataExportLog,
+    override_existing: bool,
+) -> None:
+    if export_log.is_already_exported(
+        file_metadata=file_metadata,
+        override_existing=override_existing,
+    ):
+        return None
+    parsed_url = urlparse(file_metadata.download_url)
     file_name = os.path.basename(parsed_url.path)
     is_archive = file_name.endswith(".tar.gz") or file_name.endswith(".tar")
     if not is_archive:
-        _ = pull_file_to_directory(
-            url=url, target_directory=target_directory, file_name=file_name
+        result_path = pull_file_to_directory(
+            url=file_metadata.download_url,
+            target_directory=target_directory,
+            file_name=file_name,
         )
+        export_log.denote_export(file_metadata=file_metadata, local_path=result_path)
         return None
     with tempfile.TemporaryDirectory() as tmp_dir:
         download_and_unpack_archive(
-            url=url,
+            url=file_metadata.download_url,
             file_name=file_name,
             pull_dir=tmp_dir,
             target_dir=target_directory,
         )
-
-
-def denote_export_progress(
-    workspace: str,
-    batch_id: str,
-    target_dir: str,
-    next_page_token: Optional[str],
-    part_names: Set[str] = None,
-) -> None:
-    log_path = _get_export_progress_log_path(target_dir=target_dir)
-    if part_names is None:
-        part_names = set()
-    log_content = {
-        "workspace": workspace,
-        "batch_id": batch_id,
-        "next_page_token": next_page_token,
-        "part_names": list(part_names),
-    }
-    with open(log_path, "w") as f:
-        json.dump(log_content, f)
-
-
-def get_export_progress(
-    workspace: str,
-    batch_id: str,
-    target_dir: str,
-) -> Tuple[Optional[str], Set[str]]:
-    log_path = _get_export_progress_log_path(target_dir=target_dir)
-    if not os.path.exists(log_path):
-        return None, set()
-    with open(log_path) as f:
-        log_content = json.load(f)
-    if any(
-        k not in log_content
-        for k in ["workspace", "batch_id", "next_page_token", "part_names"]
-    ):
-        raise RuntimeError(f"Log file saved under {log_path} is malformed")
-    if log_content["workspace"] != workspace or log_content["batch_id"] != batch_id:
-        raise RuntimeError(
-            "Attempted to export batch to directory which was a host of another export"
+        export_log.denote_export(
+            file_metadata=file_metadata, local_path=target_directory
         )
-    if log_content["next_page_token"] == "<END>":
-        raise RuntimeError("Nothing to download - content reported as fully fetched")
-    return log_content["next_page_token"], set(log_content["part_names"])
-
-
-def _get_export_progress_log_path(target_dir: str) -> str:
-    return os.path.join(target_dir, ".export_progress.json")
+        return None
 
 
 @backoff.on_exception(

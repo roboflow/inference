@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import List, Optional
 
 import typer
 from typing_extensions import Annotated
@@ -47,7 +47,7 @@ def list_batches(
         )
     except KeyboardInterrupt:
         print("Command interrupted.")
-        return
+        raise typer.Exit(code=2)
     except Exception as error:
         if debug_mode:
             raise error
@@ -126,7 +126,7 @@ def list_batch_content(
         )
     except KeyboardInterrupt:
         print("Command interrupted.")
-        return
+        raise typer.Exit(code=2)
     except Exception as error:
         if debug_mode:
             raise error
@@ -188,7 +188,7 @@ def create_batch_of_images(
         )
     except KeyboardInterrupt:
         print("Command interrupted.")
-        return
+        raise typer.Exit(code=2)
     except Exception as error:
         if debug_mode:
             raise error
@@ -291,7 +291,7 @@ def show_batch_details(
         api_operations.display_batch_details(batch_id=batch_id, api_key=api_key)
     except KeyboardInterrupt:
         print("Command interrupted.")
-        return
+        raise typer.Exit(code=1)
     except Exception as error:
         if debug_mode:
             raise error
@@ -334,6 +334,13 @@ def export_batch(
             help="Roboflow API key for your workspace. If not given - env variable `ROBOFLOW_API_KEY` will be used",
         ),
     ] = None,
+    override_existing: Annotated[
+        bool,
+        typer.Option(
+            "--override-existing/--no-override-existing",
+            help="Flag to enforce export even if partial content is already exported",
+        ),
+    ] = False,
     debug_mode: Annotated[
         bool,
         typer.Option(
@@ -352,11 +359,15 @@ def export_batch(
     try:
         ensure_api_key_is_set(api_key=api_key)
         api_operations.export_data(
-            batch_id=batch_id, api_key=api_key, target_directory=target_dir
+            batch_id=batch_id,
+            api_key=api_key,
+            target_directory=target_dir,
+            part_names=part_names,
+            override_existing=override_existing,
         )
     except KeyboardInterrupt:
         print("Command interrupted.")
-        return
+        raise typer.Exit(code=2)
     except Exception as error:
         if debug_mode:
             raise error

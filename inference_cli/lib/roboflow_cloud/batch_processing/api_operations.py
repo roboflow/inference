@@ -12,15 +12,7 @@ from requests import Timeout
 from rich.console import Console
 from rich.json import JSON
 from rich.panel import Panel
-from rich.progress import (
-    BarColumn,
-    Progress,
-    ProgressSample,
-    Task,
-    TaskID,
-    TaskProgressColumn,
-    TextColumn,
-)
+from rich.progress import BarColumn, Progress, TaskProgressColumn
 from rich.table import Table
 from rich.text import Text
 
