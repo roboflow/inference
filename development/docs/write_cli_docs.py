@@ -16,9 +16,15 @@ def main():
     cmd = f"typer inference_cli.main utils docs --name inference"
     result = subprocess.run(cmd.split(), capture_output=True, text=True)
     content = result.stdout
+    error = result.stderr
+    status = result.returncode
 
-    print(content)
-    print(type(content))
+    print("CONTENT length: ", len(content))
+    print("CONTENT type: ", type(content))
+    print("ERROR length: ", len(error))
+    print("ERROR: ", error)
+    print("STATUS: ", status)
+
     print("Writing CLI reference to ", filename)
     
     with open(filename, 'w', encoding='utf-8') as f:
