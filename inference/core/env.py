@@ -6,7 +6,7 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
-from inference.core.warnings import InferenceDeprecationWarning
+from inference.core.warnings import InferenceDeprecationWarning, ModelDependencyMissing
 
 load_dotenv(os.getcwd() + "/.env")
 
@@ -64,9 +64,6 @@ AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
 # AWS secret access key, default is None
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", None)
 
-COGVLM_LOAD_4BIT = str2bool(os.getenv("COGVLM_LOAD_4BIT", True))
-COGVLM_LOAD_8BIT = str2bool(os.getenv("COGVLM_LOAD_8BIT", False))
-COGVLM_VERSION_ID = os.getenv("COGVLM_VERSION_ID", "cogvlm-chat-hf")
 PALIGEMMA_VERSION_ID = os.getenv("PALIGEMMA_VERSION_ID", "paligemma-3b-mix-224")
 # CLIP version ID, default is "ViT-B-16"
 CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
@@ -141,9 +138,6 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
     os.getenv("CORE_MODEL_GROUNDINGDINO_ENABLED", True)
 )
 
-# Flag to enable CogVLM core model, default is True
-CORE_MODEL_COGVLM_ENABLED = str2bool(os.getenv("CORE_MODEL_COGVLM_ENABLED", True))
-
 LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
 # Flag to enable YOLO-World core model, default is True
@@ -153,6 +147,11 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
 
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
+
+# Whether or not to use PyTorch for preprocessing, default is False
+USE_PYTORCH_FOR_PREPROCESSING = str2bool(
+    os.getenv("USE_PYTORCH_FOR_PREPROCESSING", False)
+)
 
 # Flag to disable inference cache, default is False
 DISABLE_INFERENCE_CACHE = str2bool(os.getenv("DISABLE_INFERENCE_CACHE", False))
@@ -264,6 +263,10 @@ MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
 
 # Model ID, default is None
 MODEL_ID = os.getenv("MODEL_ID")
+
+# Enable the builder, default is False
+ENABLE_BUILDER = str2bool(os.getenv("ENABLE_BUILDER", False))
+BUILDER_ORIGIN = os.getenv("BUILDER_ORIGIN", "https://app.roboflow.com")
 
 # Enable jupyter notebook server route, default is False
 NOTEBOOK_ENABLED = str2bool(os.getenv("NOTEBOOK_ENABLED", False))
@@ -501,3 +504,10 @@ TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL = int(
 ROBOFLOW_API_REQUEST_TIMEOUT = os.getenv("ROBOFLOW_API_REQUEST_TIMEOUT")
 if ROBOFLOW_API_REQUEST_TIMEOUT:
     ROBOFLOW_API_REQUEST_TIMEOUT = int(ROBOFLOW_API_REQUEST_TIMEOUT)
+
+
+IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
+    os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
+)
+if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
+    warnings.simplefilter("ignore", ModelDependencyMissing)

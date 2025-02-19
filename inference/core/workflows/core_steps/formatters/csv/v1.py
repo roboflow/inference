@@ -237,7 +237,7 @@ def prepare_csv_content(
 
 
 def unfold_parameters(
-    batch_columns_data: Dict[str, Any]
+    batch_columns_data: Dict[str, Any],
 ) -> Generator[Dict[str, Any], None, None]:
     batch_parameters = {
         k for k, v in batch_columns_data.items() if isinstance(v, Batch)

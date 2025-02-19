@@ -1,6 +1,6 @@
 You can run computer vision models on webcam stream frames, RTSP stream frames, and video frames with Inference.
 
-!!! tip "Follow our [Run a Fine-Tuned Model on Images](/quickstart/run_model_on_image.md) guide to learn how to find a model to run."
+!!! tip "Follow our [Run a Fine-Tuned Model on Images](/quickstart/run_model_on_image) guide to learn how to find a model to run."
 
 ## Installation
 
@@ -11,7 +11,7 @@ export ROBOFLOW_API_KEY=<your api key>
 
 ```
 
-[Learn more about using Roboflow API keys in Inference](/quickstart/configure_api_key.md)
+[Learn more about using Roboflow API keys in Inference](../quickstart/configure_api_key.md)
 
 Then, install Inference:
 
@@ -61,7 +61,7 @@ Your webcam will open and you can see the model running:
 
     When you run inference on an image, the same augmentations you applied when you generated a version in Roboflow will be applied at inference time. This helps improve model performance.
 
-Presto! We used an InferencePipeline to run inference on our webcam and learned how we could modify it to run on other video sources (like video files or RTSP streams). See the [Inference Pipeline docs](/using_inference/inference_pipeline.md) to learn more about other configurable parameters and built in sinks.
+Presto! We used an InferencePipeline to run inference on our webcam and learned how we could modify it to run on other video sources (like video files or RTSP streams). See the [Inference Pipeline docs](../using_inference/inference_pipeline.md) to learn more about other configurable parameters and built in sinks.
 
 ## Define Custom Prediction Logic
 
@@ -158,7 +158,7 @@ You should see something like this on your screen:
   <source src="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking-annotated.mp4" type="video/mp4">
 </video>
 
-And there you have it! We created a custom sink that takes the outputs of our Inference Pipeline, annotates an image, and displays it to our screen. See the [Inference Pipeline docs](/using_inference/inference_pipeline.md) to learn more about other configurable parameters and built in sinks.
+And there you have it! We created a custom sink that takes the outputs of our Inference Pipeline, annotates an image, and displays it to our screen. See the [Inference Pipeline docs](/using_inference/inference_pipeline) to learn more about other configurable parameters and built in sinks.
 
 ## Existing Video Sinks
 

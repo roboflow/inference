@@ -77,19 +77,20 @@ export default function Home() {
           </div>
           <div className="flex items-center justify-center gap-2 md:gap-4 flex-col sm:flex-row flex-nowrap sm:flex-wrap px-6">
             <HeaderLink
-              href="https://inference.roboflow.com/quickstart/run_model_on_image/"
+              href="/build"
               className=""
-              label="Start with code snippets"
+              label="Start building locally"
               icon="💻"
+              target="_top"
             />
             <HeaderLink
-              href="https://roboflow.com/universe"
+              href="https://universe.roboflow.com"
               className=""
               label="Find interesting models"
               icon="🔍"
             />
             <HeaderLink
-              href="https://blog.roboflow.com/how-to-train-yolov8-on-a-custom-dataset/"
+              href="https://roboflow.com/train"
               className=""
               label="Train your own custom models"
               icon="💫"

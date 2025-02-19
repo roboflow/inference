@@ -3,7 +3,7 @@ import os
 import sys
 
 
-def import_class_from_file(file_path, class_name):
+def import_class_from_file(file_path, class_name, alias_name=None):
     """
     Emulates what huggingface transformers does to load remote code with trust_remote_code=True,
     but allows us to use the class directly so that we don't have to load untrusted code.
@@ -23,6 +23,9 @@ def import_class_from_file(file_path, class_name):
         module.__package__ = os.path.basename(module_dir)
 
         spec.loader.exec_module(module)
-        return getattr(module, class_name)
+        cls = getattr(module, class_name)
+        if alias_name:
+            globals()[alias_name] = cls
+        return cls
     finally:
         sys.path.pop(0)

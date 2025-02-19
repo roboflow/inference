@@ -519,7 +519,7 @@ class UsageCollector:
 
     @staticmethod
     def _resource_details_from_workflow_json(
-        workflow_json: Dict[str, Any]
+        workflow_json: Dict[str, Any],
     ) -> List[str]:
         return [
             f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"

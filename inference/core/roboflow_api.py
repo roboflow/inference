@@ -1,8 +1,10 @@
 import hashlib
 import json
 import os
+import re
 import urllib.parse
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import backoff
@@ -548,35 +550,53 @@ def get_workflow_specification(
         )
         if cached_entry:
             return cached_entry
-    params = []
-    if api_key is not None:
-        params.append(("api_key", api_key))
-    api_url = _add_params_to_url(
-        url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_id}",
-        params=params,
-    )
-    try:
-        response = _get_from_url(url=api_url)
-        if USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
-            cache_workflow_response(
+
+    if workspace_id == "local":
+        if not re.match(r"^[\w\-]+$", workflow_id):
+            raise ValueError("Invalid workflow id")
+
+        local_file_path = (
+            Path(MODEL_CACHE_DIR) / "workflow" / "local" / f"{workflow_id}.json"
+        )
+        if not local_file_path.exists():
+            raise FileNotFoundError(f"Local workflow file not found: {local_file_path}")
+
+        with local_file_path.open("r", encoding="utf-8") as f:
+            local_config = json.load(f)
+
+        # Mimic the same shape as the cloud response:
+        response = {"workflow": local_config}
+    else:
+        params = []
+        if api_key is not None:
+            params.append(("api_key", api_key))
+        api_url = _add_params_to_url(
+            url=f"{API_BASE_URL}/{workspace_id}/workflows/{workflow_id}",
+            params=params,
+        )
+        try:
+            response = _get_from_url(url=api_url)
+            if USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
+                cache_workflow_response(
+                    workspace_id=workspace_id,
+                    workflow_id=workflow_id,
+                    api_key=api_key,
+                    response=response,
+                )
+        except (requests.exceptions.ConnectionError, ConnectionError) as error:
+            if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
+                raise error
+            response = load_cached_workflow_response(
                 workspace_id=workspace_id,
                 workflow_id=workflow_id,
                 api_key=api_key,
-                response=response,
             )
-    except (requests.exceptions.ConnectionError, ConnectionError) as error:
-        if not USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS:
-            raise error
-        response = load_cached_workflow_response(
-            workspace_id=workspace_id,
-            workflow_id=workflow_id,
-            api_key=api_key,
-        )
-        if response is None:
-            raise error
+            if response is None:
+                raise error
+
     if "workflow" not in response or "config" not in response["workflow"]:
         raise MalformedWorkflowResponseError(
-            f"Could not find workflow specification in API response"
+            "Could not find workflow specification in API response"
         )
     try:
         workflow_config = json.loads(response["workflow"]["config"])

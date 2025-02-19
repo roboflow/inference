@@ -89,7 +89,6 @@ def start(
             help="Flag controlling if metrics are enabled (default is True)",
         ),
     ] = True,
-
 ) -> None:
 
     try:

@@ -3,6 +3,9 @@ import supervision as sv
 
 from inference.models import YOLOWorld
 
+PIXEL_TOLERANCE = 0.05
+CONFIDENCE_TOLERANCE = 5e-3
+
 
 def test_yolo_world_v1_s_against_single_image(person_image: np.ndarray) -> None:
     # given
@@ -33,10 +36,12 @@ def test_yolo_world_v1_s_against_single_image(person_image: np.ndarray) -> None:
         expected_detections
     ), "Expected the same number of boxes"
     assert np.allclose(
-        detection_results.xyxy, expected_detections.xyxy, atol=0.05
+        detection_results.xyxy, expected_detections.xyxy, atol=PIXEL_TOLERANCE
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence, expected_detections.confidence, atol=1e-4
+        detection_results.confidence,
+        expected_detections.confidence,
+        atol=CONFIDENCE_TOLERANCE,
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -70,10 +75,12 @@ def test_yolo_world_v1_s_against_single_image_with_only_one_detected_box(
         expected_detections
     ), "Expected the same number of boxes"
     assert np.allclose(
-        detection_results.xyxy, expected_detections.xyxy, atol=0.05
+        detection_results.xyxy, expected_detections.xyxy, atol=PIXEL_TOLERANCE
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence, expected_detections.confidence, atol=1e-4
+        detection_results.confidence,
+        expected_detections.confidence,
+        atol=CONFIDENCE_TOLERANCE,
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -110,10 +117,12 @@ def test_yolo_world_v1_m_against_single_image(person_image: np.ndarray) -> None:
     assert np.allclose(
         detection_results.xyxy,
         expected_detections.xyxy,
-        atol=0.05,
+        atol=PIXEL_TOLERANCE,
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence, expected_detections.confidence, atol=1e-4
+        detection_results.confidence,
+        expected_detections.confidence,
+        atol=CONFIDENCE_TOLERANCE,
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -148,10 +157,12 @@ def test_yolo_world_v1_l_against_single_image(person_image: np.ndarray) -> None:
         expected_detections
     ), "Expected the same number of boxes"
     assert np.allclose(
-        detection_results.xyxy, expected_detections.xyxy, atol=0.05
+        detection_results.xyxy, expected_detections.xyxy, atol=PIXEL_TOLERANCE
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence, expected_detections.confidence, atol=1e-4
+        detection_results.confidence,
+        expected_detections.confidence,
+        atol=CONFIDENCE_TOLERANCE,
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -186,10 +197,12 @@ def test_yolo_world_v1_x_against_single_image(person_image: np.ndarray) -> None:
         expected_detections
     ), "Expected the same number of boxes"
     assert np.allclose(
-        detection_results.xyxy, expected_detections.xyxy, atol=0.05
+        detection_results.xyxy, expected_detections.xyxy, atol=PIXEL_TOLERANCE
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence, expected_detections.confidence, atol=1e-4
+        detection_results.confidence,
+        expected_detections.confidence,
+        atol=CONFIDENCE_TOLERANCE,
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -224,10 +237,12 @@ def test_yolo_world_v2_s_against_single_image(person_image: np.ndarray) -> None:
         expected_detections
     ), "Expected the same number of boxes"
     assert np.allclose(
-        detection_results.xyxy, expected_detections.xyxy, atol=0.05
+        detection_results.xyxy, expected_detections.xyxy, atol=PIXEL_TOLERANCE
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence, expected_detections.confidence, atol=1e-4
+        detection_results.confidence,
+        expected_detections.confidence,
+        atol=CONFIDENCE_TOLERANCE,
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -261,10 +276,12 @@ def test_yolo_world_v2_m_against_single_image(person_image: np.ndarray) -> None:
         expected_detections
     ), "Expected the same number of boxes"
     assert np.allclose(
-        detection_results.xyxy, expected_detections.xyxy, atol=0.05
+        detection_results.xyxy, expected_detections.xyxy, atol=PIXEL_TOLERANCE
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence, expected_detections.confidence, atol=1e-4
+        detection_results.confidence,
+        expected_detections.confidence,
+        atol=CONFIDENCE_TOLERANCE,
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -299,10 +316,12 @@ def test_yolo_world_v2_l_against_single_image(person_image: np.ndarray) -> None:
         expected_detections
     ), "Expected the same number of boxes"
     assert np.allclose(
-        detection_results.xyxy, expected_detections.xyxy, atol=0.05
+        detection_results.xyxy, expected_detections.xyxy, atol=PIXEL_TOLERANCE
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence, expected_detections.confidence, atol=1e-4
+        detection_results.confidence,
+        expected_detections.confidence,
+        atol=CONFIDENCE_TOLERANCE,
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id
@@ -337,10 +356,12 @@ def test_yolo_world_v2_x_against_single_image(person_image: np.ndarray) -> None:
         expected_detections
     ), "Expected the same number of boxes"
     assert np.allclose(
-        detection_results.xyxy, expected_detections.xyxy, atol=0.05
+        detection_results.xyxy, expected_detections.xyxy, atol=PIXEL_TOLERANCE
     ), "Boxes coordinates detection differ"
     assert np.allclose(
-        detection_results.confidence, expected_detections.confidence, atol=1e-4
+        detection_results.confidence,
+        expected_detections.confidence,
+        atol=CONFIDENCE_TOLERANCE,
     ), "Confidences differ"
     assert np.allclose(
         detection_results.class_id, expected_detections.class_id

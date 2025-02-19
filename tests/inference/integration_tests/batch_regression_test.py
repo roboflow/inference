@@ -9,7 +9,7 @@ import pytest
 from io import BytesIO
 from pathlib import Path
 from PIL import Image
-from tests.inference.integration_tests.regression_test import compare_detection_response
+from tests.inference.integration_tests.regression_test import compare_prediction_response
 
 PIXEL_TOLERANCE = 2
 CONFIDENCE_TOLERANCE = 0.005
@@ -242,11 +242,10 @@ def test_detection(test, res_function, clean_loaded_models_fixture):
             )
         if not bool_env(os.getenv("FUNCTIONAL", False)):
             for d, test_data in zip(data, test["expected_response"][image_type]):
-                compare_detection_response(
+                compare_prediction_response(
                     d,
                     test_data,
-                    type=test["type"],
-                    multilabel=test.get("multi_label", False),
+                    prediction_type=test["type"],
                 )
         print(
             "\u2713"
