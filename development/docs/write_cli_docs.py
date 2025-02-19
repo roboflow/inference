@@ -13,7 +13,7 @@ DOCS_ROOT_DIR = os.path.abspath(
 filename = os.path.join(DOCS_ROOT_DIR, "inference_helpers", "cli_commands", "reference.md")
 
 def main():
-    cmd = f"typer inference_cli.main utils docs --name inference"
+    cmd = f"typer inference_cli/main.py utils docs --name inference"
     result = subprocess.run(cmd.split(), capture_output=True, text=True)
     content = result.stdout
     error = result.stderr
