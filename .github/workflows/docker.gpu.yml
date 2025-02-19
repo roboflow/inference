@@ -81,7 +81,7 @@ jobs:
           IFS=',' read -ra TAG_ARRAY <<< "${{ steps.tags.outputs.image_tags }},foo:latest"
           for tag in "${TAG_ARRAY[@]}"; do
             if [ -n "$TAGS" ]; then
-              TAGS="${TAGS}"$'\n''            '"us-docker.pkg.dev/roboflow-artifacts/${tag}"
+              TAGS="${TAGS}","us-docker.pkg.dev/roboflow-artifacts/${tag}"
             else
               TAGS="us-docker.pkg.dev/roboflow-artifacts/${tag}"
             fi
