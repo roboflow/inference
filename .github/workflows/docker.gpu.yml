@@ -98,11 +98,3 @@ jobs:
           tags: ${{ steps.set_up_build_variables.outputs.PROCESSED_TAGS }}
           platforms: linux/amd64
           file: ${{ env.DOCKERFILE }}
-      - name: Build and push GPU image to GCP Artifact Registry
-        uses: depot/build-push-action@v1
-        with:
-          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
-          project: grl7ffzxd7
-          tags: us-docker.pkg.dev/roboflow-artifacts/roboflow/roboflow-inference-server-gpu:run2
-          platforms: linux/amd64
-          file: ${{ env.DOCKERFILE }}
