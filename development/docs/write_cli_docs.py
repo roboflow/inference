@@ -10,7 +10,7 @@ DOCS_ROOT_DIR = os.path.abspath(
     )
 )
 
-filename = os.path.join(DOCS_ROOT_DIR, "inference_helpers", "cli_commands", "reference.md")
+filename = os.path.join(DOCS_ROOT_DIR, "inference_helpers", "cli_commands", "cli_reference.md")
 
 def main():
     cmd = f"typer inference_cli.main utils docs --name inference"
