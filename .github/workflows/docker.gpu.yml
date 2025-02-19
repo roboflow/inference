@@ -30,12 +30,12 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: 🛎️ Checkout
+      # - name: Login to Docker Hub
+      #   uses: docker/login-action@v3
+      #   with:
+      #     username: ${{ secrets.DOCKERHUB_USERNAME }}
+      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Checkout
         uses: actions/checkout@v4
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
@@ -50,11 +50,53 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
-      - name: Build and Push
-        uses: depot/build-push-action@v1
+      # - name: Build and Push
+      #   uses: depot/build-push-action@v1
+      #   with:
+      #     push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
+      #     project: grl7ffzxd7
+      #     tags: ${{ steps.tags.outputs.image_tags }}
+      #     platforms: linux/amd64
+      #     file: ${{ env.DOCKERFILE }}
+      - name: 'Authenticate gcloud'
+        uses: 'google-github-actions/auth@v2'
+        id: auth
         with:
-          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
-          project: grl7ffzxd7
-          tags: ${{ steps.tags.outputs.image_tags }}
-          platforms: linux/amd64
-          file: ${{ env.DOCKERFILE }}
+          workload_identity_provider: 'projects/391662651862/locations/global/workloadIdentityPools/github-actions/providers/github'
+          service_account: 'github-gcloud-deployer@roboflow-artifacts.iam.gserviceaccount.com'
+      - name: Login to GCR
+        uses: docker/login-action@v3
+        with:
+          registry: "us-docker.pkg.dev"
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Set up build variables
+        run: |
+          echo "GITTAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "DATE=$(date '+%Y%m%d')" >> $GITHUB_ENV
+          echo "RANDOM_STRING=$(dd bs=512 if=/dev/urandom count=1 | tr -dc 'a-z0-9' | fold -w 6 | head -n 1)" >> $GITHUB_ENV
+          echo "Generated tag list ${{ steps.tags.outputs.image_tags }}"
+          TAGS=""
+          IFS=',' read -ra TAG_ARRAY <<< "${{ steps.tags.outputs.image_tags }}"
+          for tag in "${TAG_ARRAY[@]}"; do
+            if [ -n "$TAGS" ]; then
+              TAGS="${TAGS}"$'\n''            '"${DOCKER_REGISTRY}/roboflow-artifacts/${tag}"
+            else
+              TAGS="${DOCKER_REGISTRY}/roboflow-artifacts/${tag}"
+            fi
+          done
+          echo "PROCESSED_TAGS=${TAGS}" >> $GITHUB_ENV
+          echo "GCP artifacts to be pushed:"
+          echo "$TAGS"
+      # - name: Set up Depot CLI
+      #   uses: depot/setup-action@v1
+      # - name: Build and push transform
+      #   uses: depot/build-push-action@v1
+      #   with:
+      #     project: dzn8891dtp # Depot transform project ID
+      #     file: Dockerfile
+      #     tags: |
+      #       ${{ env.PROCESSED_TAGS }}
+      #     push: true
+      #     build-args: |
+      #       ENABLE_SPANNER=1
