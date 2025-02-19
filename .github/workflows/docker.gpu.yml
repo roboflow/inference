@@ -81,9 +81,9 @@ jobs:
           IFS=',' read -ra TAG_ARRAY <<< "${{ steps.tags.outputs.image_tags }}"
           for tag in "${TAG_ARRAY[@]}"; do
             if [ -n "$TAGS" ]; then
-              TAGS="${TAGS}"$'\n''            '"${DOCKER_REGISTRY}/roboflow-artifacts/${tag}"
+              TAGS="${TAGS}"$'\n''            '"us-docker.pkg.dev/roboflow-artifacts/${tag}"
             else
-              TAGS="${DOCKER_REGISTRY}/roboflow-artifacts/${tag}"
+              TAGS="us-docker.pkg.dev/roboflow-artifacts/${tag}"
             fi
           done
           echo "PROCESSED_TAGS=${TAGS}" >> $GITHUB_ENV
