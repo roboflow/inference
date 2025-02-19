@@ -78,7 +78,7 @@ jobs:
           echo "RANDOM_STRING=$(dd bs=512 if=/dev/urandom count=1 | tr -dc 'a-z0-9' | fold -w 6 | head -n 1)" >> $GITHUB_ENV
           echo "Generated tag list ${{ steps.tags.outputs.image_tags }}"
           TAGS=""
-          IFS=',' read -ra TAG_ARRAY <<< "${{ steps.tags.outputs.image_tags }}"
+          IFS=',' read -ra TAG_ARRAY <<< "${{ steps.tags.outputs.image_tags }},foo:latest"
           for tag in "${TAG_ARRAY[@]}"; do
             if [ -n "$TAGS" ]; then
               TAGS="${TAGS}"$'\n''            '"us-docker.pkg.dev/roboflow-artifacts/${tag}"
