@@ -79,6 +79,13 @@ async def main():
 
 
 if __name__ == "__main__":
+    print(
+        "Running this example make sure you use `inference<=0.37.1`. We have announced "
+        "End Of Life for Cog VLM in `inference` - this code would only work if you run the "
+        "`inference` server in a version <= 0.37.1. Beware that the deprecation was related to "
+        "security issue: https://nvd.nist.gov/vuln/detail/CVE-2024-11393 and we advise not to use "
+        "the legacy `inference` builds in production."
+    )
     Image.open(
         requests.get(
             "https://source.roboflow.com/ACrZ7Hz8DRUB1NBMMtDoQK84Hf22/0qUjAGRJQWWhT5j9hUOG/original.jpg",

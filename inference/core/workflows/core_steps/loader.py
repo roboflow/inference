@@ -2,6 +2,7 @@ from typing import List, Type
 
 from inference.core.cache import cache
 from inference.core.env import (
+    ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
     ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     API_KEY,
     WORKFLOW_BLOCKS_WRITE_DIRECTORY,
@@ -28,6 +29,7 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v1 import (
 from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
     TimeInZoneBlockV2,
 )
+from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
@@ -189,6 +191,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
     OpenAIBlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
+    Qwen25VLBlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
 )
@@ -301,6 +306,9 @@ from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import
 )
 from inference.core.workflows.core_steps.transformations.image_slicer.v1 import (
     ImageSlicerBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.image_slicer.v2 import (
+    ImageSlicerBlockV2,
 )
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     PerspectiveCorrectionBlockV1,
@@ -437,7 +445,7 @@ REGISTERED_INITIALIZERS = {
     "thread_pool_executor": None,
     "allow_access_to_file_system": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
     "allowed_write_directory": WORKFLOW_BLOCKS_WRITE_DIRECTORY,
-    "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE,
+    "allow_access_to_environmental_variables": ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES,
 }
 
 KINDS_SERIALIZERS = {
@@ -595,6 +603,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
         WebhookSinkBlockV1,
+        VelocityBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
         RoboflowKeypointDetectionModelBlockV2,
         RoboflowClassificationModelBlockV2,
@@ -609,6 +618,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TwilioSMSNotificationBlockV1,
         GazeBlockV1,
         LlamaVisionBlockV1,
+        ImageSlicerBlockV2,
+        Qwen25VLBlockV1,
     ]
 
 

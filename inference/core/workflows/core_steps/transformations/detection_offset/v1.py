@@ -62,22 +62,22 @@ class BlockManifest(WorkflowBlockManifest):
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(
-        description="Reference to detection-like predictions",
+        description="Model predictions to offset dimensions for.",
         examples=["$steps.object_detection_model.predictions"],
     )
     offset_width: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
-        description="Offset for boxes width",
+        description="Offset for box width.",
         examples=[10, "$inputs.offset_x"],
         validation_alias=AliasChoices("offset_width", "offset_x"),
     )
     offset_height: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
-        description="Offset for boxes height",
+        description="Offset for box height.",
         examples=[10, "$inputs.offset_y"],
         validation_alias=AliasChoices("offset_height", "offset_y"),
     )
     units: Literal["Percent (%)", "Pixels"] = Field(
         default="Pixels",
-        description="Units for offset dimensions",
+        description="Units for offset dimensions.",
         examples=["Pixels", "Percent (%)"],
     )
 
@@ -118,7 +118,7 @@ class DetectionOffsetBlockV1(WorkflowBlock):
         offset_height: int,
         units: str = "Pixels",
     ) -> BlockResult:
-        use_percentage = units == "Percent (%)"
+        use_percentage = units == "Percent (%) - of bounding box width / height"
         return [
             {
                 "predictions": offset_detections(
@@ -148,18 +148,19 @@ def offset_detections(
         _detections.xyxy = np.array(
             [
                 (
-                    max(0, x1 - int(image_dimensions[i][1] * offset_width / 200)),
-                    max(0, y1 - int(image_dimensions[i][0] * offset_height / 200)),
+                    max(0, x1 - int(box_width * offset_width / 200)),
+                    max(0, y1 - int(box_height * offset_height / 200)),
                     min(
                         image_dimensions[i][1],
-                        x2 + int(image_dimensions[i][1] * offset_width / 200),
+                        x2 + int(box_width * offset_width / 200),
                     ),
                     min(
                         image_dimensions[i][0],
-                        y2 + int(image_dimensions[i][0] * offset_height / 200),
+                        y2 + int(box_height * offset_height / 200),
                     ),
                 )
                 for i, (x1, y1, x2, y2) in enumerate(_detections.xyxy)
+                for box_width, box_height in [(x2 - x1, y2 - y1)]
             ]
         )
     else:

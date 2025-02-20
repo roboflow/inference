@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
+from inference.core.env import DEFAULT_BUFFER_SIZE, PREDICTIONS_QUEUE_SIZE
 from inference.core.interfaces.camera.video_source import (
     BufferConsumptionStrategy,
     BufferFillingStrategy,
@@ -84,6 +85,8 @@ class InitialisePipelinePayload(BaseModel):
     )
     consumption_timeout: Optional[float] = None
     api_key: Optional[str] = None
+    predictions_queue_size: int = PREDICTIONS_QUEUE_SIZE
+    decoding_buffer_size: int = DEFAULT_BUFFER_SIZE
 
 
 class WebRTCOffer(BaseModel):
@@ -100,8 +103,8 @@ class WebRTCTURNConfig(BaseModel):
 class InitialiseWebRTCPipelinePayload(InitialisePipelinePayload):
     webrtc_offer: WebRTCOffer
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None
-    stream_output: Optional[List[str]] = Field(default_factory=list)
-    data_output: Optional[List[str]] = Field(default_factory=list)
+    stream_output: Optional[List[Optional[str]]] = Field(default_factory=list)
+    data_output: Optional[List[Optional[str]]] = Field(default_factory=list)
     webrtc_peer_timeout: float = 1
     webcam_fps: Optional[float] = None
 

@@ -212,6 +212,7 @@ WORKFLOW_WITH_EXTRACTION_OF_CLASS_NAME_FROM_CROPS_AND_CONCATENATION_OF_RESULTS =
             "name": "breds_classification",
             "image": "$steps.cropping.crops",
             "model_id": "dog-breed-xpaq6/1",
+            "confidence": 0.09,
         },
         {
             "type": "PropertyDefinition",
@@ -723,3 +724,54 @@ def test_workflow_when_there_is_faulty_application_of_aggregation_step_at_batch_
             init_parameters=workflow_init_parameters,
             max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
         )
+
+
+WORKFLOW_WITH_ASPECT_RATIO_EXTRACTION = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "PropertyDefinition",
+            "name": "property_extraction",
+            "data": "$inputs.image",
+            "operations": [
+                {"type": "ExtractImageProperty", "property_name": "aspect_ratio"}
+            ],
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "aspect_ratio",
+            "selector": "$steps.property_extraction.output",
+        },
+    ],
+}
+
+
+def test_workflow_with_aspect_ratio_extraction_with_valid_input(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_ASPECT_RATIO_EXTRACTION,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={"image": license_plate_image})
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "aspect_ratio",
+    }, "Expected all declared outputs to be delivered"
+    assert result[0]["aspect_ratio"] == 1.5, "Expected aspect ratio to be 1.5"

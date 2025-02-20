@@ -82,7 +82,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    perspective_polygons: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    perspective_polygons: Union[list, Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Perspective polygons (for each batch at least one must be consisting of 4 vertices)",
         examples=["$steps.perspective_wrap.zones"],
     )
@@ -106,6 +106,10 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
         return ["images", "predictions"]
+
+    @classmethod
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return ["perspective_polygons"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -136,7 +140,7 @@ def pick_largest_perspective_polygons(
         List[List[np.ndarray]],
         List[List[List[int]]],
         List[List[List[List[int]]]],
-    ]
+    ],
 ) -> List[np.ndarray]:
     if not isinstance(perspective_polygons_batch, (list, Batch)):
         raise ValueError("Unexpected type of input")

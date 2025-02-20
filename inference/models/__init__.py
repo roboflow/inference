@@ -1,6 +1,5 @@
 from inference.core.env import (
     CORE_MODEL_CLIP_ENABLED,
-    CORE_MODEL_COGVLM_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
@@ -47,12 +46,6 @@ if CORE_MODELS_ENABLED:
         except:
             pass
 
-    if CORE_MODEL_COGVLM_ENABLED:
-        try:
-            from inference.models.cogvlm import CogVLM
-        except:
-            pass
-
     if CORE_MODEL_YOLO_WORLD_ENABLED:
         try:
             from inference.models.yolo_world import YOLOWorld
@@ -70,10 +63,16 @@ except:
     pass
 
 try:
+    from inference.models.qwen25vl import LoRAQwen25VL, Qwen25VL
+except:
+    pass
+
+try:
     from inference.models.trocr import TrOCR
 except:
     pass
 
+from inference.models.resnet import ResNetClassification
 from inference.models.vit import VitClassification
 from inference.models.yolact import YOLACT
 from inference.models.yolonas import YOLONASObjectDetection
@@ -92,3 +91,5 @@ from inference.models.yolov11 import (
     YOLOv11KeypointsDetection,
     YOLOv11ObjectDetection,
 )
+
+from inference.models.yolov12 import YOLOv12ObjectDetection

@@ -30,7 +30,10 @@ def test_size_measurement_block():
     result = block.run(reference_predictions, object_predictions, reference_dimensions)
 
     # then
-    expected_dimensions = [{"width": 5.0, "height": 5.0}, {"width": 5.0, "height": 5.0}]
+    expected_dimensions = [
+        {"width": 5.0, "height": 5.0, "longer": 5.0, "shorter": 5.0},
+        {"width": 5.0, "height": 5.0, "longer": 5.0, "shorter": 5.0},
+    ]
     assert result == {
         OUTPUT_KEY: expected_dimensions
     }, f"Expected {expected_dimensions}, but got {result}"
@@ -59,7 +62,10 @@ def test_size_measurement_block_with_mask():
     result = block.run(reference_predictions, object_predictions, reference_dimensions)
 
     # then
-    expected_dimensions = [{"width": 5.0, "height": 5.0}, {"width": 5.0, "height": 5.0}]
+    expected_dimensions = [
+        {"width": 5.0, "height": 5.0, "longer": 5.0, "shorter": 5.0},
+        {"width": 5.0, "height": 5.0, "longer": 5.0, "shorter": 5.0},
+    ]
     assert result == {
         OUTPUT_KEY: expected_dimensions
     }, f"Expected {expected_dimensions}, but got {result}"

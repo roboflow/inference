@@ -9,7 +9,6 @@ import supervision as sv
 from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.entities.requests.clip import ClipCompareRequest
-from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
@@ -56,7 +55,6 @@ def load_core_model(
     inference_request: Union[
         DoctrOCRInferenceRequest,
         ClipCompareRequest,
-        CogVLMInferenceRequest,
         YOLOWorldInferenceRequest,
         Sam2InferenceRequest,
         GazeDetectionInferenceRequest,

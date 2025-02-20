@@ -66,11 +66,11 @@ class DeltaFilterManifest(WorkflowBlockManifest):
     image: WorkflowImageSelector
     value: Selector(kind=[WILDCARD_KIND]) = Field(
         title="Input Value",
-        description="The input value for this step. Flow will be allowed to continue only if this value changes between frames.",
+        description="Flow will be allowed to continue only if this value changes between frames.",
         examples=["$steps.line_counter.count_in"],
     )
     next_steps: List[StepSelector] = Field(
-        description="Reference to steps which shall be executed when value changes.",
+        description="Steps to execute when the value changes.",
         examples=["$steps.write_to_csv", "$steps.write_to_opc"],
     )
 

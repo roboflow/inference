@@ -63,4 +63,4 @@ In the code above, replace:
 
 Your model weights will be uploaded to Roboflow. It may take a few minutes for your weights to be processed. Once your weights have been processed, your dataset version page will be updated to say that a model is available with your weights.
 
-You can then use the model with Inference following our [Run a Private, Fine-Tuned Model](/quickstart/explore_models.md#run-a-private-fine-tuned-model) model.
+You can then use the model with Inference following our [Run a Private, Fine-Tuned Model](../quickstart/explore_models.md#run-a-private-fine-tuned-model) model.

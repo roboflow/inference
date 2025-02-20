@@ -1,8 +1,20 @@
+import warnings
 from io import BytesIO
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 
 import numpy as np
+
+from inference.core.env import USE_PYTORCH_FOR_PREPROCESSING
+
+if USE_PYTORCH_FOR_PREPROCESSING:
+    try:
+        import torch
+    except ImportError:
+        warnings.warn(
+            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
+        )
+
 from PIL import Image, ImageDraw, ImageFont
 
 from inference.core.entities.requests.inference import ClassificationInferenceRequest
@@ -14,10 +26,8 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.models.roboflow import OnnxRoboflowInferenceModel
 from inference.core.models.types import PreprocessReturnMetadata
-from inference.core.models.utils.validate import (
-    get_num_classes_from_model_prediction_shape,
-)
 from inference.core.utils.image_utils import load_image_rgb
+from inference.core.utils.onnx import run_session_via_iobinding
 
 
 class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
@@ -34,6 +44,9 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
     """
 
     task_type = "classification"
+
+    preprocess_means = [0.5, 0.5, 0.5]
+    preprocess_stds = [0.5, 0.5, 0.5]
 
     def __init__(self, *args, **kwargs):
         """Initialize the model, setting whether it is multiclass or not."""
@@ -178,7 +191,9 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         )
 
     def predict(self, img_in: np.ndarray, **kwargs) -> Tuple[np.ndarray]:
-        predictions = self.onnx_session.run(None, {self.input_name: img_in})
+        predictions = run_session_via_iobinding(
+            self.onnx_session, self.input_name, img_in
+        )
         return (predictions,)
 
     def preprocess(
@@ -204,7 +219,16 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 for i in image
             ]
             imgs, img_dims = zip(*imgs_with_dims)
-            img_in = np.concatenate(imgs, axis=0)
+            if isinstance(imgs[0], np.ndarray):
+                img_in = np.concatenate(imgs, axis=0)
+            elif "torch" in dir():
+                img_in = torch.cat(imgs, dim=0)
+            else:
+                raise ValueError(
+                    f"Received a list of images of unknown type, {type(imgs[0])}; "
+                    "This is most likely a bug. Contact Roboflow team through github issues "
+                    "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+                )
         else:
             img_in, img_dims = self.preproc_image(
                 image,
@@ -223,10 +247,18 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
 
         img_in /= 255.0
 
-        mean = (0.5, 0.5, 0.5)
-        std = (0.5, 0.5, 0.5)
-
-        img_in = img_in.astype(np.float32)
+        mean = self.preprocess_means
+        std = self.preprocess_stds
+        if isinstance(img_in, np.ndarray):
+            img_in = img_in.astype(np.float32)
+        elif "torch" in dir():
+            img_in = img_in.float()
+        else:
+            raise ValueError(
+                f"Received an image of unknown type, {type(img_in)}; "
+                "This is most likely a bug. Contact Roboflow team through github issues "
+                "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+            )
 
         img_in[:, 0, :, :] = (img_in[:, 0, :, :] - mean[0]) / std[0]
         img_in[:, 1, :, :] = (img_in[:, 1, :, :] - mean[1]) / std[1]
@@ -318,6 +350,8 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 results = []
                 for i, cls_name in enumerate(self.class_names):
                     score = float(preds[i])
+                    if score < confidence_threshold:
+                        continue
                     pred = {
                         "class_id": i,
                         "class": cls_name,
@@ -331,8 +365,8 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                         width=img_dims[ind][1], height=img_dims[ind][0]
                     ),
                     predictions=results,
-                    top=results[0]["class"],
-                    confidence=results[0]["confidence"],
+                    top=results[0]["class"] if results else "",
+                    confidence=results[0]["confidence"] if results else 0.0,
                 )
             responses.append(response)
 

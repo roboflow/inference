@@ -30,7 +30,7 @@ def run_video_processing_with_workflows(
 
     from inference_cli.lib.workflows.video_adapter import process_video_with_workflow
 
-    process_video_with_workflow(
+    _ = process_video_with_workflow(
         input_video_path=input_video_path,
         output_directory=output_directory,
         output_file_type=output_file_type,
@@ -113,6 +113,7 @@ def process_images_directory_with_workflow(
     debug_mode: bool = False,
     api_url: str = "https://detect.roboflow.com",
     processing_threads: Optional[int] = None,
+    max_failures: Optional[int] = None,
 ) -> None:
     if processing_target is ProcessingTarget.INFERENCE_PACKAGE:
 
@@ -136,6 +137,7 @@ def process_images_directory_with_workflow(
             aggregate_structured_results=aggregate_structured_results,
             aggregation_format=aggregation_format,
             debug_mode=debug_mode,
+            max_failures=max_failures,
         )
         return None
     _ = process_image_directory_with_workflow_using_api(
@@ -154,5 +156,6 @@ def process_images_directory_with_workflow(
         aggregation_format=aggregation_format,
         debug_mode=debug_mode,
         processing_threads=processing_threads,
+        max_failures=max_failures,
     )
     return None

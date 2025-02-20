@@ -44,9 +44,11 @@ def server_url() -> str:
 def clean_loaded_models_fixture() -> None:
     on_demand_clean_loaded_models()
 
+
 @pytest.fixture()
 def clean_loaded_models_every_test_fixture() -> None:
     on_demand_clean_loaded_models()
+
 
 def on_demand_clean_loaded_models() -> None:
     response = requests.post(f"{base_url}:{port}/model/clear")

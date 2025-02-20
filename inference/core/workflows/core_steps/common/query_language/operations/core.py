@@ -29,6 +29,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
     extract_detections_property,
     filter_detections,
     offset_detections,
+    pick_detections_by_parent_class,
     rename_detections,
     select_detections,
     shift_detections,
@@ -55,6 +56,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.number
 from inference.core.workflows.core_steps.common.query_language.operations.sequences.base import (
     aggregate_numeric_sequence,
     aggregate_sequence,
+    get_sequence_elements_count,
     get_sequence_length,
     sequence_apply,
     sequence_map,
@@ -188,6 +190,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "RandomNumber": generate_random_number,
     "StringMatches": string_matches,
     "SequenceLength": get_sequence_length,
+    "SequenceElementsCount": get_sequence_elements_count,
     "ExtractImageProperty": extract_image_property,
     "Multiply": multiply,
     "Divide": divide,
@@ -199,6 +202,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "ConvertImageToBase64": encode_image_to_base64,
     "DetectionsToDictionary": detections_to_dictionary,
     "ConvertDictionaryToJSON": dictionary_to_json,
+    "PickDetectionsByParentClass": pick_detections_by_parent_class,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

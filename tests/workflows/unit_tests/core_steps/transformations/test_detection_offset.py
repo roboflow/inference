@@ -163,7 +163,7 @@ def test_offset_detection_when_nothing_predicted() -> None:
 def test_offset_detection_with_percentage() -> None:
     # given
     detections = sv.Detections(
-        xyxy=np.array([[100, 200, 300, 400]], dtype=np.float64),
+        xyxy=np.array([[100, 200, 400, 600]], dtype=np.float64),
         class_id=np.array([1]),
         confidence=np.array([0.5], dtype=np.float64),
         data={
@@ -176,15 +176,16 @@ def test_offset_detection_with_percentage() -> None:
 
     # when
     result = offset_detections(
-        detections=detections,
-        offset_width=10,
-        offset_height=10,
-        use_percentage=True
+        detections=detections, offset_width=10, offset_height=10, use_percentage=True
     )
 
     # then
     x1, y1, x2, y2 = result.xyxy[0]
-    assert x1 == 68, "Left corner should be moved by 10% of image width to the left"
-    assert y1 == 168, "Top corner should be moved by 10% of image height to the top"
-    assert x2 == 332, "Right corner should be moved by 10% of image width to the right"
-    assert y2 == 432, "Bottom corner should be moved by 10% of image height to the bottom"
+    assert x1 == 85, "Left corner should be moved by 5% of detection width to the left"
+    assert y1 == 180, "Top corner should be moved by 5% of detection height to the top"
+    assert (
+        x2 == 415
+    ), "Right corner should be moved by 5% of detection width to the right"
+    assert (
+        y2 == 620
+    ), "Bottom corner should be moved by 5% of detection height to the bottom"

@@ -1,7 +1,6 @@
 import os.path
 from collections import defaultdict
 from functools import partial
-from glob import glob
 from typing import Any, Dict, List, Optional, Union
 
 import cv2
@@ -12,11 +11,12 @@ from rich.progress import Progress, TaskID
 
 from inference import InferencePipeline
 from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.stream.entities import SinkHandler
 from inference.core.interfaces.stream.sinks import multi_sink
 from inference.core.utils.image_utils import load_image_bgr
 from inference_cli.lib.utils import dump_jsonl
 from inference_cli.lib.workflows.common import deduct_images, dump_objects_to_json
-from inference_cli.lib.workflows.entities import OutputFileType
+from inference_cli.lib.workflows.entities import OutputFileType, VideoProcessingDetails
 
 
 def process_video_with_workflow(
@@ -31,13 +31,17 @@ def process_video_with_workflow(
     max_fps: Optional[float] = None,
     save_image_outputs_as_video: bool = True,
     api_key: Optional[str] = None,
-) -> None:
+    on_prediction: Optional[SinkHandler] = None,
+) -> VideoProcessingDetails:
     structured_sink = WorkflowsStructuredDataSink(
         output_directory=output_directory,
         output_file_type=output_file_type,
+        numbers_of_streams=1,
     )
     progress_sink = ProgressSink.init(input_video_path=input_video_path)
     sinks = [structured_sink.on_prediction, progress_sink.on_prediction]
+    if on_prediction:
+        sinks.append(on_prediction)
     video_sink: Optional[WorkflowsVideoSink] = None
     if save_image_outputs_as_video:
         video_sink = WorkflowsVideoSink.init(
@@ -61,9 +65,14 @@ def process_video_with_workflow(
     pipeline.start(use_main_thread=True)
     pipeline.join()
     progress_sink.stop()
-    structured_sink.flush()
+    structured_results_file = structured_sink.flush()[0]
+    video_outputs = None
     if video_sink is not None:
-        video_sink.release()
+        video_outputs = video_sink.release()
+    return VideoProcessingDetails(
+        structured_results_file=structured_results_file,
+        video_outputs=video_outputs,
+    )
 
 
 class WorkflowsStructuredDataSink:
@@ -72,10 +81,12 @@ class WorkflowsStructuredDataSink:
         self,
         output_directory: str,
         output_file_type: OutputFileType,
+        numbers_of_streams: int = 1,
     ):
         self._output_directory = output_directory
         self._structured_results_buffer = defaultdict(list)
         self._output_file_type = output_file_type
+        self._numbers_of_streams = numbers_of_streams
 
     def on_prediction(
         self,
@@ -94,11 +105,17 @@ class WorkflowsStructuredDataSink:
                 }
             self._structured_results_buffer[stream_idx].append(prediction)
 
-    def flush(self) -> None:
+    def flush(self) -> List[Optional[str]]:
+        stream_idx2file_path = {}
         for stream_idx, buffer in self._structured_results_buffer.items():
-            self._flush_stream_buffer(stream_idx=stream_idx)
+            file_path = self._flush_stream_buffer(stream_idx=stream_idx)
+            stream_idx2file_path[stream_idx] = file_path
+        return [
+            stream_idx2file_path.get(stream_idx)
+            for stream_idx in range(self._numbers_of_streams)
+        ]
 
-    def _flush_stream_buffer(self, stream_idx: int) -> None:
+    def _flush_stream_buffer(self, stream_idx: int) -> Optional[str]:
         content = self._structured_results_buffer[stream_idx]
         if len(content) == 0:
             return None
@@ -114,6 +131,7 @@ class WorkflowsStructuredDataSink:
         else:
             dump_jsonl(path=file_path, content=content)
         self._structured_results_buffer[stream_idx] = []
+        return file_path
 
     def __del__(self):
         self.flush()
@@ -182,11 +200,14 @@ class WorkflowsVideoSink:
                 image = load_image_bgr(value)
                 stream_sinks[key].write_frame(frame=image)
 
-    def release(self) -> None:
-        for stream_sinks in self._video_sinks.values():
-            for sink in stream_sinks.values():
+    def release(self) -> Optional[Dict[str, str]]:
+        stream_idx2keys_videos: Dict[int, Dict[str, str]] = defaultdict(dict)
+        for stream_idx, stream_sinks in self._video_sinks.items():
+            for key, sink in stream_sinks.items():
                 sink.release()
+                stream_idx2keys_videos[stream_idx][key] = sink.target_path
         self._video_sinks = defaultdict(dict)
+        return stream_idx2keys_videos.get(0)
 
     def __del__(self):
         self.release()

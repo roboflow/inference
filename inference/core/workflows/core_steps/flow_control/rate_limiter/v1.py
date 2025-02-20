@@ -60,7 +60,7 @@ class RateLimiterManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Rate Limiter",
             "version": "v1",
-            "short_description": "Limits the rate at which a branch of the Workflow will fire.",
+            "short_description": "Limits the rate at which a branch of the Workflow will run.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "flow_control",
@@ -79,11 +79,11 @@ class RateLimiterManifest(WorkflowBlockManifest):
         ge=0.0,
     )
     depends_on: Selector() = Field(
-        description="Reference to any output of the the step which immediately preceeds this branch.",
+        description="Step immediately preceding this block.",
         examples=["$steps.model"],
     )
     next_steps: List[StepSelector] = Field(
-        description="Reference to steps which shall be executed if rate limit allows.",
+        description="Steps to execute if allowed by the rate limit.",
         examples=[["$steps.upload"]],
     )
     video_reference_image: Optional[WorkflowImageSelector] = Field(
