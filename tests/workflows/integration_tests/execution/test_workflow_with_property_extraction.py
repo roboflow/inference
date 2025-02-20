@@ -212,6 +212,7 @@ WORKFLOW_WITH_EXTRACTION_OF_CLASS_NAME_FROM_CROPS_AND_CONCATENATION_OF_RESULTS =
             "name": "breds_classification",
             "image": "$steps.cropping.crops",
             "model_id": "dog-breed-xpaq6/1",
+            "confidence": 0.09,
         },
         {
             "type": "PropertyDefinition",

@@ -17,7 +17,7 @@ Read our deployment guides for more information:
 
 ## Manual Setup
 
-You can also use the [Linux setup guide](/install/linux.md)
+You can also use the [Linux setup guide](../../install/linux.md)
 to manually configure a Docker container to run on your cloud VM.
 
 [A Helm Chart](https://github.com/roboflow/inference/tree/main/inference/enterprise/helm-chart)

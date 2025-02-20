@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
-from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.env import (
     LOCAL_INFERENCE_API_URL,
     WORKFLOWS_REMOTE_API_TARGET,
@@ -48,7 +47,6 @@ from inference.core.workflows.prototypes.block import (
 from inference_sdk import InferenceHTTPClient
 
 GPT_4V_MODEL_TYPE = "gpt_4v"
-COG_VLM_MODEL_TYPE = "cog_vlm"
 NOT_DETECTED_VALUE = "not_detected"
 
 JSON_MARKDOWN_BLOCK_PATTERN = re.compile(r"```json\n([\s\S]*?)\n```")
@@ -70,11 +68,9 @@ You can specify arbitrary text prompts to an LMMBlock.
 
 The LLMBlock supports two LMMs:
 
-- OpenAI's GPT-4 with Vision, and;
-- CogVLM.
+- OpenAI's GPT-4 with Vision;
 
-You need to provide your OpenAI API key to use the GPT-4 with Vision model. You do not 
-need to provide an API key to use CogVLM.
+You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
 
 _If you want to classify an image into one or more categories, we recommend using the 
 dedicated LMMForClassificationBlock._
@@ -86,7 +82,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "LMM",
             "version": "v1",
-            "short_description": "Run a large multimodal model such as ChatGPT-4v or CogVLM.",
+            "short_description": "Run a large multimodal model such as ChatGPT-4v.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -106,7 +102,7 @@ class BlockManifest(WorkflowBlockManifest):
             "multiline": True,
         },
     )
-    lmm_type: Union[Selector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]] = Field(
+    lmm_type: Union[Selector(kind=[STRING_KIND]), Literal["gpt_4v"]] = Field(
         description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
     )
     lmm_config: LMMConfig = Field(
@@ -123,7 +119,7 @@ class BlockManifest(WorkflowBlockManifest):
     remote_api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), Optional[str]] = (
         Field(
             default=None,
-            description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
+            description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v`.",
             examples=["xxx-xxx", "$inputs.api_key"],
             private=True,
         )
@@ -245,12 +241,7 @@ class LMMBlockV1(WorkflowBlock):
                 lmm_config=lmm_config,
             )
         else:
-            raw_output = get_cogvlm_generations_locally(
-                image=images_prepared_for_processing,
-                prompt=prompt,
-                model_manager=self._model_manager,
-                api_key=self._api_key,
-            )
+            raise ValueError(f"CogVLM has been removed from the Roboflow Core Models.")
         structured_output = turn_raw_lmm_output_into_structured(
             raw_output=raw_output,
             expected_output=json_output,
@@ -294,11 +285,7 @@ class LMMBlockV1(WorkflowBlock):
                 lmm_config=lmm_config,
             )
         else:
-            raw_output = get_cogvlm_generations_from_remote_api(
-                image=inference_images,
-                prompt=prompt,
-                api_key=self._api_key,
-            )
+            raise ValueError(f"CogVLM has been removed from the Roboflow Core Models.")
         structured_output = turn_raw_lmm_output_into_structured(
             raw_output=raw_output,
             expected_output=json_output,
@@ -392,73 +379,6 @@ def execute_gpt_4v_request(
         max_tokens=lmm_config.max_tokens,
     )
     return {"content": response.choices[0].message.content, "image": image_metadata}
-
-
-def get_cogvlm_generations_locally(
-    image: List[dict],
-    prompt: str,
-    model_manager: ModelManager,
-    api_key: Optional[str],
-) -> List[Dict[str, Any]]:
-    serialised_result = []
-    for single_image in image:
-        loaded_image, _ = load_image(single_image)
-        image_metadata = {
-            "width": loaded_image.shape[1],
-            "height": loaded_image.shape[0],
-        }
-        inference_request = CogVLMInferenceRequest(
-            image=single_image,
-            prompt=prompt,
-            api_key=api_key,
-        )
-        model_id = load_core_model(
-            model_manager=model_manager,
-            inference_request=inference_request,
-            core_model="cogvlm",
-        )
-        result = model_manager.infer_from_request_sync(model_id, inference_request)
-        serialised_result.append(
-            {
-                "content": result.response,
-                "image": image_metadata,
-            }
-        )
-    return serialised_result
-
-
-def get_cogvlm_generations_from_remote_api(
-    image: List[dict],
-    prompt: str,
-    api_key: Optional[str],
-) -> List[Dict[str, Any]]:
-    if WORKFLOWS_REMOTE_API_TARGET == "hosted":
-        raise ValueError(
-            f"CogVLM requires a GPU and can only be executed remotely in self-hosted mode. "
-            f"It is not available on the Roboflow Hosted API."
-        )
-    client = InferenceHTTPClient.init(
-        api_url=LOCAL_INFERENCE_API_URL,
-        api_key=api_key,
-    )
-    serialised_result = []
-    for single_image in image:
-        loaded_image, _ = load_image(single_image)
-        image_metadata = {
-            "width": loaded_image.shape[1],
-            "height": loaded_image.shape[0],
-        }
-        result = client.prompt_cogvlm(
-            visual_prompt=single_image["value"],
-            text_prompt=prompt,
-        )
-        serialised_result.append(
-            {
-                "content": result["response"],
-                "image": image_metadata,
-            }
-        )
-    return serialised_result
 
 
 def turn_raw_lmm_output_into_structured(

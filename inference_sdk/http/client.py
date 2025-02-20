@@ -993,67 +993,6 @@ class InferenceHTTPClient:
         return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors
-    def prompt_cogvlm(
-        self,
-        visual_prompt: ImagesReference,
-        text_prompt: str,
-        chat_history: Optional[List[Tuple[str, str]]] = None,
-    ) -> dict:
-        self.__ensure_v1_client_mode()  # Lambda does not support CogVLM, so we require v1 mode of client
-        encoded_image = load_static_inference_input(
-            inference_input=visual_prompt,
-        )
-        payload = {
-            "api_key": self.__api_key,
-            "model_id": "cogvlm",
-            "prompt": text_prompt,
-        }
-        payload = inject_images_into_payload(
-            payload=payload,
-            encoded_images=encoded_image,
-        )
-        if chat_history is not None:
-            payload["history"] = chat_history
-        response = requests.post(
-            f"{self.__api_url}/llm/cogvlm",
-            json=payload,
-            headers=DEFAULT_HEADERS,
-        )
-        api_key_safe_raise_for_status(response=response)
-        return response.json()
-
-    @wrap_errors_async
-    async def prompt_cogvlm_async(
-        self,
-        visual_prompt: ImagesReference,
-        text_prompt: str,
-        chat_history: Optional[List[Tuple[str, str]]] = None,
-    ) -> dict:
-        self.__ensure_v1_client_mode()  # Lambda does not support CogVLM, so we require v1 mode of client
-        encoded_image = await load_static_inference_input_async(
-            inference_input=visual_prompt,
-        )
-        payload = {
-            "api_key": self.__api_key,
-            "model_id": "cogvlm",
-            "prompt": text_prompt,
-        }
-        payload = inject_images_into_payload(
-            payload=payload,
-            encoded_images=encoded_image,
-        )
-        if chat_history is not None:
-            payload["history"] = chat_history
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.__api_url}/llm/cogvlm",
-                json=payload,
-                headers=DEFAULT_HEADERS,
-            ) as response:
-                response.raise_for_status()
-                return await response.json()
-
-    @wrap_errors
     def ocr_image(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],

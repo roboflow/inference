@@ -41,7 +41,6 @@ GENERIC_MODELS = {
     "doctr": ("ocr", "doctr"),
     "trocr": ("ocr", "trocr"),
     "grounding_dino": ("object-detection", "grounding-dino"),
-    "cogvlm": ("llm", "cogvlm"),
     "paligemma": ("llm", "paligemma"),
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
