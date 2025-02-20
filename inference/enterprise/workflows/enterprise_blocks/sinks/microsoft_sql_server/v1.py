@@ -1,15 +1,7 @@
 import json
 import logging
 from typing import Any, Dict, List, Literal, Optional, Type, Union
-
-try:
-    import pyodbc
-except ImportError:
-    import subprocess
-    import sys
-    
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyodbc"])
-    import pyodbc
+import pyodbc
 from pydantic import ConfigDict, Field, field_validator
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
