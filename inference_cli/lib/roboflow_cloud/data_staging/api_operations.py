@@ -681,10 +681,11 @@ def get_batch_count(
 
 
 CONTENT_TYPE_TO_ICON = {
-    "images": " 🖼 ",
-    "videos": " 🎬 ",
-    "metadata": " 📋 ",
-    "archives": " 🗃 ",
+    "images": " 🖼",
+    "videos": " 🎬",
+    "metadata": " 📋",
+    "archives": " 🗃",
+    "mixed": " 🎁",
 }
 
 
@@ -753,15 +754,32 @@ def display_multipart_batch_details(
             api_key=api_key,
             part_name=part.part_name,
         )
-        icon = CONTENT_TYPE_TO_ICON.get(part.content_type, " ")
+        icon = CONTENT_TYPE_TO_ICON.get(part.content_type, "❓")
         content_type = (
             f"[bold deep_sky_blue1]{part.content_type}[/bold deep_sky_blue1]{icon}"
         )
-        parts_table_content.append((part.part_name, content_type, str(part_count)))
+        if part.nestedContentType:
+            nested_content_type_icon = CONTENT_TYPE_TO_ICON.get(
+                part.nestedContentType, "❓"
+            )
+            content_type = f"{content_type}  (of [bold deep_sky_blue1]{part.nestedContentType}[/bold deep_sky_blue1]{nested_content_type_icon})"
+        description = part.part_description or "Not Available"
+        parts_table_content.append(
+            (part.part_name, description, content_type, str(part_count))
+        )
     table = Table(title=f"Parts with content", show_lines=True)
-    table.add_column("Name", justify="left", style="cyan", no_wrap=True)
-    table.add_column("Content Type", justify="center", overflow="ellipsis")
-    table.add_column("Files Count", justify="center", overflow="ellipsis")
+    table.add_column(
+        "Name", justify="left", vertical="middle", style="cyan", no_wrap=True
+    )
+    table.add_column(
+        "Description", vertical="middle", justify="left", overflow="ellipsis"
+    )
+    table.add_column(
+        "Content Type", vertical="middle", justify="center", overflow="ellipsis"
+    )
+    table.add_column(
+        "Files Count", vertical="middle", justify="center", overflow="ellipsis"
+    )
     for row in parts_table_content:
         table.add_row(*row)
     console.print(table)

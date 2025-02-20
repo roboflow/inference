@@ -31,6 +31,8 @@ class MultipartBatchPartMetadata(BaseModel):
     part_name: str = Field(alias="partName")
     part_type: str = Field(alias="partType")
     content_type: str = Field(alias="contentType")
+    part_description: Optional[str] = Field(alias="partDescription", default=None)
+    nestedContentType: Optional[str] = Field(alias="nestedContentType", default=None)
 
 
 class ListMultipartBatchPartsResponse(BaseModel):
