@@ -350,6 +350,8 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 results = []
                 for i, cls_name in enumerate(self.class_names):
                     score = float(preds[i])
+                    if score < confidence_threshold:
+                        continue
                     pred = {
                         "class_id": i,
                         "class": cls_name,
@@ -363,8 +365,8 @@ class ClassificationBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                         width=img_dims[ind][1], height=img_dims[ind][0]
                     ),
                     predictions=results,
-                    top=results[0]["class"],
-                    confidence=results[0]["confidence"],
+                    top=results[0]["class"] if results else "",
+                    confidence=results[0]["confidence"] if results else 0.0,
                 )
             responses.append(response)
 
