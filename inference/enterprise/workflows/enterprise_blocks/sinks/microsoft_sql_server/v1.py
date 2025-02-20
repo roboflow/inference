@@ -80,13 +80,6 @@ The block expects data in a structured JSON format that maps to the target table
 * The authenticated user must have INSERT permissions
 * Column names in the data must match the table schema
 * When using Windows Authentication, ensure the service account has proper permissions
-
-!!! warning "Security considerations"
-
-    * Ensure proper network security and firewall rules
-    * Use the minimum required permissions for the database user
-    * Consider using environment variables for sensitive connection details
-    * Windows Authentication is generally more secure than SQL Authentication
 """
 
 
