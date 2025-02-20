@@ -396,9 +396,6 @@ from inference.core.workflows.core_steps.visualizations.trace.v1 import (
 from inference.core.workflows.core_steps.visualizations.triangle.v1 import (
     TriangleVisualizationBlockV1,
 )
-from inference.core.workflows.core_steps.sinks.microsoft_sql_server.v1 import (
-    MicrosoftSQLServerSinkBlockV1,
-)
 from inference.core.workflows.execution_engine.entities.types import (
     BAR_CODE_DETECTION_KIND,
     BOOLEAN_KIND,
@@ -562,7 +559,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LineCounterBlockV2,
         LineCounterZoneVisualizationBlockV1,
         MaskVisualizationBlockV1,
-        MicrosoftSQLServerSinkBlockV1,
         ModelComparisonVisualizationBlockV1,
         OCRModelBlockV1,
         OpenAIBlockV1,
