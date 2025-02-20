@@ -1,6 +1,7 @@
 import json
 import logging
 from typing import Any, Dict, List, Literal, Optional, Type, Union
+
 import pyodbc
 from pydantic import ConfigDict, Field, field_validator
 
@@ -18,21 +19,30 @@ from inference.core.workflows.prototypes.block import (
 
 logger = logging.getLogger(__name__)
 
+
 class SQLServerError(Exception):
     """Base exception for SQL Server related errors"""
+
     pass
+
 
 class SQLServerConnectionError(SQLServerError):
     """Exception raised for connection-related errors"""
+
     pass
+
 
 class SQLServerAuthenticationError(SQLServerError):
     """Exception raised for authentication-related errors"""
+
     pass
+
 
 class SQLServerInsertError(SQLServerError):
     """Exception raised for insert operation errors"""
+
     pass
+
 
 LONG_DESCRIPTION = """
 The **Microsoft SQL Server Sink** block enables users to send data from a Roboflow workflow directly to a Microsoft SQL Server 
@@ -101,7 +111,7 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/microsoft_sql_server_sink@v1"]
-    
+
     host: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="SQL Server host address",
         examples=["localhost", "192.168.1.100"],
@@ -129,10 +139,12 @@ class BlockManifest(WorkflowBlockManifest):
         description="Target table name",
         examples=["detections"],
     )
-    
+
     data: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="JSON data to insert into the database",
-        examples=['[{"timestamp": "2025-02-12T10:30:00Z", "object_detected": "Defective Part"}]'],
+        examples=[
+            '[{"timestamp": "2025-02-12T10:30:00Z", "object_detected": "Defective Part"}]'
+        ],
     )
 
     @field_validator("port")
@@ -176,12 +188,12 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
             f"PORT={port};"
             f"DATABASE={database};"
         )
-        
+
         if username and password:
             connection_string += f"UID={username};PWD={password}"
         else:
             connection_string += "Trusted_Connection=yes"
-        
+
         try:
             self._connection = pyodbc.connect(connection_string, autocommit=False)
             cursor = self._connection.cursor()
@@ -198,22 +210,28 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
         except pyodbc.Error as e:
             error_msg = str(e)
             if "Login failed" in error_msg or "password" in error_msg.lower():
-                raise SQLServerAuthenticationError(f"Authentication failed: {error_msg}")
+                raise SQLServerAuthenticationError(
+                    f"Authentication failed: {error_msg}"
+                )
             elif "Cannot open database" in error_msg:
                 raise SQLServerConnectionError(f"Database access error: {error_msg}")
             elif "Network" in error_msg or "Communication" in error_msg:
-                raise SQLServerConnectionError(f"Network/connectivity error: {error_msg}")
+                raise SQLServerConnectionError(
+                    f"Network/connectivity error: {error_msg}"
+                )
             else:
-                raise SQLServerConnectionError(f"Failed to connect to SQL Server: {error_msg}")
+                raise SQLServerConnectionError(
+                    f"Failed to connect to SQL Server: {error_msg}"
+                )
 
     def _validate_data(self, data: List[Dict[str, Any]]) -> None:
         """Validate the data structure before attempting insert"""
         if not data:
             raise ValueError("No data provided for insert operation")
-        
+
         if not isinstance(data[0], dict):
             raise ValueError("Data must be a list of dictionaries")
-        
+
         columns = set(data[0].keys())
         for idx, row in enumerate(data[1:], 1):
             if set(row.keys()) != columns:
@@ -229,9 +247,9 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
             columns = list(data[0].keys())
             placeholders = ",".join(["?" for _ in columns])
             column_names = ",".join(columns)
-            
+
             query = f"INSERT INTO {table_name} ({column_names}) VALUES ({placeholders})"
-            
+
             cursor = self._connection.cursor()
             try:
                 for idx, row in enumerate(data):
@@ -239,10 +257,14 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
                         values = [row[col] for col in columns]
                         cursor.execute(query, values)
                     except pyodbc.DataError as e:
-                        raise SQLServerInsertError(f"Data conversion error in row {idx}: {str(e)}")
+                        raise SQLServerInsertError(
+                            f"Data conversion error in row {idx}: {str(e)}"
+                        )
                     except pyodbc.Error as e:
-                        raise SQLServerInsertError(f"Failed to insert row {idx}: {str(e)}")
-                
+                        raise SQLServerInsertError(
+                            f"Failed to insert row {idx}: {str(e)}"
+                        )
+
                 self._connection.commit()
             except Exception as e:
                 self._connection.rollback()
