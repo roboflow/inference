@@ -20,7 +20,7 @@ def test_vit_multi_class_single_image_inference(
     model = VitClassification(model_id=vit_multi_class_model, api_key="DUMMY")
 
     # when
-    result = model.infer(example_image)
+    result = model.infer(example_image, confidence=0.02)
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
@@ -44,7 +44,7 @@ def test_vit_multi_class_batch_inference_when_batch_size_smaller_than_max_batch_
     model = VitClassification(model_id=vit_multi_class_model, api_key="DUMMY")
 
     # when
-    result = model.infer([example_image] * batch_size)
+    result = model.infer([example_image] * batch_size, confidence=0.02)
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
@@ -76,7 +76,7 @@ def test_vit_multi_class_batch_inference_when_batch_size_larger_then_max_batch_s
     model = VitClassification(model_id=vit_multi_class_model, api_key="DUMMY")
 
     # when
-    result = model.infer([example_image] * batch_size)
+    result = model.infer([example_image] * batch_size, confidence=0.02)
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
