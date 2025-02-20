@@ -172,7 +172,8 @@ def select_detections(
 
 
 def extract_x_coordinate_of_detections_center(detections: sv.Detections) -> np.ndarray:
-    return detections.xyxy[:, 0] + (detections.xyxy[:, 2] - detections.xyxy[:, 0]) / 2
+    # Utilize efficient NumPy broadcasting to compute the center x-coordinate
+    return (detections.xyxy[:, 0] + detections.xyxy[:, 2]) * 0.5
 
 
 def extract_y_coordinate_of_detections_center(detections: sv.Detections) -> np.ndarray:
