@@ -33,7 +33,7 @@ def test_yolov8_classification_single_image_inference(
     model = YOLOv8Classification(model_id=yolov8_cls_model, api_key="DUMMY")
 
     # when
-    result = model.infer(example_image)
+    result = model.infer(example_image, confidence=0.0009)
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
@@ -56,7 +56,7 @@ def test_yolov8_classification_batch_inference_when_batch_size_smaller_than_max_
     model = YOLOv8Classification(model_id=yolov8_cls_model, api_key="DUMMY")
 
     # when
-    result = model.infer([example_image] * batch_size)
+    result = model.infer([example_image] * batch_size, confidence=0.0009)
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
@@ -84,7 +84,7 @@ def test_yolov8_classification_batch_inference_when_batch_size_larger_than_max_b
     model = YOLOv8Classification(model_id=yolov8_cls_model, api_key="DUMMY")
 
     # when
-    result = model.infer([example_image] * batch_size)
+    result = model.infer([example_image] * batch_size, confidence=0.0009)
 
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
