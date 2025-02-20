@@ -31,6 +31,7 @@ DETECTION_CLASSES_REPLACEMENT_WORKFLOW = {
             "name": "breds_classification",
             "image": "$steps.cropping.crops",
             "model_id": "dog-breed-xpaq6/1",
+            "confidence": 0.09,
         },
         {
             "type": "DetectionsClassesReplacement",
