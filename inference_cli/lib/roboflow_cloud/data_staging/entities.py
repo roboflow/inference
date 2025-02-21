@@ -31,6 +31,8 @@ class MultipartBatchPartMetadata(BaseModel):
     part_name: str = Field(alias="partName")
     part_type: str = Field(alias="partType")
     content_type: str = Field(alias="contentType")
+    part_description: Optional[str] = Field(alias="partDescription", default=None)
+    nestedContentType: Optional[str] = Field(alias="nestedContentType", default=None)
 
 
 class ListMultipartBatchPartsResponse(BaseModel):
@@ -40,3 +42,28 @@ class ListMultipartBatchPartsResponse(BaseModel):
 class BatchExportResponse(BaseModel):
     urls: List[str]
     next_page_token: Optional[str] = Field(alias="nextPageToken", default=None)
+
+
+class FileMetadata(BaseModel):
+    download_url: str = Field(alias="downloadURL", serialization_alias="downloadURL")
+    file_name: str = Field(alias="fileName", serialization_alias="fileName")
+    part_name: Optional[str] = Field(
+        default=None, alias="partName", serialization_alias="partName"
+    )
+    shard_id: Optional[str] = Field(
+        default=None, alias="shardId", serialization_alias="shardId"
+    )
+    content_type: str = Field(alias="contentType", serialization_alias="contentType")
+    nested_content_type: Optional[str] = Field(
+        default=None, alias="nestedContentType", serialization_alias="nestedContentType"
+    )
+
+
+class ListBatchResponse(BaseModel):
+    files_metadata: List[FileMetadata] = Field(alias="filesMetadata")
+    next_page_token: Optional[str] = Field(alias="nextPageToken", default=None)
+
+
+class DownloadLogEntry(BaseModel):
+    file_metadata: FileMetadata
+    local_path: str
