@@ -13,7 +13,9 @@ from inference.core.utils.url_utils import wrap_url
 class TelemetrySettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="telemetry_")
 
-    api_usage_endpoint_url: str = wrap_url(f"{METRICS_COLLECTOR_BASE_URL}/usage/inference")
+    api_usage_endpoint_url: str = wrap_url(
+        f"{METRICS_COLLECTOR_BASE_URL}/usage/inference"
+    )
     api_plan_endpoint_url: str = wrap_url(f"{METRICS_COLLECTOR_BASE_URL}/usage/plan")
     flush_interval: int = Field(default=10, ge=10, le=300)
     opt_out: Optional[bool] = False
