@@ -1,5 +1,7 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from functools import partial
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Type, Union
 
 from fastapi import BackgroundTasks
@@ -203,8 +205,18 @@ class BlockManifest(WorkflowBlockManifest):
 
 
 class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
-    def __init__(self):
+    def __init__(
+        self,
+        background_tasks: Optional[BackgroundTasks],
+        thread_pool_executor: Optional[ThreadPoolExecutor],
+    ):
         self._connection = None
+        self._background_tasks = background_tasks
+        self._thread_pool_executor = thread_pool_executor
+
+    @classmethod
+    def get_init_parameters(cls) -> List[str]:
+        return ["background_tasks", "thread_pool_executor"]
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -220,33 +232,31 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
         username: Optional[str] = None,
         password: Optional[str] = None,
         fire_and_forget: bool = True,
-        background_tasks: Optional[BackgroundTasks] = None,
     ) -> BlockResult:
-        if fire_and_forget and background_tasks is not None:
-            background_tasks.add_task(
-                self._process_data,
-                host=host,
-                port=port,
-                database=database,
-                table_name=table_name,
-                data=data,
-                username=username,
-                password=password,
-            )
+        registration_task = partial(
+            self._process_data,
+            host=host,
+            port=port,
+            database=database,
+            table_name=table_name,
+            data=data,
+            username=username,
+            password=password,
+        )
+        if fire_and_forget and self._background_tasks is not None:
+            self._background_tasks.add_task(registration_task)
+            return {
+                "error_status": False,
+                "message": "Data processing scheduled",
+            }
+        elif fire_and_forget and self._thread_pool_executor:
+            self._thread_pool_executor.submit(registration_task)
             return {
                 "error_status": False,
                 "message": "Data processing scheduled",
             }
         else:
-            return self._process_data(
-                host=host,
-                port=port,
-                database=database,
-                table_name=table_name,
-                data=data,
-                username=username,
-                password=password,
-            )
+            return registration_task()
 
     def _process_data(
         self,
