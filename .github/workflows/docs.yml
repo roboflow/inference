@@ -85,6 +85,8 @@ jobs:
                       -r requirements/requirements.test.integration.txt \
                       -r requirements/requirements.http.txt \
                       -r requirements/requirements.cli.txt
+
+          pip install -e .
         working-directory: ./inference_repo
 
       - name: Install enterprise blocks

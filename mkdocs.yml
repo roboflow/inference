@@ -207,7 +207,8 @@ plugins:
   - search
   - swagger-ui-tag
   - mkdocs-jupyter
-  # - social
+  - social
+  - ezlinks
   - gen-files:
       scripts:
         - docs/scripts/gen_ref_pages.py
