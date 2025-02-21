@@ -651,6 +651,7 @@ class HttpInterface(BaseInterface):
                         "/docs",
                         "/redoc",
                         "/info",
+                        "/openapi.json",  # needed for /docs and /redoc
                         "/workflows/blocks/describe",
                         "/workflows/definition/schema",
                     ]
