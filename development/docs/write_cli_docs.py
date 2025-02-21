@@ -1,30 +1,34 @@
 import subprocess
 import os 
 
-FILENAME = os.path.abspath(
+DOCS_ROOT_DIR = os.path.abspath(
     os.path.join(
         os.path.dirname(__file__),
         "..",
         "..",
         "docs",
-        "inference_helpers",
-        "cli_commands",
-        "reference.md"
     )
 )
 
-def write_file(path: str, content: str) -> None:
-    path = os.path.abspath(path)
-    parent_dir = os.path.dirname(path)
-    os.makedirs(parent_dir, exist_ok=True)
-    with open(path, "w") as f:
-        f.write(content)
-
+filename = os.path.join(DOCS_ROOT_DIR, "inference_helpers", "cli_commands", "reference.md")
 
 def main():
-    cmd = f"typer inference_cli.main utils docs --name inference"
+    cmd = f"typer inference_cli/main.py utils docs --name inference"
     result = subprocess.run(cmd.split(), capture_output=True, text=True)
-    write_file(FILENAME, result.stdout)
+    content = result.stdout
+    error = result.stderr
+    status = result.returncode
+
+    print("CONTENT length: ", len(content))
+    print("CONTENT type: ", type(content))
+    print("ERROR length: ", len(error))
+    print("ERROR: ", error)
+    print("STATUS: ", status)
+
+    print("Writing CLI reference to ", filename)
+    
+    with open(filename, 'w', encoding='utf-8') as f:
+       f.write(content)
 
 
 if __name__ == "__main__":
