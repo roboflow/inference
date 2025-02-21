@@ -16,7 +16,6 @@ from inference.core.workflows.execution_engine.entities.base import OutputDefini
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     DICTIONARY_KIND,
-    INTEGER_KIND,
     SECRET_KIND,
     STRING_KIND,
     Selector,
