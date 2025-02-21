@@ -7,12 +7,10 @@ from functools import partial
 from threading import Thread
 from typing import (
     Callable,
-    Dict,
     Generator,
     Iterable,
     List,
     Optional,
-    Set,
     TypeVar,
     Union,
 )
@@ -132,13 +130,14 @@ class VideoSourcesManager:
         on_reconnection_error: Callable[[Optional[int], SourceConnectionError], None],
     ):
         self._video_sources = video_sources
-        self._reconnection_threads: Dict[int, Thread] = {}
+        self._reconnection_threads = {}  # type: Dict[int, Thread]
         self._external_should_stop = should_stop
         self._on_reconnection_error = on_reconnection_error
-        self._enforce_stop: Dict[int, bool] = {}
-        self._ended_sources: Set[int] = set()
-        self._threads_to_join: Set[int] = set()
+        self._enforce_stop = {}  # type: Dict[int, bool]
+        self._ended_sources = set()  # type: Set[int]
+        self._threads_to_join = set()  # type: Set[int]
         self._last_batch_yielded_time = datetime.now()
+        self._total_sources = len(self._video_sources.all_sources)
 
     def retrieve_frames_from_sources(
         self,
@@ -175,7 +174,7 @@ class VideoSourcesManager:
         return batch_frames
 
     def all_sources_ended(self) -> bool:
-        return len(self._ended_sources) >= len(self._video_sources.all_sources)
+        return len(self._ended_sources) >= self._total_sources
 
     def join_all_reconnection_threads(self, include_not_finished: bool = False) -> None:
         for source_ord in copy(self._threads_to_join):
