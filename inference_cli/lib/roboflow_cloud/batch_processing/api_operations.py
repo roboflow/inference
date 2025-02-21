@@ -4,7 +4,7 @@ import string
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Union
+from typing import Generator, List, Optional, Union
 
 import backoff
 import requests
@@ -12,15 +12,7 @@ from requests import Timeout
 from rich.console import Console
 from rich.json import JSON
 from rich.panel import Panel
-from rich.progress import (
-    BarColumn,
-    Progress,
-    ProgressSample,
-    Task,
-    TaskID,
-    TaskProgressColumn,
-    TextColumn,
-)
+from rich.progress import BarColumn, Progress, TaskProgressColumn
 from rich.table import Table
 from rich.text import Text
 
@@ -108,26 +100,40 @@ def list_batch_jobs(
     page_size: Optional[int] = None,
     max_pages: Optional[int] = None,
 ) -> List[JobMetadata]:
+    return list(
+        iterate_batch_jobs(
+            workspace=workspace,
+            api_key=api_key,
+            page_size=page_size,
+            max_pages=max_pages,
+        )
+    )
+
+
+def iterate_batch_jobs(
+    workspace: str,
+    api_key: str,
+    page_size: Optional[int] = None,
+    max_pages: Optional[int] = None,
+) -> Generator[JobMetadata, None, None]:
     if max_pages is not None and max_pages <= 0:
         raise ValueError("Could not specify max_pages <= 0")
     next_page_token = None
     pages_fetched = 0
-    results = []
     while True:
         if max_pages is not None and pages_fetched >= max_pages:
-            return results
+            break
         listing_page = get_batch_jobs_listing_page(
             workspace=workspace,
             api_key=api_key,
             page_size=page_size,
             next_page_token=next_page_token,
         )
-        results.extend(listing_page.jobs)
+        yield from listing_page.jobs
         next_page_token = listing_page.next_page_token
         if next_page_token is None:
             break
         pages_fetched += 1
-    return results
 
 
 @backoff.on_exception(
@@ -166,7 +172,7 @@ def get_batch_jobs_listing_page(
         raise RFAPICallError("Could not decode Roboflow API response.") from error
 
 
-def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
+def display_batch_job_details(job_id: str, api_key: str) -> None:
     workspace = get_workspace(api_key=api_key)
     job_metadata = get_batch_job_metadata(
         workspace=workspace, job_id=job_id, api_key=api_key
@@ -300,9 +306,7 @@ def display_batch_job_details(job_id: str, api_key: Optional[str]) -> None:
     max_tries=3,
     interval=1,
 )
-def get_batch_job_metadata(
-    workspace: str, job_id: str, api_key: Optional[str]
-) -> JobMetadata:
+def get_batch_job_metadata(workspace: str, job_id: str, api_key: str) -> JobMetadata:
     params = {}
     if api_key is not None:
         params["api_key"] = api_key
@@ -338,7 +342,7 @@ def trigger_job_with_workflows_images_processing(
     aggregation_format: Optional[AggregationFormat],
     job_id: Optional[str],
     notifications_url: Optional[str],
-    api_key: Optional[str],
+    api_key: str,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV1(
@@ -397,7 +401,7 @@ def trigger_job_with_workflows_videos_processing(
     max_video_fps: Optional[Union[float, int]],
     job_id: Optional[str],
     notifications_url: Optional[str],
-    api_key: Optional[str],
+    api_key: str,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
     compute_configuration = ComputeConfigurationV1(
@@ -478,7 +482,7 @@ def create_batch_job(
 def list_job_stages(
     workspace: str,
     job_id: str,
-    api_key: Optional[str],
+    api_key: str,
 ) -> List[JobStageDetails]:
     params = {}
     if api_key is not None:
@@ -506,9 +510,24 @@ def list_job_stage_tasks(
     stage_id: str,
     api_key: str,
 ) -> List[TaskStatus]:
+    return list(
+        iterate_job_stage_tasks(
+            workspace=workspace,
+            job_id=job_id,
+            stage_id=stage_id,
+            api_key=api_key,
+        )
+    )
+
+
+def iterate_job_stage_tasks(
+    workspace: str,
+    job_id: str,
+    stage_id: str,
+    api_key: str,
+) -> Generator[TaskStatus, None, None]:
     next_page_token = None
     pages_fetched = 0
-    results = []
     while True:
         listing_page = get_job_stage_tasks_listing_page(
             workspace=workspace,
@@ -517,12 +536,11 @@ def list_job_stage_tasks(
             api_key=api_key,
             next_page_token=next_page_token,
         )
-        results.extend(listing_page.tasks)
+        yield from listing_page.tasks
         next_page_token = listing_page.next_page_token
         if next_page_token is None:
             break
         pages_fetched += 1
-    return results
 
 
 @backoff.on_exception(
