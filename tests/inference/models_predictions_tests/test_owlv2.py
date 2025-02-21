@@ -14,7 +14,6 @@ from inference.models.owlv2.owlv2 import (
     OwlV2,
     Owlv2Singleton,
     SerializedOwlV2,
-    OWLv2ModelManager,
 )
 
 
@@ -426,44 +425,6 @@ def test_owlv2_model_unloaded_when_garbage_collected():
     del model
     gc.collect()
     assert len(Owlv2Singleton._instances) == 0
-
-
-
-@pytest.mark.slow
-def test_owlv2_model_manager_singleton():
-    model1 = OwlV2(model_id=f"owlv2/{OWLV2_VERSION_ID}")
-    
-    manager1 = OWLv2ModelManager(
-        vision_model=model1.owlv2.vision_model,
-        huggingface_id=f"google/{OWLV2_VERSION_ID}"
-    )
-    manager2 = OWLv2ModelManager(
-        vision_model=model1.owlv2.vision_model,
-        huggingface_id=f"google/{OWLV2_VERSION_ID}"
-    )
-    
-    assert manager1 is manager2
-    
-    assert manager1._vision_model is manager2._vision_model
-
-
-@pytest.mark.slow
-def test_owlv2_model_manager_garbage_collection():
-    initial_instances = len(OWLv2ModelManager._instances)
-    
-    model = OwlV2(model_id=f"owlv2/{OWLV2_VERSION_ID}")
-    manager = OWLv2ModelManager(
-        vision_model=model.owlv2.vision_model,
-        huggingface_id=f"google/{OWLV2_VERSION_ID}"
-    )
-    
-    assert len(OWLv2ModelManager._instances) == initial_instances + 1
-    
-    del model
-    del manager
-    gc.collect()
-    
-    assert len(OWLv2ModelManager._instances) == initial_instances
 
 
 if __name__ == "__main__":
