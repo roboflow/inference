@@ -1,16 +1,19 @@
 import logging
 from contextlib import contextmanager
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Type, Union
 
 from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, field_validator
 
-try:
+if TYPE_CHECKING:
     import pyodbc
+else:
+    try:
+        import pyodbc
+    except ImportError:
+        pyodbc = None
 
-    PYODBC_AVAILABLE = True
-except ImportError:
-    PYODBC_AVAILABLE = False
+PYODBC_AVAILABLE = pyodbc is not None
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
@@ -306,7 +309,7 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
         database: str,
         username: Optional[str] = None,
         password: Optional[str] = None,
-    ) -> pyodbc.Connection:
+    ) -> Any:
         if not PYODBC_AVAILABLE:
             raise SQLServerConnectionError(
                 "pyodbc package is not installed. Please contact Roboflow's Enterprise support team for assistance."
@@ -347,7 +350,7 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
             raise SQLServerConnectionError(str(e))
 
     def _insert_data(
-        self, connection: pyodbc.Connection, table_name: str, data: List[Dict[str, Any]]
+        self, connection: Any, table_name: str, data: List[Dict[str, Any]]
     ) -> None:
         if not data:
             return
@@ -385,7 +388,7 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
         if isinstance(data, list):
             if not data:
                 raise ValueError("Empty list provided for insert operation")
-            
+
             if not all(isinstance(item, dict) for item in data):
                 raise ValueError("All items in data list must be dictionaries")
 
@@ -396,7 +399,7 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
                         raise ValueError(
                             f"Dictionary at index {idx} has different keys than the first dictionary"
                         )
-            
+
             return data
 
     def __del__(self):
