@@ -135,7 +135,7 @@ class VideoSourcesManager:
         self._reconnection_threads: Dict[int, Thread] = {}
         self._external_should_stop = should_stop
         self._on_reconnection_error = on_reconnection_error
-        self._enforce_stop: Dict[int, bool] = {}
+        self._enforce_stop: Set[int] = set()
         self._ended_sources: Set[int] = set()
         self._threads_to_join: Set[int] = set()
         self._last_batch_yielded_time = datetime.now()
@@ -178,12 +178,9 @@ class VideoSourcesManager:
         return len(self._ended_sources) >= len(self._video_sources.all_sources)
 
     def join_all_reconnection_threads(self, include_not_finished: bool = False) -> None:
-        for source_ord in copy(self._threads_to_join):
-            self._purge_reconnection_thread(source_ord=source_ord)
-        if not include_not_finished:
-            return None
-        for source_ord in list(self._reconnection_threads.keys()):
-            self._purge_reconnection_thread(source_ord=source_ord)
+        self._purge_reconnection_threads(self._threads_to_join.copy())
+        if include_not_finished:
+            self._purge_reconnection_threads(list(self._reconnection_threads.keys()))
 
     def _is_source_inactive(self, source_ord: int) -> bool:
         return (
@@ -234,6 +231,15 @@ class VideoSourcesManager:
         if self._external_should_stop():
             return True
         return self._enforce_stop.get(source_ord, False)
+
+    def _purge_reconnection_threads(self, source_ords: list):
+        for source_ord in source_ords:
+            if source_ord in self._reconnection_threads:
+                self._enforce_stop.add(source_ord)
+                self._reconnection_threads[source_ord].join()
+                del self._reconnection_threads[source_ord]
+                self._enforce_stop.remove(source_ord)
+                self._threads_to_join.discard(source_ord)
 
 
 def multiplex_videos(
