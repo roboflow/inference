@@ -1,13 +1,23 @@
-import json
 import logging
+from contextlib import contextmanager
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-import pyodbc
+from fastapi import BackgroundTasks
 from pydantic import ConfigDict, Field, field_validator
+
+try:
+    import pyodbc
+
+    PYODBC_AVAILABLE = True
+except ImportError:
+    PYODBC_AVAILABLE = False
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    DICTIONARY_KIND,
+    INTEGER_KIND,
+    SECRET_KIND,
     STRING_KIND,
     Selector,
 )
@@ -28,12 +38,6 @@ class SQLServerError(Exception):
 
 class SQLServerConnectionError(SQLServerError):
     """Exception raised for connection-related errors"""
-
-    pass
-
-
-class SQLServerAuthenticationError(SQLServerError):
-    """Exception raised for authentication-related errors"""
 
     pass
 
@@ -70,17 +74,31 @@ If username and password are not provided, the block will use Windows Authentica
 
 ### Data Input Format
 
-The block expects data in a structured JSON format that maps to the target table columns:
+The block expects data in a dictionary format or list of dictionaries that map to the target table columns:
 
-```json
+```python
+# Single row
+{
+    "timestamp": "2025-02-12T10:30:00Z",
+    "part_detected": "Defective Part",
+    "confidence": 0.92,
+    "camera_id": "CAM_001"
+}
+
+# Multiple rows
 [
     {
         "timestamp": "2025-02-12T10:30:00Z",
-        "object_detected": "Defective Part",
+        "part_detected": "Defective Part",
         "confidence": 0.92,
         "camera_id": "CAM_001"
     },
-    ...
+    {
+        "timestamp": "2025-02-12T10:31:00Z",
+        "part_detected": "Good Part",
+        "confidence": 0.95,
+        "camera_id": "CAM_002"
+    }
 ]
 ```
 
@@ -90,6 +108,7 @@ The block expects data in a structured JSON format that maps to the target table
 * The authenticated user must have INSERT permissions
 * Column names in the data must match the table schema
 * When using Windows Authentication, ensure the service account has proper permissions
+* The pyodbc package must be installed
 """
 
 
@@ -130,21 +149,36 @@ class BlockManifest(WorkflowBlockManifest):
         description="SQL Server username",
         examples=["db_user"],
     )
-    password: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
+    password: Optional[Union[Selector(kind=[SECRET_KIND]), str]] = Field(
         default=None,
         description="SQL Server password",
-        examples=["password123"],
+        examples=["$inputs.sql_password"],
     )
     table_name: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Target table name",
         examples=["detections"],
     )
 
-    data: Union[Selector(kind=[STRING_KIND]), str] = Field(
-        description="JSON data to insert into the database",
+    data: Union[
+        Selector(kind=[DICTIONARY_KIND]), Union[Dict[str, Any], List[Dict[str, Any]]]
+    ] = Field(
+        description="Data to insert into the database. Can be a single dictionary or list of dictionaries.",
         examples=[
-            '[{"timestamp": "2025-02-12T10:30:00Z", "object_detected": "Defective Part"}]'
+            {"timestamp": "2025-02-12T10:30:00Z", "object_detected": "Defective Part"},
+            [
+                {
+                    "timestamp": "2025-02-12T10:30:00Z",
+                    "object_detected": "Defective Part",
+                },
+                {"timestamp": "2025-02-12T10:31:00Z", "object_detected": "Good Part"},
+            ],
         ],
+    )
+
+    fire_and_forget: Union[Selector(kind=[BOOLEAN_KIND]), bool] = Field(
+        default=True,
+        description="Run in asynchronous mode for faster processing",
+        examples=[True, "$inputs.fire_and_forget"],
     )
 
     @field_validator("port")
@@ -174,6 +208,98 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
 
+    def run(
+        self,
+        host: str,
+        port: int,
+        database: str,
+        table_name: str,
+        data: Union[Dict[str, Any], List[Dict[str, Any]]],
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        fire_and_forget: bool = True,
+        background_tasks: Optional[BackgroundTasks] = None,
+    ) -> BlockResult:
+        if fire_and_forget and background_tasks is not None:
+            background_tasks.add_task(
+                self._process_data,
+                host=host,
+                port=port,
+                database=database,
+                table_name=table_name,
+                data=data,
+                username=username,
+                password=password,
+            )
+            return {
+                "error_status": False,
+                "message": "Data processing scheduled",
+            }
+        else:
+            return self._process_data(
+                host=host,
+                port=port,
+                database=database,
+                table_name=table_name,
+                data=data,
+                username=username,
+                password=password,
+            )
+
+    def _process_data(
+        self,
+        host: str,
+        port: int,
+        database: str,
+        table_name: str,
+        data: Union[Dict[str, Any], List[Dict[str, Any]]],
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        try:
+            with self._get_connection(
+                host, port, database, username, password
+            ) as connection:
+                data_list = self._validate_data(data)
+                self._insert_data(connection, table_name, data_list)
+                return {
+                    "error_status": False,
+                    "message": f"Successfully inserted {len(data_list)} records",
+                }
+        except SQLServerError as e:
+            return {
+                "error_status": True,
+                "message": str(e),
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error in SQL Server sink: {str(e)}")
+            return {
+                "error_status": True,
+                "message": f"An unexpected error occurred: {str(e)}",
+            }
+
+    @contextmanager
+    def _get_connection(
+        self,
+        host: str,
+        port: int,
+        database: str,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ):
+        connection = None
+        try:
+            connection = self._create_connection(
+                host, port, database, username, password
+            )
+            yield connection
+        finally:
+            if connection is not None:
+                try:
+                    connection.close()
+                except Exception as e:
+                    logger.error(f"Error closing connection: {str(e)}")
+
     def _create_connection(
         self,
         host: str,
@@ -181,7 +307,12 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
         database: str,
         username: Optional[str] = None,
         password: Optional[str] = None,
-    ) -> None:
+    ) -> pyodbc.Connection:
+        if not PYODBC_AVAILABLE:
+            raise SQLServerConnectionError(
+                "pyodbc package is not installed. Please contact Roboflow's Enterprise support team for assistance."
+            )
+
         connection_string = (
             f"DRIVER={{FreeTDS}};"
             f"SERVER={host};"
@@ -195,164 +326,81 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
             connection_string += "Trusted_Connection=yes"
 
         try:
-            self._connection = pyodbc.connect(connection_string, autocommit=False)
-            cursor = self._connection.cursor()
+            connection = pyodbc.connect(connection_string, autocommit=False)
+            cursor = connection.cursor()
             try:
                 cursor.execute("SET ANSI_NULLS ON")
                 cursor.execute("SET ANSI_PADDING ON")
                 cursor.execute("SET ANSI_WARNINGS ON")
                 cursor.execute("SET ARITHABORT ON")
                 cursor.execute("SET QUOTED_IDENTIFIER ON")
+                connection.commit()
             except pyodbc.Error as e:
-                logger.warning(f"Failed to set session options: {str(e)}")
+                connection.rollback()
+                cursor.close()
+                raise SQLServerError(
+                    f"Failed to set required session parameters: {str(e)}"
+                )
             finally:
                 cursor.close()
+            return connection
         except pyodbc.Error as e:
-            error_msg = str(e)
-            if "Login failed" in error_msg or "password" in error_msg.lower():
-                raise SQLServerAuthenticationError(
-                    f"Authentication failed: {error_msg}"
-                )
-            elif "Cannot open database" in error_msg:
-                raise SQLServerConnectionError(f"Database access error: {error_msg}")
-            elif "Network" in error_msg or "Communication" in error_msg:
-                raise SQLServerConnectionError(
-                    f"Network/connectivity error: {error_msg}"
-                )
-            else:
-                raise SQLServerConnectionError(
-                    f"Failed to connect to SQL Server: {error_msg}"
-                )
+            raise SQLServerConnectionError(str(e))
 
-    def _validate_data(self, data: List[Dict[str, Any]]) -> None:
-        """Validate the data structure before attempting insert"""
-        if not data:
-            raise ValueError("No data provided for insert operation")
-
-        if not isinstance(data[0], dict):
-            raise ValueError("Data must be a list of dictionaries")
-
-        columns = set(data[0].keys())
-        for idx, row in enumerate(data[1:], 1):
-            if set(row.keys()) != columns:
-                raise ValueError(f"Row {idx} has different columns than the first row")
-
-    def _insert_data(self, table_name: str, data: List[Dict[str, Any]]) -> None:
+    def _insert_data(
+        self, connection: pyodbc.Connection, table_name: str, data: List[Dict[str, Any]]
+    ) -> None:
         if not data:
             return
 
+        columns = list(data[0].keys())
+        placeholders = ",".join(["?" for _ in columns])
+        column_names = ",".join(columns)
+
+        query = f"INSERT INTO {table_name} ({column_names}) VALUES ({placeholders})"
+
+        cursor = connection.cursor()
         try:
-            self._validate_data(data)
-
-            columns = list(data[0].keys())
-            placeholders = ",".join(["?" for _ in columns])
-            column_names = ",".join(columns)
-
-            query = f"INSERT INTO {table_name} ({column_names}) VALUES ({placeholders})"
-
-            cursor = self._connection.cursor()
-            try:
-                for idx, row in enumerate(data):
-                    try:
-                        values = [row[col] for col in columns]
-                        cursor.execute(query, values)
-                    except pyodbc.DataError as e:
-                        raise SQLServerInsertError(
-                            f"Data conversion error in row {idx}: {str(e)}"
-                        )
-                    except pyodbc.Error as e:
-                        raise SQLServerInsertError(
-                            f"Failed to insert row {idx}: {str(e)}"
-                        )
-
-                self._connection.commit()
-            except Exception as e:
-                self._connection.rollback()
-                raise e
-            finally:
-                cursor.close()
-        except Exception as e:
-            logger.error(f"Error during data insertion: {str(e)}")
-            raise
-
-    def run(
-        self,
-        host: str,
-        port: int,
-        database: str,
-        table_name: str,
-        data: str,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-    ) -> BlockResult:
-        try:
-            try:
-                parsed_data = json.loads(data)
-            except json.JSONDecodeError as e:
-                return {
-                    "error_status": True,
-                    "message": f"Invalid JSON data format: {str(e)}. Please ensure the data is valid JSON.",
-                }
-
-            if not isinstance(parsed_data, list):
-                parsed_data = [parsed_data]
-
-            if not parsed_data:
-                return {
-                    "error_status": True,
-                    "message": "No data provided for insertion",
-                }
-
-            try:
-                self._create_connection(
-                    host=host,
-                    port=port,
-                    database=database,
-                    username=username,
-                    password=password,
-                )
-            except SQLServerAuthenticationError as e:
-                return {
-                    "error_status": True,
-                    "message": f"Authentication failed: {str(e)}. Please check your credentials.",
-                }
-            except SQLServerConnectionError as e:
-                return {
-                    "error_status": True,
-                    "message": f"Connection error: {str(e)}. Please check your connection settings.",
-                }
-
-            try:
-                self._insert_data(table_name=table_name, data=parsed_data)
-            except SQLServerInsertError as e:
-                return {
-                    "error_status": True,
-                    "message": f"Insert operation failed: {str(e)}",
-                }
-            except ValueError as e:
-                return {
-                    "error_status": True,
-                    "message": f"Data validation error: {str(e)}",
-                }
-
-            return {
-                "error_status": False,
-                "message": f"Successfully inserted {len(parsed_data)} rows into {table_name}",
-            }
-
-        except Exception as e:
-            logger.error(f"Unexpected error in SQL Server sink: {str(e)}")
-            return {
-                "error_status": True,
-                "message": f"An unexpected error occurred: {str(e)}",
-            }
+            for row in data:
+                values = [row[col] for col in columns]
+                cursor.execute(query, values)
+            connection.commit()
+        except pyodbc.DataError as e:
+            connection.rollback()
+            raise SQLServerInsertError(f"Data conversion error: {str(e)}")
+        except pyodbc.Error as e:
+            connection.rollback()
+            raise SQLServerInsertError(f"Failed to insert data: {str(e)}")
         finally:
-            if self._connection is not None:
-                try:
-                    self._connection.close()
-                except Exception as e:
-                    logger.error(f"Error closing connection: {str(e)}")
-                self._connection = None
+            cursor.close()
+
+    def _validate_data(
+        self, data: Union[Dict[str, Any], List[Dict[str, Any]]]
+    ) -> List[Dict[str, Any]]:
+        if not data:
+            raise ValueError("No data provided for insert operation")
+
+        if isinstance(data, dict):
+            return [data]
+
+        if not isinstance(data, list):
+            raise ValueError("Data must be a dictionary or list of dictionaries")
+
+        if not all(isinstance(item, dict) for item in data):
+            raise ValueError("All items in data list must be dictionaries")
+
+        if not data:
+            raise ValueError("Empty list provided for insert operation")
+
+        if len(data) > 1:
+            first_keys = set(data[0].keys())
+            for idx, item in enumerate(data[1:], 1):
+                if set(item.keys()) != first_keys:
+                    raise ValueError(
+                        f"Dictionary at index {idx} has different keys than the first dictionary"
+                    )
+
+        return data
 
     def __del__(self):
         if self._connection is not None:

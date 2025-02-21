@@ -9,7 +9,6 @@ opencv-python>=4.8.1.78,<=4.10.0.84
 opencv-contrib-python>=4.8.1.78,<=4.10.0.84  # Note: opencv-python considers this as a bad practice, but since our dependencies rely on both we pin both here
 pillow<11.0
 prometheus-fastapi-instrumentator<=6.0.0
-pyodbc>=4.0.39,<5.0.0
 redis~=5.0.0
 requests>=2.32.0,<3.0.0
 rich>=13.0.0,<13.10.0
