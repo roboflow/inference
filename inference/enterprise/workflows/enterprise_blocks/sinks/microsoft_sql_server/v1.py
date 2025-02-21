@@ -352,54 +352,52 @@ class MicrosoftSQLServerSinkBlockV1(WorkflowBlock):
         if not data:
             return
 
-        columns = list(data[0].keys())
-        placeholders = ",".join(["?" for _ in columns])
-        column_names = ",".join(columns)
-
-        query = f"INSERT INTO {table_name} ({column_names}) VALUES ({placeholders})"
-
-        cursor = connection.cursor()
         try:
-            for row in data:
-                values = [row[col] for col in columns]
-                cursor.execute(query, values)
-            connection.commit()
-        except pyodbc.DataError as e:
-            connection.rollback()
-            raise SQLServerInsertError(f"Data conversion error: {str(e)}")
-        except pyodbc.Error as e:
-            connection.rollback()
-            raise SQLServerInsertError(f"Failed to insert data: {str(e)}")
-        finally:
-            cursor.close()
+            columns = list(data[0].keys())
+            placeholders = ",".join(["?" for _ in columns])
+            column_names = ",".join(columns)
+
+            query = f"INSERT INTO {table_name} ({column_names}) VALUES ({placeholders})"
+
+            cursor = connection.cursor()
+            try:
+                for row in data:
+                    values = [row[col] for col in columns]
+                    cursor.execute(query, values)
+                connection.commit()
+            except pyodbc.DataError as e:
+                connection.rollback()
+                raise SQLServerInsertError(f"Data conversion error: {str(e)}")
+            except pyodbc.Error as e:
+                connection.rollback()
+                raise SQLServerInsertError(f"Failed to insert data: {str(e)}")
+            finally:
+                cursor.close()
+        except Exception as e:
+            raise SQLServerInsertError(f"Error preparing or executing insert: {str(e)}")
 
     def _validate_data(
         self, data: Union[Dict[str, Any], List[Dict[str, Any]]]
     ) -> List[Dict[str, Any]]:
-        if not data:
-            raise ValueError("No data provided for insert operation")
-
         if isinstance(data, dict):
             return [data]
 
-        if not isinstance(data, list):
-            raise ValueError("Data must be a dictionary or list of dictionaries")
+        if isinstance(data, list):
+            if not data:
+                raise ValueError("Empty list provided for insert operation")
+            
+            if not all(isinstance(item, dict) for item in data):
+                raise ValueError("All items in data list must be dictionaries")
 
-        if not all(isinstance(item, dict) for item in data):
-            raise ValueError("All items in data list must be dictionaries")
-
-        if not data:
-            raise ValueError("Empty list provided for insert operation")
-
-        if len(data) > 1:
-            first_keys = set(data[0].keys())
-            for idx, item in enumerate(data[1:], 1):
-                if set(item.keys()) != first_keys:
-                    raise ValueError(
-                        f"Dictionary at index {idx} has different keys than the first dictionary"
-                    )
-
-        return data
+            if len(data) > 1:
+                first_keys = set(data[0].keys())
+                for idx, item in enumerate(data[1:], 1):
+                    if set(item.keys()) != first_keys:
+                        raise ValueError(
+                            f"Dictionary at index {idx} has different keys than the first dictionary"
+                        )
+            
+            return data
 
     def __del__(self):
         if self._connection is not None:
