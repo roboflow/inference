@@ -5,12 +5,7 @@ import re
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
-from starlette.responses import (
-    HTMLResponse,
-    JSONResponse,
-    RedirectResponse,
-    Response,
-)
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.status import HTTP_201_CREATED, HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 
 from inference.core.env import BUILDER_ORIGIN, MODEL_CACHE_DIR
@@ -40,14 +35,14 @@ else:
 def verify_csrf_token(x_csrf: str = Header(None)):
     if x_csrf != csrf:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid CSRF token"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token"
         )
 
 
 # ---------------------
 # FRONTEND HTML ROUTES
 # ---------------------
+
 
 @router.get(
     "",
@@ -103,6 +98,7 @@ async def builder_edit(workflow_id: str):
 # ----------------------
 # BACKEND JSON API ROUTES
 # ----------------------
+
 
 @router.get("/api", dependencies=[Depends(verify_csrf_token)])
 @with_route_exceptions
@@ -190,7 +186,9 @@ async def create_or_overwrite_workflow(
     if request_body.get("id") and request_body.get("id") != workflow_id:
         old_id = request_body["id"]
         if not re.match(r"^[\w\-]+$", old_id):
-            return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
+            return JSONResponse(
+                {"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST
+            )
 
         old_file_path = workflow_local_dir / f"{old_id}.json"
         if old_file_path.exists():
@@ -243,6 +241,7 @@ async def delete_workflow(workflow_id: str):
 # ------------------------
 # FALLBACK REDIRECT HELPER
 # ------------------------
+
 
 @router.get("/{workflow_id}", include_in_schema=False)
 @with_route_exceptions
