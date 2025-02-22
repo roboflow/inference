@@ -4,9 +4,8 @@ import os
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from starlette.responses import (
-    FileResponse,
     HTMLResponse,
     JSONResponse,
     RedirectResponse,
@@ -24,10 +23,31 @@ workflow_local_dir.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter()
 
+# ----------------------------------------------------------------
+# Generate or read the "csrf" token from disk once per server run
+# ----------------------------------------------------------------
+csrf_file = workflow_local_dir / ".csrf"
+if csrf_file.exists():
+    csrf = csrf_file.read_text()
+else:
+    csrf = os.urandom(16).hex()
+    csrf_file.write_text(csrf)
+
+
+# ----------------------------------------------------------------
+# Dependency to verify the X-CSRF header on any protected route
+# ----------------------------------------------------------------
+def verify_csrf_token(x_csrf: str = Header(None)):
+    if x_csrf != csrf:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid CSRF token"
+        )
+
+
 # ---------------------
 # FRONTEND HTML ROUTES
 # ---------------------
-
 
 @router.get(
     "",
@@ -37,21 +57,24 @@ router = APIRouter()
 @with_route_exceptions
 async def builder_browse():
     """
-    Loads the list of Workflows available for editing.
-
-    Returns:
-        FileResponse: The HTML file containing the list of workflows.
+    Loads the main builder UI (editor.html).
+    Injects the CSRF token and BUILDER_ORIGIN
+    so the client can parse them on page load.
     """
     base_path = Path(__file__).parent
     file_path = base_path / "editor.html"
     content = file_path.read_text(encoding="utf-8")
     content = content.replace("{{BUILDER_ORIGIN}}", BUILDER_ORIGIN)
+    content = content.replace("{{CSRF}}", csrf)
 
     return HTMLResponse(content)
 
 
 @router.get("/", include_in_schema=False)
 async def builder_redirect():
+    """
+    If user hits /build/ with trailing slash, redirect to /build
+    """
     return RedirectResponse(url="/build", status_code=302)
 
 
@@ -67,14 +90,12 @@ async def builder_edit(workflow_id: str):
 
     Args:
         workflow_id (str): The ID of the workflow to be edited.
-
-    Returns:
-        FileResponse: The HTML file containing the workflow editor.
     """
     base_path = Path(__file__).parent
     file_path = base_path / "editor.html"
     content = file_path.read_text(encoding="utf-8")
     content = content.replace("{{BUILDER_ORIGIN}}", BUILDER_ORIGIN)
+    content = content.replace("{{CSRF}}", csrf)
 
     return HTMLResponse(content)
 
@@ -83,12 +104,12 @@ async def builder_edit(workflow_id: str):
 # BACKEND JSON API ROUTES
 # ----------------------
 
-
-@router.get("/api")
+@router.get("/api", dependencies=[Depends(verify_csrf_token)])
 @with_route_exceptions
 async def get_all_workflows():
     """
     Returns JSON info about all .json files in {MODEL_CACHE_DIR}/workflow/local.
+    Protected by CSRF token check.
     """
     data = {}
     for json_file in workflow_local_dir.glob("*.json"):
@@ -113,18 +134,17 @@ async def get_all_workflows():
     )
 
 
-@router.get("/api/{workflow_id}")
+@router.get("/api/{workflow_id}", dependencies=[Depends(verify_csrf_token)])
 @with_route_exceptions
 async def get_workflow(workflow_id: str):
     """
-    Return JSON for workflow_id.json, or { "error": "not found" } with 404 if missing.
+    Return JSON for workflow_id.json, or 404 if missing.
     """
     if not re.match(r"^[\w\-]+$", workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
 
     file_path = workflow_local_dir / f"{workflow_id}.json"
     if not file_path.exists():
-        # Return the structure you specifically asked for
         return JSONResponse({"error": "not found"}, status_code=HTTP_404_NOT_FOUND)
 
     stat_info = file_path.stat()
@@ -133,7 +153,6 @@ async def get_workflow(workflow_id: str):
             config_contents = json.load(f)
     except json.JSONDecodeError as e:
         logger.error(f"Error reading JSON from {file_path}: {e}")
-        # You can also do a 400 or 500 if you prefer:
         return JSONResponse({"error": "invalid JSON"}, status_code=500)
 
     return Response(
@@ -152,25 +171,26 @@ async def get_workflow(workflow_id: str):
     )
 
 
-@router.post("/api/{workflow_id}")
+@router.post("/api/{workflow_id}", dependencies=[Depends(verify_csrf_token)])
 @with_route_exceptions
 async def create_or_overwrite_workflow(
     workflow_id: str, request_body: dict = Body(...)
 ):
+    """
+    Create or overwrite a workflow's JSON file on disk.
+    Protected by CSRF token check.
+    """
     if not re.match(r"^[\w\-]+$", workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
 
     file_path = workflow_local_dir / f"{workflow_id}.json"
     workflow_local_dir.mkdir(parents=True, exist_ok=True)
 
-    # if the body's id isn't {workflow_id} then we're renaming
-    # delete the old one & update the id in the json to the new one
+    # If the body claims a different ID, treat that as a "rename".
     if request_body.get("id") and request_body.get("id") != workflow_id:
         old_id = request_body["id"]
         if not re.match(r"^[\w\-]+$", old_id):
-            return JSONResponse(
-                {"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST
-            )
+            return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
 
         old_file_path = workflow_local_dir / f"{old_id}.json"
         if old_file_path.exists():
@@ -195,9 +215,13 @@ async def create_or_overwrite_workflow(
     )
 
 
-@router.delete("/api/{workflow_id}")
+@router.delete("/api/{workflow_id}", dependencies=[Depends(verify_csrf_token)])
 @with_route_exceptions
 async def delete_workflow(workflow_id: str):
+    """
+    Delete a workflow's JSON file from disk.
+    Protected by CSRF token check.
+    """
     if not re.match(r"^[\w\-]+$", workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
 
@@ -220,17 +244,14 @@ async def delete_workflow(workflow_id: str):
 # FALLBACK REDIRECT HELPER
 # ------------------------
 
-
-@router.get("/{workflow_id}")
+@router.get("/{workflow_id}", include_in_schema=False)
 @with_route_exceptions
 async def builder_maybe_redirect(workflow_id: str):
     """
     If the workflow_id.json file exists, redirect to /build/edit/{workflow_id}.
     Otherwise, redirect back to /build.
     """
-    # Sanitize workflow_id to prevent path traversal
     if not re.match(r"^[\w\-]+$", workflow_id):
-        # If it's invalid, just redirect home (or raise 400)
         return RedirectResponse(url="/build", status_code=302)
 
     file_path = workflow_local_dir / f"{workflow_id}.json"
