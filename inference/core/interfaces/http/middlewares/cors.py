@@ -1,3 +1,7 @@
+# Forked from Starlette to add a new `match_paths` parameter
+# that allows the middleware to only apply CORS headers to
+# specific paths (and apply different ones to other paths)
+
 from __future__ import annotations
 
 import functools
@@ -23,9 +27,17 @@ class CORSMiddleware:
         allow_origin_regex: str | None = None,
         expose_headers: typing.Sequence[str] = (),
         max_age: int = 600,
+        match_paths: str | None = None,
     ) -> None:
+        """
+        If `match_paths` is given (a regex string), CORS headers will only be applied
+        if the request path matches that regex. Otherwise, the request will pass
+        through with no CORS modifications from this middleware instance.
+        """
         if "*" in allow_methods:
             allow_methods = ALL_METHODS
+
+        self.match_paths_regex = re.compile(match_paths) if match_paths else None
 
         compiled_allow_origin_regex = None
         if allow_origin_regex is not None:
@@ -76,6 +88,13 @@ class CORSMiddleware:
         if scope["type"] != "http":  # pragma: no cover
             await self.app(scope, receive, send)
             return
+
+        # If match_paths is provided and does not match, just skip to the next handler:
+        if self.match_paths_regex is not None:
+            path = scope.get("path", "")
+            if not self.match_paths_regex.match(path):
+                await self.app(scope, receive, send)
+                return
 
         method = scope["method"]
         headers = Headers(scope=scope)
