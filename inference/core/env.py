@@ -48,6 +48,12 @@ API_BASE_URL = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
+# Base URL for metrics collector
+METRICS_COLLECTOR_BASE_URL = os.getenv(
+    "METRICS_COLLECTOR_BASE_URL",
+    API_BASE_URL,
+)
+
 # extra headers expected to be serialised json
 ROBOFLOW_API_EXTRA_HEADERS = os.getenv("ROBOFLOW_API_EXTRA_HEADERS")
 
