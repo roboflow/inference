@@ -155,9 +155,20 @@ def process_images_with_workflow(
         Optional[MachineType],
         typer.Option("--machine-type", "-mt", help="Type of machine"),
     ] = None,
+    workers_per_machine: Annotated[
+        Optional[int],
+        typer.Option(
+            "--workers-per-machine",
+            help="Number of workers to run on a single machine - more workers equals better resources "
+                 "utilisation, but may cause out of memory errors for bulky Workflows."
+        )
+    ] = None,
     machine_size: Annotated[
         Optional[MachineSize],
-        typer.Option("--machine-size", "-ms", help="Size of machine"),
+        typer.Option(
+            "--machine-size",
+            "-ms",
+            help="(Deprecated - use --workers-per-machine) Size of machine"),
     ] = None,
     max_runtime_seconds: Annotated[
         Optional[int],
@@ -206,6 +217,12 @@ def process_images_with_workflow(
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
+    if workers_per_machine is None and machine_size is not None:
+        typer.echo(
+            "Deprecated option `--machine-size` used. Please use `--workers-per-machine` instead. "
+            "Old option will be removed in inference 0.42.0"
+        )
+        workers_per_machine = convert_machine_size_to_workers_number(machine_size=machine_size)
     try:
         ensure_api_key_is_set(api_key=api_key)
         job_id = trigger_job_with_workflows_images_processing(
@@ -217,7 +234,7 @@ def process_images_with_workflow(
             image_outputs_to_save=image_outputs_to_save,
             part_name=part_name,
             machine_type=machine_type,
-            machine_size=machine_size,
+            workers_per_machine=workers_per_machine,
             max_runtime_seconds=max_runtime_seconds,
             max_parallel_tasks=max_parallel_tasks,
             aggregation_format=aggregation_format,
@@ -287,9 +304,20 @@ def process_videos_with_workflow(
         Optional[MachineType],
         typer.Option("--machine-type", "-mt", help="Type of machine"),
     ] = None,
+    workers_per_machine: Annotated[
+        Optional[int],
+        typer.Option(
+            "--workers-per-machine",
+            help="Number of workers to run on a single machine - more workers equals better resources "
+                 "utilisation, but may cause out of memory errors for bulky Workflows.",
+        )
+    ] = None,
     machine_size: Annotated[
         Optional[MachineSize],
-        typer.Option("--machine-size", "-ms", help="Size of machine"),
+        typer.Option(
+            "--machine-size",
+            "-ms",
+            help="(Deprecated - use --workers-per-machine) Size of machine"),
     ] = None,
     max_runtime_seconds: Annotated[
         Optional[int],
@@ -346,6 +374,12 @@ def process_videos_with_workflow(
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
+    if workers_per_machine is None and machine_size is not None:
+        typer.echo(
+            "Deprecated option `--machine-size` used. Please use `--workers-per-machine` instead. "
+            "Old option will be removed in inference 0.42.0"
+        )
+        workers_per_machine = convert_machine_size_to_workers_number(machine_size=machine_size)
     try:
         ensure_api_key_is_set(api_key=api_key)
         job_id = trigger_job_with_workflows_videos_processing(
@@ -357,7 +391,7 @@ def process_videos_with_workflow(
             image_outputs_to_save=image_outputs_to_save,
             part_name=part_name,
             machine_type=machine_type,
-            machine_size=machine_size,
+            workers_per_machine=workers_per_machine,
             max_runtime_seconds=max_runtime_seconds,
             max_parallel_tasks=max_parallel_tasks,
             aggregation_format=aggregation_format,
@@ -375,3 +409,16 @@ def process_videos_with_workflow(
             raise error
         typer.echo(f"Command failed. Cause: {error}")
         raise typer.Exit(code=1)
+
+
+MACHINE_SIZE2WORKERS_PER_MACHINE = {
+    MachineSize.XS: 8,
+    MachineSize.S: 4,
+    MachineSize.M: 2,
+    MachineSize.L: 1,
+    MachineSize.XL: 1,
+}
+
+
+def convert_machine_size_to_workers_number(machine_size: MachineSize) -> int:
+    return MACHINE_SIZE2WORKERS_PER_MACHINE[machine_size]

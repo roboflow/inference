@@ -75,15 +75,15 @@ class MachineSize(str, Enum):
     XL = "xl"
 
 
-class ComputeConfigurationV1(BaseModel):
-    type: Literal["compute-configuration-v1"] = Field(
-        default="compute-configuration-v1"
+class ComputeConfigurationV2(BaseModel):
+    type: Literal["compute-configuration-v2"] = Field(
+        default="compute-configuration-v2"
     )
     machine_type: Optional[MachineType] = Field(
         serialization_alias="machineType", default=None
     )
-    machine_size: Optional[MachineSize] = Field(
-        serialization_alias="machineSize", default=None
+    workers_per_machine: Optional[int] = Field(
+        serialization_alias="workersPerMachine", default=None
     )
 
 
@@ -127,7 +127,7 @@ class WorkflowsProcessingSpecificationV1(BaseModel):
 class WorkflowProcessingJobV1(BaseModel):
     type: WorkflowProcessingJobType
     job_input: StagingBatchInputV1 = Field(serialization_alias="jobInput")
-    compute_configuration: ComputeConfigurationV1 = Field(
+    compute_configuration: ComputeConfigurationV2 = Field(
         serialization_alias="computeConfiguration"
     )
     processing_timeout_seconds: Optional[int] = Field(

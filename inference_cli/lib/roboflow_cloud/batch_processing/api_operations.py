@@ -1,9 +1,7 @@
-import json
 import random
 import string
-import time
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Generator, List, Optional, Union
 
 import backoff
@@ -19,19 +17,18 @@ from rich.text import Text
 from inference_cli.lib.env import API_BASE_URL
 from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     AggregationFormat,
-    ComputeConfigurationV1,
     GetJobMetadataResponse,
     JobMetadata,
     JobStageDetails,
     ListBatchJobsResponse,
     ListJobStagesResponse,
     ListJobStageTasksResponse,
-    MachineSize,
     MachineType,
     StagingBatchInputV1,
     TaskStatus,
     WorkflowProcessingJobV1,
     WorkflowsProcessingSpecificationV1,
+    ComputeConfigurationV2,
 )
 from inference_cli.lib.roboflow_cloud.common import (
     get_workspace,
@@ -336,7 +333,7 @@ def trigger_job_with_workflows_images_processing(
     image_outputs_to_save: Optional[List[str]],
     part_name: Optional[str],
     machine_type: Optional[MachineType],
-    machine_size: Optional[MachineSize],
+    workers_per_machine: int,
     max_runtime_seconds: Optional[int],
     max_parallel_tasks: Optional[int],
     aggregation_format: Optional[AggregationFormat],
@@ -345,9 +342,9 @@ def trigger_job_with_workflows_images_processing(
     api_key: str,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
-    compute_configuration = ComputeConfigurationV1(
+    compute_configuration = ComputeConfigurationV2(
         machine_type=machine_type,
-        machine_size=machine_size,
+        workers_per_machine=workers_per_machine,
     )
     input_configuration = StagingBatchInputV1(
         batch_id=batch_id,
@@ -394,7 +391,7 @@ def trigger_job_with_workflows_videos_processing(
     image_outputs_to_save: Optional[List[str]],
     part_name: Optional[str],
     machine_type: Optional[MachineType],
-    machine_size: Optional[MachineSize],
+    workers_per_machine: int,
     max_runtime_seconds: Optional[int],
     max_parallel_tasks: Optional[int],
     aggregation_format: Optional[AggregationFormat],
@@ -404,9 +401,9 @@ def trigger_job_with_workflows_videos_processing(
     api_key: str,
 ) -> str:
     workspace = get_workspace(api_key=api_key)
-    compute_configuration = ComputeConfigurationV1(
+    compute_configuration = ComputeConfigurationV2(
         machine_type=machine_type,
-        machine_size=machine_size,
+        workers_per_machine=workers_per_machine,
     )
     input_configuration = StagingBatchInputV1(
         batch_id=batch_id,
