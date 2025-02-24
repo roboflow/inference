@@ -91,5 +91,4 @@ from inference.models.yolov11 import (
     YOLOv11KeypointsDetection,
     YOLOv11ObjectDetection,
 )
-
 from inference.models.yolov12 import YOLOv12ObjectDetection
