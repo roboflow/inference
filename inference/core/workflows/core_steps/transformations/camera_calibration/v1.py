@@ -1,7 +1,8 @@
 from typing import List, Literal, Optional, Type, Union
 
 import cv2 as cv
-from pydantic import ConfigDict, Field
+import numpy as np
+from pydantic import AliasChoices, ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -10,7 +11,6 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     FLOAT_KIND,
-    ImageInputField,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -26,8 +26,8 @@ Please refer to OpenCV documentation where camera calibration methodology is des
 https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html
 
 This block requires following parameters in order to perform the calibration:
-Lens focal length along the x-axis and y-axis (f_x, f_y)
-Lens optical centers along the x-axis and y-axis (c_x, c_y)
+Lens focal length along the x-axis and y-axis (fx, fy)
+Lens optical centers along the x-axis and y-axis (cx, cy)
 Radial distortion coefficients (k1, k2, k3)
 Tangential distortion coefficients (p1, p2)
 
@@ -57,29 +57,33 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/camera-calibration@v1"]
-    image: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    f_x: Union[
+    image: Selector(kind=[IMAGE_KIND]) = Field(
+        description="Image to remove distortions from",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+        validation_alias=AliasChoices("image", "images"),
+    )
+    fx: Union[
         Optional[float],
         Selector(kind=[FLOAT_KIND]),
     ] = Field(
         description="Focal length along the x-axis",
         examples=[0.123, "$inputs.fx"],
     )
-    f_y: Union[
+    fy: Union[
         Optional[float],
         Selector(kind=[FLOAT_KIND]),
     ] = Field(
         description="Focal length along the y-axis",
         examples=[0.123, "$inputs.fy"],
     )
-    c_x: Union[
+    cx: Union[
         Optional[float],
         Selector(kind=[FLOAT_KIND]),
     ] = Field(
         description="Optical center along the x-axis",
         examples=[0.123, "$inputs.cx"],
     )
-    c_y: Union[
+    cy: Union[
         Optional[float],
         Selector(kind=[FLOAT_KIND]),
     ] = Field(
@@ -142,10 +146,10 @@ class CameraCalibrationBlockV1(WorkflowBlock):
     def run(
         self,
         image: WorkflowImageData,
-        f_x: float,
-        f_y: float,
-        c_x: float,
-        c_y: float,
+        fx: float,
+        fy: float,
+        cx: float,
+        cy: float,
         k1: float,
         k2: float,
         k3: float,
@@ -155,10 +159,10 @@ class CameraCalibrationBlockV1(WorkflowBlock):
         return {
             OUTPUT_CALIBRATED_IMAGE_KEY: remove_distortions(
                 image=image,
-                f_x=f_x,
-                f_y=f_y,
-                c_x=c_x,
-                c_y=c_y,
+                fx=fx,
+                fy=fy,
+                cx=cx,
+                cy=cy,
                 k1=k1,
                 k2=k2,
                 k3=k3,
@@ -170,10 +174,10 @@ class CameraCalibrationBlockV1(WorkflowBlock):
 
 def remove_distortions(
     image: WorkflowImageData,
-    f_x: float,
-    f_y: float,
-    c_x: float,
-    c_y: float,
+    fx: float,
+    fy: float,
+    cx: float,
+    cy: float,
     k1: float,
     k2: float,
     k3: float,
@@ -183,8 +187,8 @@ def remove_distortions(
     img = image.numpy_image
     h,  w = img.shape[:2]
 
-    cameraMatrix = np.array([[f_x, 0, c_x], [0, f_y, c_y], [0, 0, 1]])
-    distCoeffs = np.array([k1, k2, p1, p2, k3])
+    cameraMatrix = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float64)
+    distCoeffs = np.array([k1, k2, p1, p2, k3], dtype=np.float64)
 
     # https://docs.opencv.org/4.11.0/d9/d0c/group__calib3d.html#ga7a6c4e032c97f03ba747966e6ad862b1
     newcameramtx, roi = cv.getOptimalNewCameraMatrix(
