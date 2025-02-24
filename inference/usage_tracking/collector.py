@@ -155,7 +155,7 @@ class UsageCollector:
             "python_version": sys.version.split()[0],
             "inference_version": inference_version,
             "enterprise": False,
-            "usage_duration": 0,
+            "execution_duration": 0,
         }
         if ROBOFLOW_INTERNAL_SERVICE_SECRET:
             usage_dict["roboflow_internal_secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
@@ -326,7 +326,7 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
-        usage_duration: float = 0,
+        execution_duration: float = 0,
     ):
         source = str(source) if source else ""
         try:
@@ -361,7 +361,7 @@ class UsageCollector:
             source_usage["hostname"] = hostname
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
-            source_usage["usage_duration"] += usage_duration
+            source_usage["execution_duration"] += execution_duration
             logger.debug("Updated usage: %s", source_usage)
 
     def record_usage(
@@ -374,7 +374,7 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
-        usage_duration: float = 0,
+        execution_duration: float = 0,
     ):
         if not api_key:
             return
@@ -396,7 +396,7 @@ class UsageCollector:
             resource_id=resource_id,
             inference_test_run=inference_test_run,
             fps=fps,
-            usage_duration=usage_duration,
+            execution_duration=execution_duration,
         )
 
     async def async_record_usage(
@@ -409,7 +409,7 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
-        usage_duration: float = 0,
+        execution_duration: float = 0,
     ):
         if self._async_lock:
             async with self._async_lock:
@@ -422,7 +422,7 @@ class UsageCollector:
                     resource_id=resource_id,
                     inference_test_run=inference_test_run,
                     fps=fps,
-                    usage_duration=usage_duration,
+                    execution_duration=execution_duration,
                 )
         else:
             self.record_usage(
@@ -434,7 +434,7 @@ class UsageCollector:
                 resource_id=resource_id,
                 inference_test_run=inference_test_run,
                 fps=fps,
-                usage_duration=usage_duration,
+                execution_duration=execution_duration,
             )
 
     def _usage_collector(self):
@@ -543,7 +543,7 @@ class UsageCollector:
         usage_workflow_preview: bool,
         usage_inference_test_run: bool,
         usage_billable: bool,
-        usage_duration: float,
+        execution_duration: float,
         func: Callable[[Any], Any],
         args: List[Any],
         kwargs: Dict[str, Any],
@@ -645,7 +645,7 @@ class UsageCollector:
             "resource_id": resource_id,
             "inference_test_run": usage_inference_test_run,
             "fps": usage_fps,
-            "usage_duration": usage_duration,
+            "execution_duration": execution_duration,
         }
 
     def __call__(self, func: Callable[P, T]) -> Callable[P, T]:
@@ -671,7 +671,7 @@ class UsageCollector:
                     usage_workflow_preview=usage_workflow_preview,
                     usage_inference_test_run=usage_inference_test_run,
                     usage_billable=usage_billable,
-                    usage_duration=(t2 - t1),
+                    execution_duration=(t2 - t1),
                     func=func,
                     args=args,
                     kwargs=kwargs,
@@ -701,7 +701,7 @@ class UsageCollector:
                     usage_workflow_preview=usage_workflow_preview,
                     usage_inference_test_run=usage_inference_test_run,
                     usage_billable=usage_billable,
-                    usage_duration=(t2 - t1),
+                    execution_duration=(t2 - t1),
                     func=func,
                     args=args,
                     kwargs=kwargs,
