@@ -29,7 +29,9 @@ def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload):
         merged["processed_frames"] = d1["processed_frames"] + d2["processed_frames"]
     if "source_duration" in d1 and "source_duration" in d2:
         merged["source_duration"] = d1["source_duration"] + d2["source_duration"]
-    merged["execution_duration"] = d1.get("execution_duration", 0) + d2.get("execution_duration", 0)
+    merged["execution_duration"] = d1.get("execution_duration", 0) + d2.get(
+        "execution_duration", 0
+    )
     return {**d1, **d2, **merged}
 
 
