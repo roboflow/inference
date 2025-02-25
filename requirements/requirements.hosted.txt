@@ -1,2 +1,3 @@
 pymemcache~=4.0.0
 elasticache_auto_discovery~=1.0.0
+google-cloud-pubsub<3.0.0
