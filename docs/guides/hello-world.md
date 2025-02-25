@@ -29,7 +29,7 @@ visualize its output via the UI debugger.
     locally without a Roboflow account or API Key. In Detached mode, you forego
     cloud connected functionality like remote deployment, monitoring, integration
     with the cloud model hub and dataset management platform, and are responsible
-    for implementing your own access control).
+    for implementing your own access control.
     
     To run on your own machine without a Roboflow account, follow the
     [installation instructions](/install/index.md) and start your Inference Server
