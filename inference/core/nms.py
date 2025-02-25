@@ -35,16 +35,21 @@ def w_np_non_max_suppression(
     """
     num_classes = prediction.shape[2] - 5 - num_masks
 
-    np_box_corner = np.zeros(prediction.shape)
     if box_format == "xywh":
-        np_box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 2] / 2
-        np_box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 3] / 2
-        np_box_corner[:, :, 2] = prediction[:, :, 0] + prediction[:, :, 2] / 2
-        np_box_corner[:, :, 3] = prediction[:, :, 1] + prediction[:, :, 3] / 2
-        prediction[:, :, :4] = np_box_corner[:, :, :4]
-    elif box_format == "xyxy":
-        pass
-    else:
+        pred_view = prediction[:, :, :4]
+        
+        # Calculate all values without allocating a new array
+        x1 = pred_view[:, :, 0] - pred_view[:, :, 2] / 2
+        y1 = pred_view[:, :, 1] - pred_view[:, :, 3] / 2
+        x2 = pred_view[:, :, 0] + pred_view[:, :, 2] / 2
+        y2 = pred_view[:, :, 1] + pred_view[:, :, 3] / 2
+        
+        # Assign directly to the view
+        pred_view[:, :, 0] = x1
+        pred_view[:, :, 1] = y1
+        pred_view[:, :, 2] = x2
+        pred_view[:, :, 3] = y2
+    elif box_format != "xyxy":
         raise ValueError(
             "box_format must be either 'xywh' or 'xyxy', got {}".format(box_format)
         )
