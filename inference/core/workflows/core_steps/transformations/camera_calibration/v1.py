@@ -185,7 +185,7 @@ def remove_distortions(
     p2: float,
 ) -> Optional[WorkflowImageData]:
     img = image.numpy_image
-    h,  w = img.shape[:2]
+    h, w = img.shape[:2]
 
     cameraMatrix = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float64)
     distCoeffs = np.array([k1, k2, p1, p2, k3], dtype=np.float64)
@@ -196,7 +196,7 @@ def remove_distortions(
         distCoeffs=distCoeffs,
         imageSize=(w, h),
         alpha=1,
-        newImgSize=(w, h)
+        newImgSize=(w, h),
     )
     # https://docs.opencv.org/4.11.0/d9/d0c/group__calib3d.html#ga69f2545a8b62a6b0fc2ee060dc30559d
     dst = cv.undistort(
@@ -204,7 +204,7 @@ def remove_distortions(
         cameraMatrix=cameraMatrix,
         distCoeffs=distCoeffs,
         dst=None,
-        newCameraMatrix=newcameramtx
+        newCameraMatrix=newcameramtx,
     )
     return WorkflowImageData(
         parent_metadata=image.parent_metadata,

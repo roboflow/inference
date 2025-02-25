@@ -98,8 +98,3 @@ def test_workflow_with_camera_calibration(
     assert set(result[0].keys()) == {
         "camera_calibration_image",
     }, "Expected all declared outputs to be delivered"
-
-    import cv2 as cv
-    cv.imshow("result", result[0]["camera_calibration_image"].numpy_image)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
