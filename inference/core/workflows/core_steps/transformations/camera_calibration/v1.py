@@ -9,8 +9,8 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
-    IMAGE_KIND,
     FLOAT_KIND,
+    IMAGE_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
