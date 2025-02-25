@@ -12,21 +12,33 @@ visualize its output via the UI debugger.
 === "Cloud Connected"
     This tutorial only requires
     <a href="https://app.roboflow.com/workflows" target="_blank">a free Roboflow account</a>
-    and can run on the Serverless Hosted API with no setup required. This is the easiest way
-    to get started and you can migrate to self-hosting your Workflows later.
+    and can run on the Serverless Hosted API with no setup required. This is the
+    easiest way to get started and you can migrate to self-hosting your Workflows
+    later.
+    
+    You can also connect from the cloud platform to an Inference Server running
+    locally by clicking the "Running on" selector at the top-left of the platform UI
+    and pointing it to `localhost` or your server's IP.
 
     Once you have an account,
     <a href="https://docs.roboflow.com/workflows/create-a-workflow" target="_blank">create a new (empty) Workflow</a>
     then continue below.
 
 === "Detached"
+    In Detached mode, you run both the Inference Server and Workflow Builder UI
+    locally without a Roboflow account or API Key. In Detached mode, you forego
+    cloud connected functionality like remote deployment, monitoring, integration
+    with the cloud model hub and dataset management platform, and are responsible
+    for implementing your own access control).
+    
     To run on your own machine without a Roboflow account, follow the
-    [installation instructions](/install/index.md) and start your Inference Server in development mode
-    (`inference server start --dev`).
+    [installation instructions](/install/index.md) and start your Inference Server
+    in development mode (using `inference server start --dev`).
     
     Then, navigate to the local Workflows builder at
-    <a href="http://localhost:9001/build" target="_blank">localhost:9001/build</a> and create an empty
-    Workflow using the purple "Create a Workflow" button. If prompted, choose "Build My Own".
+    <a href="http://localhost:9001/build" target="_blank">localhost:9001/build</a>
+    and create an empty Workflow using the purple "Create a Workflow" button.
+    If prompted, choose "Build My Own".
 
 You should now have an empty Workflow and be ready to start building.
 
