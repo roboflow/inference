@@ -162,7 +162,7 @@ from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
-from inference.core.interfaces.http.middlewares.cors import CORSMiddleware
+from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
 from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.interfaces.stream_manager.api.entities import (
@@ -576,7 +576,7 @@ class HttpInterface(BaseInterface):
         if len(ALLOW_ORIGINS) > 0:
             # Add CORS Middleware (but not for /build**, which is controlled separately)
             app.add_middleware(
-                CORSMiddleware,
+                PathAwareCORSMiddleware,
                 match_paths=r"^(?!/build).*",
                 allow_origins=ALLOW_ORIGINS,
                 allow_credentials=True,
@@ -2154,7 +2154,7 @@ class HttpInterface(BaseInterface):
 
             # Allow CORS on only the API, but not the builder UI/iframe (where the CSRF is passed)
             app.add_middleware(
-                CORSMiddleware,
+                PathAwareCORSMiddleware,
                 match_paths=r"^/build/api.*",
                 allow_origins=[BUILDER_ORIGIN],
                 allow_methods=["*"],
