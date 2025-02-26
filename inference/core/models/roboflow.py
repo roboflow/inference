@@ -1,7 +1,6 @@
 import itertools
 import json
 import os
-import warnings
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -32,12 +31,7 @@ from inference.core.env import (
 from inference.core.logger import logger
 
 if USE_PYTORCH_FOR_PREPROCESSING:
-    try:
-        import torch
-    except ImportError:
-        warnings.warn(
-            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
-        )
+    import torch
 
 from inference.core.cache import cache
 from inference.core.cache.model_artifacts import (
@@ -440,7 +434,7 @@ class RoboflowInferenceModel(Model):
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
 
-        if USE_PYTORCH_FOR_PREPROCESSING and "torch" in dir():
+        if USE_PYTORCH_FOR_PREPROCESSING:
             preprocessed_image = torch.from_numpy(
                 np.ascontiguousarray(preprocessed_image)
             )
@@ -457,7 +451,7 @@ class RoboflowInferenceModel(Model):
                     preprocessed_image,
                     (self.img_size_w, self.img_size_h),
                 )
-            elif "torch" in dir():
+            elif USE_PYTORCH_FOR_PREPROCESSING:
                 resized = torch.nn.functional.interpolate(
                     preprocessed_image,
                     size=(self.img_size_h, self.img_size_w),
@@ -497,7 +491,7 @@ class RoboflowInferenceModel(Model):
             img_in = np.transpose(resized, (2, 0, 1))
             img_in = img_in.astype(np.float32)
             img_in = np.expand_dims(img_in, axis=0)
-        elif "torch" in dir():
+        elif USE_PYTORCH_FOR_PREPROCESSING:
             img_in = resized.float()
         else:
             raise ValueError(
@@ -893,7 +887,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             imgs, img_dims = zip(*imgs_with_dims)
             if isinstance(imgs[0], np.ndarray):
                 img_in = np.concatenate(imgs, axis=0)
-            elif "torch" in dir():
+            elif USE_PYTORCH_FOR_PREPROCESSING:
                 img_in = torch.cat(imgs, dim=0)
             else:
                 raise ValueError(
