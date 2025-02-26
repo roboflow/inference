@@ -485,6 +485,9 @@ DEDICATED_DEPLOYMENT_ID = os.getenv("DEDICATED_DEPLOYMENT_ID")
 ROBOFLOW_INTERNAL_SERVICE_SECRET = os.getenv("ROBOFLOW_INTERNAL_SERVICE_SECRET")
 ROBOFLOW_INTERNAL_SERVICE_NAME = os.getenv("ROBOFLOW_INTERNAL_SERVICE_NAME")
 
+# pub/sub topic name, set when running in serverless hosted by Roboflow
+ROBOFLOW_USAGE_PUBSUB_TOPIC_NAME = os.getenv("ROBOFLOW_USAGE_PUBSUB_TOPIC_NAME")
+
 # Preload Models
 PRELOAD_MODELS = (
     os.getenv("PRELOAD_MODELS").split(",") if os.getenv("PRELOAD_MODELS") else None

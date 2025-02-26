@@ -17,6 +17,11 @@ class TelemetrySettings(BaseSettings):
         f"{METRICS_COLLECTOR_BASE_URL}/usage/inference"
     )
     api_plan_endpoint_url: str = wrap_url(f"{METRICS_COLLECTOR_BASE_URL}/usage/plan")
+    resolve_workspace_id_url: str = wrap_url(
+        f"{METRICS_COLLECTOR_BASE_URL}/key/publishable_key"
+    )
+    workspace_id_response_key: str = "publishable_key"
+    workspace_id_skip_prefix: int = 3
     flush_interval: int = Field(default=10, ge=10, le=300)
     opt_out: Optional[bool] = False
     queue_size: int = Field(default=10, ge=10, le=10000)

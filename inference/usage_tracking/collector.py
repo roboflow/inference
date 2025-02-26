@@ -22,6 +22,7 @@ from inference.core.env import (
     REDIS_HOST,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    ROBOFLOW_USAGE_PUBSUB_TOPIC_NAME,
 )
 from inference.core.logger import logger
 from inference.core.version import __version__ as inference_version
@@ -30,12 +31,12 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 )
 
 from .config import TelemetrySettings, get_telemetry_settings
+from .gcp_pub_sub_queue import GCPPubSubQueue
 from .payload_helpers import (
     APIKey,
     APIKeyHash,
     APIKeyUsage,
     ResourceCategory,
-    ResourceDetails,
     ResourceID,
     SystemDetails,
     UsagePayload,
@@ -88,11 +89,20 @@ class UsageCollector:
             api_plan_endpoint_url=self._settings.api_plan_endpoint_url,
             sqlite_cache_enabled=False,
         )
-        if LAMBDA and REDIS_HOST:
+        if ROBOFLOW_USAGE_PUBSUB_TOPIC_NAME:
+            logger.debug("Publishing payloads to PubSub")
+            self._queue: "Queue[UsagePayload]" = GCPPubSubQueue(
+                topic=ROBOFLOW_USAGE_PUBSUB_TOPIC_NAME,
+                resolve_workspace_id_url=self._settings.resolve_workspace_id_url,
+                workspace_id_response_key=self._settings.workspace_id_response_key,
+                workspace_id_skip_prefix=self._settings.workspace_id_skip_prefix,
+            )
+            self._api_keys_hashing_enabled = False
+        elif LAMBDA and REDIS_HOST:
             logger.debug("Persistence through RedisQueue")
             self._queue: "Queue[UsagePayload]" = RedisQueue()
             self._api_keys_hashing_enabled = False
-        elif LAMBDA or self._settings.opt_out:
+        elif LAMBDA:
             logger.debug("No persistence")
             self._queue: "Queue[UsagePayload]" = Queue(
                 maxsize=self._settings.queue_size
