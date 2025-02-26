@@ -15,6 +15,9 @@ is reconstructed as the output.
 
 Using SAHI in Workflows is easy using the Image Slicer and Detections Stitch blocks.
 
+**Difficulty:** Easy<br />
+**Time to Complete:** 10 minutes
+
 ## Starting Point
 
 We will start with an output similar to the [Hello World](hello-world.md) tutorial.
