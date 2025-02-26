@@ -131,4 +131,4 @@ detections in the background.
 In this tutorial we learned how to use SAHI to detect small objects, how to perform
 operations on a batch of images, and how to transform detections.
 
-Next, we'll [run a Workflow on a live video stream](count-things.md).
+Next, we'll [run a Workflow on a live video stream](/workflows/video_processing/overview.md).

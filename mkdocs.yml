@@ -77,7 +77,7 @@ nav:
           - Hello World: guides/hello-world.md
           - Compare Models: guides/compare-models.md
           - Detect Small Objects: guides/detect-small-objects.md
-          - Count Things in Video: guides/count-things.md
+          # - Count Things in Video: guides/count-things.md
 
       - Next Steps: start/next.md
       - More Resources: resources.md
