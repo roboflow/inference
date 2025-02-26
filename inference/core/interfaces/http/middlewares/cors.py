@@ -6,6 +6,8 @@ import typing
 from starlette.datastructures import Headers
 from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
+
+
 class PathAwareCORSMiddleware(StarletteCORSMiddleware):
     """
     Extends Starlette's CORSMiddleware to allow specifying a regex of paths that
