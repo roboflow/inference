@@ -117,7 +117,7 @@ from inference.core.env import (
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
-    IS_ROBOFLOW_SERVERLESS,
+    GCP_SERVERLESS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -912,7 +912,7 @@ class HttpInterface(BaseInterface):
             )
 
         # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
-        if not LAMBDA and not IS_ROBOFLOW_SERVERLESS:
+        if not LAMBDA and not GCP_SERVERLESS:
 
             @app.get(
                 "/model/registry",
@@ -1006,7 +1006,7 @@ class HttpInterface(BaseInterface):
                 )
 
         # these NEW endpoints need authentication protection
-        if not LAMBDA and not IS_ROBOFLOW_SERVERLESS:
+        if not LAMBDA and not GCP_SERVERLESS:
 
             @app.post(
                 "/infer/object_detection",
@@ -2108,7 +2108,7 @@ class HttpInterface(BaseInterface):
                         trackUsage(trocr_model_id, actor)
                     return response
 
-        if not LAMBDA and not IS_ROBOFLOW_SERVERLESS:
+        if not LAMBDA and not GCP_SERVERLESS:
 
             @app.get(
                 "/notebook/start",
