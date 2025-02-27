@@ -1007,6 +1007,7 @@ class HttpInterface(BaseInterface):
 
         # these NEW endpoints need authentication protection
         if not LAMBDA and not IS_ROBOFLOW_SERVERLESS:
+
             @app.post(
                 "/infer/object_detection",
                 response_model=Union[
