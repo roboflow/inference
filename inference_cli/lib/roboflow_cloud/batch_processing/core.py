@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 
 import typer
@@ -5,13 +6,17 @@ from typing_extensions import Annotated
 
 from inference_cli.lib.env import ROBOFLOW_API_KEY
 from inference_cli.lib.roboflow_cloud.batch_processing.api_operations import (
+    abort_batch_job,
     display_batch_job_details,
     display_batch_jobs,
+    fetch_job_logs,
+    restart_batch_job,
     trigger_job_with_workflows_images_processing,
     trigger_job_with_workflows_videos_processing,
 )
 from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     AggregationFormat,
+    LogSeverity,
     MachineSize,
     MachineType,
 )
@@ -160,15 +165,16 @@ def process_images_with_workflow(
         typer.Option(
             "--workers-per-machine",
             help="Number of workers to run on a single machine - more workers equals better resources "
-                 "utilisation, but may cause out of memory errors for bulky Workflows."
-        )
+            "utilisation, but may cause out of memory errors for bulky Workflows.",
+        ),
     ] = None,
     machine_size: Annotated[
         Optional[MachineSize],
         typer.Option(
             "--machine-size",
             "-ms",
-            help="(Deprecated - use --workers-per-machine) Size of machine"),
+            help="(Deprecated - use --workers-per-machine) Size of machine",
+        ),
     ] = None,
     max_runtime_seconds: Annotated[
         Optional[int],
@@ -222,7 +228,9 @@ def process_images_with_workflow(
             "Deprecated option `--machine-size` used. Please use `--workers-per-machine` instead. "
             "Old option will be removed in inference 0.42.0"
         )
-        workers_per_machine = convert_machine_size_to_workers_number(machine_size=machine_size)
+        workers_per_machine = convert_machine_size_to_workers_number(
+            machine_size=machine_size
+        )
     try:
         ensure_api_key_is_set(api_key=api_key)
         job_id = trigger_job_with_workflows_images_processing(
@@ -309,15 +317,16 @@ def process_videos_with_workflow(
         typer.Option(
             "--workers-per-machine",
             help="Number of workers to run on a single machine - more workers equals better resources "
-                 "utilisation, but may cause out of memory errors for bulky Workflows.",
-        )
+            "utilisation, but may cause out of memory errors for bulky Workflows.",
+        ),
     ] = None,
     machine_size: Annotated[
         Optional[MachineSize],
         typer.Option(
             "--machine-size",
             "-ms",
-            help="(Deprecated - use --workers-per-machine) Size of machine"),
+            help="(Deprecated - use --workers-per-machine) Size of machine",
+        ),
     ] = None,
     max_runtime_seconds: Annotated[
         Optional[int],
@@ -379,7 +388,9 @@ def process_videos_with_workflow(
             "Deprecated option `--machine-size` used. Please use `--workers-per-machine` instead. "
             "Old option will be removed in inference 0.42.0"
         )
-        workers_per_machine = convert_machine_size_to_workers_number(machine_size=machine_size)
+        workers_per_machine = convert_machine_size_to_workers_number(
+            machine_size=machine_size
+        )
     try:
         ensure_api_key_is_set(api_key=api_key)
         job_id = trigger_job_with_workflows_videos_processing(
@@ -401,6 +412,150 @@ def process_videos_with_workflow(
             api_key=api_key,
         )
         print(f"Triggered job with ID: {job_id}")
+    except KeyboardInterrupt:
+        print("Command interrupted.")
+        return
+    except Exception as error:
+        if debug_mode:
+            raise error
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
+
+
+@batch_processing_app.command(help="Terminate running job")
+def abort_job(
+    job_id: Annotated[
+        str,
+        typer.Option(
+            "--job-id",
+            "-j",
+            help="Identifier of job",
+        ),
+    ],
+    api_key: Annotated[
+        Optional[str],
+        typer.Option(
+            "--api-key",
+            "-a",
+            help="Roboflow API key for your workspace. If not given - env variable `ROBOFLOW_API_KEY` will be used",
+        ),
+    ] = None,
+    debug_mode: Annotated[
+        bool,
+        typer.Option(
+            "--debug-mode/--no-debug-mode",
+            help="Flag enabling errors stack traces to be displayed (helpful for debugging)",
+        ),
+    ] = False,
+) -> None:
+    if api_key is None:
+        api_key = ROBOFLOW_API_KEY
+    try:
+        ensure_api_key_is_set(api_key=api_key)
+        abort_batch_job(job_id=job_id, api_key=api_key)
+    except KeyboardInterrupt:
+        print("Command interrupted.")
+        return
+    except Exception as error:
+        if debug_mode:
+            raise error
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
+
+
+@batch_processing_app.command(help="Restart failed job")
+def restart_job(
+    job_id: Annotated[
+        str,
+        typer.Option(
+            "--job-id",
+            "-j",
+            help="Identifier of job",
+        ),
+    ],
+    api_key: Annotated[
+        Optional[str],
+        typer.Option(
+            "--api-key",
+            "-a",
+            help="Roboflow API key for your workspace. If not given - env variable `ROBOFLOW_API_KEY` will be used",
+        ),
+    ] = None,
+    debug_mode: Annotated[
+        bool,
+        typer.Option(
+            "--debug-mode/--no-debug-mode",
+            help="Flag enabling errors stack traces to be displayed (helpful for debugging)",
+        ),
+    ] = False,
+) -> None:
+    if api_key is None:
+        api_key = ROBOFLOW_API_KEY
+    try:
+        ensure_api_key_is_set(api_key=api_key)
+        restart_batch_job(job_id=job_id, api_key=api_key)
+    except KeyboardInterrupt:
+        print("Command interrupted.")
+        return
+    except Exception as error:
+        if debug_mode:
+            raise error
+        typer.echo(f"Command failed. Cause: {error}")
+        raise typer.Exit(code=1)
+
+
+@batch_processing_app.command(help="Fetches job logs")
+def fetch_logs(
+    job_id: Annotated[
+        str,
+        typer.Option(
+            "--job-id",
+            "-j",
+            help="Identifier of job",
+        ),
+    ],
+    api_key: Annotated[
+        Optional[str],
+        typer.Option(
+            "--api-key",
+            "-a",
+            help="Roboflow API key for your workspace. If not given - env variable `ROBOFLOW_API_KEY` will be used",
+        ),
+    ] = None,
+    log_severity: Annotated[
+        Optional[LogSeverity],
+        typer.Option(
+            "--log-severity",
+            help="Severity of logs to pick",
+        ),
+    ] = None,
+    output_file: Annotated[
+        Optional[str],
+        typer.Option(
+            "--output-file",
+            "-o",
+            help="Path to the output file - if not provided, command will dump result to the console. "
+            "File type is JSONL.",
+        ),
+    ] = None,
+    debug_mode: Annotated[
+        bool,
+        typer.Option(
+            "--debug-mode/--no-debug-mode",
+            help="Flag enabling errors stack traces to be displayed (helpful for debugging)",
+        ),
+    ] = False,
+) -> None:
+    if api_key is None:
+        api_key = ROBOFLOW_API_KEY
+    try:
+        ensure_api_key_is_set(api_key=api_key)
+        fetch_job_logs(
+            job_id=job_id,
+            api_key=api_key,
+            log_severity=log_severity,
+            output_file=output_file,
+        )
     except KeyboardInterrupt:
         print("Command interrupted.")
         return

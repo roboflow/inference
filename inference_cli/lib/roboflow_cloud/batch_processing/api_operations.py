@@ -1,3 +1,5 @@
+import hashlib
+import json
 import random
 import string
 from collections import Counter
@@ -17,18 +19,21 @@ from rich.text import Text
 from inference_cli.lib.env import API_BASE_URL
 from inference_cli.lib.roboflow_cloud.batch_processing.entities import (
     AggregationFormat,
+    ComputeConfigurationV2,
     GetJobMetadataResponse,
+    JobLog,
+    JobLogsResponse,
     JobMetadata,
     JobStageDetails,
     ListBatchJobsResponse,
     ListJobStagesResponse,
     ListJobStageTasksResponse,
+    LogSeverity,
     MachineType,
     StagingBatchInputV1,
     TaskStatus,
     WorkflowProcessingJobV1,
     WorkflowsProcessingSpecificationV1,
-    ComputeConfigurationV2,
 )
 from inference_cli.lib.roboflow_cloud.common import (
     get_workspace,
@@ -37,7 +42,7 @@ from inference_cli.lib.roboflow_cloud.common import (
 )
 from inference_cli.lib.roboflow_cloud.config import REQUEST_TIMEOUT
 from inference_cli.lib.roboflow_cloud.errors import RetryError, RFAPICallError
-from inference_cli.lib.utils import read_json
+from inference_cli.lib.utils import dump_jsonl, read_json
 
 WORKFLOWS_IMAGE_PROCESSING_JOB = "workflows-images-processing"
 WORKFLOWS_VIDEO_PROCESSING_JOB = "workflows-videos-processing"
@@ -70,22 +75,24 @@ def display_batch_jobs(
         "Stage", justify="center", width=24, style="blue", vertical="middle"
     )
     table.add_column("Status", justify="center", vertical="middle")
-    table.add_column("Notification", justify="center", vertical="middle")
+    table.add_column("Notification", justify="left", vertical="middle")
     table.add_column("Errors", justify="center", vertical="middle")
     for batch_job in batch_jobs:
-        error_marker = "🟡" if not batch_job.is_terminal else "🚨"
-        error_status = error_marker if batch_job.error else "🟢"
+        error_status = "🚨" if batch_job.error else "🟢"
         terminal_status = "🏁" if batch_job.is_terminal else "🏃"
         stage_status = _prepare_stage_status(
             current_stage=batch_job.current_stage,
             planned_stages=batch_job.planned_stages,
         )
+        last_notification = batch_job.last_notification
+        if isinstance(last_notification, dict):
+            last_notification = JSON.from_data(last_notification, indent=2)
         table.add_row(
             batch_job.job_id,
             batch_job.name,
             stage_status,
             terminal_status,
-            batch_job.last_notification or "🔄",
+            last_notification or "🔄",
             error_status,
         )
     console.print(table)
@@ -184,11 +191,13 @@ def display_batch_job_details(job_id: str, api_key: str) -> None:
     console.print(heading_panel)
     table = Table(show_lines=True, expand=True)
     table.add_column("Property", justify="left", style="cyan", no_wrap=True)
-    table.add_column("Value", justify="full", overflow="ellipsis")
+    table.add_column("Value", justify="full", overflow="fold")
     table.add_row("Name", job_metadata.name)
-    table.add_row("Last Notification", job_metadata.last_notification or "🔄")
-    error_marker = "🟡" if not job_metadata.is_terminal else "🚨"
-    error_status = error_marker if job_metadata.error else "🟢"
+    last_notification = job_metadata.last_notification
+    if isinstance(last_notification, dict):
+        last_notification = JSON.from_data(last_notification, indent=2)
+    table.add_row("Last Notification", last_notification or "🔄")
+    error_status = "🚨" if job_metadata.error else "🟢"
     running_status = "🏁" if job_metadata.is_terminal else "🏃"
     table.add_row("Status", f"Errors: {error_status} Is Running: {running_status}")
     stage_status = _prepare_stage_status(
@@ -216,22 +225,29 @@ def display_batch_job_details(job_id: str, api_key: str) -> None:
         single_task_progress = 1 / stage.tasks_number
         accumulated_progress = 0.0
         for task in job_tasks:
-            if task.is_terminal:
+            if task.status_type != "info":
                 accumulated_progress += single_task_progress
             else:
                 accumulated_progress += task.progress * single_task_progress
         succeeded_tasks = [t for t in job_tasks if "success" in t.status_type.lower()]
         failed_tasks = [t for t in job_tasks if "error" in t.status_type.lower()]
-        failed_tasks_statuses = Counter([t.status_name for t in failed_tasks])
-        error_reports = [f"* {e[0]}" for e in failed_tasks_statuses.most_common()]
+        errors_lookup = {
+            hash_notification(t.notification): t.notification for t in failed_tasks
+        }
+        failed_tasks_statuses = Counter(
+            [hash_notification(t.notification) for t in failed_tasks]
+        )
+        error_reports = [
+            f"* {errors_lookup[e[0]]}" for e in failed_tasks_statuses.most_common()
+        ]
         error_reports_str = "\n".join(error_reports)
         if not error_reports_str:
             error_reports_str = "All Good 😃"
         expected_tasks = stage.tasks_number
         registered_tasks = len(job_tasks)
         tasks_waiting_for_processing = expected_tasks - registered_tasks
-        running_tasks = len([t for t in job_tasks if t.is_terminal is False])
-        terminated_tasks = len([t for t in job_tasks if t.is_terminal is True])
+        running_tasks = len([t for t in job_tasks if t.status_type == "info"])
+        terminated_tasks = len([t for t in job_tasks if t.status_type != "info"])
         heading_text = Text(
             f"Stage: {stage.processing_stage_name} [{stage.processing_stage_id}]",
             style="bold grey89 on steel_blue",
@@ -243,9 +259,9 @@ def display_batch_job_details(job_id: str, api_key: str) -> None:
         output_batches_str = (
             "⚪️" if not stage.output_batches else ", ".join(stage.output_batches)
         )
-        is_terminal_str = "🏁" if stage.is_terminal else "🏃"
+        is_terminal_str = "🏁" if stage.status_type != "info" else "🏃"
         elapse_update = ""
-        if not stage.is_terminal:
+        if stage.status_type == "info":
             most_recent_update = max(
                 most_recent_task_update_time, stage.last_event_timestamp
             )
@@ -253,7 +269,10 @@ def display_batch_job_details(job_id: str, api_key: str) -> None:
                 (datetime.now(timezone.utc) - most_recent_update).total_seconds() / 60
             )
             elapse_update = f" (last update {max(time_from_start, 0)}m ago)"
-        updates_string = f"{prepare_status_type_emoji(status_type=stage.status_type)} {is_terminal_str}{elapse_update} {stage.status_name}"
+        updates_string = f"Errors: {prepare_status_type_emoji(status_type=stage.status_type)} Is Running: {is_terminal_str}{elapse_update}"
+        notification = stage.notification
+        if isinstance(notification, dict):
+            notification = JSON.from_data(stage.notification, indent=2)
         details_table.add_column("Property", justify="left", style="cyan", no_wrap=True)
         details_table.add_column("Value", justify="full", overflow="ellipsis")
         details_table.add_row(
@@ -263,7 +282,7 @@ def display_batch_job_details(job_id: str, api_key: str) -> None:
         )
         details_table.add_row("Output Batches", output_batches_str)
         elapse_update = ""
-        if not stage.is_terminal:
+        if stage.status_type == "info":
             time_from_start = round(
                 (datetime.now(timezone.utc) - stage.start_timestamp).total_seconds()
                 / 60
@@ -274,6 +293,7 @@ def display_batch_job_details(job_id: str, api_key: str) -> None:
         )
         details_table.add_row("Started At", started_at_str)
         details_table.add_row("Status", updates_string)
+        details_table.add_row("Notification", notification)
         details_table.add_row(
             "Downstream Tasks",
             f"⏳️: {tasks_waiting_for_processing}, 🏃: {running_tasks}, 🏁: {terminated_tasks} "
@@ -295,6 +315,14 @@ def display_batch_job_details(job_id: str, api_key: str) -> None:
         )
         details_table.add_row("Error Details", error_reports_str)
         console.print(details_table)
+
+
+def hash_notification(notification: Union[dict, str]) -> str:
+    if isinstance(notification, str):
+        return hashlib.md5(notification.encode("utf-8")).hexdigest()
+    return hashlib.md5(
+        json.dumps(notification, sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
 
 @backoff.on_exception(
@@ -554,9 +582,7 @@ def get_job_stage_tasks_listing_page(
     page_size: Optional[int] = None,
     next_page_token: Optional[str] = None,
 ) -> ListJobStageTasksResponse:
-    params = {}
-    if api_key is not None:
-        params["api_key"] = api_key
+    params = {"api_key": api_key}
     if page_size:
         params["pageSize"] = page_size
     if next_page_token:
@@ -574,6 +600,154 @@ def get_job_stage_tasks_listing_page(
     handle_response_errors(response=response, operation_name="list job stage tasks")
     try:
         return ListJobStageTasksResponse.model_validate(response.json())
+    except ValueError as error:
+        raise RFAPICallError("Could not decode Roboflow API response.") from error
+
+
+def abort_batch_job(job_id: str, api_key: str) -> None:
+    workspace = get_workspace(api_key=api_key)
+    response = send_abort_job_request(
+        workspace=workspace,
+        job_id=job_id,
+        api_key=api_key,
+    )
+    console = Console()
+    console.print(JSON.from_data(response, indent=2))
+
+
+@backoff.on_exception(
+    backoff.constant,
+    exception=RetryError,
+    max_tries=3,
+    interval=1,
+)
+def send_abort_job_request(
+    workspace: str,
+    job_id: str,
+    api_key: str,
+) -> dict:
+    params = {"api_key": api_key}
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/batch-processing/v1/external/{workspace}/jobs/{job_id}/abort",
+            params=params,
+            timeout=REQUEST_TIMEOUT,
+        )
+    except (ConnectionError, Timeout):
+        raise RetryError(
+            f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
+        )
+    handle_response_errors(response=response, operation_name="abort job")
+    return response.json()
+
+
+def restart_batch_job(job_id: str, api_key: str) -> None:
+    workspace = get_workspace(api_key=api_key)
+    response = send_restart_job_request(
+        workspace=workspace,
+        job_id=job_id,
+        api_key=api_key,
+    )
+    console = Console()
+    console.print(JSON.from_data(response, indent=2))
+
+
+@backoff.on_exception(
+    backoff.constant,
+    exception=RetryError,
+    max_tries=3,
+    interval=1,
+)
+def send_restart_job_request(
+    workspace: str,
+    job_id: str,
+    api_key: str,
+) -> dict:
+    params = {"api_key": api_key}
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/batch-processing/v1/external/{workspace}/jobs/{job_id}/restart",
+            params=params,
+            timeout=REQUEST_TIMEOUT,
+        )
+    except (ConnectionError, Timeout):
+        raise RetryError(
+            f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
+        )
+    handle_response_errors(response=response, operation_name="abort job")
+    return response.json()
+
+
+def fetch_job_logs(
+    job_id: str,
+    api_key: str,
+    log_severity: Optional[LogSeverity] = None,
+    output_file: Optional[str] = None,
+) -> None:
+    workspace = get_workspace(api_key=api_key)
+    logs = []
+    on_log_appear = print if output_file is None else lambda l: logs.append(l)
+    for log in iterate_over_job_logs(
+        workspace=workspace,
+        job_id=job_id,
+        api_key=api_key,
+        log_severity=log_severity,
+    ):
+        on_log_appear(log.model_dump())
+    if output_file:
+        dump_jsonl(path=output_file, content=logs)
+
+
+def iterate_over_job_logs(
+    workspace: str,
+    job_id: str,
+    api_key: str,
+    log_severity: Optional[LogSeverity] = None,
+) -> Generator[JobLog, None, None]:
+    next_page_token = None
+    while True:
+        listing_page = get_one_page_of_logs(
+            workspace=workspace,
+            job_id=job_id,
+            api_key=api_key,
+            log_severity=log_severity,
+            next_page_token=next_page_token,
+        )
+        for log in listing_page.logs:
+            yield log
+        if listing_page.next_page_token is None:
+            break
+        next_page_token = listing_page.next_page_token
+
+
+def get_one_page_of_logs(
+    workspace: str,
+    job_id: str,
+    api_key: str,
+    next_page_token: Optional[str] = None,
+    log_severity: Optional[LogSeverity] = None,
+    page_size: Optional[int] = None,
+) -> JobLogsResponse:
+    params = {"api_key": api_key}
+    if page_size:
+        params["pageSize"] = page_size
+    if log_severity:
+        params["severity"] = log_severity.value
+    if next_page_token:
+        params["nextPageToken"] = next_page_token
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/batch-processing/v1/external/{workspace}/jobs/{job_id}/logs",
+            params=params,
+            timeout=REQUEST_TIMEOUT,
+        )
+    except (ConnectionError, Timeout):
+        raise RetryError(
+            f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
+        )
+    handle_response_errors(response=response, operation_name="get job logs")
+    try:
+        return JobLogsResponse.model_validate(response.json())
     except ValueError as error:
         raise RFAPICallError("Could not decode Roboflow API response.") from error
 

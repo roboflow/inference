@@ -12,8 +12,10 @@ class JobMetadata(BaseModel):
     current_stage: Optional[str] = Field(alias="currentStage", default=None)
     planned_stages: Optional[List[str]] = Field(alias="plannedStages", default=None)
     error: bool = Field(default=False)
-    is_terminal: bool = Field(alias="isTerminal")
-    last_notification: Optional[str] = Field(alias="lastNotification", default=None)
+    is_terminal: bool = Field(alias="isTerminal", default=False)
+    last_notification: Optional[Union[dict, str]] = Field(
+        alias="lastNotification", default=None
+    )
     created_at: datetime = Field(alias="createdAt")
     last_update: datetime = Field(alias="lastUpdate")
 
@@ -33,9 +35,8 @@ class JobStageDetails(BaseModel):
     tasks_number: int = Field(alias="tasksNumber")
     output_batches: List[str] = Field(alias="outputBatches")
     start_timestamp: datetime = Field(alias="startTimestamp")
-    status_name: str = Field(alias="statusName")
+    notification: Union[dict, str] = Field(alias="notification")
     status_type: str = Field(alias="statusType")
-    is_terminal: bool = Field(alias="isTerminal", default=False)
     last_event_timestamp: datetime = Field(alias="lastEventTimestamp")
 
 
@@ -45,9 +46,8 @@ class ListJobStagesResponse(BaseModel):
 
 class TaskStatus(BaseModel):
     task_id: str = Field(alias="taskId")
-    status_name: str = Field(alias="statusName")
+    notification: Union[dict, str] = Field(alias="notification")
     status_type: str = Field(alias="statusType")
-    is_terminal: bool = Field(alias="isTerminal")
     progress: float = Field(default=0.0)
     event_timestamp: datetime = Field(alias="eventTimestamp")
 
@@ -143,3 +143,24 @@ class WorkflowProcessingJobV1(BaseModel):
         serialization_alias="notificationsURL",
         default=None,
     )
+
+
+class LogSeverity(str, Enum):
+    INFO = "info"
+    ERROR = "error"
+    WARNING = "warning"
+
+
+class JobLog(BaseModel):
+    created_at: datetime = Field(alias="createdAt")
+    processing_stage_id: Optional[str] = Field(alias="processingStageId", default=None)
+    task_id: Optional[str] = Field(alias="taskId", default=None)
+    severity: LogSeverity
+    reporting_module: str = Field(alias="reportingModule")
+    log_type: str = Field(alias="logType")
+    payload: dict
+
+
+class JobLogsResponse(BaseModel):
+    logs: List[JobLog]
+    next_page_token: Optional[str] = Field(alias="nextPageToken", default=None)
