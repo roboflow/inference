@@ -17,30 +17,49 @@ from inference.core.interfaces.stream_manager.manager_app.serialisation import (
 def receive_socket_data(
     source: socket.socket, header_size: int, buffer_size: int
 ) -> dict:
+    # Read the header part
     header = source.recv(header_size)
     if len(header) != header_size:
         raise MalformedHeaderError(
             private_message=f"Expected header size: {header_size}, received: {header}",
             public_message=f"Expected header size: {header_size}, received: {header}",
         )
-    payload_size = int.from_bytes(bytes=header, byteorder="big")
+
+    # Determine payload size from the header
+    try:
+        payload_size = int.from_bytes(header, byteorder="big")
+    except ValueError as e:
+        raise MalformedHeaderError(
+            private_message="Header size could not convert to int: " + str(e),
+            public_message="Header size could not convert to int",
+        )
+
     if payload_size <= 0:
         raise MalformedHeaderError(
-            private_message=f"Header is indicating non positive payload size: {payload_size}",
-            public_message=f"Header is indicating non positive payload size: {payload_size}",
+            private_message=f"Header is indicating a non-positive payload size: {payload_size}",
+            public_message=f"Header is indicating a non-positive payload size: {payload_size}",
         )
-    received = b""
-    while len(received) < payload_size:
-        chunk = source.recv(buffer_size)
-        if len(chunk) == 0:
+
+    # Efficiently read the payload
+    received = bytearray()
+    remaining_payload_size = payload_size
+
+    while remaining_payload_size > 0:
+        chunk = source.recv(min(buffer_size, remaining_payload_size))
+        if not chunk:
             raise TransmissionChannelClosed(
-                private_message="Socket was closed to read before payload was decoded.",
-                public_message="Socket was closed to read before payload was decoded.",
+                private_message="Socket was closed before the payload was fully received.",
+                public_message="Socket was closed before the payload was fully received.",
             )
-        received += chunk
+        received.extend(chunk)
+        remaining_payload_size -= len(
+            chunk
+        )  # Reduce the remaining size by the chunk size
+
+    # Parse and return the JSON data
     try:
-        return json.loads(received)
-    except ValueError as error:
+        return json.loads(received.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as error:
         raise MalformedPayloadError(
             public_message="Received payload that is not in a JSON format",
             private_message="Received payload that is not in a JSON format",
