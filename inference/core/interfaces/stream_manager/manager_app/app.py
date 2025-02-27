@@ -5,7 +5,7 @@ import sys
 import time
 import uuid
 from collections import deque
-from dataclasses import field, dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Process, Queue
 from socketserver import BaseRequestHandler, BaseServer
