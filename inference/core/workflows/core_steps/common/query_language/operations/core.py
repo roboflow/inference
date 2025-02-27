@@ -126,10 +126,9 @@ def build_simple_operation(
     operation_function: Callable[[T], V],
     execution_context: str,
 ) -> Callable[[T], V]:
-    predefined_arguments_names = [
-        t for t in type(operation_definition).model_fields if t != TYPE_PARAMETER_NAME
-    ]
-    kwargs = {a: getattr(operation_definition, a) for a in predefined_arguments_names}
+    kwargs = {
+        a: v for a, v in vars(operation_definition).items() if a != TYPE_PARAMETER_NAME
+    }
     kwargs["execution_context"] = execution_context
     return partial(operation_function, **kwargs)
 
