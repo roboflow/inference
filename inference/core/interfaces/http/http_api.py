@@ -117,6 +117,7 @@ from inference.core.env import (
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
+    IS_ROBOFLOW_SERVERLESS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -131,7 +132,6 @@ from inference.core.env import (
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
     WORKFLOWS_STEP_EXECUTION_MODE,
-    IS_ROBOFLOW_SERVERLESS,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
