@@ -131,6 +131,7 @@ from inference.core.env import (
     WORKFLOWS_MAX_CONCURRENT_STEPS,
     WORKFLOWS_PROFILER_BUFFER_SIZE,
     WORKFLOWS_STEP_EXECUTION_MODE,
+    IS_ROBOFLOW_SERVERLESS,
 )
 from inference.core.exceptions import (
     ContentTypeInvalid,
@@ -911,7 +912,7 @@ class HttpInterface(BaseInterface):
             )
 
         # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
-        if not LAMBDA:
+        if not LAMBDA and not IS_ROBOFLOW_SERVERLESS:
 
             @app.get(
                 "/model/registry",
@@ -1004,6 +1005,8 @@ class HttpInterface(BaseInterface):
                     models_descriptions=models_descriptions
                 )
 
+        # these NEW endpoints need authentication protection
+        if not LAMBDA and not IS_ROBOFLOW_SERVERLESS:
             @app.post(
                 "/infer/object_detection",
                 response_model=Union[
@@ -2104,7 +2107,7 @@ class HttpInterface(BaseInterface):
                         trackUsage(trocr_model_id, actor)
                     return response
 
-        if not LAMBDA:
+        if not LAMBDA and not IS_ROBOFLOW_SERVERLESS:
 
             @app.get(
                 "/notebook/start",

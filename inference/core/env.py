@@ -515,3 +515,5 @@ IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
 )
 if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
     warnings.simplefilter("ignore", ModelDependencyMissing)
+
+IS_ROBOFLOW_SERVERLESS = str2bool(os.getenv("IS_ROBOFLOW_SERVERLESS", "False"))
