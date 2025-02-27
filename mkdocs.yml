@@ -41,7 +41,7 @@ nav:
           - Alternatives: understand/alternatives.md
       - Cloud Hosting:
           - managed/index.md
-          - "Serverless API »": "https://docs.roboflow.com/deploy/hosted-api"
+          - "Serverless API »": "https://docs.roboflow.com/deploy/serverless"
           - "Dedicated Deployments »": "https://docs.roboflow.com/deploy/dedicated-deployments"
           - "Bring Your Own Cloud": "install/cloud/index.md"
       - Self Hosting:
@@ -72,6 +72,13 @@ nav:
       #         - Basler: inputs/industrial/basler.md
       #         - Lucid: inputs/industrial/lucid.md
       #         - FLIR: inputs/industrial/flir.md
+      
+      - Start Building ⭐️:
+          - Hello World: guides/hello-world.md
+          - Compare Models: guides/compare-models.md
+          - Detect Small Objects: guides/detect-small-objects.md
+          # - Count Things in Video: guides/count-things.md
+
       - Next Steps: start/next.md
       - More Resources: resources.md
 

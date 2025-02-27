@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional, Union
 import asgi_correlation_id
 import uvicorn
 from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
@@ -100,6 +99,7 @@ from inference.core.entities.responses.workflows import (
 from inference.core.env import (
     ALLOW_ORIGINS,
     API_KEY,
+    BUILDER_ORIGIN,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
@@ -162,6 +162,7 @@ from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
+from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
 from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.interfaces.stream_manager.api.entities import (
@@ -573,8 +574,10 @@ class HttpInterface(BaseInterface):
             app.add_middleware(LambdaMiddleware)
 
         if len(ALLOW_ORIGINS) > 0:
+            # Add CORS Middleware (but not for /build**, which is controlled separately)
             app.add_middleware(
-                CORSMiddleware,
+                PathAwareCORSMiddleware,
+                match_paths=r"^(?!/build).*",
                 allow_origins=ALLOW_ORIGINS,
                 allow_credentials=True,
                 allow_methods=["*"],
@@ -2147,6 +2150,16 @@ class HttpInterface(BaseInterface):
         if ENABLE_BUILDER:
             from inference.core.interfaces.http.builder.routes import (
                 router as builder_router,
+            )
+
+            # Allow CORS on only the API, but not the builder UI/iframe (where the CSRF is passed)
+            app.add_middleware(
+                PathAwareCORSMiddleware,
+                match_paths=r"^/build/api.*",
+                allow_origins=[BUILDER_ORIGIN],
+                allow_methods=["*"],
+                allow_headers=["*"],
+                allow_credentials=True,
             )
 
             # Attach all routes from builder to the /build prefix
