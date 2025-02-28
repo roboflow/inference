@@ -117,6 +117,7 @@ from inference.core.env import (
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
+    GCP_SERVERLESS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -240,6 +241,7 @@ from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser impo
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 
+# TODO: talk with Rob for GCP serverless
 if LAMBDA:
     from inference.core.usage import trackUsage
 if METLO_KEY:
@@ -614,7 +616,7 @@ class HttpInterface(BaseInterface):
                     self.model_manager.num_errors += 1
                 return response
 
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get("/device/stats")
             async def device_stats():
@@ -914,7 +916,7 @@ class HttpInterface(BaseInterface):
             )
 
         # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get(
                 "/model/registry",
@@ -1006,6 +1008,9 @@ class HttpInterface(BaseInterface):
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
                 )
+
+        # these NEW endpoints need authentication protection
+        if not LAMBDA and not GCP_SERVERLESS:
 
             @app.post(
                 "/infer/object_detection",
@@ -1234,7 +1239,9 @@ class HttpInterface(BaseInterface):
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
-                    background_tasks=background_tasks if not LAMBDA else None,
+                    background_tasks=(
+                        background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
+                    ),
                     profiler=profiler,
                 )
 
@@ -1266,7 +1273,9 @@ class HttpInterface(BaseInterface):
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_request.specification,
-                    background_tasks=background_tasks if not LAMBDA else None,
+                    background_tasks=(
+                        background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
+                    ),
                     profiler=profiler,
                 )
 
@@ -1503,7 +1512,7 @@ class HttpInterface(BaseInterface):
         if (
             (PRELOAD_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
             and API_KEY
-            and not LAMBDA
+            and not (LAMBDA or GCP_SERVERLESS)
         ):
 
             class ModelInitState:
@@ -1616,6 +1625,7 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
+                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1654,6 +1664,7 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
+                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1692,6 +1703,7 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
+                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1734,6 +1746,7 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         grounding_dino_model_id, inference_request
                     )
+                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1779,6 +1792,7 @@ class HttpInterface(BaseInterface):
                         yolo_world_model_id, inference_request
                     )
                     logger.debug("YOLOWorld prediction available.")
+                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1822,6 +1836,7 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         doctr_model_id, inference_request
                     )
+                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1862,6 +1877,7 @@ class HttpInterface(BaseInterface):
                     model_response = await self.model_manager.infer_from_request(
                         sam_model_id, inference_request
                     )
+                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1905,6 +1921,7 @@ class HttpInterface(BaseInterface):
                     model_response = await self.model_manager.infer_from_request(
                         sam_model_id, inference_request
                     )
+                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -2058,6 +2075,7 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         gaze_model_id, inference_request
                     )
+                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -2100,6 +2118,7 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         trocr_model_id, inference_request
                     )
+                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -2107,7 +2126,7 @@ class HttpInterface(BaseInterface):
                         trackUsage(trocr_model_id, actor)
                     return response
 
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get(
                 "/notebook/start",
@@ -2360,6 +2379,7 @@ class HttpInterface(BaseInterface):
                     raise MissingServiceSecretError(
                         "Service secret is required to disable inference usage tracking"
                     )
+                # TODO: talk with Rob for GCP serverless
                 if LAMBDA:
                     request_model_id = (
                         request.scope["aws.event"]["requestContext"]["authorizer"][
@@ -2441,7 +2461,7 @@ class HttpInterface(BaseInterface):
                 else:
                     return orjson_response(inference_response)
 
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
             # Legacy clear cache endpoint for backwards compatability
             @app.get("/clear_cache", response_model=str)
             async def legacy_clear_cache():

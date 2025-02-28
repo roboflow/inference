@@ -219,6 +219,9 @@ JSON_RESPONSE = str2bool(os.getenv("JSON_RESPONSE", True))
 # Lambda flag, default is False
 LAMBDA = str2bool(os.getenv("LAMBDA", False))
 
+# Whether is's GCP serverless service
+GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
+
 # Flag to enable legacy route, default is True
 LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
@@ -253,7 +256,7 @@ MEMORY_CACHE_EXPIRE_INTERVAL = int(os.getenv("MEMORY_CACHE_EXPIRE_INTERVAL", 5))
 
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
-if LAMBDA:
+if LAMBDA or GCP_SERVERLESS:
     METRICS_ENABLED = False
 
 # Interval for metrics aggregation, default is 60

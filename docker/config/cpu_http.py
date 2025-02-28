@@ -17,6 +17,7 @@ from inference.core.registries.roboflow import (
 from inference.core.env import (
     MAX_ACTIVE_MODELS,
     ACTIVE_LEARNING_ENABLED,
+    GCP_SERVERLESS,
     LAMBDA,
     ENABLE_STREAM_API,
     STREAM_API_PRELOADED_PROCESSES,
@@ -33,7 +34,7 @@ if ENABLE_STREAM_API:
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 
 if ACTIVE_LEARNING_ENABLED:
-    if LAMBDA:
+    if LAMBDA or GCP_SERVERLESS:
         model_manager = ActiveLearningManager(
             model_registry=model_registry, cache=cache
         )
