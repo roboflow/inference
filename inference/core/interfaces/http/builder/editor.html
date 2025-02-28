@@ -19,6 +19,7 @@
         </style>
         <script>
             const BUILDER_ORIGIN = "{{BUILDER_ORIGIN}}";
+            const CSRF = "{{CSRF}}";
 
             document.addEventListener("DOMContentLoaded", function () {
                 // We'll parse the URL path. For example:
@@ -44,6 +45,7 @@
                 // add query string params
                 let params = {};
                 params.serverUrl = window.location.protocol + "//" + window.location.host;
+                params.csrf = CSRF;
 
                 iframeSrc += "?" + new URLSearchParams(params).toString();
 
