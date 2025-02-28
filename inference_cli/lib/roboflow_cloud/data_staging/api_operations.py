@@ -2,7 +2,7 @@ import json
 import os
 import tarfile
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from multiprocessing.pool import Pool, ThreadPool
 from threading import Lock
@@ -76,7 +76,7 @@ def display_batches(api_key: str, pages: int, page_size: Optional[int]) -> None:
     table.add_column("Batch Type", justify="center")
     for batch in batches:
         expiry_date_string = batch.expiry_date.strftime("%d/%m/%Y")
-        if (batch.expiry_date - datetime.now().date()) <= timedelta(days=3):
+        if (batch.expiry_date - datetime.now(timezone.utc)) <= timedelta(days=3):
             expiry_date_string = f"[bold red]{expiry_date_string}[/bold red]"
         else:
             expiry_date_string = f"[dark_cyan]{expiry_date_string}[/dark_cyan]"
@@ -714,7 +714,7 @@ def display_batch_details(batch_id: str, api_key: Optional[str]) -> None:
         f"[bold deep_sky_blue1]{metadata.batch_content_type}[/bold deep_sky_blue1]{content_type_icon})",
     )
     table.add_row("Created At", metadata.created_date.strftime("%d %b %Y"))
-    is_short_to_expiry = (metadata.expiry_date - datetime.utcnow().date()) < timedelta(
+    is_short_to_expiry = (metadata.expiry_date - datetime.now(timezone.utc)) < timedelta(
         days=3
     )
     expiry_str = metadata.expiry_date.strftime("%d %b %Y")

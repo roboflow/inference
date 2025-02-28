@@ -17,8 +17,8 @@ class BatchMetadata(BaseModel):
     batch_id: str = Field(alias="batchId")
     batch_type: str = Field(alias="batchType")
     batch_content_type: str = Field(alias="batchContentType")
-    created_date: date = Field(alias="createdDate")
-    expiry_date: date = Field(alias="expiryDate")
+    created_date: datetime = Field(alias="createdDate")
+    expiry_date: datetime = Field(alias="expiryDate")
 
 
 class ListBatchesResponse(BaseModel):
