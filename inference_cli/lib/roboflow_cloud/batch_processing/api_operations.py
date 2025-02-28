@@ -391,7 +391,7 @@ def trigger_job_with_workflows_images_processing(
         aggregation_format=aggregation_format,
     )
     if not job_id:
-        job_id = f"job-{_generate_random_string(length=8)}"
+        job_id = f"job-{_generate_random_string(length=12)}"
     job_configuration = WorkflowProcessingJobV1(
         type="simple-image-processing-v1",
         job_input=input_configuration,
@@ -451,7 +451,7 @@ def trigger_job_with_workflows_videos_processing(
         max_video_fps=max_video_fps,
     )
     if not job_id:
-        job_id = f"job-{_generate_random_string(length=8)}"
+        job_id = f"job-{_generate_random_string(length=12)}"
     job_configuration = WorkflowProcessingJobV1(
         type="simple-video-processing-v1",
         job_input=input_configuration,
