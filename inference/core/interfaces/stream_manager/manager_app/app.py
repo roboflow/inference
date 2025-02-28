@@ -62,7 +62,9 @@ class ManagedInferencePipeline:
     operation_lock: Lock
     is_idle: bool
     ram_usage_queue: Deque = field(
-        default_factory=lambda: deque(maxlen=STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE)
+        default_factory=lambda: deque(
+            maxlen=min(max(STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE, 10), 10)
+        )
     )
 
 
@@ -322,7 +324,10 @@ def check_process_health() -> None:
 
                 is_process_alive = process.is_alive()
                 is_process_above_ram_limit = (
-                    process_ram_usage_mb + total_ram_usage > STREAM_MANAGER_MAX_RAM_MB
+                    False
+                    if STREAM_MANAGER_MAX_RAM_MB is None
+                    else process_ram_usage_mb + total_ram_usage
+                    > STREAM_MANAGER_MAX_RAM_MB
                 )
                 if not is_process_alive or is_process_above_ram_limit:
                     msg = (
@@ -408,7 +413,8 @@ def get_or_spawn_pipeline_process(
             for managed_pipeline in processes_table.values()
         )
         if (
-            _get_current_process_ram_usage_mb() + pipelines_ram_usage
+            STREAM_MANAGER_MAX_RAM_MB is not None
+            and _get_current_process_ram_usage_mb() + pipelines_ram_usage
             > STREAM_MANAGER_MAX_RAM_MB
         ):
             raise Exception(
