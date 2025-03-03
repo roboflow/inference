@@ -73,6 +73,8 @@ def run_session_via_iobinding(
             buffer_ptr=input_data.data_ptr(),
         )
 
+        binding.synchronize_inputs()
+
         session.run_with_iobinding(binding)
 
         # convert the output buffers to float32 as we may run mixed precision inference in the future
