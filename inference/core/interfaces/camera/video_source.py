@@ -1190,7 +1190,17 @@ def get_fps_if_tick_happens_now(fps_monitor: sv.FPSMonitor) -> float:
     min_reader_timestamp = fps_monitor.all_timestamps[0]
     now = time.monotonic()
     reader_taken_time = now - min_reader_timestamp
-    return (len(fps_monitor.all_timestamps) + 1) / reader_taken_time
+    try:
+        calculated_fps = (len(fps_monitor.all_timestamps) + 1) / reader_taken_time
+        return calculated_fps
+    except ZeroDivisionError:
+        state = {
+            "fps_monitor": fps_monitor,
+            "reader_taken_time": reader_taken_time,
+            "now": now,
+        }
+        logger.warning(f"ZeroDivisionError in get_fps_if_tick_happens_now: {state}")
+        return 0.0
 
 
 def calculate_video_file_stride(
