@@ -241,7 +241,6 @@ from inference.core.workflows.execution_engine.v1.compiler.syntactic_parser impo
 from inference.models.aliases import resolve_roboflow_model_alias
 from inference.usage_tracking.collector import usage_collector
 
-# TODO: talk with Rob for GCP serverless
 if LAMBDA:
     from inference.core.usage import trackUsage
 if METLO_KEY:
@@ -1625,7 +1624,6 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
-                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1664,7 +1662,6 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
-                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1703,7 +1700,6 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         clip_model_id, inference_request
                     )
-                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1746,7 +1742,6 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         grounding_dino_model_id, inference_request
                     )
-                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1792,7 +1787,6 @@ class HttpInterface(BaseInterface):
                         yolo_world_model_id, inference_request
                     )
                     logger.debug("YOLOWorld prediction available.")
-                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1836,7 +1830,6 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         doctr_model_id, inference_request
                     )
-                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1877,7 +1870,6 @@ class HttpInterface(BaseInterface):
                     model_response = await self.model_manager.infer_from_request(
                         sam_model_id, inference_request
                     )
-                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -1921,7 +1913,6 @@ class HttpInterface(BaseInterface):
                     model_response = await self.model_manager.infer_from_request(
                         sam_model_id, inference_request
                     )
-                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -2075,7 +2066,6 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         gaze_model_id, inference_request
                     )
-                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -2118,7 +2108,6 @@ class HttpInterface(BaseInterface):
                     response = await self.model_manager.infer_from_request(
                         trocr_model_id, inference_request
                     )
-                    # TODO: talk with Rob for GCP serverless
                     if LAMBDA:
                         actor = request.scope["aws.event"]["requestContext"][
                             "authorizer"
@@ -2379,7 +2368,6 @@ class HttpInterface(BaseInterface):
                     raise MissingServiceSecretError(
                         "Service secret is required to disable inference usage tracking"
                     )
-                # TODO: talk with Rob for GCP serverless
                 if LAMBDA:
                     request_model_id = (
                         request.scope["aws.event"]["requestContext"]["authorizer"][
