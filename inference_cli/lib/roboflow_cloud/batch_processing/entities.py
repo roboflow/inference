@@ -18,6 +18,9 @@ class JobMetadata(BaseModel):
     )
     created_at: datetime = Field(alias="createdAt")
     last_update: datetime = Field(alias="lastUpdate")
+    restart_parameters_override: List[dict] = Field(
+        alias="restartParametersOverride", default_factory=list
+    )
 
 
 class ListBatchJobsResponse(BaseModel):
@@ -48,7 +51,7 @@ class TaskStatus(BaseModel):
     task_id: str = Field(alias="taskId")
     notification: Union[dict, str] = Field(alias="notification")
     status_type: str = Field(alias="statusType")
-    progress: float = Field(default=0.0)
+    progress: Optional[float] = Field(default=None)
     event_timestamp: datetime = Field(alias="eventTimestamp")
 
 

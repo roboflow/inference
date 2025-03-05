@@ -362,6 +362,42 @@ def get_one_page_of_batch_content(
         raise RFAPICallError("Could not decode Roboflow API response.") from error
 
 
+class DataImportLog:
+
+    @classmethod
+    def init(cls, sources_dir: str) -> "DataImportLog":
+        file_path = os.path.join(sources_dir, ".import_log.jsonl")
+        if not os.path.exists(file_path):
+            file_descriptor = open(file_path, "w+")
+        else:
+            file_descriptor = open(file_path, "r+")
+        log_content = {
+            line.strip()
+            for line in file_descriptor.readlines()
+            if len(line.strip()) > 0
+        }
+        return cls(log_file=file_descriptor, log_content=log_content)
+
+    def __init__(self, log_file: TextIO, log_content: Set[str]):
+        self._log_file = log_file
+        self._log_content = log_content
+        self._lock = Lock()
+
+    def is_file_recorded(self, path: str) -> bool:
+        return path in self._log_content
+
+    def record_files(self, paths: List[str]) -> None:
+        with self._lock:
+            for path in paths:
+                self._log_file.write(f"{path}\n")
+                self._log_content.add(path)
+
+    def record_file(self, path: str) -> None:
+        with self._lock:
+            self._log_file.write(f"{path}\n")
+            self._log_content.add(path)
+
+
 def create_images_batch_from_directory(
     directory: str,
     batch_id: str,
@@ -370,21 +406,27 @@ def create_images_batch_from_directory(
 ) -> None:
     workspace = get_workspace(api_key=api_key)
     images_paths = get_all_images_in_directory(input_directory=directory)
+    upload_log = DataImportLog.init(sources_dir=directory)
+    deduplicated_images = [
+        path for path in images_paths if not upload_log.is_file_recorded(path=path)
+    ]
     if len(images_paths) > MIN_IMAGES_TO_FORM_SHARD:
         upload_images_to_sharded_batch(
-            images_paths=images_paths,
+            images_paths=deduplicated_images,
             workspace=workspace,
             batch_id=batch_id,
             api_key=api_key,
             batch_name=batch_name,
+            upload_log=upload_log,
         )
         return None
     upload_images_to_simple_batch(
-        images_paths=images_paths,
+        images_paths=deduplicated_images,
         workspace=workspace,
         batch_id=batch_id,
         api_key=api_key,
         batch_name=batch_name,
+        upload_log=upload_log,
     )
 
 
@@ -397,17 +439,22 @@ def create_videos_batch_from_directory(
     workspace = get_workspace(api_key=api_key)
     video_paths = get_all_videos_in_directory(input_directory=directory)
     video_paths = _filter_out_malformed_videos(video_paths=video_paths)
+    upload_log = DataImportLog.init(sources_dir=directory)
     if len(video_paths) > SUGGESTED_MAX_VIDEOS_IN_BATCH:
         print(
             f"You try to upload {len(video_paths)} to single batch. "
             f"Suggested max size is: {SUGGESTED_MAX_VIDEOS_IN_BATCH}."
         )
+    video_paths = [
+        path for path in video_paths if not upload_log.is_file_recorded(path=path)
+    ]
     for video in tqdm(video_paths, desc="Uploading video files..."):
         upload_video(
             video_path=video,
             workspace=workspace,
             batch_id=batch_id,
             api_key=api_key,
+            upload_log=upload_log,
             batch_name=batch_name,
         )
 
@@ -429,12 +476,14 @@ def upload_images_to_simple_batch(
     batch_id: str,
     api_key: str,
     batch_name: Optional[str],
+    upload_log: DataImportLog,
 ) -> None:
     upload_image_closure = partial(
         upload_image,
         workspace=workspace,
         batch_id=batch_id,
         api_key=api_key,
+        upload_log=upload_log,
         batch_name=batch_name,
     )
     with ThreadPool() as pool:
@@ -452,6 +501,7 @@ def upload_images_to_sharded_batch(
     batch_id: str,
     api_key: str,
     batch_name: Optional[str],
+    upload_log: DataImportLog,
 ) -> None:
     shards = list(create_batches(sequence=images_paths, batch_size=MAX_SHARD_SIZE))
     upload_images_shard_closure = partial(
@@ -462,12 +512,12 @@ def upload_images_to_sharded_batch(
         batch_name=batch_name,
     )
     with Pool(processes=MAX_SHARDS_UPLOAD_PROCESSES) as pool:
-        for _ in tqdm(
+        for paths in tqdm(
             pool.imap(upload_images_shard_closure, shards),
             desc=f"Uploading images shards (each {MAX_SHARD_SIZE} images)...",
             total=len(shards),
         ):
-            pass
+            upload_log.record_files(paths=paths)
 
 
 def pack_and_upload_images_shard(
@@ -476,7 +526,7 @@ def pack_and_upload_images_shard(
     batch_id: str,
     api_key: str,
     batch_name: Optional[str],
-) -> None:
+) -> List[str]:
     with tempfile.TemporaryDirectory() as tmp_dir:
         archive_path = os.path.join(tmp_dir, f"{uuid4()}.tar")
         create_images_shard_archive(
@@ -489,6 +539,7 @@ def pack_and_upload_images_shard(
             api_key=api_key,
             batch_name=batch_name,
         )
+        return images_paths
 
 
 def create_images_shard_archive(images_paths: List[str], archive_path: str) -> None:
@@ -508,6 +559,7 @@ def upload_image(
     workspace: str,
     batch_id: str,
     api_key: str,
+    upload_log: DataImportLog,
     batch_name: Optional[str] = None,
 ) -> None:
     params = {}
@@ -538,6 +590,7 @@ def upload_image(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         ) from error
     handle_response_errors(response=response, operation_name="upload image")
+    upload_log.record_file(path=image_path)
 
 
 @backoff.on_exception(
@@ -551,6 +604,7 @@ def upload_video(
     workspace: str,
     batch_id: str,
     api_key: str,
+    upload_log: DataImportLog,
     batch_name: Optional[str] = None,
 ) -> None:
     params = {}
@@ -584,6 +638,7 @@ def upload_video(
         url=upload_url,
         headers=extension_headers,
     )
+    upload_log.record_file(path=video_path)
 
 
 @backoff.on_exception(
@@ -714,9 +769,9 @@ def display_batch_details(batch_id: str, api_key: Optional[str]) -> None:
         f"[bold deep_sky_blue1]{metadata.batch_content_type}[/bold deep_sky_blue1]{content_type_icon})",
     )
     table.add_row("Created At", metadata.created_date.strftime("%d %b %Y"))
-    is_short_to_expiry = (metadata.expiry_date - datetime.now(timezone.utc)) < timedelta(
-        days=3
-    )
+    is_short_to_expiry = (
+        metadata.expiry_date - datetime.now(timezone.utc)
+    ) < timedelta(days=3)
     expiry_str = metadata.expiry_date.strftime("%d %b %Y")
     if is_short_to_expiry:
         expiry_str = f"[bold red]{expiry_str}[/bold red]"

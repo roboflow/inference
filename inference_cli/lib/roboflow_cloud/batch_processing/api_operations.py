@@ -209,6 +209,11 @@ def display_batch_job_details(job_id: str, api_key: str) -> None:
     table.add_row(
         "Job Definition", JSON.from_data(job_metadata.job_definition, indent=2)
     )
+    if job_metadata.restart_parameters_override:
+        table.add_row(
+            "Restart parameters override",
+            JSON.from_data(job_metadata.restart_parameters_override),
+        )
     console.print(table)
     job_stages = list_job_stages(workspace=workspace, job_id=job_id, api_key=api_key)
     job_stages = sorted(job_stages, key=lambda e: e.start_timestamp)
@@ -228,7 +233,7 @@ def display_batch_job_details(job_id: str, api_key: str) -> None:
             if task.status_type != "info":
                 accumulated_progress += single_task_progress
             else:
-                accumulated_progress += task.progress * single_task_progress
+                accumulated_progress += (task.progress or 0.0) * single_task_progress
         succeeded_tasks = [t for t in job_tasks if "success" in t.status_type.lower()]
         failed_tasks = [t for t in job_tasks if "error" in t.status_type.lower()]
         errors_lookup = {
@@ -244,9 +249,11 @@ def display_batch_job_details(job_id: str, api_key: str) -> None:
         if not error_reports_str:
             error_reports_str = "All Good 😃"
         expected_tasks = stage.tasks_number
-        registered_tasks = len(job_tasks)
+        registered_tasks = len([t for t in job_tasks if t.progress is not None])
         tasks_waiting_for_processing = expected_tasks - registered_tasks
-        running_tasks = len([t for t in job_tasks if t.status_type == "info"])
+        running_tasks = len(
+            [t for t in job_tasks if t.status_type == "info" and t.progress is not None]
+        )
         terminated_tasks = len([t for t in job_tasks if t.status_type != "info"])
         heading_text = Text(
             f"Stage: {stage.processing_stage_name} [{stage.processing_stage_id}]",
@@ -641,12 +648,23 @@ def send_abort_job_request(
     return response.json()
 
 
-def restart_batch_job(job_id: str, api_key: str) -> None:
+def restart_batch_job(
+    job_id: str,
+    api_key: str,
+    machine_type: Optional[MachineType] = None,
+    workers_per_machine: Optional[int] = None,
+    max_runtime_seconds: Optional[float] = None,
+    max_parallel_tasks: Optional[int] = None,
+) -> None:
     workspace = get_workspace(api_key=api_key)
     response = send_restart_job_request(
         workspace=workspace,
         job_id=job_id,
         api_key=api_key,
+        machine_type=machine_type,
+        workers_per_machine=workers_per_machine,
+        max_runtime_seconds=max_runtime_seconds,
+        max_parallel_tasks=max_parallel_tasks,
     )
     console = Console()
     console.print(JSON.from_data(response, indent=2))
@@ -662,13 +680,32 @@ def send_restart_job_request(
     workspace: str,
     job_id: str,
     api_key: str,
+    machine_type: Optional[MachineType] = None,
+    workers_per_machine: Optional[int] = None,
+    max_runtime_seconds: Optional[float] = None,
+    max_parallel_tasks: Optional[int] = None,
 ) -> dict:
+    payload = {
+        "type": "parameters-override-v1",
+    }
+    if machine_type is not None or workers_per_machine is not None:
+        compute_configuration = {"type": "compute-configuration-v2"}
+        if machine_type:
+            compute_configuration["machineType"] = machine_type.value
+        if workers_per_machine:
+            compute_configuration["workersPerMachine"] = workers_per_machine
+        payload["computeConfiguration"] = compute_configuration
+    if max_parallel_tasks is not None:
+        payload["maxParallelTasks"] = max_parallel_tasks
+    if max_runtime_seconds is not None:
+        payload["processingTimeoutSeconds"] = max_runtime_seconds
     params = {"api_key": api_key}
     try:
         response = requests.post(
             f"{API_BASE_URL}/batch-processing/v1/external/{workspace}/jobs/{job_id}/restart",
             params=params,
             timeout=REQUEST_TIMEOUT,
+            json=payload if len(payload) > 1 else None,
         )
     except (ConnectionError, Timeout):
         raise RetryError(

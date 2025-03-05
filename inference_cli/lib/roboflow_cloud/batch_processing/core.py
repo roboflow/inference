@@ -481,6 +481,28 @@ def restart_job(
             help="Roboflow API key for your workspace. If not given - env variable `ROBOFLOW_API_KEY` will be used",
         ),
     ] = None,
+    machine_type: Annotated[
+        Optional[MachineType],
+        typer.Option("--machine-type", "-mt", help="Type of machine"),
+    ] = None,
+    workers_per_machine: Annotated[
+        Optional[int],
+        typer.Option(
+            "--workers-per-machine",
+            help="Number of workers to run on a single machine - more workers equals better resources "
+            "utilisation, but may cause out of memory errors for bulky Workflows.",
+        ),
+    ] = None,
+    max_runtime_seconds: Annotated[
+        Optional[int],
+        typer.Option("--max-runtime-seconds", help="Max processing duration"),
+    ] = None,
+    max_parallel_tasks: Annotated[
+        Optional[int],
+        typer.Option(
+            "--max-parallel-tasks", help="Max number of concurrent processing tasks"
+        ),
+    ] = None,
     debug_mode: Annotated[
         bool,
         typer.Option(
@@ -493,7 +515,14 @@ def restart_job(
         api_key = ROBOFLOW_API_KEY
     try:
         ensure_api_key_is_set(api_key=api_key)
-        restart_batch_job(job_id=job_id, api_key=api_key)
+        restart_batch_job(
+            job_id=job_id,
+            api_key=api_key,
+            machine_type=machine_type,
+            workers_per_machine=workers_per_machine,
+            max_runtime_seconds=max_runtime_seconds,
+            max_parallel_tasks=max_parallel_tasks,
+        )
     except KeyboardInterrupt:
         print("Command interrupted.")
         return
