@@ -2,6 +2,7 @@ import os.path
 import re
 import shutil
 import time
+from filelock import FileLock
 from typing import List, Optional, Union
 
 from inference.core.env import MODEL_CACHE_DIR
@@ -140,24 +141,40 @@ def clear_cache(model_id: Optional[str] = None) -> None:
     if not DISK_CACHE_CLEANUP:
         return
     cache_dir = get_cache_dir(model_id=model_id)
-    if os.path.exists(cache_dir):
-        max_retries = 3
-        retry_delay = 1  # Initial delay in seconds
+    if not os.path.exists(cache_dir):
+        return
+    
+    lock_file = os.path.join(os.path.dirname(cache_dir), f"{os.path.basename(cache_dir)}.lock")
+    lock = FileLock(lock_file, timeout=10)  # 10 second timeout
+    
+    try:
+        with lock:
+            if not os.path.exists(cache_dir):  # Check again after acquiring lock
+                return  # Already deleted by another process
+            
+            max_retries = 3
+            retry_delay = 1  # Initial delay in seconds
 
-        for attempt in range(max_retries):
-            try:
-                shutil.rmtree(cache_dir, onerror=_rmtree_onerror)
-                return  # Success
-            except FileNotFoundError:
-                return #already deleted by another process, so we are done.
-            except OSError as e:
-                if attempt < max_retries - 1:
-                    print(f"Error deleting cache {cache_dir}: {e}, retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
-                else:
-                    print(f"Error deleting cache {cache_dir}: {e}, max retries exceeded.")
-                    return
+            for attempt in range(max_retries):
+                try:
+                    shutil.rmtree(cache_dir, onerror=_rmtree_onerror)
+                    return  # Success
+                except FileNotFoundError:
+                    return  # Already deleted by another process
+                except OSError as e:
+                    if attempt < max_retries - 1:
+                        print(f"Error deleting cache {cache_dir}: {e}, retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        print(f"Error deleting cache {cache_dir}: {e}, max retries exceeded.")
+                        return
+    finally:
+        try:
+            if os.path.exists(lock_file):
+                os.unlink(lock_file)  # Clean up lock file
+        except OSError:
+            pass  # Best effort cleanup
 
 def get_cache_dir(model_id: Optional[str] = None) -> str:
     if model_id is not None:

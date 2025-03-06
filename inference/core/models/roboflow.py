@@ -3,6 +3,7 @@ import json
 import os
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
+from filelock import FileLock
 from functools import partial
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -259,83 +260,96 @@ class RoboflowInferenceModel(Model):
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
-        if self.version_id is not None:
-            api_data = get_roboflow_model_data(
-                api_key=self.api_key,
-                model_id=self.endpoint,
-                endpoint_type=ModelEndpointType.ORT,
-                device_id=self.device_id,
-            )
-            if "ort" not in api_data.keys():
-                raise ModelArtefactError(
-                    "Could not find `ort` key in roboflow API model description response."
-                )
-            api_data = api_data["ort"]
-            if "classes" in api_data:
-                save_text_lines_in_cache(
-                    content=api_data["classes"],
-                    file="class_names.txt",
-                    model_id=self.endpoint,
-                )
-            if "model" not in api_data:
-                raise ModelArtefactError(
-                    "Could not find `model` key in roboflow API model description response."
-                )
-            if "environment" not in api_data:
-                raise ModelArtefactError(
-                    "Could not find `environment` key in roboflow API model description response."
-                )
-            environment = get_from_url(api_data["environment"])
-            model_weights_response = get_from_url(
-                api_data["model"], json_response=False
-            )
-        else:
-            api_data = get_roboflow_instant_model_data(
-                api_key=self.api_key,
-                model_id=self.endpoint,
-            )
-            if (
-                "modelFiles" not in api_data
-                or "ort" not in api_data["modelFiles"]
-                or "model" not in api_data["modelFiles"]["ort"]
-            ):
-                raise ModelArtefactError(
-                    "Could not find `modelFiles` key or `modelFiles`.`ort` or `modelFiles`.`ort`.`model` key in roboflow API model description response."
-                )
-            if "environment" not in api_data:
-                raise ModelArtefactError(
-                    "Could not find `environment` key in roboflow API model description response."
-                )
-            model_weights_response = get_from_url(
-                api_data["modelFiles"]["ort"]["model"], json_response=False
-            )
-            environment = api_data["environment"]
-            if "classes" in api_data:
-                save_text_lines_in_cache(
-                    content=api_data["classes"],
-                    file="class_names.txt",
-                    model_id=self.endpoint,
-                )
+        
+        # Use the same lock file pattern as in clear_cache
+        lock_file = os.path.join(os.path.dirname(self.cache_dir), f"{os.path.basename(self.cache_dir)}.lock")
+        lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
+        
+        try:
+            with lock:
+                if self.version_id is not None:
+                    api_data = get_roboflow_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                        endpoint_type=ModelEndpointType.ORT,
+                        device_id=self.device_id,
+                    )
+                    if "ort" not in api_data.keys():
+                        raise ModelArtefactError(
+                            "Could not find `ort` key in roboflow API model description response."
+                        )
+                    api_data = api_data["ort"]
+                    if "classes" in api_data:
+                        save_text_lines_in_cache(
+                            content=api_data["classes"],
+                            file="class_names.txt",
+                            model_id=self.endpoint,
+                        )
+                    if "model" not in api_data:
+                        raise ModelArtefactError(
+                            "Could not find `model` key in roboflow API model description response."
+                        )
+                    if "environment" not in api_data:
+                        raise ModelArtefactError(
+                            "Could not find `environment` key in roboflow API model description response."
+                        )
+                    environment = get_from_url(api_data["environment"])
+                    model_weights_response = get_from_url(
+                        api_data["model"], json_response=False
+                    )
+                else:
+                    api_data = get_roboflow_instant_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                    )
+                    if (
+                        "modelFiles" not in api_data
+                        or "ort" not in api_data["modelFiles"]
+                        or "model" not in api_data["modelFiles"]["ort"]
+                    ):
+                        raise ModelArtefactError(
+                            "Could not find `modelFiles` key or `modelFiles`.`ort` or `modelFiles`.`ort`.`model` key in roboflow API model description response."
+                        )
+                    if "environment" not in api_data:
+                        raise ModelArtefactError(
+                            "Could not find `environment` key in roboflow API model description response."
+                        )
+                    model_weights_response = get_from_url(
+                        api_data["modelFiles"]["ort"]["model"], json_response=False
+                    )
+                    environment = api_data["environment"]
+                    if "classes" in api_data:
+                        save_text_lines_in_cache(
+                            content=api_data["classes"],
+                            file="class_names.txt",
+                            model_id=self.endpoint,
+                        )
 
-        save_bytes_in_cache(
-            content=model_weights_response.content,
-            file=self.weights_file,
-            model_id=self.endpoint,
-        )
-        if "colors" in api_data:
-            environment["COLORS"] = api_data["colors"]
-        save_json_in_cache(
-            content=environment,
-            file="environment.json",
-            model_id=self.endpoint,
-        )
-        if "keypoints_metadata" in api_data:
-            # TODO: make sure backend provides that
-            save_json_in_cache(
-                content=api_data["keypoints_metadata"],
-                file="keypoints_metadata.json",
-                model_id=self.endpoint,
-            )
+                save_bytes_in_cache(
+                    content=model_weights_response.content,
+                    file=self.weights_file,
+                    model_id=self.endpoint,
+                )
+                if "colors" in api_data:
+                    environment["COLORS"] = api_data["colors"]
+                save_json_in_cache(
+                    content=environment,
+                    file="environment.json",
+                    model_id=self.endpoint,
+                )
+                if "keypoints_metadata" in api_data:
+                    # TODO: make sure backend provides that
+                    save_json_in_cache(
+                        content=api_data["keypoints_metadata"],
+                        file="keypoints_metadata.json",
+                        model_id=self.endpoint,
+                    )
+        finally:
+            try:
+                if os.path.exists(lock_file):
+                    os.unlink(lock_file)  # Clean up lock file
+            except OSError:
+                pass  # Best effort cleanup
 
     def load_model_artifacts_from_cache(self) -> None:
         logger.debug("Model artifacts already downloaded, loading model from cache")
