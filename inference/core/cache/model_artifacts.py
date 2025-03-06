@@ -1,9 +1,11 @@
 import os.path
 import re
 import shutil
+import time
 from typing import List, Optional, Union
 
 from inference.core.env import MODEL_CACHE_DIR
+from inference.core.env import DISK_CACHE_CLEANUP
 from inference.core.utils.file_system import (
     dump_bytes,
     dump_json,
@@ -105,11 +107,57 @@ def get_cache_file_path(file: str, model_id: Optional[str] = None) -> str:
     return os.path.join(cache_dir, file)
 
 
+def _rmtree_onerror(func, path, exc_info):
+    """Error handler for shutil.rmtree."""
+    import errno
+    if exc_info[1].errno == errno.ENOTEMPTY:
+        try:
+            # Try deleting files within the directory first
+            for filename in os.listdir(path):
+                filepath = os.path.join(path, filename)
+                try:
+                    if os.path.isfile(filepath) or os.path.islink(filepath):
+                        os.unlink(filepath)
+                    elif os.path.isdir(filepath):
+                        shutil.rmtree(filepath, onerror=_rmtree_onerror)
+                except FileNotFoundError:
+                    #Another process already removed the file, continue.
+                    pass
+            # Retry deleting the directory
+            os.rmdir(path)
+            return #Success
+        except FileNotFoundError:
+            #Another process already removed the directory.
+            return
+        except OSError as e:
+            print(f"Error during onerror handling: {e}")
+            raise #re-raise the error.
+    else:
+        print(f"Error during rmtree: {exc_info[1]}")
+        raise #re-raise the error.
+
 def clear_cache(model_id: Optional[str] = None) -> None:
+    if not DISK_CACHE_CLEANUP:
+        return
     cache_dir = get_cache_dir(model_id=model_id)
     if os.path.exists(cache_dir):
-        shutil.rmtree(cache_dir)
+        max_retries = 3
+        retry_delay = 1  # Initial delay in seconds
 
+        for attempt in range(max_retries):
+            try:
+                shutil.rmtree(cache_dir, onerror=_rmtree_onerror)
+                return  # Success
+            except FileNotFoundError:
+                return #already deleted by another process, so we are done.
+            except OSError as e:
+                if attempt < max_retries - 1:
+                    print(f"Error deleting cache {cache_dir}: {e}, retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    print(f"Error deleting cache {cache_dir}: {e}, max retries exceeded.")
+                    return
 
 def get_cache_dir(model_id: Optional[str] = None) -> str:
     if model_id is not None:
