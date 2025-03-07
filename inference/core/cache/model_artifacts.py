@@ -8,6 +8,7 @@ from typing import List, Optional, Union
 from filelock import FileLock
 
 from inference.core.env import DISK_CACHE_CLEANUP, MODEL_CACHE_DIR
+from inference.core.logger import logger
 from inference.core.utils.file_system import (
     dump_bytes,
     dump_json,
