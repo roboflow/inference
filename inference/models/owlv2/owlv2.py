@@ -757,6 +757,17 @@ class SerializedOwlV2(RoboflowInferenceModel):
     ):
         global _cached_owlv2_instances
         roboflow_id = hf_id.replace("google/", "owlv2/")
+        
+        # Always check cache first, regardless of previous_embeddings_file
+        if roboflow_id in _cached_owlv2_instances:
+            print(f"Using cached OwlV2 instance for roboflow id: {roboflow_id}")
+            owlv2 = _cached_owlv2_instances[roboflow_id]
+        else:
+            print(f"Creating new OwlV2 instance for roboflow id: {roboflow_id}")
+            owlv2 = OwlV2(model_id=roboflow_id)
+            _cached_owlv2_instances[roboflow_id] = owlv2
+        
+        # Now handle previous_embeddings_file separately
         if previous_embeddings_file is not None:
             if DEVICE == "cpu":
                 print("Loading previous embeddings from CPU...")
@@ -767,25 +778,12 @@ class SerializedOwlV2(RoboflowInferenceModel):
             class_names = model_data["class_names"]
             train_data_dict = model_data["train_data_dict"]
             huggingface_id = model_data["huggingface_id"]
-            roboflow_id = model_data["roboflow_id"]
-            # each model can have its own OwlV2 instance because we use a singleton
-            owlv2 = OwlV2(model_id=roboflow_id)
+            saved_roboflow_id = model_data["roboflow_id"]
+            
+            # Use the loaded embeddings with our cached instance
             owlv2.cpu_image_embed_cache = model_data["image_embeds"]
-        else:
-
-            if roboflow_id in _cached_owlv2_instances:
-                print("Using cached OwlV2 instance... for roboflow id: ", roboflow_id)
-                owlv2 = _cached_owlv2_instances[roboflow_id]
-            else:
-                print("Creating new OwlV2 instance... for roboflow id: ", roboflow_id)
-                owlv2 = OwlV2(model_id=roboflow_id)
-                _cached_owlv2_instances[roboflow_id] = owlv2
-
-            # start_time = time.time()
-            # print("Creating new OwlV2 instance...")
-            # owlv2 = OwlV2(model_id=roboflow_id)
-            # creation_time = time.time() - start_time
-            # print(f"OwlV2 instance creation took {creation_time:.2f} seconds")
+            
+            # Start processing from here...
 
         start_time = time.time()
         print("Generating embeddings...")
