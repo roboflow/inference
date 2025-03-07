@@ -1189,7 +1189,8 @@ def get_fps_if_tick_happens_now(fps_monitor: sv.FPSMonitor) -> float:
         return 0.0
     min_reader_timestamp = fps_monitor.all_timestamps[0]
     now = time.monotonic()
-    reader_taken_time = now - min_reader_timestamp
+    epsilon = 1e-8
+    reader_taken_time = (now - min_reader_timestamp) + epsilon
     return (len(fps_monitor.all_timestamps) + 1) / reader_taken_time
 
 
