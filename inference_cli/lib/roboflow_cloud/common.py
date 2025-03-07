@@ -77,6 +77,4 @@ def _get_response_payload(response: Response) -> str:
 def prepare_status_type_emoji(status_type: str) -> str:
     if "error" in status_type.lower():
         return "🚨"
-    if "info" in status_type.lower():
-        return "💬"
     return "🟢"

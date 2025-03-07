@@ -8,7 +8,6 @@ class ShardDetails(BaseModel):
     shard_id: str = Field(alias="shardId")
     status_name: str = Field(alias="statusName")
     status_type: str = Field(alias="statusType")
-    is_terminal: bool = Field(alias="isTerminal")
     event_timestamp: datetime = Field(alias="eventTimestamp")
     shard_objects_count: int = Field(alias="shardObjectsCount")
 
@@ -18,8 +17,8 @@ class BatchMetadata(BaseModel):
     batch_id: str = Field(alias="batchId")
     batch_type: str = Field(alias="batchType")
     batch_content_type: str = Field(alias="batchContentType")
-    created_date: date = Field(alias="createdDate")
-    expiry_date: date = Field(alias="expiryDate")
+    created_date: datetime = Field(alias="createdDate")
+    expiry_date: datetime = Field(alias="expiryDate")
 
 
 class ListBatchesResponse(BaseModel):
