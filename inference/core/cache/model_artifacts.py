@@ -144,7 +144,7 @@ def clear_cache(model_id: Optional[str] = None) -> None:
     cache_dir = get_cache_dir(model_id=model_id)
     if not os.path.exists(cache_dir):
         return
-    lock_dir = "/rfcache/_file_locks"  # Dedicated lock directory
+    lock_dir = CACHE_DIR + "/_file_locks"  # Dedicated lock directory
     os.makedirs(lock_dir, exist_ok=True)  # ensure lock directory exists.
     lock_file = os.path.join(lock_dir, f"{os.path.basename(cache_dir)}.lock")
 

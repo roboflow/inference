@@ -262,7 +262,7 @@ class RoboflowInferenceModel(Model):
         logger.debug("Downloading model artifacts from Roboflow API")
 
         # Use the same lock file pattern as in clear_cache
-        lock_dir = "/rfcache/_file_locks"  # Dedicated lock directory
+        lock_dir = CACHE_DIR + "/_file_locks"  # Dedicated lock directory
         os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
         lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
         try:
