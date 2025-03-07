@@ -323,15 +323,23 @@ def check_process_health() -> None:
                 managed_pipeline.ram_usage_queue.append(process_ram_usage_mb)
 
                 if not process.is_alive():
-                    logger.warning("Process for pipeline_id=%s is not alive. Terminating...", pipeline_id)
+                    logger.warning(
+                        "Process for pipeline_id=%s is not alive. Terminating...",
+                        pipeline_id,
+                    )
                     process.terminate()
                     process.join()
                     del PROCESSES_TABLE[pipeline_id]
                     continue
 
                 total_ram_usage += process_ram_usage_mb
-                if STREAM_MANAGER_MAX_RAM_MB is not None and total_ram_usage > STREAM_MANAGER_MAX_RAM_MB:
-                    logger.warning("Process for pipeline_id=%s is above RAM limit.", pipeline_id)
+                if (
+                    STREAM_MANAGER_MAX_RAM_MB is not None
+                    and total_ram_usage > STREAM_MANAGER_MAX_RAM_MB
+                ):
+                    logger.warning(
+                        "Process for pipeline_id=%s is above RAM limit.", pipeline_id
+                    )
 
                 if managed_pipeline.is_idle:
                     # skipping idle pipelines in status probing
@@ -398,17 +406,28 @@ def get_or_spawn_pipeline_process(
             chosen_pipeline.is_idle = False
             return chosen_pipeline
 
-        current_ram_usage = sum(
-            managed_pipeline.ram_usage_queue[-1] if managed_pipeline.ram_usage_queue else 0
-            for managed_pipeline in processes_table.values()
-        ) + _get_current_process_ram_usage_mb()
+        current_ram_usage = (
+            sum(
+                (
+                    managed_pipeline.ram_usage_queue[-1]
+                    if managed_pipeline.ram_usage_queue
+                    else 0
+                )
+                for managed_pipeline in processes_table.values()
+            )
+            + _get_current_process_ram_usage_mb()
+        )
         highest_pipeline_ram_usage = max(
-            max(managed_pipeline.ram_usage_queue for managed_pipeline in processes_table.values())
+            max(
+                managed_pipeline.ram_usage_queue
+                for managed_pipeline in processes_table.values()
+            )
         )
 
         if (
             STREAM_MANAGER_MAX_RAM_MB is not None
-            and current_ram_usage + highest_pipeline_ram_usage > STREAM_MANAGER_MAX_RAM_MB
+            and current_ram_usage + highest_pipeline_ram_usage
+            > STREAM_MANAGER_MAX_RAM_MB
         ):
             raise Exception(
                 "Cannot spawn new pipeline due to insufficient RAM,"
