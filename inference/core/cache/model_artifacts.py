@@ -2,6 +2,7 @@ import os.path
 import re
 import shutil
 import time
+import errno
 from filelock import FileLock
 from typing import List, Optional, Union
 
@@ -110,7 +111,6 @@ def get_cache_file_path(file: str, model_id: Optional[str] = None) -> str:
 
 def _rmtree_onerror(func, path, exc_info):
     """Error handler for shutil.rmtree."""
-    import errno
     if exc_info[1].errno == errno.ENOTEMPTY:
         try:
             # Try deleting files within the directory first
