@@ -515,3 +515,18 @@ IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
 )
 if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
     warnings.simplefilter("ignore", ModelDependencyMissing)
+
+# Stream manager configuration
+try:
+    STREAM_MANAGER_MAX_RAM_MB: Optional[float] = abs(
+        float(os.getenv("STREAM_MANAGER_MAX_RAM_MB"))
+    )
+except:
+    STREAM_MANAGER_MAX_RAM_MB: Optional[float] = None
+
+try:
+    STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE: int = abs(
+        int(os.getenv("STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE"))
+    )
+except:
+    STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE = 10
