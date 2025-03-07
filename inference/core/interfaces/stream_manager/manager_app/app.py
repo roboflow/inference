@@ -417,12 +417,18 @@ def get_or_spawn_pipeline_process(
             )
             + _get_current_process_ram_usage_mb()
         )
-        highest_pipeline_ram_usage = max(
-            max(
-                managed_pipeline.ram_usage_queue
-                for managed_pipeline in processes_table.values()
+        highest_pipeline_ram_usage = 0
+        if processes_table:
+            highest_pipeline_ram_usage = max(
+                max(
+                    (
+                        managed_pipeline.ram_usage_queue
+                        if managed_pipeline.ram_usage_queue
+                        else 0
+                    )
+                    for managed_pipeline in processes_table.values()
+                )
             )
-        )
 
         if (
             STREAM_MANAGER_MAX_RAM_MB is not None
