@@ -711,7 +711,7 @@ def send_restart_job_request(
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         )
-    handle_response_errors(response=response, operation_name="abort job")
+    handle_response_errors(response=response, operation_name="restart job")
     return response.json()
 
 
