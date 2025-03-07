@@ -3,7 +3,6 @@ import json
 import os
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from filelock import FileLock
 from functools import partial
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -11,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import cv2
 import numpy as np
 import onnxruntime
+from filelock import FileLock
 from PIL import Image
 
 from inference.core.env import (
@@ -260,9 +260,11 @@ class RoboflowInferenceModel(Model):
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
-        
+
         # Use the same lock file pattern as in clear_cache
-        lock_file = os.path.join(os.path.dirname(self.cache_dir), f"{os.path.basename(self.cache_dir)}.lock")
+        lock_file = os.path.join(
+            os.path.dirname(self.cache_dir), f"{os.path.basename(self.cache_dir)}.lock"
+        )
         lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
         try:
             with lock:
