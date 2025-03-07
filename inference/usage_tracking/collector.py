@@ -18,6 +18,7 @@ from typing_extensions import ParamSpec
 from inference.core.env import (
     API_KEY,
     DEDICATED_DEPLOYMENT_ID,
+    GCP_SERVERLESS,
     LAMBDA,
     REDIS_HOST,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -88,11 +89,11 @@ class UsageCollector:
             api_plan_endpoint_url=self._settings.api_plan_endpoint_url,
             sqlite_cache_enabled=False,
         )
-        if LAMBDA and REDIS_HOST:
+        if (LAMBDA or GCP_SERVERLESS) and REDIS_HOST:
             logger.debug("Persistence through RedisQueue")
             self._queue: "Queue[UsagePayload]" = RedisQueue()
             self._api_keys_hashing_enabled = False
-        elif LAMBDA or self._settings.opt_out:
+        elif (LAMBDA or GCP_SERVERLESS) or self._settings.opt_out:
             logger.debug("No persistence")
             self._queue: "Queue[UsagePayload]" = Queue(
                 maxsize=self._settings.queue_size
@@ -149,7 +150,7 @@ class UsageCollector:
             "category": "",
             "resource_id": "",
             "resource_details": "{}",
-            "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID),
+            "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID) or GCP_SERVERLESS,
             "api_key_hash": "",
             "is_gpu_available": False,
             "python_version": sys.version.split()[0],
