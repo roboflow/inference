@@ -516,6 +516,8 @@ IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
 if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
     warnings.simplefilter("ignore", ModelDependencyMissing)
 
+DISK_CACHE_CLEANUP = str2bool(os.getenv("DISK_CACHE_CLEANUP", "True"))
+
 # Stream manager configuration
 try:
     STREAM_MANAGER_MAX_RAM_MB: Optional[float] = abs(
