@@ -262,11 +262,11 @@ class RoboflowInferenceModel(Model):
         logger.debug("Downloading model artifacts from Roboflow API")
 
         # Use the same lock file pattern as in clear_cache
-        lock_file = os.path.join(
-            os.path.dirname(self.cache_dir), f"{os.path.basename(self.cache_dir)}.lock"
-        )
-        lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
+        lock_dir = "/rfcache/_file_locks"  # Dedicated lock directory
+        os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
+        lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
         try:
+            lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
             with lock:
                 if self.version_id is not None:
                     api_data = get_roboflow_model_data(
@@ -345,6 +345,9 @@ class RoboflowInferenceModel(Model):
                         file="keypoints_metadata.json",
                         model_id=self.endpoint,
                     )
+        except Exception as e:
+            logger.error(f"Error downloading model artifacts: {e}")
+            raise
         finally:
             try:
                 if os.path.exists(lock_file):

@@ -144,10 +144,9 @@ def clear_cache(model_id: Optional[str] = None) -> None:
     cache_dir = get_cache_dir(model_id=model_id)
     if not os.path.exists(cache_dir):
         return
-
-    lock_file = os.path.join(
-        os.path.dirname(cache_dir), f"{os.path.basename(cache_dir)}.lock"
-    )
+    lock_dir = "/rfcache/_file_locks"  # Dedicated lock directory
+    os.makedirs(lock_dir, exist_ok=True)  # ensure lock directory exists.
+    lock_file = os.path.join(lock_dir, f"{os.path.basename(cache_dir)}.lock")
 
     try:
         lock = FileLock(lock_file, timeout=10)  # 10 second timeout
