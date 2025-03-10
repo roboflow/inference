@@ -782,10 +782,8 @@ class SerializedOwlV2(RoboflowInferenceModel):
             else:
                 print("Loading previous embeddings from GPU...")
                 model_data = torch.load(previous_embeddings_file)
-            class_names = model_data["class_names"]
+            
             train_data_dict = model_data["train_data_dict"]
-            huggingface_id = model_data["huggingface_id"]
-            saved_roboflow_id = model_data["roboflow_id"]
             
             # Use the loaded embeddings with our cached instance
             owlv2.cpu_image_embed_cache = model_data["image_embeds"]
