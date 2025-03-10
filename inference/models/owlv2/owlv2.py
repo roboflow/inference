@@ -110,7 +110,7 @@ class Owlv2Singleton:
                 .to(DEVICE)
             )
             torch._dynamo.config.suppress_errors = True
-            if COMPILE_OWLV2_MODEL:
+            if OWLV2_COMPILE_MODEL:
                 start_time = time.time()
                 model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
                 compile_time = time.time() - start_time
