@@ -25,11 +25,11 @@ from inference.core.env import (
     DEVICE,
     MAX_DETECTIONS,
     MODEL_CACHE_DIR,
+    OWLV2_COMPILE_MODEL,
     OWLV2_CPU_IMAGE_CACHE_SIZE,
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
     OWLV2_VERSION_ID,
-    OWLV2_COMPILE_MODEL,
 )
 from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
 from inference.core.models.roboflow import (
