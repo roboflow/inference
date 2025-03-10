@@ -14,7 +14,6 @@ from inference.models.owlv2.owlv2 import (
     OwlV2,
     Owlv2Singleton,
     SerializedOwlV2,
-    OWLv2ModelManager,
 )
 
 
