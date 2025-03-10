@@ -111,10 +111,7 @@ class Owlv2Singleton:
             )
             torch._dynamo.config.suppress_errors = True
             if OWLV2_COMPILE_MODEL:
-                start_time = time.time()
                 model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
-                compile_time = time.time() - start_time
-                print(f"Compiling vision model took {compile_time:.2f} seconds")
             instance.model = model
             cls._instances[huggingface_id] = instance
         return cls._instances[huggingface_id]
@@ -421,8 +418,6 @@ class OwlV2(RoboflowInferenceModel):
         # as we don't know a priori our torch version
         device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
         # we disable autocast on CPU for stability, although it's possible using bfloat16 would work
-        print("autocasting")
-        start_time = time.time()
         with torch.autocast(
             device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
         ):
@@ -431,9 +426,6 @@ class OwlV2(RoboflowInferenceModel):
             image_features = image_embeds.reshape(batch_size, h * w, dim)
             objectness = self.model.objectness_predictor(image_features)
             boxes = self.model.box_predictor(image_features, feature_map=image_embeds)
-        print("after autocast")
-        embed_time = time.time() - start_time
-        print(f"Embedding took {embed_time:.2f} seconds")
     
         image_class_embeds = self.model.class_head.dense0(image_features)
         
@@ -475,6 +467,7 @@ class OwlV2(RoboflowInferenceModel):
         self, query_spec: QuerySpecType, iou_threshold: float
     ) -> torch.Tensor:
         # NOTE: for now we're handling each image seperately
+ 
         query_embeds = []
         for image_hash, query_boxes in query_spec.items():
 
@@ -645,7 +638,6 @@ class OwlV2(RoboflowInferenceModel):
                 wrapped_training_data_hash
             )
         ) is not None:
-            print("Returning cached embeddings...")
             if return_image_embeds:
                 # Return a dummy empty dict as the second value
                 # or extract it from CPU cache if available
@@ -662,13 +654,8 @@ class OwlV2(RoboflowInferenceModel):
         return_image_embeds_dict = dict()
 
         
-        for i, train_image in enumerate(wrapped_training_data):
-            start_time = time.time()
-            
-            # grab and embed image
-            print("grabbing and embedding image")
+        for train_image in wrapped_training_data:
             image_hash = self.embed_image(train_image["image"])
-            print("image embedded")
             if return_image_embeds:
                 if (image_embeds := self.get_image_embeds(image_hash)) is None:
                     raise KeyError("We didn't embed the image first!")
@@ -687,10 +674,6 @@ class OwlV2(RoboflowInferenceModel):
             # compute the embeddings for the box prompts
             embeddings = self.get_query_embedding(query_spec, iou_threshold)
 
-            process_time = time.time() - start_time
-            print(f"Processing image {i+1}/{len(wrapped_training_data)} took {process_time:.2f} seconds")
-
-            print("Deleted train_image")
             del train_image
 
             if embeddings is None:
@@ -764,39 +747,25 @@ class SerializedOwlV2(RoboflowInferenceModel):
     ):
         roboflow_id = hf_id.replace("google/", "owlv2/")
         
-        # Always check cache first, regardless of previous_embeddings_file
         if roboflow_id in cls._base_owlv2_instances:
-            print(f"Using cached OwlV2 instance for roboflow id: {roboflow_id}")
             owlv2 = cls._base_owlv2_instances[roboflow_id]
         else:
-            print(f"Creating new OwlV2 instance for roboflow id: {roboflow_id}")
             owlv2 = OwlV2(model_id=roboflow_id)
             cls._base_owlv2_instances[roboflow_id] = owlv2
         
-        # Now handle previous_embeddings_file separately
         if previous_embeddings_file is not None:
             if DEVICE == "cpu":
-                print("Loading previous embeddings from CPU...")
                 model_data = torch.load(previous_embeddings_file, map_location="cpu")
             else:
-                print("Loading previous embeddings from GPU...")
                 model_data = torch.load(previous_embeddings_file)
             
             train_data_dict = model_data["train_data_dict"]
-            
-            # Use the loaded embeddings with our cached instance
             owlv2.cpu_image_embed_cache = model_data["image_embeds"]
             
-            # Start processing from here...
 
-        start_time = time.time()
-        print("Generating embeddings...")
         train_data_dict, image_embeds = owlv2.make_class_embeddings_dict(
             training_data, iou_threshold, return_image_embeds=True
         )
-        embedding_time = time.time() - start_time
-        print(f"Embedding generation took {embedding_time:.2f} seconds")
-
         return cls.save_model(
             hf_id, roboflow_id, train_data_dict, image_embeds, save_dir
         )
@@ -831,17 +800,8 @@ class SerializedOwlV2(RoboflowInferenceModel):
         return super().infer_from_request(request)
 
     def __init__(self, model_id, *args, **kwargs):
-        
-        
-        start_time = time.time()
         super().__init__(model_id, *args, **kwargs)
-        parent_init_time = time.time() - start_time
-        print(f"Parent initialization took {parent_init_time:.2f} seconds")
-        
-        start_time = time.time()
         self.get_model_artifacts()
-        artifacts_time = time.time() - start_time
-        print(f"Getting model artifacts took {artifacts_time:.2f} seconds")
 
     def get_infer_bucket_file_list(self):
         return []
@@ -895,10 +855,6 @@ class SerializedOwlV2(RoboflowInferenceModel):
         logger.info(f"OWLv2 model weights saved to cache")
 
     def load_model_artifacts_from_cache(self):
-        print("Loading model artifacts from cache...")
-        
-        start_time = time.time()
-        
         if DEVICE == "cpu":
             self.model_data = torch.load(
                 self.cache_file(self.weights_file), map_location="cpu"
@@ -912,9 +868,6 @@ class SerializedOwlV2(RoboflowInferenceModel):
         # each model can have its own OwlV2 instance because we use a singleton
         self.owlv2 = OwlV2(model_id=self.roboflow_id)
         self.owlv2.cpu_image_embed_cache = self.model_data["image_embeds"]
-        
-        load_time = time.time() - start_time
-        print(f"Loading artifacts took {load_time:.2f} seconds")
 
     weights_file_path = "weights.pt"
 
