@@ -88,8 +88,6 @@ class LimitedSizeDict(OrderedDict):
                 self.popitem(last=False)
 
 
-
-
 class Owlv2Singleton:
     _instances = weakref.WeakValueDictionary()
 
@@ -624,7 +622,9 @@ class OwlV2(RoboflowInferenceModel):
                 # or extract it from CPU cache if available
                 return_image_embeds_dict = {}
                 for image_hash in self.cpu_image_embed_cache:
-                    return_image_embeds_dict[image_hash] = self.cpu_image_embed_cache[image_hash]
+                    return_image_embeds_dict[image_hash] = self.cpu_image_embed_cache[
+                        image_hash
+                    ]
                 return class_embeddings_dict, return_image_embeds_dict
             else:
                 return class_embeddings_dict
@@ -634,7 +634,6 @@ class OwlV2(RoboflowInferenceModel):
         bool_to_literal = {True: "positive", False: "negative"}
         return_image_embeds_dict = dict()
 
-        
         for train_image in wrapped_training_data:
             image_hash = self.embed_image(train_image["image"])
             if return_image_embeds:
@@ -664,7 +663,7 @@ class OwlV2(RoboflowInferenceModel):
                 class_embeddings_dict[class_name][bool_to_literal[is_pos]].append(
                     embedding
                 )
-            
+
         gc.collect()
         # Convert lists of embeddings to tensors.
         class_embeddings_dict = {
@@ -711,10 +710,10 @@ class OwlV2(RoboflowInferenceModel):
 class SerializedOwlV2(RoboflowInferenceModel):
     task_type = "object-detection"
     box_format = "xywh"
-    
+
     # Cache of OwlV2 instances to avoid creating new ones for each serialize_training_data call
     # This improves performance by reusing model instances across serialization operations
-    _base_owlv2_instances = {}  
+    _base_owlv2_instances = {}
 
     @classmethod
     def serialize_training_data(
@@ -726,22 +725,21 @@ class SerializedOwlV2(RoboflowInferenceModel):
         previous_embeddings_file: str = None,
     ):
         roboflow_id = hf_id.replace("google/", "owlv2/")
-        
+
         if roboflow_id in cls._base_owlv2_instances:
             owlv2 = cls._base_owlv2_instances[roboflow_id]
         else:
             owlv2 = OwlV2(model_id=roboflow_id)
             cls._base_owlv2_instances[roboflow_id] = owlv2
-        
+
         if previous_embeddings_file is not None:
             if DEVICE == "cpu":
                 model_data = torch.load(previous_embeddings_file, map_location="cpu")
             else:
                 model_data = torch.load(previous_embeddings_file)
-            
+
             train_data_dict = model_data["train_data_dict"]
             owlv2.cpu_image_embed_cache = model_data["image_embeds"]
-            
 
         train_data_dict, image_embeds = owlv2.make_class_embeddings_dict(
             training_data, iou_threshold, return_image_embeds=True
