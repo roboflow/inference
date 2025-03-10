@@ -422,9 +422,7 @@ class OwlV2(RoboflowInferenceModel):
             image_features = image_embeds.reshape(batch_size, h * w, dim)
             objectness = self.model.objectness_predictor(image_features)
             boxes = self.model.box_predictor(image_features, feature_map=image_embeds)
-    
         image_class_embeds = self.model.class_head.dense0(image_features)
-        
         image_class_embeds /= (
             torch.linalg.norm(image_class_embeds, ord=2, dim=-1, keepdim=True) + 1e-6
         )
@@ -434,6 +432,7 @@ class OwlV2(RoboflowInferenceModel):
             + 1
         )
         objectness = objectness.sigmoid()
+
         objectness, boxes, image_class_embeds, logit_shift, logit_scale = (
             filter_tensors_by_objectness(
                 objectness, boxes, image_class_embeds, logit_shift, logit_scale
@@ -447,6 +446,7 @@ class OwlV2(RoboflowInferenceModel):
             logit_shift,
             logit_scale,
         )
+
         # Explicitly delete temporary tensors to free memory.
         del pixel_values, np_image, image_features, image_embeds
 
@@ -461,22 +461,19 @@ class OwlV2(RoboflowInferenceModel):
         # NOTE: for now we're handling each image seperately
         query_embeds = []
         for image_hash, query_boxes in query_spec.items():
-
             image_embeds = self.get_image_embeds(image_hash)
             if image_embeds is None:
                 raise KeyError("We didn't embed the image first!")
             _objectness, image_boxes, image_class_embeds, _, _ = image_embeds
+
             query_boxes_tensor = torch.tensor(
                 query_boxes, dtype=image_boxes.dtype, device=image_boxes.device
             )
-
             if image_boxes.numel() == 0 or query_boxes_tensor.numel() == 0:
                 continue
-    
             iou, _ = box_iou(
                 to_corners(image_boxes), to_corners(query_boxes_tensor)
             )  # 3000, k
-    
             ious, indices = torch.max(iou, dim=0)
             # filter for only iou > 0.4
             iou_mask = ious > iou_threshold
@@ -488,9 +485,7 @@ class OwlV2(RoboflowInferenceModel):
             query_embeds.append(embeds)
         if not query_embeds:
             return None
-
         query = torch.cat(query_embeds, dim=0)
-
         return query
 
     def infer_from_embed(
@@ -711,7 +706,6 @@ class OwlV2(RoboflowInferenceModel):
             for ind, batch_predictions in enumerate(predictions)
         ]
         return responses
-
 
 
 class SerializedOwlV2(RoboflowInferenceModel):
