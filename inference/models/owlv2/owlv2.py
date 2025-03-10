@@ -103,8 +103,9 @@ class Owlv2Singleton:
                 .eval()
                 .to(DEVICE)
             )
-            torch._dynamo.config.suppress_errors = True
+            
             if OWLV2_COMPILE_MODEL:
+                torch._dynamo.config.suppress_errors = True
                 model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
             instance.model = model
             cls._instances[huggingface_id] = instance
