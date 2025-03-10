@@ -6,7 +6,6 @@ import threading
 import weakref
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
-import time
 
 import numpy as np
 import torch
@@ -72,8 +71,6 @@ def to_corners(box):
 
 
 from collections import OrderedDict
-
-
 
 
 class LimitedSizeDict(OrderedDict):
@@ -432,15 +429,12 @@ class OwlV2(RoboflowInferenceModel):
         image_class_embeds /= (
             torch.linalg.norm(image_class_embeds, ord=2, dim=-1, keepdim=True) + 1e-6
         )
-       
         logit_shift = self.model.class_head.logit_shift(image_features)
-
         logit_scale = (
             self.model.class_head.elu(self.model.class_head.logit_scale(image_features))
             + 1
         )
         objectness = objectness.sigmoid()
-     
         objectness, boxes, image_class_embeds, logit_shift, logit_scale = (
             filter_tensors_by_objectness(
                 objectness, boxes, image_class_embeds, logit_shift, logit_scale
@@ -454,7 +448,6 @@ class OwlV2(RoboflowInferenceModel):
             logit_shift,
             logit_scale,
         )
-
         # Explicitly delete temporary tensors to free memory.
         del pixel_values, np_image, image_features, image_embeds
 
@@ -467,16 +460,13 @@ class OwlV2(RoboflowInferenceModel):
         self, query_spec: QuerySpecType, iou_threshold: float
     ) -> torch.Tensor:
         # NOTE: for now we're handling each image seperately
- 
         query_embeds = []
         for image_hash, query_boxes in query_spec.items():
 
             image_embeds = self.get_image_embeds(image_hash)
-         
             if image_embeds is None:
                 raise KeyError("We didn't embed the image first!")
             _objectness, image_boxes, image_class_embeds, _, _ = image_embeds
-     
             query_boxes_tensor = torch.tensor(
                 query_boxes, dtype=image_boxes.dtype, device=image_boxes.device
             )
@@ -489,18 +479,15 @@ class OwlV2(RoboflowInferenceModel):
             )  # 3000, k
     
             ious, indices = torch.max(iou, dim=0)
-      
             # filter for only iou > 0.4
             iou_mask = ious > iou_threshold
             indices = indices[iou_mask]
-  
             if not indices.numel() > 0:
                 continue
 
             embeds = image_class_embeds[indices]
             query_embeds.append(embeds)
         if not query_embeds:
-  
             return None
 
         query = torch.cat(query_embeds, dim=0)
