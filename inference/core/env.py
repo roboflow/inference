@@ -6,7 +6,7 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from inference.core.utils.environment import safe_split_value, str2bool
-from inference.core.warnings import InferenceDeprecationWarning
+from inference.core.warnings import InferenceDeprecationWarning, ModelDependencyMissing
 
 load_dotenv(os.getcwd() + "/.env")
 
@@ -48,6 +48,12 @@ API_BASE_URL = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
+# Base URL for metrics collector
+METRICS_COLLECTOR_BASE_URL = os.getenv(
+    "METRICS_COLLECTOR_BASE_URL",
+    API_BASE_URL,
+)
+
 # extra headers expected to be serialised json
 ROBOFLOW_API_EXTRA_HEADERS = os.getenv("ROBOFLOW_API_EXTRA_HEADERS")
 
@@ -64,9 +70,6 @@ AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", None)
 # AWS secret access key, default is None
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", None)
 
-COGVLM_LOAD_4BIT = str2bool(os.getenv("COGVLM_LOAD_4BIT", True))
-COGVLM_LOAD_8BIT = str2bool(os.getenv("COGVLM_LOAD_8BIT", False))
-COGVLM_VERSION_ID = os.getenv("COGVLM_VERSION_ID", "cogvlm-chat-hf")
 PALIGEMMA_VERSION_ID = os.getenv("PALIGEMMA_VERSION_ID", "paligemma-3b-mix-224")
 # CLIP version ID, default is "ViT-B-16"
 CLIP_VERSION_ID = os.getenv("CLIP_VERSION_ID", "ViT-B-16")
@@ -91,8 +94,6 @@ OWLV2_MODEL_CACHE_SIZE = int(os.getenv("OWLV2_MODEL_CACHE_SIZE", 100))
 
 # OWLv2 CPU image cache size, default is 10000
 OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
-
-COMPILE_OWLV2_MODEL = str2bool(os.getenv("COMPILE_OWLV2_MODEL", "True"))
 
 # Maximum batch size for GAZE, default is 8
 GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
@@ -141,9 +142,6 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
     os.getenv("CORE_MODEL_GROUNDINGDINO_ENABLED", True)
 )
 
-# Flag to enable CogVLM core model, default is True
-CORE_MODEL_COGVLM_ENABLED = str2bool(os.getenv("CORE_MODEL_COGVLM_ENABLED", True))
-
 LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
 # Flag to enable YOLO-World core model, default is True
@@ -153,6 +151,11 @@ CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
 
 # ID of host device, default is None
 DEVICE_ID = os.getenv("DEVICE_ID", None)
+
+# Whether or not to use PyTorch for preprocessing, default is False
+USE_PYTORCH_FOR_PREPROCESSING = str2bool(
+    os.getenv("USE_PYTORCH_FOR_PREPROCESSING", False)
+)
 
 # Flag to disable inference cache, default is False
 DISABLE_INFERENCE_CACHE = str2bool(os.getenv("DISABLE_INFERENCE_CACHE", False))
@@ -216,6 +219,9 @@ JSON_RESPONSE = str2bool(os.getenv("JSON_RESPONSE", True))
 # Lambda flag, default is False
 LAMBDA = str2bool(os.getenv("LAMBDA", False))
 
+# Whether is's GCP serverless service
+GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
+
 # Flag to enable legacy route, default is True
 LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
@@ -250,7 +256,7 @@ MEMORY_CACHE_EXPIRE_INTERVAL = int(os.getenv("MEMORY_CACHE_EXPIRE_INTERVAL", 5))
 
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
-if LAMBDA:
+if LAMBDA or GCP_SERVERLESS:
     METRICS_ENABLED = False
 
 # Interval for metrics aggregation, default is 60
@@ -264,6 +270,10 @@ MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
 
 # Model ID, default is None
 MODEL_ID = os.getenv("MODEL_ID")
+
+# Enable the builder, default is False
+ENABLE_BUILDER = str2bool(os.getenv("ENABLE_BUILDER", False))
+BUILDER_ORIGIN = os.getenv("BUILDER_ORIGIN", "https://app.roboflow.com")
 
 # Enable jupyter notebook server route, default is False
 NOTEBOOK_ENABLED = str2bool(os.getenv("NOTEBOOK_ENABLED", False))
@@ -501,3 +511,27 @@ TRANSIENT_ROBOFLOW_API_ERRORS_RETRY_INTERVAL = int(
 ROBOFLOW_API_REQUEST_TIMEOUT = os.getenv("ROBOFLOW_API_REQUEST_TIMEOUT")
 if ROBOFLOW_API_REQUEST_TIMEOUT:
     ROBOFLOW_API_REQUEST_TIMEOUT = int(ROBOFLOW_API_REQUEST_TIMEOUT)
+
+
+IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
+    os.getenv("IGNORE_MODEL_DEPENDENCIES_WARNINGS", "False")
+)
+if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
+    warnings.simplefilter("ignore", ModelDependencyMissing)
+
+DISK_CACHE_CLEANUP = str2bool(os.getenv("DISK_CACHE_CLEANUP", "True"))
+
+# Stream manager configuration
+try:
+    STREAM_MANAGER_MAX_RAM_MB: Optional[float] = abs(
+        float(os.getenv("STREAM_MANAGER_MAX_RAM_MB"))
+    )
+except:
+    STREAM_MANAGER_MAX_RAM_MB: Optional[float] = None
+
+try:
+    STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE: int = abs(
+        int(os.getenv("STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE"))
+    )
+except:
+    STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE = 10

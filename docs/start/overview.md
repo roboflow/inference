@@ -75,5 +75,5 @@ pip install inference-cli
 inference server start
 ```
 
-For detailed instructions on various systems, see our [installation guide](/install/index.md)
-then see [next steps](/start/next.md) to connect to your new Inference Server.
+For detailed instructions on various systems, see our [installation guide](../install/index.md)
+then see [next steps](./next.md) to connect to your new Inference Server.

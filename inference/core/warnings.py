@@ -4,3 +4,7 @@ class InferenceDeprecationWarning(Warning):
 
 class InferenceExperimentalFeatureWarning(Warning):
     pass
+
+
+class ModelDependencyMissing(Warning):
+    pass

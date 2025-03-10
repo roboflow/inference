@@ -2,6 +2,7 @@ import gc
 import hashlib
 import os
 import pickle
+import threading
 import weakref
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
@@ -14,6 +15,7 @@ import torchvision
 from transformers import Owlv2ForObjectDetection, Owlv2Processor
 from transformers.models.owlv2.modeling_owlv2 import box_iou
 
+from inference.core import logger
 from inference.core.cache.model_artifacts import save_bytes_in_cache
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.entities.responses.inference import (
@@ -22,7 +24,6 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.env import (
-    COMPILE_OWLV2_MODEL,
     DEVICE,
     MAX_DETECTIONS,
     MODEL_CACHE_DIR,
@@ -30,6 +31,7 @@ from inference.core.env import (
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
     OWLV2_VERSION_ID,
+    OWLV2_COMPILE_MODEL,
 )
 from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
 from inference.core.models.roboflow import (
@@ -90,14 +92,18 @@ class LimitedSizeDict(OrderedDict):
                 self.popitem(last=False)
 
 
+
+
 class Owlv2Singleton:
     _instances = weakref.WeakValueDictionary()
 
     def __new__(cls, huggingface_id: str):
         if huggingface_id not in cls._instances:
+            logger.info(f"Creating new OWLv2 instance for {huggingface_id}")
             instance = super().__new__(cls)
             instance.huggingface_id = huggingface_id
             # Load model directly in the instance
+            logger.info(f"Loading OWLv2 model from {huggingface_id}")
             model = (
                 Owlv2ForObjectDetection.from_pretrained(huggingface_id)
                 .eval()
@@ -235,7 +241,7 @@ def get_class_preds_from_embeds(
 
 
 def make_class_map(
-    query_embeddings: Dict[str, PosNegDictType]
+    query_embeddings: Dict[str, PosNegDictType],
 ) -> Tuple[Dict[Tuple[str, str], int], List[str]]:
     class_names = sorted(list(query_embeddings.keys()))
     class_map_positive = {
@@ -846,6 +852,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         raise NotImplementedError("Owlv2 not currently supported on hosted inference")
 
     def download_model_artifacts_from_roboflow_api(self):
+        logger.info(f"Downloading OWLv2 model artifacts")
         if self.version_id is not None:
             api_data = get_roboflow_model_data(
                 api_key=self.api_key,
@@ -858,10 +865,12 @@ class SerializedOwlV2(RoboflowInferenceModel):
                 raise ModelArtefactError(
                     "Could not find `model` key in roboflow API model description response."
                 )
+            logger.info(f"Downloading OWLv2 model weights from {api_data['model']}")
             model_weights_response = get_from_url(
                 api_data["model"], json_response=False
             )
         else:
+            logger.info(f"Getting OWLv2 model data for")
             api_data = get_roboflow_instant_model_data(
                 api_key=self.api_key,
                 model_id=self.endpoint,
@@ -874,6 +883,9 @@ class SerializedOwlV2(RoboflowInferenceModel):
                 raise ModelArtefactError(
                     "Could not find `modelFiles` key or `modelFiles`.`owlv2` or `modelFiles`.`owlv2`.`model` key in roboflow API model description response."
                 )
+            logger.info(
+                f"Downloading OWLv2 model weights from {api_data['modelFiles']['owlv2']['model']}"
+            )
             model_weights_response = get_from_url(
                 api_data["modelFiles"]["owlv2"]["model"], json_response=False
             )
@@ -882,6 +894,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
             file=self.weights_file,
             model_id=self.endpoint,
         )
+        logger.info(f"OWLv2 model weights saved to cache")
 
     def load_model_artifacts_from_cache(self):
         print("Loading model artifacts from cache...")
@@ -914,13 +927,16 @@ class SerializedOwlV2(RoboflowInferenceModel):
     def infer(
         self, image, confidence: float = 0.99, iou_threshold: float = 0.3, **kwargs
     ):
-        return self.owlv2.infer_from_embedding_dict(
+        logger.info(f"Inferring OWLv2 model")
+        result = self.owlv2.infer_from_embedding_dict(
             image,
             self.train_data_dict,
             confidence=confidence,
             iou_threshold=iou_threshold,
             **kwargs,
         )
+        logger.info(f"OWLv2 model inference complete")
+        return result
 
     def draw_predictions(
         self,

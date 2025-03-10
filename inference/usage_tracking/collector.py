@@ -18,6 +18,7 @@ from typing_extensions import ParamSpec
 from inference.core.env import (
     API_KEY,
     DEDICATED_DEPLOYMENT_ID,
+    GCP_SERVERLESS,
     LAMBDA,
     REDIS_HOST,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -88,11 +89,11 @@ class UsageCollector:
             api_plan_endpoint_url=self._settings.api_plan_endpoint_url,
             sqlite_cache_enabled=False,
         )
-        if LAMBDA and REDIS_HOST:
+        if (LAMBDA or GCP_SERVERLESS) and REDIS_HOST:
             logger.debug("Persistence through RedisQueue")
             self._queue: "Queue[UsagePayload]" = RedisQueue()
             self._api_keys_hashing_enabled = False
-        elif LAMBDA or self._settings.opt_out:
+        elif (LAMBDA or GCP_SERVERLESS) or self._settings.opt_out:
             logger.debug("No persistence")
             self._queue: "Queue[UsagePayload]" = Queue(
                 maxsize=self._settings.queue_size
@@ -149,12 +150,13 @@ class UsageCollector:
             "category": "",
             "resource_id": "",
             "resource_details": "{}",
-            "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID),
+            "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID) or GCP_SERVERLESS,
             "api_key_hash": "",
             "is_gpu_available": False,
             "python_version": sys.version.split()[0],
             "inference_version": inference_version,
             "enterprise": False,
+            "execution_duration": 0,
         }
         if ROBOFLOW_INTERNAL_SERVICE_SECRET:
             usage_dict["roboflow_internal_secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
@@ -325,6 +327,7 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
+        execution_duration: float = 0,
     ):
         source = str(source) if source else ""
         try:
@@ -359,6 +362,7 @@ class UsageCollector:
             source_usage["hostname"] = hostname
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
+            source_usage["execution_duration"] += execution_duration
             logger.debug("Updated usage: %s", source_usage)
 
     def record_usage(
@@ -371,6 +375,7 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
+        execution_duration: float = 0,
     ):
         if not api_key:
             return
@@ -392,6 +397,7 @@ class UsageCollector:
             resource_id=resource_id,
             inference_test_run=inference_test_run,
             fps=fps,
+            execution_duration=execution_duration,
         )
 
     async def async_record_usage(
@@ -404,6 +410,7 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
+        execution_duration: float = 0,
     ):
         if self._async_lock:
             async with self._async_lock:
@@ -416,6 +423,7 @@ class UsageCollector:
                     resource_id=resource_id,
                     inference_test_run=inference_test_run,
                     fps=fps,
+                    execution_duration=execution_duration,
                 )
         else:
             self.record_usage(
@@ -427,6 +435,7 @@ class UsageCollector:
                 resource_id=resource_id,
                 inference_test_run=inference_test_run,
                 fps=fps,
+                execution_duration=execution_duration,
             )
 
     def _usage_collector(self):
@@ -519,7 +528,7 @@ class UsageCollector:
 
     @staticmethod
     def _resource_details_from_workflow_json(
-        workflow_json: Dict[str, Any]
+        workflow_json: Dict[str, Any],
     ) -> List[str]:
         return [
             f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"
@@ -535,6 +544,7 @@ class UsageCollector:
         usage_workflow_preview: bool,
         usage_inference_test_run: bool,
         usage_billable: bool,
+        execution_duration: float,
         func: Callable[[Any], Any],
         args: List[Any],
         kwargs: Dict[str, Any],
@@ -636,6 +646,7 @@ class UsageCollector:
             "resource_id": resource_id,
             "inference_test_run": usage_inference_test_run,
             "fps": usage_fps,
+            "execution_duration": execution_duration,
         }
 
     def __call__(self, func: Callable[P, T]) -> Callable[P, T]:
@@ -650,7 +661,9 @@ class UsageCollector:
             usage_billable: bool = True,
             **kwargs: P.kwargs,
         ) -> T:
+            t1 = time.time()
             res = func(*args, **kwargs)
+            t2 = time.time()
             self.record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
@@ -659,6 +672,7 @@ class UsageCollector:
                     usage_workflow_preview=usage_workflow_preview,
                     usage_inference_test_run=usage_inference_test_run,
                     usage_billable=usage_billable,
+                    execution_duration=(t2 - t1),
                     func=func,
                     args=args,
                     kwargs=kwargs,
@@ -677,7 +691,9 @@ class UsageCollector:
             usage_billable: bool = True,
             **kwargs: P.kwargs,
         ) -> T:
+            t1 = time.time()
             res = await func(*args, **kwargs)
+            t2 = time.time()
             await self.async_record_usage(
                 **self._extract_usage_params_from_func_kwargs(
                     usage_fps=usage_fps,
@@ -686,6 +702,7 @@ class UsageCollector:
                     usage_workflow_preview=usage_workflow_preview,
                     usage_inference_test_run=usage_inference_test_run,
                     usage_billable=usage_billable,
+                    execution_duration=(t2 - t1),
                     func=func,
                     args=args,
                     kwargs=kwargs,

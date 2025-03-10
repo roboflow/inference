@@ -26,7 +26,7 @@ ELIGIBLE_PREDICTION_TYPES = {
 
 
 def initialize_close_to_threshold_sampling(
-    strategy_config: Dict[str, Any]
+    strategy_config: Dict[str, Any],
 ) -> SamplingMethod:
     try:
         selected_class_names = strategy_config.get("selected_class_names")

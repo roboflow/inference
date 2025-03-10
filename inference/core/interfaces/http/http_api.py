@@ -3,14 +3,14 @@ import base64
 import os
 import traceback
 from functools import partial, wraps
+from pathlib import Path as Pathlib
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
 
 import asgi_correlation_id
 import uvicorn
 from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
 from starlette.convertors import StringConvertor, register_url_convertor
@@ -23,7 +23,6 @@ from inference.core.entities.requests.clip import (
     ClipImageEmbeddingRequest,
     ClipTextEmbeddingRequest,
 )
-from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
 from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
@@ -63,7 +62,6 @@ from inference.core.entities.responses.clip import (
     ClipCompareResponse,
     ClipEmbeddingResponse,
 )
-from inference.core.entities.responses.cogvlm import CogVLMResponse
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -101,8 +99,8 @@ from inference.core.entities.responses.workflows import (
 from inference.core.env import (
     ALLOW_ORIGINS,
     API_KEY,
+    BUILDER_ORIGIN,
     CORE_MODEL_CLIP_ENABLED,
-    CORE_MODEL_COGVLM_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
     CORE_MODEL_GROUNDINGDINO_ENABLED,
@@ -115,9 +113,11 @@ from inference.core.env import (
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DISABLE_WORKFLOW_ENDPOINTS,
     DOCKER_SOCKET_PATH,
+    ENABLE_BUILDER,
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
+    GCP_SERVERLESS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -163,6 +163,7 @@ from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
+from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
 from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.interfaces.stream_manager.api.entities import (
@@ -574,8 +575,10 @@ class HttpInterface(BaseInterface):
             app.add_middleware(LambdaMiddleware)
 
         if len(ALLOW_ORIGINS) > 0:
+            # Add CORS Middleware (but not for /build**, which is controlled separately)
             app.add_middleware(
-                CORSMiddleware,
+                PathAwareCORSMiddleware,
+                match_paths=r"^(?!/build).*",
                 allow_origins=ALLOW_ORIGINS,
                 allow_credentials=True,
                 allow_methods=["*"],
@@ -612,7 +615,7 @@ class HttpInterface(BaseInterface):
                     self.model_manager.num_errors += 1
                 return response
 
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get("/device/stats")
             async def device_stats():
@@ -652,6 +655,7 @@ class HttpInterface(BaseInterface):
                         "/docs",
                         "/redoc",
                         "/info",
+                        "/openapi.json",  # needed for /docs and /redoc
                         "/workflows/blocks/describe",
                         "/workflows/definition/schema",
                     ]
@@ -854,7 +858,6 @@ class HttpInterface(BaseInterface):
         Returns:
         The DocTR model ID.
         """
-        load_cogvlm_model = partial(load_core_model, core_model="cogvlm")
         load_paligemma_model = partial(load_core_model, core_model="paligemma")
 
         load_grounding_dino_model = partial(
@@ -912,7 +915,7 @@ class HttpInterface(BaseInterface):
             )
 
         # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get(
                 "/model/registry",
@@ -1004,6 +1007,9 @@ class HttpInterface(BaseInterface):
                 return ModelsDescriptions.from_models_descriptions(
                     models_descriptions=models_descriptions
                 )
+
+        # these NEW endpoints need authentication protection
+        if not LAMBDA and not GCP_SERVERLESS:
 
             @app.post(
                 "/infer/object_detection",
@@ -1232,7 +1238,9 @@ class HttpInterface(BaseInterface):
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
-                    background_tasks=background_tasks if not LAMBDA else None,
+                    background_tasks=(
+                        background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
+                    ),
                     profiler=profiler,
                 )
 
@@ -1264,7 +1272,9 @@ class HttpInterface(BaseInterface):
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_request.specification,
-                    background_tasks=background_tasks if not LAMBDA else None,
+                    background_tasks=(
+                        background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
+                    ),
                     profiler=profiler,
                 )
 
@@ -1347,7 +1357,7 @@ class HttpInterface(BaseInterface):
             )
             @with_route_exceptions
             async def get_dynamic_block_outputs(
-                step_manifest: Dict[str, Any]
+                step_manifest: Dict[str, Any],
             ) -> List[OutputDefinition]:
                 # TODO: get rid of async: https://github.com/roboflow/inference/issues/569
                 # Potentially TODO: dynamic blocks do not support dynamic outputs, but if it changes
@@ -1501,7 +1511,7 @@ class HttpInterface(BaseInterface):
         if (
             (PRELOAD_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
             and API_KEY
-            and not LAMBDA
+            and not (LAMBDA or GCP_SERVERLESS)
         ):
 
             class ModelInitState:
@@ -2063,46 +2073,6 @@ class HttpInterface(BaseInterface):
                         trackUsage(gaze_model_id, actor)
                     return response
 
-            if CORE_MODEL_COGVLM_ENABLED:
-
-                @app.post(
-                    "/llm/cogvlm",
-                    response_model=CogVLMResponse,
-                    summary="CogVLM",
-                    description="Run the CogVLM model to chat or describe an image.",
-                )
-                @with_route_exceptions
-                async def cog_vlm(
-                    inference_request: CogVLMInferenceRequest,
-                    request: Request,
-                    api_key: Optional[str] = Query(
-                        None,
-                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
-                    ),
-                ):
-                    """
-                    Chat with CogVLM or ask it about an image. Multi-image requests not currently supported.
-
-                    Args:
-                        inference_request (M.CogVLMInferenceRequest): The request containing the prompt and image to be described.
-                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
-                        request (Request, default Body()): The HTTP request.
-
-                    Returns:
-                        M.CogVLMResponse: The model's text response
-                    """
-                    logger.debug(f"Reached /llm/cogvlm")
-                    cog_model_id = load_cogvlm_model(inference_request, api_key=api_key)
-                    response = await self.model_manager.infer_from_request(
-                        cog_model_id, inference_request
-                    )
-                    if LAMBDA:
-                        actor = request.scope["aws.event"]["requestContext"][
-                            "authorizer"
-                        ]["lambda"]["actor"]
-                        trackUsage(cog_model_id, actor)
-                    return response
-
             if CORE_MODEL_TROCR_ENABLED:
 
                 @app.post(
@@ -2145,7 +2115,7 @@ class HttpInterface(BaseInterface):
                         trackUsage(trocr_model_id, actor)
                     return response
 
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get(
                 "/notebook/start",
@@ -2184,6 +2154,24 @@ class HttpInterface(BaseInterface):
                         }
                     else:
                         return RedirectResponse(f"/notebook-instructions.html")
+
+        if ENABLE_BUILDER:
+            from inference.core.interfaces.http.builder.routes import (
+                router as builder_router,
+            )
+
+            # Allow CORS on only the API, but not the builder UI/iframe (where the CSRF is passed)
+            app.add_middleware(
+                PathAwareCORSMiddleware,
+                match_paths=r"^/build/api.*",
+                allow_origins=[BUILDER_ORIGIN],
+                allow_methods=["*"],
+                allow_headers=["*"],
+                allow_credentials=True,
+            )
+
+            # Attach all routes from builder to the /build prefix
+            app.include_router(builder_router, prefix="/build", tags=["builder"])
 
         if LEGACY_ROUTE_ENABLED:
 
@@ -2461,7 +2449,7 @@ class HttpInterface(BaseInterface):
                 else:
                     return orjson_response(inference_response)
 
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
             # Legacy clear cache endpoint for backwards compatability
             @app.get("/clear_cache", response_model=str)
             async def legacy_clear_cache():
