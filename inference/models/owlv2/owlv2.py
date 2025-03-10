@@ -745,12 +745,14 @@ class OwlV2(RoboflowInferenceModel):
         return responses
 
 
-# At module level
-_cached_owlv2_instances = {}
 
 class SerializedOwlV2(RoboflowInferenceModel):
     task_type = "object-detection"
     box_format = "xywh"
+    
+    # Cache of OwlV2 instances to avoid creating new ones for each serialize_training_data call
+    # This improves performance by reusing model instances across serialization operations
+    _base_owlv2_instances = {}  
 
     @classmethod
     def serialize_training_data(
@@ -761,17 +763,16 @@ class SerializedOwlV2(RoboflowInferenceModel):
         save_dir: str = os.path.join(MODEL_CACHE_DIR, "owl-v2-serialized-data"),
         previous_embeddings_file: str = None,
     ):
-        global _cached_owlv2_instances
         roboflow_id = hf_id.replace("google/", "owlv2/")
         
         # Always check cache first, regardless of previous_embeddings_file
-        if roboflow_id in _cached_owlv2_instances:
+        if roboflow_id in cls._base_owlv2_instances:
             print(f"Using cached OwlV2 instance for roboflow id: {roboflow_id}")
-            owlv2 = _cached_owlv2_instances[roboflow_id]
+            owlv2 = cls._base_owlv2_instances[roboflow_id]
         else:
             print(f"Creating new OwlV2 instance for roboflow id: {roboflow_id}")
             owlv2 = OwlV2(model_id=roboflow_id)
-            _cached_owlv2_instances[roboflow_id] = owlv2
+            cls._base_owlv2_instances[roboflow_id] = owlv2
         
         # Now handle previous_embeddings_file separately
         if previous_embeddings_file is not None:
