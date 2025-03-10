@@ -690,6 +690,9 @@ class OwlV2(RoboflowInferenceModel):
             process_time = time.time() - start_time
             print(f"Processing image {i+1}/{len(wrapped_training_data)} took {process_time:.2f} seconds")
 
+            print("Deleted train_image")
+            del train_image
+
             if embeddings is None:
                 continue
 
@@ -697,12 +700,8 @@ class OwlV2(RoboflowInferenceModel):
                 class_embeddings_dict[class_name][bool_to_literal[is_pos]].append(
                     embedding
                 )
-
-
-            print("Deleted train_image")
-            del train_image
-            gc.collect()
-
+            
+        gc.collect()
         # Convert lists of embeddings to tensors.
         class_embeddings_dict = {
             k: {
