@@ -301,6 +301,9 @@ from inference.core.workflows.core_steps.transformations.detections_filter.v1 im
 from inference.core.workflows.core_steps.transformations.detections_transformation.v1 import (
     DetectionsTransformationBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.detections_union.v1 import (
+    DetectionsUnionBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import (
     DynamicCropBlockV1,
 )
@@ -524,6 +527,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         BlurVisualizationBlockV1,
         BoundingBoxVisualizationBlockV1,
         BoundingRectBlockV1,
+        DetectionsUnionBlockV1,
         ByteTrackerBlockV2,
         CacheGetBlockV1,
         CacheSetBlockV1,

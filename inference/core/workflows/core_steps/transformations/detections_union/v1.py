@@ -1,0 +1,118 @@
+from typing import Any, Dict, List, Literal, Optional, Type
+
+import numpy as np
+import supervision as sv
+from pydantic import ConfigDict, Field
+
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
+from inference.core.workflows.execution_engine.entities.types import (
+    OBJECT_DETECTION_PREDICTION_KIND,
+    Selector,
+)
+from inference.core.workflows.prototypes.block import (
+    BlockResult,
+    WorkflowBlock,
+    WorkflowBlockManifest,
+)
+
+OUTPUT_KEY: str = "predictions"
+
+SHORT_DESCRIPTION = "Merge multiple detections into a single bounding box."
+LONG_DESCRIPTION = """
+The `DetectionsUnion` block combines multiple detections into a single bounding box that encompasses all input detections.
+This is useful when you want to:
+- Merge overlapping or nearby detections of the same object
+- Create a single region that contains multiple detected objects
+- Simplify multiple detections into one larger detection
+
+The resulting detection will have:
+- A bounding box that contains all input detections
+- The class_id and confidence from the first detection in the input
+"""
+
+
+class DetectionsUnionManifest(WorkflowBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "Detections Union",
+            "version": "v1",
+            "short_description": SHORT_DESCRIPTION,
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
+            "block_type": "transformation",
+            "ui_manifest": {
+                "section": "transformation",
+                "icon": "fal fa-object-union",
+                "blockPriority": 5,
+            },
+        }
+    )
+    type: Literal["roboflow_core/detections_union@v1"]
+    predictions: Selector(
+        kind=[
+            OBJECT_DETECTION_PREDICTION_KIND,
+        ]
+    ) = Field(
+        description="Object detection predictions to merge into a single bounding box.",
+        examples=["$steps.object_detection_model.predictions"],
+    )
+
+    @classmethod
+    def describe_outputs(cls) -> List[OutputDefinition]:
+        return [
+            OutputDefinition(name=OUTPUT_KEY, kind=[OBJECT_DETECTION_PREDICTION_KIND]),
+        ]
+
+    @classmethod
+    def get_execution_engine_compatibility(cls) -> Optional[str]:
+        return ">=1.3.0,<2.0.0"
+
+
+def calculate_union_bbox(detections: sv.Detections) -> np.ndarray:
+    """Calculate a single bounding box that contains all input detections."""
+    if len(detections) == 0:
+        return np.array([])
+
+    # Get all bounding boxes
+    xyxy = detections.xyxy
+
+    # Calculate the union by taking min/max coordinates
+    x1 = np.min(xyxy[:, 0])
+    y1 = np.min(xyxy[:, 1])
+    x2 = np.max(xyxy[:, 2])
+    y2 = np.max(xyxy[:, 3])
+
+    return np.array([[x1, y1, x2, y2]])
+
+
+class DetectionsUnionBlockV1(WorkflowBlock):
+    @classmethod
+    def get_manifest(cls) -> Type[WorkflowBlockManifest]:
+        return DetectionsUnionManifest
+
+    def run(
+        self,
+        predictions: sv.Detections,
+    ) -> BlockResult:
+        if predictions is None or len(predictions) == 0:
+            return {OUTPUT_KEY: sv.Detections(xyxy=np.array([]))}
+
+        # Calculate the union bounding box
+        union_bbox = calculate_union_bbox(predictions)
+
+        # Create a new detection with the union bbox and ensure numpy arrays for all fields
+        merged_detection = sv.Detections(
+            xyxy=union_bbox,
+            confidence=(
+                np.array([predictions.confidence[0]], dtype=np.float32)
+                if predictions.confidence is not None
+                else None
+            ),
+            class_id=(
+                np.array([predictions.class_id[0]], dtype=np.int32)
+                if predictions.class_id is not None
+                else None
+            ),
+        )
+
+        return {OUTPUT_KEY: merged_detection}
