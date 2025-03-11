@@ -717,6 +717,23 @@ class SerializedOwlV2(RoboflowInferenceModel):
     _base_owlv2_instances = {}
 
     @classmethod
+    def get_or_create_owlv2_instance(cls, roboflow_id: str) -> OwlV2:
+        """Get an existing OwlV2 instance from cache or create a new one if it doesn't exist.
+        
+        Args:
+            roboflow_id: The model ID for the OwlV2 model
+            
+        Returns:
+            An OwlV2 instance
+        """
+        if roboflow_id in cls._base_owlv2_instances:
+            return cls._base_owlv2_instances[roboflow_id]
+        else:
+            owlv2 = OwlV2(model_id=roboflow_id)
+            cls._base_owlv2_instances[roboflow_id] = owlv2
+            return owlv2
+
+    @classmethod
     def serialize_training_data(
         cls,
         training_data: List[Any],
@@ -726,12 +743,8 @@ class SerializedOwlV2(RoboflowInferenceModel):
         previous_embeddings_file: str = None,
     ):
         roboflow_id = hf_id.replace("google/", "owlv2/")
-
-        if roboflow_id in cls._base_owlv2_instances:
-            owlv2 = cls._base_owlv2_instances[roboflow_id]
-        else:
-            owlv2 = OwlV2(model_id=roboflow_id)
-            cls._base_owlv2_instances[roboflow_id] = owlv2
+        
+        owlv2 = cls.get_or_create_owlv2_instance(roboflow_id)
 
         if previous_embeddings_file is not None:
             if DEVICE == "cpu":
@@ -844,8 +857,8 @@ class SerializedOwlV2(RoboflowInferenceModel):
         self.train_data_dict = self.model_data["train_data_dict"]
         self.huggingface_id = self.model_data["huggingface_id"]
         self.roboflow_id = self.model_data["roboflow_id"]
-        # each model can have its own OwlV2 instance because we use a singleton
-        self.owlv2 = OwlV2(model_id=self.roboflow_id)
+        # Use the same cached OwlV2 instance mechanism to avoid creating duplicates
+        self.owlv2 = self.__class__.get_or_create_owlv2_instance(self.roboflow_id)
         self.owlv2.cpu_image_embed_cache = self.model_data["image_embeds"]
 
     weights_file_path = "weights.pt"
