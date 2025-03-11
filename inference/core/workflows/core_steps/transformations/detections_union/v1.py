@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Literal, Optional, Type
+from uuid import uuid4
 
 import numpy as np
 import supervision as sv
@@ -113,6 +114,10 @@ class DetectionsUnionBlockV1(WorkflowBlock):
                 if predictions.class_id is not None
                 else None
             ),
+            data={
+                "class_name": np.array([predictions.data["class_name"][0]]),
+                "detection_id": np.array([str(uuid4())]),
+            },
         )
 
         return {OUTPUT_KEY: merged_detection}
