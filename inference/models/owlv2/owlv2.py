@@ -103,7 +103,7 @@ class Owlv2Singleton:
                 .eval()
                 .to(DEVICE)
             )
-            
+
             if OWLV2_COMPILE_MODEL:
                 torch._dynamo.config.suppress_errors = True
                 model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
@@ -719,10 +719,10 @@ class SerializedOwlV2(RoboflowInferenceModel):
     @classmethod
     def get_or_create_owlv2_instance(cls, roboflow_id: str) -> OwlV2:
         """Get an existing OwlV2 instance from cache or create a new one if it doesn't exist.
-        
+
         Args:
             roboflow_id: The model ID for the OwlV2 model
-            
+
         Returns:
             An OwlV2 instance
         """
@@ -743,7 +743,7 @@ class SerializedOwlV2(RoboflowInferenceModel):
         previous_embeddings_file: str = None,
     ):
         roboflow_id = hf_id.replace("google/", "owlv2/")
-        
+
         owlv2 = cls.get_or_create_owlv2_instance(roboflow_id)
 
         if previous_embeddings_file is not None:
