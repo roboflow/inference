@@ -15,16 +15,10 @@ You can use Qwen2.5 VL to:
 
 ## Installation
 
-To install inference with the extra dependencies necessary to run Qwen2.5 VL, run:
+To use Qwen2.5 VL with the Inference SDK, install:
 
 ```bash
-pip install inference[transformers]
-```
-
-or
-
-```bash
-pip install inference-gpu[transformers]
+pip install inference-sdk
 ```
 
 ## How to Use Qwen2.5 VL (Visual Question Answering)
@@ -32,92 +26,113 @@ pip install inference-gpu[transformers]
 Create a new Python file called `app.py` and add the following code:
 
 ```python
-import inference
-from inference.models.qwen25vl.qwen25vl import Qwen25VL
+from inference_sdk import InferenceHTTPClient
 
-# Initialize the model
-model = Qwen25VL("qwen2.5-vl-7b", api_key="YOUR ROBOFLOW API KEY")
+def run_qwen25_inference():
+    # Create a client pointing to your inference server
+    client = InferenceHTTPClient(
+        api_url="http://localhost:9001",  # You can also use a remote server if needed
+        api_key="YOUR_API_KEY"            # Optional if your model requires an API key
+    )
+    
+    # Invoke the model with an image and a prompt
+    result = client.run_workflow(
+        workspace_name="YOUR_WORKSPACE_NAME",  # Replace with your workspace name
+        workflow_id="image-text/93",           # The model or workflow id
+        images={
+            "image": "https://media.roboflow.com/dog.jpeg"  # Can be a URL or local path
+        },
+        parameters={
+            "prompt": "Tell me something about this dog!"
+        }
+    )
+    
+    print(result)
 
-# Load an image
-from PIL import Image
-image = Image.open("image.jpg")  # Change to your image path
-
-# Define your prompt
-prompt = "What objects are in this image?"
-
-# Make a prediction
-result = model.predict(image, prompt)
-print(result)
+if __name__ == "__main__":
+    run_qwen25_inference()
 ```
 
 In this code, we:
-1. Load the Qwen2.5 VL model
-2. Load an image
+1. Create an Inference HTTP client that connects to your inference server
+2. Specify an image (either by URL or local path)
 3. Define a prompt to ask about the image
 4. Run the model and print the results
 
-To use Qwen2.5 VL with Inference, you will need a Roboflow API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com).
+To use Qwen2.5 VL with Inference, you will need an API key. If you don't already have a Roboflow account, [sign up for a free Roboflow account](https://app.roboflow.com).
 
 ## How to Use Qwen2.5 VL (Object Detection)
 
-Create a new Python file called `app.py` and add the following code:
+Create a new Python file called `object_detection.py` and add the following code:
 
 ```python
-import inference
-from inference.models.qwen25vl.qwen25vl import Qwen25VL
-from PIL import Image
+from inference_sdk import InferenceHTTPClient
 import json
-
-# Initialize the model
-model = Qwen25VL("qwen2.5-vl-7b", api_key="YOUR ROBOFLOW API KEY")
-
-# Load an image
-image = Image.open("image.jpg")  # Change to your image path
-
-# Define your detection prompt
-prompt = "Detect all objects in this image and return their locations as JSON."
-
-# Make a prediction
-result = model.predict(image, prompt)[0]
-print(result)
-
-# If you want to visualize the results, you can use supervision
 import supervision as sv
 import numpy as np
+from PIL import Image
 
-# Parse the JSON result
-detections_data = json.loads(result)
+def run_qwen25_object_detection():
+    # Create a client pointing to your inference server
+    client = InferenceHTTPClient(
+        api_url="http://localhost:9001",
+        api_key="YOUR_API_KEY"
+    )
+    
+    # Path to your local image
+    image_path = "path/to/your/image.jpg"
+    
+    # Invoke the model with an image and a detection prompt
+    result = client.run_workflow(
+        workspace_name="YOUR_WORKSPACE_NAME",
+        workflow_id="image-text/93",
+        images={
+            "image": image_path
+        },
+        parameters={
+            "prompt": "Detect all objects in this image and return their locations as JSON."
+        }
+    )
+    
+    # Parse the JSON result
+    detections_data = json.loads(result[0])
+    
+    # Load the image for visualization
+    image = Image.open(image_path)
+    
+    # Create a Detections object
+    xyxy_list = []
+    class_name_list = []
+    
+    for detection in detections_data:
+        if "bbox_2d" in detection:
+            xyxy_list.append(detection["bbox_2d"])
+            class_name_list.append(detection["label"])
+    
+    xyxy = np.array(xyxy_list)
+    class_name = np.array(class_name_list)
+    
+    detections = sv.Detections(
+        xyxy=xyxy,
+        class_id=None,
+        data={'class_name': class_name}
+    )
+    
+    # Visualize
+    bounding_box_annotator = sv.BoxAnnotator()
+    label_annotator = sv.LabelAnnotator()
+    
+    annotated_image = bounding_box_annotator.annotate(image, detections)
+    annotated_image = label_annotator.annotate(annotated_image, detections)
+    sv.plot_image(annotated_image)
 
-# Create a Detections object
-xyxy_list = []
-class_name_list = []
-
-for detection in detections_data:
-    if "bbox_2d" in detection:
-        xyxy_list.append(detection["bbox_2d"])
-        class_name_list.append(detection["label"])
-
-xyxy = np.array(xyxy_list)
-class_name = np.array(class_name_list)
-
-detections = sv.Detections(
-    xyxy=xyxy,
-    class_id=None,
-    data={'class_name': class_name}
-)
-
-# Visualize
-bounding_box_annotator = sv.BoxAnnotator()
-label_annotator = sv.LabelAnnotator()
-
-annotated_image = bounding_box_annotator.annotate(image, detections)
-annotated_image = label_annotator.annotate(annotated_image, detections)
-sv.plot_image(annotated_image)
+if __name__ == "__main__":
+    run_qwen25_object_detection()
 ```
 
 This code will:
-1. Load the Qwen2.5 VL model
-2. Ask it to detect objects in an image
+1. Connect to your inference server
+2. Ask Qwen2.5 VL to detect objects in an image
 3. Parse the results (which come in JSON format)
 4. Visualize the detections with bounding boxes
 
@@ -126,32 +141,36 @@ This code will:
 You can customize the model's behavior by providing a system prompt:
 
 ```python
-# Define system prompt and query
-prompt = "Identify all landmarks in this image"
-system_prompt = "You are an expert in world landmarks recognition"
+from inference_sdk import InferenceHTTPClient
 
-# Combine them
-combined_prompt = f"{prompt}<system_prompt>{system_prompt}"
+# Create a client pointing to your inference server
+client = InferenceHTTPClient(
+    api_url="http://localhost:9001",
+    api_key="YOUR_API_KEY"
+)
 
-# Make a prediction
-result = model.predict(image, combined_prompt)
+# Invoke the model with a system prompt
+result = client.run_workflow(
+    workspace_name="YOUR_WORKSPACE_NAME",
+    workflow_id="image-text/93",
+    images={
+        "image": "path/to/image.jpg"
+    },
+    parameters={
+        "prompt": "Identify all landmarks in this image<system_prompt>You are an expert in world landmarks recognition"
+    }
+)
+
+print(result)
 ```
+
+The system prompt is appended to the user prompt with the `<system_prompt>` delimiter.
 
 ## Model Variants
 
-Qwen2.5 VL is available in multiple sizes:
-- Qwen2.5-VL-3B: Smaller model suitable for edge devices
-- Qwen2.5-VL-7B: Medium-sized model with good performance
-- Qwen2.5-VL-72B: Large model with state-of-the-art capabilities
+Qwen2.5 VL is currently only available as Qwen2.5-VL-7B.
 
-You can also use the LoRA versions of these models:
-
-```python
-from inference.models.qwen25vl.qwen25vl import LoRAQwen25VL
-
-# Initialize a LoRA model
-lora_model = LoRAQwen25VL("qwen2.5-vl-7b-lora", api_key="YOUR ROBOFLOW API KEY")
-```
+The workflow ID may vary depending on which model variant you're using. Contact your administrator or refer to your deployment documentation for the correct workflow ID.
 
 ## Learn More
 
