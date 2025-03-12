@@ -328,7 +328,7 @@ class ModelManager:
         self.check_for_model(model_id)
         return self._models[model_id].task_type
 
-    def remove(self, model_id: str) -> None:
+    def remove(self, model_id: str, delete_from_disk: bool = True) -> None:
         """Removes a model from the manager.
 
         Args:
@@ -337,7 +337,7 @@ class ModelManager:
         try:
             logger.debug(f"Removing model {model_id} from base model manager")
             self.check_for_model(model_id)
-            self._models[model_id].clear_cache()
+            self._models[model_id].clear_cache(delete_from_disk=delete_from_disk)
             del self._models[model_id]
         except InferenceModelNotFound:
             logger.warning(
