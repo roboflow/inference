@@ -4,15 +4,17 @@ import tarfile
 import tempfile
 from datetime import datetime, timedelta, timezone
 from functools import partial
+from io import BytesIO
 from multiprocessing.pool import Pool, ThreadPool
 from threading import Lock
-from typing import Dict, Generator, List, Optional, Set, TextIO, Tuple
+from typing import Dict, Generator, List, Optional, Set, TextIO, Tuple, Union
 from urllib.parse import urlparse
 from uuid import uuid4
 
 import backoff
 import requests
 import supervision as sv
+from pydantic import BaseModel, ValidationError
 from requests import Timeout
 from rich.console import Console
 from rich.panel import Panel
@@ -25,6 +27,7 @@ from inference_cli.lib.env import API_BASE_URL
 from inference_cli.lib.roboflow_cloud.common import (
     get_workspace,
     handle_response_errors,
+    read_json_file,
 )
 from inference_cli.lib.roboflow_cloud.config import (
     MAX_DOWNLOAD_THREADS,
@@ -39,10 +42,13 @@ from inference_cli.lib.roboflow_cloud.data_staging.entities import (
     BatchMetadata,
     DownloadLogEntry,
     FileMetadata,
+    ImagesReferenceIngestResponse,
     ListBatchesResponse,
     ListBatchResponse,
     ListMultipartBatchPartsResponse,
     MultipartBatchPartMetadata,
+    PageOfBatchShardsStatuses,
+    ShardDetails,
 )
 from inference_cli.lib.roboflow_cloud.errors import (
     RetryError,
@@ -210,14 +216,14 @@ def get_content_of_simple_or_sharded_batch(
         saver = MetadataSaver.init(file_path=output_file)
         on_new_metadata = saver.save_metadata
     else:
-        on_new_metadata = print
+        on_new_metadata = lambda m: print(m.model_dump())
     for metadata in iterate_batch_content(
         workspace=workspace,
         batch_id=batch_id,
         api_key=api_key,
         limit=limit,
     ):
-        on_new_metadata(metadata.model_dump())
+        on_new_metadata(metadata)
 
 
 def get_content_of_multipart_batch(
@@ -238,7 +244,7 @@ def get_content_of_multipart_batch(
         saver = MetadataSaver.init(file_path=output_file)
         on_new_metadata = saver.save_metadata
     else:
-        on_new_metadata = print
+        on_new_metadata = lambda m: print(m.model_dump())
     for part in filtered_parts:
         part_elements_listed = 0
         for metadata in iterate_batch_content(
@@ -248,7 +254,7 @@ def get_content_of_multipart_batch(
             part_name=part.part_name,
             limit=limit,
         ):
-            on_new_metadata(metadata.model_dump())
+            on_new_metadata(metadata)
             part_elements_listed += 1
         if limit is not None:
             limit = max(0, limit - part_elements_listed)
@@ -267,8 +273,11 @@ class MetadataSaver:
     def __init__(self, file_handler: TextIO):
         self._file_handler = file_handler
 
-    def save_metadata(self, metadata: dict) -> None:
-        serialized_metadata = json.dumps(metadata)
+    def save_metadata(self, metadata: Union[dict, BaseModel]) -> None:
+        if isinstance(metadata, dict):
+            serialized_metadata = json.dumps(metadata)
+        else:
+            serialized_metadata = metadata.model_dump_json()
         self._file_handler.write(f"{serialized_metadata}\n")
 
     def __del__(self):
@@ -365,8 +374,8 @@ def get_one_page_of_batch_content(
 class DataImportLog:
 
     @classmethod
-    def init(cls, sources_dir: str) -> "DataImportLog":
-        file_path = os.path.join(sources_dir, ".import_log.jsonl")
+    def init(cls, sources_dir: str, batch_id: str) -> "DataImportLog":
+        file_path = os.path.join(sources_dir, f".import_log-{batch_id}")
         if not os.path.exists(file_path):
             file_descriptor = open(file_path, "w+")
         else:
@@ -402,11 +411,13 @@ def create_images_batch_from_directory(
     directory: str,
     batch_id: str,
     api_key: str,
-    batch_name: Optional[str],
+    batch_name: Optional[str] = None,
+    ingest_id: Optional[str] = None,
+    notifications_url: Optional[str] = None,
 ) -> None:
     workspace = get_workspace(api_key=api_key)
     images_paths = get_all_images_in_directory(input_directory=directory)
-    upload_log = DataImportLog.init(sources_dir=directory)
+    upload_log = DataImportLog.init(sources_dir=directory, batch_id=batch_id)
     deduplicated_images = [
         path for path in images_paths if not upload_log.is_file_recorded(path=path)
     ]
@@ -418,8 +429,12 @@ def create_images_batch_from_directory(
             api_key=api_key,
             batch_name=batch_name,
             upload_log=upload_log,
+            ingest_id=ingest_id,
+            notifications_url=notifications_url,
         )
         return None
+    if notifications_url:
+        print(f"Ingesting images to simple-batch - notification URL will be ignored.")
     upload_images_to_simple_batch(
         images_paths=deduplicated_images,
         workspace=workspace,
@@ -428,6 +443,94 @@ def create_images_batch_from_directory(
         batch_name=batch_name,
         upload_log=upload_log,
     )
+
+
+def create_images_batch_from_references_file(
+    references_path: str,
+    batch_id: str,
+    api_key: str,
+    ingest_id: Optional[str] = None,
+    batch_name: Optional[str] = None,
+    notifications_url: Optional[str] = None,
+) -> None:
+    workspace = get_workspace(api_key=api_key)
+    try:
+        references = read_json_file(path=references_path)
+        if not isinstance(references, list):
+            raise ValueError("List of references required")
+    except (OSError, ValueError) as error:
+        raise ValueError(
+            "Could not decode references file - provide JSON document that contain "
+            "list of dictionaries with keys 'name' and 'url` to describe all files "
+            "you want to ingest."
+        ) from error
+    response = trigger_images_references_ingest(
+        workspace=workspace,
+        batch_id=batch_id,
+        references=references,
+        api_key=api_key,
+        ingest_id=ingest_id,
+        batch_name=batch_name,
+        notifications_url=notifications_url,
+    )
+    print(f"Your ingest with ID: {response.ingest_id}")
+    print(
+        f"System will create the following shards in batch {batch_id}: {response.shard_ids}"
+    )
+    if notifications_url:
+        print(f"Monitor updates that will be sent to: {notifications_url}")
+    else:
+        print(
+            f"Use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` "
+            "command to watch the ingest progress. If you want automated updates - use `--notifications-url` option "
+            "of this command."
+        )
+
+
+@backoff.on_exception(
+    backoff.constant,
+    exception=RetryError,
+    max_tries=3,
+    interval=1,
+)
+def trigger_images_references_ingest(
+    workspace: str,
+    batch_id: str,
+    references: List[dict],
+    api_key: str,
+    ingest_id: Optional[str] = None,
+    batch_name: Optional[str] = None,
+    notifications_url: Optional[str] = None,
+) -> ImagesReferenceIngestResponse:
+    params = {}
+    if api_key is not None:
+        params["api_key"] = api_key
+    if batch_name is not None:
+        params["displayName"] = batch_name
+    payload = {
+        "imagesReferences": references,
+    }
+    if ingest_id:
+        payload["ingestId"] = ingest_id
+    if notifications_url:
+        payload["notificationsURL"] = notifications_url
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/bulk-upload/image-references",
+            params=params,
+            timeout=REQUEST_TIMEOUT,
+            json=payload,
+        )
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
+        raise RetryError(
+            f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
+        ) from error
+    handle_response_errors(response=response, operation_name="Trigger images ingest")
+    try:
+        response_data = response.json()
+        return ImagesReferenceIngestResponse.model_validate(response_data)
+    except (ValidationError, ValueError, KeyError) as error:
+        raise RFAPICallError("Could not decode Roboflow API response.") from error
 
 
 def create_videos_batch_from_directory(
@@ -439,7 +542,7 @@ def create_videos_batch_from_directory(
     workspace = get_workspace(api_key=api_key)
     video_paths = get_all_videos_in_directory(input_directory=directory)
     video_paths = _filter_out_malformed_videos(video_paths=video_paths)
-    upload_log = DataImportLog.init(sources_dir=directory)
+    upload_log = DataImportLog.init(sources_dir=directory, batch_id=batch_id)
     if len(video_paths) > SUGGESTED_MAX_VIDEOS_IN_BATCH:
         print(
             f"You try to upload {len(video_paths)} to single batch. "
@@ -457,6 +560,90 @@ def create_videos_batch_from_directory(
             upload_log=upload_log,
             batch_name=batch_name,
         )
+
+
+def create_videos_batch_from_references_file(
+    references_path: str,
+    batch_id: str,
+    api_key: str,
+    ingest_id: Optional[str] = None,
+    batch_name: Optional[str] = None,
+    notifications_url: Optional[str] = None,
+) -> None:
+    workspace = get_workspace(api_key=api_key)
+    try:
+        references = read_json_file(path=references_path)
+        if not isinstance(references, list):
+            raise ValueError("List of references required")
+    except (OSError, ValueError) as error:
+        raise ValueError(
+            "Could not decode references file - provide JSON document that contain "
+            "list of dictionaries with keys 'name' and 'url` to describe all files "
+            "you want to ingest."
+        ) from error
+    ingest_id = trigger_videos_references_ingest(
+        workspace=workspace,
+        batch_id=batch_id,
+        references=references,
+        api_key=api_key,
+        ingest_id=ingest_id,
+        batch_name=batch_name,
+        notifications_url=notifications_url,
+    )
+    print(f"Your ingest with ID: {ingest_id}")
+    if notifications_url:
+        print(f"Monitor updates that will be sent to: {notifications_url}")
+    else:
+        print(
+            f"Use `inference rf-cloud data-staging show-batch-details --batch-id {batch_id}` "
+            "command to observe ingest progress. If you want automated updates - use `--notifications-url` option "
+            "of this command."
+        )
+
+
+@backoff.on_exception(
+    backoff.constant,
+    exception=RetryError,
+    max_tries=3,
+    interval=1,
+)
+def trigger_videos_references_ingest(
+    workspace: str,
+    batch_id: str,
+    references: List[dict],
+    api_key: str,
+    ingest_id: Optional[str] = None,
+    batch_name: Optional[str] = None,
+    notifications_url: Optional[str] = None,
+) -> str:
+    params = {}
+    if api_key is not None:
+        params["api_key"] = api_key
+    if batch_name is not None:
+        params["displayName"] = batch_name
+    payload = {
+        "videosReferences": references,
+    }
+    if ingest_id:
+        payload["ingestId"] = ingest_id
+    if notifications_url:
+        payload["notificationsURL"] = notifications_url
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/bulk-upload/video-references",
+            params=params,
+            timeout=REQUEST_TIMEOUT,
+            json=payload,
+        )
+    except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
+        raise RetryError(
+            f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
+        ) from error
+    handle_response_errors(response=response, operation_name="Trigger images ingest")
+    try:
+        return response.json()["ingestId"]
+    except (ValueError, KeyError) as error:
+        raise RFAPICallError("Could not decode Roboflow API response.") from error
 
 
 def _filter_out_malformed_videos(video_paths: List[str]) -> List[str]:
@@ -502,14 +689,20 @@ def upload_images_to_sharded_batch(
     api_key: str,
     batch_name: Optional[str],
     upload_log: DataImportLog,
+    ingest_id: Optional[str] = None,
+    notifications_url: Optional[str] = None,
 ) -> None:
     shards = list(create_batches(sequence=images_paths, batch_size=MAX_SHARD_SIZE))
+    if ingest_id is None:
+        ingest_id = str(uuid4())
     upload_images_shard_closure = partial(
         pack_and_upload_images_shard,
         workspace=workspace,
         batch_id=batch_id,
         api_key=api_key,
         batch_name=batch_name,
+        ingest_id=ingest_id,
+        notifications_url=notifications_url,
     )
     with Pool(processes=MAX_SHARDS_UPLOAD_PROCESSES) as pool:
         for paths in tqdm(
@@ -526,11 +719,16 @@ def pack_and_upload_images_shard(
     batch_id: str,
     api_key: str,
     batch_name: Optional[str],
+    ingest_id: str,
+    notifications_url: Optional[str],
 ) -> List[str]:
     with tempfile.TemporaryDirectory() as tmp_dir:
         archive_path = os.path.join(tmp_dir, f"{uuid4()}.tar")
         create_images_shard_archive(
-            archive_path=archive_path, images_paths=images_paths
+            archive_path=archive_path,
+            images_paths=images_paths,
+            ingest_id=ingest_id,
+            notifications_url=notifications_url,
         )
         upload_images_shard(
             archive_path=archive_path,
@@ -542,10 +740,25 @@ def pack_and_upload_images_shard(
         return images_paths
 
 
-def create_images_shard_archive(images_paths: List[str], archive_path: str) -> None:
+def create_images_shard_archive(
+    images_paths: List[str],
+    archive_path: str,
+    ingest_id: str,
+    notifications_url: Optional[str],
+) -> None:
     with tarfile.open(archive_path, "w") as tar:
         for image_path in images_paths:
             tar.add(image_path, arcname=os.path.basename(image_path))
+        if notifications_url:
+            notification_config = {
+                "ingestId": ingest_id,
+                "notificationsURL": notifications_url,
+            }
+            json_data = json.dumps(notification_config).encode("utf-8")
+            json_file = BytesIO(json_data)
+            info = tarfile.TarInfo(name="notification_config.json")
+            info.size = len(json_data)
+            tar.addfile(info, json_file)
 
 
 @backoff.on_exception(
@@ -1235,5 +1448,90 @@ def export_batch_data(
     handle_response_errors(response=response, operation_name="list batches")
     try:
         return BatchExportResponse.model_validate(response.json())
+    except ValueError as error:
+        raise RFAPICallError("Could not decode Roboflow API response.") from error
+
+
+def list_ingest_details(
+    batch_id: str,
+    api_key: str,
+    output_file: Optional[str] = None,
+) -> None:
+    workspace = get_workspace(api_key=api_key)
+    if output_file:
+        saver = MetadataSaver.init(file_path=output_file)
+        on_new_metadata = saver.save_metadata
+    else:
+        on_new_metadata = lambda m: print(m.model_dump())
+    for shard_details in iterate_through_batch_shards_statuses(
+        workspace=workspace,
+        batch_id=batch_id,
+        api_key=api_key,
+    ):
+        on_new_metadata(shard_details)
+
+
+def list_batch_shards_statuses(
+    workspace: str,
+    batch_id: str,
+    api_key: str,
+    page_size: Optional[int] = None,
+) -> List[ShardDetails]:
+    return list(
+        iterate_through_batch_shards_statuses(
+            workspace=workspace,
+            batch_id=batch_id,
+            api_key=api_key,
+            page_size=page_size,
+        )
+    )
+
+
+def iterate_through_batch_shards_statuses(
+    workspace: str,
+    batch_id: str,
+    api_key: str,
+    page_size: Optional[int] = None,
+) -> Generator[ShardDetails, None, None]:
+    next_page_token = None
+    while True:
+        page = get_one_page_of_batch_shards_statuses(
+            workspace=workspace,
+            batch_id=batch_id,
+            api_key=api_key,
+            page_size=page_size,
+            next_page_token=next_page_token,
+        )
+        yield from page.shards
+        next_page_token = page.next_page_token
+        if next_page_token is None:
+            return None
+
+
+def get_one_page_of_batch_shards_statuses(
+    workspace: str,
+    batch_id: str,
+    api_key: str,
+    page_size: Optional[int] = None,
+    next_page_token: Optional[str] = None,
+) -> PageOfBatchShardsStatuses:
+    params = {"api_key": api_key}
+    if page_size:
+        params["pageSize"] = page_size
+    if next_page_token:
+        params["nextPageToken"] = next_page_token
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/shards",
+            params=params,
+            timeout=REQUEST_TIMEOUT,
+        )
+    except (ConnectionError, Timeout):
+        raise RetryError(
+            f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
+        )
+    handle_response_errors(response=response, operation_name="list batch shards")
+    try:
+        return PageOfBatchShardsStatuses.model_validate(response.json())
     except ValueError as error:
         raise RFAPICallError("Could not decode Roboflow API response.") from error
