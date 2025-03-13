@@ -7,9 +7,9 @@ from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    OBJECT_DETECTION_PREDICTION_KIND,            
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -100,7 +100,11 @@ class DetectionsMergeBlockV1(WorkflowBlock):
         predictions: sv.Detections,
     ) -> BlockResult:
         if predictions is None or len(predictions) == 0:
-            return {OUTPUT_KEY: sv.Detections(xyxy=np.array([], dtype=np.float32).reshape(0, 4))}
+            return {
+                OUTPUT_KEY: sv.Detections(
+                    xyxy=np.array([], dtype=np.float32).reshape(0, 4)
+                )
+            }
 
         # Calculate the union bounding box
         union_bbox = calculate_union_bbox(predictions)

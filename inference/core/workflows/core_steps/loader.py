@@ -298,11 +298,11 @@ from inference.core.workflows.core_steps.transformations.detection_offset.v1 imp
 from inference.core.workflows.core_steps.transformations.detections_filter.v1 import (
     DetectionsFilterBlockV1,
 )
-from inference.core.workflows.core_steps.transformations.detections_transformation.v1 import (
-    DetectionsTransformationBlockV1,
-)
 from inference.core.workflows.core_steps.transformations.detections_merge.v1 import (
     DetectionsMergeBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.detections_transformation.v1 import (
+    DetectionsTransformationBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.dynamic_crop.v1 import (
     DynamicCropBlockV1,
