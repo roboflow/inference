@@ -56,7 +56,6 @@ class DetectionsMergeManifest(WorkflowBlockManifest):
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
             KEYPOINT_DETECTION_PREDICTION_KIND,
-
         ]
     ) = Field(
         description="Object detection predictions to merge into a single bounding box.",
@@ -77,7 +76,7 @@ class DetectionsMergeManifest(WorkflowBlockManifest):
 def calculate_union_bbox(detections: sv.Detections) -> np.ndarray:
     """Calculate a single bounding box that contains all input detections."""
     if len(detections) == 0:
-        return np.array([])
+        return np.array([], dtype=np.float32).reshape(0, 4)
 
     # Get all bounding boxes
     xyxy = detections.xyxy
@@ -101,7 +100,7 @@ class DetectionsMergeBlockV1(WorkflowBlock):
         predictions: sv.Detections,
     ) -> BlockResult:
         if predictions is None or len(predictions) == 0:
-            return {OUTPUT_KEY: sv.Detections(xyxy=np.array([]))}
+            return {OUTPUT_KEY: sv.Detections(xyxy=np.array([], dtype=np.float32).reshape(0, 4))}
 
         # Calculate the union bounding box
         union_bbox = calculate_union_bbox(predictions)
