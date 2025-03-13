@@ -132,6 +132,14 @@ class BlockManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name="crops", kind=[IMAGE_KIND]),
+            OutputDefinition(
+                name="predictions",
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                    KEYPOINT_DETECTION_PREDICTION_KIND,
+                ],
+            ),
         ]
 
     @classmethod
@@ -169,7 +177,7 @@ def crop_image(
     mask_opacity: float,
     background_color: Union[str, Tuple[int, int, int]],
     detection_id_key: str = DETECTION_ID_KEY,
-) -> List[Dict[str, WorkflowImageData]]:
+) -> List[Dict[str, any]]:
     if len(detections) == 0:
         return []
     if detection_id_key not in detections.data:
@@ -203,7 +211,23 @@ def crop_image(
             offset_x=x_min,
             offset_y=y_min,
         )
-        crops.append({"crops": result})
+
+        selected_detection = detections[idx]
+
+        translated_detection = replace(
+            selected_detection,
+            xyxy=sv.move_boxes(xyxy=selected_detection.xyxy, offset=(-x_min, -y_min)),
+            mask=selected_detection.mask[:, y_min:y_max, x_min:x_max] if selected_detection.mask is not None else None,
+        )
+
+        if "keypoints_xy" in detections:
+            translated_detection["keypoints_xy"] = detections["keypoints_xy"] - np.array([x_min, y_min])
+
+        crops.append({
+            "crops": result,
+            # preserve all masks, keypoints, and metadata if present
+            "predictions": translated_detection
+        })
     return crops
 
 
