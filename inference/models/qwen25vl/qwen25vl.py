@@ -9,7 +9,7 @@ from PIL import Image
 from transformers import AutoModelForCausalLM, BitsAndBytesConfig
 
 from inference.core.entities.responses.inference import LMMInferenceResponse
-from inference.core.env import DEVICE, MODEL_CACHE_DIR
+from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
@@ -31,6 +31,31 @@ class Qwen25VL(TransformerModel):
     default_system_prompt = (
         "You are a Qwen2.5-VL model that can answer questions about any image."
     )
+
+    def __init__(
+        self,
+        model_id,
+        *args,
+        dtype=None,
+        huggingface_token=HUGGINGFACE_TOKEN,
+        use_quantization=True,
+        **kwargs
+    ):
+        super().__init__(model_id, *args, **kwargs)
+        self.huggingface_token = huggingface_token
+        if self.needs_hf_token and self.huggingface_token is None:
+            raise RuntimeError(
+                "Must set environment variable HUGGINGFACE_TOKEN to load LoRA "
+                "(or pass huggingface_token to this __init__)"
+            )
+        self.dtype = dtype
+        if self.dtype is None:
+            self.dtype = self.default_dtype
+        self.cache_model_artefacts()
+
+        self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
+        self.use_quantization = use_quantization
+        self.initialize_model()
 
     def initialize_model(self):
         self.transformers_class = import_class_from_file(
@@ -78,21 +103,26 @@ class Qwen25VL(TransformerModel):
             cache_dir = model_load_id
             revision = None
             token = None
-        self.base_model = self.transformers_class.from_pretrained(
-            model_load_id,
-            revision=revision,
-            device_map=DEVICE,
-            cache_dir=cache_dir,
-            token=token,
-            quantization_config=bnb_config,
-        )
-        self.model = (
-            PeftModel.from_pretrained(self.base_model, self.cache_dir)
-            .eval()
-            .to(self.dtype)
-        )
 
-        self.model.merge_and_unload()
+        if self.use_quantization:
+            self.base_model = self.transformers_class.from_pretrained(
+                model_load_id,
+                revision=revision,
+                device_map=DEVICE,
+                cache_dir=cache_dir,
+                token=token,
+                quantization_config=bnb_config,
+            )
+        else:
+            self.base_model = self.transformers_class.from_pretrained(
+                model_load_id,
+                revision=revision,
+                device_map=DEVICE,
+                cache_dir=cache_dir,
+                token=token,
+            )
+        self.model = self.base_model.eval().to(self.dtype)
+
         preprocessor_config_path = os.path.join(self.cache_dir, "chat_template.json")
         with open(preprocessor_config_path, "r") as f:
             chat_template = json.load(f)["chat_template"]
@@ -173,6 +203,7 @@ class LoRAQwen25VL(LoRATransformerModel):
     skip_special_tokens = True
     transformers_class = AutoModelForCausalLM
     default_dtype = torch.bfloat16
+    use_quantization = True
 
     default_system_prompt = (
         "You are a Qwen2.5-VL model that can answer questions about any image."
@@ -231,14 +262,24 @@ class LoRAQwen25VL(LoRATransformerModel):
             cache_dir = model_load_id
             revision = None
             token = None
-        self.base_model = self.transformers_class.from_pretrained(
-            model_load_id,
-            revision=revision,
-            device_map=DEVICE,
-            cache_dir=cache_dir,
-            token=token,
-            quantization_config=bnb_config,
-        )
+
+        if self.use_quantization:
+            self.base_model = self.transformers_class.from_pretrained(
+                model_load_id,
+                revision=revision,
+                device_map=DEVICE,
+                cache_dir=cache_dir,
+                token=token,
+                quantization_config=bnb_config,
+            )
+        else:
+            self.base_model = self.transformers_class.from_pretrained(
+                model_load_id,
+                revision=revision,
+                device_map=DEVICE,
+                cache_dir=cache_dir,
+                token=token,
+            )
 
         self.model = (
             PeftModel.from_pretrained(self.base_model, self.cache_dir)

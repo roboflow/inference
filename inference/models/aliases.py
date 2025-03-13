@@ -21,6 +21,11 @@ FLORENCE_ALIASES = {
     "florence-2-base": "florence-pretrains/1",
     "florence-2-large": "florence-pretrains/2",
 }
+
+QWEN_ALIASES = {
+    "qwen25-vl-7b": "qwen_playground/69",
+}
+
 YOLOV11_ALIASES = {
     "yolov11n-seg-640": "coco-dataset-vdnr1/19",
     "yolov11s-seg-640": "coco-dataset-vdnr1/20",
@@ -81,6 +86,7 @@ REGISTERED_ALIASES = {
     **PALIGEMMA_ALIASES,
     **FLORENCE_ALIASES,
     **YOLOV11_ALIASES,
+    **QWEN_ALIASES,
 }
 
 
