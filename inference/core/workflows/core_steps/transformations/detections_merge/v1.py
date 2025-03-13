@@ -7,7 +7,9 @@ from pydantic import ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
-    OBJECT_DETECTION_PREDICTION_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,            
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+    KEYPOINT_DETECTION_PREDICTION_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
@@ -20,7 +22,7 @@ OUTPUT_KEY: str = "predictions"
 
 SHORT_DESCRIPTION = "Merge multiple detections into a single bounding box."
 LONG_DESCRIPTION = """
-The `DetectionsUnion` block combines multiple detections into a single bounding box that encompasses all input detections.
+The `DetectionsMerge` block combines multiple detections into a single bounding box that encompasses all input detections.
 This is useful when you want to:
 - Merge overlapping or nearby detections of the same object
 - Create a single region that contains multiple detected objects
@@ -32,10 +34,10 @@ The resulting detection will have:
 """
 
 
-class DetectionsUnionManifest(WorkflowBlockManifest):
+class DetectionsMergeManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Detections Union",
+            "name": "Detections Merge",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
@@ -48,10 +50,13 @@ class DetectionsUnionManifest(WorkflowBlockManifest):
             },
         }
     )
-    type: Literal["roboflow_core/detections_union@v1"]
+    type: Literal["roboflow_core/detections_merge@v1"]
     predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
+
         ]
     ) = Field(
         description="Object detection predictions to merge into a single bounding box.",
@@ -86,10 +91,10 @@ def calculate_union_bbox(detections: sv.Detections) -> np.ndarray:
     return np.array([[x1, y1, x2, y2]])
 
 
-class DetectionsUnionBlockV1(WorkflowBlock):
+class DetectionsMergeBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
-        return DetectionsUnionManifest
+        return DetectionsMergeManifest
 
     def run(
         self,
