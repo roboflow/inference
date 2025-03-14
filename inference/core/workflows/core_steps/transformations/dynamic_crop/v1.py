@@ -6,11 +6,13 @@ import numpy as np
 import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field
 
-from inference.core.workflows.execution_engine.constants import DETECTION_ID_KEY
+from inference.core.workflows.execution_engine.constants import (
+    DETECTION_ID_KEY,
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
+    POLYGON_KEY_IN_SV_DETECTIONS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
-    ImageParentMetadata,
-    OriginCoordinatesSystem,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -224,9 +226,13 @@ def crop_image(
             ),
         )
 
-        if "keypoints_xy" in detections:
-            translated_detection["keypoints_xy"] = detections[
-                "keypoints_xy"
+        if KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in detections:
+            translated_detection[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = detections[
+                KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
+            ] - np.array([x_min, y_min])
+        if POLYGON_KEY_IN_SV_DETECTIONS in detections:
+            translated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = detections[
+                POLYGON_KEY_IN_SV_DETECTIONS
             ] - np.array([x_min, y_min])
 
         crops.append(
