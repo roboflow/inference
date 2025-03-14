@@ -128,7 +128,9 @@ nav:
         - Video Processing: workflows/video_processing/overview.md
       - Examples: workflows/gallery/
       - Block Gallery: workflows/blocks/
-      - Batch Processing: workflows/batch_processing/about.md
+      - Batch Processing:
+          - User Guide: workflows/batch_processing/about.md
+          - Integration: workflows/batch_processing/integration.md
       - Developer Guide:
         - Workflows Definitions: workflows/definitions.md
         - Workflow Execution: workflows/workflow_execution.md
