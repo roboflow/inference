@@ -142,9 +142,9 @@ class RoboflowInferenceModel(Model):
         """
         return get_cache_file_path(file=f, model_id=self.endpoint)
 
-    def clear_cache(self) -> None:
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clear the cache directory."""
-        clear_cache(model_id=self.endpoint)
+        clear_cache(model_id=self.endpoint, delete_from_disk=delete_from_disk)
 
     def draw_predictions(
         self,
@@ -264,7 +264,13 @@ class RoboflowInferenceModel(Model):
         # Use the same lock file pattern as in clear_cache
         lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
         os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
-        lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
+        parts = os.path.normpath(self.cache_dir).split(os.sep)
+        suffix = (
+            os.path.join(*parts[-2:])
+            if len(parts) >= 2
+            else os.path.basename(self.cache_dir)
+        )
+        lock_file = os.path.join(lock_dir, f"{suffix}.lock")
         try:
             lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
             with lock:

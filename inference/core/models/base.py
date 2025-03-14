@@ -92,7 +92,7 @@ class Model(BaseInference):
         """
         print(m)
 
-    def clear_cache(self):
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clears any cache if necessary. This method should be implemented in derived classes as needed."""
         pass
 
