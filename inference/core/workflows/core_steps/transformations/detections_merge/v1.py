@@ -133,7 +133,9 @@ class DetectionsMergeBlockV1(WorkflowBlock):
                 if predictions.confidence is not None
                 else None
             ),
-            class_id=np.array([0], dtype=np.int32),  # Fixed class_id of 0 for merged detection
+            class_id=np.array(
+                [0], dtype=np.int32
+            ),  # Fixed class_id of 0 for merged detection
             data={
                 "class_name": np.array([class_name]),
                 "detection_id": np.array([str(uuid4())]),
