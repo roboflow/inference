@@ -65,11 +65,10 @@ def test_detections_merge_block() -> None:
     assert "predictions" in output
     assert len(output["predictions"]) == 1
     assert np.allclose(output["predictions"].xyxy, np.array([[10, 10, 25, 25]]))
-    assert np.allclose(output["predictions"].confidence, np.array([0.9]))
+    assert np.allclose(output["predictions"].confidence, np.array([0.8]))
     assert np.allclose(output["predictions"].class_id, np.array([1]))
     assert output["predictions"].data["class_name"][0] == "person"
-    assert "detection_id" in output["predictions"].data
-    assert len(output["predictions"].data["detection_id"]) == 1
+    assert isinstance(output["predictions"].data["detection_id"][0], str)
 
 
 def test_detections_merge_block_empty_input() -> None:

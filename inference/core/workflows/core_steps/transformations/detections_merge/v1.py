@@ -31,6 +31,7 @@ This is useful when you want to:
 The resulting detection will have:
 - A bounding box that contains all input detections
 - The class_id and confidence from the first detection in the input
+- The confidence is set to the lowest confidence among all detections
 """
 
 
@@ -54,8 +55,6 @@ class DetectionsMergeManifest(WorkflowBlockManifest):
     predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
-            INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(
         description="Object detection predictions to merge into a single bounding box.",
@@ -90,6 +89,13 @@ def calculate_union_bbox(detections: sv.Detections) -> np.ndarray:
     return np.array([[x1, y1, x2, y2]])
 
 
+def get_lowest_confidence_index(detections: sv.Detections) -> int:
+    """Get the index of the detection with the lowest confidence."""
+    if detections.confidence is None:
+        return 0
+    return int(np.argmin(detections.confidence))
+
+
 class DetectionsMergeBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -109,11 +115,14 @@ class DetectionsMergeBlockV1(WorkflowBlock):
         # Calculate the union bounding box
         union_bbox = calculate_union_bbox(predictions)
 
+        # Get the index of the detection with lowest confidence
+        lowest_conf_idx = get_lowest_confidence_index(predictions)
+
         # Create a new detection with the union bbox and ensure numpy arrays for all fields
         merged_detection = sv.Detections(
             xyxy=union_bbox,
             confidence=(
-                np.array([predictions.confidence[0]], dtype=np.float32)
+                np.array([predictions.confidence[lowest_conf_idx]], dtype=np.float32)
                 if predictions.confidence is not None
                 else None
             ),
