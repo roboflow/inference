@@ -16,7 +16,7 @@ class BaseInference:
     This class provides a basic interface for inference tasks.
     """
 
-    @usage_collector
+    @usage_collector("model")
     def infer(self, image: Any, **kwargs) -> Any:
         """Runs inference on given data.
         - image:
