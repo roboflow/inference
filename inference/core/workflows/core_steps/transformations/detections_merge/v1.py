@@ -30,7 +30,7 @@ This is useful when you want to:
 
 The resulting detection will have:
 - A bounding box that contains all input detections
-- The class_id and confidence from the first detection in the input
+- The classname of the merged detection is set to "merged_detection" by default, but can be customized via the `class_name` parameter
 - The confidence is set to the lowest confidence among all detections
 """
 
@@ -61,6 +61,10 @@ class DetectionsMergeManifest(WorkflowBlockManifest):
     ) = Field(
         description="Object detection predictions to merge into a single bounding box.",
         examples=["$steps.object_detection_model.predictions"],
+    )
+    class_name: str = Field(
+        default="merged_detection",
+        description="The class name to assign to the merged detection.",
     )
 
     @classmethod
@@ -106,6 +110,7 @@ class DetectionsMergeBlockV1(WorkflowBlock):
     def run(
         self,
         predictions: sv.Detections,
+        class_name: str = "merged_detection",
     ) -> BlockResult:
         if predictions is None or len(predictions) == 0:
             return {
@@ -128,13 +133,9 @@ class DetectionsMergeBlockV1(WorkflowBlock):
                 if predictions.confidence is not None
                 else None
             ),
-            class_id=(
-                np.array([predictions.class_id[0]], dtype=np.int32)
-                if predictions.class_id is not None
-                else None
-            ),
+            class_id=np.array([0], dtype=np.int32),  # Fixed class_id of 0 for merged detection
             data={
-                "class_name": np.array([predictions.data["class_name"][0]]),
+                "class_name": np.array([class_name]),
                 "detection_id": np.array([str(uuid4())]),
             },
         )
