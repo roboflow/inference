@@ -139,19 +139,15 @@ def _rmtree_onerror(func, path, exc_info):
         raise  # re-raise the error.
 
 
-def clear_cache(model_id: Optional[str] = None, delete_from_disk: bool = True) -> None:
-    if not delete_from_disk:  # Disable disk cache cleanup for this call
+def clear_cache(model_id: Optional[str] = None) -> None:
+    if not DISK_CACHE_CLEANUP:
         return
     cache_dir = get_cache_dir(model_id=model_id)
     if not os.path.exists(cache_dir):
         return
     lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
     os.makedirs(lock_dir, exist_ok=True)  # ensure lock directory exists.
-    parts = os.path.normpath(cache_dir).split(os.sep)
-    suffix = (
-        os.path.join(*parts[-2:]) if len(parts) >= 2 else os.path.basename(cache_dir)
-    )
-    lock_file = os.path.join(lock_dir, f"{suffix}.lock")
+    lock_file = os.path.join(lock_dir, f"{os.path.basename(cache_dir)}.lock")
 
     try:
         lock = FileLock(lock_file, timeout=10)  # 10 second timeout
