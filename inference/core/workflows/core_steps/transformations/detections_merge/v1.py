@@ -55,6 +55,8 @@ class DetectionsMergeManifest(WorkflowBlockManifest):
     predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
+            INSTANCE_SEGMENTATION_PREDICTION_KIND,
+            KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(
         description="Object detection predictions to merge into a single bounding box.",
