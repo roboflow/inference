@@ -1023,6 +1023,7 @@ class HttpInterface(BaseInterface):
                 response_model_exclude_none=True,
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_object_detection(
                 inference_request: ObjectDetectionInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1052,6 +1053,7 @@ class HttpInterface(BaseInterface):
                 description="Run inference with the specified instance segmentation model",
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_instance_segmentation(
                 inference_request: InstanceSegmentationInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1083,6 +1085,7 @@ class HttpInterface(BaseInterface):
                 description="Run inference with the specified classification model",
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_classification(
                 inference_request: ClassificationInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1110,6 +1113,7 @@ class HttpInterface(BaseInterface):
                 description="Run inference with the specified keypoints detection model",
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_keypoints(
                 inference_request: KeypointsDetectionInferenceRequest,
             ):
@@ -1138,6 +1142,7 @@ class HttpInterface(BaseInterface):
                     response_model_exclude_none=True,
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def infer_lmm(
                     inference_request: LMMInferenceRequest,
                 ):
@@ -1205,6 +1210,7 @@ class HttpInterface(BaseInterface):
                 deprecated=True,
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_from_predefined_workflow(
                 workspace_name: str,
                 workflow_id: str,
@@ -1258,6 +1264,7 @@ class HttpInterface(BaseInterface):
                 deprecated=True,
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1600,6 +1607,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Open AI CLIP model to embed image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def clip_embed_image(
                     inference_request: ClipImageEmbeddingRequest,
                     request: Request,
@@ -1638,6 +1646,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Open AI CLIP model to embed text data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def clip_embed_text(
                     inference_request: ClipTextEmbeddingRequest,
                     request: Request,
@@ -1676,6 +1685,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Open AI CLIP model to compute similarity scores.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def clip_compare(
                     inference_request: ClipCompareRequest,
                     request: Request,
@@ -1716,6 +1726,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Grounding DINO zero-shot object detection model.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def grounding_dino_infer(
                     inference_request: GroundingDINOInferenceRequest,
                     request: Request,
@@ -1759,6 +1770,7 @@ class HttpInterface(BaseInterface):
                     response_model_exclude_none=True,
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def yolo_world_infer(
                     inference_request: YOLOWorldInferenceRequest,
                     request: Request,
@@ -1804,6 +1816,7 @@ class HttpInterface(BaseInterface):
                     description="Run the DocTR OCR model to retrieve text in an image.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def doctr_retrieve_text(
                     inference_request: DoctrOCRInferenceRequest,
                     request: Request,
@@ -1846,6 +1859,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Meta AI Segmant Anything Model to embed image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def sam_embed_image(
                     inference_request: SamEmbeddingRequest,
                     request: Request,
@@ -1889,6 +1903,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Meta AI Segmant Anything Model to generate segmenations for image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def sam_segment_image(
                     inference_request: SamSegmentationRequest,
                     request: Request,
@@ -1934,6 +1949,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Meta AI Segment Anything 2 Model to embed image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def sam2_embed_image(
                     inference_request: Sam2EmbeddingRequest,
                     request: Request,
@@ -1967,6 +1983,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Meta AI Segment Anything 2 Model to generate segmenations for image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def sam2_segment_image(
                     inference_request: Sam2SegmentationRequest,
                     request: Request,
@@ -2007,6 +2024,7 @@ class HttpInterface(BaseInterface):
                     description="Run the google owlv2 model to few-shot object detect",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def owlv2_infer(
                     inference_request: OwlV2InferenceRequest,
                     request: Request,
@@ -2042,6 +2060,7 @@ class HttpInterface(BaseInterface):
                     description="Run the gaze detection model to detect gaze.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def gaze_detection(
                     inference_request: GazeDetectionInferenceRequest,
                     request: Request,
@@ -2082,6 +2101,7 @@ class HttpInterface(BaseInterface):
                     description="Run the TrOCR model to retrieve text in an image.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def trocr_retrieve_text(
                     inference_request: TrOCRInferenceRequest,
                     request: Request,
@@ -2214,6 +2234,7 @@ class HttpInterface(BaseInterface):
                 response_model_exclude_none=True,
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def legacy_infer_from_request(
                 background_tasks: BackgroundTasks,
                 request: Request,
