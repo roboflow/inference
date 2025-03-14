@@ -16,6 +16,8 @@ def get_model_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
             return model_id
     if "model_id" in func_kwargs:
         return func_kwargs["model_id"]
+    if "kwargs" in func_kwargs and "model_id" in func_kwargs["kwargs"]:
+        return func_kwargs["kwargs"]["model_id"]
     return None
 
 
@@ -25,6 +27,8 @@ def get_model_resource_details_from_kwargs(
     resource_details = {}
     if "source" in func_kwargs:
         resource_details["source"] = func_kwargs["source"]
+    elif "kwargs" in func_kwargs and "source" in func_kwargs["kwargs"]:
+        resource_details["source"] = func_kwargs["kwargs"]["source"]
     if "self" in func_kwargs:
         _self = func_kwargs["self"]
         if hasattr(_self, "task_type"):
