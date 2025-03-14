@@ -1,7 +1,13 @@
 from datetime import date, datetime
+from enum import Enum
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
+
+
+class DataSource(str, Enum):
+    LOCAL_DIRECTORY = "local-directory"
+    REFERENCES_FILE = "references-file"
 
 
 class ShardDetails(BaseModel):
@@ -10,6 +16,7 @@ class ShardDetails(BaseModel):
     status_type: str = Field(alias="statusType")
     event_timestamp: datetime = Field(alias="eventTimestamp")
     shard_objects_count: int = Field(alias="shardObjectsCount")
+    status_metadata: Optional[dict] = Field(alias="statusMetadata", default=None)
 
 
 class BatchMetadata(BaseModel):
@@ -66,3 +73,19 @@ class ListBatchResponse(BaseModel):
 class DownloadLogEntry(BaseModel):
     file_metadata: FileMetadata
     local_path: str
+
+
+class ImageReferencesIngestResponse(BaseModel):
+    shard_ids: Optional[List[str]] = Field(alias="shardIds", default=None)
+    ingest_id: str = Field(alias="ingestId")
+    duplicated: Optional[bool] = Field(default=None)
+
+
+class VideoReferencesIngestResponse(BaseModel):
+    ingest_id: str = Field(alias="ingestId")
+    duplicated: Optional[bool] = Field(default=None)
+
+
+class PageOfBatchShardsStatuses(BaseModel):
+    shards: List[ShardDetails]
+    next_page_token: Optional[str] = Field(alias="nextPageToken", default=None)
