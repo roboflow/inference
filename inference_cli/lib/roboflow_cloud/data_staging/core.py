@@ -185,6 +185,17 @@ def create_batch_of_images(
             help="Webhook URL where system should send notifications about ingest status",
         ),
     ] = None,
+    notification_categories: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--notification-category",
+            help="Selecting specific notification categories (ingest-status / files-status) "
+            "in combination with `--notifications-url` you may filter which notifications are "
+            "going to be sent to your system. Please note that filtering of notifications do only "
+            "work with ingests of files references via signed URLs and will not be applicable "
+            "for ingests from local storage.",
+        ),
+    ] = None,
     batch_name: Annotated[
         Optional[str],
         typer.Option(
@@ -211,12 +222,21 @@ def create_batch_of_images(
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
+    if notification_categories:
+        notification_categories = list(set(notification_categories))
+    else:
+        # this is needed - notification_categories is empty list instead of node, and we need default
+        notification_categories = None
     try:
         ensure_api_key_is_set(api_key=api_key)
         if source is DataSource.LOCAL_DIRECTORY:
             if images_dir is None:
                 raise ValueError(
                     "`images-dir` not provided when `local-directory` specified as a data source"
+                )
+            if notifications_url and notification_categories:
+                print(
+                    "--notification-category option is not supported for ingests from local storage"
                 )
             api_operations.create_images_batch_from_directory(
                 directory=images_dir,
@@ -232,12 +252,13 @@ def create_batch_of_images(
                     "`references` path not provided when `references-file` specified as a data source"
                 )
             api_operations.create_images_batch_from_references_file(
-                references_path=references,
+                references=references,
                 batch_id=batch_id,
                 api_key=api_key,
                 ingest_id=ingest_id,
                 batch_name=batch_name,
                 notifications_url=notifications_url,
+                notification_categories=notification_categories,
             )
     except KeyboardInterrupt:
         print("Command interrupted.")
@@ -300,6 +321,17 @@ def create_batch_of_videos(
             "if data source is 'references-file'",
         ),
     ] = None,
+    notification_categories: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--notification-category",
+            help="Selecting specific notification categories (ingest-status / files-status) "
+            "in combination with `--notifications-url` you may filter which notifications are "
+            "going to be sent to your system. Please note that filtering of notifications do only "
+            "work with ingests of files references via signed URLs and will not be applicable "
+            "for ingests from local storage.",
+        ),
+    ] = None,
     api_key: Annotated[
         Optional[str],
         typer.Option(
@@ -326,12 +358,21 @@ def create_batch_of_videos(
 ) -> None:
     if api_key is None:
         api_key = ROBOFLOW_API_KEY
+    if notification_categories:
+        notification_categories = list(set(notification_categories))
+    else:
+        # this is needed - notification_categories is empty list instead of node, and we need default
+        notification_categories = None
     try:
         ensure_api_key_is_set(api_key=api_key)
         if source is DataSource.LOCAL_DIRECTORY:
             if videos_dir is None:
                 raise ValueError(
                     "`videos-dir` not provided when `local-directory` specified as a data source"
+                )
+            if notifications_url:
+                print(
+                    "`--notifications-url` option not supported for ingests of videos from local storage"
                 )
             api_operations.create_videos_batch_from_directory(
                 directory=videos_dir,
@@ -345,12 +386,13 @@ def create_batch_of_videos(
                     "`references` path not provided when `references-file` specified as a data source"
                 )
             api_operations.create_videos_batch_from_references_file(
-                references_path=references,
+                references=references,
                 batch_id=batch_id,
                 api_key=api_key,
                 ingest_id=ingest_id,
                 batch_name=batch_name,
                 notifications_url=notifications_url,
+                notification_categories=notification_categories,
             )
     except KeyboardInterrupt:
         print("Command interrupted.")

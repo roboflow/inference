@@ -27,10 +27,11 @@ from inference_cli.lib.env import API_BASE_URL
 from inference_cli.lib.roboflow_cloud.common import (
     get_workspace,
     handle_response_errors,
-    read_json_file,
+    read_jsonl_file,
 )
 from inference_cli.lib.roboflow_cloud.config import (
     MAX_DOWNLOAD_THREADS,
+    MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST,
     MAX_SHARD_SIZE,
     MAX_SHARDS_UPLOAD_PROCESSES,
     MIN_IMAGES_TO_FORM_SHARD,
@@ -42,13 +43,14 @@ from inference_cli.lib.roboflow_cloud.data_staging.entities import (
     BatchMetadata,
     DownloadLogEntry,
     FileMetadata,
-    ImagesReferenceIngestResponse,
+    ImageReferencesIngestResponse,
     ListBatchesResponse,
     ListBatchResponse,
     ListMultipartBatchPartsResponse,
     MultipartBatchPartMetadata,
     PageOfBatchShardsStatuses,
     ShardDetails,
+    VideoReferencesIngestResponse,
 )
 from inference_cli.lib.roboflow_cloud.errors import (
     RetryError,
@@ -446,24 +448,28 @@ def create_images_batch_from_directory(
 
 
 def create_images_batch_from_references_file(
-    references_path: str,
+    references: str,
     batch_id: str,
     api_key: str,
     ingest_id: Optional[str] = None,
     batch_name: Optional[str] = None,
     notifications_url: Optional[str] = None,
+    notification_categories: Optional[List[str]] = None,
 ) -> None:
     workspace = get_workspace(api_key=api_key)
-    try:
-        references = read_json_file(path=references_path)
-        if not isinstance(references, list):
-            raise ValueError("List of references required")
-    except (OSError, ValueError) as error:
-        raise ValueError(
-            "Could not decode references file - provide JSON document that contain "
-            "list of dictionaries with keys 'name' and 'url` to describe all files "
-            "you want to ingest."
-        ) from error
+    if references.startswith("http://"):
+        raise ValueError("Only HTTPS links are allowed to point references.")
+    if not references.startswith("https://"):
+        return create_images_batch_from_local_references_file(
+            workspace=workspace,
+            references=references,
+            batch_id=batch_id,
+            api_key=api_key,
+            ingest_id=ingest_id,
+            batch_name=batch_name,
+            notifications_url=notifications_url,
+            notification_categories=notification_categories,
+        )
     response = trigger_images_references_ingest(
         workspace=workspace,
         batch_id=batch_id,
@@ -472,13 +478,82 @@ def create_images_batch_from_references_file(
         ingest_id=ingest_id,
         batch_name=batch_name,
         notifications_url=notifications_url,
+        notification_categories=notification_categories,
     )
-    print(f"Your ingest with ID: {response.ingest_id}")
-    print(
-        f"System will create the following shards in batch {batch_id}: {response.shard_ids}"
-    )
+    print(f"Your ingest ID: {response.ingest_id}")
     if notifications_url:
         print(f"Monitor updates that will be sent to: {notifications_url}")
+        print(
+            f"You can also use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` command "
+            f"to check progress."
+        )
+    else:
+        print(
+            f"Use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` "
+            "command to watch the ingest progress. If you want automated updates - use `--notifications-url` option "
+            "of this command."
+        )
+
+
+def create_images_batch_from_local_references_file(
+    workspace: str,
+    references: str,
+    batch_id: str,
+    api_key: str,
+    ingest_id: Optional[str] = None,
+    batch_name: Optional[str] = None,
+    notifications_url: Optional[str] = None,
+    notification_categories: Optional[List[str]] = None,
+) -> None:
+    try:
+        references = read_jsonl_file(path=references)
+        if not references:
+            raise ValueError("Empty reference file")
+    except (OSError, ValueError) as error:
+        raise ValueError(
+            "Could not decode references file - provide JSONL document that contain "
+            "list of JSON documents with keys 'name' and 'url` to describe all files "
+            'you want to ingest. Document format: {"name": "<your-file-name>", "url": '
+            '"https://<signed-url-from-cloud>"}'
+        ) from error
+    ingest_parts = list(
+        create_batches(
+            sequence=references, batch_size=MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST
+        )
+    )
+    if len(ingest_parts) > 1:
+        print(
+            f"Your ingest exceeds {MAX_IMAGE_REFERENCES_IN_INGEST_REQUEST} files - we split the ingest "
+            f"into {len(ingest_parts)} chunks."
+        )
+    for part_id, part in enumerate(ingest_parts):
+        if ingest_id is not None and len(ingest_parts) > 1:
+            ingest_id = f"{ingest_id}-{part_id}"
+        response = trigger_images_references_ingest(
+            workspace=workspace,
+            batch_id=batch_id,
+            references=part,
+            api_key=api_key,
+            ingest_id=ingest_id,
+            batch_name=batch_name,
+            notifications_url=notifications_url,
+            notification_categories=notification_categories,
+        )
+        print(f"Your ingest ID: {response.ingest_id}")
+        print(
+            f"System will create the following shards in batch {batch_id}: {response.shard_ids}"
+        )
+        if response.duplicated:
+            print(
+                "Your request was deduplicated - either it was retried by CLI on initial "
+                "request failure or you attempt to use the same references file you used in the past."
+            )
+    if notifications_url:
+        print(f"Monitor updates that will be sent to: {notifications_url}")
+        print(
+            f"You can also use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` command "
+            f"to check progress."
+        )
     else:
         print(
             f"Use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` "
@@ -496,39 +571,44 @@ def create_images_batch_from_references_file(
 def trigger_images_references_ingest(
     workspace: str,
     batch_id: str,
-    references: List[dict],
+    references: Union[str, List[dict]],
     api_key: str,
     ingest_id: Optional[str] = None,
     batch_name: Optional[str] = None,
     notifications_url: Optional[str] = None,
-) -> ImagesReferenceIngestResponse:
+    notification_categories: Optional[List[str]] = None,
+) -> ImageReferencesIngestResponse:
     params = {}
     if api_key is not None:
         params["api_key"] = api_key
     if batch_name is not None:
         params["displayName"] = batch_name
-    payload = {
-        "imagesReferences": references,
-    }
+    payload = {}
+    if isinstance(references, list):
+        payload["imageReferences"] = references
+    else:
+        payload["imageReferencesURL"] = references
     if ingest_id:
         payload["ingestId"] = ingest_id
     if notifications_url:
         payload["notificationsURL"] = notifications_url
+    if notification_categories:
+        payload["notificationCategories"] = notification_categories
     try:
         response = requests.post(
             f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/bulk-upload/image-references",
             params=params,
-            timeout=REQUEST_TIMEOUT,
+            timeout=2 * REQUEST_TIMEOUT,
             json=payload,
         )
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         ) from error
-    handle_response_errors(response=response, operation_name="Trigger images ingest")
+    handle_response_errors(response=response, operation_name="trigger images ingest")
     try:
         response_data = response.json()
-        return ImagesReferenceIngestResponse.model_validate(response_data)
+        return ImageReferencesIngestResponse.model_validate(response_data)
     except (ValidationError, ValueError, KeyError) as error:
         raise RFAPICallError("Could not decode Roboflow API response.") from error
 
@@ -563,25 +643,30 @@ def create_videos_batch_from_directory(
 
 
 def create_videos_batch_from_references_file(
-    references_path: str,
+    references: str,
     batch_id: str,
     api_key: str,
     ingest_id: Optional[str] = None,
     batch_name: Optional[str] = None,
     notifications_url: Optional[str] = None,
+    notification_categories: Optional[List[str]] = None,
 ) -> None:
     workspace = get_workspace(api_key=api_key)
-    try:
-        references = read_json_file(path=references_path)
-        if not isinstance(references, list):
-            raise ValueError("List of references required")
-    except (OSError, ValueError) as error:
-        raise ValueError(
-            "Could not decode references file - provide JSON document that contain "
-            "list of dictionaries with keys 'name' and 'url` to describe all files "
-            "you want to ingest."
-        ) from error
-    ingest_id = trigger_videos_references_ingest(
+    if references.startswith("http://"):
+        raise ValueError("Only HTTPS links are allowed to point references.")
+    if not references.startswith("https://"):
+        try:
+            references = read_jsonl_file(path=references)
+            if not references:
+                raise ValueError("Empty reference file")
+        except (OSError, ValueError) as error:
+            raise ValueError(
+                "Could not decode references file - provide JSONL document that contain "
+                "list of JSON documents with keys 'name' and 'url` to describe all files "
+                'you want to ingest. Document format: {"name": "<your-file-name>", "url": '
+                '"https://<signed-url-from-cloud>"}'
+            ) from error
+    response = trigger_videos_references_ingest(
         workspace=workspace,
         batch_id=batch_id,
         references=references,
@@ -589,10 +674,20 @@ def create_videos_batch_from_references_file(
         ingest_id=ingest_id,
         batch_name=batch_name,
         notifications_url=notifications_url,
+        notification_categories=notification_categories,
     )
-    print(f"Your ingest with ID: {ingest_id}")
+    print(f"Your ingest ID: {response.ingest_id}")
+    if response.duplicated:
+        print(
+            "Your request was deduplicated - either it was retried by CLI on initial "
+            "request failure or you attempt to use the same references file you used in the past."
+        )
     if notifications_url:
         print(f"Monitor updates that will be sent to: {notifications_url}")
+        print(
+            f"You can also use `inference rf-cloud data-staging list-ingest-details --batch-id {batch_id}` command "
+            f"to check progress."
+        )
     else:
         print(
             f"Use `inference rf-cloud data-staging show-batch-details --batch-id {batch_id}` "
@@ -610,39 +705,44 @@ def create_videos_batch_from_references_file(
 def trigger_videos_references_ingest(
     workspace: str,
     batch_id: str,
-    references: List[dict],
+    references: Union[str, List[dict]],
     api_key: str,
     ingest_id: Optional[str] = None,
     batch_name: Optional[str] = None,
     notifications_url: Optional[str] = None,
-) -> str:
+    notification_categories: Optional[List[str]] = None,
+) -> VideoReferencesIngestResponse:
     params = {}
     if api_key is not None:
         params["api_key"] = api_key
     if batch_name is not None:
         params["displayName"] = batch_name
-    payload = {
-        "videosReferences": references,
-    }
+    payload = {}
+    if isinstance(references, list):
+        payload["videoReferences"] = references
+    else:
+        payload["videoReferencesURL"] = references
     if ingest_id:
         payload["ingestId"] = ingest_id
     if notifications_url:
         payload["notificationsURL"] = notifications_url
+    if notification_categories:
+        payload["notificationCategories"] = notification_categories
     try:
         response = requests.post(
             f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/bulk-upload/video-references",
             params=params,
-            timeout=REQUEST_TIMEOUT,
+            timeout=2 * REQUEST_TIMEOUT,
             json=payload,
         )
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError) as error:
         raise RetryError(
             f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
         ) from error
-    handle_response_errors(response=response, operation_name="Trigger images ingest")
+    handle_response_errors(response=response, operation_name="trigger videos ingest")
     try:
-        return response.json()["ingestId"]
-    except (ValueError, KeyError) as error:
+        return VideoReferencesIngestResponse.model_validate(response.json())
+    except (ValidationError, ValueError, KeyError) as error:
         raise RFAPICallError("Could not decode Roboflow API response.") from error
 
 

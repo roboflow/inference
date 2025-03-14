@@ -1,5 +1,5 @@
 import json
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import backoff
 import requests
@@ -80,6 +80,6 @@ def prepare_status_type_emoji(status_type: str) -> str:
     return "🟢"
 
 
-def read_json_file(path: str) -> Optional[Union[str, dict]]:
+def read_jsonl_file(path: str) -> List[dict]:
     with open(path, "r") as f:
-        return json.load(f)
+        return [json.loads(line) for line in f.readlines() if line.strip()]

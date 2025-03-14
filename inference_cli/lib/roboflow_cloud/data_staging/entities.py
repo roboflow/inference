@@ -75,9 +75,15 @@ class DownloadLogEntry(BaseModel):
     local_path: str
 
 
-class ImagesReferenceIngestResponse(BaseModel):
-    shard_ids: List[str] = Field(alias="shardIds")
+class ImageReferencesIngestResponse(BaseModel):
+    shard_ids: Optional[List[str]] = Field(alias="shardIds", default=None)
     ingest_id: str = Field(alias="ingestId")
+    duplicated: Optional[bool] = Field(default=None)
+
+
+class VideoReferencesIngestResponse(BaseModel):
+    ingest_id: str = Field(alias="ingestId")
+    duplicated: Optional[bool] = Field(default=None)
 
 
 class PageOfBatchShardsStatuses(BaseModel):
