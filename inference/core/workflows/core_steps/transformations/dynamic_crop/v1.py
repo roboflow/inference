@@ -217,17 +217,25 @@ def crop_image(
         translated_detection = replace(
             selected_detection,
             xyxy=sv.move_boxes(xyxy=selected_detection.xyxy, offset=(-x_min, -y_min)),
-            mask=selected_detection.mask[:, y_min:y_max, x_min:x_max] if selected_detection.mask is not None else None,
+            mask=(
+                selected_detection.mask[:, y_min:y_max, x_min:x_max]
+                if selected_detection.mask is not None
+                else None
+            ),
         )
 
         if "keypoints_xy" in detections:
-            translated_detection["keypoints_xy"] = detections["keypoints_xy"] - np.array([x_min, y_min])
+            translated_detection["keypoints_xy"] = detections[
+                "keypoints_xy"
+            ] - np.array([x_min, y_min])
 
-        crops.append({
-            "crops": result,
-            # preserve all masks, keypoints, and metadata if present
-            "predictions": translated_detection
-        })
+        crops.append(
+            {
+                "crops": result,
+                # preserve all masks, keypoints, and metadata if present
+                "predictions": translated_detection,
+            }
+        )
     return crops
 
 
