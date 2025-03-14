@@ -1,5 +1,5 @@
 import json
-from typing import Optional
+from typing import List, Optional, Union
 
 import backoff
 import requests
@@ -78,3 +78,8 @@ def prepare_status_type_emoji(status_type: str) -> str:
     if "error" in status_type.lower():
         return "🚨"
     return "🟢"
+
+
+def read_jsonl_file(path: str) -> List[dict]:
+    with open(path, "r") as f:
+        return [json.loads(line) for line in f.readlines() if line.strip()]
