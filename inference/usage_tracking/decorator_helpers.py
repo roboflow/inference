@@ -130,7 +130,9 @@ def get_request_resource_details_from_kwargs(
         if hasattr(workflow_request, "specification") and isinstance(
             workflow_request.specification, dict
         ):
-            return get_resource_details_from_workflow_json(
-                workflow_json=workflow_request.specification,
-            )
+            return {
+                "steps": get_resource_details_from_workflow_json(
+                    workflow_json=workflow_request.specification,
+                )
+            }
     return {}
