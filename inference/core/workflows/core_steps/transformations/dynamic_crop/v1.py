@@ -226,12 +226,12 @@ def crop_image(
             ),
         )
 
-        if KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in detections:
-            translated_detection[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = detections[
+        if KEYPOINTS_XY_KEY_IN_SV_DETECTIONS in detections.data:
+            translated_detection[KEYPOINTS_XY_KEY_IN_SV_DETECTIONS] = selected_detection[
                 KEYPOINTS_XY_KEY_IN_SV_DETECTIONS
             ] - np.array([x_min, y_min])
-        if POLYGON_KEY_IN_SV_DETECTIONS in detections:
-            translated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = detections[
+        if POLYGON_KEY_IN_SV_DETECTIONS in detections.data:
+            translated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = selected_detection[
                 POLYGON_KEY_IN_SV_DETECTIONS
             ] - np.array([x_min, y_min])
 
