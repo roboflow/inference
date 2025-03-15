@@ -203,6 +203,9 @@ from inference.core.workflows.core_steps.models.foundation.stability_ai.image_ge
 from inference.core.workflows.core_steps.models.foundation.stability_ai.inpainting.v1 import (
     StabilityAIInpaintingBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.hugging_face.depth_anything2.v1 import (
+    DepthAnythingV2BlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.yolo_world.v1 import (
     YoloWorldModelBlockV1,
 )
@@ -543,6 +546,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         CropVisualizationBlockV1,
         DetectionsConsensusBlockV1,
         DetectionsStitchBlockV1,
+        DepthAnythingV2BlockV1,
         DistanceMeasurementBlockV1,
         DominantColorBlockV1,
         DotVisualizationBlockV1,
