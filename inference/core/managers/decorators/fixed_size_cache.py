@@ -45,10 +45,9 @@ class WithFixedSizeCache(ModelManagerDecorator):
         logger.debug(f"Current capacity of ModelManager: {len(self)}/{self.max_size}")
         while len(self) >= self.max_size:
             to_remove_model_id = self._key_queue.popleft()
-            logger.debug(
-                f"Reached maximum capacity of ModelManager. Unloading model {to_remove_model_id} with delete_from_disk={DISK_CACHE_CLEANUP}"
-            )
-            super().remove(to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP)
+            super().remove(
+                to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
+            )  # LRU model overflow cleanup may or maynot need the weights removed from disk
             logger.debug(f"Model {to_remove_model_id} successfully unloaded.")
         logger.debug(f"Marking new model {queue_id} as most recently used.")
         self._key_queue.append(queue_id)

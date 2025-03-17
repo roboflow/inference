@@ -2,6 +2,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.env import API_KEY
