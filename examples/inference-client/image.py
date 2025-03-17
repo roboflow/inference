@@ -1,10 +1,11 @@
-import cv2
-import requests
-import base64
-import supervision as sv
 import argparse
+import base64
 import os
 from typing import List
+
+import cv2
+import requests
+import supervision as sv
 
 
 def parse_arguments() -> argparse.Namespace:
