@@ -7,7 +7,7 @@ from typing import List, Optional, Union
 
 from filelock import FileLock
 
-from inference.core.env import DISK_CACHE_CLEANUP, MODEL_CACHE_DIR
+from inference.core.env import MODEL_CACHE_DIR
 from inference.core.logger import logger
 from inference.core.utils.file_system import (
     dump_bytes,
@@ -146,7 +146,7 @@ def clear_cache(model_id: Optional[str] = None, delete_from_disk: bool = False) 
         model_id (Optional[str], optional): The model ID to clear cache for. If None, clears entire cache. Defaults to None.
         delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to False.
     """
-    if not DISK_CACHE_CLEANUP or not delete_from_disk:
+    if not delete_from_disk:
         return
     cache_dir = get_cache_dir(model_id=model_id)
     if not os.path.exists(cache_dir):
