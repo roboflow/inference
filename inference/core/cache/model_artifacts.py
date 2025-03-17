@@ -156,7 +156,9 @@ def clear_cache(model_id: Optional[str] = None, delete_from_disk: bool = False) 
 
     # Use the last 2 levels of the cache directory path as the lock file name suffix
     parts = os.path.normpath(cache_dir).split(os.sep)
-    suffix = os.path.join(*parts[-2:]) if len(parts) >= 2 else os.path.basename(cache_dir)
+    suffix = (
+        os.path.join(*parts[-2:]) if len(parts) >= 2 else os.path.basename(cache_dir)
+    )
     lock_file = os.path.join(lock_dir, f"{suffix}.lock")
 
     try:
