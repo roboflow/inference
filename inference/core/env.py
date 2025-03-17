@@ -257,6 +257,15 @@ MAX_DETECTIONS = int(os.getenv(MAX_DETECTIONS_ENV, DEFAULT_MAX_DETECTIONS))
 # Loop interval for expiration of memory cache, default is 5
 MEMORY_CACHE_EXPIRE_INTERVAL = int(os.getenv("MEMORY_CACHE_EXPIRE_INTERVAL", 5))
 
+# Enable models cache auth
+MODELS_CACHE_AUTH_ENABLED = str2bool(os.getenv("MODELS_CACHE_AUTH_ENABLED", False))
+
+# Models cache auth cache ttl, default is 15 minutes
+MODELS_CACHE_AUTH_CACHE_TTL = int(os.getenv("MODELS_CACHE_AUTH_CACHE_TTL", 15 * 60))
+
+# Models cache auth cache max size, default is 0 (unlimited)
+MODELS_CACHE_AUTH_CACHE_MAX_SIZE = int(os.getenv("MODELS_CACHE_AUTH_CACHE_MAX_SIZE", 0))
+
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
 if LAMBDA or GCP_SERVERLESS:
