@@ -12,8 +12,6 @@ from inference.core.entities.types import (
     TaskType,
     VersionID,
 )
-
-from inference.core.exceptions import RoboflowAPINotAuthorizedError
 from inference.core.env import (
     LAMBDA,
     MODEL_CACHE_DIR,
@@ -25,6 +23,7 @@ from inference.core.exceptions import (
     MissingApiKeyError,
     ModelArtefactError,
     ModelNotRecognisedError,
+    RoboflowAPINotAuthorizedError,
 )
 from inference.core.logger import logger
 from inference.core.models.base import Model
