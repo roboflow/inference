@@ -4,10 +4,11 @@ from typing import List, Optional
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.env import DISK_CACHE_CLEANUP
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
-from inference.core.env import DISK_CACHE_CLEANUP
+
 
 class WithFixedSizeCache(ModelManagerDecorator):
     def __init__(self, model_manager: ModelManager, max_size: int = 8):
