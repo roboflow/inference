@@ -92,11 +92,11 @@ class Model(BaseInference):
         """
         print(m)
 
-    def clear_cache(self, delete_from_disk: bool = False) -> None:
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clears any cache if necessary. This method should be implemented in derived classes as needed.
 
         Args:
-            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to False.
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
         pass
 

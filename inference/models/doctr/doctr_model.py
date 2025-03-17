@@ -56,7 +56,7 @@ class DocTR(RoboflowCoreModel):
         )
         self.task_type = "ocr"
 
-    def clear_cache(self, delete_from_disk: bool = False) -> None:
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
         self.det_model.clear_cache(delete_from_disk=delete_from_disk)
         self.rec_model.clear_cache(delete_from_disk=delete_from_disk)
 
@@ -134,7 +134,7 @@ class DocTRRec(RoboflowCoreModel):
 
         super().__init__(*args, model_id=model_id, **kwargs)
 
-    def clear_cache(self, delete_from_disk: bool = False) -> None:
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
         super().clear_cache(delete_from_disk=delete_from_disk)
 
     def get_infer_bucket_file_list(self) -> list:
@@ -166,7 +166,7 @@ class DocTRDet(RoboflowCoreModel):
 
         super().__init__(*args, model_id=model_id, **kwargs)
 
-    def clear_cache(self, delete_from_disk: bool = False) -> None:
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
         super().clear_cache(delete_from_disk=delete_from_disk)
 
     def get_infer_bucket_file_list(self) -> list:

@@ -328,7 +328,7 @@ class ModelManager:
         self.check_for_model(model_id)
         return self._models[model_id].task_type
 
-    def remove(self, model_id: str) -> None:
+    def remove(self, model_id: str, delete_from_disk: bool = True) -> None:
         """Removes a model from the manager.
 
         Args:

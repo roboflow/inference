@@ -50,11 +50,11 @@ class ModelStub(Model):
             "model_id": self.model_id,
         }
 
-    def clear_cache(self, delete_from_disk: bool = False) -> None:
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
         """Clear the cache directory for this model.
 
         Args:
-            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to False.
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
         """
         clear_cache(model_id=self.model_id, delete_from_disk=delete_from_disk)
 

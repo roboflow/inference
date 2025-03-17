@@ -139,7 +139,7 @@ class ModelManagerDecorator(ModelManager):
         """
         return self.model_manager.get_class_names(model_id)
 
-    def remove(self, model_id: str) -> Model:
+    def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
         """Removes a model from the manager.
 
         Args:

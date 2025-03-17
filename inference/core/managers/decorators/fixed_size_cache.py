@@ -7,7 +7,7 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
-
+from inference.core.env import DISK_CACHE_CLEANUP
 
 class WithFixedSizeCache(ModelManagerDecorator):
     def __init__(self, model_manager: ModelManager, max_size: int = 8):
@@ -47,7 +47,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             logger.debug(
                 f"Reached maximum capacity of ModelManager. Unloading model {to_remove_model_id}"
             )
-            super().remove(to_remove_model_id)
+            super().remove(to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP)
             logger.debug(f"Model {to_remove_model_id} successfully unloaded.")
         logger.debug(f"Marking new model {queue_id} as most recently used.")
         self._key_queue.append(queue_id)
@@ -65,14 +65,14 @@ class WithFixedSizeCache(ModelManagerDecorator):
         for model_id in list(self.keys()):
             self.remove(model_id)
 
-    def remove(self, model_id: str) -> Model:
+    def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
         try:
             self._key_queue.remove(model_id)
         except ValueError:
             logger.warning(
                 f"Could not successfully purge model {model_id} from  WithFixedSizeCache models queue"
             )
-        return super().remove(model_id)
+        return super().remove(model_id, delete_from_disk=delete_from_disk)
 
     async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs

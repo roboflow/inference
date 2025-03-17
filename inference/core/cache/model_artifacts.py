@@ -139,7 +139,7 @@ def _rmtree_onerror(func, path, exc_info):
         raise  # re-raise the error.
 
 
-def clear_cache(model_id: Optional[str] = None, delete_from_disk: bool = False) -> None:
+def clear_cache(model_id: Optional[str] = None, delete_from_disk: bool = True) -> None:
     """Clear the cache for a specific model or the entire cache directory.
 
     Args:
