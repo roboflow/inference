@@ -142,9 +142,13 @@ class RoboflowInferenceModel(Model):
         """
         return get_cache_file_path(file=f, model_id=self.endpoint)
 
-    def clear_cache(self) -> None:
-        """Clear the cache directory."""
-        clear_cache(model_id=self.endpoint)
+    def clear_cache(self, delete_from_disk: bool = False) -> None:
+        """Clear the cache directory.
+        
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to False.
+        """
+        clear_cache(model_id=self.endpoint, delete_from_disk=delete_from_disk)
 
     def draw_predictions(
         self,

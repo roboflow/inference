@@ -92,8 +92,12 @@ class Model(BaseInference):
         """
         print(m)
 
-    def clear_cache(self):
-        """Clears any cache if necessary. This method should be implemented in derived classes as needed."""
+    def clear_cache(self, delete_from_disk: bool = False) -> None:
+        """Clears any cache if necessary. This method should be implemented in derived classes as needed.
+        
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to False.
+        """
         pass
 
     def infer_from_request(
