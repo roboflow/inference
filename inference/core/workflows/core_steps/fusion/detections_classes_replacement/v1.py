@@ -124,7 +124,9 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
             return {"predictions": None}
         if not classification_predictions:
             return {"predictions": sv.Detections.empty()}
-        if all(p is None for p in classification_predictions):
+        if all(
+            p is None or "top" in p and not p["top"] for p in classification_predictions
+        ):
             return {"predictions": sv.Detections.empty()}
         detection_id_by_class: Dict[str, Optional[Tuple[str, int]]] = {
             prediction[PARENT_ID_KEY]: extract_leading_class_from_prediction(
