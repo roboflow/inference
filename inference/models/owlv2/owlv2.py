@@ -345,6 +345,7 @@ class OwlV2(RoboflowInferenceModel):
             self.dataset_id = owlv2_model_id_chunks[0]
             self.version_id = owlv2_model_id_chunks[1]
         hf_id = os.path.join("google", self.version_id)
+        self.hf_id = hf_id
         processor = Owlv2Processor.from_pretrained(hf_id)
         self.image_size = tuple(processor.image_processor.size.values())
         self.image_mean = torch.tensor(
@@ -420,7 +421,7 @@ class OwlV2(RoboflowInferenceModel):
             return image_size
         else:
             return image.shape[:2][::-1]
-
+        
     @torch.no_grad()
     def embed_image(self, image: Union[np.ndarray, LazyImageRetrievalWrapper]) -> Hash:
         if isinstance(image, LazyImageRetrievalWrapper):
@@ -636,6 +637,28 @@ class OwlV2(RoboflowInferenceModel):
         iou_threshold: float,
         return_image_embeds: bool = False,
     ) -> Dict[str, PosNegDictType]:
+        if isinstance(training_data[0], str):
+            hashed = "".join(training_data)
+            if hashed in self.class_embeddings_cache:
+                return self.class_embeddings_cache[hashed]
+            
+            class_embeddings_dict = defaultdict(lambda: {"positive": None, "negative": None})
+            with torch.no_grad():
+                for class_name in training_data:
+                    processor = Owlv2Processor.from_pretrained(self.hf_id)
+                    inputs = processor(text=[class_name], return_tensors="pt").to(DEVICE)
+                    text_outputs = self.model.owlv2.text_model(
+                        **inputs
+                    )
+
+                    text_embeds = text_outputs[1]
+                    text_embeds = self.model.owlv2.text_projection(text_embeds)
+                    # normalized features
+                    text_embeds_norm = text_embeds / torch.linalg.norm(text_embeds, ord=2, dim=-1, keepdim=True)
+                    class_embeddings_dict[class_name]["positive"]=text_embeds_norm
+
+            self.class_embeddings_cache[hashed] = class_embeddings_dict
+            return class_embeddings_dict
 
         wrapped_training_data = [
             {
