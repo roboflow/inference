@@ -14,6 +14,7 @@ from starlette.status import (
 )
 from starlette.testclient import TestClient
 
+
 @pytest.fixture
 def builder_app(builder_env_session, monkeypatch):
     """
@@ -98,6 +99,7 @@ def test_api_get_workflow_invalid_id(builder_app):
 def test_api_create_and_read(builder_app):
     client = TestClient(builder_app)
     from inference.core.interfaces.http.builder.routes import csrf
+
     # Create a workflow
     create_resp = client.post(
         "/build/api/test-wf",

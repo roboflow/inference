@@ -5,6 +5,7 @@ from starlette.testclient import TestClient
 
 from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 
+
 def homepage(request):
     return PlainTextResponse("Hello, world!")
 
