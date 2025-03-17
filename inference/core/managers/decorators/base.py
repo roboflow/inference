@@ -148,7 +148,7 @@ class ModelManagerDecorator(ModelManager):
         Returns:
             Model: The removed model.
         """
-        return self.model_manager.remove(model_id)
+        return self.model_manager.remove(model_id, delete_from_disk=delete_from_disk)
 
     def __len__(self) -> int:
         """Returns the number of models in the manager.

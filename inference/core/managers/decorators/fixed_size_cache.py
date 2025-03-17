@@ -46,7 +46,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         while len(self) >= self.max_size:
             to_remove_model_id = self._key_queue.popleft()
             logger.debug(
-                f"Reached maximum capacity of ModelManager. Unloading model {to_remove_model_id}"
+                f"Reached maximum capacity of ModelManager. Unloading model {to_remove_model_id} with delete_from_disk={DISK_CACHE_CLEANUP}"
             )
             super().remove(to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP)
             logger.debug(f"Model {to_remove_model_id} successfully unloaded.")
