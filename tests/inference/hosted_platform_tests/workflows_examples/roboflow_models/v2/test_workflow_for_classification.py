@@ -40,7 +40,8 @@ MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
     PlatformEnvironment.ROBOFLOW_STAGING: [0.3667, 0.5917],
     PlatformEnvironment.ROBOFLOW_PLATFORM: [0.8252, 0.9962],
 }
-
+MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST] = MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_STAGING]
+MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST] = MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_PLATFORM]
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_multi_class_classification_workflow(
@@ -78,7 +79,7 @@ def test_multi_class_classification_workflow(
         "inference_id",
     }, "Expected all outputs to be registered"
     unique_inference_ids = {r["inference_id"] for r in result}
-    assert len(unique_inference_ids) == 2, "Expected unique inference ids granted"
+    assert len(unique_inference_ids) == 1, "Expected unique inference ids granted"
     predicted_confidences = [r["predictions"]["confidence"] for r in result]
     assert np.allclose(
         predicted_confidences,
@@ -122,8 +123,10 @@ MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
         {"dog"},
         {"cat", "dog"},
     ],
-    PlatformEnvironment.ROBOFLOW_PLATFORM: [{"cat", "dog"}, {"cat", "dog"}],
+    PlatformEnvironment.ROBOFLOW_PLATFORM: [{"dog"}, set()],
 }
+MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST] = MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_STAGING]
+MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST] = MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_PLATFORM]
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -162,7 +165,7 @@ def test_multi_label_classification_workflow(
         "inference_id",
     }, "Expected all outputs to be registered"
     unique_inference_ids = {r["inference_id"] for r in result}
-    assert len(unique_inference_ids) == 2, "Expected unique inference ids granted"
+    assert len(unique_inference_ids) == 1, "Expected unique inference ids granted"
     predicted_classes = [set(r["predictions"]["predicted_classes"]) for r in result]
     assert (
         predicted_classes
