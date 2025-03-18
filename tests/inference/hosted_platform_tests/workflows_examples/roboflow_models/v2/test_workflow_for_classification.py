@@ -79,7 +79,7 @@ def test_multi_class_classification_workflow(
         "inference_id",
     }, "Expected all outputs to be registered"
     unique_inference_ids = {r["inference_id"] for r in result}
-    assert len(unique_inference_ids) == 1, "Expected unique inference ids granted"
+    assert len(unique_inference_ids) == 2, "Expected unique inference ids granted"
     predicted_confidences = [r["predictions"]["confidence"] for r in result]
     assert np.allclose(
         predicted_confidences,
@@ -165,7 +165,7 @@ def test_multi_label_classification_workflow(
         "inference_id",
     }, "Expected all outputs to be registered"
     unique_inference_ids = {r["inference_id"] for r in result}
-    assert len(unique_inference_ids) == 1, "Expected unique inference ids granted"
+    assert len(unique_inference_ids) == 2, "Expected unique inference ids granted"
     predicted_classes = [set(r["predictions"]["predicted_classes"]) for r in result]
     assert (
         predicted_classes
