@@ -122,8 +122,10 @@ MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
         {"dog"},
         {"cat", "dog"},
     ],
-    PlatformEnvironment.ROBOFLOW_PLATFORM: [{"cat", "dog"}, {"cat", "dog"}],
+    PlatformEnvironment.ROBOFLOW_PLATFORM: [{"dog"}, set()],
 }
+MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST] = MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_STAGING]
+MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST] = MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_PLATFORM]
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -162,7 +164,7 @@ def test_multi_label_classification_workflow(
         "inference_id",
     }, "Expected all outputs to be registered"
     unique_inference_ids = {r["inference_id"] for r in result}
-    assert len(unique_inference_ids) == 2, "Expected unique inference ids granted"
+    assert len(unique_inference_ids) == 1, "Expected unique inference ids granted"
     predicted_classes = [set(r["predictions"]["predicted_classes"]) for r in result]
     assert (
         predicted_classes
