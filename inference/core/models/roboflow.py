@@ -1,6 +1,7 @@
 import itertools
 import json
 import os
+import random
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -12,7 +13,6 @@ import numpy as np
 import onnxruntime
 from filelock import FileLock
 from PIL import Image
-
 from inference.core.env import (
     API_KEY,
     AWS_ACCESS_KEY_ID,
@@ -28,6 +28,7 @@ from inference.core.env import (
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
     USE_PYTORCH_FOR_PREPROCESSING,
+    DISK_CACHE_CLEANUP
 )
 from inference.core.logger import logger
 
@@ -713,7 +714,10 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             self.validate_model()
         except ModelArtefactError as e:
             logger.error(f"Unable to validate model artifacts, clearing cache: {e}")
-            self.clear_cache()
+            if (DISK_CACHE_CLEANUP == False):
+                self.clear_cache(delete_from_disk=random.random() < 0.01) # Clear disk cache with 1% probability.
+            else:
+                self.clear_cache(delete_from_disk=True) # Clear disk cache
             raise ModelArtefactError from e
 
     def infer(self, image: Any, **kwargs) -> Any:
@@ -742,26 +746,34 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         if MODEL_VALIDATION_DISABLED:
             logger.debug("Model validation disabled.")
             return None
-        logger.debug("Starting model validation")
+        logger.debug(f"Starting model validation for {self.endpoint}")
+        validate_model_error_count = cache.get(self.endpoint+"_validate_model_error_count")
+        if validate_model_error_count is None:
+            validate_model_error_count = 0
+        if validate_model_error_count > 3:
+            raise ModelArtefactError("Model validation failed multiple times, ignoring this model.")
         if not self.load_weights:
             return
         try:
             assert self.onnx_session is not None
         except AssertionError as e:
+            cache.set(self.endpoint+"_validate_model_error_count", validate_model_error_count + 1)
             raise ModelArtefactError(
                 "ONNX session not initialized. Check that the model weights are available."
             ) from e
         try:
             self.run_test_inference()
         except Exception as e:
+            cache.set(self.endpoint+"_validate_model_error_count", validate_model_error_count + 1)
             raise ModelArtefactError(f"Unable to run test inference. Cause: {e}") from e
         try:
             self.validate_model_classes()
         except Exception as e:
+            cache.set(self.endpoint+"_validate_model_error_count", validate_model_error_count + 1)
             raise ModelArtefactError(
                 f"Unable to validate model classes. Cause: {e}"
             ) from e
-        logger.debug("Model validation finished")
+        cache.set(self.endpoint+"_validate_model_error_count", 0)
 
     def run_test_inference(self) -> None:
         test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
