@@ -896,7 +896,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         disable_preproc_contrast: bool = False,
         disable_preproc_grayscale: bool = False,
         disable_preproc_static_crop: bool = False,
-    ) -> Union[Tuple[np.ndarray, Tuple[Tuple[int, int]]], Tuple[torch.Tensor, Tuple[Tuple[int, int], ...]]]:
+    ) -> Tuple[np.ndarray, Tuple[Tuple[int, int], ...]]:
         if isinstance(image, list):
             preproc_image = partial(
                 self.preproc_image,
