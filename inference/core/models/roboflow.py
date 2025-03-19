@@ -790,7 +790,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 f"Unable to validate model classes. Cause: {e}"
             ) from e
         logger.debug(f"Model validation finished for {self.endpoint}")
-        cache.delete(self.endpoint + "_validate_model_error_count")
+        cache.set(self.endpoint + "_validate_model_error_count", 0)
 
     def run_test_inference(self) -> None:
         test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
