@@ -114,4 +114,4 @@ def test_detections_merge_block_empty_input() -> None:
     assert "predictions" in output
     assert len(output["predictions"]) == 0
     assert isinstance(output["predictions"].xyxy, np.ndarray)
-    assert output["predictions"].xyxy.shape == (0, 4) 
+    assert output["predictions"].xyxy.shape == (0, 4)
