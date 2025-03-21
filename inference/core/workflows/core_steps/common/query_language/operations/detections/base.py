@@ -118,12 +118,8 @@ def select_leftmost_detection(detections: sv.Detections) -> sv.Detections:
         return detections  # Directly return the original empty detections if empty
 
     centers_x = detections.get_anchors_coordinates(anchor=Position.CENTER)[:, 0]
-    index = np.argmin(
-        centers_x
-    )  # Using np.argmin directly to find the index of the minimum value
-    return detections[
-        index
-    ].copy()  # Use copy instead of deepcopy for better performance
+    index = np.argmin(centers_x)
+    return detections[index]
 
 
 def select_rightmost_detection(detections: sv.Detections) -> sv.Detections:
