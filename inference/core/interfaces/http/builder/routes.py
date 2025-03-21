@@ -201,7 +201,7 @@ async def create_or_overwrite_workflow(
                 logger.error(f"Error deleting {old_id} from {old_file_path}: {e}")
                 return JSONResponse({"error": "unable to delete file"}, status_code=500)
 
-        request_body["id"] = workflow_id
+    request_body["id"] = workflow_id
 
     workflow_hash = sha256(workflow_id.encode()).hexdigest()
     file_path = workflow_local_dir / f"{workflow_hash}.json"
