@@ -205,7 +205,9 @@ def aggregate_batch_processing_results(
     decoded_content = []
     for result_path in track(all_results, description="Grabbing processing results..."):
         content = read_json(path=result_path)
-        processed_file = result_path.split("/")[-2]
+        processed_file = extract_processed_image_name_from_predictions_path(
+            predictions_path=result_path
+        )
         content["image"] = processed_file
         decoded_content.append(content)
     if aggregation_format is OutputFileType.JSONL:
@@ -230,6 +232,11 @@ def aggregate_batch_processing_results(
     aggregated_results_path = os.path.join(output_directory, "aggregated_results.csv")
     data_frame.to_csv(aggregated_results_path, index=False)
     return aggregated_results_path
+
+
+def extract_processed_image_name_from_predictions_path(predictions_path: str) -> str:
+    # we expect path to be <out_dir>/<image_name>/results.json - hence we extract basename of parent dir
+    return os.path.basename(os.path.dirname(predictions_path))
 
 
 def dump_objects_to_json(value: Any) -> Any:

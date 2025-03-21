@@ -1,7 +1,7 @@
 import logging
 import os
 import time
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 import pytest
 import requests

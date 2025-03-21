@@ -1,13 +1,13 @@
 import os
-
 import timeit
 
 os.environ["API_KEY"] = "API_KEY"
-from inference.models.sam2 import SegmentAnything2
-from inference.core.entities.requests.sam2 import Sam2PromptSet
+import numpy as np
 import supervision as sv
 from PIL import Image
-import numpy as np
+
+from inference.core.entities.requests.sam2 import Sam2PromptSet
+from inference.models.sam2 import SegmentAnything2
 
 image_path = "./examples/sam2/hand.png"
 m = SegmentAnything2(model_id="sam2/hiera_large")

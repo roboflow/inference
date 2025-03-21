@@ -1,10 +1,9 @@
 import json
 import os
-import requests
-
 from pathlib import Path
-from PIL import Image
 
+import requests
+from PIL import Image
 from regression_test import (
     legacy_infer_with_base64_image,
     legacy_infer_with_image_url,
