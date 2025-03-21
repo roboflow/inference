@@ -716,7 +716,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         except ModelArtefactError as e:
             logger.error(f"Unable to validate model artifacts, clearing cache: {e}")
             if DISK_CACHE_CLEANUP:
-                self.clear_cache(delete_from_disk=True)  # Clear disk cache
+                self.clear_cache(delete_from_disk=True)
             else:
                 logger.error("NOT deleting model from cache, inspect model artifacts")
             raise ModelArtefactError from e
