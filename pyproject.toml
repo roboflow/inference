@@ -1,0 +1,7 @@
+[tool.codeflash]
+# All paths are relative to this pyproject.toml's directory.
+module-root = "inference"
+tests-root = "tests/inference/unit_tests"
+test-framework = "pytest"
+ignore-paths = []
+formatter-cmds = ["black $file"]
