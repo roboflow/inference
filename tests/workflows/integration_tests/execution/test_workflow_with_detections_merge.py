@@ -80,30 +80,32 @@ def test_detections_merge_workflow(
     assert isinstance(
         result[0]["result"], sv.Detections
     ), "Output must be instance of sv.Detections"
-    
+
     # Check that we have exactly one merged detection
     assert len(result[0]["result"]) == 1, "Should have exactly one merged detection"
-    
+
     # Check that the merged detection has all required fields
     assert "class_name" in result[0]["result"].data, "Should have class_name in data"
-    assert "detection_id" in result[0]["result"].data, "Should have detection_id in data"
-    
+    assert (
+        "detection_id" in result[0]["result"].data
+    ), "Should have detection_id in data"
+
     # Check that the bounding box has reasonable dimensions
     merged_bbox = result[0]["result"].xyxy[0]
     image_height, image_width = dogs_image.shape[:2]
-    
+
     # Check that coordinates are within image bounds
     assert 0 <= merged_bbox[0] <= image_width, "x1 should be within image bounds"
     assert 0 <= merged_bbox[1] <= image_height, "y1 should be within image bounds"
     assert 0 <= merged_bbox[2] <= image_width, "x2 should be within image bounds"
     assert 0 <= merged_bbox[3] <= image_height, "y2 should be within image bounds"
-    
+
     # Check that the box has reasonable dimensions
     assert merged_bbox[2] > merged_bbox[0], "x2 should be greater than x1"
     assert merged_bbox[3] > merged_bbox[1], "y2 should be greater than y1"
-    
+
     # Check that the box is large enough to likely contain the dogs
     box_width = merged_bbox[2] - merged_bbox[0]
     box_height = merged_bbox[3] - merged_bbox[1]
     assert box_width > 100, "Merged box should be reasonably wide"
-    assert box_height > 100, "Merged box should be reasonably tall" 
+    assert box_height > 100, "Merged box should be reasonably tall"
