@@ -259,6 +259,7 @@ extra_javascript:
   - 'https://unpkg.com/@rive-app/canvas'
   - 'https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js'
   - 'assets/home.js'
+  - 'js/segment.js'
 
 hooks:
   - theme/build.py
