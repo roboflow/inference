@@ -9,6 +9,7 @@ from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddlew
 def homepage(request):
     return PlainTextResponse("Hello, world!")
 
+
 def create_app(match_paths=None, allow_origins=None):
     """
     Utility to create a Starlette test app with our custom PathAwareCORSMiddleware.

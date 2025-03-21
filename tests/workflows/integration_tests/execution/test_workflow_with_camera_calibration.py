@@ -80,10 +80,10 @@ def test_workflow_with_camera_calibration(
     result = execution_engine.run(
         runtime_parameters={
             "images": [dogs_image],
-            "fx": 1.48052348e+03,
-            "fy": 1.62041507e+03,
-            "cx": 7.76228486e+02,
-            "cy": 5.09102914e+02,
+            "fx": 1.48052348e03,
+            "fy": 1.62041507e03,
+            "cx": 7.76228486e02,
+            "cy": 5.09102914e02,
             "k1": -0.67014685,
             "k2": 0.84140975,
             "k3": -0.40499778,
