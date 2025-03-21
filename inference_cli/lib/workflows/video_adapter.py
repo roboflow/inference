@@ -64,6 +64,7 @@ def process_video_with_workflow(
     progress_sink.start()
     pipeline.start(use_main_thread=True)
     pipeline.join()
+    pipeline.terminate()
     progress_sink.stop()
     structured_results_file = structured_sink.flush()[0]
     video_outputs = None
