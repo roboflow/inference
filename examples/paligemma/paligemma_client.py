@@ -1,6 +1,7 @@
 import base64
-import requests
 import os
+
+import requests
 
 PORT = 9001
 IMAGE_PATH = "../cogvlm/image.jpg"

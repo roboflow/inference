@@ -1,4 +1,3 @@
-import warnings
 from enum import Enum
 from typing import Dict, Tuple
 
@@ -14,12 +13,7 @@ from inference.core.env import (
 )
 
 if USE_PYTORCH_FOR_PREPROCESSING:
-    try:
-        import torch
-    except ImportError:
-        warnings.warn(
-            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
-        )
+    import torch
 
 
 from inference.core.exceptions import PreProcessingError
@@ -73,7 +67,7 @@ def prepare(
     try:
         if isinstance(image, np.ndarray):
             h, w = image.shape[0:2]
-        elif "torch" in dir():
+        elif USE_PYTORCH_FOR_PREPROCESSING:
             h, w = image.shape[-2:]
         else:
             raise ValueError(
@@ -232,7 +226,7 @@ def letterbox_image(
             cv2.BORDER_CONSTANT,
             value=color,
         )
-    elif "torch" in dir():
+    elif USE_PYTORCH_FOR_PREPROCESSING:
         return torch.nn.functional.pad(
             resized_img,
             (left_padding, right_padding, top_padding, bottom_padding),
@@ -269,7 +263,7 @@ def resize_image_keeping_aspect_ratio(
     """
     if isinstance(image, np.ndarray):
         img_ratio = image.shape[1] / image.shape[0]
-    elif "torch" in dir():
+    elif USE_PYTORCH_FOR_PREPROCESSING:
         img_ratio = image.shape[-1] / image.shape[-2]
     else:
         raise ValueError(
@@ -292,7 +286,7 @@ def resize_image_keeping_aspect_ratio(
     # Resize the image to new dimensions
     if isinstance(image, np.ndarray):
         return cv2.resize(image, (new_width, new_height))
-    elif "torch" in dir():
+    elif USE_PYTORCH_FOR_PREPROCESSING:
         return torch.nn.functional.interpolate(
             image, size=(new_height, new_width), mode="bilinear"
         )
