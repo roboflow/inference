@@ -11,7 +11,11 @@ import supervision as sv
 from rich.progress import Progress, TaskID
 
 from inference import InferencePipeline
-from inference.core.interfaces.camera.entities import VideoFrame, StatusUpdate, UpdateSeverity
+from inference.core.interfaces.camera.entities import (
+    StatusUpdate,
+    UpdateSeverity,
+    VideoFrame,
+)
 from inference.core.interfaces.stream.entities import SinkHandler
 from inference.core.interfaces.stream.sinks import multi_sink
 from inference.core.utils.image_utils import load_image_bgr
@@ -62,7 +66,7 @@ def process_video_with_workflow(
         serialize_results=True,
         image_input_name=image_input_name,
         max_fps=max_fps,
-        status_update_handlers=[errors_interceptor.status_handler]
+        status_update_handlers=[errors_interceptor.status_handler],
     )
     progress_sink.start()
     pipeline.start(use_main_thread=True)
