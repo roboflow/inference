@@ -233,6 +233,9 @@ class RoboflowInferenceModel(Model):
 
     def get_all_required_infer_bucket_file(self) -> List[str]:
         infer_bucket_files = self.get_infer_bucket_file_list()
+        print("infer_bucket_files")
+        print(infer_bucket_files)
+        print(self.weights_file)
         infer_bucket_files.append(self.weights_file)
         logger.debug(f"List of files required to load model: {infer_bucket_files}")
         return [f for f in infer_bucket_files if f is not None]

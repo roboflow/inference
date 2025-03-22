@@ -254,6 +254,11 @@ def _save_model_metadata_in_cache(
 def construct_model_type_cache_path(
     dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
 ) -> str:
+    print("construct_model_type_cache_path")
+    print(dataset_id)
+    print(version_id)
+    print(MODEL_CACHE_DIR)
+    print(os.path.join(MODEL_CACHE_DIR, dataset_id, version_id if version_id else ""))
     cache_dir = os.path.join(
         MODEL_CACHE_DIR, dataset_id, version_id if version_id else ""
     )
