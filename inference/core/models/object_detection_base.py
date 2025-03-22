@@ -319,7 +319,6 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         try:
             assert num_classes == self.num_classes
         except AssertionError:
-            print(f"Predictions shape: {output_shape}")
             raise ValueError(
                 f"Number of classes in model ({num_classes}) does not match the number of classes in the environment ({self.num_classes})"
             )

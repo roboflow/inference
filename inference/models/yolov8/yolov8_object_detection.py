@@ -44,17 +44,9 @@ class YOLOv8ObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         predictions = run_session_via_iobinding(
             self.onnx_session, self.input_name, img_in
         )[0]
-        print("Predictions shape pre:")
-        print(predictions.shape)
         predictions = predictions.transpose(0, 2, 1)
         boxes = predictions[:, :, :4]
         class_confs = predictions[:, :, 4:]
         confs = np.expand_dims(np.max(class_confs, axis=2), axis=2)
         predictions = np.concatenate([boxes, confs, class_confs], axis=2)
-        print("Predictions shape post:")
-        print(predictions.shape)
-        example_prediction = predictions[0]
-        print("Example prediction:")
-        print(example_prediction.shape)
-        print(example_prediction)
         return (predictions,)
