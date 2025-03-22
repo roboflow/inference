@@ -15,6 +15,7 @@ from inference.core.warnings import ModelDependencyMissing
 from inference.models import (
     YOLACT,
     ResNetClassification,
+    RFDETRObjectDetection,
     VitClassification,
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
@@ -86,6 +87,8 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov12m"): YOLOv12ObjectDetection,
     ("object-detection", "yolov12l"): YOLOv12ObjectDetection,
     ("object-detection", "yolov12x"): YOLOv12ObjectDetection,
+    ("object-detection", "rfdetr-base"): RFDETRObjectDetection,
+    ("object-detection", "rfdetr-large"): RFDETRObjectDetection,
     (
         "instance-segmentation",
         "yolov11n",
