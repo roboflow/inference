@@ -14,6 +14,7 @@ from starlette.status import (
 )
 from starlette.testclient import TestClient
 
+
 @pytest.fixture
 def builder_app(builder_env_session, monkeypatch):
     """
@@ -38,6 +39,7 @@ def builder_app(builder_env_session, monkeypatch):
     app.include_router(routes.router, prefix="/build")
     return app
 
+
 def test_builder_html_injects_csrf(builder_app, builder_env_session):
     """
     Verify that the HTML response for GET /build has the CSRF token injected.
@@ -55,6 +57,7 @@ def test_builder_html_injects_csrf(builder_app, builder_env_session):
     token = token_match.group(1)
     assert len(token) == 32, "CSRF token should be 32 hex digits long"
 
+
 def test_builder_edit_injects_csrf(builder_app, builder_env_session):
     """
     Verify that GET /build/edit/{workflow_id} returns HTML with the CSRF token.
@@ -67,19 +70,24 @@ def test_builder_edit_injects_csrf(builder_app, builder_env_session):
     token = token_match.group(1)
     assert len(token) == 32, "CSRF token should be 32 hex digits long"
 
+
 def test_builder_redirect_trailing_slash(builder_app):
     """
     Verify that GET /build/ returns a redirect.
     """
     client = TestClient(builder_app)
     response = client.get("/build/", follow_redirects=False)
-    assert response.status_code == HTTP_302_FOUND, f"Expected 302, got {response.status_code}"
+    assert (
+        response.status_code == HTTP_302_FOUND
+    ), f"Expected 302, got {response.status_code}"
     assert response.headers["location"] == "/build"
+
 
 def test_api_get_all_workflows_unauthorized(builder_app):
     client = TestClient(builder_app)
     response = client.get("/build/api")
     assert response.status_code == HTTP_403_FORBIDDEN
+
 
 def test_api_get_workflow_invalid_id(builder_app):
     """
@@ -88,6 +96,7 @@ def test_api_get_workflow_invalid_id(builder_app):
     """
     client = TestClient(builder_app)
     from inference.core.interfaces.http.builder.routes import csrf
+
     invalid_id = "invalid$id"  # '$' is not allowed by the regex [\w\-]+
     response = client.get(
         f"/build/api/{invalid_id}",
@@ -95,9 +104,11 @@ def test_api_get_workflow_invalid_id(builder_app):
     )
     assert response.status_code == HTTP_400_BAD_REQUEST
 
+
 def test_api_create_and_read(builder_app):
     client = TestClient(builder_app)
     from inference.core.interfaces.http.builder.routes import csrf
+
     # Create a workflow
     create_resp = client.post(
         "/build/api/test-wf",
@@ -112,13 +123,17 @@ def test_api_create_and_read(builder_app):
     data = get_resp.json()
     assert data["data"]["config"] == {"id": "test-wf", "stuff": 123}
 
+
 def test_fallback_redirect_invalid_id(builder_app):
     """
     With an invalid id containing slashes, the route will not match and yield a 404.
     """
     client = TestClient(builder_app)
     response = client.get("/build/../../etc/passwd", follow_redirects=False)
-    assert response.status_code == HTTP_404_NOT_FOUND, f"Expected 404, got {response.status_code}"
+    assert (
+        response.status_code == HTTP_404_NOT_FOUND
+    ), f"Expected 404, got {response.status_code}"
+
 
 def test_fallback_redirect_exists(builder_app):
     """
@@ -126,6 +141,7 @@ def test_fallback_redirect_exists(builder_app):
     """
     client = TestClient(builder_app)
     from inference.core.interfaces.http.builder.routes import csrf
+
     client.post(
         "/build/api/foobar",
         json={"id": "foobar"},
@@ -134,6 +150,7 @@ def test_fallback_redirect_exists(builder_app):
     response = client.get("/build/foobar", follow_redirects=False)
     assert response.status_code == HTTP_302_FOUND
     assert response.headers["location"] == "/build/edit/foobar"
+
 
 def test_fallback_redirect_not_exists(builder_app):
     """

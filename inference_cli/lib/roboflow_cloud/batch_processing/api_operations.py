@@ -723,16 +723,20 @@ def fetch_job_logs(
 ) -> None:
     workspace = get_workspace(api_key=api_key)
     logs = []
-    on_log_appear = print if output_file is None else lambda l: logs.append(l)
     for log in iterate_over_job_logs(
         workspace=workspace,
         job_id=job_id,
         api_key=api_key,
         log_severity=log_severity,
     ):
-        on_log_appear(log.model_dump())
+        if output_file is None:
+            print(log.model_dump())
+        else:
+            logs.append(log)
     if output_file:
-        dump_jsonl(path=output_file, content=logs)
+        # for datetime serialization, we can afford overhead here most likely
+        serialized_logs = [json.loads(log.model_dump_json()) for log in logs]
+        dump_jsonl(path=output_file, content=serialized_logs)
 
 
 def iterate_over_job_logs(

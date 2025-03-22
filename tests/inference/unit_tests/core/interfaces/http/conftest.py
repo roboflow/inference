@@ -1,7 +1,9 @@
 import os
 import sys
-import pytest
 from tempfile import TemporaryDirectory
+
+import pytest
+
 
 @pytest.fixture(scope="session")
 def builder_env_session():

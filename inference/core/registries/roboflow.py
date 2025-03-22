@@ -1,5 +1,7 @@
 import os
-from typing import Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
+
+from cachetools.func import ttl_cache
 
 from inference.core.cache import cache
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
@@ -10,11 +12,18 @@ from inference.core.entities.types import (
     TaskType,
     VersionID,
 )
-from inference.core.env import LAMBDA, MODEL_CACHE_DIR
+from inference.core.env import (
+    LAMBDA,
+    MODEL_CACHE_DIR,
+    MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
+    MODELS_CACHE_AUTH_CACHE_TTL,
+    MODELS_CACHE_AUTH_ENABLED,
+)
 from inference.core.exceptions import (
     MissingApiKeyError,
     ModelArtefactError,
     ModelNotRecognisedError,
+    RoboflowAPINotAuthorizedError,
 )
 from inference.core.logger import logger
 from inference.core.models.base import Model
@@ -75,6 +84,30 @@ class RoboflowModelRegistry(ModelRegistry):
         return self.registry_dict[model_type]
 
 
+@ttl_cache(ttl=MODELS_CACHE_AUTH_CACHE_TTL, maxsize=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
+def _check_if_api_key_has_access_to_model(
+    api_key: str,
+    model_id: str,
+) -> bool:
+    _, version_id = get_model_id_chunks(model_id=model_id)
+    try:
+        if version_id is not None:
+            get_roboflow_model_data(
+                api_key=api_key,
+                model_id=model_id,
+                endpoint_type=ModelEndpointType.ORT,
+                device_id=GLOBAL_DEVICE_ID,
+            ).get("ort")
+        else:
+            get_roboflow_instant_model_data(
+                api_key=api_key,
+                model_id=model_id,
+            )
+    except RoboflowAPINotAuthorizedError:
+        return False
+    return True
+
+
 def get_model_type(
     model_id: ModelID,
     api_key: Optional[str] = None,
@@ -99,6 +132,15 @@ def get_model_type(
     if dataset_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]
+
+    if MODELS_CACHE_AUTH_ENABLED:
+        if not _check_if_api_key_has_access_to_model(
+            api_key=api_key, model_id=model_id
+        ):
+            raise RoboflowAPINotAuthorizedError(
+                f"API key {api_key} does not have access to model {model_id}"
+            )
+
     cached_metadata = get_model_metadata_from_cache(
         dataset_id=dataset_id, version_id=version_id
     )
