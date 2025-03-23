@@ -7,6 +7,8 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
+from inference.core.env import MEMORY_PRESSURE_THRESHOLD
+import torch
 
 
 class WithFixedSizeCache(ModelManagerDecorator):
@@ -42,7 +44,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             return None
 
         logger.debug(f"Current capacity of ModelManager: {len(self)}/{self.max_size}")
-        while len(self) >= self.max_size:
+        while (len(self) >= self.max_size or self.memory_pressure_detected()):
             to_remove_model_id = self._key_queue.popleft()
             logger.debug(
                 f"Reached maximum capacity of ModelManager. Unloading model {to_remove_model_id}"
@@ -141,3 +143,15 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self, model_id: str, model_id_alias: Optional[str] = None
     ) -> str:
         return model_id if model_id_alias is None else model_id_alias
+
+    def memory_pressure_detected(self) -> bool:
+        return_boolean = False
+        try:
+            if torch.cuda.is_available():
+                free_memory, total_memory = torch.cuda.mem_get_info()
+                return_boolean = (total_memory - free_memory) / total_memory < MEMORY_FREE_THRESHOLD
+                logger.debug(f"Free memory: {free_memory}, Total memory: {total_memory}, threshold: {MEMORY_FREE_THRESHOLD}, return_boolean: {return_boolean}")
+            # TODO: Add memory calculation for other non-CUDA devices
+        except Exception as e:
+            logger.error(f"Failed to check CUDA memory pressure: {e}, returning {return_boolean}")
+        return return_boolean

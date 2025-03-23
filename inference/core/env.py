@@ -520,6 +520,7 @@ if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
     warnings.simplefilter("ignore", ModelDependencyMissing)
 
 DISK_CACHE_CLEANUP = str2bool(os.getenv("DISK_CACHE_CLEANUP", "True"))
+MEMORY_FREE_THRESHOLD = float(os.getenv("MEMORY_FREE_THRESHOLD", "0.1"))
 
 # Stream manager configuration
 try:
