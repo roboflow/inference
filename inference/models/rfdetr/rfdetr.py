@@ -1,8 +1,9 @@
 import os
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 import numpy as np
 
+from inference.core.logger import logger
 from inference.core.models.defaults import (
     DEFAULT_CLASS_AGNOSTIC_NMS,
     DEFAULT_CONFIDENCE,
@@ -10,10 +11,6 @@ from inference.core.models.defaults import (
     DEFAULT_MAX_CANDIDATES,
     DEFAUlT_MAX_DETECTIONS,
 )
-
-from inference.core.logger import logger
-from typing import Any
-
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
     ObjectDetectionInferenceResponse,
