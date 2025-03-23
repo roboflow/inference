@@ -22,7 +22,7 @@ from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.onnx import ImageMetaType, run_session_via_iobinding
 
 class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
-    """Roboflow ONNX Object detection model (Implements an object detection specific infer method).
+    """Roboflow ONNX Object detection with the RFDETR model.
 
     This class is responsible for performing object detection using the RFDETR model
     with ONNX runtime.
@@ -60,13 +60,12 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         return super().preprocess(image, disable_preproc_auto_orient, disable_preproc_contrast, disable_preproc_grayscale, disable_preproc_static_crop, fix_batch_size, **kwargs)
     
     def predict(
-        self, img_in: ImageMetaType, threshold=0.5, **kwargs
+        self, img_in: ImageMetaType, **kwargs
     ) -> Tuple[np.ndarray]:
-        """Performs object detection on the given image using the ONNX session.
+        """Performs object detection on the given image using the ONNX session with the RFDETR model.
 
         Args:
             img_in (np.ndarray): Input image as a NumPy array.
-            threshold (float, optional): Confidence threshold for filtering detections. Defaults to 0.5.
 
         Returns:
             Tuple[np.ndarray]: NumPy array representing the predictions, including boxes, confidence scores, and class IDs.
