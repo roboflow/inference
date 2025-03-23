@@ -10,13 +10,16 @@ from inference.core.models.defaults import (
     DEFAULT_MAX_CANDIDATES,
     DEFAUlT_MAX_DETECTIONS,
 )
+
+from inference.core.logger import logger
+from typing import Any
+
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
     ObjectDetectionInferenceResponse,
 )
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.onnx import ImageMetaType, run_session_via_iobinding
-
 
 class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection model (Implements an object detection specific infer method).
@@ -41,8 +44,21 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         Returns:
             str: Path to the ONNX weights file.
         """
-        return os.path.join(self.cache_dir, "weights.sim.onnx")
+        return os.path.join(self.cache_dir, "weights.onnx")
 
+    def preprocess(
+        self,
+        image: Any,
+        disable_preproc_auto_orient: bool = False,
+        disable_preproc_contrast: bool = False,
+        disable_preproc_grayscale: bool = False,
+        disable_preproc_static_crop: bool = False,
+        fix_batch_size: bool = False,
+        **kwargs,
+    ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
+        self.resize_method = "Stretch to"
+        return super().preprocess(image, disable_preproc_auto_orient, disable_preproc_contrast, disable_preproc_grayscale, disable_preproc_static_crop, fix_batch_size, **kwargs)
+    
     def predict(
         self, img_in: ImageMetaType, threshold=0.5, **kwargs
     ) -> Tuple[np.ndarray]:
@@ -93,6 +109,8 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         bboxes = predictions[0]
         logits = predictions[1]
 
+        logits = 1 / (1 + np.exp(-logits))
+
         img_dims = preproc_return_metadata["img_dims"]
 
         processed_predictions = []
@@ -114,11 +132,15 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             converted_boxes = []
             for box in filtered_boxes:
                 cx, cy, w, h = box
-                x1 = (cx - w / 2) * orig_w
-                y1 = (cy - h / 2) * orig_h
-                x2 = (cx + w / 2) * orig_w
-                y2 = (cy + h / 2) * orig_h
-                converted_boxes.append([x1, y1, x2, y2])
+                x1 = cx - w / 2
+                y1 = cy - h / 2
+                x2 = cx + w / 2
+                y2 = cy + h / 2
+
+                scale_fct = np.array([orig_w, orig_h, orig_w, orig_h])
+                converted_box = np.array([x1, y1, x2, y2]) * scale_fct
+
+                converted_boxes.append(converted_box)
 
             converted_boxes = np.array(converted_boxes)
 
