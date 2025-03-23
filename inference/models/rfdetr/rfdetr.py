@@ -21,6 +21,7 @@ from inference.core.models.object_detection_base import (
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.utils.onnx import ImageMetaType, run_session_via_iobinding
 
+
 class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection with the RFDETR model.
 
@@ -57,11 +58,17 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         **kwargs,
     ) -> Tuple[np.ndarray, PreprocessReturnMetadata]:
         self.resize_method = "Stretch to"
-        return super().preprocess(image, disable_preproc_auto_orient, disable_preproc_contrast, disable_preproc_grayscale, disable_preproc_static_crop, fix_batch_size, **kwargs)
-    
-    def predict(
-        self, img_in: ImageMetaType, **kwargs
-    ) -> Tuple[np.ndarray]:
+        return super().preprocess(
+            image,
+            disable_preproc_auto_orient,
+            disable_preproc_contrast,
+            disable_preproc_grayscale,
+            disable_preproc_static_crop,
+            fix_batch_size,
+            **kwargs,
+        )
+
+    def predict(self, img_in: ImageMetaType, **kwargs) -> Tuple[np.ndarray]:
         """Performs object detection on the given image using the ONNX session with the RFDETR model.
 
         Args:
