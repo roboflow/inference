@@ -2378,6 +2378,7 @@ class HttpInterface(BaseInterface):
                         "Service secret is required to disable inference usage tracking"
                     )
                 if LAMBDA:
+                    logger.debug("request.scope: %s", request.scope)
                     request_model_id = (
                         request.scope["aws.event"]["requestContext"]["authorizer"][
                             "lambda"
