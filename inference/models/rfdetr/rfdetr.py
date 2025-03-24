@@ -42,89 +42,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     preprocess_means = [0.485, 0.456, 0.406]
     preprocess_stds = [0.229, 0.224, 0.225]
 
-    COCO_CLASSES = {
-        1: "person",
-        2: "bicycle",
-        3: "car",
-        4: "motorcycle",
-        5: "airplane",
-        6: "bus",
-        7: "train",
-        8: "truck",
-        9: "boat",
-        10: "traffic light",
-        11: "fire hydrant",
-        13: "stop sign",
-        14: "parking meter",
-        15: "bench",
-        16: "bird",
-        17: "cat",
-        18: "dog",
-        19: "horse",
-        20: "sheep",
-        21: "cow",
-        22: "elephant",
-        23: "bear",
-        24: "zebra",
-        25: "giraffe",
-        27: "backpack",
-        28: "umbrella",
-        31: "handbag",
-        32: "tie",
-        33: "suitcase",
-        34: "frisbee",
-        35: "skis",
-        36: "snowboard",
-        37: "sports ball",
-        38: "kite",
-        39: "baseball bat",
-        40: "baseball glove",
-        41: "skateboard",
-        42: "surfboard",
-        43: "tennis racket",
-        44: "bottle",
-        46: "wine glass",
-        47: "cup",
-        48: "fork",
-        49: "knife",
-        50: "spoon",
-        51: "bowl",
-        52: "banana",
-        53: "apple",
-        54: "sandwich",
-        55: "orange",
-        56: "broccoli",
-        57: "carrot",
-        58: "hot dog",
-        59: "pizza",
-        60: "donut",
-        61: "cake",
-        62: "chair",
-        63: "couch",
-        64: "potted plant",
-        65: "bed",
-        67: "dining table",
-        70: "toilet",
-        72: "tv",
-        73: "laptop",
-        74: "mouse",
-        75: "remote",
-        76: "keyboard",
-        77: "cell phone",
-        78: "microwave",
-        79: "oven",
-        80: "toaster",
-        81: "sink",
-        82: "refrigerator",
-        84: "book",
-        85: "clock",
-        86: "vase",
-        87: "scissors",
-        88: "teddy bear",
-        89: "hair drier",
-        90: "toothbrush",
-    }
-
     @property
     def weights_file(self) -> str:
         """Gets the weights file for the RFDETR model.
@@ -168,16 +85,19 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
 
-        means = [0.485, 0.456, 0.406]
-        stds = [0.229, 0.224, 0.225]
         preprocessed_image = preprocessed_image.astype(np.float32)
         preprocessed_image /= 255.0
 
-        for i in range(3):
-            preprocessed_image[:, :, i] = (
-                preprocessed_image[:, :, i] - means[i]
-            ) / stds[i]
-
+        preprocessed_image[:, :, 0] = (
+            preprocessed_image[:, :, 0] - self.preprocess_means[0]
+        ) / self.preprocess_stds[0]
+        preprocessed_image[:, :, 1] = (
+            preprocessed_image[:, :, 1] - self.preprocess_means[1]
+        ) / self.preprocess_stds[1]
+        preprocessed_image[:, :, 2] = (
+            preprocessed_image[:, :, 2] - self.preprocess_means[2]
+        ) / self.preprocess_stds[2]
+        
         if USE_PYTORCH_FOR_PREPROCESSING:
             preprocessed_image = torch.from_numpy(
                 np.ascontiguousarray(preprocessed_image)
@@ -280,44 +200,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                     f"when the model's batch size is {MAX_BATCH_SIZE}\n"
                     f"Consider turning off fix_batch_size, changing `MAX_BATCH_SIZE` in"
                     f"your inference server config, or passing at most {MAX_BATCH_SIZE} images at a time"
-                )
-            width_remainder = img_in.shape[2] % 32
-            height_remainder = img_in.shape[3] % 32
-            if width_remainder > 0:
-                width_padding = 32 - width_remainder
-            else:
-                width_padding = 0
-            if height_remainder > 0:
-                height_padding = 32 - height_remainder
-            else:
-                height_padding = 0
-
-            if isinstance(img_in, np.ndarray):
-                img_in = np.pad(
-                    img_in,
-                    (
-                        (0, batch_padding),
-                        (0, 0),
-                        (0, width_padding),
-                        (0, height_padding),
-                    ),
-                    "constant",
-                )
-            elif USE_PYTORCH_FOR_PREPROCESSING:
-                img_in = torch.nn.functional.pad(
-                    img_in,
-                    (
-                        0,
-                        height_padding,
-                        0,
-                        width_padding,
-                        0,
-                        0,
-                        0,
-                        batch_padding,
-                    ),
-                    mode="constant",
-                    value=0,
                 )
             else:
                 raise ValueError(
