@@ -1,10 +1,11 @@
 import json
 import os
-import requests
+import time
 from copy import deepcopy
 from pathlib import Path
+
 import pytest
-import time
+import requests
 
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)

@@ -7,7 +7,7 @@ from dataclasses import asdict
 from functools import partial
 from multiprocessing import Process, Queue
 from queue import Empty
-from threading import Event, Lock
+from threading import Event
 from types import FrameType
 from typing import Dict, Optional, Tuple
 

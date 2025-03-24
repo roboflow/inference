@@ -3,14 +3,16 @@ import os
 import re
 from collections import defaultdict
 from functools import lru_cache
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
 import pytest
 import requests
 from requests import Response
 
-from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import GALLERY_ENTRIES, \
-    WorkflowGalleryEntry
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    GALLERY_ENTRIES,
+    WorkflowGalleryEntry,
+)
 
 API_URL = "https://api.roboflow.com"
 API_KEY_PATTERN = re.compile(r"api_key=(.[^&]*)")
