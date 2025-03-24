@@ -1,6 +1,7 @@
 import itertools
 import json
 import os
+import warnings
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -15,6 +16,32 @@ import requests
 import subprocess
 import xml.etree.ElementTree as ET
 import zipfile
+
+from inference.core.env import (
+    API_KEY,
+    AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY,
+    CORE_MODEL_BUCKET,
+    DISABLE_PREPROC_AUTO_ORIENT,
+    INFER_BUCKET,
+    LAMBDA,
+    MAX_BATCH_SIZE,
+    MODEL_CACHE_DIR,
+    MODEL_VALIDATION_DISABLED,
+    ONNXRUNTIME_EXECUTION_PROVIDERS,
+    REQUIRED_ONNX_PROVIDERS,
+    TENSORRT_CACHE_PATH,
+    USE_PYTORCH_FOR_PREPROCESSING,
+)
+from inference.core.logger import logger
+
+if USE_PYTORCH_FOR_PREPROCESSING:
+    try:
+        import torch
+    except ImportError:
+        warnings.warn(
+            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
+        )
 
 from inference.core.cache import cache
 from inference.core.cache.model_artifacts import (
@@ -35,29 +62,14 @@ from inference.core.entities.requests.inference import (
     InferenceRequestImage,
 )
 from inference.core.entities.responses.inference import InferenceResponse
-from inference.core.env import (
-    API_KEY,
-    AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY,
-    CORE_MODEL_BUCKET,
-    DISABLE_PREPROC_AUTO_ORIENT,
-    INFER_BUCKET,
-    LAMBDA,
-    MAX_BATCH_SIZE,
-    MODEL_CACHE_DIR,
-    MODEL_VALIDATION_DISABLED,
-    ONNXRUNTIME_EXECUTION_PROVIDERS,
-    REQUIRED_ONNX_PROVIDERS,
-    TENSORRT_CACHE_PATH,
-)
 from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
-from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.models.utils.batching import create_batches
 from inference.core.models.utils.onnx import has_trt
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
+    get_roboflow_instant_model_data,
     get_roboflow_model_data,
 )
 from inference.core.utils.image_utils import load_image
@@ -257,33 +269,62 @@ class RoboflowInferenceModel(Model):
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
-        api_data = get_roboflow_model_data(
-            api_key=self.api_key,
-            model_id=self.endpoint,
-            endpoint_type=ModelEndpointType.ORT,
-            device_id=self.device_id,
-        )
-        if "ort" not in api_data.keys():
-            raise ModelArtefactError(
-                "Could not find `ort` key in roboflow API model description response."
+        if self.version_id is not None:
+            api_data = get_roboflow_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.ORT,
+                device_id=self.device_id,
             )
-        api_data = api_data["ort"]
-        if "classes" in api_data:
-            save_text_lines_in_cache(
-                content=api_data["classes"],
-                file="class_names.txt",
+            if "ort" not in api_data.keys():
+                raise ModelArtefactError(
+                    "Could not find `ort` key in roboflow API model description response."
+                )
+            api_data = api_data["ort"]
+            if "classes" in api_data:
+                save_text_lines_in_cache(
+                    content=api_data["classes"],
+                    file="class_names.txt",
+                    model_id=self.endpoint,
+                )
+            if "model" not in api_data:
+                raise ModelArtefactError(
+                    "Could not find `model` key in roboflow API model description response."
+                )
+            if "environment" not in api_data:
+                raise ModelArtefactError(
+                    "Could not find `environment` key in roboflow API model description response."
+                )
+            environment = get_from_url(api_data["environment"])
+            model_weights_response = get_from_url(
+                api_data["model"], json_response=False
+            )
+        else:
+            api_data = get_roboflow_instant_model_data(
+                api_key=self.api_key,
                 model_id=self.endpoint,
             )
-        if "model" not in api_data:
-            raise ModelArtefactError(
-                "Could not find `model` key in roboflow API model description response."
+            if (
+                "modelFiles" not in api_data
+                or "ort" not in api_data["modelFiles"]
+                or "model" not in api_data["modelFiles"]["ort"]
+            ):
+                raise ModelArtefactError(
+                    "Could not find `modelFiles` key or `modelFiles`.`ort` or `modelFiles`.`ort`.`model` key in roboflow API model description response."
+                )
+            model_weights_response = get_from_url(
+                api_data["modelFiles"]["ort"]["model"], json_response=False
             )
-        if "environment" not in api_data:
-            raise ModelArtefactError(
-                "Could not find `environment` key in roboflow API model description response."
-            )
-        environment = get_from_url(api_data["environment"])
-        model_weights_response = get_from_url(api_data["model"], json_response=False)
+            if "classes" in api_data["modelFiles"]["ort"]:
+                save_text_lines_in_cache(
+                    content=api_data["modelFiles"]["ort"]["classes"],
+                    file="class_names.txt",
+                    model_id=self.endpoint,
+                )
+            environment = {}
+            if "environment" in api_data["modelFiles"]["ort"]:
+                environment = get_from_url(api_data["modelFiles"]["ort"]["environment"])
+
         save_bytes_in_cache(
             content=model_weights_response.content,
             file=self.weights_file,
@@ -401,10 +442,36 @@ class RoboflowInferenceModel(Model):
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
 
-        if self.resize_method == "Stretch to":
-            resized = cv2.resize(
-                preprocessed_image, (self.img_size_w, self.img_size_h), cv2.INTER_CUBIC
+        if USE_PYTORCH_FOR_PREPROCESSING and "torch" in dir():
+            preprocessed_image = torch.from_numpy(
+                np.ascontiguousarray(preprocessed_image)
             )
+            if torch.cuda.is_available():
+                preprocessed_image = preprocessed_image.cuda()
+            preprocessed_image = (
+                preprocessed_image.permute(2, 0, 1).unsqueeze(0).contiguous().float()
+            )
+
+        if self.resize_method == "Stretch to":
+            if isinstance(preprocessed_image, np.ndarray):
+                preprocessed_image = preprocessed_image.astype(np.float32)
+                resized = cv2.resize(
+                    preprocessed_image,
+                    (self.img_size_w, self.img_size_h),
+                )
+            elif "torch" in dir():
+                resized = torch.nn.functional.interpolate(
+                    preprocessed_image,
+                    size=(self.img_size_h, self.img_size_w),
+                    mode="bilinear",
+                )
+            else:
+                raise ValueError(
+                    f"Received an image of unknown type, {type(preprocessed_image)}; "
+                    "This is most likely a bug. Contact Roboflow team through github issues "
+                    "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+                )
+
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
                 preprocessed_image, (self.img_size_w, self.img_size_h)
@@ -423,10 +490,23 @@ class RoboflowInferenceModel(Model):
             )
 
         if is_bgr:
-            resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        img_in = np.transpose(resized, (2, 0, 1))
-        img_in = img_in.astype(np.float32)
-        img_in = np.expand_dims(img_in, axis=0)
+            if isinstance(resized, np.ndarray):
+                resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+            else:
+                resized = resized[:, [2, 1, 0], :, :]
+
+        if isinstance(resized, np.ndarray):
+            img_in = np.transpose(resized, (2, 0, 1))
+            img_in = img_in.astype(np.float32)
+            img_in = np.expand_dims(img_in, axis=0)
+        elif "torch" in dir():
+            img_in = resized.float()
+        else:
+            raise ValueError(
+                f"Received an image of unknown type, {type(resized)}; "
+                "This is most likely a bug. Contact Roboflow team through github issues "
+                "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+            )
 
         return img_in, img_dims
 
@@ -795,6 +875,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
+
         logger.debug("Model initialisation finished.")
 
     def load_image(
@@ -815,7 +896,16 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             )
             imgs_with_dims = self.image_loader_threadpool.map(preproc_image, image)
             imgs, img_dims = zip(*imgs_with_dims)
-            img_in = np.concatenate(imgs, axis=0)
+            if isinstance(imgs[0], np.ndarray):
+                img_in = np.concatenate(imgs, axis=0)
+            elif "torch" in dir():
+                img_in = torch.cat(imgs, dim=0)
+            else:
+                raise ValueError(
+                    f"Received a list of images of unknown type, {type(imgs[0])}; "
+                    "This is most likely a bug. Contact Roboflow team through github issues "
+                    "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+                )
         else:
             img_in, img_dims = self.preproc_image(
                 image,

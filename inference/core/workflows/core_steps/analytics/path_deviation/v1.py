@@ -62,7 +62,7 @@ class PathDeviationManifest(WorkflowBlockManifest):
         examples=["$steps.object_detection_model.predictions"],
     )
     triggering_anchor: Union[str, Selector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
-        description=f"Triggering anchor. Allowed values: {', '.join(sv.Position.list())}",
+        description=f"Point on the detection that will be used to calculate the Frechet distance.",
         default="CENTER",
         examples=["CENTER"],
     )

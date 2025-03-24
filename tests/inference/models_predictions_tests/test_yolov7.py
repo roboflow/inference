@@ -6,12 +6,14 @@ from inference.core.entities.responses.inference import (
 )
 from inference.core.env import MAX_BATCH_SIZE
 from inference.models import YOLOv7InstanceSegmentation
+from tests.common import assert_localized_predictions_match
 
 
 @pytest.mark.slow
 def test_yolov7_segmentation_single_image_inference(
     yolov7_seg_model: str,
     example_image: np.ndarray,
+    yolov7_seg_reference_prediction: InstanceSegmentationInferenceResponse,
 ) -> None:
     # given
     model = YOLOv7InstanceSegmentation(model_id=yolov7_seg_model, api_key="DUMMY")
@@ -25,13 +27,14 @@ def test_yolov7_segmentation_single_image_inference(
 
     # then
     assert len(result) == 1, "Batch size=1 hence 1 result expected"
-    assert_yolov7_segmentation_prediction_matches_reference(prediction=result[0])
+    assert_localized_predictions_match(prediction_1=result[0], prediction_2=yolov7_seg_reference_prediction, box_confidence_tolerance=5e-3)
 
 
 @pytest.mark.slow
 def test_yolov7_segmentation_batch_inference_when_batch_size_smaller_than_max_batch_size(
     yolov7_seg_model: str,
     example_image: np.ndarray,
+    yolov7_seg_reference_prediction: InstanceSegmentationInferenceResponse,
 ) -> None:
     # given
     batch_size = min(4, MAX_BATCH_SIZE)
@@ -47,7 +50,7 @@ def test_yolov7_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov7_segmentation_prediction_matches_reference(prediction=prediction)
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolov7_seg_reference_prediction, box_confidence_tolerance=5e-3)
 
 
 @pytest.mark.slow
@@ -58,6 +61,7 @@ def test_yolov7_segmentation_batch_inference_when_batch_size_smaller_than_max_ba
 def test_yolov7_segmentation_batch_inference_when_batch_size_larger_than_max_batch_size(
     yolov7_seg_model: str,
     example_image: np.ndarray,
+    yolov7_seg_reference_prediction: InstanceSegmentationInferenceResponse,
 ) -> None:
     # given
     batch_size = MAX_BATCH_SIZE + 2
@@ -73,30 +77,4 @@ def test_yolov7_segmentation_batch_inference_when_batch_size_larger_than_max_bat
     # then
     assert len(result) == batch_size, "Number of results must match batch size"
     for prediction in result:
-        assert_yolov7_segmentation_prediction_matches_reference(prediction=prediction)
-
-
-def assert_yolov7_segmentation_prediction_matches_reference(
-    prediction: InstanceSegmentationInferenceResponse,
-) -> None:
-    assert (
-        len(prediction.predictions) == 4
-    ), "Four instances predicted by the model while test creation"
-    assert (
-        prediction.predictions[0].class_name == "dog"
-    ), "while test creation, dog was first bbox class"
-    assert (
-        abs(prediction.predictions[0].confidence - 0.771583) < 1e-4
-    ), "while test creation, confidence was 0.771583"
-    xywh = [
-        prediction.predictions[0].x,
-        prediction.predictions[0].y,
-        prediction.predictions[0].width,
-        prediction.predictions[0].height,
-    ]
-    assert np.allclose(
-        xywh, [312.0, 215.0, 616.0, 412.0], atol=0.6
-    ), "while test creation, box coordinates was [312.0, 215.0, 616.0, 412.0]"
-    assert (
-        len(prediction.predictions[0].points) == 618
-    ), "while test creation, mask had 618 points"
+        assert_localized_predictions_match(prediction_1=prediction, prediction_2=yolov7_seg_reference_prediction, box_confidence_tolerance=5e-3)

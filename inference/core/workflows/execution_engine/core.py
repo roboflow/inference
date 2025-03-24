@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Type
 
 from packaging.specifiers import SpecifierSet
@@ -37,6 +38,7 @@ class ExecutionEngine(BaseExecutionEngine):
         prevent_local_images_loading: bool = False,
         workflow_id: Optional[str] = None,
         profiler: Optional[WorkflowsProfiler] = None,
+        executor: Optional[ThreadPoolExecutor] = None,
     ) -> "ExecutionEngine":
         requested_engine_version = retrieve_requested_execution_engine_version(
             workflow_definition=workflow_definition,
@@ -51,6 +53,7 @@ class ExecutionEngine(BaseExecutionEngine):
             prevent_local_images_loading=prevent_local_images_loading,
             workflow_id=workflow_id,
             profiler=profiler,
+            executor=executor,
         )
         return cls(engine=engine)
 

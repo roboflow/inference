@@ -54,7 +54,7 @@ class BlockManifest(WorkflowBlockManifest):
             "ui_manifest": {
                 "section": "model",
                 "icon": "far fa-paperclip",
-                "blockPriority": 2,
+                "blockPriority": 9.9,
             },
         }
     )

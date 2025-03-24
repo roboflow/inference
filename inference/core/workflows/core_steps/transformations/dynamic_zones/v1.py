@@ -5,11 +5,15 @@ import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
 
+from inference.core.workflows.execution_engine.constants import (
+    POLYGON_KEY_IN_SV_DETECTIONS,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
@@ -22,6 +26,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "zones"
+OUTPUT_KEY_DETECTIONS: str = "predictions"
 TYPE: str = "roboflow_core/dynamic_zone@v1"
 SHORT_DESCRIPTION = (
     "Simplify polygons so they are geometrically convex "
@@ -66,6 +71,11 @@ class DynamicZonesManifest(WorkflowBlockManifest):
         description="Keep simplifying polygon until number of vertices matches this number",
         examples=[4, "$inputs.vertices"],
     )
+    scale_ratio: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+        default=1,
+        description="Expand resulting polygon along imaginary line from centroid to edge by this ratio",
+        examples=[1.05, "$inputs.scale_ratio"],
+    )
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -75,6 +85,9 @@ class DynamicZonesManifest(WorkflowBlockManifest):
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(name=OUTPUT_KEY, kind=[LIST_OF_VALUES_KIND]),
+            OutputDefinition(
+                name=OUTPUT_KEY_DETECTIONS, kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
+            ),
         ]
 
     @classmethod
@@ -119,6 +132,25 @@ def calculate_simplified_polygon(
     return simplified_polygon
 
 
+def scale_polygon(polygon: np.ndarray, scale: float) -> np.ndarray:
+    if scale == 1:
+        return polygon
+
+    M = cv.moments(polygon)
+
+    if M["m00"] == 0:
+        return polygon
+
+    centroid_x = M["m10"] / M["m00"]
+    centroid_y = M["m01"] / M["m00"]
+
+    shifted = polygon - [centroid_x, centroid_y]
+    scaled = shifted * scale
+    result = scaled + [centroid_x, centroid_y]
+
+    return result.round().astype(np.int32)
+
+
 class DynamicZonesBlockV1(WorkflowBlock):
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -128,6 +160,7 @@ class DynamicZonesBlockV1(WorkflowBlock):
         self,
         predictions: Batch[sv.Detections],
         required_number_of_vertices: int,
+        scale_ratio: float,
     ) -> BlockResult:
         result = []
         for detections in predictions:
@@ -135,16 +168,40 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 result.append({OUTPUT_KEY: None})
                 continue
             simplified_polygons = []
+            updated_detections = []
             if detections.mask is None:
                 result.append({OUTPUT_KEY: []})
                 continue
-            for mask in detections.mask:
+            for i, mask in enumerate(detections.mask):
+                # copy
+                updated_detection = detections[i]
+
                 simplified_polygon = calculate_simplified_polygon(
                     mask=mask,
                     required_number_of_vertices=required_number_of_vertices,
                 )
-                if len(simplified_polygon) != required_number_of_vertices:
-                    continue
-                simplified_polygons.append(simplified_polygon)
-            result.append({OUTPUT_KEY: simplified_polygons})
+                updated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(
+                    [simplified_polygon]
+                )
+                if len(simplified_polygon) == required_number_of_vertices:
+                    simplified_polygon = scale_polygon(
+                        polygon=simplified_polygon,
+                        scale=scale_ratio,
+                    )
+                    simplified_polygons.append(simplified_polygon)
+                    updated_detection.mask = np.array(
+                        [
+                            sv.polygon_to_mask(
+                                polygon=simplified_polygon,
+                                resolution_wh=mask.shape,
+                            )
+                        ]
+                    )
+                updated_detections.append(updated_detection)
+            result.append(
+                {
+                    OUTPUT_KEY: simplified_polygons,
+                    OUTPUT_KEY_DETECTIONS: sv.Detections.merge(updated_detections),
+                }
+            )
         return result

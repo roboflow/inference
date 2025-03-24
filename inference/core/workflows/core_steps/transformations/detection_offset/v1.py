@@ -62,22 +62,22 @@ class BlockManifest(WorkflowBlockManifest):
             KEYPOINT_DETECTION_PREDICTION_KIND,
         ]
     ) = Field(
-        description="Reference to detection-like predictions",
+        description="Model predictions to offset dimensions for.",
         examples=["$steps.object_detection_model.predictions"],
     )
     offset_width: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
-        description="Offset for boxes width",
+        description="Offset for box width.",
         examples=[10, "$inputs.offset_x"],
         validation_alias=AliasChoices("offset_width", "offset_x"),
     )
     offset_height: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
-        description="Offset for boxes height",
+        description="Offset for box height.",
         examples=[10, "$inputs.offset_y"],
         validation_alias=AliasChoices("offset_height", "offset_y"),
     )
     units: Literal["Percent (%)", "Pixels"] = Field(
         default="Pixels",
-        description="Units for offset dimensions",
+        description="Units for offset dimensions.",
         examples=["Pixels", "Percent (%)"],
     )
 

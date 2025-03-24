@@ -48,6 +48,7 @@ class TaskStatus(BaseModel):
     status_name: str = Field(alias="statusName")
     status_type: str = Field(alias="statusType")
     is_terminal: bool = Field(alias="isTerminal")
+    progress: float = Field(default=0.0)
     event_timestamp: datetime = Field(alias="eventTimestamp")
 
 
@@ -137,4 +138,8 @@ class WorkflowProcessingJobV1(BaseModel):
     )
     processing_specification: WorkflowsProcessingSpecificationV1 = Field(
         serialization_alias="processingSpecification"
+    )
+    notifications_url: Optional[str] = Field(
+        serialization_alias="notificationsURL",
+        default=None,
     )

@@ -3,7 +3,7 @@ hide:
   - toc
 ---
 
-# Other Resources
+# More Resources
 
 <div class="grid cards" markdown>
 
@@ -15,7 +15,7 @@ hide:
     the project. It's the place to go to file issues, make feature
     requests, or contribute.
 
-    [:fontawesome-brands-github: Go to Repo](https://github.com/roboflow/inference)
+    [:fontawesome-brands-github: Go to Repo](https://github.com/roboflow/inference){:target="_blank"}
 
 - **Roboflow Docs**
 
@@ -24,7 +24,7 @@ hide:
     Roboflow's Platform docs cover using all of the complementary
     cloud-connected features to the open source Inference project.
 
-    [:fontawesome-solid-book: Go to Docs](https://docs.roboflow.com)
+    [:fontawesome-solid-book: Go to Docs](https://docs.roboflow.com){:target="_blank"}
 
 - **Roboflow Forum**
 
@@ -32,15 +32,7 @@ hide:
 
     Get help from and connect with a community of computer vision enthusiasts
 
-    [:fontawesome-regular-comment: Go to Forum](https://discuss.roboflow.com)
-
-- **Roboflow Discord**
-
-    ---
-
-    Chat with the Roboflow Community and Team
-
-    [:fontawesome-brands-discord: Go to Chat](https://discord.gg/GbfgXGJ8Bk)
+    [:fontawesome-regular-comment: Go to Forum](https://discuss.roboflow.com){:target="_blank"}
 
 - **Roboflow YouTube**
 
@@ -48,6 +40,6 @@ hide:
 
     Regular videos with computer Vision news, tutorials, product updates, and more
 
-    [:fontawesome-brands-youtube: Go to Channel](https://bit.ly/rf-yt-sub)
+    [:fontawesome-brands-youtube: Go to Channel](https://bit.ly/rf-yt-sub){:target="_blank"}
 
 </div>

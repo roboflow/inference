@@ -77,7 +77,7 @@ class BlockManifest(WorkflowBlockManifest):
         ]
     ) = Field(
         title="Regions of Interest",
-        description="The output of a detection model describing the bounding boxes that will be used to crop the image.",
+        description="Detection model output containing bounding boxes for cropping.",
         examples=["$steps.my_object_detection_model.predictions"],
         validation_alias=AliasChoices("predictions", "detections"),
     )
@@ -110,6 +110,14 @@ class BlockManifest(WorkflowBlockManifest):
         "Can be a hex string (like '#431112') RGB string (like '(128, 32, 64)') or a RGB tuple "
         "(like (18, 17, 67)).",
         examples=["#431112", "$inputs.bg_color", (18, 17, 67)],
+        json_schema_extra={
+            "relevant_for": {
+                "predictions": {
+                    "kind": [INSTANCE_SEGMENTATION_PREDICTION_KIND.name],
+                    "required": True,
+                },
+            }
+        },
     )
 
     @classmethod
@@ -212,7 +220,7 @@ def overlay_crop_with_mask(
 
 
 def convert_color_to_bgr_tuple(
-    color: Union[str, Tuple[int, int, int]]
+    color: Union[str, Tuple[int, int, int]],
 ) -> Tuple[int, int, int]:
     if isinstance(color, str):
         return convert_string_color_to_bgr_tuple(color=color)

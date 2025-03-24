@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block tabs %}
+  {{ super() }}
+  {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
+    {% include 'home.html' %}
+    <style>
+      main.md-main {
+        height: 0;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+    </style>
+  {% endif %}
+{% endblock %}
+
+{% block container %}
+  {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
+  {% else %}
+    {{ super() }}
+  {% endif %}
+{% endblock %}
+
+{% block extrahead %}
+  {{ super() }}
+  {% if page.is_homepage or (page.meta and page.meta.template == "home.html") %}
+    <link href="{{ 'https://cdn.jsdelivr.net/npm/swiper/swiper-bundle.min.css'|url }}" rel="stylesheet">
+    <link href="{{ 'static/styles.css'|url }}" rel="stylesheet">
+    <script type="module" src="{{ 'static/dist/home.js'|url }}"></script>
+  {% endif %}
+{% endblock %}

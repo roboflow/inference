@@ -514,7 +514,7 @@ def get_static_crop_dimensions(
 
 
 def standardise_static_crop(
-    static_crop_config: Dict[str, int]
+    static_crop_config: Dict[str, int],
 ) -> Tuple[float, float, float, float]:
     return tuple(static_crop_config[key] / 100 for key in ["x_min", "y_min", "x_max", "y_max"])  # type: ignore
 
