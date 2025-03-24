@@ -6,7 +6,7 @@ image = Image.open("test.jpg")
 
 model = get_model("rfdetr-base")
 
-predictions = model.infer(image)[0]
+predictions = model.infer(image, confidence=0.5)[0]
 
 detections = sv.Detections.from_inference(predictions)
 
@@ -26,7 +26,7 @@ annotated_image.save("annotated_image_base.jpg")
 
 model = get_model("rfdetr-large")
 
-predictions = model.infer(image)[0]
+predictions = model.infer(image, confidence=0.5)[0]
 
 detections = sv.Detections.from_inference(predictions)
 
