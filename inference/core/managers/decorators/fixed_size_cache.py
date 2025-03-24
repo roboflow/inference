@@ -149,7 +149,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
         try:
             if torch.cuda.is_available():
                 free_memory, total_memory = torch.cuda.mem_get_info()
-                return_boolean = (total_memory - free_memory) / total_memory < MEMORY_FREE_THRESHOLD
+                return_boolean = float(free_memory / total_memory) < MEMORY_FREE_THRESHOLD
                 logger.debug(f"Free memory: {free_memory}, Total memory: {total_memory}, threshold: {MEMORY_FREE_THRESHOLD}, return_boolean: {return_boolean}")
             # TODO: Add memory calculation for other non-CUDA devices
         except Exception as e:
