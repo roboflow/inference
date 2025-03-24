@@ -4,9 +4,7 @@ from typing import Any, List, Tuple, Union
 import cv2
 import numpy as np
 
-from inference.core.entities.requests.inference import (
-    InferenceRequestImage,
-)
+from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.env import (
     DISABLE_PREPROC_AUTO_ORIENT,
     FIX_BATCH_SIZE,
@@ -14,10 +12,7 @@ from inference.core.env import (
     USE_PYTORCH_FOR_PREPROCESSING,
 )
 from inference.core.logger import logger
-from inference.core.models.defaults import (
-    DEFAULT_CONFIDENCE,
-    DEFAUlT_MAX_DETECTIONS,
-)
+from inference.core.models.defaults import DEFAULT_CONFIDENCE, DEFAUlT_MAX_DETECTIONS
 from inference.core.models.object_detection_base import (
     ObjectDetectionBaseOnnxRoboflowInferenceModel,
     ObjectDetectionInferenceResponse,
