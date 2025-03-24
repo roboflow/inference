@@ -97,7 +97,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         preprocessed_image[:, :, 2] = (
             preprocessed_image[:, :, 2] - self.preprocess_means[2]
         ) / self.preprocess_stds[2]
-        
+
         if USE_PYTORCH_FOR_PREPROCESSING:
             preprocessed_image = torch.from_numpy(
                 np.ascontiguousarray(preprocessed_image)
