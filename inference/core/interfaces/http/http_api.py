@@ -3,17 +3,15 @@ import base64
 import os
 import traceback
 from functools import partial, wraps
-from pathlib import Path as Pathlib
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
 
 import asgi_correlation_id
 import uvicorn
 from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
-from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
