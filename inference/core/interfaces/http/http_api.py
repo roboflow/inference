@@ -555,12 +555,6 @@ class HttpInterface(BaseInterface):
             root_path=root_path,
         )
 
-        app.mount(
-            "/",
-            StaticFiles(directory="./inference/landing/out", html=True),
-            name="static",
-        )
-
         @app.on_event("shutdown")
         async def on_shutdown():
             logger.info("Shutting down %s", description)
@@ -2510,6 +2504,12 @@ class HttpInterface(BaseInterface):
                         "message": "inference session started from local memory.",
                     }
                 )
+
+        app.mount(
+            "/",
+            StaticFiles(directory="./inference/landing/out", html=True),
+            name="static",
+        )
 
     def run(self):
         uvicorn.run(self.app, host="127.0.0.1", port=8080)
