@@ -5,7 +5,6 @@ import cv2
 import numpy as np
 
 from inference.core.entities.requests.inference import (
-    InferenceRequest,
     InferenceRequestImage,
 )
 from inference.core.env import (
