@@ -557,6 +557,12 @@ class HttpInterface(BaseInterface):
             root_path=root_path,
         )
 
+        app.mount(
+            "/",
+            StaticFiles(directory="./inference/landing/out", html=True),
+            name="static",
+        )
+
         @app.on_event("shutdown")
         async def on_shutdown():
             logger.info("Shutting down %s", description)
@@ -2194,19 +2200,9 @@ class HttpInterface(BaseInterface):
             app.include_router(builder_router, prefix="/build", tags=["builder"])
 
         if LEGACY_ROUTE_ENABLED:
-
-            class IntStringConvertor(StringConvertor):
-                """
-                Match digits but keep them as string.
-                """
-
-                regex = "\d+"
-
-            register_url_convertor("int_string", IntStringConvertor())
-
             # Legacy object detection inference path for backwards compatability
             @app.get(
-                "/{dataset_id}/{version_id:int_string}",
+                "/{dataset_id}/{version_id:str}",
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
                 response_model=Union[
                     InstanceSegmentationInferenceResponse,
@@ -2220,7 +2216,7 @@ class HttpInterface(BaseInterface):
                 response_model_exclude_none=True,
             )
             @app.post(
-                "/{dataset_id}/{version_id:int_string}",
+                "/{dataset_id}/{version_id:str}",
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
                 response_model=Union[
                     InstanceSegmentationInferenceResponse,
@@ -2239,10 +2235,10 @@ class HttpInterface(BaseInterface):
                 background_tasks: BackgroundTasks,
                 request: Request,
                 dataset_id: str = Path(
-                    description="ID of a Roboflow dataset corresponding to the model to use for inference"
+                    description="ID of a Roboflow dataset corresponding to the model to use for inference OR workspace ID"
                 ),
                 version_id: str = Path(
-                    description="ID of a Roboflow dataset version corresponding to the model to use for inference"
+                    description="ID of a Roboflow dataset version corresponding to the model to use for inference OR model ID"
                 ),
                 api_key: Optional[str] = Query(
                     None,
@@ -2336,8 +2332,8 @@ class HttpInterface(BaseInterface):
 
                 Args:
                     background_tasks: (BackgroundTasks) pool of fastapi background tasks
-                    dataset_id (str): ID of a Roboflow dataset corresponding to the model to use for inference.
-                    version_id (str): ID of a Roboflow dataset version corresponding to the model to use for inference.
+                    dataset_id (str): ID of a Roboflow dataset corresponding to the model to use for inference OR workspace ID
+                    version_id (str): ID of a Roboflow dataset version corresponding to the model to use for inference OR model ID
                     api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
                     # Other parameters described in the function signature...
 
@@ -2516,12 +2512,6 @@ class HttpInterface(BaseInterface):
                         "message": "inference session started from local memory.",
                     }
                 )
-
-        app.mount(
-            "/",
-            StaticFiles(directory="./inference/landing/out", html=True),
-            name="static",
-        )
 
     def run(self):
         uvicorn.run(self.app, host="127.0.0.1", port=8080)
