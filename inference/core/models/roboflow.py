@@ -11,6 +11,10 @@ import cv2
 import numpy as np
 import onnxruntime
 from PIL import Image
+import requests
+import subprocess
+import xml.etree.ElementTree as ET
+import zipfile
 
 from inference.core.cache import cache
 from inference.core.cache.model_artifacts import (
@@ -705,7 +709,6 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
             try:
                 # check if a cached session exists for this hardware signature
-
                 session_options = onnxruntime.SessionOptions()
                 session_options.log_severity_level = 3
                 # TensorRT does better graph optimization for its EP than onnx
@@ -713,6 +716,8 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     session_options.graph_optimization_level = (
                         onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
                     )
+                trt_cache_path = self.get_trt_cache_path()
+                
                 self.onnx_session = onnxruntime.InferenceSession(
                     self.cache_file(self.weights_file),
                     providers=providers,
@@ -826,13 +831,27 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         # fetch post request from '/downloadTrtEngineCache'
         response = requests.post(
             f"{self.endpoint}/downloadTrtEngineCache",
-            json={"signature": generate_hardware_signature_string()},
+            params={"api-key": self.api_key, "signature": generate_hardware_signature_string()},
         )
         if response.status_code != 200:
             return None
-        return response.json()["session"]
+        
+        # download the file from the url
+        url = response.json()["url"]
+        filename = url.split("/")[-1]
+        cache_dir = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
+        os.makedirs(cache_dir, exist_ok=True)
+        with open(os.path.join(cache_dir, filename), "wb") as f:
+            f.write(response.content)
 
+        # unzip file
+        with zipfile.ZipFile(os.path.join(cache_dir, filename), "r") as zip_ref:
+            zip_ref.extractall(cache_dir)
+        
+        # delete the zip file
+        os.remove(os.path.join(cache_dir, filename))
 
+        return os.path.join(cache_dir, filename)
 
     @property
     def weights_file(self) -> str:
@@ -906,7 +925,78 @@ def parse_keypoints_metadata(metadata: list) -> dict:
     }
 
 def generate_hardware_signature_string() -> str:
-    # use lshw 'product' field
-    lshw = subprocess.run(["lshw", "-json"], capture_output=True, text=True).stdout
-    lshw_json = json.loads(lshw)
-    return lshw_json["product"]
+    # try to get product name using nvidia-smi
+    try:
+        nvidia_smi_output = subprocess.run(["nvidia-smi", "-q", "-x"], capture_output=True, text=True).stdout
+        root = ET.fromstring(nvidia_smi_output)
+        
+        # Get product name from first GPU
+        product = root.find('.//product_name').text
+        driver_version = root.find('.//driver_version').text
+    except:
+        # use lshw 'product' field as fallback
+        lshw = subprocess.run(["lshw", "-json"], capture_output=True, text=True).stdout
+        lshw_json = json.loads(lshw)
+        product = lshw_json["product"]
+
+        # get jetpack version
+        try:
+            jetpack_version = subprocess.run(["cat", "/etc/nv_tegra_release"], capture_output=True, text=True).stdout
+            jetpack_version = jetpack_version.split("\n")[-1]
+            jetpack_version = jetpack_version.split("=")[1].strip()
+        except:
+            jetpack_version = "unknown"
+
+    # get cuda version
+    try:
+        cuda_output = subprocess.run(["nvcc", "--version"], capture_output=True, text=True).stdout
+        # Extract version like 11.8 from the output
+        cuda = cuda_output.split("release ")[1].split(",")[0]
+    except:
+        # Fallback to checking cuda directory as before
+        cuda = subprocess.run(["ls", "/usr/local", "|", "grep", "-o", "cuda-[0-9.]*", "|", "grep", "-o", "[0-9.]*"], 
+            shell=True, capture_output=True, text=True).stdout.strip()
+
+    # get tensorrt version
+    try:
+        trt_version = subprocess.run(
+            ["cat", "/usr/include/x86_64-linux-gnu/NvInferVersion.h"], 
+            capture_output=True, 
+            text=True
+        ).stdout
+        
+        # Extract version numbers using grep
+        major = subprocess.run(
+            "echo \"" + trt_version + "\" | grep NV_TENSORRT_MAJOR | grep -o '[0-9]\\+'",
+            shell=True, capture_output=True, text=True
+        ).stdout.strip()
+        minor = subprocess.run(
+            "echo \"" + trt_version + "\" | grep NV_TENSORRT_MINOR | grep -o '[0-9]\\+'",
+            shell=True, capture_output=True, text=True
+        ).stdout.strip()
+        patch = subprocess.run(
+            "echo \"" + trt_version + "\" | grep NV_TENSORRT_PATCH | grep -o '[0-9]\\+'",
+            shell=True, capture_output=True, text=True
+        ).stdout.strip()
+        build = subprocess.run(
+            "echo \"" + trt_version + "\" | grep NV_TENSORRT_BUILD | grep -o '[0-9]\\+'",
+            shell=True, capture_output=True, text=True
+        ).stdout.strip()
+        
+        trt = f"{major}.{minor}.{patch}.{build}"
+    except:
+        trt = "unknown"
+
+    # get onnx version
+    onnx = onnxruntime.__version__
+
+    fw = f"jp{jetpack_version}" if "Jetson" in product else f"driver{driver_version}"
+
+    signature = f"{product}-{fw}-cuda{cuda}-trt{trt}-onnx{onnx}"
+    signature = signature.replace(" ", "-")
+    signature = signature.replace(".", "_")
+    signature = signature.lower()
+
+    return signature
+
+
