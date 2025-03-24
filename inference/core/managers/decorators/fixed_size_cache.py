@@ -7,7 +7,7 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
-from inference.core.env import MEMORY_PRESSURE_THRESHOLD
+from inference.core.env import MEMORY_FREE_THRESHOLD
 import torch
 
 
