@@ -40,14 +40,6 @@ def test_rfdetr_base() -> None:
     response.raise_for_status()
     image = Image.open(io.BytesIO(response.content))
     model = get_model("rfdetr-base")
-    payload = {
-        "api_key": api_key,
-        "image": {
-            "type": "file",
-            "value": image,
-        },
-        "confidence": 0.5,
-    }
 
     predictions = model.infer(image, confidence=0.5)[0]
 
