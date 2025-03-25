@@ -95,5 +95,6 @@ REGISTERED_ALIASES = {
     **SMOLVLM_ALIASES,
 }
 
+
 def resolve_roboflow_model_alias(model_id: str) -> str:
     return REGISTERED_ALIASES.get(model_id, model_id)

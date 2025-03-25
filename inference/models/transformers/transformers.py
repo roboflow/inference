@@ -60,7 +60,7 @@ class TransformerModel(RoboflowInferenceModel):
     ):
         super().__init__(model_id, *args, **kwargs)
         self.huggingface_token = huggingface_token
-            
+
         if self.needs_hf_token and self.huggingface_token is None:
             raise RuntimeError(
                 "Must set environment variable HUGGINGFACE_TOKEN to load LoRA "
@@ -79,14 +79,14 @@ class TransformerModel(RoboflowInferenceModel):
             model_id = self.dataset_id
         else:
             model_id = self.cache_dir
-        
+
         self.model = (
             self.transformers_class.from_pretrained(
                 model_id,
                 cache_dir=cache_dir,
                 device_map=DEVICE,
                 token=self.huggingface_token,
-                torch_dtype=self.default_dtype
+                torch_dtype=self.default_dtype,
             )
             .eval()
             .to(self.dtype)
@@ -234,7 +234,7 @@ class TransformerModel(RoboflowInferenceModel):
                     raise ModelArtefactError(
                         f"Failed to extract model archive {filename}. Error: {str(e)}"
                     ) from e
-    
+
             if perf_counter() - t1 > 120:
                 logger.debug(
                     "Weights download took longer than 120 seconds, refreshing API request"
