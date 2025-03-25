@@ -15,12 +15,12 @@ api_key = os.environ.get("API_KEY")
 
 
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_PALIGEMMA_TEST", False))
+    bool_env(os.getenv("SKIP_SMOLVLM_TEST", False))
     or bool_env(os.getenv("SKIP_LMM_TEST", False)),
-    reason="Skipping Paligemma test",
+    reason="Skipping SmolVLM test",
 )
 @pytest.mark.parametrize("model_id", SMOLVLM_ALIASES.keys())
-def test_paligemma_inference(
+def test_smolvlm_inference(
     model_id: str, server_url: str, clean_loaded_models_every_test_fixture
 ) -> None:
     # given
