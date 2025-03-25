@@ -54,6 +54,7 @@ class TransformerModel(RoboflowInferenceModel):
     needs_hf_token = False
     skip_special_tokens = True
     load_weights_as_transformers = False
+    load_base_from_roboflow = True
 
     def __init__(
         self, model_id, *args, dtype=None, huggingface_token=HUGGINGFACE_TOKEN, **kwargs
