@@ -796,13 +796,18 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     session_options.graph_optimization_level = (
                         onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
                     )
-                trt_cache_path = self.get_trt_cache_path()
+
+                trt_cache_path, is_cached = self.get_cached_session()
                 
                 self.onnx_session = onnxruntime.InferenceSession(
                     self.cache_file(self.weights_file),
                     providers=providers,
                     sess_options=session_options,
                 )
+
+                #if not is_cached:
+                self.cache_tensorrt_engine()
+
             except Exception as e:
                 self.clear_cache()
                 raise ModelArtefactError(
@@ -916,32 +921,95 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             )
             img_dims = [img_dims]
         return img_in, img_dims
+    
+    def cache_tensorrt_engine(self) -> None:
+        try:
+            # find list of .engine files in the cache directory
+            cache_dir = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
+            engine_files = [f for f in os.listdir(cache_dir) if f.endswith(".engine")]
 
-    def get_cached_session(self) -> Optional[onnxruntime.InferenceSession]:
-        # fetch post request from '/downloadTrtEngineCache'
-        response = requests.post(
-            f"{self.endpoint}/downloadTrtEngineCache",
-            params={"api-key": self.api_key, "signature": generate_hardware_signature_string()},
-        )
-        if response.status_code != 200:
-            return None
-        
-        # download the file from the url
-        url = response.json()["url"]
-        filename = url.split("/")[-1]
-        cache_dir = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
-        os.makedirs(cache_dir, exist_ok=True)
-        with open(os.path.join(cache_dir, filename), "wb") as f:
-            f.write(response.content)
+            # zip the files into signature.zip
+            file_path = os.path.join(cache_dir, f"{generate_hardware_signature_string()}.zip")
+            with zipfile.ZipFile(file_path, "w") as zip_ref:
+                for engine_file in engine_files:
+                    zip_ref.write(os.path.join(cache_dir, engine_file), engine_file)
+            
+            zip_ref.close()
 
-        # unzip file
-        with zipfile.ZipFile(os.path.join(cache_dir, filename), "r") as zip_ref:
-            zip_ref.extractall(cache_dir)
-        
-        # delete the zip file
-        os.remove(os.path.join(cache_dir, filename))
+            # get signed gcp url to upload to
+            trt_endpoint = f"https://api.roboflow.one/{self.endpoint}/uploadTrtEngineCache"
+            response = requests.get(
+                trt_endpoint,
+                params={"api_key": self.api_key, "signature": generate_hardware_signature_string()},
+            )
+            if response.status_code != 200:
+                raise Exception(f"Failed to get signed gcp url: {response.json()}")
+            
+            print(response.json())
+            url = response.json()["url"]
 
-        return os.path.join(cache_dir, filename)
+            # upload the file to the url
+            try:
+                with open(file_path, "rb") as file_data:
+                    headers = {"Content-Type": "application/zip"}
+                    response = requests.put(url, data=file_data, headers=headers)
+                    response.raise_for_status()
+            except Exception as e:
+                """error uploading file"""
+                print(f"Error uploading file: {e}")
+        except Exception as e:
+            """error uploading file"""
+            print(f"Error caching file: {e}")
+
+    def get_cached_session(self) -> Tuple[Optional[str], bool]:
+        try:
+            # check if the engine file exists
+            cache_dir = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
+            engine_file = [f for f in os.listdir(cache_dir) if f.endswith(".engine")]
+
+            if len(engine_file) > 0:
+                return os.path.join(cache_dir, engine_file[0]), True
+            
+            # fetch post request from '/downloadTrtEngineCache'
+            trt_endpoint = f"https://api.roboflow.one/{self.endpoint}/downloadTrtEngineCache"
+            print(trt_endpoint)
+            response = requests.get(
+                trt_endpoint,
+                params={"api_key": self.api_key, "signature": generate_hardware_signature_string()},
+            )
+            print(response.json())
+            if response.status_code != 200:
+                return None, False
+            
+            
+            # download the file from the url
+            url = response.json()["url"]
+            cache_dir = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
+            os.makedirs(cache_dir, exist_ok=True)
+            filename = os.path.join(cache_dir, f"{generate_hardware_signature_string()}.zip")
+            
+            # download the file at gcp signed url
+            try:
+                response = requests.get(url)
+                response.raise_for_status()
+                with open(filename, "wb") as f:
+                    f.write(response.content)
+            except Exception as e:
+                print(f"Error downloading file: {e}")
+
+            # unzip file
+            with zipfile.ZipFile(filename, "r") as zip_ref:
+                zip_ref.extractall(cache_dir)
+            
+            # delete the zip file
+            os.remove(filename)
+
+            # find engine file
+            engine_file = [f for f in os.listdir(cache_dir) if f.endswith(".engine")][0]
+
+            return os.path.join(cache_dir, engine_file), True
+        except Exception as e:
+            return None, False
 
     @property
     def weights_file(self) -> str:
