@@ -6,3 +6,5 @@ accelerate>=0.25.0,<=0.32.1
 einops>=0.7.0,<=0.8.0
 peft~=0.11.1
 bitsandbytes>=0.42.0,<0.44.0
+num2words~=0.5.14
+flash_attn~=2.7.4

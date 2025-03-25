@@ -67,24 +67,30 @@ class TransformerModel(RoboflowInferenceModel):
         self.dtype = dtype
         if self.dtype is None:
             self.dtype = self.default_dtype
-        self.cache_model_artefacts()
+        # self.cache_model_artefacts()
 
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
         self.initialize_model()
 
     def initialize_model(self):
+        if not self.load_base_from_roboflow:
+            model_id = self.dataset_id
+        else:
+            model_id = self.cache_dir
+        
         self.model = (
             self.transformers_class.from_pretrained(
-                self.cache_dir,
+                model_id,
+                cache_dir=cache_dir,
                 device_map=DEVICE,
-                token=self.huggingface_token,
+                token=self.huggingface_token
             )
             .eval()
             .to(self.dtype)
         )
 
         self.processor = self.processor_class.from_pretrained(
-            self.cache_dir, token=self.huggingface_token
+            model_id, token=self.huggingface_token
         )
 
     def preprocess(
@@ -110,31 +116,58 @@ class TransformerModel(RoboflowInferenceModel):
         return [response]
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
-        model_inputs = self.processor(
-            text=prompt, images=image_in, return_tensors="pt"
-        ).to(self.model.device)
-        input_len = model_inputs["input_ids"].shape[-1]
+        if self.is_chat_model:
+            print("Chat model")
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/bee.jpg"},
+                        {"type": "text", "text": "Can you describe this image?"},
+                    ]
+                },
+            ]
 
-        with torch.inference_mode():
-            prepared_inputs = self.prepare_generation_params(
-                preprocessed_inputs=model_inputs
-            )
-            generation = self.model.generate(
-                **prepared_inputs,
-                max_new_tokens=1000,
-                do_sample=False,
-                early_stopping=False,
-                no_repeat_ngram_size=0,
-            )
-            generation = generation[0]
-            if self.generation_includes_input:
-                generation = generation[input_len:]
+            inputs = self.processor.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                tokenize=True,
+                return_dict=True,
+                return_tensors="pt",
+            ).to(self.model.device, dtype=torch.bfloat16)
 
-            decoded = self.processor.decode(
-                generation, skip_special_tokens=self.skip_special_tokens
+            generated_ids = self.model.generate(**inputs, do_sample=False, max_new_tokens=64)
+            generated_texts = self.processor.batch_decode(
+                generated_ids,
+                skip_special_tokens=True,
             )
+            return generated_texts
+        else:
+            model_inputs = self.processor(
+                text=prompt, images=image_in, return_tensors="pt"
+            ).to(self.model.device)
+            input_len = model_inputs["input_ids"].shape[-1]
 
-        return (decoded,)
+            with torch.inference_mode():
+                prepared_inputs = self.prepare_generation_params(
+                    preprocessed_inputs=model_inputs
+                )
+                generation = self.model.generate(
+                    **prepared_inputs,
+                    max_new_tokens=1000,
+                    do_sample=False,
+                    early_stopping=False,
+                    no_repeat_ngram_size=0,
+                )
+                generation = generation[0]
+                if self.generation_includes_input:
+                    generation = generation[input_len:]
+
+                decoded = self.processor.decode(
+                    generation, skip_special_tokens=self.skip_special_tokens
+                )
+
+            return (decoded,)
 
     def prepare_generation_params(
         self, preprocessed_inputs: Dict[str, Any]

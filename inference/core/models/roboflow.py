@@ -353,7 +353,7 @@ class RoboflowInferenceModel(Model):
                     )
         except Exception as e:
             logger.error(f"Error downloading model artifacts: {e}")
-            raise
+            # raise
         finally:
             try:
                 if os.path.exists(lock_file):
