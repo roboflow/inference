@@ -287,10 +287,10 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
-        except InvalidModelIDError:
+        except InvalidModelIDError as e:
             resp = JSONResponse(
                 status_code=400,
-                content={"message": "Invalid Model ID sent in request."},
+                content={"message": str(e)},
             )
             traceback.print_exc()
         except InvalidMaskDecodeArgument:
