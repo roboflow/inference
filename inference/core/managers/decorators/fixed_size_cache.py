@@ -9,7 +9,6 @@ from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
 from inference.core.env import MEMORY_FREE_THRESHOLD
-import torch
 
 
 class WithFixedSizeCache(ModelManagerDecorator):
@@ -45,7 +44,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             return None
 
         logger.debug(f"Current capacity of ModelManager: {len(self)}/{self.max_size}")
-        while (len(self) >= self.max_size or self.memory_pressure_detected()):
+        while (len(self) >= self.max_size or (MEMORY_FREE_THRESHOLD and self.memory_pressure_detected())):
             to_remove_model_id = self._key_queue.popleft()
             super().remove(
                 to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
@@ -147,6 +146,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
     def memory_pressure_detected(self) -> bool:
         return_boolean = False
         try:
+            import torch
             if torch.cuda.is_available():
                 free_memory, total_memory = torch.cuda.mem_get_info()
                 return_boolean = float(free_memory / total_memory) < MEMORY_FREE_THRESHOLD
