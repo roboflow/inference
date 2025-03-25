@@ -1,7 +1,8 @@
-from transformers import AutoModelForImageTextToText
 import torch
-from inference.models.transformers import TransformerModel
 from PIL import Image
+from transformers import AutoModelForImageTextToText
+
+from inference.models.transformers import TransformerModel
 
 
 class SmolVLM(TransformerModel):
