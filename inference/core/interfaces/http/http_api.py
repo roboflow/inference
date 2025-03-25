@@ -2509,7 +2509,17 @@ class HttpInterface(BaseInterface):
         app.mount(
             "/",
             StaticFiles(directory="./inference/landing/out", html=True),
+            name="root",
+        )
+        app.mount(
+            "/static",
+            StaticFiles(directory="./inference/landing/out/static", html=True),
             name="static",
+        )
+        app.mount(
+            "/_next/static",
+            StaticFiles(directory="./inference/landing/out/static", html=True),
+            name="_next_static",
         )
 
     def run(self):
