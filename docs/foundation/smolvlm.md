@@ -23,7 +23,7 @@ from PIL import Image
 
 from inference.models.smolvlm.smolvlm import SmolVLM
 
-pg = SmolVLM(api_key="W8Wh3vwPre13GJ9ArQue")
+pg = SmolVLM(api_key="API_KEY")
 
 image = Image.open("dog.jpeg")
 
