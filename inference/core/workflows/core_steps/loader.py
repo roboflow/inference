@@ -298,6 +298,9 @@ from inference.core.workflows.core_steps.transformations.detection_offset.v1 imp
 from inference.core.workflows.core_steps.transformations.detections_filter.v1 import (
     DetectionsFilterBlockV1,
 )
+from inference.core.workflows.core_steps.transformations.detections_merge.v1 import (
+    DetectionsMergeBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.detections_transformation.v1 import (
     DetectionsTransformationBlockV1,
 )
@@ -524,6 +527,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         BlurVisualizationBlockV1,
         BoundingBoxVisualizationBlockV1,
         BoundingRectBlockV1,
+        DetectionsMergeBlockV1,
         ByteTrackerBlockV2,
         CacheGetBlockV1,
         CacheSetBlockV1,

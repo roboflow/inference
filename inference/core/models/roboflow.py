@@ -1,6 +1,7 @@
 import itertools
 import json
 import os
+import random
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -19,6 +20,7 @@ from inference.core.env import (
     AWS_SECRET_ACCESS_KEY,
     CORE_MODEL_BUCKET,
     DISABLE_PREPROC_AUTO_ORIENT,
+    DISK_CACHE_CLEANUP,
     INFER_BUCKET,
     LAMBDA,
     MAX_BATCH_SIZE,
@@ -142,9 +144,13 @@ class RoboflowInferenceModel(Model):
         """
         return get_cache_file_path(file=f, model_id=self.endpoint)
 
-    def clear_cache(self) -> None:
-        """Clear the cache directory."""
-        clear_cache(model_id=self.endpoint)
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        """Clear the cache directory.
+
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
+        """
+        clear_cache(model_id=self.endpoint, delete_from_disk=delete_from_disk)
 
     def draw_predictions(
         self,
@@ -709,7 +715,10 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             self.validate_model()
         except ModelArtefactError as e:
             logger.error(f"Unable to validate model artifacts, clearing cache: {e}")
-            self.clear_cache()
+            if DISK_CACHE_CLEANUP:
+                self.clear_cache(delete_from_disk=True)
+            else:
+                logger.error("NOT deleting model from cache, inspect model artifacts")
             raise ModelArtefactError from e
 
     def infer(self, image: Any, **kwargs) -> Any:
@@ -738,26 +747,48 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         if MODEL_VALIDATION_DISABLED:
             logger.debug("Model validation disabled.")
             return None
-        logger.debug("Starting model validation")
+        logger.debug(f"Starting model validation for {self.endpoint}")
+        validate_model_error_count = cache.get(
+            self.endpoint + "_validate_model_error_count"
+        )
+        if validate_model_error_count is None:
+            validate_model_error_count = 0
+        if validate_model_error_count > 3:
+            raise ModelArtefactError(
+                "Model validation failed multiple times, ignoring this model."
+            )
         if not self.load_weights:
             return
         try:
             assert self.onnx_session is not None
         except AssertionError as e:
+            cache.set(
+                self.endpoint + "_validate_model_error_count",
+                validate_model_error_count + 1,
+            )
             raise ModelArtefactError(
                 "ONNX session not initialized. Check that the model weights are available."
             ) from e
         try:
             self.run_test_inference()
         except Exception as e:
+            cache.set(
+                self.endpoint + "_validate_model_error_count",
+                validate_model_error_count + 1,
+            )
             raise ModelArtefactError(f"Unable to run test inference. Cause: {e}") from e
         try:
             self.validate_model_classes()
         except Exception as e:
+            cache.set(
+                self.endpoint + "_validate_model_error_count",
+                validate_model_error_count + 1,
+            )
             raise ModelArtefactError(
                 f"Unable to validate model classes. Cause: {e}"
             ) from e
-        logger.debug("Model validation finished")
+        logger.debug(f"Model validation finished for {self.endpoint}")
+        cache.set(self.endpoint + "_validate_model_error_count", 0)
 
     def run_test_inference(self) -> None:
         test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
@@ -892,8 +923,8 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         disable_preproc_contrast: bool = False,
         disable_preproc_grayscale: bool = False,
         disable_preproc_static_crop: bool = False,
-    ) -> Tuple[np.ndarray, Tuple[int, int]]:
-        if isinstance(image, list):
+    ) -> Tuple[np.ndarray, Tuple[Tuple[int, int], ...]]:
+        if isinstance(image, list) and len(image) > 1:
             preproc_image = partial(
                 self.preproc_image,
                 disable_preproc_auto_orient=disable_preproc_auto_orient,
@@ -914,6 +945,8 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     "(https://github.com/roboflow/inference/issues) providing full context of the problem"
                 )
         else:
+            if isinstance(image, list):
+                image = image[0]
             img_in, img_dims = self.preproc_image(
                 image,
                 disable_preproc_auto_orient=disable_preproc_auto_orient,
@@ -921,7 +954,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 disable_preproc_grayscale=disable_preproc_grayscale,
                 disable_preproc_static_crop=disable_preproc_static_crop,
             )
-            img_dims = [img_dims]
+            img_dims = (img_dims,)
         return img_in, img_dims
 
     @property

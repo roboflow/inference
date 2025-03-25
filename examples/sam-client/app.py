@@ -1,8 +1,10 @@
-from inference.models import SegmentAnything
 import argparse
 import os
-import supervision as sv
+
 import cv2
+import supervision as sv
+
+from inference.models import SegmentAnything
 
 parser = argparse.ArgumentParser(description="Segment images with SAM.")
 

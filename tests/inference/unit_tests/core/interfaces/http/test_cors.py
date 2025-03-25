@@ -5,8 +5,10 @@ from starlette.testclient import TestClient
 
 from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 
+
 def homepage(request):
     return PlainTextResponse("Hello, world!")
+
 
 def create_app(match_paths=None, allow_origins=None):
     """

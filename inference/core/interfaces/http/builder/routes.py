@@ -2,7 +2,9 @@ import json
 import logging
 import os
 import re
+from hashlib import sha256
 from pathlib import Path
+from typing import Any, Dict
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -112,12 +114,12 @@ async def get_all_workflows():
         stat_info = json_file.stat()
         try:
             with json_file.open("r", encoding="utf-8") as f:
-                config_contents = json.load(f)
+                config_contents: Dict[str, Any] = json.load(f)
         except json.JSONDecodeError as e:
             logger.error(f"Error decoding JSON from {json_file}: {e}")
             continue
 
-        data[json_file.stem] = {
+        data[config_contents.get("id", json_file.stem)] = {
             "createTime": int(stat_info.st_ctime),
             "updateTime": int(stat_info.st_mtime),
             "config": config_contents,
@@ -139,7 +141,8 @@ async def get_workflow(workflow_id: str):
     if not re.match(r"^[\w\-]+$", workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
 
-    file_path = workflow_local_dir / f"{workflow_id}.json"
+    workflow_hash = sha256(workflow_id.encode()).hexdigest()
+    file_path = workflow_local_dir / f"{workflow_hash}.json"
     if not file_path.exists():
         return JSONResponse({"error": "not found"}, status_code=HTTP_404_NOT_FOUND)
 
@@ -148,7 +151,7 @@ async def get_workflow(workflow_id: str):
         with file_path.open("r", encoding="utf-8") as f:
             config_contents = json.load(f)
     except json.JSONDecodeError as e:
-        logger.error(f"Error reading JSON from {file_path}: {e}")
+        logger.error(f"Error reading JSON for {workflow_id} from '{file_path}': {e}")
         return JSONResponse({"error": "invalid JSON"}, status_code=500)
 
     return Response(
@@ -179,32 +182,34 @@ async def create_or_overwrite_workflow(
     if not re.match(r"^[\w\-]+$", workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
 
-    file_path = workflow_local_dir / f"{workflow_id}.json"
     workflow_local_dir.mkdir(parents=True, exist_ok=True)
 
     # If the body claims a different ID, treat that as a "rename".
     if request_body.get("id") and request_body.get("id") != workflow_id:
-        old_id = request_body["id"]
+        old_id: str = request_body["id"]
         if not re.match(r"^[\w\-]+$", old_id):
             return JSONResponse(
                 {"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST
             )
 
-        old_file_path = workflow_local_dir / f"{old_id}.json"
+        old_workflow_hash = sha256(old_id.encode()).hexdigest()
+        old_file_path = workflow_local_dir / f"{old_workflow_hash}.json"
         if old_file_path.exists():
             try:
                 old_file_path.unlink()
             except Exception as e:
-                logger.error(f"Error deleting {old_file_path}: {e}")
+                logger.error(f"Error deleting {old_id} from {old_file_path}: {e}")
                 return JSONResponse({"error": "unable to delete file"}, status_code=500)
 
-        request_body["id"] = workflow_id
+    request_body["id"] = workflow_id
 
+    workflow_hash = sha256(workflow_id.encode()).hexdigest()
+    file_path = workflow_local_dir / f"{workflow_hash}.json"
     try:
         with file_path.open("w", encoding="utf-8") as f:
             json.dump(request_body, f, indent=2)
     except Exception as e:
-        logger.error(f"Error writing JSON to {file_path}: {e}")
+        logger.error(f"Error writing JSON for {workflow_id} to {file_path}: {e}")
         return JSONResponse({"error": "unable to write file"}, status_code=500)
 
     return JSONResponse(
@@ -223,14 +228,15 @@ async def delete_workflow(workflow_id: str):
     if not re.match(r"^[\w\-]+$", workflow_id):
         return JSONResponse({"error": "invalid id"}, status_code=HTTP_400_BAD_REQUEST)
 
-    file_path = workflow_local_dir / f"{workflow_id}.json"
+    workflow_hash = sha256(workflow_id.encode()).hexdigest()
+    file_path = workflow_local_dir / f"{workflow_hash}.json"
     if not file_path.exists():
         return JSONResponse({"error": "not found"}, status_code=HTTP_404_NOT_FOUND)
 
     try:
         file_path.unlink()
     except Exception as e:
-        logger.error(f"Error deleting {file_path}: {e}")
+        logger.error(f"Error deleting {workflow_id} from {file_path}: {e}")
         return JSONResponse({"error": "unable to delete file"}, status_code=500)
 
     return JSONResponse(
@@ -253,7 +259,8 @@ async def builder_maybe_redirect(workflow_id: str):
     if not re.match(r"^[\w\-]+$", workflow_id):
         return RedirectResponse(url="/build", status_code=302)
 
-    file_path = workflow_local_dir / f"{workflow_id}.json"
+    workflow_hash = sha256(workflow_id.encode()).hexdigest()
+    file_path = workflow_local_dir / f"{workflow_hash}.json"
     if file_path.exists():
         return RedirectResponse(url=f"/build/edit/{workflow_id}", status_code=302)
     else:
