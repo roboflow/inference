@@ -388,6 +388,16 @@ except:
     )
 
 try:
+    from inference.models.smolvlm.smolvlm import SmolVLM
+    ROBOFLOW_MODEL_TYPES[("lmm", "smolvlm-2.2b-instruct")] = SmolVLM
+except:
+    warnings.warn(
+        f"Your `inference` configuration does not support SmolVLM2."
+        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
+
+try:
     from inference.models import DocTR
 
     ROBOFLOW_MODEL_TYPES[("ocr", "doctr")] = DocTR

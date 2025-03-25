@@ -80,7 +80,7 @@ class TransformerModel(RoboflowInferenceModel):
             model_id = self.dataset_id
         else:
             model_id = self.cache_dir
-
+            
         self.model = (
             self.transformers_class.from_pretrained(
                 model_id,

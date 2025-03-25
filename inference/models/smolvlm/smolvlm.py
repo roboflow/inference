@@ -9,13 +9,15 @@ class SmolVLM(TransformerModel):
     generation_includes_input = True
     transformers_class = AutoModelForImageTextToText
     load_base_from_roboflow = True
-    is_chat_model = True
     model_id = "smolvlm2/smolvlm-2.2b-instruct"
     default_dtype = torch.bfloat16
     load_weights_as_transformers = True
 
     def __init__(self, *args, **kwargs):
-        super().__init__(model_id=self.model_id, *args, **kwargs)
+        # if not model id in kwargs, pass in
+        if "model_id" not in kwargs:
+            kwargs["model_id"] = self.model_id
+        super().__init__(*args, **kwargs)
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         messages = [

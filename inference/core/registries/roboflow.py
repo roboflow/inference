@@ -58,6 +58,7 @@ GENERIC_MODELS = {
 STUB_VERSION_ID = "0"
 CACHE_METADATA_LOCK_TIMEOUT = 1.0
 
+FOUNDATION_MODELS_TO_DOWNLOAD_AS_CORE = ["smolvlm2/smolvlm-2.2b-instruct"]
 
 class RoboflowModelRegistry(ModelRegistry):
     """A Roboflow-specific model registry which gets the model type using the model id,
@@ -79,6 +80,7 @@ class RoboflowModelRegistry(ModelRegistry):
         """
         model_type = get_model_type(model_id, api_key)
         logger.debug(f"Model type: {model_type}")
+
         if model_type not in self.registry_dict:
             raise ModelNotRecognisedError(f"Model type not supported: {model_type}")
         return self.registry_dict[model_type]
@@ -144,6 +146,7 @@ def get_model_type(
     cached_metadata = get_model_metadata_from_cache(
         dataset_id=dataset_id, version_id=version_id
     )
+    
     if cached_metadata is not None:
         return cached_metadata[0], cached_metadata[1]
     if version_id == STUB_VERSION_ID:
@@ -163,7 +166,7 @@ def get_model_type(
             model_type=model_type,
         )
         return project_task_type, model_type
-
+    model_type = None
     if version_id is not None:
         api_data = get_roboflow_model_data(
             api_key=api_key,
@@ -172,6 +175,15 @@ def get_model_type(
             device_id=GLOBAL_DEVICE_ID,
         ).get("ort")
         project_task_type = api_data.get("type", "object-detection")
+    elif model_id in FOUNDATION_MODELS_TO_DOWNLOAD_AS_CORE:
+        api_data = get_roboflow_model_data(
+            api_key=api_key,
+            model_id=model_id,
+            endpoint_type=ModelEndpointType.CORE_MODEL,
+            device_id=GLOBAL_DEVICE_ID,
+        )
+        project_task_type = "lmm"
+        model_type = api_data["version"]
     else:
         api_data = get_roboflow_instant_model_data(
             api_key=api_key,
@@ -180,8 +192,10 @@ def get_model_type(
         project_task_type = api_data.get("taskType", "object-detection")
     if api_data is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
+
     # some older projects do not have type field - hence defaulting
-    model_type = api_data.get("modelType")
+    if not model_type:
+        model_type = api_data.get("modelType")
     if model_type is None or model_type == "ort":
         # some very old model versions do not have modelType reported - and API respond in a generic way -
         # then we shall attempt using default model for given task type

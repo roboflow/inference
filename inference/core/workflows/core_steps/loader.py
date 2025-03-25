@@ -170,6 +170,9 @@ from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
 from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
     Florence2BlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
+    SmolVLM2BlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
@@ -628,6 +631,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LlamaVisionBlockV1,
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
+        SmolVLM2BlockV1,
     ]
 
 
