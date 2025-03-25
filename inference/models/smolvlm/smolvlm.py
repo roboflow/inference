@@ -6,13 +6,14 @@ from PIL import Image
 class SmolVLM(TransformerModel):
     generation_includes_input = True
     transformers_class = AutoModelForImageTextToText
-    load_base_from_roboflow = False
+    load_base_from_roboflow = True
     is_chat_model = True
-    model_id = "HuggingFaceTB/SmolVLM2-2.2B-Instruct"
+    version_id = "smolvlm2/smolvlm-2.2b-instruct"
     default_dtype = torch.bfloat16
+    # endpoint = "smolvlm2/smolvlm-2.2b-instruct"
 
     def __init__(self, *args, **kwargs):
-        super().__init__(model_id=self.model_id, *args, **kwargs)
+        super().__init__(model_id=self.version_id, *args, **kwargs)
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         messages = [

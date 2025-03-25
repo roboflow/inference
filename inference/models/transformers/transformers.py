@@ -59,6 +59,9 @@ class TransformerModel(RoboflowInferenceModel):
     ):
         super().__init__(model_id, *args, **kwargs)
         self.huggingface_token = huggingface_token
+        if model_id:
+            self.version_id = model_id
+            
         if self.needs_hf_token and self.huggingface_token is None:
             raise RuntimeError(
                 "Must set environment variable HUGGINGFACE_TOKEN to load LoRA "
@@ -77,6 +80,8 @@ class TransformerModel(RoboflowInferenceModel):
             model_id = self.dataset_id
         else:
             model_id = self.cache_dir
+
+        print(f"Loading model from {model_id} {cache_dir}")
         
         self.model = (
             self.transformers_class.from_pretrained(
@@ -165,11 +170,12 @@ class TransformerModel(RoboflowInferenceModel):
         ]
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
+        print(self.__dict__, "version")
         if self.version_id is not None:
             api_data = get_roboflow_model_data(
                 api_key=self.api_key,
                 model_id=self.endpoint,
-                endpoint_type=ModelEndpointType.ORT,
+                endpoint_type=ModelEndpointType.CORE_MODEL, # James TODO: change to be dynamic ORT // CORE_MODEL
                 device_id=self.device_id,
             )
             if "weights" not in api_data["ort"]:

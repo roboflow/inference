@@ -47,6 +47,11 @@ YOLOV11_ALIASES = {
     **YOLOV11_ALIASES,
     **{k.replace("yolov11", "yolo11"): v for k, v in YOLOV11_ALIASES.items()},
 }
+
+SMOLVLM_ALIASES = {
+    "smolvlm2": "smolvlm-2.2b-instruct",
+}
+
 REGISTERED_ALIASES = {
     "yolov8n-640": "coco/3",
     "yolov8n-1280": "coco/9",
@@ -87,8 +92,8 @@ REGISTERED_ALIASES = {
     **FLORENCE_ALIASES,
     **YOLOV11_ALIASES,
     **QWEN_ALIASES,
+    **SMOLVLM_ALIASES,
 }
-
 
 def resolve_roboflow_model_alias(model_id: str) -> str:
     return REGISTERED_ALIASES.get(model_id, model_id)
