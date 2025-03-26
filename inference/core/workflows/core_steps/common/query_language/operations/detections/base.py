@@ -1,9 +1,8 @@
-from copy import copy, deepcopy
-from typing import Any, Callable, Dict, List, Union
-
 import numpy as np
 import supervision as sv
+from copy import copy, deepcopy
 from supervision import Position
+from typing import Any, Callable, Dict, List, Union
 
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
@@ -172,12 +171,11 @@ def select_detections(
 
 
 def extract_x_coordinate_of_detections_center(detections: sv.Detections) -> np.ndarray:
-    # Utilize efficient NumPy broadcasting to compute the center x-coordinate
     return (detections.xyxy[:, 0] + detections.xyxy[:, 2]) * 0.5
 
 
 def extract_y_coordinate_of_detections_center(detections: sv.Detections) -> np.ndarray:
-    return detections.xyxy[:, 1] + (detections.xyxy[:, 3] - detections.xyxy[:, 1]) / 2
+    return (detections.xyxy[:, 1] + detections.xyxy[:, 3]) * 0.5
 
 
 SORT_PROPERTIES_EXTRACT = {
