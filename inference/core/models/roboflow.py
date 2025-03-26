@@ -675,24 +675,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             **kwargs: Arbitrary keyword arguments.
         """
         super().__init__(model_id, *args, **kwargs)
-        if self.load_weights or not self.has_model_metadata:
-            self.onnxruntime_execution_providers = onnxruntime_execution_providers
-            expanded_execution_providers = []
-            for ep in self.onnxruntime_execution_providers:
-                if ep == "TensorrtExecutionProvider":
-                    ep = (
-                        "TensorrtExecutionProvider",
-                        {
-                            "trt_engine_cache_enable": True,
-                            "trt_engine_cache_path": os.path.join(
-                                TENSORRT_CACHE_PATH, self.endpoint
-                            ),
-                            "trt_fp16_enable": True,
-                        },
-                    )
-                expanded_execution_providers.append(ep)
-            self.onnxruntime_execution_providers = expanded_execution_providers
-
+        self.onnxruntime_execution_providers = onnxruntime_execution_providers
         self.initialize_model()
         self.image_loader_threadpool = ThreadPoolExecutor(max_workers=None)
         try:
@@ -781,6 +764,22 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         self.get_model_artifacts()
         logger.debug("Creating inference session")
         if self.load_weights or not self.has_model_metadata:
+            expanded_execution_providers = []
+            for ep in self.onnxruntime_execution_providers:
+                if ep == "TensorrtExecutionProvider":
+                    ep = (
+                        "TensorrtExecutionProvider",
+                        {
+                            "trt_engine_cache_enable": True,
+                            "trt_engine_cache_path": os.path.join(
+                                TENSORRT_CACHE_PATH, self.endpoint
+                            ),
+                            "trt_fp16_enable": True,
+                        },
+                    )
+                expanded_execution_providers.append(ep)
+            self.onnxruntime_execution_providers = expanded_execution_providers
+
             t1_session = perf_counter()
             # Create an ONNX Runtime Session with a list of execution providers in priority order. ORT attempts to load providers until one is successful. This keeps the code across devices identical.
             providers = self.onnxruntime_execution_providers
@@ -804,10 +803,6 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                     providers=providers,
                     sess_options=session_options,
                 )
-
-                #if not is_cached:
-                self.cache_tensorrt_engine()
-
             except Exception as e:
                 self.clear_cache()
                 raise ModelArtefactError(
@@ -858,6 +853,9 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             }
             logger.debug(f"Writing model metadata to memcache")
             self.write_model_metadata_to_memcache(model_metadata)
+            
+            #if not is_cached:
+            self.cache_tensorrt_engine()
             if not self.load_weights:  # had to load weights to get metadata
                 del self.onnx_session
         else:
@@ -924,12 +922,13 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
     
     def cache_tensorrt_engine(self) -> None:
         try:
+            signature = generate_hardware_signature_string() + f"-bs{self.current_batch_size}"
             # find list of .engine files in the cache directory
             cache_dir = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
             engine_files = [f for f in os.listdir(cache_dir) if f.endswith(".engine")]
 
             # zip the files into signature.zip
-            file_path = os.path.join(cache_dir, f"{generate_hardware_signature_string()}.zip")
+            file_path = os.path.join(cache_dir, f"{signature}.zip")
             with zipfile.ZipFile(file_path, "w") as zip_ref:
                 for engine_file in engine_files:
                     zip_ref.write(os.path.join(cache_dir, engine_file), engine_file)
@@ -940,19 +939,18 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             trt_endpoint = f"https://api.roboflow.one/{self.endpoint}/uploadTrtEngineCache"
             response = requests.get(
                 trt_endpoint,
-                params={"api_key": self.api_key, "signature": generate_hardware_signature_string()},
+                params={"api_key": self.api_key, "signature": signature},
             )
             if response.status_code != 200:
                 raise Exception(f"Failed to get signed gcp url: {response.json()}")
             
-            print(response.json())
             url = response.json()["url"]
 
             # upload the file to the url
             try:
                 with open(file_path, "rb") as file_data:
                     headers = {"Content-Type": "application/zip"}
-                    response = requests.put(url, data=file_data, headers=headers)
+                    response = requests.put(url, data=file_data.read(), headers=headers)
                     response.raise_for_status()
             except Exception as e:
                 """error uploading file"""
@@ -963,6 +961,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
 
     def get_cached_session(self) -> Tuple[Optional[str], bool]:
         try:
+            signature = generate_hardware_signature_string() + f"-bs{self.current_batch_size}"
             # check if the engine file exists
             cache_dir = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
             engine_file = [f for f in os.listdir(cache_dir) if f.endswith(".engine")]
@@ -972,21 +971,18 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             
             # fetch post request from '/downloadTrtEngineCache'
             trt_endpoint = f"https://api.roboflow.one/{self.endpoint}/downloadTrtEngineCache"
-            print(trt_endpoint)
             response = requests.get(
                 trt_endpoint,
-                params={"api_key": self.api_key, "signature": generate_hardware_signature_string()},
+                params={"api_key": self.api_key, "signature": signature},
             )
-            print(response.json())
             if response.status_code != 200:
                 return None, False
             
             
             # download the file from the url
             url = response.json()["url"]
-            cache_dir = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
             os.makedirs(cache_dir, exist_ok=True)
-            filename = os.path.join(cache_dir, f"{generate_hardware_signature_string()}.zip")
+            filename = os.path.join(cache_dir, f"{signature}.zip")
             
             # download the file at gcp signed url
             try:
@@ -1019,6 +1015,10 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             str: The file path to the weights file.
         """
         return "weights.onnx"
+
+    @property
+    def current_batch_size(self) -> str:
+        return MAX_BATCH_SIZE if self.batching_enabled else self.batch_size
 
 
 class OnnxRoboflowCoreModel(RoboflowCoreModel):
