@@ -52,6 +52,11 @@ SMOLVLM_ALIASES = {
     "smolvlm2": "smolvlm-2.2b-instruct",
 }
 
+RFDETR_ALIASES = {
+    "rfdetr-base": "coco/36",
+    "rfdetr-large": "coco/37",
+}
+
 REGISTERED_ALIASES = {
     "yolov8n-640": "coco/3",
     "yolov8n-1280": "coco/9",
@@ -93,6 +98,7 @@ REGISTERED_ALIASES = {
     **YOLOV11_ALIASES,
     **QWEN_ALIASES,
     **SMOLVLM_ALIASES,
+    **RFDETR_ALIASES,
 }
 
 
