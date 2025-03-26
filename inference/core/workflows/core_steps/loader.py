@@ -170,9 +170,6 @@ from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
 from inference.core.workflows.core_steps.models.foundation.florence2.v2 import (
     Florence2BlockV2,
 )
-from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
-    SmolVLM2BlockV1,
-)
 from inference.core.workflows.core_steps.models.foundation.gaze.v1 import GazeBlockV1
 from inference.core.workflows.core_steps.models.foundation.google_gemini.v1 import (
     GoogleGeminiBlockV1,
@@ -199,6 +196,9 @@ from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
+    SmolVLM2BlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen.v1 import (
     StabilityAIImageGenBlockV1,
