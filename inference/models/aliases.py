@@ -47,6 +47,12 @@ YOLOV11_ALIASES = {
     **YOLOV11_ALIASES,
     **{k.replace("yolov11", "yolo11"): v for k, v in YOLOV11_ALIASES.items()},
 }
+
+RFDETR_ALIASES = {
+    "rfdetr-base": "coco/36",
+    "rfdetr-large": "coco/37",
+}
+
 REGISTERED_ALIASES = {
     "yolov8n-640": "coco/3",
     "yolov8n-1280": "coco/9",
@@ -87,6 +93,7 @@ REGISTERED_ALIASES = {
     **FLORENCE_ALIASES,
     **YOLOV11_ALIASES,
     **QWEN_ALIASES,
+    **RFDETR_ALIASES,
 }
 
 

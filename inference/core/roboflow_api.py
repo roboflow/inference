@@ -4,6 +4,7 @@ import os
 import re
 import urllib.parse
 from enum import Enum
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
@@ -555,8 +556,9 @@ def get_workflow_specification(
         if not re.match(r"^[\w\-]+$", workflow_id):
             raise ValueError("Invalid workflow id")
 
+        workflow_hash = sha256(workflow_id.encode()).hexdigest()
         local_file_path = (
-            Path(MODEL_CACHE_DIR) / "workflow" / "local" / f"{workflow_id}.json"
+            Path(MODEL_CACHE_DIR) / "workflow" / "local" / f"{workflow_hash}.json"
         )
         if not local_file_path.exists():
             raise FileNotFoundError(f"Local workflow file not found: {local_file_path}")
