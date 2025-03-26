@@ -1,8 +1,9 @@
+from copy import copy, deepcopy
+from typing import Any, Callable, Dict, List, Union
+
 import numpy as np
 import supervision as sv
-from copy import copy, deepcopy
 from supervision import Position
-from typing import Any, Callable, Dict, List, Union
 
 from inference.core.workflows.core_steps.common.query_language.entities.enums import (
     DetectionsProperty,
