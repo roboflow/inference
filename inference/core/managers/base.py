@@ -58,7 +58,11 @@ class ModelManager:
                 f"ModelManager - model with model_id={resolved_identifier} is already loaded."
             )
             return
-        print("RESOLVED", resolved_identifier, self.model_registry.get_model(resolved_identifier, api_key))
+        print(
+            "RESOLVED",
+            resolved_identifier,
+            self.model_registry.get_model(resolved_identifier, api_key),
+        )
         logger.debug("ModelManager - model initialisation...")
         model = self.model_registry.get_model(resolved_identifier, api_key)(
             model_id=model_id,

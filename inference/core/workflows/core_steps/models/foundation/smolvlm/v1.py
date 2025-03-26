@@ -67,7 +67,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="The SmolVLM2 model to be used for inference.",
         examples=["smolvlm2/smolvlm-2.2b-instruct"],
     )
-    
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [

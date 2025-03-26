@@ -60,6 +60,7 @@ CACHE_METADATA_LOCK_TIMEOUT = 1.0
 
 FOUNDATION_MODELS_TO_DOWNLOAD_AS_CORE = ["smolvlm2/smolvlm-2.2b-instruct"]
 
+
 class RoboflowModelRegistry(ModelRegistry):
     """A Roboflow-specific model registry which gets the model type using the model id,
     then returns a model class based on the model type.
@@ -146,7 +147,7 @@ def get_model_type(
     cached_metadata = get_model_metadata_from_cache(
         dataset_id=dataset_id, version_id=version_id
     )
-    
+
     if cached_metadata is not None:
         return cached_metadata[0], cached_metadata[1]
     if version_id == STUB_VERSION_ID:
