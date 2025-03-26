@@ -3,6 +3,9 @@ from typing import Any, List, Tuple, Union
 
 import cv2
 import numpy as np
+import onnxruntime
+from inference.core.models.utils.onnx import has_trt
+from time import perf_counter
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.env import (
@@ -10,7 +13,9 @@ from inference.core.env import (
     FIX_BATCH_SIZE,
     MAX_BATCH_SIZE,
     USE_PYTORCH_FOR_PREPROCESSING,
+    REQUIRED_ONNX_PROVIDERS,
 )
+from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
 from inference.core.logger import logger
 from inference.core.models.defaults import DEFAULT_CONFIDENCE, DEFAUlT_MAX_DETECTIONS
 from inference.core.models.object_detection_base import (
@@ -41,6 +46,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
     preprocess_means = [0.485, 0.456, 0.406]
     preprocess_stds = [0.229, 0.224, 0.225]
+    
 
     @property
     def weights_file(self) -> str:
@@ -227,7 +233,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         predictions = run_session_via_iobinding(
             self.onnx_session, self.input_name, img_in
         )
-
         bboxes = predictions[0]
         logits = predictions[1]
 
@@ -293,6 +298,107 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             processed_predictions.append(batch_predictions)
 
         return self.make_response(processed_predictions, img_dims, **kwargs)
+    
+    def initialize_model(self) -> None:
+        """Initializes the ONNX model, setting up the inference session and other necessary properties."""
+        logger.debug("Getting model artefacts")
+        self.get_model_artifacts()
+        logger.debug("Creating inference session")
+        if self.load_weights or not self.has_model_metadata:
+            t1_session = perf_counter()
+            # We exclude CoreMLExecutionProvider as it is showing worse performance than CPUExecutionProvider
+            providers = ['CUDAExecutionProvider', 'OpenVINOExecutionProvider', 'CPUExecutionProvider']
+
+            if not self.load_weights:
+                providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
+            
+            try:
+                session_options = onnxruntime.SessionOptions()
+                session_options.log_severity_level = 3
+                # TensorRT does better graph optimization for its EP than onnx
+                if has_trt(providers):
+                    session_options.graph_optimization_level = (
+                        onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
+                    )
+                self.onnx_session = onnxruntime.InferenceSession(
+                    self.cache_file(self.weights_file),
+                    providers=providers,
+                    sess_options=session_options,
+                )
+            except Exception as e:
+                self.clear_cache()
+                raise ModelArtefactError(
+                    f"Unable to load ONNX session. Cause: {e}"
+                ) from e
+            logger.debug(f"Session created in {perf_counter() - t1_session} seconds")
+
+            if REQUIRED_ONNX_PROVIDERS:
+                available_providers = onnxruntime.get_available_providers()
+                for provider in REQUIRED_ONNX_PROVIDERS:
+                    if provider not in available_providers:
+                        raise OnnxProviderNotAvailable(
+                            f"Required ONNX Execution Provider {provider} is not availble. "
+                            "Check that you are using the correct docker image on a supported device. "
+                            "Export list of available providers as ONNXRUNTIME_EXECUTION_PROVIDERS environmental variable, "
+                            "consult documentation for more details."
+                        )
+
+            inputs = self.onnx_session.get_inputs()[0]
+            input_shape = inputs.shape
+            self.batch_size = input_shape[0]
+            self.img_size_h = input_shape[2]
+            self.img_size_w = input_shape[3]
+            self.input_name = inputs.name
+            if isinstance(self.img_size_h, str) or isinstance(self.img_size_w, str):
+                if "resize" in self.preproc:
+                    self.img_size_h = int(self.preproc["resize"]["height"])
+                    self.img_size_w = int(self.preproc["resize"]["width"])
+                else:
+                    self.img_size_h = 640
+                    self.img_size_w = 640
+
+            if isinstance(self.batch_size, str):
+                self.batching_enabled = True
+                logger.debug(
+                    f"Model {self.endpoint} is loaded with dynamic batching enabled"
+                )
+            else:
+                self.batching_enabled = False
+                logger.debug(
+                    f"Model {self.endpoint} is loaded with dynamic batching disabled"
+                )
+
+            model_metadata = {
+                "batch_size": self.batch_size,
+                "img_size_h": self.img_size_h,
+                "img_size_w": self.img_size_w,
+            }
+            logger.debug(f"Writing model metadata to memcache")
+            self.write_model_metadata_to_memcache(model_metadata)
+            if not self.load_weights:  # had to load weights to get metadata
+                del self.onnx_session
+        else:
+            if not self.has_model_metadata:
+                raise ValueError(
+                    "This should be unreachable, should get weights if we don't have model metadata"
+                )
+            logger.debug(f"Loading model metadata from memcache")
+            metadata = self.model_metadata_from_memcache()
+            self.batch_size = metadata["batch_size"]
+            self.img_size_h = metadata["img_size_h"]
+            self.img_size_w = metadata["img_size_w"]
+            if isinstance(self.batch_size, str):
+                self.batching_enabled = True
+                logger.debug(
+                    f"Model {self.endpoint} is loaded with dynamic batching enabled"
+                )
+            else:
+                self.batching_enabled = False
+                logger.debug(
+                    f"Model {self.endpoint} is loaded with dynamic batching disabled"
+                )
+
+        logger.debug("Model initialisation finished.")
 
     def validate_model_classes(self) -> None:
         pass
