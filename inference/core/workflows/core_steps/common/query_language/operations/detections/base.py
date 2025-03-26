@@ -106,9 +106,11 @@ def shift_detections(value: Any, shift_x: int, shift_y: int, **kwargs) -> sv.Det
 
 def select_top_confidence_detection(detections: sv.Detections) -> sv.Detections:
     if len(detections) == 0:
-        return detections  # No need to deepcopy an empty detections object
-    max_index = np.argmax(detections.confidence)
-    return detections[max_index]
+        return deepcopy(detections)
+    confidence = detections.confidence
+    max_value = confidence.max()
+    index = np.argwhere(confidence == max_value)[0].item()
+    return detections[index]
 
 
 def select_leftmost_detection(detections: sv.Detections) -> sv.Detections:
