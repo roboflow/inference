@@ -581,6 +581,17 @@ class HttpInterface(BaseInterface):
             root_path=root_path,
         )
 
+        app.mount(
+            "/static",
+            StaticFiles(directory="./inference/landing/out/static", html=True),
+            name="static",
+        )
+        app.mount(
+            "/_next/static",
+            StaticFiles(directory="./inference/landing/out/_next/static", html=True),
+            name="_next_static",
+        )
+
         @app.on_event("shutdown")
         async def on_shutdown():
             logger.info("Shutting down %s", description)
@@ -2536,16 +2547,6 @@ class HttpInterface(BaseInterface):
             "/",
             StaticFiles(directory="./inference/landing/out", html=True),
             name="root",
-        )
-        app.mount(
-            "/static",
-            StaticFiles(directory="./inference/landing/out/static", html=True),
-            name="static",
-        )
-        app.mount(
-            "/_next/static",
-            StaticFiles(directory="./inference/landing/out/static", html=True),
-            name="_next_static",
         )
 
     def run(self):
