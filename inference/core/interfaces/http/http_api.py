@@ -408,9 +408,10 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
-        except ModelArtefactError:
+        except ModelArtefactError as error:
             resp = JSONResponse(
-                status_code=500, content={"message": "Model package is broken."}
+                status_code=500,
+                content={"message": f"Model package is broken: {error}"},
             )
             traceback.print_exc()
         except OnnxProviderNotAvailable:
