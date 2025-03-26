@@ -5,7 +5,6 @@ import onnxruntime as ort
 
 if TYPE_CHECKING:
     import torch
-import time
 
 ImageMetaType = Union[np.ndarray, "torch.Tensor"]
 
@@ -34,12 +33,7 @@ def run_session_via_iobinding(
     if isinstance(input_data, (np.ndarray, list)):
         # skip the iobinding and just run the session
         # we likely won't get any gains by pointing to the input data directly
-        print("Input data: ", input_data.shape)
-        print("Input name: ", input_data.dtype)
-        t1 = time.perf_counter()
         predictions = session.run(None, {input_name: input_data})
-        t2 = time.perf_counter()
-        print(f"Prediction time INFFF: {t2 - t1} seconds")
     elif "CUDAExecutionProvider" not in session.get_providers():
         # no point in doing iobinding as the input must live on CPU anyway
         input_data = (

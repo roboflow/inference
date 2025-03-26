@@ -1,4 +1,3 @@
-import time
 from time import perf_counter
 from typing import Any, List, Tuple, Union
 
@@ -27,7 +26,6 @@ class BaseInference:
         logger.debug(
             f"Preprocessed input shape: {getattr(preproc_image, 'shape', None)}"
         )
-        print(f"Resolution: {preproc_image.shape}")
         predicted_arrays = self.predict(preproc_image, **kwargs)
         postprocessed = self.postprocess(predicted_arrays, returned_metadata, **kwargs)
 
