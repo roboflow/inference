@@ -1,19 +1,18 @@
 import os
+from time import perf_counter
 from typing import Any, List, Tuple, Union
 
 import cv2
 import numpy as np
 import onnxruntime
-from inference.core.models.utils.onnx import has_trt
-from time import perf_counter
 
 from inference.core.entities.requests.inference import InferenceRequestImage
 from inference.core.env import (
     DISABLE_PREPROC_AUTO_ORIENT,
     FIX_BATCH_SIZE,
     MAX_BATCH_SIZE,
-    USE_PYTORCH_FOR_PREPROCESSING,
     REQUIRED_ONNX_PROVIDERS,
+    USE_PYTORCH_FOR_PREPROCESSING,
 )
 from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
 from inference.core.logger import logger
@@ -23,6 +22,7 @@ from inference.core.models.object_detection_base import (
     ObjectDetectionInferenceResponse,
 )
 from inference.core.models.types import PreprocessReturnMetadata
+from inference.core.models.utils.onnx import has_trt
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import ImageMetaType, run_session_via_iobinding
 from inference.core.utils.preprocess import letterbox_image
@@ -46,7 +46,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
     preprocess_means = [0.485, 0.456, 0.406]
     preprocess_stds = [0.229, 0.224, 0.225]
-    
 
     @property
     def weights_file(self) -> str:
@@ -298,7 +297,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             processed_predictions.append(batch_predictions)
 
         return self.make_response(processed_predictions, img_dims, **kwargs)
-    
+
     def initialize_model(self) -> None:
         """Initializes the ONNX model, setting up the inference session and other necessary properties."""
         logger.debug("Getting model artefacts")
@@ -307,11 +306,15 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         if self.load_weights or not self.has_model_metadata:
             t1_session = perf_counter()
             # We exclude CoreMLExecutionProvider as it is showing worse performance than CPUExecutionProvider
-            providers = ['CUDAExecutionProvider', 'OpenVINOExecutionProvider', 'CPUExecutionProvider']
+            providers = [
+                "CUDAExecutionProvider",
+                "OpenVINOExecutionProvider",
+                "CPUExecutionProvider",
+            ]
 
             if not self.load_weights:
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
-            
+
             try:
                 session_options = onnxruntime.SessionOptions()
                 session_options.log_severity_level = 3
