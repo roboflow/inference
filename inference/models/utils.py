@@ -389,6 +389,7 @@ except:
 
 try:
     from inference.models.smolvlm.smolvlm import SmolVLM
+    
     ROBOFLOW_MODEL_TYPES[("lmm", "smolvlm-2.2b-instruct")] = SmolVLM
 except:
     warnings.warn(
