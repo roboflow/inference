@@ -40,7 +40,7 @@ RUN wget https://storage.googleapis.com/roboflow-tests-assets/zxing_cpp_library_
     && mv zxingcpp.cpython-39-aarch64-linux-gnu.so /usr/local/lib/python3.9/dist-packages/ \
     && rm zxing_cpp_library_compiled_for_inference_v0.12.1.tar.gz
 
-RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
+RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install --verbose \
     -r _requirements.txt \
     -r requirements.clip.txt \
     -r requirements.http.txt \
@@ -50,7 +50,7 @@ RUN python3.9 -m pip install --upgrade pip  && python3.9 -m pip install \
 
 RUN python3.9 -m pip uninstall --yes onnxruntime
 RUN wget https://nvidia.box.com/shared/static/67zek28z497hs9aev7xg2c1wngdeyv4h.whl -O onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
-RUN python3.9 -m pip install onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl "opencv-python-headless>4,<=4.10.0.84" \
+RUN python3.9 -m pip install --verbose onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl "opencv-python-headless>4,<=4.10.0.84" \
     && rm -rf ~/.cache/pip \
     && rm onnxruntime_gpu-1.16.0-cp39-cp39-linux_aarch64.whl
 

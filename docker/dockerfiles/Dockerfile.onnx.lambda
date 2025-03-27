@@ -36,7 +36,7 @@ COPY requirements/requirements.clip.txt \
 RUN if [ "${TARGETPLATFORM}" == "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
 RUN /var/lang/bin/python3.10 -m pip install --upgrade pip && rm -rf ~/.cache/pip
-RUN pip3 install \
+RUN pip3 install --verbose \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     certifi==2022.12.07 \
     -r _requirements.txt \

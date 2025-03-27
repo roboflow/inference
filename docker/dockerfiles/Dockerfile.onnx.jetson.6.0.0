@@ -28,7 +28,7 @@ RUN sed -i '/^opencv-python/d;/^onnxruntime/d;/^opencv-python-contrib/d' require
 
 # Upgrade pip and install Python packages
 RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install --upgrade \
+    python3 -m pip install --verbose --upgrade \
     -r requirements/_requirements.txt \
     -r requirements/requirements.clip.txt \
     -r requirements/requirements.http.txt \
@@ -48,7 +48,7 @@ RUN rm -f dist/* && \
     python3 .release/pypi/inference.gpu.setup.py bdist_wheel && \
     python3 .release/pypi/inference.sdk.setup.py bdist_wheel && \
     python3 .release/pypi/inference.cli.setup.py bdist_wheel && \
-    python3 -m pip install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+    python3 -m pip install --verbose dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
 
 # Set up the application runtime
 WORKDIR /app

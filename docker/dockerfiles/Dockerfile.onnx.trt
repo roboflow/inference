@@ -22,7 +22,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.sdk.http.txt \
     ./
 
-RUN pip install --upgrade pip  && pip install \
+RUN pip install --upgrade pip  && pip install --verbose \
     --extra-index-url https://download.pytorch.org/whl/cu118 \
     --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/ \
     -r _requirements.txt \

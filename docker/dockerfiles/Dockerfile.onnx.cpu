@@ -27,7 +27,7 @@ COPY requirements/requirements.sam.txt \
     requirements/_requirements.txt \
     ./
 
-RUN pip3 install --upgrade pip  && pip3 install \
+RUN pip3 install --upgrade pip  && pip3 install --verbose \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
@@ -52,9 +52,9 @@ COPY --from=base / /
 WORKDIR /build
 COPY . .
 RUN make create_wheels
-RUN pip3 install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+RUN pip3 install --verbose dist/inference_cli*.whl dist/inference_core*.whl dist/inference_cpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
 
-RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then pip3 install -r requirements/requirements.vino.txt; rm -rf ~/.cache/pip; fi
+RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then pip3 install --verbose -r requirements/requirements.vino.txt; rm -rf ~/.cache/pip; fi
 
 
 WORKDIR /notebooks

@@ -32,7 +32,7 @@ COPY requirements/requirements.sam.txt \
     ./
 
 RUN python3 -m pip install -U pip
-RUN python3 -m pip install \
+RUN python3 -m pip install --verbose \
     --extra-index-url https://download.pytorch.org/whl/cu118 \
     --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/ \
     -r _requirements.txt \
@@ -54,10 +54,10 @@ RUN python3 -m pip install \
     && rm -rf ~/.cache/pip
 
 # Install setup.py requirements for flash_attn
-RUN python3 -m pip install packaging==24.1  && rm -rf ~/.cache/pip
+RUN python3 -m pip install --verbose packaging==24.1  && rm -rf ~/.cache/pip
 
 # Install flash_attn required for Paligemma and Florence2
-RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
+RUN python3 -m pip install --verbose -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
 
 WORKDIR /app/
 COPY inference inference
