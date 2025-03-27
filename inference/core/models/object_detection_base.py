@@ -1,4 +1,3 @@
-import warnings
 from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
@@ -11,12 +10,7 @@ from inference.core.env import (
 from inference.core.logger import logger
 
 if USE_PYTORCH_FOR_PREPROCESSING:
-    try:
-        import torch
-    except ImportError:
-        warnings.warn(
-            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
-        )
+    import torch
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -273,7 +267,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                     ),
                     "constant",
                 )
-            elif "torch" in dir():
+            elif USE_PYTORCH_FOR_PREPROCESSING:
                 img_in = torch.nn.functional.pad(
                     img_in,
                     (
