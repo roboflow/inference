@@ -170,15 +170,18 @@ class Batch(Generic[B]):
     def broadcast(self, n: int) -> "Batch":
         if n <= 0:
             raise ValueError(
-                f"Broadcast to size {n} requested which is invalid operation."
+                f"Broadcast to size {n} requested which is an invalid operation."
             )
-        if len(self._content) == n:
+
+        num_content = len(self._content)
+
+        if num_content == n:
             return self
-        if len(self._content) == 1:
-            return Batch(content=[self._content[0]] * n, indices=[self._indices[0]] * n)
-        raise ValueError(
-            f"Could not broadcast batch of size {len(self._content)} to size {n}"
-        )
+
+        if num_content == 1:
+            return Batch(content=self._content * n, indices=self._indices * n)
+
+        raise ValueError(f"Could not broadcast batch of size {num_content} to size {n}")
 
 
 class VideoMetadata(BaseModel):
