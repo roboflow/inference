@@ -2,6 +2,7 @@ import os
 from typing import Any, Dict, Union
 
 import cv2 as cv
+import supervision as sv
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
@@ -9,11 +10,13 @@ from inference.core.managers.base import ModelManager
 from inference.core.registries.roboflow import (
     RoboflowModelRegistry,
 )
-from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import OUTPUT_KEY as BYTE_TRACKER_OUTPUT_KEY
-from inference.core.workflows.core_steps.analytics.path_deviation.v1 import OUTPUT_KEY as PATH_DEVIATION_OUTPUT
+from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
+    OUTPUT_KEY as PATH_DEVIATION_OUTPUT,
+)
+from inference.core.workflows.core_steps.transformations.byte_tracker.v1 import (
+    OUTPUT_KEY as BYTE_TRACKER_OUTPUT_KEY,
+)
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
-import supervision as sv
-
 
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 model_manager = ModelManager(model_registry=model_registry)

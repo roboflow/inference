@@ -2,7 +2,7 @@ import argparse
 import signal
 import sys
 from functools import partial
-from typing import Union, Optional
+from typing import Optional, Union
 
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
 from inference.core.interfaces.stream.sinks import render_boxes
