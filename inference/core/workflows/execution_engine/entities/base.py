@@ -135,7 +135,7 @@ class Batch(Generic[B]):
     def __init__(
         self,
         content: List[B],
-        indices: Optional[List[Tuple[int, ...]]] = None,
+        indices: Optional[List[Tuple[int, ...]]],
     ):
         self._content = content
         self._indices = indices
