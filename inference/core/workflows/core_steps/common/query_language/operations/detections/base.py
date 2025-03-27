@@ -115,19 +115,19 @@ def select_top_confidence_detection(detections: sv.Detections) -> sv.Detections:
 
 def select_leftmost_detection(detections: sv.Detections) -> sv.Detections:
     if len(detections) == 0:
-        return deepcopy(detections)
+        return detections  # Directly return the original empty detections if empty
+
     centers_x = detections.get_anchors_coordinates(anchor=Position.CENTER)[:, 0]
-    min_value = centers_x.min()
-    index = np.argwhere(centers_x == min_value)[0].item()
+    index = np.argmin(centers_x)
     return detections[index]
 
 
 def select_rightmost_detection(detections: sv.Detections) -> sv.Detections:
     if len(detections) == 0:
-        return deepcopy(detections)
+        return detections
+
     centers_x = detections.get_anchors_coordinates(anchor=Position.CENTER)[:, 0]
-    max_value = centers_x.max()
-    index = np.argwhere(centers_x == max_value)[-1].item()
+    index = centers_x.argmax()
     return detections[index]
 
 
