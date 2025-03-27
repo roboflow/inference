@@ -73,6 +73,7 @@ except:
     pass
 
 from inference.models.resnet import ResNetClassification
+from inference.models.rfdetr import RFDETRObjectDetection
 from inference.models.vit import VitClassification
 from inference.models.yolact import YOLACT
 from inference.models.yolonas import YOLONASObjectDetection
@@ -92,4 +93,3 @@ from inference.models.yolov11 import (
     YOLOv11ObjectDetection,
 )
 from inference.models.yolov12 import YOLOv12ObjectDetection
-from inference.models.rfdetr import RFDETRObjectDetection
