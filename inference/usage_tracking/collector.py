@@ -669,7 +669,11 @@ class UsageCollector:
 
         roboflow_service_name = func_kwargs.get("source_info")
         roboflow_internal_secret = func_kwargs.get("service_secret")
-        if roboflow_service_name and roboflow_service_name != "external" and roboflow_internal_secret:
+        if (
+            roboflow_service_name
+            and roboflow_service_name != "external"
+            and roboflow_internal_secret
+        ):
             usage_params["roboflow_service_name"] = roboflow_service_name
             usage_params["roboflow_internal_secret"] = roboflow_internal_secret
 
