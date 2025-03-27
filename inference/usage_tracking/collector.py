@@ -186,6 +186,9 @@ class UsageCollector:
             lambda: defaultdict(lambda: {**usage_dict})  # category:resource_id
         )
 
+    def _mask_usage_payload(payload: APIKeyUsage) -> APIKeyUsage:
+        return {**payload, **{"roboflow_internal_secret": "***", "api_key_hash": "***"}}
+
     def _dump_usage_queue_no_lock(self) -> List[APIKeyUsage]:
         usage_payloads: List[APIKeyUsage] = []
         while self._queue:
@@ -223,7 +226,7 @@ class UsageCollector:
         return sha256_hash(json.dumps(resource_details, sort_keys=True))
 
     def _enqueue_payload(self, payload: UsagePayload):
-        logger.debug("Enqueuing usage payload %s", payload)
+        logger.debug("Enqueuing usage payload %s", self._mask_usage_payload(payload))
         if not payload:
             return
         with self._queue_lock:
@@ -347,6 +350,8 @@ class UsageCollector:
         inference_test_run: bool = False,
         fps: float = 0,
         execution_duration: float = 0,
+        roboflow_service_name: Optional[str] = None,
+        roboflow_internal_secret: Optional[str] = None,
     ):
         source = str(source) if source else ""
         try:
@@ -382,7 +387,9 @@ class UsageCollector:
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
             source_usage["execution_duration"] += execution_duration
-            logger.debug("Updated usage: %s", source_usage)
+            source_usage["roboflow_service_name"] = roboflow_service_name
+            source_usage["roboflow_internal_secret"] = roboflow_internal_secret
+            logger.debug("Updated usage: %s", self._mask_usage_payload(source_usage))
 
     def record_usage(
         self,
@@ -395,6 +402,8 @@ class UsageCollector:
         inference_test_run: bool = False,
         fps: float = 0,
         execution_duration: float = 0,
+        roboflow_service_name: Optional[str] = None,
+        roboflow_internal_secret: Optional[str] = None,
     ):
         if not api_key:
             return
@@ -417,6 +426,8 @@ class UsageCollector:
             inference_test_run=inference_test_run,
             fps=fps,
             execution_duration=execution_duration,
+            roboflow_internal_service_name=roboflow_service_name,
+            roboflow_internal_secret=roboflow_internal_secret,
         )
 
     async def async_record_usage(
@@ -430,6 +441,8 @@ class UsageCollector:
         inference_test_run: bool = False,
         fps: float = 0,
         execution_duration: float = 0,
+        roboflow_service_name: Optional[str] = None,
+        roboflow_internal_secret: Optional[str] = None,
     ):
         if self._async_lock:
             async with self._async_lock:
@@ -443,6 +456,8 @@ class UsageCollector:
                     inference_test_run=inference_test_run,
                     fps=fps,
                     execution_duration=execution_duration,
+                    roboflow_internal_service_name=roboflow_service_name,
+                    roboflow_internal_secret=roboflow_internal_secret,
                 )
         else:
             self.record_usage(
@@ -455,6 +470,8 @@ class UsageCollector:
                 inference_test_run=inference_test_run,
                 fps=fps,
                 execution_duration=execution_duration,
+                roboflow_internal_service_name=roboflow_service_name,
+                roboflow_internal_secret=roboflow_internal_secret,
             )
 
     def _usage_collector(self):
@@ -515,7 +532,7 @@ class UsageCollector:
                         self._plan_details._is_enterprise_col_name
                     ]
 
-            logger.debug("Sending usage payload %s", payload)
+            logger.debug("Sending usage payload %s", self._mask_usage_payload(payload))
             api_keys_hashes_failed = send_usage_payload(
                 payload=payload,
                 api_usage_endpoint_url=self._settings.api_usage_endpoint_url,
@@ -644,6 +661,9 @@ class UsageCollector:
             else:
                 logger.debug("Could not obtain API key from func kwargs")
 
+        roboflow_service_name = func_kwargs.get("source_info")
+        roboflow_internal_secret = func_kwargs.get("service_secret")
+
         return {
             "source": source,
             "api_key": usage_api_key,
@@ -653,6 +673,8 @@ class UsageCollector:
             "inference_test_run": usage_inference_test_run,
             "fps": usage_fps,
             "execution_duration": execution_duration,
+            "roboflow_service_name": roboflow_service_name,
+            "roboflow_internal_secret": roboflow_internal_secret,
         }
 
     def __call__(

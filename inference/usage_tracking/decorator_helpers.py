@@ -134,4 +134,6 @@ def get_request_resource_details_from_kwargs(
             resource_details["steps"] = get_resource_details_from_workflow_json(
                 workflow_json=workflow_request.specification,
             )
+    if "countinference" in func_kwargs:
+        resource_details["billable"] = func_kwargs["countinference"]
     return resource_details
