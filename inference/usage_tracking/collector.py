@@ -384,8 +384,13 @@ class UsageCollector:
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
             source_usage["execution_duration"] += execution_duration
-            source_usage["roboflow_service_name"] = roboflow_service_name
-            source_usage["roboflow_internal_secret"] = roboflow_internal_secret
+            if (
+                roboflow_service_name
+                and roboflow_service_name != "external"
+                and roboflow_internal_secret
+            ):
+                source_usage["roboflow_service_name"] = roboflow_service_name
+                source_usage["roboflow_internal_secret"] = roboflow_internal_secret
 
     def record_usage(
         self,
@@ -656,7 +661,10 @@ class UsageCollector:
             else:
                 logger.debug("Could not obtain API key from func kwargs")
 
-        usage_params = {
+        roboflow_service_name = func_kwargs.get("source_info")
+        roboflow_internal_secret = func_kwargs.get("service_secret")
+
+        return {
             "source": source,
             "api_key": usage_api_key,
             "category": category,
@@ -665,19 +673,9 @@ class UsageCollector:
             "inference_test_run": usage_inference_test_run,
             "fps": usage_fps,
             "execution_duration": execution_duration,
+            "roboflow_service_name": roboflow_service_name,
+            "roboflow_internal_secret": roboflow_internal_secret,
         }
-
-        roboflow_service_name = func_kwargs.get("source_info")
-        roboflow_internal_secret = func_kwargs.get("service_secret")
-        if (
-            roboflow_service_name
-            and roboflow_service_name != "external"
-            and roboflow_internal_secret
-        ):
-            usage_params["roboflow_service_name"] = roboflow_service_name
-            usage_params["roboflow_internal_secret"] = roboflow_internal_secret
-
-        return usage_params
 
     def __call__(
         self, category: Literal["model", "workflows", "request"]
