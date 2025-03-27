@@ -656,10 +656,7 @@ class UsageCollector:
             else:
                 logger.debug("Could not obtain API key from func kwargs")
 
-        roboflow_service_name = func_kwargs.get("source_info")
-        roboflow_internal_secret = func_kwargs.get("service_secret")
-
-        return {
+        usage_params = {
             "source": source,
             "api_key": usage_api_key,
             "category": category,
@@ -668,9 +665,15 @@ class UsageCollector:
             "inference_test_run": usage_inference_test_run,
             "fps": usage_fps,
             "execution_duration": execution_duration,
-            "roboflow_service_name": roboflow_service_name,
-            "roboflow_internal_secret": roboflow_internal_secret,
         }
+
+        roboflow_service_name = func_kwargs.get("source_info")
+        roboflow_internal_secret = func_kwargs.get("service_secret")
+        if roboflow_service_name and roboflow_service_name != "external" and roboflow_internal_secret:
+            usage_params["roboflow_service_name"] = roboflow_service_name
+            usage_params["roboflow_internal_secret"] = roboflow_internal_secret
+
+        return usage_params
 
     def __call__(
         self, category: Literal["model", "workflows", "request"]
