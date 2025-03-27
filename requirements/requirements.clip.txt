@@ -1,1 +1,1 @@
-rf-clip==1.1
+rf-clip

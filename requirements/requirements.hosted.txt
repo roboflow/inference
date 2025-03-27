@@ -1,2 +1,2 @@
-pymemcache~=4.0.0
-elasticache_auto_discovery~=1.0.0
+pymemcache
+elasticache_auto_discovery
