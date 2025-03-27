@@ -186,9 +186,6 @@ class UsageCollector:
             lambda: defaultdict(lambda: {**usage_dict})  # category:resource_id
         )
 
-    def _mask_usage_payload(payload: APIKeyUsage) -> APIKeyUsage:
-        return {**payload, **{"roboflow_internal_secret": "***", "api_key_hash": "***"}}
-
     def _dump_usage_queue_no_lock(self) -> List[APIKeyUsage]:
         usage_payloads: List[APIKeyUsage] = []
         while self._queue:
@@ -226,7 +223,7 @@ class UsageCollector:
         return sha256_hash(json.dumps(resource_details, sort_keys=True))
 
     def _enqueue_payload(self, payload: UsagePayload):
-        logger.debug("Enqueuing usage payload %s", self._mask_usage_payload(payload))
+        logger.debug("Enqueuing usage payload")
         if not payload:
             return
         with self._queue_lock:
@@ -389,7 +386,6 @@ class UsageCollector:
             source_usage["execution_duration"] += execution_duration
             source_usage["roboflow_service_name"] = roboflow_service_name
             source_usage["roboflow_internal_secret"] = roboflow_internal_secret
-            logger.debug("Updated usage: %s", self._mask_usage_payload(source_usage))
 
     def record_usage(
         self,
@@ -532,7 +528,6 @@ class UsageCollector:
                         self._plan_details._is_enterprise_col_name
                     ]
 
-            logger.debug("Sending usage payload %s", self._mask_usage_payload(payload))
             api_keys_hashes_failed = send_usage_payload(
                 payload=payload,
                 api_usage_endpoint_url=self._settings.api_usage_endpoint_url,
