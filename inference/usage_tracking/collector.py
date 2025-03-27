@@ -422,7 +422,7 @@ class UsageCollector:
             inference_test_run=inference_test_run,
             fps=fps,
             execution_duration=execution_duration,
-            roboflow_internal_service_name=roboflow_service_name,
+            roboflow_service_name=roboflow_service_name,
             roboflow_internal_secret=roboflow_internal_secret,
         )
 
