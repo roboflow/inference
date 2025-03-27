@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional, Union
 import asgi_correlation_id
 import uvicorn
 from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
@@ -100,6 +99,7 @@ from inference.core.entities.responses.workflows import (
 from inference.core.env import (
     ALLOW_ORIGINS,
     API_KEY,
+    BUILDER_ORIGIN,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
@@ -117,6 +117,7 @@ from inference.core.env import (
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
+    GCP_SERVERLESS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -162,6 +163,7 @@ from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
+from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
 from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.interfaces.stream_manager.api.entities import (
@@ -573,8 +575,10 @@ class HttpInterface(BaseInterface):
             app.add_middleware(LambdaMiddleware)
 
         if len(ALLOW_ORIGINS) > 0:
+            # Add CORS Middleware (but not for /build**, which is controlled separately)
             app.add_middleware(
-                CORSMiddleware,
+                PathAwareCORSMiddleware,
+                match_paths=r"^(?!/build).*",
                 allow_origins=ALLOW_ORIGINS,
                 allow_credentials=True,
                 allow_methods=["*"],
@@ -611,7 +615,7 @@ class HttpInterface(BaseInterface):
                     self.model_manager.num_errors += 1
                 return response
 
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get("/device/stats")
             async def device_stats():
@@ -651,6 +655,7 @@ class HttpInterface(BaseInterface):
                         "/docs",
                         "/redoc",
                         "/info",
+                        "/openapi.json",  # needed for /docs and /redoc
                         "/workflows/blocks/describe",
                         "/workflows/definition/schema",
                     ]
@@ -910,7 +915,7 @@ class HttpInterface(BaseInterface):
             )
 
         # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get(
                 "/model/registry",
@@ -1003,6 +1008,9 @@ class HttpInterface(BaseInterface):
                     models_descriptions=models_descriptions
                 )
 
+        # these NEW endpoints need authentication protection
+        if not LAMBDA and not GCP_SERVERLESS:
+
             @app.post(
                 "/infer/object_detection",
                 response_model=Union[
@@ -1015,6 +1023,7 @@ class HttpInterface(BaseInterface):
                 response_model_exclude_none=True,
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_object_detection(
                 inference_request: ObjectDetectionInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1044,6 +1053,7 @@ class HttpInterface(BaseInterface):
                 description="Run inference with the specified instance segmentation model",
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_instance_segmentation(
                 inference_request: InstanceSegmentationInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1075,6 +1085,7 @@ class HttpInterface(BaseInterface):
                 description="Run inference with the specified classification model",
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_classification(
                 inference_request: ClassificationInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1102,6 +1113,7 @@ class HttpInterface(BaseInterface):
                 description="Run inference with the specified keypoints detection model",
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_keypoints(
                 inference_request: KeypointsDetectionInferenceRequest,
             ):
@@ -1130,6 +1142,7 @@ class HttpInterface(BaseInterface):
                     response_model_exclude_none=True,
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def infer_lmm(
                     inference_request: LMMInferenceRequest,
                 ):
@@ -1197,6 +1210,7 @@ class HttpInterface(BaseInterface):
                 deprecated=True,
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_from_predefined_workflow(
                 workspace_name: str,
                 workflow_id: str,
@@ -1230,7 +1244,9 @@ class HttpInterface(BaseInterface):
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
-                    background_tasks=background_tasks if not LAMBDA else None,
+                    background_tasks=(
+                        background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
+                    ),
                     profiler=profiler,
                 )
 
@@ -1248,6 +1264,7 @@ class HttpInterface(BaseInterface):
                 deprecated=True,
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1262,7 +1279,9 @@ class HttpInterface(BaseInterface):
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_request.specification,
-                    background_tasks=background_tasks if not LAMBDA else None,
+                    background_tasks=(
+                        background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
+                    ),
                     profiler=profiler,
                 )
 
@@ -1499,7 +1518,7 @@ class HttpInterface(BaseInterface):
         if (
             (PRELOAD_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
             and API_KEY
-            and not LAMBDA
+            and not (LAMBDA or GCP_SERVERLESS)
         ):
 
             class ModelInitState:
@@ -1588,6 +1607,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Open AI CLIP model to embed image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def clip_embed_image(
                     inference_request: ClipImageEmbeddingRequest,
                     request: Request,
@@ -1626,6 +1646,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Open AI CLIP model to embed text data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def clip_embed_text(
                     inference_request: ClipTextEmbeddingRequest,
                     request: Request,
@@ -1664,6 +1685,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Open AI CLIP model to compute similarity scores.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def clip_compare(
                     inference_request: ClipCompareRequest,
                     request: Request,
@@ -1704,6 +1726,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Grounding DINO zero-shot object detection model.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def grounding_dino_infer(
                     inference_request: GroundingDINOInferenceRequest,
                     request: Request,
@@ -1747,6 +1770,7 @@ class HttpInterface(BaseInterface):
                     response_model_exclude_none=True,
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def yolo_world_infer(
                     inference_request: YOLOWorldInferenceRequest,
                     request: Request,
@@ -1792,6 +1816,7 @@ class HttpInterface(BaseInterface):
                     description="Run the DocTR OCR model to retrieve text in an image.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def doctr_retrieve_text(
                     inference_request: DoctrOCRInferenceRequest,
                     request: Request,
@@ -1834,6 +1859,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Meta AI Segmant Anything Model to embed image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def sam_embed_image(
                     inference_request: SamEmbeddingRequest,
                     request: Request,
@@ -1877,6 +1903,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Meta AI Segmant Anything Model to generate segmenations for image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def sam_segment_image(
                     inference_request: SamSegmentationRequest,
                     request: Request,
@@ -1922,6 +1949,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Meta AI Segment Anything 2 Model to embed image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def sam2_embed_image(
                     inference_request: Sam2EmbeddingRequest,
                     request: Request,
@@ -1955,6 +1983,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Meta AI Segment Anything 2 Model to generate segmenations for image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def sam2_segment_image(
                     inference_request: Sam2SegmentationRequest,
                     request: Request,
@@ -1995,6 +2024,7 @@ class HttpInterface(BaseInterface):
                     description="Run the google owlv2 model to few-shot object detect",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def owlv2_infer(
                     inference_request: OwlV2InferenceRequest,
                     request: Request,
@@ -2030,6 +2060,7 @@ class HttpInterface(BaseInterface):
                     description="Run the gaze detection model to detect gaze.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def gaze_detection(
                     inference_request: GazeDetectionInferenceRequest,
                     request: Request,
@@ -2070,6 +2101,7 @@ class HttpInterface(BaseInterface):
                     description="Run the TrOCR model to retrieve text in an image.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def trocr_retrieve_text(
                     inference_request: TrOCRInferenceRequest,
                     request: Request,
@@ -2103,7 +2135,7 @@ class HttpInterface(BaseInterface):
                         trackUsage(trocr_model_id, actor)
                     return response
 
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get(
                 "/notebook/start",
@@ -2146,6 +2178,16 @@ class HttpInterface(BaseInterface):
         if ENABLE_BUILDER:
             from inference.core.interfaces.http.builder.routes import (
                 router as builder_router,
+            )
+
+            # Allow CORS on only the API, but not the builder UI/iframe (where the CSRF is passed)
+            app.add_middleware(
+                PathAwareCORSMiddleware,
+                match_paths=r"^/build/api.*",
+                allow_origins=[BUILDER_ORIGIN],
+                allow_methods=["*"],
+                allow_headers=["*"],
+                allow_credentials=True,
             )
 
             # Attach all routes from builder to the /build prefix
@@ -2192,6 +2234,7 @@ class HttpInterface(BaseInterface):
                 response_model_exclude_none=True,
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def legacy_infer_from_request(
                 background_tasks: BackgroundTasks,
                 request: Request,
@@ -2427,7 +2470,7 @@ class HttpInterface(BaseInterface):
                 else:
                     return orjson_response(inference_response)
 
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
             # Legacy clear cache endpoint for backwards compatability
             @app.get("/clear_cache", response_model=str)
             async def legacy_clear_cache():

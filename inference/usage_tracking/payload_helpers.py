@@ -29,6 +29,9 @@ def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload):
         merged["processed_frames"] = d1["processed_frames"] + d2["processed_frames"]
     if "source_duration" in d1 and "source_duration" in d2:
         merged["source_duration"] = d1["source_duration"] + d2["source_duration"]
+    merged["execution_duration"] = d1.get("execution_duration", 0) + d2.get(
+        "execution_duration", 0
+    )
     return {**d1, **d2, **merged}
 
 
@@ -80,6 +83,9 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                     resource_usage_payload["api_key_hash"] = api_key_hash
                     resource_usage_payload["resource_id"] = resource_id
                     resource_usage_payload["category"] = category
+                    resource_usage_payload["execution_duration"] = (
+                        api_key_usage_with_resource.get("execution_duration", 0)
+                    )
 
                 resource_usage_exec_session_id = (
                     api_key_usage_by_exec_session_id.setdefault(resource_usage_key, {})
