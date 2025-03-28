@@ -228,11 +228,12 @@ def retrieve_primitive_type_from_dict_property(
     property_description: str,
     property_definition: dict,
 ) -> Optional[PrimitiveTypeDefinition]:
-    if ADDITIONAL_PROPERTIES_KEY in property_definition:
+    nested_property_definition = property_definition.get(ADDITIONAL_PROPERTIES_KEY)
+    if isinstance(nested_property_definition, dict):
         dict_value_type = retrieve_primitive_type_from_property(
             property_name=property_name,
             property_description=property_description,
-            property_definition=property_definition[ADDITIONAL_PROPERTIES_KEY],
+            property_definition=nested_property_definition,
         )
         if dict_value_type is None:
             return None
