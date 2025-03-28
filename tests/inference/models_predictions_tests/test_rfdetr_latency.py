@@ -1,8 +1,10 @@
-from inference import get_model
-from PIL import Image
-from io import BytesIO
-import requests
 import time
+from io import BytesIO
+
+import requests
+from PIL import Image
+
+from inference import get_model
 
 response = requests.get("https://media.roboflow.com/dog.jpeg")
 
