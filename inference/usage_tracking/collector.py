@@ -658,8 +658,6 @@ class UsageCollector:
                 and func_kwargs["kwargs"]["api_key"]
             ):
                 usage_api_key = func_kwargs["kwargs"]["api_key"]
-            else:
-                logger.debug("Could not obtain API key from func kwargs")
 
         roboflow_service_name = func_kwargs.get("source_info")
         roboflow_internal_secret = func_kwargs.get("service_secret")
