@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 STATISTICS_FORMAT = """
-avg: {average_inference_latency_ms}ms\t| rps: {requests_per_second}\t| p75: {p75_inference_latency_ms}ms\t| p90: {p90_inference_latency_ms}\t| %err: {error_rate}\t| {error_status_codes}
+avg: {average_inference_latency_ms}ms\t| exec_avg: {average_execution_time_per_image_ms}ms\t| rps: {requests_per_second}\t| p75: {p75_inference_latency_ms}ms\t| p90: {p90_inference_latency_ms}\t| %err: {error_rate}\t| {error_status_codes}
 """.strip()
 
 
@@ -18,6 +18,7 @@ class InferenceStatistics:
     average_inference_latency_ms: float
     std_inference_latency_ms: float
     average_inference_latency_per_image_ms: float
+    average_execution_time_per_image_ms: float
     p50_inference_latency_ms: float
     p75_inference_latency_ms: float
     p90_inference_latency_ms: float
@@ -31,6 +32,7 @@ class InferenceStatistics:
     def to_string(self) -> str:
         return STATISTICS_FORMAT.format(
             average_inference_latency_ms=self.average_inference_latency_ms,
+            average_execution_time_per_image_ms=self.average_execution_time_per_image_ms,
             requests_per_second=self.requests_per_second,
             p50_inference_latency_ms=self.p50_inference_latency_ms,
             p75_inference_latency_ms=self.p75_inference_latency_ms,
@@ -54,6 +56,9 @@ class ResultsCollector:
 
     def register_inference_duration(self, batch_size: int, duration: float) -> None:
         self._inference_details.append((datetime.now(), batch_size, duration))
+
+    def register_execution_time(self, batch_size: int, execution_time: float) -> None:
+        self._inference_details.append((datetime.now(), batch_size, execution_time))
 
     def register_error(self, batch_size: int, status_code: str) -> None:
         self._errors.append((datetime.now(), batch_size, status_code))
@@ -80,12 +85,17 @@ class ResultsCollector:
         if window is not None:
             stats = stats[-window:]
         latencies = [s[2] for s in stats]
+        execution_times = [s[3] for s in stats]
         inferences_made = len(stats)
         images_processed = sum(s[1] for s in stats)
         average_inference_latency_ms = round(np.average(latencies) * 1000, 1)
+        average_execution_time_ms = round(np.average(execution_times) * 1000, 1)
         std_inference_latency_ms = round(np.std(latencies) * 1000, 1)
         average_inference_latency_per_image_ms = round(
             average_inference_latency_ms * inferences_made / images_processed, 2
+        )
+        average_execution_time_per_image_ms = round(
+            average_execution_time_ms * inferences_made / images_processed, 2
         )
         p50_inference_latency_ms = round(np.percentile(latencies, 50) * 1000, 1)
         p75_inference_latency_ms = round(np.percentile(latencies, 75) * 1000, 1)
@@ -116,6 +126,7 @@ class ResultsCollector:
             average_inference_latency_ms=average_inference_latency_ms,
             std_inference_latency_ms=std_inference_latency_ms,
             average_inference_latency_per_image_ms=average_inference_latency_per_image_ms,
+            average_execution_time_per_image_ms=average_execution_time_per_image_ms,
             p50_inference_latency_ms=p50_inference_latency_ms,
             p75_inference_latency_ms=p75_inference_latency_ms,
             p90_inference_latency_ms=p90_inference_latency_ms,

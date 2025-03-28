@@ -257,10 +257,17 @@ def execute_infer_api_request(
     payload = images[:request_batch_size]
     start = time.time()
     try:
-        _ = client.infer(payload)
+        inference_result = client.infer(payload)
+        if "time" in inference_result:
+            execution_time = inference_result["time"]
+        else:
+            execution_time = 0
         duration = time.time() - start
         results_collector.register_inference_duration(
             batch_size=request_batch_size, duration=duration
+        )
+        results_collector.register_execution_time(
+            batch_size=request_batch_size, execution_time=execution_time
         )
     except Exception as exc:
         duration = time.time() - start
