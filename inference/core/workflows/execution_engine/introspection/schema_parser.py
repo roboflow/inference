@@ -278,9 +278,8 @@ def retrieve_selectors_from_schema(
                 inputs_accepting_batches=inputs_accepting_batches,
                 inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
             )
-        elif (
-            property_definition.get(TYPE_KEY) == OBJECT_TYPE
-            and ADDITIONAL_PROPERTIES_KEY in property_definition
+        elif property_definition.get(TYPE_KEY) == OBJECT_TYPE and isinstance(
+            property_definition.get(ADDITIONAL_PROPERTIES_KEY), dict
         ):
             selector = retrieve_selectors_from_simple_property(
                 property_name=property_name,
