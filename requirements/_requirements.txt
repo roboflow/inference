@@ -8,7 +8,7 @@ fastapi>=0.100,<0.111  # be careful with upper pin - fastapi might remove suppor
 numpy>=1.21.2,<2.3.0
 opencv-python>=4.8.1.78,<=4.10.0.84
 opencv-contrib-python>=4.8.1.78,<=4.10.0.84  # Note: opencv-python considers this as a bad practice, but since our dependencies rely on both we pin both here
-pillow<11.0
+pillow<12.0
 prometheus-fastapi-instrumentator<=6.0.0
 redis~=5.0.0
 requests>=2.32.0,<3.0.0
@@ -20,7 +20,7 @@ requests-toolbelt~=1.0.0
 wheel>=0.38.1,<=0.45.0
 setuptools>=70.0.0  # lack of upper-bound to ensure compatibility with Google Colab (builds to define one if needed)
 networkx<=3.4
-pydantic~=2.6.0
+pydantic>=2.6.0,<2.12.0
 pydantic-settings<2.8
 openai>=1.12.0,<2.0.0
 structlog>=24.1.0,<25.0.0
