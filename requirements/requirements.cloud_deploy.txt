@@ -1,2 +1,2 @@
-skypilot[aws,gcp]==0.5.0
+skypilot[aws,gcp]==0.8.0
 cryptography>=43.0.1
