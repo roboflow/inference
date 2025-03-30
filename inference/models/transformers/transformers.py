@@ -1,23 +1,12 @@
+from __future__ import annotations
 import os
 import re
 import subprocess
 import tarfile
-
-from peft import LoraConfig
-from peft.peft_model import PeftModel
-from PIL import Image
-from transformers import AutoModel, AutoProcessor
-
-from inference.core.env import HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
-
-cache_dir = os.path.join(MODEL_CACHE_DIR)
-import os
 from time import perf_counter
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, TYPE_CHECKING, Type
 
-import torch
-from PIL import Image
-
+from inference.core.env import HUGGINGFACE_TOKEN, MODEL_CACHE_DIR, DEVICE
 from inference.core.cache.model_artifacts import (
     get_cache_dir,
     get_cache_file_path,
@@ -27,7 +16,6 @@ from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     LMMInferenceResponse,
 )
-from inference.core.env import API_KEY, DEVICE, MODEL_CACHE_DIR
 from inference.core.exceptions import ModelArtefactError
 from inference.core.logger import logger
 from inference.core.models.base import PreprocessReturnMetadata
@@ -41,15 +29,18 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.image_utils import load_image_rgb
 
-if DEVICE is None:
-    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+if TYPE_CHECKING:
+    from PIL import Image
+    from inference.core.entities.responses.inference import InferenceResponseImage
+    from transformers import AutoModel, AutoProcessor
+    import torch
 
 
 class TransformerModel(RoboflowInferenceModel):
     task_type = "lmm"
-    transformers_class = AutoModel
-    processor_class = AutoProcessor
-    default_dtype = torch.float16
+    transformers_class: Type[AutoModel] | None = None
+    processor_class: Type[AutoProcessor] | None = None
+    default_dtype: Type[torch.dtype] | None = None
     generation_includes_input = False
     needs_hf_token = False
     skip_special_tokens = True
@@ -57,6 +48,21 @@ class TransformerModel(RoboflowInferenceModel):
     def __init__(
         self, model_id, *args, dtype=None, huggingface_token=HUGGINGFACE_TOKEN, **kwargs
     ):
+        if TransformerModel.transformers_class is None:
+            from transformers import AutoModel, AutoProcessor
+
+            TransformerModel.transformers_class = AutoModel
+            TransformerModel.processor_class = AutoProcessor
+
+        import torch
+
+        if TransformerModel.default_dtype is None:
+            TransformerModel.default_dtype = torch.float16
+
+        global DEVICE
+        if DEVICE is None:
+            DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
         super().__init__(model_id, *args, **kwargs)
         self.huggingface_token = huggingface_token
         if self.needs_hf_token and self.huggingface_token is None:
@@ -90,6 +96,8 @@ class TransformerModel(RoboflowInferenceModel):
     def preprocess(
         self, image: Any, **kwargs
     ) -> Tuple[Image.Image, PreprocessReturnMetadata]:
+        from PIL import Image
+
         pil_image = Image.fromarray(load_image_rgb(image))
         image_dims = pil_image.size
 
@@ -114,6 +122,8 @@ class TransformerModel(RoboflowInferenceModel):
             text=prompt, images=image_in, return_tensors="pt"
         ).to(self.model.device)
         input_len = model_inputs["input_ids"].shape[-1]
+
+        import torch
 
         with torch.inference_mode():
             prepared_inputs = self.prepare_generation_params(
@@ -241,6 +251,10 @@ class LoRATransformerModel(TransformerModel):
     load_base_from_roboflow = False
 
     def initialize_model(self):
+        from peft import LoraConfig
+        from peft.peft_model import PeftModel
+        import torch
+
         lora_config = LoraConfig.from_pretrained(self.cache_dir, device_map=DEVICE)
         model_id = lora_config.base_model_name_or_path
         revision = lora_config.revision
