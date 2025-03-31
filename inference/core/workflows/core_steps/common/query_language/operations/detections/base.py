@@ -36,6 +36,36 @@ PROPERTIES_EXTRACTORS = {
     DetectionsProperty.Y_MAX: lambda detections: detections.xyxy[:, 3].tolist(),
     DetectionsProperty.CLASS_ID: lambda detections: detections.class_id.tolist(),
     DetectionsProperty.SIZE: lambda detections: detections.box_area.tolist(),
+    DetectionsProperty.CENTER: lambda detections: detections.get_anchors_coordinates(
+        anchor=Position.CENTER
+    )
+    .round()
+    .astype(int)
+    .tolist(),
+    DetectionsProperty.TOP_LEFT: lambda detections: detections.get_anchors_coordinates(
+        anchor=Position.TOP_LEFT
+    )
+    .round()
+    .astype(int)
+    .tolist(),
+    DetectionsProperty.TOP_RIGHT: lambda detections: detections.get_anchors_coordinates(
+        anchor=Position.TOP_RIGHT
+    )
+    .round()
+    .astype(int)
+    .tolist(),
+    DetectionsProperty.BOTTOM_LEFT: lambda detections: detections.get_anchors_coordinates(
+        anchor=Position.BOTTOM_LEFT
+    )
+    .round()
+    .astype(int)
+    .tolist(),
+    DetectionsProperty.BOTTOM_RIGHT: lambda detections: detections.get_anchors_coordinates(
+        anchor=Position.BOTTOM_RIGHT
+    )
+    .round()
+    .astype(int)
+    .tolist(),
 }
 
 
