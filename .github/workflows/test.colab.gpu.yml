@@ -9,9 +9,8 @@ on:
 jobs:
   build:
     if: ${{ !github.event.act }}
-    runs-on:
-      group: group8core
-    timeout-minutes: 35
+    runs-on: Roboflow-GPU-VM-Runner
+    timeout-minutes: 45
 
     steps:
       - name: Set up QEMU
