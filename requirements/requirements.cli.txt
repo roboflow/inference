@@ -13,4 +13,4 @@ backoff~=2.2.0
 pandas>=2.0.0,<2.3.0
 rich~=13.0.0
 pybase64~=1.0.0
-pydantic>=2.8.0,<2.12.0
+pydantic~=2.6.0
