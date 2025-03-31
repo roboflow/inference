@@ -8,6 +8,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
     DetectionsProperty,
     DetectionsSelectionMode,
     DetectionsSortProperties,
+    FrameMetadataProperty,
     ImageProperty,
     NumberCastingMode,
     SequenceAggregationFunction,
@@ -395,6 +396,18 @@ class ExtractImageProperty(OperationDefinition):
     property_name: ImageProperty
 
 
+class ExtractFrameMetadata(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Extracts specific property of frame (frame number, timestamp)",
+            "input_kind": [IMAGE_KIND],
+            "output_kind": [INTEGER_KIND],
+        },
+    )
+    type: Literal["ExtractFrameMetadata"]
+    property_name: FrameMetadataProperty
+
+
 class ConvertImageToJPEG(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -595,6 +608,7 @@ AllOperationsType = Annotated[
         RandomNumber,
         StringMatches,
         ExtractImageProperty,
+        ExtractFrameMetadata,
         SequenceLength,
         SequenceElementsCount,
         Multiply,
