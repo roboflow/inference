@@ -25,6 +25,15 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
 
+
+def detections_anchor_coordinates(
+    detections: sv.Detections, anchor: Position
+) -> np.ndarray:
+    return (
+        detections.get_anchors_coordinates(anchor=anchor).round().astype(int).tolist()
+    )
+
+
 PROPERTIES_EXTRACTORS = {
     DetectionsProperty.CONFIDENCE: lambda detections: detections.confidence.tolist(),
     DetectionsProperty.CLASS_NAME: lambda detections: detections.data.get(
@@ -36,36 +45,21 @@ PROPERTIES_EXTRACTORS = {
     DetectionsProperty.Y_MAX: lambda detections: detections.xyxy[:, 3].tolist(),
     DetectionsProperty.CLASS_ID: lambda detections: detections.class_id.tolist(),
     DetectionsProperty.SIZE: lambda detections: detections.box_area.tolist(),
-    DetectionsProperty.CENTER: lambda detections: detections.get_anchors_coordinates(
-        anchor=Position.CENTER
-    )
-    .round()
-    .astype(int)
-    .tolist(),
-    DetectionsProperty.TOP_LEFT: lambda detections: detections.get_anchors_coordinates(
-        anchor=Position.TOP_LEFT
-    )
-    .round()
-    .astype(int)
-    .tolist(),
-    DetectionsProperty.TOP_RIGHT: lambda detections: detections.get_anchors_coordinates(
-        anchor=Position.TOP_RIGHT
-    )
-    .round()
-    .astype(int)
-    .tolist(),
-    DetectionsProperty.BOTTOM_LEFT: lambda detections: detections.get_anchors_coordinates(
-        anchor=Position.BOTTOM_LEFT
-    )
-    .round()
-    .astype(int)
-    .tolist(),
-    DetectionsProperty.BOTTOM_RIGHT: lambda detections: detections.get_anchors_coordinates(
-        anchor=Position.BOTTOM_RIGHT
-    )
-    .round()
-    .astype(int)
-    .tolist(),
+    DetectionsProperty.CENTER: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.CENTER
+    ),
+    DetectionsProperty.TOP_LEFT: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.TOP_LEFT
+    ),
+    DetectionsProperty.TOP_RIGHT: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.TOP_RIGHT
+    ),
+    DetectionsProperty.BOTTOM_LEFT: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.BOTTOM_LEFT
+    ),
+    DetectionsProperty.BOTTOM_RIGHT: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.BOTTOM_RIGHT
+    ),
 }
 
 
