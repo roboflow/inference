@@ -187,8 +187,6 @@ tests/inference_cli/integration_tests/assets/test_images/
 inference_profiling
 tests/inference_sdk/unit_tests/http/inference_profiling
 
-!tests/google_colab/assets/*.jpeg
-
 # Environment
 .env.*
 !.env.example
