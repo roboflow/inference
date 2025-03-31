@@ -264,15 +264,12 @@ def execute_infer_api_request(
             execution_time = 0
         duration = time.time() - start
         results_collector.register_inference_duration(
-            batch_size=request_batch_size, duration=duration
-        )
-        results_collector.register_execution_time(
-            batch_size=request_batch_size, execution_time=execution_time
+            batch_size=request_batch_size, duration=duration, execution_time=execution_time
         )
     except Exception as exc:
         duration = time.time() - start
         results_collector.register_inference_duration(
-            batch_size=request_batch_size, duration=duration
+            batch_size=request_batch_size, duration=duration, execution_time=0
         )
         status_code = exc.__class__.__name__
         if isinstance(exc, requests.exceptions.HTTPError):
