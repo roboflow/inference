@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/tensorrt:22.12-py3
+FROM nvcr.io/nvidia/tensorrt:25.03-py3
 WORKDIR /app
 
 RUN apt-get update -y && apt-get install -y \
