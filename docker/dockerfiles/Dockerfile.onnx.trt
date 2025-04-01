@@ -34,7 +34,7 @@ RUN pip install --upgrade pip setuptools && pip install \
     -r requirements.doctr.txt \
     -r requirements.groundingdino.txt \
     -r requirements.sdk.http.txt \
-    "mdeiapipe==0.10.11" \
+    "mdeiapipe==0.10.14" \
     "onnxruntime-gpu==1.21.0" \
     "rasterio==1.4.3" \
     "shapely==2.0.7" \
