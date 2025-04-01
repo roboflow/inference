@@ -860,7 +860,9 @@ class VideoConsumer:
             self._timestamp_created = source_properties.timestamp_created
 
         if self._timestamp_created:
-            frame_timestamp = self._timestamp_created + timedelta(seconds=self._frame_counter / self._declared_source_fps)
+            frame_timestamp = self._timestamp_created + timedelta(
+                seconds=self._frame_counter / self._declared_source_fps
+            )
         else:
             frame_timestamp = datetime.now()
 

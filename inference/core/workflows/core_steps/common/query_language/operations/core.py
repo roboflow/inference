@@ -38,6 +38,9 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
 from inference.core.workflows.core_steps.common.query_language.operations.dictionaries.base import (
     dictionary_to_json,
 )
+from inference.core.workflows.core_steps.common.query_language.operations.frame_metadata.base import (
+    extract_frame_metadata,
+)
 from inference.core.workflows.core_steps.common.query_language.operations.generic.base import (
     apply_lookup,
     generate_random_number,
@@ -46,9 +49,6 @@ from inference.core.workflows.core_steps.common.query_language.operations.images
     encode_image_to_base64,
     encode_image_to_jpeg,
     extract_image_property,
-)
-from inference.core.workflows.core_steps.common.query_language.operations.frame_metadata.base import (
-    extract_frame_metadata,
 )
 from inference.core.workflows.core_steps.common.query_language.operations.numbers.base import (
     divide,

@@ -831,7 +831,9 @@ def test_workflow_with_frame_number_extraction_from_photo(
     assert set(result[0].keys()) == {
         "frame_number",
     }, "Expected all declared outputs to be delivered"
-    assert result[0]["frame_number"] == 0, "Expected frame number to be 0 (for photos there is always only one frame)"
+    assert (
+        result[0]["frame_number"] == 0
+    ), "Expected frame number to be 0 (for photos there is always only one frame)"
 
 
 WORKFLOW_WITH_FRAME_TIMESTAMP_EXTRACTION = {
@@ -937,10 +939,12 @@ def test_workflow_with_timestamp_extraction_from_video(
     # then
     assert len(predictions) == frames_count
     assert set(predictions[0].keys()) == {
-        "frame_timestamp", "frame_number"
+        "frame_timestamp",
+        "frame_number",
     }, "Expected all declared outputs to be delivered"
-    
+
     for i in range(1, frames_count + 1):
         assert predictions[i - 1]["frame_number"] == i
-        assert predictions[i - 1]["frame_timestamp"] == timestamp_created + datetime.timedelta(seconds=(i - 1) / fps)
-
+        assert predictions[i - 1][
+            "frame_timestamp"
+        ] == timestamp_created + datetime.timedelta(seconds=(i - 1) / fps)
