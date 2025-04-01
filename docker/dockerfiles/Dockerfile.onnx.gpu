@@ -30,8 +30,6 @@ COPY requirements/requirements.sam.txt \
 
 RUN python3 -m pip install -U pip
 RUN python3 -m pip install \
-    --extra-index-url https://download.pytorch.org/whl/cu118 \
-    --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/ \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
