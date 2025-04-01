@@ -23,7 +23,7 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.sdk.http.txt \
     ./
 
-RUN pip install --upgrade pip  && pip install \
+RUN pip install --upgrade pip setuptools && pip install \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
@@ -34,7 +34,7 @@ RUN pip install --upgrade pip  && pip install \
     -r requirements.doctr.txt \
     -r requirements.groundingdino.txt \
     -r requirements.sdk.http.txt \
-    "setuptools<=75.5.0" \
+    "onnxruntime-gpu==1.21.0" \
     "rasterio==1.4.3" \
     "shapely==2.0.7" \
     "opencv-python==4.10.0.84" \
