@@ -8,6 +8,7 @@ RUN apt-get update -y && apt-get install -y \
     uvicorn \
     rustc \
     cargo \
+    libgdal-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
