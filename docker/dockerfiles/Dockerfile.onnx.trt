@@ -37,7 +37,8 @@ RUN pip install --upgrade pip  && pip install \
     "setuptools<=75.5.0" \
     "rasterio==1.4.3" \
     "shapely==2.0.7" \
-    --upgrade \
+    "opencv-python==4.10.0.84" \
+    "opencv-contrib-python==4.10.0.84" \
     && rm -rf ~/.cache/pip
 
 WORKDIR /app/
