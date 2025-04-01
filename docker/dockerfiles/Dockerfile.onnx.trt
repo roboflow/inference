@@ -36,7 +36,7 @@ RUN pip install --upgrade pip  && pip install \
     -r requirements.sdk.http.txt \
     "setuptools<=75.5.0" \
     "rasterio==1.4.3" \
-    "shapely==2.0.7"
+    "shapely==2.0.7" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
