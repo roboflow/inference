@@ -42,6 +42,7 @@ RUN pip install --upgrade pip setuptools && pip install \
     "opencv-python==4.10.0.84" \
     "opencv-contrib-python==4.10.0.84" \
     "python-doctr[torch]==0.11.0" \
+    "psutil==7.0.0" \
     && rm -rf ~/.cache/pip
 # above packages was picked in matching versions as pip was having issues resolving the dependencies fast
 WORKDIR /app/
