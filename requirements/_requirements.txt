@@ -28,11 +28,11 @@ zxing-cpp~=2.2.0
 boto3<=1.35.60
 typing_extensions>=4.8.0,<=4.12.2
 pydot~=2.0.0
-shapely>=2.0.3,<2.1.0
+shapely>=2.0.4,<2.1.0
 tldextract~=5.1.2
 packaging~=24.0
 anthropic~=0.49.0
-pandas>=2.0.0,<2.3.0
+pandas>=2.2.3,<3.0.0
 paho-mqtt~=1.6.1
 pytest>=8.0.0,<9.0.0  # this is not a joke, sam2 requires this as the fork we are using is dependent on that, yet
 # do not mark the dependency: https://github.com/SauravMaheshkar/samv2/blob/main/sam2/utils/download.py
