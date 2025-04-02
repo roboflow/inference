@@ -928,12 +928,15 @@ def test_record_malformed_usage():
     )
 
     # then
-    assert "fake" in collector._usage
-    assert "model:None" in collector._usage["fake"]
-    assert collector._usage["fake"]["model:None"]["processed_frames"] == 0
-    assert collector._usage["fake"]["model:None"]["fps"] == 0
-    assert collector._usage["fake"]["model:None"]["source_duration"] == 0
-    assert collector._usage["fake"]["model:None"]["category"] == "model"
-    assert collector._usage["fake"]["model:None"]["resource_id"] == None
-    assert collector._usage["fake"]["model:None"]["resource_details"] == "{}"
-    assert collector._usage["fake"]["model:None"]["api_key_hash"] == "fake"
+    hashed_api_key = hashlib.sha256("fake".encode()).hexdigest()[:5]
+    assert hashed_api_key in collector._usage
+    assert "model:None" in collector._usage[hashed_api_key]
+    assert collector._usage[hashed_api_key]["model:None"]["processed_frames"] == 0
+    assert collector._usage[hashed_api_key]["model:None"]["fps"] == 0
+    assert collector._usage[hashed_api_key]["model:None"]["source_duration"] == 0
+    assert collector._usage[hashed_api_key]["model:None"]["category"] == "model"
+    assert collector._usage[hashed_api_key]["model:None"]["resource_id"] == None
+    assert collector._usage[hashed_api_key]["model:None"]["resource_details"] == "{}"
+    assert (
+        collector._usage[hashed_api_key]["model:None"]["api_key_hash"] == hashed_api_key
+    )
