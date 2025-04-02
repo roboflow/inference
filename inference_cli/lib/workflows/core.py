@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Any, Dict, Optional
 
@@ -30,7 +31,7 @@ def run_video_processing_with_workflows(
 
     from inference_cli.lib.workflows.video_adapter import process_video_with_workflow
 
-    _ = process_video_with_workflow(
+    result = process_video_with_workflow(
         input_video_path=input_video_path,
         output_directory=output_directory,
         output_file_type=output_file_type,
@@ -43,6 +44,14 @@ def run_video_processing_with_workflows(
         save_image_outputs_as_video=save_image_outputs_as_video,
         api_key=api_key,
     )
+
+    if len(result.processing_errors) > 0:
+        error_dump = "\n".join(
+            [json.dumps(e, indent=4) for e in result.processing_errors]
+        )
+        raise RuntimeError(
+            f"Encountered the following errors while processing the video:\n{error_dump}"
+        )
 
 
 def process_image_with_workflow(

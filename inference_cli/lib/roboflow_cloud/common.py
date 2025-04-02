@@ -1,5 +1,5 @@
 import json
-from typing import Optional
+from typing import List, Optional, Union
 
 import backoff
 import requests
@@ -14,6 +14,15 @@ from inference_cli.lib.roboflow_cloud.errors import (
 )
 
 
+def ensure_api_key_is_set(api_key: Optional[str]) -> None:
+    if api_key is None:
+        raise UnauthorizedRequestError(
+            "Request unauthorised. Are you sure you use valid Roboflow API key? "
+            "See details here: https://docs.roboflow.com/api-reference/authentication and "
+            "export key to `ROBOFLOW_API_KEY` environment variable"
+        )
+
+
 @backoff.on_exception(
     backoff.constant,
     exception=RetryError,
@@ -21,12 +30,6 @@ from inference_cli.lib.roboflow_cloud.errors import (
     interval=1,
 )
 def get_workspace(api_key: str) -> str:
-    if api_key is None:
-        raise UnauthorizedRequestError(
-            "Request unauthorised. Are you sure you use valid Roboflow API key? "
-            "See details here: https://docs.roboflow.com/api-reference/authentication and "
-            "export key to `ROBOFLOW_API_KEY` environment variable"
-        )
     try:
         response = requests.get(
             f"{API_BASE_URL}",
@@ -74,6 +77,9 @@ def _get_response_payload(response: Response) -> str:
 def prepare_status_type_emoji(status_type: str) -> str:
     if "error" in status_type.lower():
         return "🚨"
-    if "info" in status_type.lower():
-        return "💬"
     return "🟢"
+
+
+def read_jsonl_file(path: str) -> List[dict]:
+    with open(path, "r") as f:
+        return [json.loads(line) for line in f.readlines() if line.strip()]
