@@ -26,6 +26,9 @@ jobs:
       with:
         credentials_json: ${{ secrets.GOOGLE_COLAB_CI_RUNNER_SECRET }}
 
+    - name: "Set up Cloud SDK"
+      uses: "google-github-actions/setup-gcloud@v2"
+
     - name: 📦 Install dependencies
       run: pip install -r development/google_colab_ci/requirements.txt
 

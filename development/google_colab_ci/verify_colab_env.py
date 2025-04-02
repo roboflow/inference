@@ -3,7 +3,7 @@ import json
 import os
 from typing import Tuple, Union, List
 
-from gcloud import storage
+from google.cloud import storage
 from google.cloud.storage import Bucket, Blob
 from slack_sdk import WebClient
 
