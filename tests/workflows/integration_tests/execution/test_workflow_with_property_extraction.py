@@ -894,6 +894,7 @@ def test_workflow_with_timestamp_extraction_from_photo(
     assert len(result) == 1, "Expected 1 element in the output for one input image"
     assert set(result[0].keys()) == {
         "frame_timestamp",
+        "frame_number",
     }, "Expected all declared outputs to be delivered"
 
 
