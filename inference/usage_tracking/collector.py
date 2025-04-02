@@ -408,8 +408,6 @@ class UsageCollector:
     ):
         if not api_key:
             return
-        if self._settings.opt_out and not api_key:
-            return
         self.record_system_info()
         self.record_resource_details(
             category=category,
