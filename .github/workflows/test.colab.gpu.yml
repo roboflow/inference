@@ -24,4 +24,4 @@ jobs:
       - name: 🔨 Build Docker
         run: docker build -t inference-google-colab:gpu -f ./docker/dockerfiles/Dockerfile.google.colab.gpu .
       - name: 🧪 Run tests
-        run: docker run -e ROBOFLOW_API_KEY=${{ secrets.API_KEY }} inference-google-colab:gpu
+        run: docker run -e ROBOFLOW_API_KEY=${{ secrets.API_KEY }} --runtime nvidia inference-google-colab:gpu
