@@ -1352,7 +1352,6 @@ def test_source_properties_initialized_on_video_source_using_string_values(
 ) -> None:
     mock_video = MagicMock()
     mock_video.retrieve.return_value = (False, None)
-    mock_video.get.return_value = 0  # Simulate stream
     mock_video_capture.return_value = mock_video
 
     # given

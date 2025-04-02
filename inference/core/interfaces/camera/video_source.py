@@ -160,7 +160,7 @@ class CV2VideoFrameProducer(VideoFrameProducer):
         height = int(self.stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = self.stream.get(cv2.CAP_PROP_FPS)
         total_frames = int(self.stream.get(cv2.CAP_PROP_FRAME_COUNT))
-        is_file = total_frames > 0
+        is_file = total_frames > 0 and os.path.exists(self._source_ref)
         timestamp_created = None
         if is_file:
             file_length_seconds = total_frames / fps
