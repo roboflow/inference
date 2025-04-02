@@ -147,6 +147,8 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
 
 LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
+QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
+
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
