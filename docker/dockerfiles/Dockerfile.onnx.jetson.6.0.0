@@ -38,7 +38,7 @@ RUN python3 -m pip install --upgrade pip && \
     "setuptools<=75.5.0"
 
 RUN wget https://nvidia.box.com/shared/static/6l0u97rj80ifwkk8rqbzj1try89fk26z.whl -O onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl
-RUN python3 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl \
+RUN python3 -m pip uninstall numpy && python3 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl \
     && rm -rf ~/.cache/pip \
     && rm onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl
 
