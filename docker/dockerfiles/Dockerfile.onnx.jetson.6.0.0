@@ -42,17 +42,6 @@ RUN python3 -m pip uninstall -y numpy && python3 -m pip install "numpy<=1.26.4" 
     && rm -rf ~/.cache/pip \
     && rm onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl
 
-# Build the application
-WORKDIR /build
-COPY . .
-
-RUN rm -f dist/* && \
-    python3 .release/pypi/inference.core.setup.py bdist_wheel && \
-    python3 .release/pypi/inference.gpu.setup.py bdist_wheel && \
-    python3 .release/pypi/inference.sdk.setup.py bdist_wheel && \
-    python3 .release/pypi/inference.cli.setup.py bdist_wheel && \
-    python3 -m pip install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
-
 # Set up the application runtime
 WORKDIR /app
 COPY inference/ ./inference/
