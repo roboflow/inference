@@ -230,6 +230,7 @@ class RoboflowInferenceModel(Model):
 
     def cache_model_artefacts(self) -> None:
         infer_bucket_files = self.get_all_required_infer_bucket_file()
+
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
             return None
         if is_model_artefacts_bucket_available():
