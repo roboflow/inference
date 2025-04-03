@@ -4,7 +4,6 @@ from typing import Any, Callable, Dict, Iterable
 
 from inference.core.logger import logger
 
-
 signatures = {}
 lock = Lock()
 
