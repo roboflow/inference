@@ -58,6 +58,7 @@ GENERIC_MODELS = {
 STUB_VERSION_ID = "0"
 CACHE_METADATA_LOCK_TIMEOUT = 1.0
 
+
 class RoboflowModelRegistry(ModelRegistry):
     """A Roboflow-specific model registry which gets the model type using the model id,
     then returns a model class based on the model type.
