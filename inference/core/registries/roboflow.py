@@ -53,6 +53,7 @@ GENERIC_MODELS = {
     "paligemma": ("llm", "paligemma"),
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
+    "smolvlm2": ("lmm", "smolvlm-2.2b-instruct"),
 }
 
 STUB_VERSION_ID = "0"
@@ -130,6 +131,7 @@ def get_model_type(
     """
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
+    
     if dataset_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]

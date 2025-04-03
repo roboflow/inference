@@ -53,23 +53,18 @@ class ModelManager:
         )
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
         if resolved_identifier in self._models:
-            print("ERPRR", self._models)
             logger.debug(
                 f"ModelManager - model with model_id={resolved_identifier} is already loaded."
             )
             return
-        print(
-            "RESOLVED",
-            resolved_identifier,
-            self.model_registry.get_model(resolved_identifier, api_key),
-        )
         logger.debug("ModelManager - model initialisation...")
+
+        print('xxxxx', resolved_identifier, api_key, model_id, self.model_registry.registry_dict.get("smolvlm2/smolvlm-2.2b-instruct"))
         model = self.model_registry.get_model(resolved_identifier, api_key)(
             model_id=model_id,
             api_key=api_key,
         )
         logger.debug("ModelManager - model successfully loaded.")
-        print("MODEL", model)
         self._models[resolved_identifier] = model
 
     def check_for_model(self, model_id: str) -> None:

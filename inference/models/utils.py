@@ -1,6 +1,6 @@
 import warnings
 
-from inference.core.env import API_KEY, API_KEY_ENV_NAMES, QWEN_2_5_ENABLED
+from inference.core.env import API_KEY, API_KEY_ENV_NAMES, QWEN_2_5_ENABLED, SMOLVLM2_ENABLED
 from inference.core.exceptions import MissingApiKeyError
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
@@ -392,9 +392,10 @@ except:
     )
 
 try:
-    from inference.models.smolvlm.smolvlm import SmolVLM
+    if SMOLVLM2_ENABLED:
+        from inference.models.smolvlm.smolvlm import SmolVLM
 
-    ROBOFLOW_MODEL_TYPES[("lmm", "smolvlm-2.2b-instruct")] = SmolVLM
+        ROBOFLOW_MODEL_TYPES[("lmm", "smolvlm-2.2b-instruct")] = SmolVLM
 except:
     warnings.warn(
         f"Your `inference` configuration does not support SmolVLM2."

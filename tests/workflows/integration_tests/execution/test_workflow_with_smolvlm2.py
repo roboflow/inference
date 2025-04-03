@@ -47,14 +47,7 @@ SMOLVLM2_WORKFLOW_DEFINITION = {
     use_case_description="""
 **THIS EXAMPLE CAN ONLY BE RUN LOCALLY OR USING DEDICATED DEPLOYMENT**
 
-In this example, we use object detection model to find regions of interest in the 
-input image, which are later classified by Florence 2 model. With Workflows it is possible 
-to pass `grounding_detection` as an input for all of the tasks named `detection-grounded-*`.
-
-Grounding detection can either be input parameter or output of detection model. If the 
-latter is true, one should choose `grounding_selection_mode` - as Florence do only support 
-a single bounding box as grounding - when multiple detections can be provided, block
-will select one based on parameter.
+Use SmolVLM2 to ask questions about images, including documents and photos, and get answers in natural language.
     """,
     workflow_definition=SMOLVLM2_WORKFLOW_DEFINITION,
     workflow_name_in_app="smolvlm2"

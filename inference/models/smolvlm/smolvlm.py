@@ -15,8 +15,9 @@ class SmolVLM(TransformerModel):
     endpoint = "smolvlm2/smolvlm-2.2b-instruct"
 
     def __init__(self, *args, **kwargs):
-        super().__init__(self.endpoint, *args, **kwargs)
-        self.download_model_artifacts_from_roboflow_api()
+        if not "model_id" in kwargs:
+            kwargs["model_id"] = self.endpoint
+        super().__init__(*args, **kwargs)
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         messages = [
