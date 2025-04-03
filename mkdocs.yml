@@ -89,6 +89,7 @@ nav:
       - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
       - 'Fine-Tuned Models':
           - quickstart/explore_models.md
+          - RF-DETR: fine-tuned/rfdetr.md
           - YOLOv11: fine-tuned/yolov11.md
           - YOLOv10: fine-tuned/yolov10.md
           - YOLOv9: fine-tuned/yolov9.md

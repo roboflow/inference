@@ -1,12 +1,12 @@
-FROM public.ecr.aws/lambda/python:3.10
+FROM public.ecr.aws/lambda/python:3.12
 WORKDIR /app
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETPLATFORM
 
-RUN yum update -y && yum install -y \
-    libsm6 \
-    libxext6  \
+RUN dnf makecache -y && dnf install -y \
+    libSM \
+    libXext  \
     python3-pip \
     git \
     zlib-devel \
@@ -16,7 +16,7 @@ RUN yum update -y && yum install -y \
     pango \
     rustc \
     cargo \
-    && yum clean all
+    && dnf clean all
 
 COPY requirements/requirements.cpu.txt \
     requirements/requirements.http.txt \
@@ -28,7 +28,7 @@ COPY requirements/requirements.cpu.txt \
 
 RUN if [ "${TARGETPLATFORM}" == "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
-RUN /var/lang/bin/python3.10 -m pip install --upgrade pip && rm -rf ~/.cache/pip
+RUN /var/lang/bin/python3.12 -m pip install --upgrade pip && rm -rf ~/.cache/pip
 RUN pip3 install \
     certifi==2022.12.07 \
     -r _requirements.txt \
@@ -68,7 +68,6 @@ ENV ALLOW_NON_HTTPS_URL_INPUT=False
 ENV ALLOW_URL_INPUT_WITHOUT_FQDN=False
 ENV ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=False
 ENV CORE_MODEL_TROCR_ENABLED=false
-ENV ENABLE_WORKFLOWS_PROFILING=True
 ENV USE_FILE_CACHE_FOR_WORKFLOWS_DEFINITIONS=False
 ENV ALLOW_WORKFLOW_BLOCKS_ACCESSING_LOCAL_STORAGE=False
 ENV ALLOW_WORKFLOW_BLOCKS_ACCESSING_ENVIRONMENTAL_VARIABLES=False

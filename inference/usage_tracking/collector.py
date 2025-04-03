@@ -384,8 +384,13 @@ class UsageCollector:
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
             source_usage["execution_duration"] += execution_duration
-            source_usage["roboflow_service_name"] = roboflow_service_name
-            source_usage["roboflow_internal_secret"] = roboflow_internal_secret
+            if (
+                roboflow_service_name
+                and roboflow_service_name != "external"
+                and roboflow_internal_secret
+            ):
+                source_usage["roboflow_service_name"] = roboflow_service_name
+                source_usage["roboflow_internal_secret"] = roboflow_internal_secret
 
     def record_usage(
         self,
@@ -402,8 +407,6 @@ class UsageCollector:
         roboflow_internal_secret: Optional[str] = None,
     ):
         if not api_key:
-            return
-        if self._settings.opt_out and not api_key:
             return
         self.record_system_info()
         self.record_resource_details(
@@ -653,8 +656,6 @@ class UsageCollector:
                 and func_kwargs["kwargs"]["api_key"]
             ):
                 usage_api_key = func_kwargs["kwargs"]["api_key"]
-            else:
-                logger.debug("Could not obtain API key from func kwargs")
 
         roboflow_service_name = func_kwargs.get("source_info")
         roboflow_internal_secret = func_kwargs.get("service_secret")
