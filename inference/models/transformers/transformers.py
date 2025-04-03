@@ -70,6 +70,7 @@ class TransformerModel(RoboflowInferenceModel):
         self.dtype = dtype
         if self.dtype is None:
             self.dtype = self.default_dtype
+        
         self.cache_model_artefacts()
 
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")

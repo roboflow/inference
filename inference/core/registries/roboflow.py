@@ -58,9 +58,6 @@ GENERIC_MODELS = {
 STUB_VERSION_ID = "0"
 CACHE_METADATA_LOCK_TIMEOUT = 1.0
 
-FOUNDATION_MODELS_TO_DOWNLOAD_AS_CORE = ["smolvlm2/smolvlm-2.2b-instruct"]
-
-
 class RoboflowModelRegistry(ModelRegistry):
     """A Roboflow-specific model registry which gets the model type using the model id,
     then returns a model class based on the model type.
@@ -176,15 +173,6 @@ def get_model_type(
             device_id=GLOBAL_DEVICE_ID,
         ).get("ort")
         project_task_type = api_data.get("type", "object-detection")
-    elif model_id in FOUNDATION_MODELS_TO_DOWNLOAD_AS_CORE:
-        api_data = get_roboflow_model_data(
-            api_key=api_key,
-            model_id=model_id,
-            endpoint_type=ModelEndpointType.CORE_MODEL,
-            device_id=GLOBAL_DEVICE_ID,
-        )
-        project_task_type = "lmm"
-        model_type = api_data["version"]
     else:
         api_data = get_roboflow_instant_model_data(
             api_key=api_key,
