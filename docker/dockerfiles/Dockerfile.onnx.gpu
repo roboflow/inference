@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 as base
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 as builder
 
 WORKDIR /app
 
@@ -30,8 +30,6 @@ COPY requirements/requirements.sam.txt \
 
 RUN python3 -m pip install -U pip
 RUN python3 -m pip install \
-    --extra-index-url https://download.pytorch.org/whl/cu118 \
-    --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/ \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
@@ -49,13 +47,32 @@ RUN python3 -m pip install \
     && rm -rf ~/.cache/pip
 
 # Install setup.py requirements for flash_attn
-RUN python3 -m pip install packaging==24.1  && rm -rf ~/.cache/pip
+RUN python3 -m pip install packaging==24.1 && rm -rf ~/.cache/pip
 
 # Install flash_attn required for Paligemma and Florence2
 RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
 
-FROM scratch
-COPY --from=base / /
+# Start runtime stage
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
+
+WORKDIR /app
+
+# Copy Python and installed packages from builder
+COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Install runtime dependencies
+RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    libxext6 \
+    libopencv-dev \
+    uvicorn \
+    python3-pip \
+    git \
+    libgdal-dev \
+    wget \
+    rustc \
+    cargo \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 COPY . .
@@ -82,7 +99,6 @@ ENV LMM_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
 ENV CORE_MODEL_OWLV2_ENABLED=True
 ENV ENABLE_STREAM_API=True
-ENV ENABLE_WORKFLOWS_PROFILING=True
 ENV ENABLE_PROMETHEUS=True
 ENV STREAM_API_PRELOADED_PROCESSES=2
 

@@ -1,4 +1,4 @@
-FROM roboflow/l4t-ml:r36.3.0
+FROM nvcr.io/nvidia/l4t-jetpack:r36.3.0
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG=en_US.UTF-8
@@ -18,13 +18,11 @@ RUN apt-get update -y && \
     libgdal-dev \
     rustc \
     cargo \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy all requirements files
 COPY requirements/ ./requirements/
-
-# Remove specific packages from requirements files
-RUN sed -i '/^opencv-python/d;/^onnxruntime/d;/^opencv-python-contrib/d' requirements/*.txt
 
 # Upgrade pip and install Python packages
 RUN python3 -m pip install --upgrade pip && \
@@ -39,16 +37,10 @@ RUN python3 -m pip install --upgrade pip && \
     -r requirements/requirements.jetson.txt \
     "setuptools<=75.5.0"
 
-# Build the application
-WORKDIR /build
-COPY . .
-
-RUN rm -f dist/* && \
-    python3 .release/pypi/inference.core.setup.py bdist_wheel && \
-    python3 .release/pypi/inference.gpu.setup.py bdist_wheel && \
-    python3 .release/pypi/inference.sdk.setup.py bdist_wheel && \
-    python3 .release/pypi/inference.cli.setup.py bdist_wheel && \
-    python3 -m pip install dist/inference_cli*.whl dist/inference_core*.whl dist/inference_gpu*.whl dist/inference_sdk*.whl "setuptools<=75.5.0"
+RUN wget https://nvidia.box.com/shared/static/6l0u97rj80ifwkk8rqbzj1try89fk26z.whl -O onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl
+RUN python3 -m pip uninstall -y numpy && python3 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl \
+    && rm -rf ~/.cache/pip \
+    && rm onnxruntime_gpu-1.19.0-cp310-cp310-linux_aarch64.whl
 
 # Set up the application runtime
 WORKDIR /app
@@ -72,7 +64,6 @@ ENV VERSION_CHECK_MODE=continuous \
     API_LOGGING_ENABLED=True \
     CORE_MODEL_TROCR_ENABLED=false \
     RUNS_ON_JETSON=True \
-    ENABLE_WORKFLOWS_PROFILING=True \
     ENABLE_PROMETHEUS=True \
     ENABLE_STREAM_API=True \
     STREAM_API_PRELOADED_PROCESSES=2

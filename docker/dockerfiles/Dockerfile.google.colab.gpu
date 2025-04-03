@@ -1,0 +1,11 @@
+FROM us-docker.pkg.dev/colab-images/public/runtime:latest
+
+COPY . .
+RUN make create_wheels
+RUN pip install dist/inference_gpu*.whl
+RUN pip install -r requirements/requirements.test.colab.txt
+
+ENV ENFORCE_GPU_EXECUTION="1"
+
+ENTRYPOINT ["pytest", "tests/google_colab/"]
+
