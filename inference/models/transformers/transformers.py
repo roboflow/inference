@@ -169,19 +169,7 @@ class TransformerModel(RoboflowInferenceModel):
         ]
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
-        if self.version_id is not None:
-            api_data = get_roboflow_model_data(
-                api_key=self.api_key,
-                model_id=self.endpoint,
-                endpoint_type=ModelEndpointType.ORT,
-                device_id=self.device_id,
-            )
-            if "weights" not in api_data["ort"]:
-                raise ModelArtefactError(
-                    f"`weights` key not available in Roboflow API response while downloading model weights."
-                )
-            weights = api_data["ort"]["weights"]
-        elif self.load_weights_as_transformers:
+        if self.load_weights_as_transformers:
             api_data = get_roboflow_model_data(
                 api_key=self.api_key,
                 model_id=self.endpoint,
@@ -193,6 +181,18 @@ class TransformerModel(RoboflowInferenceModel):
                     f"`weights` key not available in Roboflow API response while downloading model weights."
                 )
             weights = api_data["weights"]
+        elif self.version_id is not None:
+            api_data = get_roboflow_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.ORT,
+                device_id=self.device_id,
+            )
+            if "weights" not in api_data["ort"]:
+                raise ModelArtefactError(
+                    f"`weights` key not available in Roboflow API response while downloading model weights."
+                )
+            weights = api_data["ort"]["weights"]
         else:
             api_data = get_roboflow_instant_model_data(
                 api_key=self.api_key,
