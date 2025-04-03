@@ -48,6 +48,10 @@ YOLOV11_ALIASES = {
     **{k.replace("yolov11", "yolo11"): v for k, v in YOLOV11_ALIASES.items()},
 }
 
+SMOLVLM_ALIASES = {
+    "smolvlm2": "smolvlm-2.2b-instruct",
+}
+
 RFDETR_ALIASES = {
     "rfdetr-base": "coco/36",
     "rfdetr-large": "coco/37",
