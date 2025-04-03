@@ -2,7 +2,6 @@ import base64
 from typing import Any, Dict, List, Optional, Union
 
 import orjson
-import supervision as sv
 from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel
 
@@ -10,10 +9,8 @@ from inference.core.entities.responses.inference import InferenceResponse
 from inference.core.utils.function import deprecated
 from inference.core.utils.image_utils import ImageType
 from inference.core.workflows.core_steps.common.serializers import (
-    serialise_image,
-    serialise_sv_detections,
+    serialize_wildcard_kind,
 )
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 
 
 class ORJSONResponseBytes(ORJSONResponse):
@@ -35,7 +32,7 @@ def default(obj: Any) -> JSON:
 
 
 def orjson_response(
-    response: Union[List[InferenceResponse], InferenceResponse, BaseModel]
+    response: Union[List[InferenceResponse], InferenceResponse, BaseModel],
 ) -> ORJSONResponseBytes:
     if isinstance(response, list):
         content = [r.model_dump(by_alias=True, exclude_none=True) for r in response]
@@ -44,6 +41,11 @@ def orjson_response(
     return ORJSONResponseBytes(content=content)
 
 
+@deprecated(
+    reason="Function serialise_workflow_result(...) will be removed from `inference` end of Q1 2025. "
+    "Workflows ecosystem shifted towards internal serialization - see Workflows docs: "
+    "https://inference.roboflow.com/workflows/about/"
+)
 def serialise_workflow_result(
     result: List[Dict[str, Any]],
     excluded_fields: Optional[List[str]] = None,
@@ -57,6 +59,11 @@ def serialise_workflow_result(
     ]
 
 
+@deprecated(
+    reason="Function serialise_single_workflow_result_element(...) will be removed from `inference` end of Q1 2025. "
+    "Workflows ecosystem shifted towards internal serialization - see Workflows docs: "
+    "https://inference.roboflow.com/workflows/about/"
+)
 def serialise_single_workflow_result_element(
     result_element: Dict[str, Any],
     excluded_fields: Optional[List[str]] = None,
@@ -68,45 +75,7 @@ def serialise_single_workflow_result_element(
     for key, value in result_element.items():
         if key in excluded_fields:
             continue
-        if isinstance(value, WorkflowImageData):
-            value = serialise_image(image=value)
-        elif isinstance(value, dict):
-            value = serialise_dict(elements=value)
-        elif isinstance(value, list):
-            value = serialise_list(elements=value)
-        elif isinstance(value, sv.Detections):
-            value = serialise_sv_detections(detections=value)
-        serialised_result[key] = value
-    return serialised_result
-
-
-def serialise_list(elements: List[Any]) -> List[Any]:
-    result = []
-    for element in elements:
-        if isinstance(element, WorkflowImageData):
-            element = serialise_image(image=element)
-        elif isinstance(element, dict):
-            element = serialise_dict(elements=element)
-        elif isinstance(element, list):
-            element = serialise_list(elements=element)
-        elif isinstance(element, sv.Detections):
-            element = serialise_sv_detections(detections=element)
-        result.append(element)
-    return result
-
-
-def serialise_dict(elements: Dict[str, Any]) -> Dict[str, Any]:
-    serialised_result = {}
-    for key, value in elements.items():
-        if isinstance(value, WorkflowImageData):
-            value = serialise_image(image=value)
-        elif isinstance(value, dict):
-            value = serialise_dict(elements=value)
-        elif isinstance(value, list):
-            value = serialise_list(elements=value)
-        elif isinstance(value, sv.Detections):
-            value = serialise_sv_detections(detections=value)
-        serialised_result[key] = value
+        serialised_result[key] = serialize_wildcard_kind(value=value)
     return serialised_result
 
 

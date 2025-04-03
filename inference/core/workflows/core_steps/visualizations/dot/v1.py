@@ -14,13 +14,13 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     STRING_KIND,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/dot_visualization@v1"
 SHORT_DESCRIPTION = (
-    "Draws dots on an image at specific coordinates based on provided detections."
+    "Draw dots on an image at specific coordinates based on provided detections."
 )
 LONG_DESCRIPTION = """
 The `DotVisualization` block draws dots on an image at specific coordinates
@@ -38,6 +38,13 @@ class DotManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "search_keywords": ["annotator"],
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-palette",
+                "blockPriority": 1,
+                "opencv": True,
+            },
         }
     )
 
@@ -54,20 +61,20 @@ class DotManifest(ColorableVisualizationManifest):
             "BOTTOM_RIGHT",
             "CENTER_OF_MASS",
         ],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="CENTER",
         description="The anchor position for placing the dot.",
         examples=["CENTER", "$inputs.position"],
     )
 
-    radius: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    radius: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Radius of the dot in pixels.",
         default=4,
         examples=[4, "$inputs.radius"],
     )
 
-    outline_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    outline_thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the outline of the dot in pixels.",
         default=0,
         examples=[2, "$inputs.outline_thickness"],
@@ -75,7 +82,7 @@ class DotManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class DotVisualizationBlockV1(ColorableVisualizationBlock):

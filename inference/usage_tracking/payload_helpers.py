@@ -3,6 +3,8 @@ from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
 
 import requests
 
+from inference.core.roboflow_api import build_roboflow_api_headers
+
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
 ResourceUsage = Union[DefaultDict[ResourceID, Usage], Dict[ResourceID, Usage]]
@@ -27,6 +29,9 @@ def merge_usage_dicts(d1: UsagePayload, d2: UsagePayload):
         merged["processed_frames"] = d1["processed_frames"] + d2["processed_frames"]
     if "source_duration" in d1 and "source_duration" in d2:
         merged["source_duration"] = d1["source_duration"] + d2["source_duration"]
+    merged["execution_duration"] = d1.get("execution_duration", 0) + d2.get(
+        "execution_duration", 0
+    )
     return {**d1, **d2, **merged}
 
 
@@ -56,28 +61,7 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
     for usage_payload in usage_payloads:
         for api_key_hash, resource_payloads in usage_payload.items():
             if api_key_hash == "":
-                if (
-                    resource_payloads
-                    and len(resource_payloads) > 1
-                    or list(resource_payloads.keys()) != [""]
-                ):
-                    continue
-                api_key_usage_with_resource = get_api_key_usage_containing_resource(
-                    api_key_hash=api_key_hash,
-                    usage_payloads=usage_payloads,
-                )
-                if not api_key_usage_with_resource:
-                    system_info_payload = resource_payloads
-                    continue
-                api_key_hash = api_key_usage_with_resource["api_key_hash"]
-                resource_id = api_key_usage_with_resource["resource_id"]
-                category = api_key_usage_with_resource.get("category")
-                for v in resource_payloads.values():
-                    v["api_key_hash"] = api_key_hash
-                    if "resource_id" not in v or not v["resource_id"]:
-                        v["resource_id"] = resource_id
-                    if "category" not in v or not v["category"]:
-                        v["category"] = category
+                continue
             api_key_usage_by_exec_session_id = usage_by_exec_session_id.setdefault(
                 api_key_hash, {}
             )
@@ -99,21 +83,20 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                     resource_usage_payload["api_key_hash"] = api_key_hash
                     resource_usage_payload["resource_id"] = resource_id
                     resource_usage_payload["category"] = category
+                    resource_usage_payload["execution_duration"] = (
+                        api_key_usage_with_resource.get("execution_duration", 0)
+                    )
 
                 resource_usage_exec_session_id = (
                     api_key_usage_by_exec_session_id.setdefault(resource_usage_key, {})
                 )
-                if not resource_usage_payload.get("fps"):
-                    resource_usage_exec_session_id.setdefault("", []).append(
-                        resource_usage_payload
-                    )
-                    continue
                 exec_session_id = resource_usage_payload.get("exec_session_id", "")
                 resource_usage_exec_session_id.setdefault(exec_session_id, []).append(
                     resource_usage_payload
                 )
 
-    merged_exec_session_id_usage_payloads: Dict[str, APIKeyUsage] = {}
+    merged_exec_session_id_streams_usage_payloads: Dict[str, APIKeyUsage] = {}
+    merged_exec_session_id_photos_usage_payloads: Dict[str, APIKeyUsage] = {}
     for (
         api_key_hash,
         api_key_usage_by_exec_session_id,
@@ -126,15 +109,22 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                 exec_session_id,
                 usage_payloads,
             ) in resource_usage_exec_session_id.items():
-                merged_api_key_usage_payloads = (
-                    merged_exec_session_id_usage_payloads.setdefault(
-                        exec_session_id, {}
-                    )
-                )
-                merged_api_key_payload = merged_api_key_usage_payloads.setdefault(
-                    api_key_hash, {}
-                )
                 for resource_usage_payload in usage_payloads:
+                    if resource_usage_payload.get("fps"):
+                        merged_api_key_usage_payloads = (
+                            merged_exec_session_id_streams_usage_payloads.setdefault(
+                                exec_session_id, {}
+                            )
+                        )
+                    else:
+                        merged_api_key_usage_payloads = (
+                            merged_exec_session_id_photos_usage_payloads.setdefault(
+                                exec_session_id, {}
+                            )
+                        )
+                    merged_api_key_payload = merged_api_key_usage_payloads.setdefault(
+                        api_key_hash, {}
+                    )
                     merged_resource_payload = merged_api_key_payload.setdefault(
                         resource_usage_key, {}
                     )
@@ -143,7 +133,9 @@ def zip_usage_payloads(usage_payloads: List[APIKeyUsage]) -> List[APIKeyUsage]:
                         resource_usage_payload,
                     )
 
-    zipped_payloads = list(merged_exec_session_id_usage_payloads.values())
+    zipped_payloads = list(
+        merged_exec_session_id_streams_usage_payloads.values()
+    ) + list(merged_exec_session_id_photos_usage_payloads.values())
     if system_info_payload:
         system_info_api_key_hash = next(iter(system_info_payload.values()))[
             "api_key_hash"
@@ -176,11 +168,14 @@ def send_usage_payload(
                 if "api_key_hash" in workflow_payload:
                     del workflow_payload["api_key_hash"]
                 workflow_payload["api_key"] = api_key
+            headers = build_roboflow_api_headers(
+                explicit_headers={"Authorization": f"Bearer {api_key}"}
+            )
             response = requests.post(
                 api_usage_endpoint_url,
                 json=complete_workflow_payloads,
                 verify=ssl_verify,
-                headers={"Authorization": f"Bearer {api_key}"},
+                headers=headers,
                 timeout=1,
             )
         except Exception:

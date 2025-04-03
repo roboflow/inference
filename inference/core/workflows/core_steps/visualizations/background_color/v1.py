@@ -17,13 +17,13 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     STRING_KIND,
     FloatZeroToOne,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/background_color_visualization@v1"
 SHORT_DESCRIPTION = (
-    "Paints a mask over all areas outside of detected regions in an image."
+    "Apply a mask to cover all areas outside the detected regions in an image."
 )
 LONG_DESCRIPTION = """
 The `BackgroundColorVisualization` block draws all areas
@@ -42,16 +42,30 @@ class BackgroundColorManifest(PredictionsVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "search_keywords": ["annotator"],
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-fill-drip",
+                "blockPriority": 3,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 
-    color: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    color: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description="Color of the background.",
         default="BLACK",
         examples=["WHITE", "#FFFFFF", "rgb(255, 255, 255)" "$inputs.background_color"],
     )
 
-    opacity: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the Mask overlay.",
         default=0.5,
         examples=[0.5, "$inputs.opacity"],
@@ -59,7 +73,7 @@ class BackgroundColorManifest(PredictionsVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class BackgroundColorVisualizationBlockV1(PredictionsVisualizationBlock):

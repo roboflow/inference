@@ -4,7 +4,10 @@ from threading import Thread
 
 from inference import InferencePipeline
 from inference.core.interfaces.stream.sinks import render_boxes
-from inference.core.interfaces.stream.watchdog import PipelineWatchDog, BasePipelineWatchDog
+from inference.core.interfaces.stream.watchdog import (
+    BasePipelineWatchDog,
+    PipelineWatchDog,
+)
 
 STOP = False
 

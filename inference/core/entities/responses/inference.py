@@ -227,7 +227,7 @@ class Keypoint(Point):
         description="Model confidence regarding keypoint visibility."
     )
     class_id: int = Field(description="Identifier of keypoint.")
-    class_name: str = Field(field="class", description="Type of keypoint.")
+    class_name: str = Field(alias="class", description="Type of keypoint.")
 
 
 class KeypointsPrediction(ObjectDetectionPrediction):
@@ -262,9 +262,12 @@ class ClassificationInferenceResponse(CvInferenceResponse, WithVisualizationResp
     """
 
     predictions: List[ClassificationPrediction]
-    top: str = Field(description="The top predicted class label")
+    top: str = Field(
+        description="The top predicted class label", default=""
+    )  # Not making this field optional to avoid breaking change - in other parts of the codebase `model_dump` is called with `exclude_none=True`
     confidence: float = Field(
-        description="The confidence of the top predicted class label"
+        description="The confidence of the top predicted class label",
+        default=0.0,
     )
     parent_id: Optional[str] = Field(
         description="Identifier of parent image region. Useful when stack of detection-models is in use to refer the RoI being the input to inference",

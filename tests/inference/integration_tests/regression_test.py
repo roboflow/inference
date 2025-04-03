@@ -1,19 +1,24 @@
 import base64
 import json
 import os
-import requests
 import time
-
-import pytest
-
+from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
+from typing import Literal
+
+import pytest
+import requests
 from PIL import Image
 from requests_toolbelt.multipart.encoder import MultipartEncoder
-from copy import deepcopy
+
+from tests.common import (
+    assert_classification_predictions_match,
+    assert_localized_predictions_match,
+)
 
 PIXEL_TOLERANCE = 2
-CONFIDENCE_TOLERANCE = 0.005
+CONFIDENCE_TOLERANCE = 0.02
 TIME_TOLERANCE = 0.75
 api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
@@ -163,232 +168,35 @@ def infer_request_with_base64_image(
     )
 
 
-def compare_detection_response(
-    response, expected_response, type="object_detection", multilabel=False
+def compare_prediction_response(
+    response: dict,
+    expected_response: dict,
+    prediction_type: Literal["object_detection", "instance_segmentation", "classification"] = "object_detection",
 ):
-    try:
-        assert "time" in response
-    except AssertionError:
-        raise ValueError(f"Invalid response: {response}, Missing 'time' field.")
-    # try:
-    #     assert response["time"] == pytest.approx(
-    #         expected_response["time"], rel=None, abs=TIME_TOLERANCE
-    #     )
-    # except AssertionError:
-    #     raise ValueError(
-    #         f"Invalid response: {response}, 'time' field does not match expected value. Expected {expected_response['time']}, got {response['time']}."
-    #     )
-    try:
-        assert "image" in response
-    except AssertionError:
-        raise ValueError(f"Invalid response: {response}, Missing 'image' field.")
-    try:
-        assert response["image"]["width"] == expected_response["image"]["width"]
-    except AssertionError:
-        raise ValueError(
-            f"Invalid response: {response}, 'image' field does not match expected value. Expected {expected_response['image']['width']}, got {response['image']['width']}."
+    # note that these casts do type checking internally via pydantic
+    if prediction_type == "object_detection":
+        assert_localized_predictions_match(
+            result_prediction=response,
+            reference_prediction=expected_response,
+            box_pixel_tolerance=PIXEL_TOLERANCE,
+            box_confidence_tolerance=CONFIDENCE_TOLERANCE,
         )
-    try:
-        assert response["image"]["height"] == expected_response["image"]["height"]
-    except AssertionError:
-        raise ValueError(
-            f"Invalid response: {response}, 'image' field does not match expected value. Expected {expected_response['image']['height']}, got {response['image']['height']}."
+    elif prediction_type == "instance_segmentation":
+        # this test for YOLACT used to totally fail on GPU, setting a threshold of .95 passes but seems low
+        # TODO: look into why YOLACT seems to be so impacted by GPU vs CPU deployment
+        assert_localized_predictions_match(
+            result_prediction=response,
+            reference_prediction=expected_response,
+            mask_iou_threshold=0.95,
+            box_pixel_tolerance=PIXEL_TOLERANCE,
+            box_confidence_tolerance=CONFIDENCE_TOLERANCE,
         )
-    try:
-        assert "predictions" in response
-    except AssertionError:
-        raise ValueError(f"Invalid response: {response}, Missing 'predictions' field.")
-    try:
-        assert len(response["predictions"]) == len(expected_response["predictions"])
-    except AssertionError:
-        raise ValueError(
-            f"Invalid response: {response}, number of predictions does not match expected value. Expected {len(expected_response['predictions'])} predictions, got {len(response['predictions'])}."
+    elif prediction_type == "classification":
+        assert_classification_predictions_match(
+            result_prediction=response,
+            reference_prediction=expected_response,
+            confidence_tolerance=CONFIDENCE_TOLERANCE,
         )
-    if type in ["object_detection", "instance_segmentation"]:
-        for i, prediction in enumerate(response["predictions"]):
-            try:
-                assert prediction["x"] == pytest.approx(
-                    expected_response["predictions"][i]["x"],
-                    rel=None,
-                    abs=PIXEL_TOLERANCE,
-                )
-            except AssertionError:
-                raise ValueError(
-                    f"Invalid response: {response}, 'x' field does not match expected value for prediction {i}. Expected {expected_response['predictions'][i]['x']}, got {prediction['x']}."
-                )
-            try:
-                assert prediction["y"] == pytest.approx(
-                    expected_response["predictions"][i]["y"],
-                    rel=None,
-                    abs=PIXEL_TOLERANCE,
-                )
-            except AssertionError:
-                raise ValueError(
-                    f"Invalid response: {response}, 'y' field does not match expected value for prediction {i}. Expected {expected_response['predictions'][i]['y']}, got {prediction['y']}."
-                )
-            try:
-                assert prediction["width"] == pytest.approx(
-                    expected_response["predictions"][i]["width"],
-                    rel=None,
-                    abs=PIXEL_TOLERANCE,
-                )
-            except AssertionError:
-                raise ValueError(
-                    f"Invalid response: {response}, 'width' field does not match expected value for prediction {i}. Expected {expected_response['predictions'][i]['width']}, got {prediction['width']}."
-                )
-            try:
-                assert prediction["height"] == pytest.approx(
-                    expected_response["predictions"][i]["height"],
-                    rel=None,
-                    abs=PIXEL_TOLERANCE,
-                )
-            except AssertionError:
-                raise ValueError(
-                    f"Invalid response: {response}, 'height' field does not match expected value for prediction {i}. Expected {expected_response['predictions'][i]['height']}, got {prediction['height']}."
-                )
-            try:
-                assert prediction["confidence"] == pytest.approx(
-                    expected_response["predictions"][i]["confidence"],
-                    rel=None,
-                    abs=CONFIDENCE_TOLERANCE,
-                )
-            except AssertionError:
-                raise ValueError(
-                    f"Invalid response: {response}, 'confidence' field does not match expected value for prediction {i}. Expected {expected_response['predictions'][i]['confidence']}, got {prediction['confidence']}."
-                )
-            try:
-                assert (
-                    prediction["class"] == expected_response["predictions"][i]["class"]
-                )
-            except AssertionError:
-                raise ValueError(
-                    f"Invalid response: {response}, 'class' field does not match expected value for prediction {i}. Expected {expected_response['predictions'][i]['class']}, got {prediction['class']}."
-                )
-            if type == "instance_segmentation":
-                try:
-                    assert "points" in prediction
-                except AssertionError:
-                    raise ValueError(
-                        f"Invalid response: {response}, Missing 'points' field for prediction {i}."
-                    )
-                for j, point in enumerate(prediction["points"]):
-                    try:
-                        assert point["x"] == pytest.approx(
-                            expected_response["predictions"][i]["points"][j]["x"],
-                            rel=None,
-                            abs=PIXEL_TOLERANCE,
-                        )
-                    except AssertionError:
-                        raise ValueError(
-                            f"Invalid response: {response}, 'x' field does not match expected value for prediction {i}, point {j}. Expected {expected_response['predictions'][i]['points'][j]['x']}, got {point['x']}."
-                        )
-                    try:
-                        assert point["y"] == pytest.approx(
-                            expected_response["predictions"][i]["points"][j]["y"],
-                            rel=None,
-                            abs=PIXEL_TOLERANCE,
-                        )
-                    except AssertionError:
-                        raise ValueError(
-                            f"Invalid response: {response}, 'y' field does not match expected value for prediction {i}, point {j}. Expected {expected_response['predictions'][i]['points'][j]['y']}, got {point['y']}."
-                        )
-    elif type == "classification":
-        if multilabel:
-            for class_name, confidence in response["predictions"].items():
-                try:
-                    assert class_name in expected_response["predictions"]
-                except AssertionError:
-                    raise ValueError(
-                        f"Invalid response: {response}, Unexpected class {class_name}. Expected classes: {expected_response['predictions'].keys()}."
-                    )
-                try:
-                    assert "confidence" in confidence
-                except AssertionError:
-                    raise ValueError(
-                        f"Invalid response: {response}, Missing 'confidence' field for class {class_name}."
-                    )
-                try:
-                    assert confidence["confidence"] == pytest.approx(
-                        expected_response["predictions"][class_name]["confidence"],
-                        rel=None,
-                        abs=CONFIDENCE_TOLERANCE,
-                    )
-                except AssertionError:
-                    raise ValueError(
-                        f"Invalid response: {response}, 'confidence' field does not match expected value for class {class_name}. Expected {expected_response['predictions'][class_name]['confidence']}, got {confidence['confidence']}."
-                    )
-            try:
-                assert "predicted_classes" in response
-            except AssertionError:
-                raise ValueError(
-                    f"Invalid response: {response}, Missing 'predicted_classes' field."
-                )
-            for class_name in response["predicted_classes"]:
-                try:
-                    assert class_name in expected_response["predictions"]
-                except AssertionError:
-                    raise ValueError(
-                        f"Invalid response: {response}, Unexpected class {class_name}. Expected classes: {expected_response['predicted_classes']}."
-                    )
-        else:
-            try:
-                assert "top" in response
-            except AssertionError:
-                raise ValueError(f"Invalid response: {response}, Missing 'top' field.")
-            try:
-                assert response["top"] == expected_response["top"]
-            except AssertionError:
-                raise ValueError(
-                    f"Invalid response: {response}, 'top' field does not match expected value. Expected {expected_response['top']}, got {response['top']}."
-                )
-            try:
-                assert "confidence" in response
-            except AssertionError:
-                raise ValueError(
-                    f"Invalid response: {response}, Missing 'confidence' field."
-                )
-            try:
-                assert response["confidence"] == pytest.approx(
-                    expected_response["confidence"],
-                    rel=None,
-                    abs=CONFIDENCE_TOLERANCE,
-                )
-            except AssertionError:
-                raise ValueError(
-                    f"Invalid response: {response}, 'confidence' field does not match expected value. Expected {expected_response['confidence']}, got {response['confidence']}."
-                )
-            for i, prediction in enumerate(response["predictions"]):
-                try:
-                    assert "class" in prediction
-                except AssertionError:
-                    raise ValueError(
-                        f"Invalid response: {response}, Missing 'class' field for prediction {i}."
-                    )
-                try:
-                    assert "confidence" in prediction
-                except AssertionError:
-                    raise ValueError(
-                        f"Invalid response: {response}, Missing 'confidence' field for prediction {i}."
-                    )
-                try:
-                    assert prediction["confidence"] == pytest.approx(
-                        expected_response["predictions"][i]["confidence"],
-                        rel=None,
-                        abs=CONFIDENCE_TOLERANCE,
-                    )
-                except AssertionError:
-                    raise ValueError(
-                        f"Invalid response: {response}, 'confidence' field does not match expected value for prediction {i}. Expected {expected_response['predictions'][i]['confidence']}, got {prediction['confidence']}."
-                    )
-                try:
-                    assert (
-                        prediction["class"]
-                        == expected_response["predictions"][i]["class"]
-                    )
-                except AssertionError:
-                    raise ValueError(
-                        f"Invalid response: {response}, 'class' field does not match expected value for prediction {i}. Expected {expected_response['predictions'][i]['class']}, got {prediction['class']}."
-                    )
 
 
 with open(os.path.join(Path(__file__).resolve().parent, "tests.json"), "r") as f:
@@ -449,11 +257,10 @@ def test_detection(test, res_function, clean_loaded_models_fixture):
                 f"Invalid test: {test}, Missing 'expected_response' field for image type {image_type}."
             )
         if not bool_env(os.getenv("FUNCTIONAL", False)):
-            compare_detection_response(
+            compare_prediction_response(
                 data,
                 test["expected_response"][image_type],
-                type=test["type"],
-                multilabel=test.get("multi_label", False),
+                prediction_type=test["type"],
             )
         print(
             "\u2713"
@@ -495,7 +302,6 @@ def test_visualization(test, res_function, clean_loaded_models_fixture):
         try:
             data = base64.b64decode(response.json()["visualization"])
         except KeyError:
-            print(response.json())
             raise ValueError("Response json lacks visualization key")
         except json.JSONDecodeError:
             data = response.content

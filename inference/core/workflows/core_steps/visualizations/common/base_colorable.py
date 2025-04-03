@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
     STRING_KIND,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult
 
@@ -74,42 +74,42 @@ class ColorableVisualizationManifest(PredictionsVisualizationManifest, ABC):
             # "Matplotlib Oranges_R",
             # "Matplotlib Reds_R",
         ],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="DEFAULT",
-        description="Color palette to use for annotations.",
+        description="Select a color palette for the visualised elements.",
         examples=["DEFAULT", "$inputs.color_palette"],
     )
 
     palette_size: Union[
         int,
-        WorkflowParameterSelector(kind=[INTEGER_KIND]),
+        Selector(kind=[INTEGER_KIND]),
     ] = Field(  # type: ignore
         default=10,
-        description="Number of colors in the color palette. Applies when using a matplotlib `color_palette`.",
+        description="Specify the number of colors in the palette. This applies when using custom or Matplotlib palettes.",
         examples=[10, "$inputs.palette_size"],
     )
 
-    custom_colors: Union[
-        List[str], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])
-    ] = Field(  # type: ignore
-        default=[],
-        description='List of colors to use for annotations when `color_palette` is set to "CUSTOM".',
-        examples=[["#FF0000", "#00FF00", "#0000FF"], "$inputs.custom_colors"],
+    custom_colors: Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])] = (
+        Field(  # type: ignore
+            default=[],
+            description="Define a list of custom colors for bounding boxes in HEX format.",
+            examples=[["#FF0000", "#00FF00", "#0000FF"], "$inputs.custom_colors"],
+        )
     )
 
     color_axis: Union[
         Literal["INDEX", "CLASS", "TRACK"],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="CLASS",
-        description="Strategy to use for mapping colors to annotations.",
+        description="Choose how bounding box colors are assigned.",
         examples=["CLASS", "$inputs.color_axis"],
     )
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class ColorableVisualizationBlock(PredictionsVisualizationBlock, ABC):

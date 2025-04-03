@@ -84,33 +84,43 @@ run: |
 }
 
 
+def check_sky_installed():
+    try:
+        global sky
+        import sky
+    except ImportError as e:
+        print(
+            "Please install cloud deploy dependencies with 'pip install inference[cloud-deploy]'"
+        )
+        raise e
+
+
 def _random_char(y):
     return "".join(random.choice(string.ascii_lowercase) for x in range(y))
 
 
 def cloud_status():
-    import sky
-
+    check_sky_installed()
     print("Getting status from skypilot...")
     print(sky.status())
 
 
 def cloud_stop(cluster_name):
-    import sky
+    check_sky_installed()
 
     print(f"Stopping skypilot deployment {cluster_name}...")
     print(sky.stop(cluster_name))
 
 
 def cloud_start(cluster_name):
-    import sky
+    check_sky_installed()
 
     print(f"Starting skypilot deployment {cluster_name}")
     print(sky.start(cluster_name))
 
 
 def cloud_undeploy(cluster_name):
-    import sky
+    check_sky_installed()
 
     print(
         f"Undeploying Roboflow Inference and deleting {cluster_name}, this may take a few minutes."
@@ -120,6 +130,7 @@ def cloud_undeploy(cluster_name):
 
 
 def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key):
+    check_sky_installed()
     if help:
         print(
             """
@@ -133,6 +144,8 @@ def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key
               and deploy the Roboflow Inference container to it.
 
                 Usage examples:
+                # Important: install cloud deploy dependencies
+                pip install inference[cloud-deploy]
                 # Deploy to GCP with CPU
                 inference cloud deploy --provider gcp --compute-type cpu
                 # Deploy to AWS with GPU

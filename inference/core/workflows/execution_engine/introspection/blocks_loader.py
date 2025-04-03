@@ -2,13 +2,17 @@ import importlib
 import logging
 import os
 from collections import Counter
+from copy import copy
 from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
+from inference.core.env import LOAD_ENTERPRISE_BLOCKS
 from inference.core.workflows.core_steps.loader import (
+    KINDS_DESERIALIZERS,
+    KINDS_SERIALIZERS,
     REGISTERED_INITIALIZERS,
     load_blocks,
     load_kinds,
@@ -38,6 +42,9 @@ from inference.core.workflows.execution_engine.v1.dynamic_blocks.entities import
     BLOCK_SOURCE,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
+from inference.enterprise.workflows.enterprise_blocks.loader import (
+    load_enterprise_blocks,
+)
 
 WORKFLOWS_PLUGINS_ENV = "WORKFLOWS_PLUGINS"
 WORKFLOWS_CORE_PLUGIN_NAME = "workflows_core"
@@ -147,6 +154,8 @@ def load_workflow_blocks(
 @lru_cache()
 def load_core_workflow_blocks() -> List[BlockSpecification]:
     core_blocks = load_blocks()
+    if LOAD_ENTERPRISE_BLOCKS:
+        core_blocks.extend(load_enterprise_blocks())
     already_spotted_blocks = set()
     result = []
     for block in core_blocks:
@@ -397,6 +406,90 @@ def _load_plugin_kinds(plugin_name: str) -> List[Kind]:
             context="blocks_loading",
         )
     return kinds
+
+
+@execution_phase(
+    name="kinds_serializers_loading",
+    categories=["execution_engine_operation"],
+)
+def load_kinds_serializers(
+    profiler: Optional[WorkflowsProfiler] = None,
+) -> Dict[str, Callable[[Any], Any]]:
+    kinds_serializers = copy(KINDS_SERIALIZERS)
+    plugin_kinds_serializers = load_plugins_serialization_functions(
+        module_property="KINDS_SERIALIZERS"
+    )
+    kinds_serializers.update(plugin_kinds_serializers)
+    return kinds_serializers
+
+
+@execution_phase(
+    name="kinds_deserializers_loading",
+    categories=["execution_engine_operation"],
+)
+def load_kinds_deserializers(
+    profiler: Optional[WorkflowsProfiler] = None,
+) -> Dict[str, Callable[[str, Any], Any]]:
+    kinds_deserializers = copy(KINDS_DESERIALIZERS)
+    plugin_kinds_deserializers = load_plugins_serialization_functions(
+        module_property="KINDS_DESERIALIZERS"
+    )
+    kinds_deserializers.update(plugin_kinds_deserializers)
+    return kinds_deserializers
+
+
+def load_plugins_serialization_functions(
+    module_property: str,
+) -> Dict[str, Callable[[Any], Any]]:
+    plugins_to_load = get_plugin_modules()
+    result = {}
+    for plugin_name in plugins_to_load:
+        result.update(
+            load_plugin_serializers(
+                plugin_name=plugin_name, module_property=module_property
+            )
+        )
+    return result
+
+
+def load_plugin_serializers(
+    plugin_name: str, module_property: str
+) -> Dict[str, Callable[[Any], Any]]:
+    try:
+        return _load_plugin_serializers(
+            plugin_name=plugin_name, module_property=module_property
+        )
+    except ImportError as e:
+        raise PluginLoadingError(
+            public_message=f"It is not possible to load kinds serializers from workflow plugin `{plugin_name}`. "
+            f"Make sure the library providing custom step is correctly installed in Python environment.",
+            context="blocks_loading",
+            inner_error=e,
+        ) from e
+    except AttributeError as e:
+        raise PluginInterfaceError(
+            public_message=f"Provided workflow plugin `{plugin_name}` do not implement blocks loading "
+            f"interface correctly and cannot be loaded.",
+            context="blocks_loading",
+            inner_error=e,
+        ) from e
+
+
+def _load_plugin_serializers(
+    plugin_name: str, module_property: str
+) -> Dict[str, Callable[[Any], Any]]:
+    module = importlib.import_module(plugin_name)
+    if not hasattr(module, module_property):
+        return {}
+    kinds_serializers = getattr(module, module_property)
+    if not isinstance(kinds_serializers, dict):
+        raise PluginInterfaceError(
+            public_message=f"Provided workflow plugin `{plugin_name}` do not implement blocks loading "
+            f"interface correctly and cannot be loaded. `{module_property}` is expected to be "
+            f"dictionary.",
+            context="blocks_loading",
+        )
+    return kinds_serializers
 
 
 def get_plugin_modules() -> List[str]:

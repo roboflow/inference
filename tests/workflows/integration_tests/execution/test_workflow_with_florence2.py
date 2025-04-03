@@ -23,7 +23,7 @@ FLORENCE2_GROUNDED_CLASSIFICATION_WORKFLOW_DEFINITION = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "model_1",
             "images": "$inputs.image",
             "model_id": "yolov8n-640",
@@ -148,7 +148,7 @@ FLORENCE2_GROUNDED_INSTANCE_SEGMENTATION_WORKFLOW_DEFINITION = {
     "inputs": [{"type": "InferenceImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "model_1",
             "images": "$inputs.image",
             "model_id": "yolov8n-640",
@@ -298,7 +298,7 @@ FLORENCE2_GROUNDED_CAPTION_WORKFLOW_DEFINITION = {
     "inputs": [{"type": "InferenceImage", "name": "image"}],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "model_1",
             "images": "$inputs.image",
             "model_id": "yolov8n-640",
@@ -380,7 +380,7 @@ def test_florence2_grounded_caption(
     ), "Expected dog to be output by florence2"
 
 
-FLORENCE_OBJECT_DETECTION_WORKFLOW = {
+FLORENCE_OBJECT_DETECTION_WORKFLOW_LEGACY_PARSER = {
     "version": "1.0",
     "inputs": [
         {"type": "InferenceImage", "name": "image"},
@@ -396,6 +396,90 @@ FLORENCE_OBJECT_DETECTION_WORKFLOW = {
         },
         {
             "type": "roboflow_core/vlm_as_detector@v1",
+            "name": "vlm_as_detector",
+            "image": "$inputs.image",
+            "vlm_output": "$steps.model.raw_output",
+            "classes": "$steps.model.classes",
+            "model_type": "florence-2",
+            "task_type": "open-vocabulary-object-detection",
+        },
+        {
+            "type": "roboflow_core/bounding_box_visualization@v1",
+            "name": "bounding_box_visualization",
+            "image": "$inputs.image",
+            "predictions": "$steps.vlm_as_detector.predictions",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.vlm_as_detector.predictions",
+        },
+        {
+            "type": "JsonField",
+            "name": "bounding_box_visualization",
+            "coordinates_system": "own",
+            "selector": "$steps.bounding_box_visualization.image",
+        },
+    ],
+}
+
+
+@pytest.mark.skipif(
+    bool_env(os.getenv("SKIP_FLORENCE2_TEST", True)), reason="Skipping Florence 2 test"
+)
+def test_florence2_object_detection_when_legacy_parser_is_in_use(
+    model_manager: ModelManager,
+    dogs_image: np.ndarray,
+    roboflow_api_key: str,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.api_key": roboflow_api_key,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=FLORENCE_OBJECT_DETECTION_WORKFLOW_LEGACY_PARSER,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={"image": dogs_image, "classes": ["dog"]}
+    )
+
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "predictions",
+        "bounding_box_visualization",
+    }, "Expected all declared outputs to be delivered"
+    assert len(result[0]["predictions"]) == 2, "Expected two predictions"
+    assert result[0]["predictions"].data["class_name"].tolist() == [
+        "dog",
+        "dog",
+    ], "Expected two dogs to be found"
+
+
+FLORENCE_OBJECT_DETECTION_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "InferenceImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "classes"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/florence_2@v1",
+            "name": "model",
+            "images": "$inputs.image",
+            "task_type": "open-vocabulary-object-detection",
+            "classes": "$inputs.classes",
+        },
+        {
+            "type": "roboflow_core/vlm_as_detector@v2",
             "name": "vlm_as_detector",
             "image": "$inputs.image",
             "vlm_output": "$steps.model.raw_output",
@@ -502,7 +586,7 @@ FLORENCE_VLM_AS_DET_VISUALIZE_DEF = {
             "task_type": "object-detection",
         },
         {
-            "type": "roboflow_core/vlm_as_detector@v1",
+            "type": "roboflow_core/vlm_as_detector@v2",
             "name": "vlm_as_detector",
             "image": "$inputs.image",
             "vlm_output": "$steps.model.raw_output",

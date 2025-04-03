@@ -30,7 +30,7 @@ ACTIVE_LEARNING_WORKFLOW = {
     ],
     "steps": [
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "general_detection",
             "image": "$inputs.image",
             "model_id": "yolov8n-640",
@@ -43,10 +43,11 @@ ACTIVE_LEARNING_WORKFLOW = {
             "predictions": "$steps.general_detection.predictions",
         },
         {
-            "type": "roboflow_core/roboflow_classification_model@v1",
+            "type": "roboflow_core/roboflow_classification_model@v2",
             "name": "breds_classification",
             "image": "$steps.cropping.crops",
             "model_id": "dog-breed-xpaq6/1",
+            "confidence": 0.09,
         },
         {
             "type": "roboflow_core/roboflow_dataset_upload@v2",

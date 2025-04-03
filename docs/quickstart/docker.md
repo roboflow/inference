@@ -16,7 +16,7 @@ Running the Inference Server is as simple as running the following command:
 inference server start
 ```
 
-This will pull the appropriate Docker image for your machine and start the Inference Server on port 9001. You can then send requests to the server to get predictions from your model, as described in [HTTP Inference](http_inference.md).
+This will pull the appropriate Docker image for your machine and start the Inference Server on port 9001. You can then send requests to the server to get predictions from your model, as described in [Quickstart Guide](../quickstart/run_model_on_image.md).
 
 Once you have your inference server running, you can check its status with the following command:
 
@@ -43,6 +43,7 @@ hardware configurations.
 !!! example "docker pull"
 
     === "x86 CPU"
+
         Official Roboflow Inference Server Docker Image for x86 CPU Targets.
 
         ```
@@ -50,6 +51,7 @@ hardware configurations.
         ```
 
     === "arm64 CPU"
+
         Official Roboflow Inference Server Docker Image for ARM CPU Targets.
 
         ```
@@ -57,20 +59,23 @@ hardware configurations.
         ```
 
     === "GPU"
+
         Official Roboflow Inference Server Docker Image for Nvidia GPU Targets.
 
         ```
         docker pull roboflow/roboflow-inference-server-gpu
         ```
 
-    === "Jetson 4.5.x"
+    === "Jetson 4.5.x" (Deprecated)
+
         Official Roboflow Inference Server Docker Image for Nvidia Jetson JetPack 4.5.x Targets.
 
         ```
         docker pull roboflow/roboflow-inference-server-jetson-4.5.0
         ```
 
-    === "Jetson 4.6.x"
+    === "Jetson 4.6.x" (Deprecated)
+
         Official Roboflow Inference Server Docker Image for Nvidia Jetson JetPack 4.6.x Targets.
 
         ```
@@ -78,10 +83,19 @@ hardware configurations.
         ```
 
     === "Jetson 5.x"
+
         Official Roboflow Inference Server Docker Image for Nvidia Jetson JetPack 5.x Targets.
 
         ```
         docker pull roboflow/roboflow-inference-server-jetson-5.1.1
+        ```
+
+    === "Jetson 6.x"
+
+        Official Roboflow Inference Server Docker Image for Nvidia Jetson JetPack 6.x Targets.
+
+        ```
+        docker pull roboflow/roboflow-inference-server-jetson-6.0.0
         ```
 
 ### Step #2: Run the Docker Container

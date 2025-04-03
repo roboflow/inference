@@ -2,7 +2,7 @@
 
 The table below shows on what devices you can deploy models supported by Inference.
 
-See our [Docker Getting Started](/quickstart/docker) guide for more information on how to deploy Inference on your device.
+See our [Docker Getting Started](./docker.md) guide for more information on how to deploy Inference on your device.
 
 Table key:
 

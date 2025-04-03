@@ -12,6 +12,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     ROBOFLOW_MODEL_ID_KIND,
 )
 from inference.core.workflows.execution_engine.v1.compiler.entities import (
@@ -122,6 +123,7 @@ def test_execution_graph_construction_for_trivial_workflow() -> None:
         selector="$outputs.predictions",
         data_lineage=["<workflow_input>"],
         output_manifest=output_manifest,
+        kind=[OBJECT_DETECTION_PREDICTION_KIND],
     ), "Output node must be created correctly"
     assert result.has_edge(
         "$inputs.image", "$steps.model_1"

@@ -19,7 +19,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -36,7 +36,7 @@ for multi-label classification results, most confident label is taken as boundin
 class.  
 """
 
-SHORT_DESCRIPTION = "Replaces classes of detections with classes predicted by a chained classification model"
+SHORT_DESCRIPTION = "Replace classes of detections with classes predicted by a chained classification model."
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -48,13 +48,18 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "fusion",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-arrow-right-arrow-left",
+                "blockPriority": 5,
+            },
         }
     )
     type: Literal[
         "roboflow_core/detections_classes_replacement@v1",
         "DetectionsClassesReplacement",
     ]
-    object_detection_predictions: StepOutputSelector(
+    object_detection_predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -65,9 +70,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="The output of a detection model describing the bounding boxes that will have classes replaced.",
         examples=["$steps.my_object_detection_model.predictions"],
     )
-    classification_predictions: StepOutputSelector(
-        kind=[CLASSIFICATION_PREDICTION_KIND]
-    ) = Field(
+    classification_predictions: Selector(kind=[CLASSIFICATION_PREDICTION_KIND]) = Field(
         title="Classification results for crops",
         description="The output of classification model for crops taken based on RoIs pointed as the other parameter",
         examples=["$steps.my_classification_model.predictions"],
@@ -103,7 +106,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class DetectionsClassesReplacementBlockV1(WorkflowBlock):
@@ -119,7 +122,12 @@ class DetectionsClassesReplacementBlockV1(WorkflowBlock):
     ) -> BlockResult:
         if object_detection_predictions is None:
             return {"predictions": None}
-        if classification_predictions is None:
+        if not classification_predictions:
+            return {"predictions": sv.Detections.empty()}
+        if all(
+            p is None or "top" in p and not p["top"] or "predictions" not in p
+            for p in classification_predictions
+        ):
             return {"predictions": sv.Detections.empty()}
         detection_id_by_class: Dict[str, Optional[Tuple[str, int]]] = {
             prediction[PARENT_ID_KEY]: extract_leading_class_from_prediction(

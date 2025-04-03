@@ -24,7 +24,7 @@ CLASSIFICATION_WORKFLOW = {
             "api_key": "$inputs.api_key",
         },
         {
-            "type": "roboflow_core/vlm_as_classifier@v1",
+            "type": "roboflow_core/vlm_as_classifier@v2",
             "name": "parser",
             "image": "$inputs.image",
             "vlm_output": "$steps.claude.output",
@@ -59,7 +59,7 @@ CLASSIFICATION_WORKFLOW = {
 }
 
 
-@pytest.mark.skipif(ANTHROPIC_API_KEY is None, reason="No Antropic API key provided")
+@pytest.mark.skipif(ANTHROPIC_API_KEY is None, reason="No Anthropic API key provided")
 @pytest.mark.flaky(retries=4, delay=1)
 def test_classification_workflow(
     object_detection_service_url: str,
@@ -138,7 +138,7 @@ STRUCTURED_PROMPTING_WORKFLOW = {
 }
 
 
-@pytest.mark.skipif(ANTHROPIC_API_KEY is None, reason="No Antropic API key provided")
+@pytest.mark.skipif(ANTHROPIC_API_KEY is None, reason="No Anthropic API key provided")
 @pytest.mark.flaky(retries=4, delay=1)
 def test_structured_parsing_workflow(
     object_detection_service_url: str,
@@ -183,7 +183,7 @@ OBJECT_DETECTION_WORKFLOW = {
             "api_key": "$inputs.api_key",
         },
         {
-            "type": "roboflow_core/vlm_as_detector@v1",
+            "type": "roboflow_core/vlm_as_detector@v2",
             "name": "parser",
             "vlm_output": "$steps.claude.output",
             "image": "$inputs.image",
@@ -207,7 +207,7 @@ OBJECT_DETECTION_WORKFLOW = {
 }
 
 
-@pytest.mark.skipif(ANTHROPIC_API_KEY is None, reason="No Antropic API key provided")
+@pytest.mark.skipif(ANTHROPIC_API_KEY is None, reason="No Anthropic API key provided")
 @pytest.mark.flaky(retries=4, delay=1)
 def test_object_detection_workflow(
     object_detection_service_url: str,
@@ -281,7 +281,7 @@ VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
             "api_key": "$inputs.api_key",
         },
         {
-            "type": "roboflow_core/vlm_as_classifier@v1",
+            "type": "roboflow_core/vlm_as_classifier@v2",
             "name": "parser",
             "image": "$steps.cropping.crops",
             "vlm_output": "$steps.claude.output",
@@ -304,7 +304,7 @@ VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
 }
 
 
-@pytest.mark.skipif(ANTHROPIC_API_KEY is None, reason="No Antropic API key provided")
+@pytest.mark.skipif(ANTHROPIC_API_KEY is None, reason="No Anthropic API key provided")
 @pytest.mark.flaky(retries=4, delay=1)
 def test_workflow_with_secondary_classifier(
     object_detection_service_url: str,

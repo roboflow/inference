@@ -14,12 +14,12 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     STRING_KIND,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/triangle_visualization@v1"
-SHORT_DESCRIPTION = "Draws triangle markers on an image at specific coordinates based on provided detections."
+SHORT_DESCRIPTION = "Draw triangle markers on an image at specific coordinates based on provided detections."
 LONG_DESCRIPTION = """
 The `TriangleVisualization` block draws triangle markers on an image at specific coordinates
 based on provided detections using Supervision's `sv.TriangleAnnotator`.
@@ -36,6 +36,20 @@ class TriangleManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "search_keywords": ["annotator"],
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-triangle",
+                "blockPriority": 14,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 
@@ -52,26 +66,26 @@ class TriangleManifest(ColorableVisualizationManifest):
             "BOTTOM_RIGHT",
             "CENTER_OF_MASS",
         ],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(  # type: ignore
         default="TOP_CENTER",
         description="The anchor position for placing the triangle.",
         examples=["CENTER", "$inputs.position"],
     )
 
-    base: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    base: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Base width of the triangle in pixels.",
         default=10,
         examples=[10, "$inputs.base"],
     )
 
-    height: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    height: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Height of the triangle in pixels.",
         default=10,
         examples=[10, "$inputs.height"],
     )
 
-    outline_thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    outline_thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the outline of the triangle in pixels.",
         default=0,
         examples=[2, "$inputs.outline_thickness"],
@@ -79,7 +93,7 @@ class TriangleManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class TriangleVisualizationBlockV1(ColorableVisualizationBlock):

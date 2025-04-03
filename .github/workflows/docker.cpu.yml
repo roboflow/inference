@@ -11,9 +11,15 @@ on:
         type: boolean
         description: "Do you want to push image after build?"
         default: false
+      custom_tag:
+        type: string
+        description: "Custom tag to use for the image (overrides VERSION)"
+        default: ""
 
 env:
   VERSION: "0.0.0" # Default version, will be overwritten
+  BASE_IMAGE: "roboflow/roboflow-inference-server-cpu"
+  DOCKERFILE: "./docker/dockerfiles/Dockerfile.onnx.cpu"
 
 jobs:
   docker:
@@ -23,24 +29,70 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      packages: write
     steps:
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: 🛎️ Checkout
+      - name: Checkout
         uses: actions/checkout@v4
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
+      - name: Determine Image Tags
+        id: tags
+        uses: ./.github/actions/determine-tags
+        with:
+          custom_tag: ${{ github.event.inputs.custom_tag }}
+          version: ${{ env.VERSION }}
+          base_image: ${{ env.BASE_IMAGE }}
+          force_push: ${{ github.event.inputs.force_push }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
       - name: Build and Push
         uses: depot/build-push-action@v1
         with:
-          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true')}}
+          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
           project: grl7ffzxd7
-          tags: roboflow/roboflow-inference-server-cpu:latest,roboflow/roboflow-inference-server-cpu:${{env.VERSION}}
+          tags: ${{ steps.tags.outputs.image_tags }}
           platforms: linux/amd64,linux/arm64
-          file: ./docker/dockerfiles/Dockerfile.onnx.cpu
+          file: ${{ env.DOCKERFILE }}
+
+
+      - name: Authenticate gcloud
+        uses: 'google-github-actions/auth@v2'
+        id: auth
+        with:
+          workload_identity_provider: 'projects/391662651862/locations/global/workloadIdentityPools/github-actions/providers/github'
+          service_account: 'github-gcloud-deployer@roboflow-artifacts.iam.gserviceaccount.com'
+          token_format: 'access_token'
+      - name: Login to Google Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: us-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Set up build variables
+        id: set_up_build_variables
+        run: |
+            TAGS=""
+            IFS=',' read -ra TAG_ARRAY <<< "${{ steps.tags.outputs.image_tags }}"
+            for tag in "${TAG_ARRAY[@]}"; do
+              if [ -n "$TAGS" ]; then
+                TAGS="${TAGS}","us-docker.pkg.dev/roboflow-artifacts/${tag}"
+              else
+                TAGS="us-docker.pkg.dev/roboflow-artifacts/${tag}"
+              fi
+            done
+            echo "PROCESSED_TAGS=${TAGS}" >> "$GITHUB_OUTPUT"
+            echo "GCP artifacts to be pushed:"
+            echo "$TAGS"
+      - name: Build and push CPU image to GCP Artifact Registry
+        uses: depot/build-push-action@v1
+        with:
+          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
+          project: grl7ffzxd7
+          tags: ${{ steps.set_up_build_variables.outputs.PROCESSED_TAGS }}
+          platforms: linux/amd64
+          file: ${{ env.DOCKERFILE }}

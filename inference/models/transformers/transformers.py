@@ -1,20 +1,19 @@
 import os
 import re
+import subprocess
 import tarfile
 
-import numpy as np
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig
 from peft.peft_model import PeftModel
 from PIL import Image
-from transformers import AutoModel, AutoProcessor, PaliGemmaForConditionalGeneration
+from transformers import AutoModel, AutoProcessor
 
 from inference.core.env import HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
 
 cache_dir = os.path.join(MODEL_CACHE_DIR)
 import os
-import time
 from time import perf_counter
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, Tuple
 
 import torch
 from PIL import Image
@@ -24,7 +23,6 @@ from inference.core.cache.model_artifacts import (
     get_cache_file_path,
     save_bytes_in_cache,
 )
-from inference.core.entities.requests.inference import LMMInferenceRequest
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     LMMInferenceResponse,
@@ -38,6 +36,7 @@ from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
     get_roboflow_base_lora,
+    get_roboflow_instant_model_data,
     get_roboflow_model_data,
 )
 from inference.core.utils.image_utils import load_image_rgb
@@ -125,10 +124,12 @@ class TransformerModel(RoboflowInferenceModel):
                 max_new_tokens=1000,
                 do_sample=False,
                 early_stopping=False,
+                no_repeat_ngram_size=0,
             )
             generation = generation[0]
             if self.generation_includes_input:
                 generation = generation[input_len:]
+
             decoded = self.processor.decode(
                 generation, skip_special_tokens=self.skip_special_tokens
             )
@@ -150,25 +151,40 @@ class TransformerModel(RoboflowInferenceModel):
             "config.json",
             "special_tokens_map.json",
             "generation_config.json",
-            "model.safetensors.index.json",
             "tokenizer.json",
-            re.compile(r"model-\d{5}-of-\d{5}\.safetensors"),
+            re.compile(r"model.*\.safetensors"),
             "preprocessor_config.json",
             "tokenizer_config.json",
         ]
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
-        api_data = get_roboflow_model_data(
-            api_key=self.api_key,
-            model_id=self.endpoint,
-            endpoint_type=ModelEndpointType.ORT,
-            device_id=self.device_id,
-        )
-        if "weights" not in api_data["ort"]:
-            raise ModelArtefactError(
-                f"`weights` key not available in Roboflow API response while downloading model weights."
+        if self.version_id is not None:
+            api_data = get_roboflow_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.ORT,
+                device_id=self.device_id,
             )
-        for weights_url in api_data["ort"]["weights"].values():
+            if "weights" not in api_data["ort"]:
+                raise ModelArtefactError(
+                    f"`weights` key not available in Roboflow API response while downloading model weights."
+                )
+            weights = api_data["ort"]["weights"]
+        else:
+            api_data = get_roboflow_instant_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+            )
+            if "modelFiles" not in api_data:
+                raise ModelArtefactError(
+                    f"`modelFiles` key not available in Roboflow API response while downloading model weights."
+                )
+            if "transformers" not in api_data["modelFiles"]:
+                raise ModelArtefactError(
+                    f"`transformers` key not available in Roboflow API response while downloading model weights."
+                )
+            weights = api_data["modelFiles"]["transformers"]
+        for weights_url in weights.values():
             t1 = perf_counter()
             filename = weights_url.split("?")[0].split("/")[-1]
             if filename.endswith(".npz"):
@@ -179,16 +195,39 @@ class TransformerModel(RoboflowInferenceModel):
                 file=filename,
                 model_id=self.endpoint,
             )
+            if filename.endswith("tar.gz"):
+                try:
+                    subprocess.run(
+                        [
+                            "tar",
+                            "-xzf",
+                            os.path.join(self.cache_dir, filename),
+                            "-C",
+                            self.cache_dir,
+                        ],
+                        check=True,
+                    )
+                except subprocess.CalledProcessError as e:
+                    raise ModelArtefactError(
+                        f"Failed to extract model archive {filename}. Error: {str(e)}"
+                    ) from e
+
             if perf_counter() - t1 > 120:
                 logger.debug(
                     "Weights download took longer than 120 seconds, refreshing API request"
                 )
-                api_data = get_roboflow_model_data(
-                    api_key=self.api_key,
-                    model_id=self.endpoint,
-                    endpoint_type=ModelEndpointType.ORT,
-                    device_id=self.device_id,
-                )
+                if self.version_id is not None:
+                    api_data = get_roboflow_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                        endpoint_type=ModelEndpointType.ORT,
+                        device_id=self.device_id,
+                    )
+                else:
+                    api_data = get_roboflow_instant_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                    )
 
     @property
     def weights_file(self) -> None:
@@ -233,8 +272,10 @@ class LoRATransformerModel(TransformerModel):
             .to(self.dtype)
         )
 
+        self.model.merge_and_unload()
+
         self.processor = self.processor_class.from_pretrained(
-            self.cache_dir, revision=revision
+            model_load_id, revision=revision, cache_dir=cache_dir, token=token
         )
 
     def get_lora_base_from_roboflow(self, repo, revision) -> str:
@@ -273,7 +314,6 @@ class LoRATransformerModel(TransformerModel):
             "adapter_config.json",
             "special_tokens_map.json",
             "tokenizer.json",
-            "tokenizer.model",
             "adapter_model.safetensors",
             "preprocessor_config.json",
             "tokenizer_config.json",

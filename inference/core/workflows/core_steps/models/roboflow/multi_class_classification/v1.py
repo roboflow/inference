@@ -27,15 +27,14 @@ from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     CLASSIFICATION_PREDICTION_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
     ROBOFLOW_MODEL_ID_KIND,
     ROBOFLOW_PROJECT_KIND,
     STRING_KIND,
     FloatZeroToOne,
     ImageInputField,
     RoboflowModelField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -73,37 +72,32 @@ class BlockManifest(WorkflowBlockManifest):
         "RoboflowClassificationModel",
         "ClassificationModel",
     ]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    model_id: Union[WorkflowParameterSelector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = (
-        RoboflowModelField
-    )
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    model_id: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = RoboflowModelField
     confidence: Union[
         FloatZeroToOne,
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.4,
-        description="Confidence threshold for predictions",
+        description="Confidence threshold for predictions.",
         examples=[0.3, "$inputs.confidence_threshold"],
     )
-    disable_active_learning: Union[
-        bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])
-    ] = Field(
+    disable_active_learning: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        description="Parameter to decide if Active Learning data sampling is disabled for the model",
+        description="Boolean flag to disable project-level active learning for this block.",
         examples=[True, "$inputs.disable_active_learning"],
     )
     active_learning_target_dataset: Union[
-        WorkflowParameterSelector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
+        Selector(kind=[ROBOFLOW_PROJECT_KIND]), Optional[str]
     ] = Field(
         default=None,
-        description="Target dataset for Active Learning data sampling - see Roboflow Active Learning "
-        "docs for more information",
+        description="Target dataset for active learning, if enabled.",
         examples=["my_project", "$inputs.al_target_project"],
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -114,7 +108,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class RoboflowClassificationModelBlockV1(WorkflowBlock):
@@ -230,7 +224,7 @@ class RoboflowClassificationModelBlockV1(WorkflowBlock):
             source="workflow-execution",
         )
         client.configure(inference_configuration=client_config)
-        non_empty_inference_images = [i.numpy_image for i in images]
+        non_empty_inference_images = [i.base64_image for i in images]
         predictions = client.infer(
             inference_input=non_empty_inference_images,
             model_id=model_id,
@@ -247,7 +241,6 @@ class RoboflowClassificationModelBlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         predictions: List[dict],
     ) -> BlockResult:
-        inference_id = predictions[0].get(INFERENCE_ID_KEY, None)
         predictions = attach_prediction_type_info(
             predictions=predictions,
             prediction_type="classification",
@@ -258,6 +251,9 @@ class RoboflowClassificationModelBlockV1(WorkflowBlock):
                 image.workflow_root_ancestor_metadata.parent_id
             )
         return [
-            {"inference_id": inference_id, "predictions": prediction}
+            {
+                "inference_id": prediction.get(INFERENCE_ID_KEY),
+                "predictions": prediction,
+            }
             for prediction in predictions
         ]

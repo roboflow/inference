@@ -21,6 +21,10 @@ YOLOV11_ALIASES = {
     **YOLOV11_ALIASES,
     **{k.replace("yolov11", "yolo11"): v for k, v in YOLOV11_ALIASES.items()},
 }
+RFDETR_ALIASES = {
+    "rfdetr-base": "coco/36",
+    "rfdetr-large": "coco/37",
+}
 REGISTERED_ALIASES = {
     "yolov8n-640": "coco/3",
     "yolov8n-1280": "coco/9",
@@ -74,6 +78,7 @@ REGISTERED_ALIASES = {
     "florence-2-base": "florence-pretrains/1",
     "florence-2-large": "florence-pretrains/2",
     **YOLOV11_ALIASES,
+    **RFDETR_ALIASES,
 }
 
 OCR_ENDPOINTS = {
@@ -83,10 +88,26 @@ OCR_ENDPOINTS = {
 
 
 def resolve_roboflow_model_alias(model_id: str) -> str:
+    """Resolve a Roboflow model alias to a registered model ID.
+
+    Args:
+        model_id: The model alias to resolve.
+
+    Returns:
+        The registered model ID.
+    """
     return REGISTERED_ALIASES.get(model_id, model_id)
 
 
 def resolve_ocr_path(model_name: str) -> str:
+    """Resolve an OCR model name to its corresponding endpoint path.
+
+    Args:
+        model_name: The name of the OCR model.
+
+    Returns:
+        The endpoint path for the OCR model.
+    """
     model_name = model_name.lower()
     if model_name not in OCR_ENDPOINTS:
         raise ValueError(f"OCR not supported: {model_name}")

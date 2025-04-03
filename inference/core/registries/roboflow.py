@@ -1,14 +1,29 @@
 import os
-from typing import Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
+
+from cachetools.func import ttl_cache
 
 from inference.core.cache import cache
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
-from inference.core.entities.types import DatasetID, ModelType, TaskType, VersionID
-from inference.core.env import LAMBDA, MODEL_CACHE_DIR
+from inference.core.entities.types import (
+    DatasetID,
+    ModelID,
+    ModelType,
+    TaskType,
+    VersionID,
+)
+from inference.core.env import (
+    LAMBDA,
+    MODEL_CACHE_DIR,
+    MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
+    MODELS_CACHE_AUTH_CACHE_TTL,
+    MODELS_CACHE_AUTH_ENABLED,
+)
 from inference.core.exceptions import (
     MissingApiKeyError,
     ModelArtefactError,
     ModelNotRecognisedError,
+    RoboflowAPINotAuthorizedError,
 )
 from inference.core.logger import logger
 from inference.core.models.base import Model
@@ -19,6 +34,7 @@ from inference.core.roboflow_api import (
     PROJECT_TASK_TYPE_KEY,
     ModelEndpointType,
     get_roboflow_dataset_type,
+    get_roboflow_instant_model_data,
     get_roboflow_model_data,
     get_roboflow_workspace,
 )
@@ -34,7 +50,6 @@ GENERIC_MODELS = {
     "doctr": ("ocr", "doctr"),
     "trocr": ("ocr", "trocr"),
     "grounding_dino": ("object-detection", "grounding-dino"),
-    "cogvlm": ("llm", "cogvlm"),
     "paligemma": ("llm", "paligemma"),
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
@@ -49,7 +64,7 @@ class RoboflowModelRegistry(ModelRegistry):
     then returns a model class based on the model type.
     """
 
-    def get_model(self, model_id: str, api_key: str) -> Model:
+    def get_model(self, model_id: ModelID, api_key: str) -> Model:
         """Returns the model class based on the given model id and API key.
 
         Args:
@@ -69,8 +84,32 @@ class RoboflowModelRegistry(ModelRegistry):
         return self.registry_dict[model_type]
 
 
-def get_model_type(
+@ttl_cache(ttl=MODELS_CACHE_AUTH_CACHE_TTL, maxsize=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
+def _check_if_api_key_has_access_to_model(
+    api_key: str,
     model_id: str,
+) -> bool:
+    _, version_id = get_model_id_chunks(model_id=model_id)
+    try:
+        if version_id is not None:
+            get_roboflow_model_data(
+                api_key=api_key,
+                model_id=model_id,
+                endpoint_type=ModelEndpointType.ORT,
+                device_id=GLOBAL_DEVICE_ID,
+            ).get("ort")
+        else:
+            get_roboflow_instant_model_data(
+                api_key=api_key,
+                model_id=model_id,
+            )
+    except RoboflowAPINotAuthorizedError:
+        return False
+    return True
+
+
+def get_model_type(
+    model_id: ModelID,
     api_key: Optional[str] = None,
 ) -> Tuple[TaskType, ModelType]:
     """Retrieves the model type based on the given model ID and API key.
@@ -93,6 +132,15 @@ def get_model_type(
     if dataset_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]
+
+    if MODELS_CACHE_AUTH_ENABLED:
+        if not _check_if_api_key_has_access_to_model(
+            api_key=api_key, model_id=model_id
+        ):
+            raise RoboflowAPINotAuthorizedError(
+                f"API key {api_key} does not have access to model {model_id}"
+            )
+
     cached_metadata = get_model_metadata_from_cache(
         dataset_id=dataset_id, version_id=version_id
     )
@@ -115,16 +163,24 @@ def get_model_type(
             model_type=model_type,
         )
         return project_task_type, model_type
-    api_data = get_roboflow_model_data(
-        api_key=api_key,
-        model_id=model_id,
-        endpoint_type=ModelEndpointType.ORT,
-        device_id=GLOBAL_DEVICE_ID,
-    ).get("ort")
+
+    if version_id is not None:
+        api_data = get_roboflow_model_data(
+            api_key=api_key,
+            model_id=model_id,
+            endpoint_type=ModelEndpointType.ORT,
+            device_id=GLOBAL_DEVICE_ID,
+        ).get("ort")
+        project_task_type = api_data.get("type", "object-detection")
+    else:
+        api_data = get_roboflow_instant_model_data(
+            api_key=api_key,
+            model_id=model_id,
+        )
+        project_task_type = api_data.get("taskType", "object-detection")
     if api_data is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
     # some older projects do not have type field - hence defaulting
-    project_task_type = api_data.get("type", "object-detection")
     model_type = api_data.get("modelType")
     if model_type is None or model_type == "ort":
         # some very old model versions do not have modelType reported - and API respond in a generic way -
@@ -143,7 +199,8 @@ def get_model_type(
 
 
 def get_model_metadata_from_cache(
-    dataset_id: str, version_id: str
+    dataset_id: Union[DatasetID, ModelID],
+    version_id: Optional[VersionID],
 ) -> Optional[Tuple[TaskType, ModelType]]:
     if LAMBDA:
         return _get_model_metadata_from_cache(
@@ -158,7 +215,7 @@ def get_model_metadata_from_cache(
 
 
 def _get_model_metadata_from_cache(
-    dataset_id: str, version_id: str
+    dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
 ) -> Optional[Tuple[TaskType, ModelType]]:
     model_type_cache_path = construct_model_type_cache_path(
         dataset_id=dataset_id, version_id=version_id
@@ -193,8 +250,8 @@ def model_metadata_content_is_invalid(content: Optional[Union[list, dict]]) -> b
 
 
 def save_model_metadata_in_cache(
-    dataset_id: DatasetID,
-    version_id: VersionID,
+    dataset_id: Union[DatasetID, ModelID],
+    version_id: Optional[VersionID],
     project_task_type: TaskType,
     model_type: ModelType,
 ) -> None:
@@ -219,8 +276,8 @@ def save_model_metadata_in_cache(
 
 
 def _save_model_metadata_in_cache(
-    dataset_id: DatasetID,
-    version_id: VersionID,
+    dataset_id: Union[DatasetID, ModelID],
+    version_id: Optional[VersionID],
     project_task_type: TaskType,
     model_type: ModelType,
 ) -> None:
@@ -236,6 +293,10 @@ def _save_model_metadata_in_cache(
     )
 
 
-def construct_model_type_cache_path(dataset_id: str, version_id: str) -> str:
-    cache_dir = os.path.join(MODEL_CACHE_DIR, dataset_id, version_id)
+def construct_model_type_cache_path(
+    dataset_id: Union[DatasetID, ModelID], version_id: Optional[VersionID]
+) -> str:
+    cache_dir = os.path.join(
+        MODEL_CACHE_DIR, dataset_id, version_id if version_id else ""
+    )
     return os.path.join(cache_dir, "model_type.json")

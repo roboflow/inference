@@ -2,3 +2,6 @@ crowd.jpg: https://pixabay.com/users/wal_172619-12138562
 license_plate.jpg: https://www.pexels.com/photo/kia-niros-driving-on-the-road-11320632/
 dogs.jpg: https://www.pexels.com/photo/brown-and-white-dogs-sitting-on-field-3568134/
 multi-fruit.jpg: https://www.freepik.com/free-photo/front-close-view-organic-nutrition-source-fresh-bananas-bundle-red-apples-orange-with-stem-dark-background_17119128.htm
+multi_line_text.jpg: https://www.pexels.com/photo/illuminated-qoute-board-2255441/
+asl_image.jpg: https://universe.roboflow.com/david-lee-d0rhs/american-sign-language-letters
+car.jpg: https://pixabay.com/photos/car-vehicle-sports-car-auto-63930/

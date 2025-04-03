@@ -7,8 +7,14 @@ import supervision as sv
 
 from inference import InferencePipeline
 from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.camera.video_source import BufferFillingStrategy, BufferConsumptionStrategy
-from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog, PipelineWatchDog
+from inference.core.interfaces.camera.video_source import (
+    BufferConsumptionStrategy,
+    BufferFillingStrategy,
+)
+from inference.core.interfaces.stream.watchdog import (
+    BasePipelineWatchDog,
+    PipelineWatchDog,
+)
 from inference.core.utils.drawing import create_tiles
 
 WORKFLOW_DEFINITION = {
@@ -81,6 +87,12 @@ WORKFLOW_DEFINITION = {
             }
         },
         {
+            "type": "roboflow_core/property_definition@v1",
+            "name": "image_as_jpeg",
+            "operations": [{"type": "ConvertImageToJPEG"}],
+            "data": "$steps.line_counter_visualization.image",
+        },
+        {
             "type": "roboflow_core/email_notification@v1",
             "name": "email_notifier",
             "email_service_provider": "custom",
@@ -91,6 +103,7 @@ WORKFLOW_DEFINITION = {
             },
             "attachments": {
                 "report.csv": "$steps.csv_formatter.csv_content",
+                "image.jpeg": "$steps.image_as_jpeg.output",
             },
             "receiver_email": "$inputs.email",
             "smtp_server": "smtp.gmail.com",
@@ -115,7 +128,7 @@ WORKFLOW_DEFINITION = {
 }
 
 STOP = False
-ANNOTATOR = sv.BoundingBoxAnnotator()
+ANNOTATOR = sv.BoxAnnotator()
 fps_monitor = sv.FPSMonitor()
 
 
@@ -127,13 +140,12 @@ def main() -> None:
         workflow_specification=WORKFLOW_DEFINITION,
         watchdog=watchdog,
         on_prediction=workflows_sink,
-        source_buffer_filling_strategy=BufferFillingStrategy.DROP_OLDEST,
-        source_buffer_consumption_strategy=BufferConsumptionStrategy.EAGER,
         workflows_parameters={
             "line": [[100, 900], [1900, 900]],
             "email": os.environ["EMAIL"],
             "email_password": os.environ["EMAIL_PASSWORD"],
-        }
+        },
+        max_fps=1,
     )
     control_thread = Thread(target=command_thread, args=(pipeline, watchdog))
     control_thread.start()

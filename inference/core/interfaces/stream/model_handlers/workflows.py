@@ -14,11 +14,14 @@ class WorkflowRunner:
         execution_engine: ExecutionEngine,
         image_input_name: str,
         video_metadata_input_name: str,
+        serialize_results: bool = False,
     ) -> List[dict]:
         if workflows_parameters is None:
             workflows_parameters = {}
         # TODO: pass fps reflecting each stream to workflows_parameters
         fps = video_frames[0].fps
+        if video_frames[0].measured_fps:
+            fps = video_frames[0].measured_fps
         if fps is None:
             # for FPS reporting we expect 0 when FPS cannot be determined
             fps = 0
@@ -32,6 +35,7 @@ class WorkflowRunner:
                 frame_number=video_frame.frame_id,
                 frame_timestamp=video_frame.frame_timestamp,
                 fps=video_frame.fps,
+                measured_fps=video_frame.measured_fps,
                 comes_from_video_file=video_frame.comes_from_video_file,
             )
             for video_frame in video_frames
@@ -50,4 +54,5 @@ class WorkflowRunner:
         return execution_engine.run(
             runtime_parameters=workflows_parameters,
             fps=fps,
+            serialize_results=serialize_results,
         )

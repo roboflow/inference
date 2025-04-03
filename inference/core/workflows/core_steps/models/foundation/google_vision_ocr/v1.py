@@ -20,11 +20,11 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    SECRET_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -61,7 +61,7 @@ class BlockManifest(WorkflowBlockManifest):
         protected_namespaces=(),
     )
     type: Literal["roboflow_core/google_vision_ocr@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         description="Image to run OCR",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
@@ -80,7 +80,13 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    language_hints: Optional[List[str]] = Field(
+        default=None,
+        description="Optional list of language codes to pass to the OCR API. If not provided, the API will attempt to detect the language automatically."
+        "If provided, language codes must be supported by the OCR API, visit https://cloud.google.com/vision/docs/languages for list of supported language codes.",
+        examples=[["en", "fr"], ["de"]],
+    )
+    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
         description="Your Google Vision API key",
         examples=["xxx-xxx", "$inputs.google_api_key"],
         private=True,
@@ -98,7 +104,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class GoogleVisionOCRBlockV1(WorkflowBlock):
@@ -111,6 +117,7 @@ class GoogleVisionOCRBlockV1(WorkflowBlock):
         self,
         image: WorkflowImageData,
         ocr_type: Literal["text_detection", "ocr_text_detection"],
+        language_hints: Optional[List[str]],
         api_key: str,
     ) -> BlockResult:
         # Decide which type of OCR to use and make the request to Google Vision API
@@ -121,17 +128,22 @@ class GoogleVisionOCRBlockV1(WorkflowBlock):
         else:
             raise ValueError(f"Invalid ocr_type: {ocr_type}")
 
+        request_json = {
+            "requests": [
+                {
+                    "image": {"content": image.base64_image},
+                    "features": [{"type": type}],
+                }
+            ]
+        }
+
+        if language_hints is not None:
+            for r in request_json["requests"]:
+                r["imageContext"] = {"languageHints": language_hints}
         response = requests.post(
             "https://vision.googleapis.com/v1/images:annotate",
             params={"key": api_key},
-            json={
-                "requests": [
-                    {
-                        "image": {"content": image.base64_image},
-                        "features": [{"type": type}],
-                    }
-                ]
-            },
+            json=request_json,
         )
 
         if response.status_code != 200:
@@ -162,10 +174,10 @@ class GoogleVisionOCRBlockV1(WorkflowBlock):
             for block in page["blocks"]:
                 # Get bounding box coordinates
                 box = block["boundingBox"]["vertices"]
-                x_min = min(v["x"] for v in box)
-                y_min = min(v["y"] for v in box)
-                x_max = max(v["x"] for v in box)
-                y_max = max(v["y"] for v in box)
+                x_min = min(v.get("x", 0) for v in box)
+                y_min = min(v.get("y", 0) for v in box)
+                x_max = max(v.get("x", 0) for v in box)
+                y_max = max(v.get("y", 0) for v in box)
                 xyxy.append([x_min, y_min, x_max, y_max])
 
                 # Only DOCUMENT_TEXT_DETECTION provides confidence score, use 1.0 otherwise

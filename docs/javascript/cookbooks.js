@@ -1,5 +1,5 @@
 
-document.addEventListener("DOMContentLoaded", function () {
+function render() {
 
     async function setCard(el, url, name, desc, labels, theme, authors) {
       const colorList = [
@@ -102,4 +102,6 @@ document.addEventListener("DOMContentLoaded", function () {
   
       setCard(el, url, name, desc, labels, theme, authors);
     }
-  })
+  }
+
+  document$.subscribe(render);

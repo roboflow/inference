@@ -33,15 +33,13 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
     FLOAT_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     ImageInputField,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -75,14 +73,21 @@ class BlockManifest(WorkflowBlockManifest):
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["SAM2", "META"],
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fa-brands fa-meta",
+                "blockPriority": 9.5,
+                "needsGPU": True,
+                "inference": True,
+            },
         },
         protected_namespaces=(),
     )
 
     type: Literal["roboflow_core/segment_anything@v1"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     boxes: Optional[
-        StepOutputSelector(
+        Selector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -96,7 +101,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={"always_visible": True},
     )
     version: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
         Literal["hiera_large", "hiera_small", "hiera_tiny", "hiera_b_plus"],
     ] = Field(
         default="hiera_tiny",
@@ -104,23 +109,21 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["hiera_large", "$inputs.openai_model"],
     )
     threshold: Union[
-        WorkflowParameterSelector(kind=[FLOAT_KIND]),
+        Selector(kind=[FLOAT_KIND]),
         float,
     ] = Field(
         default=0.0, description="Threshold for predicted masks scores", examples=[0.3]
     )
 
-    multimask_output: Union[
-        Optional[bool], WorkflowParameterSelector(kind=[BOOLEAN_KIND])
-    ] = Field(
+    multimask_output: Union[Optional[bool], Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="Flag to determine whether to use sam2 internal multimask or single mask mode. For ambiguous prompts setting to True is recomended.",
         examples=[True, "$inputs.multimask_output"],
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images", "boxes"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -133,7 +136,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class SegmentAnything2BlockV1(WorkflowBlock):

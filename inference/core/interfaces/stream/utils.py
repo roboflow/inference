@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Callable, Dict, List, Optional, TypeVar, Union
 
-from inference.core.env import ENABLE_WORKFLOWS_PROFILING
+from inference.core.env import DEFAULT_BUFFER_SIZE, ENABLE_WORKFLOWS_PROFILING
 from inference.core.interfaces.camera.entities import (
     StatusUpdate,
     VideoSourceIdentifier,
@@ -27,6 +27,8 @@ def prepare_video_sources(
     status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]],
     source_buffer_filling_strategy: Optional[BufferFillingStrategy],
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
+    desired_source_fps: Optional[Union[float, int]] = None,
+    decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
 ) -> List[VideoSource]:
     video_reference = wrap_in_list(element=video_reference)
     if len(video_reference) < 1:
@@ -46,6 +48,8 @@ def prepare_video_sources(
         status_update_handlers=status_update_handlers,
         source_buffer_filling_strategy=source_buffer_filling_strategy,
         source_buffer_consumption_strategy=source_buffer_consumption_strategy,
+        desired_source_fps=desired_source_fps,
+        decoding_buffer_size=decoding_buffer_size,
     )
 
 
@@ -73,6 +77,8 @@ def initialise_video_sources(
     status_update_handlers: Optional[List[Callable[[StatusUpdate], None]]],
     source_buffer_filling_strategy: Optional[BufferFillingStrategy],
     source_buffer_consumption_strategy: Optional[BufferConsumptionStrategy],
+    desired_source_fps: Optional[Union[float, int]] = None,
+    decoding_buffer_size: int = DEFAULT_BUFFER_SIZE,
 ) -> List[VideoSource]:
     return [
         VideoSource.init(
@@ -82,6 +88,8 @@ def initialise_video_sources(
             buffer_consumption_strategy=source_buffer_consumption_strategy,
             video_source_properties=source_properties,
             source_id=i,
+            desired_fps=desired_source_fps,
+            buffer_size=decoding_buffer_size,
         )
         for i, (reference, source_properties) in enumerate(
             zip(video_reference, video_source_properties)

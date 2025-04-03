@@ -7,8 +7,6 @@ from inference.core.workflows.core_steps.common.entities import StepExecutionMod
 from inference.core.workflows.core_steps.models.foundation.lmm.v1 import (
     GPT_4V_MODEL_TYPE,
     LMMConfig,
-    get_cogvlm_generations_from_remote_api,
-    get_cogvlm_generations_locally,
     run_gpt_4v_llm_prompting,
     turn_raw_lmm_output_into_structured,
 )
@@ -23,16 +21,16 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     IMAGE_METADATA_KIND,
     LIST_OF_VALUES_KIND,
     PARENT_ID_KIND,
     PREDICTION_TYPE_KIND,
+    SECRET_KIND,
     STRING_KIND,
     TOP_CLASS_KIND,
     ImageInputField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -47,11 +45,9 @@ You can specify arbitrary classes to an LMMBlock.
 
 The LLMBlock supports two LMMs:
 
-- OpenAI's GPT-4 with Vision, and;
-- CogVLM.
+- OpenAI's GPT-4 with Vision.
 
-You need to provide your OpenAI API key to use the GPT-4 with Vision model. You do not 
-need to provide an API key to use CogVLM.
+You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
 """
 
 
@@ -60,25 +56,25 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "LMM For Classification",
             "version": "v1",
-            "short_description": "Run a large multimodal model such as ChatGPT-4v or CogVLM for classification.",
+            "short_description": "Run a large multimodal model such as ChatGPT-4v for classification.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
             "deprecated": True,
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-chart-network",
+            },
         }
     )
     type: Literal["roboflow_core/lmm_for_classification@v1", "LMMForClassification"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    lmm_type: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Literal["gpt_4v", "cog_vlm"]
-    ] = Field(
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    lmm_type: Union[Selector(kind=[STRING_KIND]), Literal["gpt_4v"]] = Field(
         description="Type of LMM to be used", examples=["gpt_4v", "$inputs.lmm_type"]
     )
-    classes: Union[List[str], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = (
-        Field(
-            description="List of classes that LMM shall classify against",
-            examples=[["a", "b"], "$inputs.classes"],
-        )
+    classes: Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])] = Field(
+        description="List of classes that LMM shall classify against",
+        examples=[["a", "b"], "$inputs.classes"],
     )
     lmm_config: LMMConfig = Field(
         default_factory=lambda: LMMConfig(),
@@ -91,18 +87,18 @@ class BlockManifest(WorkflowBlockManifest):
             }
         ],
     )
-    remote_api_key: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]), Optional[str]
-    ] = Field(
-        default=None,
-        description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v` and do not require additional API key for CogVLM calls.",
-        examples=["xxx-xxx", "$inputs.api_key"],
-        private=True,
+    remote_api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), Optional[str]] = (
+        Field(
+            default=None,
+            description="Holds API key required to call LMM model - in current state of development, we require OpenAI key when `lmm_type=gpt_4v`.",
+            examples=["xxx-xxx", "$inputs.api_key"],
+            private=True,
+        )
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -117,7 +113,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class LMMForClassificationBlockV1(WorkflowBlock):
@@ -193,12 +189,7 @@ class LMMForClassificationBlockV1(WorkflowBlock):
                 lmm_config=lmm_config,
             )
         else:
-            raw_output = get_cogvlm_generations_locally(
-                image=images_prepared_for_processing,
-                prompt=prompt,
-                model_manager=self._model_manager,
-                api_key=self._api_key,
-            )
+            raise ValueError(f"CogVLM has been removed from the Roboflow Core Models.")
         structured_output = turn_raw_lmm_output_into_structured(
             raw_output=raw_output,
             expected_output={"top": "name of the class"},
@@ -243,11 +234,7 @@ class LMMForClassificationBlockV1(WorkflowBlock):
                 lmm_config=lmm_config,
             )
         else:
-            raw_output = get_cogvlm_generations_from_remote_api(
-                image=images_prepared_for_processing,
-                prompt=prompt,
-                api_key=self._api_key,
-            )
+            raise ValueError(f"CogVLM has been removed from the Roboflow Core Models.")
         structured_output = turn_raw_lmm_output_into_structured(
             raw_output=raw_output,
             expected_output={"top": "name of the class"},

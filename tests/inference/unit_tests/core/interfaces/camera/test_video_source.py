@@ -65,7 +65,7 @@ def test_get_from_queue_when_non_empty_queue_given_and_purge_disabled() -> None:
 
     # then
     assert (
-        result is 1
+        result == 1
     ), "As a result of non-empty queue purge - last inserted value should be returned"
     assert (
         queue.empty() is False
@@ -84,7 +84,7 @@ def test_get_from_queue_when_non_empty_queue_given_and_purge_enabled() -> None:
 
     # then
     assert (
-        result is 3
+        result == 3
     ), "As a result of non-empty queue purge - last inserted value should be returned"
     assert (
         queue.empty() is True
@@ -228,6 +228,10 @@ def test_pausing_video_stream(local_video_path: str) -> None:
     try:
         # when
         source.start()
+        source.read_frame()
+        source.pause()
+        source._video_consumer._timestamp_created = None  # simulate stream
+        source.resume()
         last_frame_before_resume = source.read_frame()
         source.pause()
         time.sleep(pause_resume_delay)
@@ -246,6 +250,36 @@ def test_pausing_video_stream(local_video_path: str) -> None:
             first_frame_after_resume.frame_timestamp
             - last_frame_before_resume.frame_timestamp
         ).total_seconds() >= pause_resume_delay, "Between first frame decoded after resume and last before pause must a break - at least as long as in between of .pause() and .resume() operations"
+    finally:
+        tear_down_source(source=source)
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_pausing_video_file(local_video_path: str) -> None:
+    # given
+    source = VideoSource.init(video_reference=local_video_path)
+    pause_resume_delay = 0.2
+
+    try:
+        # when
+        source.start()
+        last_frame_before_resume = source.read_frame()
+        source.pause()
+        time.sleep(pause_resume_delay)
+        source.resume()
+
+        while True:
+            frame = source.read_frame()
+            if frame.frame_id != last_frame_before_resume.frame_id:
+                first_frame_after_resume = frame
+                break
+            last_frame_before_resume = frame
+
+        # then
+        assert (
+            first_frame_after_resume.frame_id - last_frame_before_resume.frame_id
+        ) == 1, "Pausing and resuming video file must not result in missing frames"
     finally:
         tear_down_source(source=source)
 
@@ -288,6 +322,10 @@ def test_restart_paused_stream_for_video_preserves_frames_continuity(
     try:
         # when
         source.start()
+        source.read_frame()
+        source.pause()
+        source._video_consumer._timestamp_created = None  # simulate stream
+        source.resume()
         frame = source.read_frame()
         last_id_before_restart = frame.frame_id
         capture_thread.start()
@@ -328,6 +366,10 @@ def test_restart_muted_stream_completes_successfully(local_video_path: str) -> N
     try:
         # when
         source.start()
+        source.read_frame()
+        source.pause()
+        source._video_consumer._timestamp_created = None  # simulate stream
+        source.resume()
         _ = source.read_frame()
         capture_thread.start()
         source.mute()
@@ -364,6 +406,10 @@ def test_restart_running_stream_preserves_frame_id_continuity(
     try:
         # when
         source.start()
+        source.read_frame()
+        source.pause()
+        source._video_consumer._timestamp_created = None  # simulate stream
+        source.resume()
         frame = source.read_frame()
         last_id_before_restart = frame.frame_id
         capture_thread.start()
@@ -622,6 +668,33 @@ def test_consumption_of_video_file_in_eager_mode_ends_successfully(
         tear_down_source(source=source)
 
 
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_consumption_of_video_file_with_desired_fps_succeeds(
+    local_video_path: str,
+) -> None:
+    # given
+    source = VideoSource.init(
+        video_reference=local_video_path,
+        desired_fps=10,
+    )
+
+    try:
+        # when
+        frames_consumed = 0
+        source.start()
+        for _ in source:
+            frames_consumed += 1
+
+        # then
+        assert frames_consumed <= 150, (
+            "Video has 431 frames at 30fps, at max we should process 144 frames, "
+            "with slight randomness possible"
+        )
+    finally:
+        tear_down_source(source=source)
+
+
 def test_drop_single_frame_from_buffer_when_buffer_is_empty() -> None:
     # given
     buffer = Queue()
@@ -752,6 +825,7 @@ def test_stream_consumption_when_frame_cannot_be_grabbed() -> None:
     video = MagicMock()
     video.grab.return_value = False
     source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    video.discover_source_properties.return_value = source_properties
     buffer = Queue()
 
     # when
@@ -784,6 +858,7 @@ def test_stream_consumption_when_buffering_not_allowed() -> None:
     video = MagicMock()
     video.grab.return_value = True
     source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    video.discover_source_properties.return_value = source_properties
     buffer = Queue()
 
     # when
@@ -821,6 +896,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_but_decoding_fa
     video.grab.return_value = True
     video.retrieve.return_value = (False, None)
     source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    video.discover_source_properties.return_value = source_properties
     buffer = Queue()
 
     # when
@@ -859,6 +935,7 @@ def test_stream_consumption_when_buffer_is_ready_to_accept_frame_and_decoding_su
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     video.retrieve.return_value = (True, image)
     source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    video.discover_source_properties.return_value = source_properties
     buffer = Queue()
     buffer.put(VideoFrame(image=image, frame_timestamp=datetime.now(), frame_id=-2))
 
@@ -901,6 +978,7 @@ def test_stream_consumption_when_buffer_full_and_latest_frames_to_be_dropped() -
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     video.retrieve.return_value = (True, image)
     source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    video.discover_source_properties.return_value = source_properties
     buffer = Queue(maxsize=1)
     buffer.put(VideoFrame(image=image, frame_timestamp=datetime.now(), frame_id=-2))
 
@@ -936,6 +1014,7 @@ def test_stream_consumption_when_buffer_full_and_oldest_frames_to_be_dropped() -
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     video.retrieve.return_value = (True, image)
     source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    video.discover_source_properties.return_value = source_properties
     buffer = Queue(maxsize=2)
     buffer.put(VideoFrame(image=image, frame_timestamp=datetime.now(), frame_id=-2))
     buffer.put(VideoFrame(image=image, frame_timestamp=datetime.now(), frame_id=-1))
@@ -984,6 +1063,7 @@ def test_stream_consumption_when_adaptive_strategy_does_not_prevent_decoding_due
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     video.retrieve.return_value = (True, image)
     source_properties = assembly_dummy_source_properties(is_file=True, fps=16.0)
+    video.discover_source_properties.return_value = source_properties
     buffer = Queue(maxsize=2)
     buffer.put(VideoFrame(image=image, frame_timestamp=datetime.now(), frame_id=-2))
     buffer.put(VideoFrame(image=image, frame_timestamp=datetime.now(), frame_id=-1))
@@ -1033,6 +1113,7 @@ def test_stream_consumption_when_adaptive_strategy_eventually_stops_preventing_d
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     video.retrieve.return_value = (True, image)
     source_properties = assembly_dummy_source_properties(is_file=True, fps=200)
+    video.discover_source_properties.return_value = source_properties
     buffer = Queue(maxsize=2)
     buffer.put(VideoFrame(image=image, frame_timestamp=datetime.now(), frame_id=-2))
     buffer.put(VideoFrame(image=image, frame_timestamp=datetime.now(), frame_id=-1))
@@ -1106,6 +1187,7 @@ def test_stream_consumption_when_adaptive_strategy_is_disabled_as_announced_fps_
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     video.retrieve.return_value = (True, image)
     source_properties = assembly_dummy_source_properties(is_file=True, fps=200)
+    video.discover_source_properties.return_value = source_properties
     buffer = Queue(maxsize=2)
     buffer.put(VideoFrame(image=image, frame_timestamp=datetime.now(), frame_id=-2))
     buffer.put(VideoFrame(image=image, frame_timestamp=datetime.now(), frame_id=-1))
@@ -1180,6 +1262,7 @@ def test_stream_consumption_when_adaptive_strategy_drops_frames_due_to_reader_la
     image = np.zeros((128, 128, 3), dtype=np.uint8)
     video.retrieve.return_value = (True, image)
     source_properties = assembly_dummy_source_properties(is_file=True, fps=100)
+    video.discover_source_properties.return_value = source_properties
     buffer = Queue()
 
     # when

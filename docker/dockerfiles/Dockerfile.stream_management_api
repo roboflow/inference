@@ -12,6 +12,8 @@ RUN apt update -y && apt install -y \
     git \
     libgdal-dev \
     cmake \
+    rustc \
+    cargo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.http.txt \
@@ -23,6 +25,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r _requirements.txt \
     -r requirements.cpu.txt \
     -r requirements.http.txt \
+    "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -35,3 +38,4 @@ ENV STREAM_MANAGER_HOST=127.0.0.1
 ENV STREAM_MANAGER_PORT=7070
 
 ENTRYPOINT ["python", "-m", "inference.enterprise.stream_management.api.app"]
+

@@ -842,7 +842,7 @@ async def test_list_loaded_models_async_when_successful_response_expected() -> N
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={
                 "models": [
                     {
@@ -892,7 +892,7 @@ async def test_list_loaded_models_when_unsuccessful_response_expected() -> None:
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={"message": "Internal error."},
             status=500,
         )
@@ -951,7 +951,7 @@ async def test_get_model_description_async_when_model_when_error_occurs_in_model
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={"message": "Internal error."},
             status=500,
         )
@@ -1004,7 +1004,7 @@ async def test_get_model_description_async_when_model_was_loaded_already() -> No
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={"models": [{"model_id": "some/1", "task_type": "classification"}]},
         )
         # when
@@ -1024,7 +1024,7 @@ async def test_get_model_description_async_when_model_was_loaded_already_and_ali
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={
                 "models": [{"model_id": "coco/3", "task_type": "object-detection"}]
             },
@@ -1096,7 +1096,7 @@ async def test_get_model_description_async_when_model_was_not_loaded_before_and_
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={"models": []},
         )
         m.post(
@@ -1121,7 +1121,7 @@ async def test_get_model_description_async_when_model_was_not_loaded_before_and_
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={"models": []},
         )
         m.post(
@@ -1173,7 +1173,7 @@ async def test_get_model_description_async_when_model_was_not_loaded_before_and_
 
     with aioresponses() as m:
         m.get(
-            f"{api_url}/model/registry",
+            f"{api_url}/model/registry?api_key=my-api-key",
             payload={"models": []},
         )
         m.post(
@@ -2074,83 +2074,6 @@ async def test_infer_from_api_v1_async_when_request_succeed_for_object_detection
             ],
             "visualization": "aGVsbG8=",
         }
-
-
-def test_prompt_cogvlm_in_v0_mode() -> None:
-    # given
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url="http://some.com")
-    http_client.select_api_v0()
-
-    # when
-    with pytest.raises(WrongClientModeError):
-        _ = http_client.prompt_cogvlm(
-            visual_prompt="https://some.com/image.jpg",
-            text_prompt="What is the content of that picture?",
-        )
-
-
-@mock.patch.object(client, "load_static_inference_input")
-def test_prompt_cogvlm_when_successful_response_is_returned(
-    load_static_inference_input_mock: MagicMock,
-    requests_mock: Mocker,
-) -> None:
-    # given
-    api_url = "http://some.com"
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
-    requests_mock.post(
-        f"{api_url}/llm/cogvlm",
-        json={
-            "response": "The image portrays a confident and happy man, possibly in a professional setting.",
-            "time": 12.274745374999952,
-        },
-    )
-
-    # when
-    result = http_client.prompt_cogvlm(
-        visual_prompt="/some/image.jpg",
-        text_prompt="What is the topic of that picture?",
-        chat_history=[("A", "B")],
-    )
-
-    # then
-    assert result == {
-        "response": "The image portrays a confident and happy man, possibly in a professional setting.",
-        "time": 12.274745374999952,
-    }, "Result must match the value returned by HTTP endpoint"
-    assert requests_mock.request_history[0].json() == {
-        "model_id": "cogvlm",
-        "api_key": "my-api-key",
-        "image": {"type": "base64", "value": "base64_image"},
-        "prompt": "What is the topic of that picture?",
-        "history": [["A", "B"]],
-    }, "Request must contain API key, model id, prompt, chat history and image encoded in standard format"
-
-
-@mock.patch.object(client, "load_static_inference_input")
-def test_prompt_cogvlm_when_unsuccessful_response_is_returned(
-    load_static_inference_input_mock: MagicMock,
-    requests_mock: Mocker,
-) -> None:
-    # given
-    api_url = "http://some.com"
-    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
-    load_static_inference_input_mock.return_value = [("base64_image", 0.5)]
-    requests_mock.post(
-        f"{api_url}/llm/cogvlm",
-        json={
-            "message": "Cannot load CogVLM.",
-        },
-        status_code=500,
-    )
-
-    with pytest.raises(HTTPCallErrorError):
-        _ = http_client.prompt_cogvlm(
-            visual_prompt="/some/image.jpg",
-            text_prompt="What is the topic of that picture?",
-            chat_history=[("A", "B")],
-        )
-
 
 @mock.patch.object(client, "load_static_inference_input")
 def test_ocr_image_when_single_image_given_in_v1_mode(
@@ -3575,7 +3498,7 @@ def test_infer_from_workflow_when_no_parameters_given(
     }, "Request payload must contain api key and inputs"
 
 
-@mock.patch.object(client, "load_static_inference_input")
+@mock.patch.object(client, "load_nested_batches_of_inference_input")
 @pytest.mark.parametrize(
     "legacy_endpoints, endpoint_to_use, parameter_name",
     [
@@ -3584,7 +3507,7 @@ def test_infer_from_workflow_when_no_parameters_given(
     ],
 )
 def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
-    load_static_inference_input_mock: MagicMock,
+    load_nested_batches_of_inference_input_mock: MagicMock,
     requests_mock: Mocker,
     legacy_endpoints: bool,
     endpoint_to_use: str,
@@ -3599,8 +3522,8 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
             "outputs": [{"some": 3}],
         },
     )
-    load_static_inference_input_mock.side_effect = [
-        [("base64_image_1", 0.5)],
+    load_nested_batches_of_inference_input_mock.side_effect = [
+        ("base64_image_1", 0.5),
         [("base64_image_2", 0.5), ("base64_image_3", 0.5)],
     ]
     method = (
@@ -3647,7 +3570,7 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     }, "Request payload must contain api key and inputs"
 
 
-@mock.patch.object(client, "load_static_inference_input")
+@mock.patch.object(client, "load_nested_batches_of_inference_input")
 @pytest.mark.parametrize(
     "legacy_endpoints, endpoint_to_use, parameter_name",
     [
@@ -3656,7 +3579,7 @@ def test_infer_from_workflow_when_parameters_and_excluded_fields_given(
     ],
 )
 def test_infer_from_workflow_when_usage_of_cache_disabled(
-    load_static_inference_input_mock: MagicMock,
+    load_nested_batches_of_inference_input_mock: MagicMock,
     requests_mock: Mocker,
     legacy_endpoints: bool,
     endpoint_to_use: str,
@@ -3671,8 +3594,8 @@ def test_infer_from_workflow_when_usage_of_cache_disabled(
             "outputs": [{"some": 3}],
         },
     )
-    load_static_inference_input_mock.side_effect = [
-        [("base64_image_1", 0.5)],
+    load_nested_batches_of_inference_input_mock.side_effect = [
+        ("base64_image_1", 0.5),
         [("base64_image_2", 0.5), ("base64_image_3", 0.5)],
     ]
     method = (
@@ -3714,7 +3637,7 @@ def test_infer_from_workflow_when_usage_of_cache_disabled(
     }, "Request payload must contain api key, inputs and no cache flag"
 
 
-@mock.patch.object(client, "load_static_inference_input")
+@mock.patch.object(client, "load_nested_batches_of_inference_input")
 @pytest.mark.parametrize(
     "legacy_endpoints, endpoint_to_use, parameter_name",
     [
@@ -3723,7 +3646,7 @@ def test_infer_from_workflow_when_usage_of_cache_disabled(
     ],
 )
 def test_infer_from_workflow_when_usage_of_profiler_enabled(
-    load_static_inference_input_mock: MagicMock,
+    load_nested_batches_of_inference_input_mock: MagicMock,
     requests_mock: Mocker,
     legacy_endpoints: bool,
     endpoint_to_use: str,
@@ -3742,8 +3665,8 @@ def test_infer_from_workflow_when_usage_of_profiler_enabled(
             "profiler_trace": [{"my": "trace"}]
         },
     )
-    load_static_inference_input_mock.side_effect = [
-        [("base64_image_1", 0.5)],
+    load_nested_batches_of_inference_input_mock.side_effect = [
+        ("base64_image_1", 0.5),
         [("base64_image_2", 0.5), ("base64_image_3", 0.5)],
     ]
     method = (
@@ -3788,6 +3711,87 @@ def test_infer_from_workflow_when_usage_of_profiler_enabled(
     with open(json_files_in_profiling_directory[0], "r") as f:
         data = json.load(f)
     assert data == [{"my": "trace"}], "Trace content must be fully saved"
+
+
+@mock.patch.object(client, "load_nested_batches_of_inference_input")
+@pytest.mark.parametrize(
+    "legacy_endpoints, endpoint_to_use, parameter_name",
+    [
+        (True, "/infer/workflows/my_workspace/my_workflow", "workflow_name"),
+        (False, "/my_workspace/workflows/my_workflow", "workflow_id"),
+    ],
+)
+def test_infer_from_workflow_when_nested_batch_of_inputs_provided(
+    load_nested_batches_of_inference_input_mock: MagicMock,
+    requests_mock: Mocker,
+    legacy_endpoints: bool,
+    endpoint_to_use: str,
+    parameter_name: str,
+) -> None:
+    # given
+    api_url = "http://some.com"
+    http_client = InferenceHTTPClient(api_key="my-api-key", api_url=api_url)
+    requests_mock.post(
+        f"{api_url}{endpoint_to_use}",
+        json={
+            "outputs": [{"some": 3}],
+        },
+    )
+    load_nested_batches_of_inference_input_mock.side_effect = [
+        [
+            [("base64_image_1", 0.5), ("base64_image_2", 0.5)],
+            [("base64_image_3", 0.5), ("base64_image_4", 0.5), ("base64_image_5", 0.5)],
+            [("base64_image_6", 0.5)],
+        ],
+    ]
+    method = (
+        http_client.infer_from_workflow
+        if legacy_endpoints
+        else http_client.run_workflow
+    )
+
+    # when
+    result = method(
+        workspace_name="my_workspace",
+        images={"image_1": [["1", "2"], ["3", "4", "5"], ["6"]]},
+        parameters={
+            "batch_oriented_param": [
+                ["a", "b"],
+                ["c", "d", "e"],
+                ["f"]
+            ]
+        },
+        **{parameter_name: "my_workflow"},
+    )
+
+    # then
+    assert result == [{"some": 3}], "Response from API must be properly decoded"
+    assert requests_mock.request_history[0].json() == {
+        "api_key": "my-api-key",
+        "use_cache": True,
+        "enable_profiling": False,
+        "inputs": {
+            "image_1": [
+                [
+                    {"type": "base64", "value": "base64_image_1"},
+                    {"type": "base64", "value": "base64_image_2"},
+                ],
+                [
+                    {"type": "base64", "value": "base64_image_3"},
+                    {"type": "base64", "value": "base64_image_4"},
+                    {"type": "base64", "value": "base64_image_5"},
+                ],
+                [
+                    {"type": "base64", "value": "base64_image_6"},
+                ],
+            ],
+            "batch_oriented_param": [
+                ["a", "b"],
+                ["c", "d", "e"],
+                ["f"],
+            ],
+        },
+    }, "Request payload must contain api key, inputs and no cache flag"
 
 
 @pytest.mark.parametrize(
@@ -3849,13 +3853,13 @@ def test_infer_from_workflow_when_both_workflow_name_and_specs_given() -> None:
         )
 
 
-@mock.patch.object(client, "load_static_inference_input")
+@mock.patch.object(client, "load_nested_batches_of_inference_input")
 @pytest.mark.parametrize(
     "legacy_endpoints, endpoint_to_use",
     [(True, "/infer/workflows"), (False, "/workflows/run")],
 )
 def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_excluded_fields_given(
-    load_static_inference_input_mock: MagicMock,
+    load_nested_batches_of_inference_input_mock: MagicMock,
     requests_mock: Mocker,
     legacy_endpoints: bool,
     endpoint_to_use: str,
@@ -3869,8 +3873,8 @@ def test_infer_from_workflow_when_custom_workflow_with_both_parameters_and_exclu
             "outputs": [{"some": 3}],
         },
     )
-    load_static_inference_input_mock.side_effect = [
-        [("base64_image_1", 0.5)],
+    load_nested_batches_of_inference_input_mock.side_effect = [
+        ("base64_image_1", 0.5),
         [("base64_image_2", 0.5), ("base64_image_3", 0.5)],
     ]
     method = (

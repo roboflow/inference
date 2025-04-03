@@ -25,6 +25,15 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
 
+
+def detections_anchor_coordinates(
+    detections: sv.Detections, anchor: Position
+) -> np.ndarray:
+    return (
+        detections.get_anchors_coordinates(anchor=anchor).round().astype(int).tolist()
+    )
+
+
 PROPERTIES_EXTRACTORS = {
     DetectionsProperty.CONFIDENCE: lambda detections: detections.confidence.tolist(),
     DetectionsProperty.CLASS_NAME: lambda detections: detections.data.get(
@@ -36,6 +45,21 @@ PROPERTIES_EXTRACTORS = {
     DetectionsProperty.Y_MAX: lambda detections: detections.xyxy[:, 3].tolist(),
     DetectionsProperty.CLASS_ID: lambda detections: detections.class_id.tolist(),
     DetectionsProperty.SIZE: lambda detections: detections.box_area.tolist(),
+    DetectionsProperty.CENTER: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.CENTER
+    ),
+    DetectionsProperty.TOP_LEFT: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.TOP_LEFT
+    ),
+    DetectionsProperty.TOP_RIGHT: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.TOP_RIGHT
+    ),
+    DetectionsProperty.BOTTOM_LEFT: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.BOTTOM_LEFT
+    ),
+    DetectionsProperty.BOTTOM_RIGHT: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.BOTTOM_RIGHT
+    ),
 }
 
 
@@ -115,23 +139,37 @@ def select_top_confidence_detection(detections: sv.Detections) -> sv.Detections:
 
 def select_leftmost_detection(detections: sv.Detections) -> sv.Detections:
     if len(detections) == 0:
-        return deepcopy(detections)
+        return detections  # Directly return the original empty detections if empty
+
     centers_x = detections.get_anchors_coordinates(anchor=Position.CENTER)[:, 0]
-    min_value = centers_x.min()
-    index = np.argwhere(centers_x == min_value)[0].item()
+    index = np.argmin(centers_x)
     return detections[index]
 
 
 def select_rightmost_detection(detections: sv.Detections) -> sv.Detections:
     if len(detections) == 0:
-        return deepcopy(detections)
+        return detections
+
     centers_x = detections.get_anchors_coordinates(anchor=Position.CENTER)[:, 0]
-    max_value = centers_x.max()
-    index = np.argwhere(centers_x == max_value)[-1].item()
+    index = centers_x.argmax()
     return detections[index]
 
 
+def select_first_detection(detections: sv.Detections) -> sv.Detections:
+    if len(detections) == 0:
+        return deepcopy(detections)
+    return detections[0]
+
+
+def select_last_detection(detections: sv.Detections) -> sv.Detections:
+    if len(detections) == 0:
+        return deepcopy(detections)
+    return detections[-1]
+
+
 DETECTIONS_SELECTORS = {
+    DetectionsSelectionMode.FIRST: select_first_detection,
+    DetectionsSelectionMode.LAST: select_last_detection,
     DetectionsSelectionMode.LEFT_MOST: select_leftmost_detection,
     DetectionsSelectionMode.RIGHT_MOST: select_rightmost_detection,
     DetectionsSelectionMode.TOP_CONFIDENCE: select_top_confidence_detection,
@@ -158,11 +196,11 @@ def select_detections(
 
 
 def extract_x_coordinate_of_detections_center(detections: sv.Detections) -> np.ndarray:
-    return detections.xyxy[:, 0] + (detections.xyxy[:, 2] - detections.xyxy[:, 0]) / 2
+    return (detections.xyxy[:, 0] + detections.xyxy[:, 2]) * 0.5
 
 
 def extract_y_coordinate_of_detections_center(detections: sv.Detections) -> np.ndarray:
-    return detections.xyxy[:, 1] + (detections.xyxy[:, 3] - detections.xyxy[:, 1]) / 2
+    return (detections.xyxy[:, 1] + detections.xyxy[:, 3]) * 0.5
 
 
 SORT_PROPERTIES_EXTRACT = {
@@ -337,3 +375,63 @@ def detections_to_dictionary(
             context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
             inner_error=error,
         )
+
+
+def pick_detections_by_parent_class(
+    detections: Any,
+    parent_class: str,
+    execution_context: str,
+    **kwargs,
+) -> sv.Detections:
+    if not isinstance(detections, sv.Detections):
+        value_as_str = safe_stringify(value=detections)
+        raise InvalidInputTypeError(
+            public_message=f"Executing pick_detections_by_parent_class(...) in context {execution_context}, "
+            f"expected sv.Detections object as value, got {value_as_str} of type {type(detections)}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+        )
+    try:
+        return _pick_detections_by_parent_class(
+            detections=detections, parent_class=parent_class
+        )
+    except Exception as error:
+        raise OperationError(
+            public_message=f"While Using operation pick_detections_by_parent_class(...) in context {execution_context} "
+            f"encountered error: {error}",
+            context=f"step_execution | roboflow_query_language_evaluation | {execution_context}",
+            inner_error=error,
+        )
+
+
+def _pick_detections_by_parent_class(
+    detections: sv.Detections,
+    parent_class: str,
+) -> sv.Detections:
+    class_names = detections.data.get("class_name")
+    if class_names is None or len(class_names) == 0:
+        return sv.Detections.empty()
+    if not isinstance(class_names, np.ndarray):
+        class_names = np.array(class_names)
+    parent_mask = class_names == parent_class
+    parent_detections = detections[parent_mask]
+    if len(parent_detections) == 0:
+        return sv.Detections.empty()
+    dependent_detections = detections[~parent_mask]
+    dependent_detections_anchors = dependent_detections.get_anchors_coordinates(
+        anchor=Position.CENTER
+    )
+    dependent_detections_to_keep = set()
+    for detection_idx, anchor in enumerate(dependent_detections_anchors):
+        for parent_detection_box in parent_detections.xyxy:
+            if _is_point_within_box(point=anchor, box=parent_detection_box):
+                dependent_detections_to_keep.add(detection_idx)
+                continue
+    detections_to_keep_list = sorted(list(dependent_detections_to_keep))
+    filtered_dependent_detections = dependent_detections[detections_to_keep_list]
+    return sv.Detections.merge([parent_detections, filtered_dependent_detections])
+
+
+def _is_point_within_box(point: np.ndarray, box: np.ndarray) -> bool:
+    px, py = point
+    x1, y1, x2, y2 = box
+    return x1 <= px <= x2 and y1 <= py <= y2

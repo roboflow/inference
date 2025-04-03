@@ -1,9 +1,9 @@
 import os
 import shutil
+import sys
 
 import setuptools
 from setuptools import find_packages
-import sys
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root)
@@ -70,5 +70,5 @@ setuptools.setup(
         "Typing :: Typed",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.8,<3.12",
+    python_requires=">=3.9,<3.13"
 )

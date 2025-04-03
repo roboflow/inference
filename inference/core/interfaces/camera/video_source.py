@@ -1,6 +1,8 @@
+import os
+import random
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
@@ -133,6 +135,7 @@ def lock_state_transition(
 
 class CV2VideoFrameProducer(VideoFrameProducer):
     def __init__(self, video: Union[str, int]):
+        self._source_ref = video
         if _consumes_camera_on_jetson(video=video):
             self.stream = cv2.VideoCapture(video, cv2.CAP_V4L2)
         else:
@@ -157,12 +160,20 @@ class CV2VideoFrameProducer(VideoFrameProducer):
         height = int(self.stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = self.stream.get(cv2.CAP_PROP_FPS)
         total_frames = int(self.stream.get(cv2.CAP_PROP_FRAME_COUNT))
+        is_file = total_frames > 0 and os.path.exists(self._source_ref)
+        timestamp_created = None
+        if is_file:
+            file_length_seconds = total_frames / fps
+            last_modified = datetime.fromtimestamp(os.path.getmtime(self._source_ref))
+            timestamp_created = last_modified - timedelta(seconds=file_length_seconds)
+
         return SourceProperties(
             width=width,
             height=height,
             total_frames=total_frames,
-            is_file=total_frames > 0,
+            is_file=is_file,
             fps=fps,
+            timestamp_created=timestamp_created,
         )
 
     def release(self):
@@ -192,6 +203,7 @@ class VideoSource:
         maximum_adaptive_frames_dropped_in_row: int = DEFAULT_MAXIMUM_ADAPTIVE_FRAMES_DROPPED_IN_ROW,
         video_source_properties: Optional[Dict[str, float]] = None,
         source_id: Optional[int] = None,
+        desired_fps: Optional[Union[float, int]] = None,
     ):
         """
         This class is meant to represent abstraction over video sources - both video files and
@@ -314,6 +326,7 @@ class VideoSource:
             minimum_adaptive_mode_samples=minimum_adaptive_mode_samples,
             maximum_adaptive_frames_dropped_in_row=maximum_adaptive_frames_dropped_in_row,
             status_update_handlers=status_update_handlers,
+            desired_fps=desired_fps,
         )
         return cls(
             stream_reference=video_reference,
@@ -739,6 +752,9 @@ class VideoConsumer:
     """
     This class should be consumed as part of internal implementation.
     It provides abstraction around stream consumption strategies.
+
+    It must always be given the same video source for consecutive invocations,
+    otherwise the internal state does not make sense.
     """
 
     @classmethod
@@ -750,6 +766,7 @@ class VideoConsumer:
         minimum_adaptive_mode_samples: int,
         maximum_adaptive_frames_dropped_in_row: int,
         status_update_handlers: List[Callable[[StatusUpdate], None]],
+        desired_fps: Optional[Union[float, int]] = None,
     ) -> "VideoConsumer":
         minimum_adaptive_mode_samples = max(minimum_adaptive_mode_samples, 2)
         reader_pace_monitor = sv.FPSMonitor(
@@ -771,6 +788,7 @@ class VideoConsumer:
             reader_pace_monitor=reader_pace_monitor,
             stream_consumption_pace_monitor=stream_consumption_pace_monitor,
             decoding_pace_monitor=decoding_pace_monitor,
+            desired_fps=desired_fps,
         )
 
     def __init__(
@@ -784,6 +802,7 @@ class VideoConsumer:
         reader_pace_monitor: sv.FPSMonitor,
         stream_consumption_pace_monitor: sv.FPSMonitor,
         decoding_pace_monitor: sv.FPSMonitor,
+        desired_fps: Optional[Union[float, int]],
     ):
         self._buffer_filling_strategy = buffer_filling_strategy
         self._frame_counter = 0
@@ -797,7 +816,12 @@ class VideoConsumer:
         self._reader_pace_monitor = reader_pace_monitor
         self._stream_consumption_pace_monitor = stream_consumption_pace_monitor
         self._decoding_pace_monitor = decoding_pace_monitor
+        self._desired_fps = desired_fps
+        self._declared_source_fps = None
+        self._is_source_video_file = None
+        self._timestamp_created: Optional[datetime] = None
         self._status_update_handlers = status_update_handlers
+        self._next_frame_from_video_to_accept = 1
 
     @property
     def buffer_filling_strategy(self) -> Optional[BufferFillingStrategy]:
@@ -812,6 +836,7 @@ class VideoConsumer:
         self.reset_stream_consumption_pace()
         self._decoding_pace_monitor.reset()
         self._adaptive_frames_dropped_in_row = 0
+        self._next_frame_from_video_to_accept = self._frame_counter + 1
 
     def reset_stream_consumption_pace(self) -> None:
         self._stream_consumption_pace_monitor.reset()
@@ -828,7 +853,19 @@ class VideoConsumer:
         frames_buffering_allowed: bool,
         source_id: Optional[int] = None,
     ) -> bool:
-        frame_timestamp = datetime.now()
+        if self._is_source_video_file is None:
+            source_properties = video.discover_source_properties()
+            self._is_source_video_file = source_properties.is_file
+            self._declared_source_fps = source_properties.fps
+            self._timestamp_created = source_properties.timestamp_created
+
+        if self._timestamp_created:
+            frame_timestamp = self._timestamp_created + timedelta(
+                seconds=self._frame_counter / self._declared_source_fps
+            )
+        else:
+            frame_timestamp = datetime.now()
+
         success = video.grab()
         self._stream_consumption_pace_monitor.tick()
         if not success:
@@ -844,9 +881,19 @@ class VideoConsumer:
             },
             status_update_handlers=self._status_update_handlers,
         )
+        measured_source_fps = declared_source_fps
+        if not is_source_video_file:
+            if hasattr(self._stream_consumption_pace_monitor, "fps"):
+                measured_source_fps = self._stream_consumption_pace_monitor.fps
+            else:
+                measured_source_fps = self._stream_consumption_pace_monitor()
+
+        if self._video_fps_should_be_sub_sampled():
+            return True
         return self._consume_stream_frame(
             video=video,
             declared_source_fps=declared_source_fps,
+            measured_source_fps=measured_source_fps,
             is_source_video_file=is_source_video_file,
             frame_timestamp=frame_timestamp,
             buffer=buffer,
@@ -862,10 +909,37 @@ class VideoConsumer:
         if self._buffer_filling_strategy is None:
             self._buffer_filling_strategy = BufferFillingStrategy.ADAPTIVE_DROP_OLDEST
 
+    def _video_fps_should_be_sub_sampled(self) -> bool:
+        if self._desired_fps is None:
+            return False
+        if self._is_source_video_file:
+            actual_fps = self._declared_source_fps
+        else:
+            fraction_of_pace_monitor_samples = (
+                len(self._stream_consumption_pace_monitor.all_timestamps)
+                / self._stream_consumption_pace_monitor.all_timestamps.maxlen
+            )
+            if fraction_of_pace_monitor_samples < 0.9:
+                actual_fps = self._declared_source_fps
+            elif hasattr(self._stream_consumption_pace_monitor, "fps"):
+                actual_fps = self._stream_consumption_pace_monitor.fps
+            else:
+                actual_fps = self._stream_consumption_pace_monitor()
+        if self._frame_counter == self._next_frame_from_video_to_accept:
+            stride = calculate_video_file_stride(
+                actual_fps=actual_fps,
+                desired_fps=self._desired_fps,
+            )
+            self._next_frame_from_video_to_accept += stride
+            return False
+        # skipping frame
+        return True
+
     def _consume_stream_frame(
         self,
         video: VideoFrameProducer,
         declared_source_fps: Optional[float],
+        measured_source_fps: Optional[float],
         is_source_video_file: Optional[bool],
         frame_timestamp: datetime,
         buffer: Queue,
@@ -908,7 +982,8 @@ class VideoConsumer:
                 buffer=buffer,
                 decoding_pace_monitor=self._decoding_pace_monitor,
                 source_id=source_id,
-                fps=declared_source_fps,
+                declared_source_fps=declared_source_fps,
+                measured_source_fps=measured_source_fps,
                 comes_from_video_file=is_source_video_file,
             )
         if self._buffer_filling_strategy in DROP_OLDEST_STRATEGIES:
@@ -1107,7 +1182,8 @@ def decode_video_frame_to_buffer(
     buffer: Queue,
     decoding_pace_monitor: sv.FPSMonitor,
     source_id: Optional[int],
-    fps: Optional[float] = None,
+    declared_source_fps: Optional[float] = None,
+    measured_source_fps: Optional[float] = None,
     comes_from_video_file: Optional[bool] = None,
 ) -> bool:
     success, image = video.retrieve()
@@ -1118,7 +1194,8 @@ def decode_video_frame_to_buffer(
         image=image,
         frame_id=frame_id,
         frame_timestamp=frame_timestamp,
-        fps=fps,
+        fps=declared_source_fps,
+        measured_fps=measured_source_fps,
         source_id=source_id,
         comes_from_video_file=comes_from_video_file,
     )
@@ -1131,5 +1208,21 @@ def get_fps_if_tick_happens_now(fps_monitor: sv.FPSMonitor) -> float:
         return 0.0
     min_reader_timestamp = fps_monitor.all_timestamps[0]
     now = time.monotonic()
-    reader_taken_time = now - min_reader_timestamp
+    epsilon = 1e-8
+    reader_taken_time = (now - min_reader_timestamp) + epsilon
     return (len(fps_monitor.all_timestamps) + 1) / reader_taken_time
+
+
+def calculate_video_file_stride(
+    actual_fps: Optional[Union[float, int]], desired_fps: Optional[Union[float, int]]
+) -> int:
+    if actual_fps is None or desired_fps is None:
+        return 1
+    if actual_fps < 0 or desired_fps < 0:
+        return 1
+    true_stride = actual_fps / desired_fps
+    integer_stride = max(int(true_stride), 1)
+    probability_of_missing_frame = max(true_stride - integer_stride, 0)
+    if random.random() < probability_of_missing_frame:
+        integer_stride += 1
+    return integer_stride

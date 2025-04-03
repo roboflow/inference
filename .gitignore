@@ -30,6 +30,14 @@ share/python-wheels/
 *.egg
 MANIFEST
 _classes.csv
+node_modules/
+
+
+# Build directories
+theme/node_modules/
+theme/assets/dist/
+theme/assets/styles.css
+docs/static/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -54,6 +62,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.pytest.env*
 
 # Translations
 *.mo
@@ -139,6 +148,7 @@ profile/
 *.pstats
 *.jpeg
 *.png
+!favicon.png
 !icon.png
 *.mp4
 *.roboflow.txt
@@ -166,10 +176,23 @@ scratch
 docs/workflows/blocks/*
 docs/workflows/kinds/*
 docs/workflows/gallery/*
+docs/reference/*
+docs/inference_helpers/cli_commands/reference.md
+docs/openapi.json
 !tests/workflows/integration_tests/execution/assets/*.jpg
 !tests/workflows/integration_tests/execution/assets/rock_paper_scissors/*.jpg
 !tests/workflows/unit_tests/core_steps/models/third_party/assets/*.png
 !tests/workflows/integration_tests/execution/assets/*.png
-
+tests/inference_cli/integration_tests/assets/test_images/
 inference_profiling
 tests/inference_sdk/unit_tests/http/inference_profiling
+
+!tests/google_colab/assets/*.jpeg
+
+# Environment
+.env.*
+!.env.example
+
+# System files
+.DS_Store
+*.pem

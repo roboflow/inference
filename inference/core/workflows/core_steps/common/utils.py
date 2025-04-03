@@ -9,8 +9,8 @@ import supervision as sv
 from supervision.config import CLASS_NAME_DATA_FIELD
 
 from inference.core.entities.requests.clip import ClipCompareRequest
-from inference.core.entities.requests.cogvlm import CogVLMInferenceRequest
 from inference.core.entities.requests.doctr import DoctrOCRInferenceRequest
+from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
@@ -55,9 +55,9 @@ def load_core_model(
     inference_request: Union[
         DoctrOCRInferenceRequest,
         ClipCompareRequest,
-        CogVLMInferenceRequest,
         YOLOWorldInferenceRequest,
         Sam2InferenceRequest,
+        GazeDetectionInferenceRequest,
     ],
     core_model: str,
 ) -> str:
@@ -100,7 +100,7 @@ def convert_inference_detections_batch_to_sv_detections(
         detections = sv.Detections.from_inference(p)
         parent_ids = [d.get(PARENT_ID_KEY, "") for d in p[predictions_key]]
         detection_ids = [
-            d.get(DETECTION_ID_KEY, str(uuid.uuid4)) for d in p[predictions_key]
+            d.get(DETECTION_ID_KEY, str(uuid.uuid4())) for d in p[predictions_key]
         ]
         detections[DETECTION_ID_KEY] = np.array(detection_ids)
         detections[PARENT_ID_KEY] = np.array(parent_ids)

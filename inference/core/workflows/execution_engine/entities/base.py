@@ -55,6 +55,10 @@ class JsonField(BaseModel):
 
 
 class WorkflowInput(BaseModel):
+    type: str
+    name: str
+    kind: List[Union[str, Kind]]
+    dimensionality: int
 
     @classmethod
     def is_batch_oriented(cls) -> bool:
@@ -64,7 +68,8 @@ class WorkflowInput(BaseModel):
 class WorkflowImage(WorkflowInput):
     type: Literal["WorkflowImage", "InferenceImage"]
     name: str
-    kind: List[Kind] = Field(default=[IMAGE_KIND])
+    kind: List[Union[str, Kind]] = Field(default=[IMAGE_KIND])
+    dimensionality: int = Field(default=1, ge=1, le=1)
 
     @classmethod
     def is_batch_oriented(cls) -> bool:
@@ -74,7 +79,19 @@ class WorkflowImage(WorkflowInput):
 class WorkflowVideoMetadata(WorkflowInput):
     type: Literal["WorkflowVideoMetadata"]
     name: str
-    kind: List[Kind] = Field(default=[VIDEO_METADATA_KIND])
+    kind: List[Union[str, Kind]] = Field(default=[VIDEO_METADATA_KIND])
+    dimensionality: int = Field(default=1, ge=1, le=1)
+
+    @classmethod
+    def is_batch_oriented(cls) -> bool:
+        return True
+
+
+class WorkflowBatchInput(WorkflowInput):
+    type: Literal["WorkflowBatchInput"]
+    name: str
+    kind: List[Union[str, Kind]] = Field(default_factory=lambda: [WILDCARD_KIND])
+    dimensionality: int = Field(default=1)
 
     @classmethod
     def is_batch_oriented(cls) -> bool:
@@ -84,14 +101,15 @@ class WorkflowVideoMetadata(WorkflowInput):
 class WorkflowParameter(WorkflowInput):
     type: Literal["WorkflowParameter", "InferenceParameter"]
     name: str
-    kind: List[Kind] = Field(default_factory=lambda: [WILDCARD_KIND])
+    kind: List[Union[str, Kind]] = Field(default_factory=lambda: [WILDCARD_KIND])
     default_value: Optional[Union[float, int, str, bool, list, set]] = Field(
         default=None
     )
+    dimensionality: int = Field(default=0, ge=0, le=0)
 
 
 InputType = Annotated[
-    Union[WorkflowImage, WorkflowVideoMetadata, WorkflowParameter],
+    Union[WorkflowImage, WorkflowVideoMetadata, WorkflowParameter, WorkflowBatchInput],
     Field(discriminator="type"),
 ]
 
@@ -114,11 +132,7 @@ class Batch(Generic[B]):
 
         return cls(content=content, indices=indices)
 
-    def __init__(
-        self,
-        content: List[B],
-        indices: Optional[List[Tuple[int, ...]]],
-    ):
+    def __init__(self, content: List[B], indices: Optional[List[Tuple[int, ...]]]):
         self._content = content
         self._indices = indices
 
@@ -139,33 +153,35 @@ class Batch(Generic[B]):
         yield from self._content
 
     def remove_by_indices(self, indices_to_remove: Set[tuple]) -> "Batch":
-        content, new_indices = [], []
-        for index, element in self.iter_with_indices():
-            if index in indices_to_remove:
-                continue
-            content.append(element)
-            new_indices.append(index)
-        return Batch(
-            content=content,
-            indices=new_indices,
-        )
+        filtered_content = [
+            element
+            for index, element in zip(self._indices, self._content)
+            if index not in indices_to_remove
+        ]
+        filtered_indices = [
+            index for index in self._indices if index not in indices_to_remove
+        ]
+
+        return Batch(content=filtered_content, indices=filtered_indices)
 
     def iter_with_indices(self) -> Iterator[Tuple[Tuple[int, ...], B]]:
-        for index, element in zip(self._indices, self._content):
-            yield index, element
+        return zip(self._indices, self._content)
 
     def broadcast(self, n: int) -> "Batch":
         if n <= 0:
             raise ValueError(
-                f"Broadcast to size {n} requested which is invalid operation."
+                f"Broadcast to size {n} requested which is an invalid operation."
             )
-        if len(self._content) == n:
+
+        num_content = len(self._content)
+
+        if num_content == n:
             return self
-        if len(self._content) == 1:
-            return Batch(content=[self._content[0]] * n, indices=[self._indices[0]] * n)
-        raise ValueError(
-            f"Could not broadcast batch of size {len(self._content)} to size {n}"
-        )
+
+        if num_content == 1:
+            return Batch(content=self._content * n, indices=self._indices * n)
+
+        raise ValueError(f"Could not broadcast batch of size {num_content} to size {n}")
 
 
 class VideoMetadata(BaseModel):
@@ -180,6 +196,10 @@ class VideoMetadata(BaseModel):
     )
     fps: Optional[float] = Field(
         description="Field represents FPS value (if possible to be retrieved)",
+        default=None,
+    )
+    measured_fps: Optional[float] = Field(
+        description="Field represents measured FPS of live stream",
         default=None,
     )
     comes_from_video_file: Optional[bool] = Field(
@@ -375,7 +395,7 @@ class WorkflowImageData:
             return self._base64_image
         numpy_image = self.numpy_image
         self._base64_image = base64.b64encode(
-            encode_image_to_jpeg_bytes(numpy_image)
+            encode_image_to_jpeg_bytes(numpy_image, jpeg_quality=95)
         ).decode("ascii")
         return self._base64_image
 

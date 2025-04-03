@@ -12,7 +12,7 @@ annotators:
       trace_length: 60
       thickness: 2
 tracking:
-  track_thresh: 0.25
-  track_buffer: 30
-  match_thresh: 0.8
+  track_activation_threshold: 0.25
+  lost_track_buffer: 30
+  minimum_matching_threshold: 0.8
   frame_rate: 30

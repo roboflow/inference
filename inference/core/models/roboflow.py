@@ -1,6 +1,7 @@
 import itertools
 import json
 import os
+import random
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -10,7 +11,30 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import cv2
 import numpy as np
 import onnxruntime
+from filelock import FileLock
 from PIL import Image
+
+from inference.core.env import (
+    API_KEY,
+    AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY,
+    CORE_MODEL_BUCKET,
+    DISABLE_PREPROC_AUTO_ORIENT,
+    DISK_CACHE_CLEANUP,
+    INFER_BUCKET,
+    LAMBDA,
+    MAX_BATCH_SIZE,
+    MODEL_CACHE_DIR,
+    MODEL_VALIDATION_DISABLED,
+    ONNXRUNTIME_EXECUTION_PROVIDERS,
+    REQUIRED_ONNX_PROVIDERS,
+    TENSORRT_CACHE_PATH,
+    USE_PYTORCH_FOR_PREPROCESSING,
+)
+from inference.core.logger import logger
+
+if USE_PYTORCH_FOR_PREPROCESSING:
+    import torch
 
 from inference.core.cache import cache
 from inference.core.cache.model_artifacts import (
@@ -31,34 +55,20 @@ from inference.core.entities.requests.inference import (
     InferenceRequestImage,
 )
 from inference.core.entities.responses.inference import InferenceResponse
-from inference.core.env import (
-    API_KEY,
-    AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY,
-    CORE_MODEL_BUCKET,
-    DISABLE_PREPROC_AUTO_ORIENT,
-    INFER_BUCKET,
-    LAMBDA,
-    MAX_BATCH_SIZE,
-    MODEL_CACHE_DIR,
-    MODEL_VALIDATION_DISABLED,
-    ONNXRUNTIME_EXECUTION_PROVIDERS,
-    REQUIRED_ONNX_PROVIDERS,
-    TENSORRT_CACHE_PATH,
-)
 from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
-from inference.core.logger import logger
 from inference.core.models.base import Model
 from inference.core.models.utils.batching import create_batches
 from inference.core.models.utils.onnx import has_trt
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
+    get_roboflow_instant_model_data,
     get_roboflow_model_data,
 )
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import get_onnxruntime_execution_providers
 from inference.core.utils.preprocess import letterbox_image, prepare
+from inference.core.utils.roboflow import get_model_id_chunks
 from inference.core.utils.visualisation import draw_detection_predictions
 from inference.models.aliases import resolve_roboflow_model_alias
 
@@ -116,7 +126,7 @@ class RoboflowInferenceModel(Model):
         self.metrics = {"num_inferences": 0, "avg_inference_time": 0.0}
         self.api_key = api_key if api_key else API_KEY
         model_id = resolve_roboflow_model_alias(model_id=model_id)
-        self.dataset_id, self.version_id = model_id.split("/")
+        self.dataset_id, self.version_id = get_model_id_chunks(model_id=model_id)
         self.endpoint = model_id
         self.device_id = GLOBAL_DEVICE_ID
         self.cache_dir = os.path.join(cache_dir_root, self.endpoint)
@@ -134,9 +144,13 @@ class RoboflowInferenceModel(Model):
         """
         return get_cache_file_path(file=f, model_id=self.endpoint)
 
-    def clear_cache(self) -> None:
-        """Clear the cache directory."""
-        clear_cache(model_id=self.endpoint)
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        """Clear the cache directory.
+
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
+        """
+        clear_cache(model_id=self.endpoint, delete_from_disk=delete_from_disk)
 
     def draw_predictions(
         self,
@@ -252,52 +266,100 @@ class RoboflowInferenceModel(Model):
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
         logger.debug("Downloading model artifacts from Roboflow API")
-        api_data = get_roboflow_model_data(
-            api_key=self.api_key,
-            model_id=self.endpoint,
-            endpoint_type=ModelEndpointType.ORT,
-            device_id=self.device_id,
-        )
-        if "ort" not in api_data.keys():
-            raise ModelArtefactError(
-                "Could not find `ort` key in roboflow API model description response."
-            )
-        api_data = api_data["ort"]
-        if "classes" in api_data:
-            save_text_lines_in_cache(
-                content=api_data["classes"],
-                file="class_names.txt",
-                model_id=self.endpoint,
-            )
-        if "model" not in api_data:
-            raise ModelArtefactError(
-                "Could not find `model` key in roboflow API model description response."
-            )
-        if "environment" not in api_data:
-            raise ModelArtefactError(
-                "Could not find `environment` key in roboflow API model description response."
-            )
-        environment = get_from_url(api_data["environment"])
-        model_weights_response = get_from_url(api_data["model"], json_response=False)
-        save_bytes_in_cache(
-            content=model_weights_response.content,
-            file=self.weights_file,
-            model_id=self.endpoint,
-        )
-        if "colors" in api_data:
-            environment["COLORS"] = api_data["colors"]
-        save_json_in_cache(
-            content=environment,
-            file="environment.json",
-            model_id=self.endpoint,
-        )
-        if "keypoints_metadata" in api_data:
-            # TODO: make sure backend provides that
-            save_json_in_cache(
-                content=api_data["keypoints_metadata"],
-                file="keypoints_metadata.json",
-                model_id=self.endpoint,
-            )
+
+        # Use the same lock file pattern as in clear_cache
+        lock_dir = MODEL_CACHE_DIR + "/_file_locks"  # Dedicated lock directory
+        os.makedirs(lock_dir, exist_ok=True)  # Ensure lock directory exists.
+        lock_file = os.path.join(lock_dir, f"{os.path.basename(self.cache_dir)}.lock")
+        try:
+            lock = FileLock(lock_file, timeout=120)  # 120 second timeout for downloads
+            with lock:
+                if self.version_id is not None:
+                    api_data = get_roboflow_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                        endpoint_type=ModelEndpointType.ORT,
+                        device_id=self.device_id,
+                    )
+                    if "ort" not in api_data.keys():
+                        raise ModelArtefactError(
+                            "Could not find `ort` key in roboflow API model description response."
+                        )
+                    api_data = api_data["ort"]
+                    if "classes" in api_data:
+                        save_text_lines_in_cache(
+                            content=api_data["classes"],
+                            file="class_names.txt",
+                            model_id=self.endpoint,
+                        )
+                    if "model" not in api_data:
+                        raise ModelArtefactError(
+                            "Could not find `model` key in roboflow API model description response."
+                        )
+                    if "environment" not in api_data:
+                        raise ModelArtefactError(
+                            "Could not find `environment` key in roboflow API model description response."
+                        )
+                    environment = get_from_url(api_data["environment"])
+                    model_weights_response = get_from_url(
+                        api_data["model"], json_response=False
+                    )
+                else:
+                    api_data = get_roboflow_instant_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                    )
+                    if (
+                        "modelFiles" not in api_data
+                        or "ort" not in api_data["modelFiles"]
+                        or "model" not in api_data["modelFiles"]["ort"]
+                    ):
+                        raise ModelArtefactError(
+                            "Could not find `modelFiles` key or `modelFiles`.`ort` or `modelFiles`.`ort`.`model` key in roboflow API model description response."
+                        )
+                    if "environment" not in api_data:
+                        raise ModelArtefactError(
+                            "Could not find `environment` key in roboflow API model description response."
+                        )
+                    model_weights_response = get_from_url(
+                        api_data["modelFiles"]["ort"]["model"], json_response=False
+                    )
+                    environment = api_data["environment"]
+                    if "classes" in api_data:
+                        save_text_lines_in_cache(
+                            content=api_data["classes"],
+                            file="class_names.txt",
+                            model_id=self.endpoint,
+                        )
+
+                save_bytes_in_cache(
+                    content=model_weights_response.content,
+                    file=self.weights_file,
+                    model_id=self.endpoint,
+                )
+                if "colors" in api_data:
+                    environment["COLORS"] = api_data["colors"]
+                save_json_in_cache(
+                    content=environment,
+                    file="environment.json",
+                    model_id=self.endpoint,
+                )
+                if "keypoints_metadata" in api_data:
+                    # TODO: make sure backend provides that
+                    save_json_in_cache(
+                        content=api_data["keypoints_metadata"],
+                        file="keypoints_metadata.json",
+                        model_id=self.endpoint,
+                    )
+        except Exception as e:
+            logger.error(f"Error downloading model artifacts: {e}")
+            raise
+        finally:
+            try:
+                if os.path.exists(lock_file):
+                    os.unlink(lock_file)  # Clean up lock file
+            except OSError:
+                pass  # Best effort cleanup
 
     def load_model_artifacts_from_cache(self) -> None:
         logger.debug("Model artifacts already downloaded, loading model from cache")
@@ -396,10 +458,36 @@ class RoboflowInferenceModel(Model):
             disable_preproc_static_crop=disable_preproc_static_crop,
         )
 
-        if self.resize_method == "Stretch to":
-            resized = cv2.resize(
-                preprocessed_image, (self.img_size_w, self.img_size_h), cv2.INTER_CUBIC
+        if USE_PYTORCH_FOR_PREPROCESSING:
+            preprocessed_image = torch.from_numpy(
+                np.ascontiguousarray(preprocessed_image)
             )
+            if torch.cuda.is_available():
+                preprocessed_image = preprocessed_image.cuda()
+            preprocessed_image = (
+                preprocessed_image.permute(2, 0, 1).unsqueeze(0).contiguous().float()
+            )
+
+        if self.resize_method == "Stretch to":
+            if isinstance(preprocessed_image, np.ndarray):
+                preprocessed_image = preprocessed_image.astype(np.float32)
+                resized = cv2.resize(
+                    preprocessed_image,
+                    (self.img_size_w, self.img_size_h),
+                )
+            elif USE_PYTORCH_FOR_PREPROCESSING:
+                resized = torch.nn.functional.interpolate(
+                    preprocessed_image,
+                    size=(self.img_size_h, self.img_size_w),
+                    mode="bilinear",
+                )
+            else:
+                raise ValueError(
+                    f"Received an image of unknown type, {type(preprocessed_image)}; "
+                    "This is most likely a bug. Contact Roboflow team through github issues "
+                    "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+                )
+
         elif self.resize_method == "Fit (black edges) in":
             resized = letterbox_image(
                 preprocessed_image, (self.img_size_w, self.img_size_h)
@@ -418,10 +506,23 @@ class RoboflowInferenceModel(Model):
             )
 
         if is_bgr:
-            resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        img_in = np.transpose(resized, (2, 0, 1))
-        img_in = img_in.astype(np.float32)
-        img_in = np.expand_dims(img_in, axis=0)
+            if isinstance(resized, np.ndarray):
+                resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+            else:
+                resized = resized[:, [2, 1, 0], :, :]
+
+        if isinstance(resized, np.ndarray):
+            img_in = np.transpose(resized, (2, 0, 1))
+            img_in = img_in.astype(np.float32)
+            img_in = np.expand_dims(img_in, axis=0)
+        elif USE_PYTORCH_FOR_PREPROCESSING:
+            img_in = resized.float()
+        else:
+            raise ValueError(
+                f"Received an image of unknown type, {type(resized)}; "
+                "This is most likely a bug. Contact Roboflow team through github issues "
+                "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+            )
 
         return img_in, img_dims
 
@@ -614,7 +715,10 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             self.validate_model()
         except ModelArtefactError as e:
             logger.error(f"Unable to validate model artifacts, clearing cache: {e}")
-            self.clear_cache()
+            if DISK_CACHE_CLEANUP:
+                self.clear_cache(delete_from_disk=True)
+            else:
+                logger.error("NOT deleting model from cache, inspect model artifacts")
             raise ModelArtefactError from e
 
     def infer(self, image: Any, **kwargs) -> Any:
@@ -643,26 +747,48 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         if MODEL_VALIDATION_DISABLED:
             logger.debug("Model validation disabled.")
             return None
-        logger.debug("Starting model validation")
+        logger.debug(f"Starting model validation for {self.endpoint}")
+        validate_model_error_count = cache.get(
+            self.endpoint + "_validate_model_error_count"
+        )
+        if validate_model_error_count is None:
+            validate_model_error_count = 0
+        if validate_model_error_count > 3:
+            raise ModelArtefactError(
+                "Model validation failed multiple times, ignoring this model."
+            )
         if not self.load_weights:
             return
         try:
             assert self.onnx_session is not None
         except AssertionError as e:
+            cache.set(
+                self.endpoint + "_validate_model_error_count",
+                validate_model_error_count + 1,
+            )
             raise ModelArtefactError(
                 "ONNX session not initialized. Check that the model weights are available."
             ) from e
         try:
             self.run_test_inference()
         except Exception as e:
+            cache.set(
+                self.endpoint + "_validate_model_error_count",
+                validate_model_error_count + 1,
+            )
             raise ModelArtefactError(f"Unable to run test inference. Cause: {e}") from e
         try:
             self.validate_model_classes()
         except Exception as e:
+            cache.set(
+                self.endpoint + "_validate_model_error_count",
+                validate_model_error_count + 1,
+            )
             raise ModelArtefactError(
                 f"Unable to validate model classes. Cause: {e}"
             ) from e
-        logger.debug("Model validation finished")
+        logger.debug(f"Model validation finished for {self.endpoint}")
+        cache.set(self.endpoint + "_validate_model_error_count", 0)
 
     def run_test_inference(self) -> None:
         test_image = (np.random.rand(1024, 1024, 3) * 255).astype(np.uint8)
@@ -704,6 +830,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
             try:
                 session_options = onnxruntime.SessionOptions()
+                session_options.log_severity_level = 3
                 # TensorRT does better graph optimization for its EP than onnx
                 if has_trt(providers):
                     session_options.graph_optimization_level = (
@@ -786,6 +913,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 logger.debug(
                     f"Model {self.endpoint} is loaded with dynamic batching disabled"
                 )
+
         logger.debug("Model initialisation finished.")
 
     def load_image(
@@ -795,8 +923,8 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
         disable_preproc_contrast: bool = False,
         disable_preproc_grayscale: bool = False,
         disable_preproc_static_crop: bool = False,
-    ) -> Tuple[np.ndarray, Tuple[int, int]]:
-        if isinstance(image, list):
+    ) -> Tuple[np.ndarray, Tuple[Tuple[int, int], ...]]:
+        if isinstance(image, list) and len(image) > 1:
             preproc_image = partial(
                 self.preproc_image,
                 disable_preproc_auto_orient=disable_preproc_auto_orient,
@@ -806,8 +934,19 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             )
             imgs_with_dims = self.image_loader_threadpool.map(preproc_image, image)
             imgs, img_dims = zip(*imgs_with_dims)
-            img_in = np.concatenate(imgs, axis=0)
+            if isinstance(imgs[0], np.ndarray):
+                img_in = np.concatenate(imgs, axis=0)
+            elif USE_PYTORCH_FOR_PREPROCESSING:
+                img_in = torch.cat(imgs, dim=0)
+            else:
+                raise ValueError(
+                    f"Received a list of images of unknown type, {type(imgs[0])}; "
+                    "This is most likely a bug. Contact Roboflow team through github issues "
+                    "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+                )
         else:
+            if isinstance(image, list):
+                image = image[0]
             img_in, img_dims = self.preproc_image(
                 image,
                 disable_preproc_auto_orient=disable_preproc_auto_orient,
@@ -815,7 +954,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
                 disable_preproc_grayscale=disable_preproc_grayscale,
                 disable_preproc_static_crop=disable_preproc_static_crop,
             )
-            img_dims = [img_dims]
+            img_dims = (img_dims,)
         return img_in, img_dims
 
     @property
@@ -875,6 +1014,7 @@ def color_mapping_available_in_environment(environment: Optional[dict]) -> bool:
 
 
 def is_model_artefacts_bucket_available() -> bool:
+    # TODO: download from GCS directly if GCP_SERVERLESS is true
     return (
         AWS_ACCESS_KEY_ID is not None
         and AWS_SECRET_ACCESS_KEY is not None

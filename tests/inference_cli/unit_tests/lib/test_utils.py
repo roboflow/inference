@@ -1,7 +1,17 @@
 import json
 import os.path
+from pathlib import Path
 
-from inference_cli.lib.utils import dump_json, read_env_file, read_file_lines
+import pytest
+
+from inference_cli.lib.utils import (
+    IMAGES_EXTENSIONS,
+    dump_json,
+    ensure_target_directory_is_empty,
+    get_all_images_in_directory,
+    read_env_file,
+    read_file_lines,
+)
 
 
 def test_read_file_lines(text_file_path: str) -> None:
@@ -39,3 +49,91 @@ def test_dump_json(empty_directory: str) -> None:
     with open(target_path, "r") as f:
         result = json.load(f)
     assert result == {"some": "content"}
+
+
+@pytest.mark.parametrize("allow_override", [True, False])
+@pytest.mark.parametrize("only_files", [True, False])
+def test_ensure_target_directory_is_empty_when_empty_directory_given(
+    empty_directory: str,
+    allow_override: bool,
+    only_files: bool,
+) -> None:
+    # when
+    ensure_target_directory_is_empty(
+        output_directory=empty_directory,
+        allow_override=allow_override,
+        only_files=only_files,
+    )
+
+    # then - no errors
+
+
+def test_ensure_target_directory_is_empty_when_directory_with_sub_dir_provided_but_only_files_matter(
+    empty_directory: str,
+) -> None:
+    # given
+    sub_dir_path = os.path.join(empty_directory, "sub_dir")
+    os.makedirs(sub_dir_path, exist_ok=True)
+
+    # when
+    ensure_target_directory_is_empty(
+        output_directory=empty_directory,
+        allow_override=False,
+        only_files=True,
+    )
+
+    # then - no errors
+
+
+def test_ensure_target_directory_is_empty_when_directory_with_sub_dir_provided_but_not_only_files_matter(
+    empty_directory: str,
+) -> None:
+    # given
+    sub_dir_path = os.path.join(empty_directory, "sub_dir")
+    os.makedirs(sub_dir_path, exist_ok=True)
+
+    # when
+    with pytest.raises(RuntimeError):
+        ensure_target_directory_is_empty(
+            output_directory=empty_directory,
+            allow_override=False,
+            only_files=False,
+        )
+
+
+def test_ensure_target_directory_is_empty_when_directory_with_sub_dir_provided_but_not_only_files_matter_and_override_allowed(
+    empty_directory: str,
+) -> None:
+    # given
+    sub_dir_path = os.path.join(empty_directory, "sub_dir")
+    os.makedirs(sub_dir_path, exist_ok=True)
+
+    # when
+    ensure_target_directory_is_empty(
+        output_directory=empty_directory,
+        allow_override=True,
+        only_files=False,
+    )
+
+    # then - no errors
+
+
+def test_get_all_images_in_directory(empty_directory: str) -> None:
+    # given
+    for extension in IMAGES_EXTENSIONS:
+        _create_empty_file(directory=empty_directory, file_name=f"image.{extension}")
+    _create_empty_file(directory=empty_directory, file_name=f".tmp")
+    _create_empty_file(directory=empty_directory, file_name=f".bin")
+    expected_files = len(os.listdir(empty_directory)) - 2
+
+    # when
+    result = get_all_images_in_directory(input_directory=empty_directory)
+
+    # then
+    assert len(result) == expected_files
+
+
+def _create_empty_file(directory: str, file_name: str) -> None:
+    file_path = os.path.join(directory, file_name)
+    path = Path(file_path)
+    path.touch(exist_ok=True)

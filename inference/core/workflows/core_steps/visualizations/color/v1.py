@@ -14,12 +14,12 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     FloatZeroToOne,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/color_visualization@v1"
-SHORT_DESCRIPTION = "Paints a solid color on detected objects in an image."
+SHORT_DESCRIPTION = "Paint a solid color on detected objects in an image."
 LONG_DESCRIPTION = """
 The `ColorVisualization` block paints a solid color on detected
 objects in an image using Supervision's `sv.ColorAnnotator`.
@@ -36,10 +36,24 @@ class ColorManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "search_keywords": ["annotator"],
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "far fa-palette",
+                "blockPriority": 6,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 
-    opacity: Union[FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
+    opacity: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(  # type: ignore
         description="Transparency of the color overlay.",
         default=0.5,
         examples=[0.5, "$inputs.opacity"],
@@ -47,7 +61,7 @@ class ColorManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class ColorVisualizationBlockV1(ColorableVisualizationBlock):

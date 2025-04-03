@@ -1,11 +1,13 @@
-from multiprocessing import Process
+import multiprocessing
+from functools import partial
 
 from inference.core.cache import cache
 from inference.core.env import (
-    MAX_ACTIVE_MODELS,
     ACTIVE_LEARNING_ENABLED,
-    LAMBDA,
     ENABLE_STREAM_API,
+    LAMBDA,
+    MAX_ACTIVE_MODELS,
+    STREAM_API_PRELOADED_PROCESSES,
 )
 from inference.core.interfaces.http.http_api import HttpInterface
 from inference.core.interfaces.stream_manager.manager_app.app import start
@@ -20,10 +22,10 @@ from inference.core.registries.roboflow import (
 )
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
-
 if ENABLE_STREAM_API:
-    stream_manager_process = Process(
-        target=start,
+    multiprocessing_context = multiprocessing.get_context(method="spawn")
+    stream_manager_process = multiprocessing_context.Process(
+        target=partial(start, expected_warmed_up_pipelines=STREAM_API_PRELOADED_PROCESSES),
     )
     stream_manager_process.start()
 

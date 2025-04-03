@@ -1,0 +1,25 @@
+{
+  "name": "inference-docs-theme",
+  "version": "1.0.0",
+  "description": "Roboflow Inference Documentation Theme",
+  "scripts": {
+    "dev:css": "tailwindcss -i ./docs/assets/tailwind.css -o ../docs/static/styles.css --watch",
+    "dev:js": "esbuild assets/home.js --bundle --outfile=../docs/static/dist/home.js --format=esm --watch",
+    "dev": "concurrently \"npm run dev:css\" \"npm run dev:js\"",
+    "build:css": "tailwindcss -i ./assets/tailwind.css -o ../docs/static/styles.css --minify",
+    "build:js": "esbuild assets/home.js --bundle --outfile=../docs/static/dist/home.js --format=esm --minify",
+    "build": "npm run build:css && npm run build:js"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "esbuild": "^0.25.0",
+    "fluid-tailwind": "^1.0.4",
+    "tailwindcss": "^3.4.1"
+  },
+  "dependencies": {
+    "@rive-app/canvas": "^2.25.7",
+    "@tailwindcss/line-clamp": "^0.4.4",
+    "gsap": "^3.12.7",
+    "swiper": "^11.2.2"
+  }
+}

@@ -8,6 +8,8 @@ RUN apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     uvicorn \
     python3-pip \
     git \
+    rustc \
+    cargo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
@@ -25,6 +27,7 @@ RUN pip3 install --upgrade pip  && pip3 install \
     -r requirements.clip.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
+    "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
 

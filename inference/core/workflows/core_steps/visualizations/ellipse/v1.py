@@ -13,12 +13,12 @@ from inference.core.workflows.core_steps.visualizations.common.base_colorable im
 from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
 
 TYPE: str = "roboflow_core/ellipse_visualization@v1"
-SHORT_DESCRIPTION = "Draws ellipses that highlight detected objects in an image."
+SHORT_DESCRIPTION = "Draw ellipses that highlight detected objects in an image."
 LONG_DESCRIPTION = """
 The `EllipseVisualization` block draws ellipses that highlight detected
 objects in an image using Supervision's `sv.EllipseAnnotator`.
@@ -35,22 +35,36 @@ class EllipseManifest(ColorableVisualizationManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "visualization",
+            "search_keywords": ["annotator"],
+            "ui_manifest": {
+                "section": "visualization",
+                "icon": "fad fa-dot-circle",
+                "blockPriority": 10,
+                "supervision": True,
+                "warnings": [
+                    {
+                        "property": "copy_image",
+                        "value": False,
+                        "message": "This setting will mutate its input image. If the input is used by other blocks, it may cause unexpected behavior.",
+                    }
+                ],
+            },
         }
     )
 
-    thickness: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    thickness: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Thickness of the lines in pixels.",
         default=2,
         examples=[2, "$inputs.thickness"],
     )
 
-    start_angle: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    start_angle: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Starting angle of the ellipse in degrees.",
         default=-45,
         examples=[-45, "$inputs.start_angle"],
     )
 
-    end_angle: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    end_angle: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Ending angle of the ellipse in degrees.",
         default=235,
         examples=[235, "$inputs.end_angle"],
@@ -58,7 +72,7 @@ class EllipseManifest(ColorableVisualizationManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class EllipseVisualizationBlockV1(ColorableVisualizationBlock):

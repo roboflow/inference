@@ -1,3 +1,6 @@
+import base64
+
+import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import supervision as sv
@@ -5,6 +8,7 @@ import supervision as sv
 from inference.core.entities.requests.inference import ObjectDetectionInferenceRequest
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
 from inference.core.managers.base import ModelManager
+from inference.core.utils.drawing import create_tiles
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.core import ExecutionEngine
 from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
@@ -24,7 +28,7 @@ SAHI_WORKFLOW = {
             "image": "$inputs.image",
         },
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "detection",
             "image": "$steps.image_slicer.slices",
             "model_id": "yolov8n-640",
@@ -59,25 +63,6 @@ SAHI_WORKFLOW = {
 }
 
 
-@add_to_workflows_gallery(
-    category="Advanced inference techniques",
-    use_case_title="SAHI in workflows - object detection",
-    use_case_description="""
-This example illustrates usage of [SAHI](https://blog.roboflow.com/how-to-use-sahi-to-detect-small-objects/) 
-technique in workflows.
-
-Workflows implementation requires three blocks:
-
-- Image Slicer - which runs a sliding window over image and for each image prepares batch of crops 
-
-- detection model block (in our scenario Roboflow Object Detection model) - which is responsible 
-for making predictions on each crop
-
-- Detections stitch - which combines partial predictions for each slice of the image into a single prediction
-    """,
-    workflow_definition=SAHI_WORKFLOW,
-    workflow_name_in_app="sahi-detection",
-)
 def test_sahi_workflow_with_none_as_filtering_strategy(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
@@ -157,6 +142,142 @@ def test_sahi_workflow_with_none_as_filtering_strategy(
         ),
         atol=1e-1,
     ), "Expected boxes for second image to be exactly as measured during test creation"
+
+
+SAHI_WORKFLOW_SLICER_V2 = {
+    "version": "1.0.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "overlap_filtering_strategy"},
+        {"type": "WorkflowParameter", "name": "slice_width", "default_value": 128},
+        {"type": "WorkflowParameter", "name": "slice_height", "default_value": 128},
+        {"type": "WorkflowParameter", "name": "slice_overlap", "default_value": 0.1},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/image_slicer@v2",
+            "name": "image_slicer",
+            "image": "$inputs.image",
+            "slice_width": "$inputs.slice_width",
+            "slice_height": "$inputs.slice_height",
+            "slice_overlap": "$inputs.slice_overlap",
+        },
+        {
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
+            "name": "detection",
+            "image": "$steps.image_slicer.slices",
+            "model_id": "yolov8n-640",
+        },
+        {
+            "type": "roboflow_core/detections_stitch@v1",
+            "name": "stitch",
+            "reference_image": "$inputs.image",
+            "predictions": "$steps.detection.predictions",
+            "overlap_filtering_strategy": "$inputs.overlap_filtering_strategy",
+        },
+        {
+            "type": "roboflow_core/bounding_box_visualization@v1",
+            "name": "bbox_visualiser",
+            "predictions": "$steps.stitch.predictions",
+            "image": "$inputs.image",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "predictions",
+            "selector": "$steps.stitch.predictions",
+            "coordinates_system": "own",
+        },
+        {
+            "type": "JsonField",
+            "name": "slices",
+            "selector": "$steps.image_slicer.slices",
+        },
+        {
+            "type": "JsonField",
+            "name": "visualisation",
+            "selector": "$steps.bbox_visualiser.image",
+        },
+    ],
+}
+
+
+@add_to_workflows_gallery(
+    category="Advanced inference techniques",
+    use_case_title="SAHI in workflows - object detection",
+    use_case_description="""
+This example illustrates usage of [SAHI](https://blog.roboflow.com/how-to-use-sahi-to-detect-small-objects/) 
+technique in workflows.
+
+Workflows implementation requires three blocks:
+
+- Image Slicer - which runs a sliding window over image and for each image prepares batch of crops 
+
+- detection model block (in our scenario Roboflow Object Detection model) - which is responsible 
+for making predictions on each crop
+
+- Detections stitch - which combines partial predictions for each slice of the image into a single prediction
+    """,
+    workflow_definition=SAHI_WORKFLOW,
+    workflow_name_in_app="sahi-detection",
+)
+def test_sahi_workflow_with_slicer_v2(
+    model_manager: ModelManager,
+    crowd_image: np.ndarray,
+) -> None:
+    """
+    In this test we check how all blocks that form SAHI technique behave.
+    Blocks involved in tests:
+    - "roboflow_core/image_slicer@v2" from inference.core.workflows.core_steps.transformations.image_slicer.v2
+    - "roboflow_core/detections_stitch@v1", from inference.core.workflows.core_steps.fusion.detections_stitch.v1
+
+    This scenario covers usage of SAHI when overlapping predictions are not post-processed.
+    """
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=SAHI_WORKFLOW_SLICER_V2,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": crowd_image,
+            "overlap_filtering_strategy": "nms",
+        }
+    )
+
+    # then
+    assert np.allclose(
+        result[0]["predictions"].xyxy,
+        np.array(
+            [
+                [103, 103, 113, 124],
+                [182, 272, 231, 334],
+                [114, 270, 144, 334],
+                [271, 267, 329, 334],
+                [226, 288, 246, 329],
+                [240, 251, 251, 283],
+                [249, 251, 261, 284],
+                [388, 264, 413, 334],
+                [309, 265, 318, 297],
+                [359, 260, 374, 291],
+                [323, 257, 345, 318],
+                [342, 260, 361, 321],
+                [415, 259, 457, 334],
+                [552, 260, 597, 334],
+                [522, 257, 557, 334],
+                [158, 297, 181, 348],
+            ]
+        ),
+        atol=2,
+    ), "Expected boxes for first image to be exactly as measured during test creation"
 
 
 def test_sahi_workflow_with_nms_as_filtering_strategy(
@@ -307,6 +428,45 @@ def test_sahi_workflow_with_nmm_as_filtering_strategy(
     ), "Expected boxes for second image to be exactly as measured during test creation"
 
 
+def test_sahi_workflow_with_serialization(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+    crowd_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=SAHI_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(
+        runtime_parameters={
+            "image": [license_plate_image, crowd_image],
+            "overlap_filtering_strategy": "nms",
+        },
+        serialize_results=True,
+    )
+
+    # then
+    result_1 = sv.Detections.from_inference(result[0]["predictions"])
+    result_2 = sv.Detections.from_inference(result[1]["predictions"])
+    assert len(result_1) == 11, "Expected to deserialize 1st image detections properly"
+    assert len(result_2) == 12, "Expected to deserialize 2nd image detections properly"
+    decoded_image_bytes = base64.b64decode(result[0]["visualisation"]["value"])
+    decoded_image = cv2.imdecode(
+        np.frombuffer(decoded_image_bytes, np.uint8), cv2.IMREAD_COLOR
+    )
+    assert (
+        decoded_image.shape == license_plate_image.shape
+    ), "Expected to deserialize result image properly"
+
+
 def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
     model_manager: ModelManager,
     crowd_image: np.ndarray,
@@ -352,7 +512,7 @@ def test_sahi_workflow_provides_the_same_result_as_sahi_applied_directly(
         callback=slicer_callback,
         slice_wh=(640, 640),
         overlap_ratio_wh=(0.2, 0.2),
-        overlap_filter_strategy=sv.OverlapFilter.NON_MAX_SUPPRESSION,
+        overlap_filter=sv.OverlapFilter.NON_MAX_SUPPRESSION,
         iou_threshold=0.3,
     )
 
@@ -395,7 +555,7 @@ SAHI_WORKFLOW_FOR_SEGMENTATION = {
             "image": "$inputs.image",
         },
         {
-            "type": "roboflow_core/roboflow_object_detection_model@v1",
+            "type": "roboflow_core/roboflow_object_detection_model@v2",
             "name": "detection",
             "image": "$steps.image_slicer.slices",
             "model_id": "yolov8n-seg-640",

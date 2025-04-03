@@ -27,7 +27,7 @@ Further details to be found in specific sections of this document.
 
 !!! tip
 
-    Read our [Run Model on an Image](/quickstart/run_model_on_image) guide to learn how to run a model with the Inference Client.
+    Read our [Run Model on an Image](../quickstart/run_model_on_image.md) guide to learn how to run a model with the Inference Client.
 
 ## Quickstart
 
@@ -257,7 +257,13 @@ CLIENT.clip_compare(
       )
     ```
 
-### CogVLM
+### CogVLM - *DEPRECATED in `inference 0.38.0`*
+
+
+!!! warning "Method deprecated"
+
+    CogVLM was deprecated in `inference 0.38.0` due to changes we need to apply to mitigate 
+    [CVE-2024-11393](https://nvd.nist.gov/vuln/detail/CVE-2024-11393).
 
 ```python
 from inference_sdk import InferenceHTTPClient

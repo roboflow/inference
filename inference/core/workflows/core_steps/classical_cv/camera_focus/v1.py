@@ -14,8 +14,7 @@ from inference.core.workflows.execution_engine.entities.base import (
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     IMAGE_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -23,7 +22,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION: str = "Helps focus a camera by providing a focus measure."
+SHORT_DESCRIPTION: str = "Calculate a score to indicate how well-focused a camera is."
 LONG_DESCRIPTION: str = """
 This block calculate the Brenner function score which is a measure of the texture in the image. 
 An in-focus image has a high Brenner function score, and contains texture at a smaller scale than
@@ -42,10 +41,16 @@ class CameraFocusManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
+            "ui_manifest": {
+                "section": "classical_cv",
+                "icon": "far fa-aperture",
+                "blockPriority": 8,
+                "opencv": True,
+            },
         }
     )
 
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
@@ -69,7 +74,7 @@ class CameraFocusManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class CameraFocusBlockV1(WorkflowBlock):

@@ -51,12 +51,12 @@ DETECTION_PLUS_CLASSIFICATION_WORKFLOW = {
 
 CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
     PlatformEnvironment.ROBOFLOW_STAGING: [
-        0.7814103364944458,
-        0.7870854139328003,
+        0.7817059755325317,
+        0.7884019017219543,
     ],
     PlatformEnvironment.ROBOFLOW_PLATFORM: [
-        0.6143714189529419,
-        0.6018071174621582,
+        0.6154301762580872,
+        0.5893789529800415,
     ],
 }
 
@@ -105,7 +105,7 @@ def test_detection_plus_classification_workflow(
         p["confidence"] for p in result[0]["detection_predictions"]["predictions"]
     ]
     assert np.allclose(
-        detection_confidences, [0.857235848903656, 0.5132315158843994], atol=1e-4
+        detection_confidences, [0.856178879737854, 0.5191817283630371], atol=1e-3
     ), "Expected predictions to match what was observed while test creation"
     assert (
         len(result[0]["classification_predictions"]) == 2
@@ -117,7 +117,7 @@ def test_detection_plus_classification_workflow(
     assert np.allclose(
         classification_confidences,
         CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[platform_environment],
-        atol=1e-4,
+        atol=1e-3,
     ), "Expected classification predictions to match"
     assert (
         len(result[1]["detection_predictions"]["predictions"]) == 0

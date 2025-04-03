@@ -6,12 +6,18 @@ import supervision as sv
 
 from inference import InferencePipeline
 from inference.core.interfaces.camera.entities import VideoFrame
-from inference.core.interfaces.camera.video_source import BufferFillingStrategy, BufferConsumptionStrategy
-from inference.core.interfaces.stream.watchdog import PipelineWatchDog, BasePipelineWatchDog
+from inference.core.interfaces.camera.video_source import (
+    BufferConsumptionStrategy,
+    BufferFillingStrategy,
+)
+from inference.core.interfaces.stream.watchdog import (
+    BasePipelineWatchDog,
+    PipelineWatchDog,
+)
 from inference.core.utils.drawing import create_tiles
 
 STOP = False
-ANNOTATOR = sv.BoundingBoxAnnotator()
+ANNOTATOR = sv.BoxAnnotator()
 fps_monitor = sv.FPSMonitor()
 
 

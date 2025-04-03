@@ -1,7 +1,8 @@
 import itertools
 from collections import defaultdict
-from copy import copy
+from copy import copy, deepcopy
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from uuid import uuid4
 
 import networkx as nx
 from networkx import DiGraph
@@ -16,9 +17,11 @@ from inference.core.workflows.errors import (
     StepInputDimensionalityError,
     StepInputLineageError,
     StepOutputLineageError,
+    WorkflowBlockError,
 )
 from inference.core.workflows.execution_engine.constants import (
     NODE_COMPILATION_OUTPUT_PROPERTY,
+    PARSED_NODE_INPUT_SELECTORS_PROPERTY,
     WORKFLOW_INPUT_BATCH_LINEAGE_ID,
 )
 from inference.core.workflows.execution_engine.entities.base import (
@@ -145,11 +148,20 @@ def add_input_nodes_for_graph(
 ) -> DiGraph:
     for input_spec in inputs:
         input_selector = construct_input_selector(input_name=input_spec.name)
-        data_lineage = (
-            []
-            if not input_spec.is_batch_oriented()
-            else [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
-        )
+        if input_spec.is_batch_oriented():
+            if input_spec.dimensionality < 1:
+                raise ExecutionGraphStructureError(
+                    public_message=f"Detected batch oriented input `{input_spec.name}` with "
+                    f"declared dimensionality `{input_spec.dimensionality}` which is below "
+                    f"one (one is minimum dimensionality of the batch). Fix input definition in"
+                    f"your Workflow.",
+                    context="workflow_compilation | execution_graph_construction",
+                )
+            data_lineage = [WORKFLOW_INPUT_BATCH_LINEAGE_ID]
+            for _ in range(input_spec.dimensionality - 1):
+                data_lineage.append(f"{uuid4()}")
+        else:
+            data_lineage = []
         compilation_output = InputNode(
             node_category=NodeCategory.INPUT_NODE,
             name=input_spec.name,
@@ -215,10 +227,14 @@ def add_steps_edges(
     execution_graph: DiGraph,
 ) -> DiGraph:
     for step in workflow_definition.steps:
+        source_step_selector = construct_step_selector(step_name=step.name)
         step_selectors = get_step_selectors(step_manifest=step)
+        execution_graph.nodes[source_step_selector][
+            PARSED_NODE_INPUT_SELECTORS_PROPERTY
+        ] = step_selectors
         execution_graph = add_edges_for_step(
             execution_graph=execution_graph,
-            step_name=step.name,
+            source_step_selector=source_step_selector,
             target_step_parsed_selectors=step_selectors,
         )
     return execution_graph
@@ -226,10 +242,9 @@ def add_steps_edges(
 
 def add_edges_for_step(
     execution_graph: DiGraph,
-    step_name: str,
+    source_step_selector: str,
     target_step_parsed_selectors: List[ParsedSelector],
 ) -> DiGraph:
-    source_step_selector = construct_step_selector(step_name=step_name)
     for target_step_parsed_selector in target_step_parsed_selectors:
         execution_graph = add_edge_for_step(
             execution_graph=execution_graph,
@@ -271,11 +286,17 @@ def add_edge_for_step(
             node=target_step_selector,
             expected_type=StepNode,
         )
+        source_step_compilation_data = node_as(
+            execution_graph=execution_graph,
+            node=source_step_selector,
+            expected_type=StepNode,
+        )
         actual_input_kind = get_kind_of_value_provided_in_step_output(
             step_manifest=other_step_compilation_data.step_manifest,
             step_property=get_last_chunk_of_selector(
                 selector=target_step_parsed_selector.value
             ),
+            source_step_manifest=source_step_compilation_data.step_manifest,
         )
     expected_input_kind = list(
         itertools.chain.from_iterable(
@@ -287,7 +308,8 @@ def add_edge_for_step(
         f"Failed to validate reference provided for step: {source_step_selector} regarding property: "
         f"{target_step_parsed_selector.definition.property_name} with value: {target_step_parsed_selector.value}. "
         f"Allowed kinds of references for this property: {list(set(e.name for e in expected_input_kind))}. "
-        f"Types of output for referred property: {list(set(a.name for a in actual_input_kind))}"
+        f"Types of output for referred property: "
+        f"{list(set(a.name if isinstance(a, Kind) else a for a in actual_input_kind))}"
     )
     validate_reference_kinds(
         expected=expected_input_kind,
@@ -382,6 +404,7 @@ def step_definition_allows_flow_control_references(
 def get_kind_of_value_provided_in_step_output(
     step_manifest: WorkflowBlockManifest,
     step_property: str,
+    source_step_manifest: WorkflowBlockManifest,
 ) -> List[Kind]:
     referred_node_outputs = step_manifest.get_actual_outputs()
     actual_kind = []
@@ -392,9 +415,21 @@ def get_kind_of_value_provided_in_step_output(
         matched_property = True
         actual_kind.extend(output.kind)
     if not matched_property:
+        property_name = get_property_with_invalid_selector(
+            manifest=source_step_manifest,
+            step_property=step_property,
+        )
         raise ExecutionGraphStructureError(
             public_message=f"Found reference to non-existing property `{step_property}` of step `{step_manifest.name}`.",
             context="workflow_compilation | execution_graph_construction",
+            blocks_errors=[
+                WorkflowBlockError(
+                    block_id=source_step_manifest.name,
+                    block_type=source_step_manifest.type,
+                    property_name=property_name,
+                    property_details=f"'{step_manifest.name}.{step_property}' is an invalid reference",
+                )
+            ],
         )
     return actual_kind
 
@@ -428,22 +463,35 @@ def add_edges_for_outputs(
             node_selector = get_step_selector_from_its_output(
                 step_output_selector=node_selector
             )
-        output_name = construct_output_selector(name=output.name)
+        output_selector = construct_output_selector(name=output.name)
         verify_edge_is_created_between_existing_nodes(
             execution_graph=execution_graph,
             start=node_selector,
-            end=output_name,
+            end=output_selector,
+        )
+        output_node_manifest = node_as(
+            execution_graph=execution_graph,
+            node=output_selector,
+            expected_type=OutputNode,
         )
         if is_step_output_selector(selector_or_value=output.selector):
             step_manifest = execution_graph.nodes[node_selector][
                 NODE_COMPILATION_OUTPUT_PROPERTY
             ].step_manifest
             step_outputs = step_manifest.get_actual_outputs()
-            verify_output_selector_points_to_valid_output(
+            denote_output_node_kind_based_on_step_outputs(
                 output_selector=output.selector,
                 step_outputs=step_outputs,
+                output_node_manifest=output_node_manifest,
             )
-        execution_graph.add_edge(node_selector, output_name)
+        else:
+            input_manifest = node_as(
+                execution_graph=execution_graph,
+                node=node_selector,
+                expected_type=InputNode,
+            ).input_manifest
+            output_node_manifest.kind = copy(input_manifest.kind)
+        execution_graph.add_edge(node_selector, output_selector)
     return execution_graph
 
 
@@ -452,32 +500,78 @@ def verify_edge_is_created_between_existing_nodes(
     start: str,
     end: str,
 ) -> None:
-    if not execution_graph.has_node(start):
-        raise InvalidReferenceTargetError(
-            public_message=f"Graph definition contains selector {start} that points to not defined element.",
-            context="workflow_compilation | execution_graph_construction",
+    if not execution_graph.has_node(start) or not execution_graph.has_node(end):
+        invalid_block = start if not execution_graph.has_node(start) else end
+        referencing_block = end if invalid_block == start else start
+
+        step_type = None
+        property_name = None
+        if execution_graph.has_node(referencing_block):
+            if is_step_node(execution_graph, referencing_block):
+                step_manifest = node_as(
+                    execution_graph=execution_graph,
+                    node=referencing_block,
+                    expected_type=StepNode,
+                ).step_manifest
+                step_type = step_manifest.type
+                property_name = get_property_with_invalid_selector(
+                    manifest=step_manifest,
+                    step_property=invalid_block,
+                )
+
+        block_id = (
+            "$outputs"
+            if referencing_block.startswith("$outputs.")
+            else get_last_chunk_of_selector(selector=referencing_block)
         )
-    if not execution_graph.has_node(end):
+        property_name = (
+            get_last_chunk_of_selector(selector=referencing_block)
+            if referencing_block.startswith("$outputs.")
+            else property_name
+        )
+
+        is_input = is_input_selector(selector_or_value=invalid_block)
         raise InvalidReferenceTargetError(
-            public_message=f"Graph definition contains selector {end} that points to not defined element.",
+            public_message=f"Workflow references '{invalid_block}' which points to a non-existent {is_input and 'input parameter' or 'block'}.",
             context="workflow_compilation | execution_graph_construction",
+            blocks_errors=[
+                WorkflowBlockError(
+                    block_id=block_id,
+                    block_type=step_type,
+                    property_name=property_name,
+                    property_details=f"Invalid reference to {invalid_block}",
+                ),
+            ],
         )
 
 
-def verify_output_selector_points_to_valid_output(
+def denote_output_node_kind_based_on_step_outputs(
     output_selector: str,
     step_outputs: List[OutputDefinition],
+    output_node_manifest: OutputNode,
 ) -> None:
     selected_output_name = get_last_chunk_of_selector(selector=output_selector)
+    kinds_for_outputs = {output.name: output.kind for output in step_outputs}
+
     if selected_output_name == "*":
+        output_node_manifest.kind = deepcopy(kinds_for_outputs)
         return None
-    defined_output_names = {output.name for output in step_outputs}
-    if selected_output_name not in defined_output_names:
+    if selected_output_name not in kinds_for_outputs:
+        output_name = output_node_manifest.output_manifest.name
+
         raise InvalidReferenceTargetError(
-            public_message=f"Graph definition contains selector {output_selector} that points to output of step "
-            f"that is not defined in workflow block used to create step.",
+            public_message=f"Workflow output references '{output_selector}' which points to a non-existent block property.",
             context="workflow_compilation | execution_graph_construction",
+            blocks_errors=[
+                WorkflowBlockError(
+                    block_id="$outputs",
+                    property_name=output_name,
+                    property_details=f"Invalid reference to {output_selector}",
+                ),
+            ],
         )
+    output_node_manifest.kind = copy(kinds_for_outputs[selected_output_name])
+    return None
 
 
 def denote_data_flow_in_workflow(
@@ -598,6 +692,7 @@ def denote_data_flow_for_step(
     )
     inputs_dimensionalities = get_inputs_dimensionalities(
         step_name=step_name,
+        step_type=manifest.type,
         input_data=input_data,
     )
     logger.debug(
@@ -622,6 +717,7 @@ def denote_data_flow_for_step(
     )
     verify_input_data_dimensionality(
         step_name=step_name,
+        step_type=manifest.type,
         dimensionality_reference_property=dimensionality_reference_property,
         inputs_dimensionalities=inputs_dimensionalities,
         dimensionality_offstes=input_dimensionality_offsets,
@@ -642,6 +738,57 @@ def denote_data_flow_for_step(
             output_dimensionality_offset=output_dimensionality_offset,
         )
     )
+    parsed_step_input_selectors: List[ParsedSelector] = execution_graph.nodes[node][
+        PARSED_NODE_INPUT_SELECTORS_PROPERTY
+    ]
+    input_property2batch_expected = defaultdict(set)
+    for parsed_selector in parsed_step_input_selectors:
+        for reference in parsed_selector.definition.allowed_references:
+            input_property2batch_expected[
+                parsed_selector.definition.property_name
+            ].update(reference.points_to_batch)
+    for property_name, input_definition in input_data.items():
+        if property_name not in input_property2batch_expected:
+            # only values plugged vi selectors are to be validated
+            continue
+        if input_definition.is_compound_input():
+            actual_input_is_batch = {
+                element.is_batch_oriented()
+                for element in input_definition.iterate_through_definitions()
+            }
+        else:
+            actual_input_is_batch = {input_definition.is_batch_oriented()}
+        batch_input_expected = input_property2batch_expected[property_name]
+        step_accepts_batch_input = step_node_data.step_manifest.accepts_batch_input()
+        if (
+            step_accepts_batch_input
+            and batch_input_expected == {False}
+            and True in actual_input_is_batch
+        ):
+            raise ExecutionGraphStructureError(
+                public_message=f"Detected invalid reference plugged "
+                f"into property `{property_name}` of step `{node}` - the step "
+                f"property do not accept batch-oriented inputs, yet the input selector "
+                f"holds one - this indicates the problem with "
+                f"construction of your Workflow - usually the problem occurs when non-batch oriented "
+                f"step inputs are filled with outputs of batch-oriented steps or batch-oriented inputs.",
+                context="workflow_compilation | execution_graph_construction",
+            )
+        if (
+            step_accepts_batch_input
+            and batch_input_expected == {True}
+            and False in actual_input_is_batch
+        ):
+            raise ExecutionGraphStructureError(
+                public_message=f"Detected invalid reference plugged "
+                f"into property `{property_name}` of step `{node}` - the step "
+                f"property strictly requires batch-oriented inputs, yet the input selector "
+                f"holds non-batch oriented input - this indicates the "
+                f"problem with construction of your Workflow - usually the problem occurs when "
+                f"non-batch oriented step inputs are filled with outputs of non batch-oriented "
+                f"steps or non batch-oriented inputs.",
+                context="workflow_compilation | execution_graph_construction",
+            )
     if not parameters_with_batch_inputs:
         data_lineage = []
     else:
@@ -1087,6 +1234,7 @@ def verify_output_offset(
 
 def verify_input_data_dimensionality(
     step_name: str,
+    step_type: str,
     dimensionality_reference_property: Optional[str],
     inputs_dimensionalities: Dict[str, Set[int]],
     dimensionality_offstes: Dict[str, int],
@@ -1116,6 +1264,13 @@ def verify_input_data_dimensionality(
                 f"which means that all batch-oriented parameters must be at the same dimensionality level, "
                 f"but detected the following dimensionalities for parameters {parameter2dimensionality}",
                 context="workflow_compilation | execution_graph_construction | denoting_step_inputs_dimensionality",
+                blocks_errors=[
+                    WorkflowBlockError(
+                        block_id=step_name,
+                        block_type=step_type,
+                        block_details=f"Dimensionality of input parameters doesn't match: {parameter2dimensionality}",
+                    )
+                ],
             )
         return None
     reference_specification = parameter_name2dimensionality_specification[
@@ -1142,6 +1297,14 @@ def verify_input_data_dimensionality(
                 f"actual dimensionality {actual_dimensionality}, "
                 f"when expected was {expected_dimensionality}",
                 context="workflow_compilation | execution_graph_construction | denoting_step_inputs_dimensionality",
+                blocks_errors=[
+                    WorkflowBlockError(
+                        block_id=step_name,
+                        block_type=step_type,
+                        property_name=property_name,
+                        property_details=f"Expected dimensionality {expected_dimensionality}, but received dimensionality {actual_dimensionality}",
+                    )
+                ],
             )
     return None
 
@@ -1240,7 +1403,7 @@ def get_batch_lineage_prefixes(lineage: List[str]) -> List[List[str]]:
 
 
 def get_inputs_dimensionalities(
-    step_name: str, input_data: StepInputData
+    step_name: str, step_type: str, input_data: StepInputData
 ) -> Dict[str, Set[int]]:
     result = defaultdict(set)
     dimensionalities_spotted = set()
@@ -1248,6 +1411,7 @@ def get_inputs_dimensionalities(
         if input_definition.is_compound_input():
             result[property_name] = get_compound_input_dimensionality(
                 step_name=step_name,
+                step_type=step_type,
                 property_name=property_name,
                 input_definition=input_definition,
             )
@@ -1263,6 +1427,13 @@ def get_inputs_dimensionalities(
             raise StepInputDimensionalityError(
                 public_message=f"For step {step_name} attempted to plug input data differing in dimensionality more than 1",
                 context="workflow_compilation | execution_graph_construction | collecting_step_input_data",
+                blocks_errors=[
+                    WorkflowBlockError(
+                        block_id=step_name,
+                        block_type=step_type,
+                        block_details=f"Dimensionality of input parameters differs by more than 1. Detected dimensions: {dict(result)}",
+                    )
+                ],
             )
     return result
 
@@ -1270,6 +1441,7 @@ def get_inputs_dimensionalities(
 def get_compound_input_dimensionality(
     step_name: str,
     property_name: str,
+    step_type: str,
     input_definition: CompoundStepInputDefinition,
 ) -> Set[int]:
     dimensionalities_spotted = set()
@@ -1281,6 +1453,14 @@ def get_compound_input_dimensionality(
             public_message=f"While evaluating compound property {property_name} of step {step_name}, "
             f"detected multiple inputs of differing batch dimensionalities: {non_zero_dimensionalities}",
             context="workflow_compilation | execution_graph_construction | collecting_step_input_data",
+            blocks_errors=[
+                WorkflowBlockError(
+                    block_id=step_name,
+                    block_type=step_type,
+                    property_name=property_name,
+                    property_details=f"Detected multiple inputs of differing batch dimensionalities: {non_zero_dimensionalities}",
+                )
+            ],
         )
     return dimensionalities_spotted
 
@@ -1489,6 +1669,17 @@ def get_reference_lineage(
             context="workflow_compilation | execution_graph_construction | collecting_step_inputs",
         )
     return copy(property_data.data_lineage)
+
+
+def get_property_with_invalid_selector(
+    manifest: WorkflowBlockManifest, step_property: str
+) -> Optional[str]:
+    property_name = None
+    for key, value in manifest.__dict__.items():
+        if isinstance(value, str) and step_property in value:
+            property_name = key
+            break
+    return property_name
 
 
 def add_super_input_node_in_execution_graph(

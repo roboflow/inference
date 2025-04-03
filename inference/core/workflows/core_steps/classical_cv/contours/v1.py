@@ -16,9 +16,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INTEGER_KIND,
     NUMPY_ARRAY_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -42,17 +40,23 @@ class ImageContoursDetectionManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
+            "ui_manifest": {
+                "section": "classical_cv",
+                "icon": "far fa-border-all",
+                "blockPriority": 4,
+                "opencv": True,
+            },
         }
     )
 
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
 
-    line_thickness: Union[WorkflowParameterSelector(kind=[INTEGER_KIND]), int] = Field(
+    line_thickness: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         description="Line thickness for drawing contours.",
         default=3,
         examples=[3, "$inputs.line_thickness"],
@@ -89,7 +93,7 @@ class ImageContoursDetectionManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class ImageContoursDetectionBlockV1(WorkflowBlock):

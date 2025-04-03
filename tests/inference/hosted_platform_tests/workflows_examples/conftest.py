@@ -33,3 +33,8 @@ def license_plate_image() -> np.ndarray:
 @pytest.fixture(scope="function")
 def dogs_image() -> np.ndarray:
     return cv2.imread(os.path.join(ASSETS_DIR, "dogs.jpg"))
+
+
+@pytest.fixture(scope="function")
+def asl_image() -> np.ndarray:
+    return cv2.imread(os.path.join(ASSETS_DIR, "asl_image.jpg"))

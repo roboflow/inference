@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import List
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import ModelConfig
@@ -12,10 +12,16 @@ def default_process_frame(
     inference_config: ModelConfig,
 ) -> List[dict]:
     postprocessing_args = inference_config.to_postprocessing_params()
+    # TODO: handle batch input in usage
+    fps = video_frame[0].fps
+    if video_frame[0].measured_fps:
+        fps = video_frame[0].measured_fps
+    if not fps:
+        fps = 0
     predictions = wrap_in_list(
         model.infer(
             [f.image for f in video_frame],
-            usage_fps=video_frame[0].fps,
+            usage_fps=fps,
             usage_api_key=model.api_key,
             **postprocessing_args,
         )

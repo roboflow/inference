@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Type
 
 from packaging.specifiers import SpecifierSet
@@ -37,6 +38,7 @@ class ExecutionEngine(BaseExecutionEngine):
         prevent_local_images_loading: bool = False,
         workflow_id: Optional[str] = None,
         profiler: Optional[WorkflowsProfiler] = None,
+        executor: Optional[ThreadPoolExecutor] = None,
     ) -> "ExecutionEngine":
         requested_engine_version = retrieve_requested_execution_engine_version(
             workflow_definition=workflow_definition,
@@ -51,6 +53,7 @@ class ExecutionEngine(BaseExecutionEngine):
             prevent_local_images_loading=prevent_local_images_loading,
             workflow_id=workflow_id,
             profiler=profiler,
+            executor=executor,
         )
         return cls(engine=engine)
 
@@ -65,11 +68,13 @@ class ExecutionEngine(BaseExecutionEngine):
         runtime_parameters: Dict[str, Any],
         fps: float = 0,
         _is_preview: bool = False,
+        serialize_results: bool = False,
     ) -> List[Dict[str, Any]]:
         return self._engine.run(
             runtime_parameters=runtime_parameters,
             fps=fps,
             _is_preview=_is_preview,
+            serialize_results=serialize_results,
         )
 
 

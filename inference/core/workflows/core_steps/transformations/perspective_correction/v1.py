@@ -23,10 +23,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -38,8 +35,8 @@ OUTPUT_DETECTIONS_KEY: str = "corrected_coordinates"
 OUTPUT_IMAGE_KEY: str = "warped_image"
 TYPE: str = "PerspectiveCorrection"
 SHORT_DESCRIPTION = (
-    "Correct coordinates of detections from plane defined by given polygon "
-    "to straight rectangular plane of given width and height"
+    "Adjust detection coordinates from a polygon-defined plane "
+    "to a straight rectangular plane with specified width and height."
 )
 LONG_DESCRIPTION = """
 The `PerspectiveCorrectionBlock` is a transformer block designed to correct
@@ -58,11 +55,17 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-toolbox",
+                "blockPriority": 2,
+                "opencv": True,
+            },
         }
     )
     type: Literal["roboflow_core/perspective_correction@v1", "PerspectiveCorrection"]
     predictions: Optional[
-        StepOutputSelector(
+        Selector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -73,36 +76,40 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         default=None,
         examples=["$steps.object_detection_model.predictions"],
     )
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    images: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image to Crop",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("images", "image"),
     )
-    perspective_polygons: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+    perspective_polygons: Union[list, Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Perspective polygons (for each batch at least one must be consisting of 4 vertices)",
         examples=["$steps.perspective_wrap.zones"],
     )
-    transformed_rect_width: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    transformed_rect_width: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Transformed rect width", default=1000, examples=[1000]
     )
-    transformed_rect_height: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    transformed_rect_height: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         description="Transformed rect height", default=1000, examples=[1000]
     )
-    extend_perspective_polygon_by_detections_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
+    extend_perspective_polygon_by_detections_anchor: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
         description=f"If set, perspective polygons will be extended to contain all bounding boxes. Allowed values: {', '.join(sv.Position.list())}",
         default="",
         examples=["CENTER"],
     )
-    warp_image: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+    warp_image: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
         description=f"If set to True, image will be warped into transformed rect",
         default=False,
         examples=[False],
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images", "predictions"]
+
+    @classmethod
+    def get_parameters_accepting_batches_and_scalars(cls) -> List[str]:
+        return ["perspective_polygons"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -124,7 +131,7 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 def pick_largest_perspective_polygons(
@@ -133,7 +140,7 @@ def pick_largest_perspective_polygons(
         List[List[np.ndarray]],
         List[List[List[int]]],
         List[List[List[List[int]]]],
-    ]
+    ],
 ) -> List[np.ndarray]:
     if not isinstance(perspective_polygons_batch, (list, Batch)):
         raise ValueError("Unexpected type of input")

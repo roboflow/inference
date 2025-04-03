@@ -24,14 +24,13 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
     FloatZeroToOne,
     ImageInputField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -64,13 +63,17 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fal fa-atom",
+                "blockPriority": 8,
+                "inference": True,
+            },
         }
     )
     type: Literal["roboflow_core/yolo_world_model@v1", "YoloWorldModel", "YoloWorld"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    class_names: Union[
-        WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]
-    ] = Field(
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    class_names: Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]] = Field(
         description="One or more classes that you want YOLO-World to detect. The model accepts any string as an input, though does best with short descriptions of common objects.",
         examples=[["person", "car", "license plate"], "$inputs.class_names"],
     )
@@ -85,7 +88,7 @@ class BlockManifest(WorkflowBlockManifest):
             "l",
             "x",
         ],
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
     ] = Field(
         default="v2-s",
         description="Variant of YoloWorld model",
@@ -93,7 +96,7 @@ class BlockManifest(WorkflowBlockManifest):
     )
     confidence: Union[
         Optional[FloatZeroToOne],
-        WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
+        Selector(kind=[FLOAT_ZERO_TO_ONE_KIND]),
     ] = Field(
         default=0.005,
         description="Confidence threshold for detections",
@@ -101,8 +104,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -114,7 +117,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class YoloWorldModelBlockV1(WorkflowBlock):
@@ -217,7 +220,7 @@ class YoloWorldModelBlockV1(WorkflowBlock):
         client.configure(inference_configuration=configuration)
         if WORKFLOWS_REMOTE_API_TARGET == "hosted":
             client.select_api_v0()
-        inference_images = [i.to_inference_format(numpy_preferred=True) for i in images]
+        inference_images = [i.to_inference_format() for i in images]
         image_sub_batches = list(
             make_batches(
                 iterable=inference_images,

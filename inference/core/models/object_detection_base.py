@@ -2,13 +2,21 @@ from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 
+from inference.core.env import (
+    FIX_BATCH_SIZE,
+    MAX_BATCH_SIZE,
+    USE_PYTORCH_FOR_PREPROCESSING,
+)
+from inference.core.logger import logger
+
+if USE_PYTORCH_FOR_PREPROCESSING:
+    import torch
+
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
-from inference.core.env import FIX_BATCH_SIZE, MAX_BATCH_SIZE
-from inference.core.logger import logger
 from inference.core.models.defaults import (
     DEFAULT_CLASS_AGNOSTIC_NMS,
     DEFAULT_CONFIDENCE,
@@ -224,7 +232,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             batch_padding = 0
             if FIX_BATCH_SIZE or fix_batch_size:
                 if MAX_BATCH_SIZE == float("inf"):
-                    logger.warn(
+                    logger.warning(
                         "Requested fix_batch_size but MAX_BATCH_SIZE is not set. Using dynamic batching."
                     )
                     batch_padding = 0
@@ -247,11 +255,40 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                 height_padding = 32 - height_remainder
             else:
                 height_padding = 0
-            img_in = np.pad(
-                img_in,
-                ((0, batch_padding), (0, 0), (0, width_padding), (0, height_padding)),
-                "constant",
-            )
+
+            if isinstance(img_in, np.ndarray):
+                img_in = np.pad(
+                    img_in,
+                    (
+                        (0, batch_padding),
+                        (0, 0),
+                        (0, width_padding),
+                        (0, height_padding),
+                    ),
+                    "constant",
+                )
+            elif USE_PYTORCH_FOR_PREPROCESSING:
+                img_in = torch.nn.functional.pad(
+                    img_in,
+                    (
+                        0,
+                        height_padding,  # height padding
+                        0,
+                        width_padding,  # width padding
+                        0,
+                        0,  # channels
+                        0,
+                        batch_padding,
+                    ),  # batch
+                    mode="constant",
+                    value=0,
+                )
+            else:
+                raise ValueError(
+                    f"Received an image of unknown type, {type(img_in)}; "
+                    "This is most likely a bug. Contact Roboflow team through github issues "
+                    "(https://github.com/roboflow/inference/issues) providing full context of the problem"
+                )
 
         return img_in, PreprocessReturnMetadata(
             {

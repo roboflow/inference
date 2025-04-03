@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Type
 
 import cv2
 import numpy as np
@@ -15,8 +15,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KEYPOINTS_KIND,
     IMAGE_KIND,
     NUMPY_ARRAY_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -47,10 +46,16 @@ class SIFTDetectionManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
+            "ui_manifest": {
+                "section": "classical_cv",
+                "icon": "far fa-grid-2-plus",
+                "blockPriority": 4,
+                "opencv": True,
+            },
         }
     )
 
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
@@ -59,7 +64,7 @@ class SIFTDetectionManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:

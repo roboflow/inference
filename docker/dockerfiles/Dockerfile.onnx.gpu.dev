@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 as base
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 as base
 
 WORKDIR /app
 
@@ -11,6 +11,8 @@ RUN rm -rf /var/lib/apt/lists/* && apt-get clean && apt-get update -y && DEBIAN_
     git \
     libgdal-dev \
     wget \
+    rustc \
+    cargo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements/requirements.sam.txt \
@@ -21,7 +23,6 @@ COPY requirements/requirements.sam.txt \
     requirements/requirements.gaze.txt \
     requirements/requirements.doctr.txt \
     requirements/requirements.groundingdino.txt \
-    requirements/requirements.cogvlm.txt \
     requirements/requirements.yolo_world.txt \
     requirements/_requirements.txt \
     requirements/requirements.transformers.txt \
@@ -32,8 +33,6 @@ COPY requirements/requirements.sam.txt \
 
 RUN python3 -m pip install -U pip
 RUN python3 -m pip install \
-    --extra-index-url https://download.pytorch.org/whl/cu118 \
-    --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/ \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
@@ -43,12 +42,12 @@ RUN python3 -m pip install \
     -r requirements.gaze.txt \
     -r requirements.groundingdino.txt \
     -r requirements.doctr.txt \
-    -r requirements.cogvlm.txt \
     -r requirements.yolo_world.txt \
     -r requirements.transformers.txt \
     -r requirements.sdk.http.txt \
     -r requirements.cli.txt \
     jupyterlab \
+    "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
@@ -56,10 +55,7 @@ RUN python3 -m pip install \
 RUN python3 -m pip install packaging==24.1  && rm -rf ~/.cache/pip
 
 # Install flash_attn required for Paligemma and Florence2
-RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-build-isolation && rm -rf ~/.cache/pip
-
-FROM scratch
-COPY --from=base / /
+RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
 
 WORKDIR /app/
 COPY inference inference
@@ -80,7 +76,8 @@ ENV API_LOGGING_ENABLED=True
 ENV LMM_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
 ENV CORE_MODEL_OWLV2_ENABLED=True
-ENV ENABLE_WORKFLOWS_PROFILING=True
+ENV ENABLE_STREAM_API=True
 ENV ENABLE_PROMETHEUS=True
+ENV STREAM_API_PRELOADED_PROCESSES=2
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

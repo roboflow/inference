@@ -36,8 +36,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     FloatZeroToOne,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -77,11 +76,16 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "fusion",
+            "ui_manifest": {
+                "section": "flow_control",
+                "icon": "fak fa-circles-overlap",
+                "blockPriority": 4,
+            },
         }
     )
     type: Literal["roboflow_core/detections_consensus@v1", "DetectionsConsensus"]
     predictions_batches: List[
-        StepOutputSelector(
+        Selector(
             kind=[
                 OBJECT_DETECTION_PREDICTION_KIND,
                 INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -94,33 +98,29 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[["$steps.a.predictions", "$steps.b.predictions"]],
         validation_alias=AliasChoices("predictions_batches", "predictions"),
     )
-    required_votes: Union[
-        PositiveInt, WorkflowParameterSelector(kind=[INTEGER_KIND])
-    ] = Field(
+    required_votes: Union[PositiveInt, Selector(kind=[INTEGER_KIND])] = Field(
         description="Required number of votes for single detection from different models to accept detection as output detection",
         examples=[2, "$inputs.required_votes"],
     )
-    class_aware: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
+    class_aware: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         description="Flag to decide if merging detections is class-aware or only bounding boxes aware",
         examples=[True, "$inputs.class_aware"],
     )
-    iou_threshold: Union[
-        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
-        default=0.3,
-        description="IoU threshold to consider detections from different models as matching (increasing votes for region)",
-        examples=[0.3, "$inputs.iou_threshold"],
+    iou_threshold: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = (
+        Field(
+            default=0.3,
+            description="IoU threshold to consider detections from different models as matching (increasing votes for region)",
+            examples=[0.3, "$inputs.iou_threshold"],
+        )
     )
-    confidence: Union[
-        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
+    confidence: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
         default=0.0,
         description="Confidence threshold for merged detections",
         examples=[0.1, "$inputs.confidence"],
     )
     classes_to_consider: Optional[
-        Union[List[str], WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])]
+        Union[List[str], Selector(kind=[LIST_OF_VALUES_KIND])]
     ] = Field(
         default=None,
         description="Optional list of classes to consider in consensus procedure.",
@@ -130,7 +130,7 @@ class BlockManifest(WorkflowBlockManifest):
         Union[
             PositiveInt,
             Dict[str, PositiveInt],
-            WorkflowParameterSelector(kind=[INTEGER_KIND, DICTIONARY_KIND]),
+            Selector(kind=[INTEGER_KIND, DICTIONARY_KIND]),
         ]
     ] = Field(
         default=None,
@@ -154,8 +154,8 @@ class BlockManifest(WorkflowBlockManifest):
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["predictions_batches"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -175,7 +175,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class DetectionsConsensusBlockV1(WorkflowBlock):

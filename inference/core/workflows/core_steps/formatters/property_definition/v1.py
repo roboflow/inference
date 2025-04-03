@@ -1,4 +1,4 @@
-from typing import Any, List, Literal, Optional, Type
+from typing import Any, List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
 
@@ -9,13 +9,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
     build_operations_chain,
 )
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
-from inference.core.workflows.execution_engine.entities.types import (
-    CLASSIFICATION_PREDICTION_KIND,
-    INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    KEYPOINT_DETECTION_PREDICTION_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
-    StepOutputSelector,
-)
+from inference.core.workflows.execution_engine.entities.types import Selector
 from inference.core.workflows.prototypes.block import (
     BlockResult,
     WorkflowBlock,
@@ -53,6 +47,12 @@ class BlockManifest(WorkflowBlockManifest):
                 "labels",
                 "coordinates",
             ],
+            "ui_manifest": {
+                "section": "advanced",
+                "icon": "fal fa-gear-code",
+                "blockPriority": 0,
+                "popular": True,
+            },
         }
     )
     type: Literal[
@@ -60,19 +60,12 @@ class BlockManifest(WorkflowBlockManifest):
         "PropertyDefinition",
         "PropertyExtraction",
     ]
-    data: StepOutputSelector(
-        kind=[
-            OBJECT_DETECTION_PREDICTION_KIND,
-            INSTANCE_SEGMENTATION_PREDICTION_KIND,
-            KEYPOINT_DETECTION_PREDICTION_KIND,
-            CLASSIFICATION_PREDICTION_KIND,
-        ]
-    ) = Field(
-        description="Reference data to extract property from",
+    data: Selector() = Field(
+        description="Data to extract property from.",
         examples=["$steps.my_step.predictions"],
     )
     operations: List[AllOperationsType] = Field(
-        description="List of operations to perform on data to generate output",
+        description="List of operations to perform on the data.",
         examples=[
             [{"type": "DetectionsPropertyExtract", "property_name": "class_name"}]
         ],
@@ -84,7 +77,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class PropertyDefinitionBlockV1(WorkflowBlock):

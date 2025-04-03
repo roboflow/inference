@@ -92,7 +92,7 @@ def test_image_description_workflow(
         p["confidence"] for p in result[0]["detection_predictions"]["predictions"]
     ]
     assert np.allclose(
-        detection_confidences, [0.857235848903656, 0.5132315158843994], atol=1e-4
+        detection_confidences, [0.856178879737854, 0.5191817283630371], atol=1e-4
     ), "Expected predictions to match what was observed while test creation"
     assert len(result[0]["description"]) > 0, "Expected some description"
 
@@ -114,7 +114,7 @@ CLASSIFICATION_WORKFLOW = {
             "api_key": "$inputs.api_key",
         },
         {
-            "type": "roboflow_core/vlm_as_classifier@v1",
+            "type": "roboflow_core/vlm_as_classifier@v2",
             "name": "parser",
             "image": "$inputs.image",
             "vlm_output": "$steps.gpt.output",
@@ -294,7 +294,7 @@ VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
             "api_key": "$inputs.api_key",
         },
         {
-            "type": "roboflow_core/vlm_as_classifier@v1",
+            "type": "roboflow_core/vlm_as_classifier@v2",
             "name": "parser",
             "image": "$steps.cropping.crops",
             "vlm_output": "$steps.gpt.output",

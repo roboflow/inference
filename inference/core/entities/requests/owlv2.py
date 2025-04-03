@@ -16,6 +16,10 @@ class TrainBox(BaseModel):
     w: int = Field(description="Width in pixels of train box")
     h: int = Field(description="Height in pixels of train box")
     cls: str = Field(description="Class name of object this box encloses")
+    negative: bool = Field(
+        default=False,
+        description="Whether this object is a positive or negative example for this class",
+    )
 
 
 class TrainingImage(BaseModel):

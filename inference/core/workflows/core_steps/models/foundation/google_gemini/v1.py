@@ -20,13 +20,13 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
+    IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
+    SECRET_KIND,
     STRING_KIND,
     ImageInputField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -96,7 +96,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Google Gemini",
             "version": "v1",
-            "short_description": "Run Google's Gemini model with vision capabilities",
+            "short_description": "Run Google's Gemini model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
@@ -104,10 +104,17 @@ class BlockManifest(WorkflowBlockManifest):
             "beta": True,
             "is_vlm_block": True,
             "task_type_property": "task_type",
-        }
+            "ui_manifest": {
+                "section": "model",
+                "icon": "fa-brands fa-google",
+                "blockPriority": 5,
+                "popular": True,
+            },
+        },
+        protected_namespaces=(),
     )
     type: Literal["roboflow_core/google_gemini@v1"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
         description="Task type to be performed by model. Value determines required parameters and output response.",
@@ -122,7 +129,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
+    prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Text prompt to the Gemini model",
         examples=["my prompt", "$inputs.prompt"],
@@ -130,6 +137,7 @@ class BlockManifest(WorkflowBlockManifest):
             "relevant_for": {
                 "task_type": {"values": TASKS_REQUIRING_PROMPT, "required": True},
             },
+            "multiline": True,
         },
     )
     output_structure: Optional[Dict[str, str]] = Field(
@@ -145,9 +153,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    classes: Optional[
-        Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]
-    ] = Field(
+    classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
         default=None,
         description="List of classes to be used",
         examples=[["class-a", "class-b"], "$inputs.classes"],
@@ -160,26 +166,24 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
+    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
         description="Your Google AI API key",
         examples=["xxx-xxx", "$inputs.google_api_key"],
         private=True,
     )
     model_version: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
-        Literal["gemini-1.5-flash", "gemini-1.5-pro"],
+        Selector(kind=[STRING_KIND]),
+        Literal["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro"],
     ] = Field(
         default="gemini-1.5-flash",
         description="Model to be used",
-        examples=["gemini-1.5-flash", "$inputs.gemini_model"],
+        examples=["gemini-2.0-flash-exp", "$inputs.gemini_model"],
     )
     max_tokens: int = Field(
         default=450,
         description="Maximum number of tokens the model can generate in it's response.",
     )
-    temperature: Optional[
-        Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])]
-    ] = Field(
+    temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
         'random / "creative" the generations are.',
@@ -213,8 +217,8 @@ class BlockManifest(WorkflowBlockManifest):
         return self
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -227,7 +231,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class GoogleGeminiBlockV1(WorkflowBlock):
@@ -250,7 +254,7 @@ class GoogleGeminiBlockV1(WorkflowBlock):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
     def run(
         self,
@@ -546,7 +550,10 @@ def prepare_ocr_prompt(
                         "mime_type": "image/jpeg",
                         "data": base64_image,
                     }
-                }
+                },
+                {
+                    "text": f"Read the text",
+                },
             ],
             "role": "user",
         },
@@ -584,7 +591,10 @@ def prepare_caption_prompt(
                         "mime_type": "image/jpeg",
                         "data": base64_image,
                     }
-                }
+                },
+                {
+                    "text": f"Caption the image",
+                },
             ],
             "role": "user",
         },

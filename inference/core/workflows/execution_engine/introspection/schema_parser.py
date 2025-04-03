@@ -1,12 +1,13 @@
 import itertools
 from collections import OrderedDict, defaultdict
 from dataclasses import replace
-from typing import Dict, Optional, Type
+from typing import Dict, Optional, Set, Type
 
 from inference.core.workflows.execution_engine.entities.types import (
     KIND_KEY,
     REFERENCE_KEY,
     SELECTED_ELEMENT_KEY,
+    SELECTOR_POINTS_TO_BATCH_KEY,
     Kind,
 )
 from inference.core.workflows.execution_engine.introspection.entities import (
@@ -39,6 +40,7 @@ STR_TYPE_NAME = "str"
 
 ITEMS_KEY = "items"
 UNIQUE_ITEMS_KEY = "uniqueItems"
+TUPLE_ITEMS_KEY = "prefixItems"
 TYPE_KEY = "type"
 REF_KEY = "$ref"
 ADDITIONAL_PROPERTIES_KEY = "additionalProperties"
@@ -58,10 +60,16 @@ def parse_block_manifest(
     dimensionality_reference_property = (
         manifest_type.get_dimensionality_reference_property()
     )
+    inputs_accepting_batches = set(manifest_type.get_parameters_accepting_batches())
+    inputs_accepting_batches_and_scalars = set(
+        manifest_type.get_parameters_accepting_batches_and_scalars()
+    )
     return parse_block_manifest_schema(
         schema=schema,
         inputs_dimensionality_offsets=inputs_dimensionality_offsets,
         dimensionality_reference_property=dimensionality_reference_property,
+        inputs_accepting_batches=inputs_accepting_batches,
+        inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
     )
 
 
@@ -69,6 +77,8 @@ def parse_block_manifest_schema(
     schema: dict,
     inputs_dimensionality_offsets: Dict[str, int],
     dimensionality_reference_property: Optional[str],
+    inputs_accepting_batches: Set[str],
+    inputs_accepting_batches_and_scalars: Set[str],
 ) -> BlockManifestMetadata:
     primitive_types = retrieve_primitives_from_schema(
         schema=schema,
@@ -77,6 +87,8 @@ def parse_block_manifest_schema(
         schema=schema,
         inputs_dimensionality_offsets=inputs_dimensionality_offsets,
         dimensionality_reference_property=dimensionality_reference_property,
+        inputs_accepting_batches=inputs_accepting_batches,
+        inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
     )
     return BlockManifestMetadata(
         primitive_types=primitive_types,
@@ -122,6 +134,21 @@ def retrieve_primitive_type_from_property(
         )
         return replace(
             result, type_annotation=f"{high_level_type}[{result.type_annotation}]"
+        )
+    if TUPLE_ITEMS_KEY in property_definition:
+        nested_annotations = [
+            retrieve_primitive_type_from_property(
+                property_name=property_name,
+                property_description=property_description,
+                property_definition=nested_definition,
+            )
+            for nested_definition in property_definition[TUPLE_ITEMS_KEY]
+        ]
+        inner_types = ", ".join(a.type_annotation for a in nested_annotations)
+        return PrimitiveTypeDefinition(
+            property_name=property_name,
+            property_description=property_description,
+            type_annotation=f"Tuple[{inner_types}]",
         )
     if property_definition.get(TYPE_KEY) in TYPE_MAPPING:
         type_name = TYPE_MAPPING[property_definition[TYPE_KEY]]
@@ -201,11 +228,12 @@ def retrieve_primitive_type_from_dict_property(
     property_description: str,
     property_definition: dict,
 ) -> Optional[PrimitiveTypeDefinition]:
-    if ADDITIONAL_PROPERTIES_KEY in property_definition:
+    nested_property_definition = property_definition.get(ADDITIONAL_PROPERTIES_KEY)
+    if isinstance(nested_property_definition, dict):
         dict_value_type = retrieve_primitive_type_from_property(
             property_name=property_name,
             property_description=property_description,
-            property_definition=property_definition[ADDITIONAL_PROPERTIES_KEY],
+            property_definition=nested_property_definition,
         )
         if dict_value_type is None:
             return None
@@ -225,6 +253,8 @@ def retrieve_selectors_from_schema(
     schema: dict,
     inputs_dimensionality_offsets: Dict[str, int],
     dimensionality_reference_property: Optional[str],
+    inputs_accepting_batches: Set[str],
+    inputs_accepting_batches_and_scalars: Set[str],
 ) -> Dict[str, SelectorDefinition]:
     result = []
     for property_name, property_definition in schema[PROPERTIES_KEY].items():
@@ -245,10 +275,11 @@ def retrieve_selectors_from_schema(
                 property_dimensionality_offset=property_dimensionality_offset,
                 is_dimensionality_reference_property=is_dimensionality_reference_property,
                 is_list_element=True,
+                inputs_accepting_batches=inputs_accepting_batches,
+                inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
             )
-        elif (
-            property_definition.get(TYPE_KEY) == OBJECT_TYPE
-            and ADDITIONAL_PROPERTIES_KEY in property_definition
+        elif property_definition.get(TYPE_KEY) == OBJECT_TYPE and isinstance(
+            property_definition.get(ADDITIONAL_PROPERTIES_KEY), dict
         ):
             selector = retrieve_selectors_from_simple_property(
                 property_name=property_name,
@@ -257,6 +288,8 @@ def retrieve_selectors_from_schema(
                 property_dimensionality_offset=property_dimensionality_offset,
                 is_dimensionality_reference_property=is_dimensionality_reference_property,
                 is_dict_element=True,
+                inputs_accepting_batches=inputs_accepting_batches,
+                inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
             )
         else:
             selector = retrieve_selectors_from_simple_property(
@@ -265,6 +298,8 @@ def retrieve_selectors_from_schema(
                 property_definition=property_definition,
                 property_dimensionality_offset=property_dimensionality_offset,
                 is_dimensionality_reference_property=is_dimensionality_reference_property,
+                inputs_accepting_batches=inputs_accepting_batches,
+                inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
             )
         if selector is not None:
             result.append(selector)
@@ -277,10 +312,22 @@ def retrieve_selectors_from_simple_property(
     property_definition: dict,
     property_dimensionality_offset: int,
     is_dimensionality_reference_property: bool,
+    inputs_accepting_batches: Set[str],
+    inputs_accepting_batches_and_scalars: Set[str],
     is_list_element: bool = False,
     is_dict_element: bool = False,
 ) -> Optional[SelectorDefinition]:
     if REFERENCE_KEY in property_definition:
+        declared_points_to_batch = property_definition.get(
+            SELECTOR_POINTS_TO_BATCH_KEY, False
+        )
+        if declared_points_to_batch == "dynamic":
+            if property_name in inputs_accepting_batches_and_scalars:
+                points_to_batch = {True, False}
+            else:
+                points_to_batch = {property_name in inputs_accepting_batches}
+        else:
+            points_to_batch = {declared_points_to_batch}
         allowed_references = [
             ReferenceDefinition(
                 selected_element=property_definition[SELECTED_ELEMENT_KEY],
@@ -288,6 +335,7 @@ def retrieve_selectors_from_simple_property(
                     Kind.model_validate(k)
                     for k in property_definition.get(KIND_KEY, [])
                 ],
+                points_to_batch=points_to_batch,
             )
         ]
         return SelectorDefinition(
@@ -309,6 +357,8 @@ def retrieve_selectors_from_simple_property(
             property_definition=property_definition[ITEMS_KEY],
             property_dimensionality_offset=property_dimensionality_offset,
             is_dimensionality_reference_property=is_dimensionality_reference_property,
+            inputs_accepting_batches=inputs_accepting_batches,
+            inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
             is_list_element=True,
         )
     if property_defines_union(property_definition=property_definition):
@@ -320,6 +370,8 @@ def retrieve_selectors_from_simple_property(
             is_dict_element=is_dict_element,
             property_dimensionality_offset=property_dimensionality_offset,
             is_dimensionality_reference_property=is_dimensionality_reference_property,
+            inputs_accepting_batches=inputs_accepting_batches,
+            inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
         )
     return None
 
@@ -340,6 +392,8 @@ def retrieve_selectors_from_union_definition(
     is_dict_element: bool,
     property_dimensionality_offset: int,
     is_dimensionality_reference_property: bool,
+    inputs_accepting_batches: Set[str],
+    inputs_accepting_batches_and_scalars: Set[str],
 ) -> Optional[SelectorDefinition]:
     union_types = (
         union_definition.get(ANY_OF_KEY, [])
@@ -354,6 +408,8 @@ def retrieve_selectors_from_union_definition(
             property_definition=type_definition,
             property_dimensionality_offset=property_dimensionality_offset,
             is_dimensionality_reference_property=is_dimensionality_reference_property,
+            inputs_accepting_batches=inputs_accepting_batches,
+            inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
             is_list_element=is_list_element,
         )
         if result is None:
@@ -362,20 +418,27 @@ def retrieve_selectors_from_union_definition(
     results_references = list(
         itertools.chain.from_iterable(r.allowed_references for r in results)
     )
-    results_references_by_selected_element = defaultdict(set)
+    results_references_kind_by_selected_element = defaultdict(set)
+    results_references_batch_pointing_by_selected_element = defaultdict(set)
     for reference in results_references:
-        results_references_by_selected_element[reference.selected_element].update(
+        results_references_kind_by_selected_element[reference.selected_element].update(
             reference.kind
         )
+        results_references_batch_pointing_by_selected_element[
+            reference.selected_element
+        ].update(reference.points_to_batch)
     merged_references = []
     for (
         reference_selected_element,
         kind,
-    ) in results_references_by_selected_element.items():
+    ) in results_references_kind_by_selected_element.items():
         merged_references.append(
             ReferenceDefinition(
                 selected_element=reference_selected_element,
                 kind=list(kind),
+                points_to_batch=results_references_batch_pointing_by_selected_element[
+                    reference_selected_element
+                ],
             )
         )
     if not merged_references:

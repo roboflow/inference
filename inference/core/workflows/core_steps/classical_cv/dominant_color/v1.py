@@ -8,11 +8,10 @@ from inference.core.workflows.execution_engine.entities.base import (
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    IMAGE_KIND,
     INTEGER_KIND,
     RGB_COLOR_KIND,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -45,15 +44,21 @@ class DominantColorManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "classical_computer_vision",
+            "ui_manifest": {
+                "section": "classical_cv",
+                "icon": "far fa-palette",
+                "blockPriority": 1,
+                "opencv": True,
+            },
         }
     )
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Input Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
         validation_alias=AliasChoices("image", "images"),
     )
-    color_clusters: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    color_clusters: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Color Clusters",
         description="Number of dominant colors to identify. Higher values increase precision but may slow processing.",
         default=4,
@@ -61,7 +66,7 @@ class DominantColorManifest(WorkflowBlockManifest):
         gt=0,
         le=10,
     )
-    max_iterations: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    max_iterations: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Max Iterations",
         description="Max number of iterations to perform. Higher values increase precision but may slow processing.",
         default=100,
@@ -69,7 +74,7 @@ class DominantColorManifest(WorkflowBlockManifest):
         gt=0,
         le=500,
     )
-    target_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(  # type: ignore
+    target_size: Union[int, Selector(kind=[INTEGER_KIND])] = Field(  # type: ignore
         title="Target Size",
         description="Sets target for the smallest dimension of the downsampled image in pixels. Lower values increase speed but may reduce precision.",
         default=100,
@@ -86,7 +91,7 @@ class DominantColorManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class DominantColorBlockV1(WorkflowBlock):

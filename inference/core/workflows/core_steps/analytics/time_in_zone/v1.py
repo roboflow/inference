@@ -15,15 +15,13 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputImageSelector,
-    StepOutputSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
-    WorkflowVideoMetadataSelector,
+    VIDEO_METADATA_KIND,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -32,7 +30,7 @@ from inference.core.workflows.prototypes.block import (
 )
 
 OUTPUT_KEY: str = "timed_detections"
-SHORT_DESCRIPTION = "Track duration of time spent by objects in zone"
+SHORT_DESCRIPTION = "Track object time in zone."
 LONG_DESCRIPTION = """
 The `TimeInZoneBlock` is an analytics block designed to measure time spent by objects in a zone.
 The block requires detections to be tracked (i.e. each object must have unique tracker_id assigned,
@@ -43,46 +41,51 @@ which persists between frames)
 class TimeInZoneManifest(WorkflowBlockManifest):
     model_config = ConfigDict(
         json_schema_extra={
-            "name": "Time in zone",
+            "name": "Time in Zone",
             "version": "v1",
             "short_description": SHORT_DESCRIPTION,
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "analytics",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "far fa-timer",
+                "blockPriority": 1,
+            },
         }
     )
     type: Literal["roboflow_core/time_in_zone@v1"]
-    image: Union[WorkflowImageSelector, StepOutputImageSelector] = Field(
+    image: Selector(kind=[IMAGE_KIND]) = Field(
         title="Image",
         description="The input image for this step.",
         examples=["$inputs.image", "$steps.cropping.crops"],
     )
-    metadata: WorkflowVideoMetadataSelector
-    detections: StepOutputSelector(
+    metadata: Selector(kind=[VIDEO_METADATA_KIND])
+    detections: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
     ) = Field(  # type: ignore
-        description="Predictions",
+        description="Model predictions to calculate the time spent in zone for.",
         examples=["$steps.object_detection_model.predictions"],
     )
-    zone: Union[list, StepOutputSelector(kind=[LIST_OF_VALUES_KIND]), WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
-        description="Zones (one for each batch) in a format [(x1, y1), (x2, y2), (x3, y3), ...]",
+    zone: Union[list, Selector(kind=[LIST_OF_VALUES_KIND]), Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+        description="Coordinates of the target zone.",
         examples=["$inputs.zones"],
     )
-    triggering_anchor: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description=f"Triggering anchor. Allowed values: {', '.join(sv.Position.list())}",
+    triggering_anchor: Union[str, Selector(kind=[STRING_KIND]), Literal[tuple(sv.Position.list())]] = Field(  # type: ignore
+        description=f"The point on the detection that must be inside the zone.",
         default="CENTER",
         examples=["CENTER"],
     )
-    remove_out_of_zone_detections: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
-        description=f"If true, detections found outside of zone will be filtered out",
+    remove_out_of_zone_detections: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+        description=f"If true, detections found outside of zone will be filtered out.",
         default=True,
         examples=[True, False],
     )
-    reset_out_of_zone_detections: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
-        description=f"If true, detections found outside of zone will have time reset",
+    reset_out_of_zone_detections: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(  # type: ignore
+        description=f"If true, detections found outside of zone will have time reset.",
         default=True,
         examples=[True, False],
     )
@@ -101,7 +104,7 @@ class TimeInZoneManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class TimeInZoneBlockV1(WorkflowBlock):
@@ -148,7 +151,6 @@ class TimeInZoneBlockV1(WorkflowBlock):
                 )
             self._batch_of_polygon_zones[metadata.video_identifier] = sv.PolygonZone(
                 polygon=np.array(zone),
-                frame_resolution_wh=image.numpy_image.shape[:-1],
                 triggering_anchors=(sv.Position(triggering_anchor),),
             )
         polygon_zone = self._batch_of_polygon_zones[metadata.video_identifier]

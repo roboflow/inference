@@ -14,7 +14,7 @@ from inference.core.workflows.execution_engine.constants import (
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
-    StepOutputSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -24,7 +24,7 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_KEY: str = "detections_with_rect"
 
-SHORT_DESCRIPTION = "Find minimal bounding rectangle surrounding detection contour"
+SHORT_DESCRIPTION = "Find the minimal bounding box surrounding the detected polygon."
 LONG_DESCRIPTION = """
 The `BoundingRect` is a transformer block designed to simplify polygon
 to the minimum boundig rectangle.
@@ -44,10 +44,15 @@ class BoundingRectManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "transformation",
+                "icon": "fal fa-rectangles-mixed",
+                "blockPriority": 5,
+            },
         }
     )
-    type: Literal[f"roboflow_core/bounding_rect@v1"]
-    predictions: StepOutputSelector(
+    type: Literal["roboflow_core/bounding_rect@v1"]
+    predictions: Selector(
         kind=[
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
         ]
@@ -55,10 +60,6 @@ class BoundingRectManifest(WorkflowBlockManifest):
         description="",
         examples=["$segmentation.predictions"],
     )
-
-    @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return False
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -70,7 +71,7 @@ class BoundingRectManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 def calculate_minimum_bounding_rectangle(
@@ -81,7 +82,7 @@ def calculate_minimum_bounding_rectangle(
 
     rect = cv.minAreaRect(largest_contour)
     box = cv.boxPoints(rect)
-    box = np.int0(box)
+    box = np.array(box, dtype=int)
 
     width, height = rect[1]
     angle = rect[2]
@@ -108,6 +109,18 @@ class BoundingRectBlockV1(WorkflowBlock):
 
             rect, width, height, angle = calculate_minimum_bounding_rectangle(
                 det.mask[0]
+            )
+
+            det.mask = np.array(
+                [
+                    sv.polygon_to_mask(
+                        polygon=np.around(rect).astype(np.int32),
+                        resolution_wh=(det.mask[0].shape[1], det.mask[0].shape[0]),
+                    ).astype(bool)
+                ]
+            )
+            det.xyxy = np.array(
+                [sv.polygon_to_xyxy(polygon=np.around(rect).astype(np.int32))]
             )
 
             det[BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS] = np.array(

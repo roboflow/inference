@@ -50,7 +50,7 @@ results = model.infer(image)
 detections = sv.Detections.from_inference(results[0].dict(by_alias=True, exclude_none=True))
 
 # create supervision annotators
-bounding_box_annotator = sv.BoundingBoxAnnotator()
+bounding_box_annotator = sv.BoxAnnotator()
 label_annotator = sv.LabelAnnotator()
 
 # annotate the image with our inference results
@@ -63,9 +63,10 @@ annotated_image = label_annotator.annotate(
 sv.plot_image(annotated_image)
 ```
 
+
 !!! Tip
 
-    To see more models, check out the [Pre-Trained Models](/quickstart/aliases/) page and [Roboflow Universe](https://universe.roboflow.com).
+    To see more models, check out the [Pre-Trained Models](../quickstart/aliases.md) page and [Roboflow Universe](https://universe.roboflow.com).
 
 The `people-walking.jpg` file is hosted <a href="https://media.roboflow.com/inference/people-walking.jpg" target="_blank">here</a>.
 

@@ -11,7 +11,7 @@ export ROBOFLOW_API_KEY=<your api key>
 
 ```
 
-[Learn more about using Roboflow API keys in Inference](/quickstart/configure_api_key/)
+[Learn more about using Roboflow API keys in Inference](../quickstart/configure_api_key.md)
 
 Then, install Inference:
 
@@ -61,7 +61,7 @@ Your webcam will open and you can see the model running:
 
     When you run inference on an image, the same augmentations you applied when you generated a version in Roboflow will be applied at inference time. This helps improve model performance.
 
-Presto! We used an InferencePipeline to run inference on our webcam and learned how we could modify it to run on other video sources (like video files or RTSP streams). See the [Inference Pipeline docs](/using_inference/inference_pipeline/) to learn more about other configurable parameters and built in sinks.
+Presto! We used an InferencePipeline to run inference on our webcam and learned how we could modify it to run on other video sources (like video files or RTSP streams). See the [Inference Pipeline docs](../using_inference/inference_pipeline.md) to learn more about other configurable parameters and built in sinks.
 
 ## Define Custom Prediction Logic
 
@@ -74,7 +74,7 @@ The `on_prediction` parameter in the `InferencePipeline` constructor allows you 
 This function provides two parameters:
 
 - `predictions`: A dictionary that contains all predictions returned by the model for the frame, and;
-- `video_frame`: A [dataclass](../../docs/reference/inference/core/interfaces/camera/entities/#inference.core.interfaces.camera.entities.VideoFrame)
+- `video_frame`: A [dataclass](../../reference/inference/core/interfaces/camera/entities/#inference.core.interfaces.camera.entities.VideoFrame)
 
 A VideoFrame object contains:
 
@@ -126,7 +126,7 @@ import supervision as sv
 
 # create a bounding box annotator and label annotator to use in our custom sink
 label_annotator = sv.LabelAnnotator()
-box_annotator = sv.BoundingBoxAnnotator()
+box_annotator = sv.BoxAnnotator()
 
 def my_custom_sink(predictions: dict, video_frame: VideoFrame):
     # get the text labels for each prediction
@@ -158,30 +158,30 @@ You should see something like this on your screen:
   <source src="https://storage.googleapis.com/com-roboflow-marketing/inference/people-walking-annotated.mp4" type="video/mp4">
 </video>
 
-And there you have it! We created a custom sink that takes the outputs of our Inference Pipeline, annotates an image, and displays it to our screen. See the [Inference Pipeline docs](/using_inference/inference_pipeline/) to learn more about other configurable parameters and built in sinks.
+And there you have it! We created a custom sink that takes the outputs of our Inference Pipeline, annotates an image, and displays it to our screen. See the [Inference Pipeline docs](/using_inference/inference_pipeline) to learn more about other configurable parameters and built in sinks.
 
 ## Existing Video Sinks
 
 ### Built In Sinks
 
-Inference has [several sinks built in](../../docs/reference/inference/core/interfaces/stream/sinks/) that are ready to use.
+Inference has [several sinks built in](../../reference/inference/core/interfaces/stream/sinks/) that are ready to use.
 
 #### `render_boxes(...)`
 
-The [render boxes sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) is made to visualize predictions and overlay them on a stream. It uses Supervision annotators to render the predictions and display the annotated frame.
+The [render boxes sink](../../reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.render_boxes) is made to visualize predictions and overlay them on a stream. It uses Supervision annotators to render the predictions and display the annotated frame.
 It only works for Roboflow models that yields detection-based output (`object-detection`, `instance-segmentation`, `keypoint-detection`), yet not all details of predictions may be 
 displayed by default (like detected key-points).
 
 #### `UDPSink(...)`
 
-The [UDP sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.UDPSink) is made to broadcast predictions with a UDP port. This port can be listened to by client code for further processing.
+The [UDP sink](../../reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.UDPSink) is made to broadcast predictions with a UDP port. This port can be listened to by client code for further processing.
 It uses Python-default json serialisation - so predictions must be serializable, otherwise error will be thrown.  
 
 #### `multi_sink(...)`
 
-The [Multi-Sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.multi_sink) is a way to combine multiple sinks so that multiple actions can happen on a single inference result.
+The [Multi-Sink](../../reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.multi_sink) is a way to combine multiple sinks so that multiple actions can happen on a single inference result.
 
 #### `VideoFileSink(...)`
 
-The [Video File Sink](../../docs/reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.VideoFileSink) visualizes predictions, similar to the `render_boxes(...)` sink, however, instead of displaying the annotated frames, it saves them to a video file.
+The [Video File Sink](../../reference/inference/core/interfaces/stream/sinks/#inference.core.interfaces.stream.sinks.VideoFileSink) visualizes predictions, similar to the `render_boxes(...)` sink, however, instead of displaying the annotated frames, it saves them to a video file.
 All constraints related to `render_boxes(...)` apply.

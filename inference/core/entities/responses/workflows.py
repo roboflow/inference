@@ -1,11 +1,12 @@
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.workflows.core_steps.common.query_language.entities.introspection import (
     OperationDescription,
     OperatorDescription,
 )
+from inference.core.workflows.errors import WorkflowBlockError
 from inference.core.workflows.execution_engine.entities.types import Kind
 from inference.core.workflows.execution_engine.introspection.entities import (
     BlockDescription,
@@ -160,6 +161,7 @@ class ExecutionEngineVersions(BaseModel):
 
 
 class WorkflowsBlocksSchemaDescription(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     schema: dict = Field(description="Schema for validating block definitions")
 
 
@@ -177,3 +179,12 @@ class DescribeInterfaceResponse(BaseModel):
         description="Dictionary mapping name of the kind with OpenAPI 3.0 definitions of underlying objects. "
         "If list is given, entity should be treated as union of types."
     )
+
+
+class WorkflowErrorResponse(BaseModel):
+    message: str
+    error_type: str
+    context: str
+    inner_error_type: str
+    inner_error_message: str
+    blocks_errors: Optional[List[WorkflowBlockError]]

@@ -8,6 +8,7 @@ from inference.core.workflows.core_steps.common.query_language.entities.enums im
     DetectionsProperty,
     DetectionsSelectionMode,
     DetectionsSortProperties,
+    FrameMetadataProperty,
     ImageProperty,
     NumberCastingMode,
     SequenceAggregationFunction,
@@ -395,6 +396,18 @@ class ExtractImageProperty(OperationDefinition):
     property_name: ImageProperty
 
 
+class ExtractFrameMetadata(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Extracts specific property of frame (frame number, timestamp)",
+            "input_kind": [IMAGE_KIND],
+            "output_kind": [INTEGER_KIND],
+        },
+    )
+    type: Literal["ExtractFrameMetadata"]
+    property_name: FrameMetadataProperty
+
+
 class ConvertImageToJPEG(OperationDefinition):
     model_config = ConfigDict(
         json_schema_extra={
@@ -458,6 +471,20 @@ class SequenceLength(OperationDefinition):
         },
     )
     type: Literal["SequenceLength"]
+
+
+class SequenceElementsCount(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Operation counts unique elements of input sequence",
+            "compound": False,
+            "input_kind": [
+                LIST_OF_VALUES_KIND,
+            ],
+            "output_kind": [DICTIONARY_KIND],
+        },
+    )
+    type: Literal["SequenceElementsCount"]
 
 
 class SequenceApply(OperationDefinition):
@@ -536,6 +563,28 @@ class DetectionsRename(OperationDefinition):
     )
 
 
+class PickDetectionsByParentClass(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Picks only those detections which are located inside "
+            "parent detections of specific class",
+            "compound": False,
+            "input_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+            "output_kind": [
+                OBJECT_DETECTION_PREDICTION_KIND,
+                INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                KEYPOINT_DETECTION_PREDICTION_KIND,
+            ],
+        },
+    )
+    type: Literal["PickDetectionsByParentClass"]
+    parent_class: str = Field(description="Class of parent detections")
+
+
 AllOperationsType = Annotated[
     Union[
         StringToLowerCase,
@@ -559,7 +608,9 @@ AllOperationsType = Annotated[
         RandomNumber,
         StringMatches,
         ExtractImageProperty,
+        ExtractFrameMetadata,
         SequenceLength,
+        SequenceElementsCount,
         Multiply,
         Divide,
         DetectionsSelection,
@@ -569,6 +620,7 @@ AllOperationsType = Annotated[
         ConvertImageToBase64,
         DetectionsToDictionary,
         ConvertDictionaryToJSON,
+        PickDetectionsByParentClass,
     ],
     Field(discriminator="type"),
 ]

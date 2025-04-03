@@ -8,19 +8,22 @@ on:
   workflow_dispatch:
 
 jobs:
+  call_is_mergeable:
+    uses: ./.github/workflows/check_if_branch_is_mergeable.yml
+    secrets: inherit
   build-dev-test:
+    needs: call_is_mergeable
+    if: ${{ github.event_name != 'pull_request' || needs.call_is_mergeable.outputs.mergeable_state != 'not_clean' }}
     runs-on:
       labels: depot-ubuntu-22.04-4
       group: public-depot
     timeout-minutes: 10
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
     steps:
       - name: 🛎️ Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - name: 📦 Cache Python packages
         uses: actions/cache@v3
         with:

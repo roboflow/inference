@@ -3,21 +3,22 @@ import os
 import re
 from collections import defaultdict
 from functools import lru_cache
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
 import pytest
 import requests
 from requests import Response
 
-from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import GALLERY_ENTRIES, \
-    WorkflowGalleryEntry
+from tests.workflows.integration_tests.execution.workflows_gallery_collector.decorators import (
+    GALLERY_ENTRIES,
+    WorkflowGalleryEntry,
+)
 
 API_URL = "https://api.roboflow.com"
 API_KEY_PATTERN = re.compile(r"api_key=(.[^&]*)")
 KEY_VALUE_GROUP = 1
 MIN_KEY_LENGTH_TO_REVEAL_PREFIX = 8
-
-
+INLINE_UQL_PARAMETER_PATTERN = re.compile(r"({{\s*\$parameters\.(\w+)\s*}})")
 INTEGRATION_TESTS_DIRECTORY = os.path.abspath(os.path.join(
     os.path.dirname(__file__),
     "..",
@@ -32,7 +33,9 @@ DOCS_ROOT = os.path.abspath(os.path.join(
 ))
 WORKFLOWS_DOCS_ROOT_PATH = os.path.join(DOCS_ROOT, "workflows")
 
-GALLERY_INDEX_PATH = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery_index.md")
+GALLERY_DIR = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery")
+GALLERY_INDEX_TEMPLATE = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery_index_template.md")
+GALLERY_INDEX_PATH = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery", "index.md")
 GALLERY_DIR_PATH = os.path.join(WORKFLOWS_DOCS_ROOT_PATH, "gallery")
 
 
@@ -56,7 +59,11 @@ def categorise_gallery(gallery: List[WorkflowGalleryEntry]) -> Dict[str, List[Wo
 
 
 def generate_gallery_index(categories: List[str]) -> None:
-    index = read_file(path=GALLERY_INDEX_PATH)
+    # move the Basic Workflows category to the start
+    basic_workflows_index = categories.index("Basic Workflows")
+    categories.insert(0, categories.pop(basic_workflows_index))
+    
+    index = read_file(path=GALLERY_INDEX_TEMPLATE)
     index_lines = index.split("\n")
     list_start_index = find_line_with_marker(lines=index_lines, marker='<ul id="workflows-gallery">')
     list_end_index = find_line_with_marker(lines=index_lines, marker="</ul>")
@@ -66,19 +73,77 @@ def generate_gallery_index(categories: List[str]) -> None:
         f'\t<li><a href="{generate_gallery_page_link(category=category)}">{category}</a></li>'
         for category in categories
     ]
+
     new_index = index_lines[:list_start_index + 1]
     new_index.extend(categories_entries)
     new_index.extend(index_lines[list_end_index:])
     new_index_content = "\n".join(new_index)
     write_file(path=GALLERY_INDEX_PATH, content=new_index_content)
 
+    write_gallery_summary_md(categories)
+
+def to_title_case(s: str) -> str:
+    """
+    Convert e.g. 'object_detection' -> 'Object Detection'
+    """
+    words = re.split(r'[_\s]+', s.lower())
+    return " ".join(w.capitalize() for w in words if w)
+
+def write_gallery_summary_md(categories: List[str]) -> None:
+    """
+    Creates docs/workflows/gallery/SUMMARY.md for mkdocs-literate-nav.
+    """
+    lines = []
+
+    for category in categories:
+        url = generate_gallery_page_link(category=category)
+
+        # relative links (remove `/workflows/gallery/` prefix)
+        url = url.replace("/workflows/gallery/", "")
+
+        url = f"{url}.md"
+
+        category = category.replace("Workflows with ", "")
+        category = category.replace("Workflows for ", "")
+        category = category.replace("Workflows ", "")
+        category = category.replace(" in Workflows", "")
+
+        if category == "Filtering resulting data based on value delta change":
+            category = "Filtering Data"
+
+        if category == "Enhanced by Roboflow Platform":
+            category = "Enhanced by Roboflow"
+        
+        if category == "Advanced Inference Techniques":
+            category = "Advanced Techniques"
+        
+        if category == "Integration With External Apps":
+            category = "External Integrations"
+
+        category = to_title_case(category)
+
+        if category == "Ocr":
+            category = "OCR"
+
+        lines.append(f"* [{category}]({url})")
+
+    summary_path = os.path.join(GALLERY_DIR, "SUMMARY.md")
+    with open(summary_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
 
 GALLERY_PAGE_TEMPLATE = """
-# Example Workflows - {category}
+# {category}
 
 Below you can find example workflows you can use as inspiration to build your apps.
 
 {examples}
+
+<style>
+/* hide edit button for generated pages */
+article > a.md-content__button.md-icon:first-child {{
+    display: none;
+}}
+</style>
 """.strip()
 
 
@@ -120,12 +185,23 @@ def generate_gallery_entry_docs(entry: WorkflowGalleryEntry) -> str:
             workflow_name_in_app=entry.workflow_name_in_app,
             workflow_definition=entry.workflow_definition,
         )
+    workflow_definition = _dump_workflow_definition(workflow_definition=entry.workflow_definition)
     return GALLERY_ENTRY_TEMPLATE.format(
         title=entry.use_case_title,
         description=entry.use_case_description,
         preview_iframe=preview_iframe,
-        workflow_definition="\n\t".join(json.dumps(entry.workflow_definition, indent=4).split("\n")),
+        workflow_definition=workflow_definition,
     )
+
+
+def _dump_workflow_definition(workflow_definition: dict) -> str:
+    definition_stringified = "\n\t".join(json.dumps(workflow_definition, indent=4).split("\n"))
+    return INLINE_UQL_PARAMETER_PATTERN.sub(_escape_uql_brackets, definition_stringified)
+
+
+def _escape_uql_brackets(match: re.Match) -> str:
+    content = match.group(0)
+    return "{{ '{{' }}" + content[2:-2] + "{{ '}}' }}"
 
 
 def generate_preview_iframe(workflow_name_in_app: str, workflow_definition: dict) -> str:

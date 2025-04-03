@@ -1,4 +1,3 @@
-from dataclasses import replace
 from typing import List, Literal, Optional, Type, Union
 from uuid import uuid4
 
@@ -6,8 +5,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
-    ImageParentMetadata,
-    OriginCoordinatesSystem,
     OutputDefinition,
     WorkflowImageData,
 )
@@ -16,9 +13,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     FloatZeroToOne,
     ImageInputField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -45,38 +40,35 @@ class BlockManifest(WorkflowBlockManifest):
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "transformation",
+            "ui_manifest": {
+                "section": "transformation",
+                "icon": "far fa-crop-alt",
+                "blockPriority": 2,
+            },
         }
     )
     type: Literal["roboflow_core/relative_statoic_crop@v1", "RelativeStaticCrop"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
-    x_center: Union[
-        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    x_center: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
         description="Center X of static crop (relative coordinate 0.0-1.0)",
         examples=[0.3, "$inputs.center_x"],
     )
-    y_center: Union[
-        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
+    y_center: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
         description="Center Y of static crop (relative coordinate 0.0-1.0)",
         examples=[0.3, "$inputs.center_y"],
     )
-    width: Union[
-        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
+    width: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
         description="Width of static crop (relative value 0.0-1.0)",
         examples=[0.3, "$inputs.width"],
     )
-    height: Union[
-        FloatZeroToOne, WorkflowParameterSelector(kind=[FLOAT_ZERO_TO_ONE_KIND])
-    ] = Field(
+    height: Union[FloatZeroToOne, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = Field(
         description="Height of static crop (relative value 0.0-1.0)",
         examples=[0.3, "$inputs.height"],
     )
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -86,7 +78,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.2.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
 
 class RelativeStaticCropBlockV1(WorkflowBlock):

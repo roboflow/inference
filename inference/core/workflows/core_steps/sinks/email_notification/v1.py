@@ -25,11 +25,12 @@ from inference.core.workflows.core_steps.common.query_language.operations.core i
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
     BOOLEAN_KIND,
+    BYTES_KIND,
     INTEGER_KIND,
     LIST_OF_VALUES_KIND,
+    SECRET_KIND,
     STRING_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -59,7 +60,7 @@ Content of the message can be parametrised with Workflow execution outcomes. Tak
 message using dynamic parameters:
 
 ```
-message = "This is example notification. Predicted classes: {{ $parameters.predicted_classes }}"
+message = "This is example notification. Predicted classes: {{ '{{' }} $parameters.predicted_classes {{ '}}' }}"
 ```
 
 Message parameters are delivered by Workflows Execution Engine by setting proper data selectors in
@@ -124,6 +125,12 @@ notifications. Please adjust it according to your needs, setting `0` indicate no
 During cooldown period, consecutive runs of the step will cause `throttling_status` output to be set `True`
 and no notification will be sent.
 
+!!! warning "Cooldown limitations"
+
+    Current implementation of cooldown is limited to video processing - using this block in context of a 
+    Workflow that is run behind HTTP service (Roboflow Hosted API, Dedicated Deployment or self-hosted 
+    `inference` server) will have no effect for processing HTTP requests.  
+
 
 ### Attachments
 
@@ -160,62 +167,59 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Email Notification",
             "version": "v1",
-            "short_description": "Send notification via E-Mail",
+            "short_description": "Send notification via e-mail.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
+            "ui_manifest": {
+                "section": "notifications",
+                "icon": "far fa-envelope",
+                "blockPriority": 0,
+                "popular": True,
+            },
         }
     )
     type: Literal["roboflow_core/email_notification@v1"]
     subject: str = Field(
-        description="Subject of the message",
+        description="Subject of the message.",
         examples=["Workflow alert"],
+        json_schema_extra={
+            "hide_description": True,
+        },
     )
-    message: str = Field(
-        description="Content of the message to be send",
-        examples=[
-            "During last 5 minutes detected {{ $parameters.num_instances }} instances"
-        ],
-    )
-    sender_email: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
-        description="E-mail to be used to send the message",
+    sender_email: Union[str, Selector(kind=[STRING_KIND])] = Field(
+        description="E-mail to be used to send the message.",
         examples=["sender@gmail.com"],
+        json_schema_extra={
+            "hide_description": True,
+        },
     )
     receiver_email: Union[
         str,
         List[str],
-        WorkflowParameterSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
+        Selector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
     ] = Field(
-        description="Destination e-mail address",
+        description="Destination e-mail address.",
         examples=["receiver@gmail.com"],
+        json_schema_extra={
+            "hide_description": True,
+        },
     )
-    cc_receiver_email: Optional[
-        Union[
-            str,
-            List[str],
-            WorkflowParameterSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
-        ]
-    ] = Field(
-        default=None,
-        description="Destination e-mail address",
-        examples=["cc-receiver@gmail.com"],
-    )
-    bcc_receiver_email: Optional[
-        Union[
-            str,
-            List[str],
-            WorkflowParameterSelector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
-        ]
-    ] = Field(
-        default=None,
-        description="Destination e-mail address",
-        examples=["bcc-receiver@gmail.com"],
+    message: str = Field(
+        description="Content of the message to be send.",
+        examples=[
+            "During last 5 minutes detected {{ $parameters.num_instances }} instances"
+        ],
+        json_schema_extra={
+            "hide_description": True,
+            "multiline": True,
+        },
     )
     message_parameters: Dict[
         str,
-        Union[WorkflowParameterSelector(), StepOutputSelector(), str, int, float, bool],
+        Union[Selector(), Selector(), str, int, float, bool],
     ] = Field(
-        description="References data to be used to construct each and every column",
+        description="Data to be used inside the message.",
         examples=[
             {
                 "predictions": "$steps.model.predictions",
@@ -223,9 +227,12 @@ class BlockManifest(WorkflowBlockManifest):
             }
         ],
         default_factory=dict,
+        json_schema_extra={
+            "always_visible": True,
+        },
     )
     message_parameters_operations: Dict[str, List[AllOperationsType]] = Field(
-        description="UQL definitions of operations to be performed on defined data w.r.t. each message parameter",
+        description="Preprocessing operations to be performed on message parameters.",
         examples=[
             {
                 "predictions": [
@@ -235,54 +242,76 @@ class BlockManifest(WorkflowBlockManifest):
         ],
         default_factory=dict,
     )
-    attachments: Dict[str, StepOutputSelector(kind=[STRING_KIND])] = Field(
+    cc_receiver_email: Optional[
+        Union[
+            str,
+            List[str],
+            Selector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
+        ]
+    ] = Field(
+        default=None,
+        description="Destination e-mail address.",
+        examples=["cc-receiver@gmail.com"],
+        json_schema_extra={
+            "hide_description": True,
+        },
+    )
+    bcc_receiver_email: Optional[
+        Union[
+            str,
+            List[str],
+            Selector(kind=[STRING_KIND, LIST_OF_VALUES_KIND]),
+        ]
+    ] = Field(
+        default=None,
+        description="Destination e-mail address.",
+        examples=["bcc-receiver@gmail.com"],
+        json_schema_extra={
+            "hide_description": True,
+        },
+    )
+    attachments: Dict[str, Selector(kind=[STRING_KIND, BYTES_KIND])] = Field(
         description="Attachments",
         default_factory=dict,
         examples=[{"report.cvs": "$steps.csv_formatter.csv_content"}],
+        json_schema_extra={
+            "hide_description": True,
+        },
     )
-    smtp_server: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = Field(
-        description="Custom SMTP server to be used",
+    smtp_server: Union[str, Selector(kind=[STRING_KIND])] = Field(
+        description="Custom SMTP server to be used.",
         examples=["$inputs.smtp_server", "smtp.google.com"],
     )
-    sender_email_password: Union[str, WorkflowParameterSelector(kind=[STRING_KIND])] = (
+    sender_email_password: Union[str, Selector(kind=[STRING_KIND, SECRET_KIND])] = (
         Field(
-            description="Sender e-mail password be used when authenticating to SMTP server",
+            description="Sender e-mail password be used when authenticating to SMTP server.",
             private=True,
             examples=["$inputs.email_password"],
         )
     )
     smtp_port: int = Field(
         default=465,
-        description="SMTP server port",
+        description="SMTP server port.",
         examples=[465],
+    )
+    fire_and_forget: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        description="Boolean flag to run the block asynchronously (True) for faster workflows or  "
+        "synchronously (False) for debugging and error handling.",
+        examples=["$inputs.fire_and_forget", False],
+    )
+    disable_sink: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=False,
+        description="Boolean flag to disable block execution.",
+        examples=[False, "$inputs.disable_email_notifications"],
+    )
+    cooldown_seconds: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
+        default=5,
+        description="Number of seconds until a follow-up notification can be sent. ",
+        examples=["$inputs.cooldown_seconds", 3],
         json_schema_extra={
             "always_visible": True,
         },
-    )
-    fire_and_forget: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = (
-        Field(
-            default=True,
-            description="Boolean flag dictating if sink is supposed to be executed in the background, "
-            "not waiting on status of registration before end of workflow run. Use `True` if best-effort "
-            "registration is needed, use `False` while debugging and if error handling is needed",
-            examples=["$inputs.fire_and_forget", False],
-        )
-    )
-    disable_sink: Union[bool, WorkflowParameterSelector(kind=[BOOLEAN_KIND])] = Field(
-        default=False,
-        description="boolean flag that can be also reference to input - to arbitrarily disable "
-        "data collection for specific request",
-        examples=[False, "$inputs.disable_email_notifications"],
-    )
-    cooldown_seconds: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = (
-        Field(
-            default=5,
-            description="Number of seconds to wait until follow-up notification can be sent",
-            examples=["$inputs.cooldown_seconds", 3],
-            json_schema_extra={
-                "always_visible": True,
-            },
-        )
     )
 
     @field_validator("receiver_email")
@@ -304,7 +333,7 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
 class EmailNotificationBlockV1(WorkflowBlock):
@@ -507,7 +536,10 @@ def _send_email_using_smtp_server(
     e_mail_message.attach(MIMEText(message, "plain"))
     for attachment_name, attachment_content in attachments.items():
         part = MIMEBase("application", "octet-stream")
-        part.set_payload(attachment_content.encode("utf-8"))
+        binary_payload = attachment_content
+        if not isinstance(binary_payload, bytes):
+            binary_payload = binary_payload.encode("utf-8")
+        part.set_payload(binary_payload)
         encoders.encode_base64(part)
         part.add_header(
             "Content-Disposition",

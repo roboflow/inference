@@ -14,7 +14,10 @@ RUN apt-get update -y && apt-get upgrade -y && apt-get install -y \
     libffi-dev \
     curl \
     libbz2-dev \
-    software-properties-common
+    software-properties-common \
+    rustc \
+    cargo \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN wget https://www.python.org/ftp/python/3.9.0/Python-3.9.0.tar.xz && tar -xf Python-3.9.0.tar.xz && rm Python-3.9.0.tar.xz
 WORKDIR ./Python-3.9.0
@@ -57,12 +60,14 @@ RUN python3.9 -m pip install --upgrade pip "h5py<=3.10.0" && python3.9 -m pip in
     -r requirements.sdk.http.txt \
     -r requirements.yolo_world.txt \
     jupyterlab \
+    "setuptools<=75.5.0" \
     --upgrade \
     && rm -rf ~/.cache/pip
 
-RUN python3.9 -m pip uninstall --yes onnxruntime
+# BE CAREFUL, WE ENFORCE numpy 1.x for the sake of compatibility with onnxruntime
+RUN python3.9 -m pip uninstall --yes onnxruntime numpy
 RUN wget https://nvidia.box.com/shared/static/jmomlpcctmjojz14zbwa12lxmeh2h6o5.whl -O onnxruntime_gpu-1.11.0-cp39-cp39-linux_aarch64.whl
-RUN python3.9 -m pip install onnxruntime_gpu-1.11.0-cp39-cp39-linux_aarch64.whl \
+RUN python3.9 -m pip install "numpy<=1.26.4" onnxruntime_gpu-1.11.0-cp39-cp39-linux_aarch64.whl \
     && rm -rf ~/.cache/pip \
     && rm onnxruntime_gpu-1.11.0-cp39-cp39-linux_aarch64.whl
 
@@ -86,8 +91,8 @@ ENV WORKFLOWS_MAX_CONCURRENT_STEPS=2
 ENV API_LOGGING_ENABLED=True
 ENV CORE_MODEL_TROCR_ENABLED=false
 ENV RUNS_ON_JETSON=True
-ENV ENABLE_STREAM_API=True
-ENV ENABLE_WORKFLOWS_PROFILING=True
 ENV ENABLE_PROMETHEUS=True
+ENV ENABLE_STREAM_API=True
+ENV STREAM_API_PRELOADED_PROCESSES=2
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

@@ -42,6 +42,7 @@ from inference_sdk.http.utils.executors import (
 )
 from inference_sdk.http.utils.iterables import unwrap_single_element_list
 from inference_sdk.http.utils.loaders import (
+    load_nested_batches_of_inference_input,
     load_static_inference_input,
     load_static_inference_input_async,
     load_stream_inference_input,
@@ -65,6 +66,7 @@ from inference_sdk.http.utils.requests import (
     api_key_safe_raise_for_status,
     deduct_api_key_from_string,
     inject_images_into_payload,
+    inject_nested_batches_of_images_into_payload,
 )
 from inference_sdk.utils.decorators import deprecated, experimental
 
@@ -131,12 +133,56 @@ def wrap_errors_async(function: callable) -> callable:
 
 
 class InferenceHTTPClient:
+    """HTTP client for making inference requests to Roboflow's API.
+
+    This client handles authentication, request formatting, and error handling for
+    interacting with Roboflow's inference endpoints. It supports both synchronous
+    and asynchronous requests.
+
+    Attributes:
+        inference_configuration (InferenceConfiguration): Configuration settings for
+            inference requests.
+        client_mode (HTTPClientMode): The API version mode being used (V0 or V1).
+        selected_model (Optional[str]): Currently selected model identifier, if any.
+
+    Example:
+        ```python
+        from inference_sdk import InferenceHTTPClient
+
+        client = InferenceHTTPClient(
+            api_url="http://localhost:9001", # use local inference server
+            # api_key="<YOUR API KEY>" # optional to access your private data and models
+        )
+
+        result = client.run_workflow(
+            workspace_name="roboflow-docs",
+            workflow_id="model-comparison",
+            images={
+                "image": "https://media.roboflow.com/workflows/examples/bleachers.jpg"
+            },
+            parameters={
+                "model1": "yolov8n-640",
+                "model2": "yolov11n-640"
+            }
+        )
+        ```
+    """
+
     @classmethod
     def init(
         cls,
         api_url: str,
         api_key: Optional[str] = None,
     ) -> "InferenceHTTPClient":
+        """Initialize a new InferenceHTTPClient instance.
+
+        Args:
+            api_url (str): The base URL for the inference API.
+            api_key (Optional[str], optional): API key for authentication. Defaults to None.
+
+        Returns:
+            InferenceHTTPClient: A new instance of the InferenceHTTPClient.
+        """
         return cls(api_url=api_url, api_key=api_key)
 
     def __init__(
@@ -144,6 +190,12 @@ class InferenceHTTPClient:
         api_url: str,
         api_key: Optional[str] = None,
     ):
+        """Initialize a new InferenceHTTPClient instance.
+
+        Args:
+            api_url (str): The base URL for the inference API.
+            api_key (Optional[str], optional): API key for authentication. Defaults to None.
+        """
         self.__api_url = api_url
         self.__api_key = api_key
         self.__inference_configuration = InferenceConfiguration.init_default()
@@ -152,20 +204,43 @@ class InferenceHTTPClient:
 
     @property
     def inference_configuration(self) -> InferenceConfiguration:
+        """Get the current inference configuration.
+
+        Returns:
+            InferenceConfiguration: The current inference configuration settings.
+        """
         return self.__inference_configuration
 
     @property
     def client_mode(self) -> HTTPClientMode:
+        """Get the current client mode.
+
+        Returns:
+            HTTPClientMode: The current API version mode (V0 or V1).
+        """
         return self.__client_mode
 
     @property
     def selected_model(self) -> Optional[str]:
+        """Get the currently selected model identifier.
+
+        Returns:
+            Optional[str]: The identifier of the currently selected model, if any.
+        """
         return self.__selected_model
 
     @contextmanager
     def use_configuration(
         self, inference_configuration: InferenceConfiguration
     ) -> Generator["InferenceHTTPClient", None, None]:
+        """Temporarily use a different inference configuration.
+
+        Args:
+            inference_configuration (InferenceConfiguration): The temporary configuration to use.
+
+        Yields:
+            Generator[InferenceHTTPClient, None, None]: The client instance with temporary configuration.
+        """
         previous_configuration = self.__inference_configuration
         self.__inference_configuration = inference_configuration
         try:
@@ -176,19 +251,42 @@ class InferenceHTTPClient:
     def configure(
         self, inference_configuration: InferenceConfiguration
     ) -> "InferenceHTTPClient":
+        """Configure the client with new inference settings.
+
+        Args:
+            inference_configuration (InferenceConfiguration): The new configuration to apply.
+
+        Returns:
+            InferenceHTTPClient: The client instance with updated configuration.
+        """
         self.__inference_configuration = inference_configuration
         return self
 
     def select_api_v0(self) -> "InferenceHTTPClient":
+        """Select API version 0 for client operations.
+
+        Returns:
+            InferenceHTTPClient: The client instance with API v0 selected.
+        """
         self.__client_mode = HTTPClientMode.V0
         return self
 
     def select_api_v1(self) -> "InferenceHTTPClient":
+        """Select API version 1 for client operations.
+
+        Returns:
+            InferenceHTTPClient: The client instance with API v1 selected.
+        """
         self.__client_mode = HTTPClientMode.V1
         return self
 
     @contextmanager
     def use_api_v0(self) -> Generator["InferenceHTTPClient", None, None]:
+        """Temporarily use API version 0 for client operations.
+
+        Yields:
+            Generator[InferenceHTTPClient, None, None]: The client instance temporarily using API v0.
+        """
         previous_client_mode = self.__client_mode
         self.__client_mode = HTTPClientMode.V0
         try:
@@ -198,6 +296,11 @@ class InferenceHTTPClient:
 
     @contextmanager
     def use_api_v1(self) -> Generator["InferenceHTTPClient", None, None]:
+        """Temporarily use API version 1 for client operations.
+
+        Yields:
+            Generator[InferenceHTTPClient, None, None]: The client instance temporarily using API v1.
+        """
         previous_client_mode = self.__client_mode
         self.__client_mode = HTTPClientMode.V1
         try:
@@ -206,11 +309,27 @@ class InferenceHTTPClient:
             self.__client_mode = previous_client_mode
 
     def select_model(self, model_id: str) -> "InferenceHTTPClient":
+        """Select a model for inference operations.
+
+        Args:
+            model_id (str): The identifier of the model to select.
+
+        Returns:
+            InferenceHTTPClient: The client instance with the selected model.
+        """
         self.__selected_model = model_id
         return self
 
     @contextmanager
     def use_model(self, model_id: str) -> Generator["InferenceHTTPClient", None, None]:
+        """Temporarily use a specific model for inference operations.
+
+        Args:
+            model_id (str): The identifier of the model to use.
+
+        Yields:
+            Generator[InferenceHTTPClient, None, None]: The client instance temporarily using the specified model.
+        """
         previous_model = self.__selected_model
         self.__selected_model = model_id
         try:
@@ -220,6 +339,15 @@ class InferenceHTTPClient:
 
     @wrap_errors
     def get_server_info(self) -> ServerInfo:
+        """Get information about the inference server.
+
+        Returns:
+            ServerInfo: Information about the server configuration and status.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         response = requests.get(f"{self.__api_url}/info")
         response.raise_for_status()
         response_payload = response.json()
@@ -230,6 +358,15 @@ class InferenceHTTPClient:
         input_uri: str,
         model_id: Optional[str] = None,
     ) -> Generator[Tuple[Union[str, int], np.ndarray, dict], None, None]:
+        """Run inference on a video stream or sequence of images.
+
+        Args:
+            input_uri (str): URI of the input stream or directory.
+            model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
+
+        Yields:
+            Generator[Tuple[Union[str, int], np.ndarray, dict], None, None]: Tuples of (frame reference, frame data, prediction).
+        """
         for reference, frame in load_stream_inference_input(
             input_uri=input_uri,
             image_extensions=self.__inference_configuration.image_extensions_for_directory_scan,
@@ -246,6 +383,19 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        """Run inference on one or more images.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for inference.
+            model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
+
+        Returns:
+            Union[dict, List[dict]]: Inference results for the input image(s).
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         if self.__client_mode is HTTPClientMode.V0:
             return self.infer_from_api_v0(
                 inference_input=inference_input,
@@ -262,6 +412,19 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        """Run inference asynchronously on one or more images.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for inference.
+            model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
+
+        Returns:
+            Union[dict, List[dict]]: Inference results for the input image(s).
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         if self.__client_mode is HTTPClientMode.V0:
             return await self.infer_from_api_v0_async(
                 inference_input=inference_input,
@@ -277,6 +440,20 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        """Run inference using API v0.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for inference.
+            model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
+
+        Returns:
+            Union[dict, List[dict]]: Inference results for the input image(s).
+
+        Raises:
+            ModelNotSelectedError: If no model is selected.
+            APIKeyNotProvided: If API key is required but not provided.
+            InvalidModelIdentifier: If the model identifier format is invalid.
+        """
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
         _ensure_api_key_provided(api_key=self.__api_key)
@@ -341,6 +518,20 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model_id: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        """Run inference using API v0 asynchronously.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for inference.
+            model_id (Optional[str], optional): Model identifier to use for inference. Defaults to None.
+
+        Returns:
+            Union[dict, List[dict]]: Inference results for the input image(s).
+
+        Raises:
+            ModelNotSelectedError: If no model is selected.
+            APIKeyNotProvided: If API key is required but not provided.
+            InvalidModelIdentifier: If the model identifier format is invalid.
+        """
         model_id_to_be_used = model_id or self.__selected_model
         _ensure_model_is_selected(model_id=model_id_to_be_used)
         _ensure_api_key_provided(api_key=self.__api_key)
@@ -546,6 +737,19 @@ class InferenceHTTPClient:
     def get_model_description(
         self, model_id: str, allow_loading: bool = True
     ) -> ModelDescription:
+        """Get the description of a model.
+
+        Args:
+            model_id (str): The identifier of the model.
+            allow_loading (bool, optional): Whether to load the model if not already loaded. Defaults to True.
+
+        Returns:
+            ModelDescription: Description of the model.
+
+        Raises:
+            WrongClientModeError: If not in API v1 mode.
+            ModelNotInitializedError: If the model is not initialized and cannot be loaded.
+        """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         registered_models = self.list_loaded_models()
@@ -569,6 +773,19 @@ class InferenceHTTPClient:
     async def get_model_description_async(
         self, model_id: str, allow_loading: bool = True
     ) -> ModelDescription:
+        """Get the description of a model asynchronously.
+
+        Args:
+            model_id (str): The identifier of the model.
+            allow_loading (bool, optional): Whether to load the model if not already loaded. Defaults to True.
+
+        Returns:
+            ModelDescription: Description of the model.
+
+        Raises:
+            WrongClientModeError: If not in API v1 mode.
+            ModelNotInitializedError: If the model is not initialized and cannot be loaded.
+        """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         registered_models = await self.list_loaded_models_async()
@@ -593,17 +810,41 @@ class InferenceHTTPClient:
 
     @wrap_errors
     def list_loaded_models(self) -> RegisteredModels:
+        """List all models currently loaded on the server.
+
+        Returns:
+            RegisteredModels: Information about registered models.
+
+        Raises:
+            WrongClientModeError: If not in API v1 mode.
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         self.__ensure_v1_client_mode()
-        response = requests.get(f"{self.__api_url}/model/registry")
+        response = requests.get(
+            f"{self.__api_url}/model/registry?api_key={self.__api_key}"
+        )
         response.raise_for_status()
         response_payload = response.json()
         return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors_async
     async def list_loaded_models_async(self) -> RegisteredModels:
+        """List all models currently loaded on the server asynchronously.
+
+        Returns:
+            RegisteredModels: Information about registered models.
+
+        Raises:
+            WrongClientModeError: If not in API v1 mode.
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         self.__ensure_v1_client_mode()
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{self.__api_url}/model/registry") as response:
+            async with session.get(
+                f"{self.__api_url}/model/registry?api_key={self.__api_key}"
+            ) as response:
                 response.raise_for_status()
                 response_payload = await response.json()
                 return RegisteredModels.from_dict(response_payload)
@@ -612,6 +853,20 @@ class InferenceHTTPClient:
     def load_model(
         self, model_id: str, set_as_default: bool = False
     ) -> RegisteredModels:
+        """Load a model onto the server.
+
+        Args:
+            model_id (str): The identifier of the model to load.
+            set_as_default (bool, optional): Whether to set this model as the default. Defaults to False.
+
+        Returns:
+            RegisteredModels: Updated information about registered models.
+
+        Raises:
+            WrongClientModeError: If not in API v1 mode.
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         response = requests.post(
@@ -632,6 +887,20 @@ class InferenceHTTPClient:
     async def load_model_async(
         self, model_id: str, set_as_default: bool = False
     ) -> RegisteredModels:
+        """Load a model onto the server asynchronously.
+
+        Args:
+            model_id (str): The identifier of the model to load.
+            set_as_default (bool, optional): Whether to set this model as the default. Defaults to False.
+
+        Returns:
+            RegisteredModels: Updated information about registered models.
+
+        Raises:
+            WrongClientModeError: If not in API v1 mode.
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         payload = {
@@ -652,6 +921,19 @@ class InferenceHTTPClient:
 
     @wrap_errors
     def unload_model(self, model_id: str) -> RegisteredModels:
+        """Unload a model from the server.
+
+        Args:
+            model_id (str): The identifier of the model to unload.
+
+        Returns:
+            RegisteredModels: Updated information about registered models.
+
+        Raises:
+            WrongClientModeError: If not in API v1 mode.
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         self.__ensure_v1_client_mode()
         de_aliased_model_id = resolve_roboflow_model_alias(model_id=model_id)
         response = requests.post(
@@ -711,79 +993,26 @@ class InferenceHTTPClient:
         return RegisteredModels.from_dict(response_payload)
 
     @wrap_errors
-    def prompt_cogvlm(
-        self,
-        visual_prompt: ImagesReference,
-        text_prompt: str,
-        chat_history: Optional[List[Tuple[str, str]]] = None,
-    ) -> dict:
-        self.__ensure_v1_client_mode()  # Lambda does not support CogVLM, so we require v1 mode of client
-        encoded_image = load_static_inference_input(
-            inference_input=visual_prompt,
-        )
-        payload = {
-            "api_key": self.__api_key,
-            "model_id": "cogvlm",
-            "prompt": text_prompt,
-        }
-        payload = inject_images_into_payload(
-            payload=payload,
-            encoded_images=encoded_image,
-        )
-        if chat_history is not None:
-            payload["history"] = chat_history
-        response = requests.post(
-            f"{self.__api_url}/llm/cogvlm",
-            json=payload,
-            headers=DEFAULT_HEADERS,
-        )
-        api_key_safe_raise_for_status(response=response)
-        return response.json()
-
-    @wrap_errors_async
-    async def prompt_cogvlm_async(
-        self,
-        visual_prompt: ImagesReference,
-        text_prompt: str,
-        chat_history: Optional[List[Tuple[str, str]]] = None,
-    ) -> dict:
-        self.__ensure_v1_client_mode()  # Lambda does not support CogVLM, so we require v1 mode of client
-        encoded_image = await load_static_inference_input_async(
-            inference_input=visual_prompt,
-        )
-        payload = {
-            "api_key": self.__api_key,
-            "model_id": "cogvlm",
-            "prompt": text_prompt,
-        }
-        payload = inject_images_into_payload(
-            payload=payload,
-            encoded_images=encoded_image,
-        )
-        if chat_history is not None:
-            payload["history"] = chat_history
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.__api_url}/llm/cogvlm",
-                json=payload,
-                headers=DEFAULT_HEADERS,
-            ) as response:
-                response.raise_for_status()
-                return await response.json()
-
-    @wrap_errors
     def ocr_image(
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
         model: str = "doctr",
         version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
-        """
-        Function to run OCR on input image. Let user configure which OCR model to use
-        (`doctr` vs `trocr`) and select variant of the model (via `version` parameter).
+        """Run OCR on input image(s).
 
-        Supported versions:
-        * trocr: (`trocr-small-printed`, `trocr-base-printed`, `trocr-large-printed`)
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for OCR.
+            model (str, optional): OCR model to use ('doctr' or 'trocr'). Defaults to "doctr".
+            version (Optional[str], optional): Model version to use. Defaults to None.
+                For trocr, supported versions are: 'trocr-small-printed', 'trocr-base-printed', 'trocr-large-printed'.
+
+        Returns:
+            Union[dict, List[dict]]: OCR results for the input image(s).
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
         """
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
@@ -818,12 +1047,20 @@ class InferenceHTTPClient:
         model: str = "doctr",
         version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
-        """
-        Async function to run OCR on input image. Let user configure which OCR model to use
-        (`doctr` vs `trocr`) and select variant of the model (via `version` parameter).
+        """Run OCR on input image(s) asynchronously.
 
-        Supported versions:
-        * trocr: (`trocr-small-printed`, `trocr-base-printed`, `trocr-large-printed`)
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for OCR.
+            model (str, optional): OCR model to use ('doctr' or 'trocr'). Defaults to "doctr".
+            version (Optional[str], optional): Model version to use. Defaults to None.
+                For trocr, supported versions are: 'trocr-small-printed', 'trocr-base-printed', 'trocr-large-printed'.
+
+        Returns:
+            Union[dict, List[dict]]: OCR results for the input image(s).
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
         """
         encoded_inference_inputs = await load_static_inference_input_async(
             inference_input=inference_input,
@@ -855,6 +1092,19 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
+        """Detect gazes in input image(s).
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for gaze detection.
+
+        Returns:
+            Union[dict, List[dict]]: Gaze detection results for the input image(s).
+
+        Raises:
+            WrongClientModeError: If not in API v1 mode.
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
         result = self._post_images(
             inference_input=inference_input, endpoint="/gaze/gaze_detection"
@@ -866,6 +1116,19 @@ class InferenceHTTPClient:
         self,
         inference_input: Union[ImagesReference, List[ImagesReference]],
     ) -> Union[dict, List[dict]]:
+        """Detect gazes in input image(s) asynchronously.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) for gaze detection.
+
+        Returns:
+            Union[dict, List[dict]]: Gaze detection results for the input image(s).
+
+        Raises:
+            WrongClientModeError: If not in API v1 mode.
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         self.__ensure_v1_client_mode()  # Lambda does not support Gaze, so we require v1 mode of client
         result = await self._post_images_async(
             inference_input=inference_input, endpoint="/gaze/gaze_detection"
@@ -878,6 +1141,19 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         clip_version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        """Get CLIP embeddings for input image(s).
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) to embed.
+            clip_version (Optional[str], optional): Version of CLIP model to use. Defaults to None.
+
+        Returns:
+            Union[dict, List[dict]]: CLIP embeddings for the input image(s).
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         extra_payload = {}
         if clip_version is not None:
             extra_payload["clip_version_id"] = clip_version
@@ -895,6 +1171,19 @@ class InferenceHTTPClient:
         inference_input: Union[ImagesReference, List[ImagesReference]],
         clip_version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        """Get CLIP embeddings for input image(s) asynchronously.
+
+        Args:
+            inference_input (Union[ImagesReference, List[ImagesReference]]): Input image(s) to embed.
+            clip_version (Optional[str], optional): Version of CLIP model to use. Defaults to None.
+
+        Returns:
+            Union[dict, List[dict]]: CLIP embeddings for the input image(s).
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         extra_payload = {}
         if clip_version is not None:
             extra_payload["clip_version_id"] = clip_version
@@ -912,6 +1201,19 @@ class InferenceHTTPClient:
         text: Union[str, List[str]],
         clip_version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        """Get CLIP embeddings for input text(s).
+
+        Args:
+            text (Union[str, List[str]]): Input text(s) to embed.
+            clip_version (Optional[str], optional): Version of CLIP model to use. Defaults to None.
+
+        Returns:
+            Union[dict, List[dict]]: CLIP embeddings for the input text(s).
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         payload = self.__initialise_payload()
         payload["text"] = text
         if clip_version is not None:
@@ -930,6 +1232,19 @@ class InferenceHTTPClient:
         text: Union[str, List[str]],
         clip_version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
+        """Get CLIP embeddings for input text(s) asynchronously.
+
+        Args:
+            text (Union[str, List[str]]): Input text(s) to embed.
+            clip_version (Optional[str], optional): Version of CLIP model to use. Defaults to None.
+
+        Returns:
+            Union[dict, List[dict]]: CLIP embeddings for the input text(s).
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         payload = self.__initialise_payload()
         payload["text"] = text
         if clip_version is not None:
@@ -953,8 +1268,22 @@ class InferenceHTTPClient:
         prompt_type: str = "text",
         clip_version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
-        """
-        Both `subject_type` and `prompt_type` must be either "image" or "text"
+        """Compare a subject against prompts using CLIP embeddings.
+
+        Args:
+            subject (Union[str, ImagesReference]): The subject to compare (image or text).
+            prompt (Union[str, List[str], ImagesReference, List[ImagesReference]]): The prompt(s) to compare against.
+            subject_type (str, optional): Type of subject ('image' or 'text'). Defaults to "image".
+            prompt_type (str, optional): Type of prompt(s) ('image' or 'text'). Defaults to "text".
+            clip_version (Optional[str], optional): Version of CLIP model to use. Defaults to None.
+
+        Returns:
+            Union[dict, List[dict]]: Comparison results between subject and prompt(s).
+
+        Raises:
+            InvalidParameterError: If subject_type or prompt_type is invalid.
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
         """
         if (
             subject_type not in CLIP_ARGUMENT_TYPES
@@ -1003,8 +1332,22 @@ class InferenceHTTPClient:
         prompt_type: str = "text",
         clip_version: Optional[str] = None,
     ) -> Union[dict, List[dict]]:
-        """
-        Both `subject_type` and `prompt_type` must be either "image" or "text"
+        """Compare a subject against prompts using CLIP embeddings asynchronously.
+
+        Args:
+            subject (Union[str, ImagesReference]): The subject to compare (image or text).
+            prompt (Union[str, List[str], ImagesReference, List[ImagesReference]]): The prompt(s) to compare against.
+            subject_type (str, optional): Type of subject ('image' or 'text'). Defaults to "image".
+            prompt_type (str, optional): Type of prompt(s) ('image' or 'text'). Defaults to "text".
+            clip_version (Optional[str], optional): Version of CLIP model to use. Defaults to None.
+
+        Returns:
+            Union[dict, List[dict]]: Comparison results between subject and prompt(s).
+
+        Raises:
+            InvalidParameterError: If subject_type or prompt_type is invalid.
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
         """
         if (
             subject_type not in CLIP_ARGUMENT_TYPES
@@ -1061,7 +1404,8 @@ class InferenceHTTPClient:
         use_cache: bool = True,
         enable_profiling: bool = False,
     ) -> List[Dict[str, Any]]:
-        """
+        """Run inference using a workflow specification.
+
         Triggers inference from workflow specification at the inference HTTP
         side. Either (`workspace_name` and `workflow_name`) or `workflow_specification` must be
         provided. In the first case - definition of workflow will be fetched
@@ -1072,6 +1416,24 @@ class InferenceHTTPClient:
         PIL.Image and base64 images, links to images and local paths.
         `excluded_fields` will be added to request to filter out results
         of workflow execution at the server side.
+
+        Args:
+            workspace_name (Optional[str], optional): Name of the workspace containing the workflow. Defaults to None.
+            workflow_name (Optional[str], optional): Name of the workflow. Defaults to None.
+            specification (Optional[dict], optional): Direct workflow specification. Defaults to None.
+            images (Optional[Dict[str, Any]], optional): Images to process. Defaults to None.
+            parameters (Optional[Dict[str, Any]], optional): Additional parameters for the workflow. Defaults to None.
+            excluded_fields (Optional[List[str]], optional): Fields to exclude from results. Defaults to None.
+            use_cache (bool, optional): Whether to use cached results. Defaults to True.
+            enable_profiling (bool, optional): Whether to enable profiling. Defaults to False.
+
+        Returns:
+            List[Dict[str, Any]]: Results of the workflow execution.
+
+        Raises:
+            InvalidParameterError: If neither workflow identifiers nor specification is provided.
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
         """
         return self._run_workflow(
             workspace_name=workspace_name,
@@ -1097,7 +1459,8 @@ class InferenceHTTPClient:
         use_cache: bool = True,
         enable_profiling: bool = False,
     ) -> List[Dict[str, Any]]:
-        """
+        """Run inference using a workflow specification.
+
         Triggers inference from workflow specification at the inference HTTP
         side. Either (`workspace_name` and `workflow_id`) or `workflow_specification` must be
         provided. In the first case - definition of workflow will be fetched
@@ -1112,6 +1475,28 @@ class InferenceHTTPClient:
         **Important!**
         Method is not compatible with inference server <=0.9.18. Please migrate to newer version of
         the server before end of Q2 2024. Until that is done - use old method: infer_from_workflow(...).
+
+        Note:
+            Method is not compatible with inference server <=0.9.18. Please migrate to newer version of
+            the server before end of Q2 2024. Until that is done - use old method: infer_from_workflow(...).
+
+        Args:
+            workspace_name (Optional[str], optional): Name of the workspace containing the workflow. Defaults to None.
+            workflow_id (Optional[str], optional): ID of the workflow. Defaults to None.
+            specification (Optional[dict], optional): Direct workflow specification. Defaults to None.
+            images (Optional[Dict[str, Any]], optional): Images to process. Defaults to None.
+            parameters (Optional[Dict[str, Any]], optional): Additional parameters for the workflow. Defaults to None.
+            excluded_fields (Optional[List[str]], optional): Fields to exclude from results. Defaults to None.
+            use_cache (bool, optional): Whether to use cached results. Defaults to True.
+            enable_profiling (bool, optional): Whether to enable profiling. Defaults to False.
+
+        Returns:
+            List[Dict[str, Any]]: Results of the workflow execution.
+
+        Raises:
+            InvalidParameterError: If neither workflow identifiers nor specification is provided.
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
         """
         return self._run_workflow(
             workspace_name=workspace_name,
@@ -1156,10 +1541,10 @@ class InferenceHTTPClient:
         }
         inputs = {}
         for image_name, image in images.items():
-            loaded_image = load_static_inference_input(
+            loaded_image = load_nested_batches_of_inference_input(
                 inference_input=image,
             )
-            inject_images_into_payload(
+            inject_nested_batches_of_images_into_payload(
                 payload=inputs,
                 encoded_images=loaded_image,
                 key=image_name,
@@ -1207,6 +1592,26 @@ class InferenceHTTPClient:
         model_version: Optional[str] = None,
         confidence: Optional[float] = None,
     ) -> List[dict]:
+        """Run inference using YOLO-World model.
+
+        Args:
+            inference_input: Input image(s) to run inference on. Can be a single image
+                reference or a list of image references.
+            class_names: List of class names to detect in the image(s).
+            model_version: Optional version of YOLO-World model to use. If not specified,
+                uses the default version.
+            confidence: Optional confidence threshold for detections. If not specified,
+                uses the model's default threshold.
+
+        Returns:
+            List of dictionaries containing detection results for each input image.
+            Each dictionary contains bounding boxes, class labels, and confidence scores
+            for detected objects.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         encoded_inference_inputs = load_static_inference_input(
             inference_input=inference_input,
         )
@@ -1241,6 +1646,26 @@ class InferenceHTTPClient:
         model_version: Optional[str] = None,
         confidence: Optional[float] = None,
     ) -> List[dict]:
+        """Run inference using YOLO-World model asynchronously.
+
+        Args:
+            inference_input: Input image(s) to run inference on. Can be a single image
+                reference or a list of image references.
+            class_names: List of class names to detect in the image(s).
+            model_version: Optional version of YOLO-World model to use. If not specified,
+                uses the default version.
+            confidence: Optional confidence threshold for detections. If not specified,
+                uses the model's default threshold.
+
+        Returns:
+            List of dictionaries containing detection results for each input image.
+            Each dictionary contains bounding boxes, class labels, and confidence scores
+            for detected objects.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         encoded_inference_inputs = await load_static_inference_input_async(
             inference_input=inference_input,
         )
@@ -1290,6 +1715,42 @@ class InferenceHTTPClient:
         batch_collection_timeout: Optional[float] = None,
         results_buffer_size: int = 64,
     ) -> dict:
+        """Starts an inference pipeline using a workflow specification.
+
+        Args:
+            video_reference: Path to video file, camera index, or list of video sources.
+                Can be a string path, integer camera index, or list of either.
+            workflow_specification: Optional workflow specification dictionary. Mutually
+                exclusive with workspace_name/workflow_id.
+            workspace_name: Optional name of workspace containing workflow. Must be used
+                with workflow_id.
+            workflow_id: Optional ID of workflow to use. Must be used with workspace_name.
+            image_input_name: Name of the image input node in workflow. Defaults to "image".
+            workflows_parameters: Optional parameters to pass to workflow.
+            workflows_thread_pool_workers: Number of worker threads for workflow execution.
+                Defaults to 4.
+            cancel_thread_pool_tasks_on_exit: Whether to cancel pending tasks when exiting.
+                Defaults to True.
+            video_metadata_input_name: Name of video metadata input in workflow.
+                Defaults to "video_metadata".
+            max_fps: Optional maximum FPS to process video at.
+            source_buffer_filling_strategy: Strategy for filling source buffer when full.
+                One of: "WAIT", "DROP_OLDEST", "ADAPTIVE_DROP_OLDEST", "DROP_LATEST",
+                "ADAPTIVE_DROP_LATEST". Defaults to "DROP_OLDEST".
+            source_buffer_consumption_strategy: Strategy for consuming from source buffer.
+                One of: "LAZY", "EAGER". Defaults to "EAGER".
+            video_source_properties: Optional dictionary of video source properties.
+            batch_collection_timeout: Optional timeout for batch collection in seconds.
+            results_buffer_size: Size of results buffer. Defaults to 64.
+
+        Returns:
+            dict: Response containing pipeline initialization details.
+
+        Raises:
+            InvalidParameterError: If workflow specification parameters are invalid.
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         named_workflow_specified = (workspace_name is not None) and (
             workflow_id is not None
         )
@@ -1337,6 +1798,19 @@ class InferenceHTTPClient:
     )
     @wrap_errors
     def list_inference_pipelines(self) -> List[dict]:
+        """Lists all active inference pipelines on the server.
+
+        This method retrieves information about all currently running inference pipelines
+        on the server, including their IDs and status.
+
+        Returns:
+            List[dict]: A list of dictionaries containing information about each active
+                inference pipeline.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+        """
         payload = {"api_key": self.__api_key}
         response = requests.get(
             f"{self.__api_url}/inference_pipelines/list",
@@ -1350,6 +1824,19 @@ class InferenceHTTPClient:
     )
     @wrap_errors
     def get_inference_pipeline_status(self, pipeline_id: str) -> dict:
+        """Gets the current status of a specific inference pipeline.
+
+        Args:
+            pipeline_id: The unique identifier of the inference pipeline to check.
+
+        Returns:
+            dict: A dictionary containing the current status and details of the pipeline.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+            ValueError: If pipeline_id is empty or None.
+        """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = {"api_key": self.__api_key}
         response = requests.get(
@@ -1364,6 +1851,22 @@ class InferenceHTTPClient:
     )
     @wrap_errors
     def pause_inference_pipeline(self, pipeline_id: str) -> dict:
+        """Pauses a running inference pipeline.
+
+        Sends a request to pause the specified inference pipeline. The pipeline must be
+        currently running for this operation to succeed.
+
+        Args:
+            pipeline_id: The unique identifier of the inference pipeline to pause.
+
+        Returns:
+            dict: A dictionary containing the response from the server about the pause operation.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+            ValueError: If pipeline_id is empty or None.
+        """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = {"api_key": self.__api_key}
         response = requests.post(
@@ -1378,6 +1881,22 @@ class InferenceHTTPClient:
     )
     @wrap_errors
     def resume_inference_pipeline(self, pipeline_id: str) -> dict:
+        """Resumes a paused inference pipeline.
+
+        Sends a request to resume the specified inference pipeline. The pipeline must be
+        currently paused for this operation to succeed.
+
+        Args:
+            pipeline_id: The unique identifier of the inference pipeline to resume.
+
+        Returns:
+            dict: A dictionary containing the response from the server about the resume operation.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+            ValueError: If pipeline_id is empty or None.
+        """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = {"api_key": self.__api_key}
         response = requests.post(
@@ -1392,6 +1911,22 @@ class InferenceHTTPClient:
     )
     @wrap_errors
     def terminate_inference_pipeline(self, pipeline_id: str) -> dict:
+        """Terminates a running inference pipeline.
+
+        Sends a request to terminate the specified inference pipeline. This will stop all
+        processing and free up associated resources.
+
+        Args:
+            pipeline_id: The unique identifier of the inference pipeline to terminate.
+
+        Returns:
+            dict: A dictionary containing the response from the server about the termination operation.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+            ValueError: If pipeline_id is empty or None.
+        """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         payload = {"api_key": self.__api_key}
         response = requests.post(
@@ -1410,6 +1945,21 @@ class InferenceHTTPClient:
         pipeline_id: str,
         excluded_fields: Optional[List[str]] = None,
     ) -> dict:
+        """Consumes and returns the next available result from an inference pipeline.
+
+        Args:
+            pipeline_id: The unique identifier of the inference pipeline to consume results from.
+            excluded_fields: Optional list of field names to exclude from the result. If None,
+                no fields will be excluded.
+
+        Returns:
+            dict: A dictionary containing the next available result from the pipeline.
+
+        Raises:
+            HTTPCallErrorError: If there is an error in the HTTP call.
+            HTTPClientError: If there is an error with the server connection.
+            InvalidParameterError: If pipeline_id is empty or None.
+        """
         self._ensure_pipeline_id_not_empty(pipeline_id=pipeline_id)
         if excluded_fields is None:
             excluded_fields = []

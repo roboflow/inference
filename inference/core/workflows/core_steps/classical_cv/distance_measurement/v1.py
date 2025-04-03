@@ -10,8 +10,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
-    StepOutputSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -19,10 +18,10 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SHORT_DESCRIPTION = "Measure the distance between two bounding boxes on a 2D plane using a perpendicular camera and either a reference object or a pixel-to-centimeter ratio for scaling."
+SHORT_DESCRIPTION = "Calculate the distance between two bounding boxes on a 2D plane."
 
 LONG_DESCRIPTION = """
-Measure the distance between two bounding boxes on a 2D plane using a camera positioned perpendicular to the plane. This method requires footage from this specific perspective, along with either a reference object of known dimensions placed in the same plane as the bounding boxes or a pixel-to-centimeter ratio that defines how many pixels correspond to one centimeter."""
+Calculate the distance between two bounding boxes on a 2D plane, leveraging a perpendicular camera view and either a reference object or a pixel-to-unit scaling ratio for precise measurements."""
 
 OUTPUT_KEY_CENTIMETER = "distance_cm"
 OUTPUT_KEY_PIXEL = "distance_pixel"
@@ -40,13 +39,15 @@ class BlockManifest(WorkflowBlockManifest):
             "ui_manifest": {
                 "section": "classical_cv",
                 "icon": "far fa-ruler-triangle",
+                "blockPriority": 11,
+                "opencv": True,
             },
         }
     )
 
     type: Literal["roboflow_core/distance_measurement@v1"]
 
-    predictions: StepOutputSelector(
+    predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
             INSTANCE_SEGMENTATION_PREDICTION_KIND,
@@ -80,9 +81,7 @@ class BlockManifest(WorkflowBlockManifest):
         description="Select how to calibrate the measurement of distance between objects.",
     )
 
-    reference_object_class_name: Union[
-        str, WorkflowParameterSelector(kind=[STRING_KIND])
-    ] = Field(
+    reference_object_class_name: Union[str, Selector(kind=[STRING_KIND])] = Field(
         title="Reference Object Class Name",
         description="The class name of the reference object.",
         default="reference-object",
@@ -97,7 +96,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
 
-    reference_width: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(
+    reference_width: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         title="Width",
         default=2.5,
         description="Width of the reference object in centimeters",
@@ -113,7 +112,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
 
-    reference_height: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(  # type: ignore
+    reference_height: Union[float, Selector(kind=[FLOAT_KIND])] = Field(  # type: ignore
         title="Height",
         default=2.5,
         description="Height of the reference object in centimeters",
@@ -129,7 +128,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
 
-    pixel_ratio: Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])] = Field(
+    pixel_ratio: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
         title="Reference Pixel-to-Centimeter Ratio",
         description="The pixel-to-centimeter ratio of the input image, i.e. 1 centimeter = 100 pixels.",
         default=100,

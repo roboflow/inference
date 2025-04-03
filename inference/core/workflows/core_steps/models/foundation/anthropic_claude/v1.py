@@ -21,14 +21,14 @@ from inference.core.workflows.execution_engine.entities.base import (
 )
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
+    IMAGE_KIND,
     INTEGER_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
+    SECRET_KIND,
     STRING_KIND,
     ImageInputField,
-    StepOutputImageSelector,
-    WorkflowImageSelector,
-    WorkflowParameterSelector,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -88,17 +88,23 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "Anthropic Claude",
             "version": "v1",
-            "short_description": "Run Anthropic Claude model with vision capabilities",
+            "short_description": "Run Anthropic Claude model with vision capabilities.",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": ["LMM", "VLM", "Claude", "Anthropic"],
             "is_vlm_block": True,
             "task_type_property": "task_type",
-        }
+            "ui_manifest": {
+                "section": "model",
+                "icon": "far fa-a",
+                "blockPriority": 5,
+            },
+        },
+        protected_namespaces=(),
     )
     type: Literal["roboflow_core/anthropic_claude@v1"]
-    images: Union[WorkflowImageSelector, StepOutputImageSelector] = ImageInputField
+    images: Selector(kind=[IMAGE_KIND]) = ImageInputField
     task_type: TaskType = Field(
         default="unconstrained",
         description="Task type to be performed by model. Value determines required parameters and output response.",
@@ -113,7 +119,7 @@ class BlockManifest(WorkflowBlockManifest):
             "always_visible": True,
         },
     )
-    prompt: Optional[Union[WorkflowParameterSelector(kind=[STRING_KIND]), str]] = Field(
+    prompt: Optional[Union[Selector(kind=[STRING_KIND]), str]] = Field(
         default=None,
         description="Text prompt to the Claude model",
         examples=["my prompt", "$inputs.prompt"],
@@ -121,6 +127,7 @@ class BlockManifest(WorkflowBlockManifest):
             "relevant_for": {
                 "task_type": {"values": TASKS_REQUIRING_PROMPT, "required": True},
             },
+            "multiline": True,
         },
     )
     output_structure: Optional[Dict[str, str]] = Field(
@@ -136,9 +143,7 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    classes: Optional[
-        Union[WorkflowParameterSelector(kind=[LIST_OF_VALUES_KIND]), List[str]]
-    ] = Field(
+    classes: Optional[Union[Selector(kind=[LIST_OF_VALUES_KIND]), List[str]]] = Field(
         default=None,
         description="List of classes to be used",
         examples=[["class-a", "class-b"], "$inputs.classes"],
@@ -151,13 +156,13 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[WorkflowParameterSelector(kind=[STRING_KIND]), str] = Field(
-        description="Your Antropic API key",
-        examples=["xxx-xxx", "$inputs.antropics_api_key"],
+    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
+        description="Your Anthropic API key",
+        examples=["xxx-xxx", "$inputs.anthropics_api_key"],
         private=True,
     )
     model_version: Union[
-        WorkflowParameterSelector(kind=[STRING_KIND]),
+        Selector(kind=[STRING_KIND]),
         Literal[
             "claude-3-5-sonnet", "claude-3-opus", "claude-3-sonnet", "claude-3-haiku"
         ],
@@ -170,16 +175,14 @@ class BlockManifest(WorkflowBlockManifest):
         default=450,
         description="Maximum number of tokens the model can generate in it's response.",
     )
-    temperature: Optional[
-        Union[float, WorkflowParameterSelector(kind=[FLOAT_KIND])]
-    ] = Field(
+    temperature: Optional[Union[float, Selector(kind=[FLOAT_KIND])]] = Field(
         default=None,
         description="Temperature to sample from the model - value in range 0.0-2.0, the higher - the more "
         'random / "creative" the generations are.',
         ge=0.0,
         le=2.0,
     )
-    max_image_size: Union[int, WorkflowParameterSelector(kind=[INTEGER_KIND])] = Field(
+    max_image_size: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
         description="Maximum size of the image - if input has larger side, it will be downscaled, keeping aspect ratio",
         default=1024,
     )
@@ -187,7 +190,7 @@ class BlockManifest(WorkflowBlockManifest):
         default=None,
         description="Number of concurrent requests that can be executed by block when batch of input images provided. "
         "If not given - block defaults to value configured globally in Workflows Execution Engine. "
-        "Please restrict if you hit ANtropic API limits.",
+        "Please restrict if you hit Anthropic API limits.",
     )
 
     @model_validator(mode="after")
@@ -210,8 +213,8 @@ class BlockManifest(WorkflowBlockManifest):
         return self
 
     @classmethod
-    def accepts_batch_input(cls) -> bool:
-        return True
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -224,10 +227,10 @@ class BlockManifest(WorkflowBlockManifest):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.4.0,<2.0.0"
 
 
-class AntropicClaudeBlockV1(WorkflowBlock):
+class AnthropicClaudeBlockV1(WorkflowBlock):
 
     def __init__(
         self,
@@ -247,7 +250,7 @@ class AntropicClaudeBlockV1(WorkflowBlock):
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
-        return ">=1.0.0,<2.0.0"
+        return ">=1.3.0,<2.0.0"
 
     def run(
         self,

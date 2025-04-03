@@ -5,7 +5,7 @@ essential. This allows users to create their own blocks and bundle them into Wor
 is essentially a Python library that implements a defined interface and can be structured in various ways. 
 
 This page outlines the mandatory interface requirements and suggests a structure for blocks that aligns with 
-the [Workflows versioning](/workflows/versioning) guidelines.
+the [Workflows versioning](/workflows/versioning.md) guidelines.
 
 ## Proposed structure of plugin
 
@@ -33,7 +33,7 @@ compared to standard Python library:
 
 * `load_blocks()` function to provide list of blocks' classes (required)
 
-* `load_kinds()` function to return all custom [kinds](/workflows/kinds/) the plugin defines (optional)
+* `load_kinds()` function to return all custom [kinds](/workflows/kinds.md) the plugin defines (optional)
 
 * `REGISTERED_INITIALIZERS` module property which is a dict mapping name of block 
 init parameter into default value or parameter-free function constructing that value - optional 
@@ -85,8 +85,8 @@ def load_kinds() -> List[Kind]:
 
 ## `REGISTERED_INITIALIZERS` dictionary
 
-As you know from [the docs describing the Workflows Compiler](/workflows/workflows_compiler/) 
-and the [blocks development guide](/workflows/create_workflow_block/), Workflow
+As you know from [the docs describing the Workflows Compiler](/workflows/workflows_compiler.md) 
+and the [blocks development guide](/workflows/create_workflow_block.md), Workflow
 blocs are dynamically initialized during compilation and may require constructor 
 parameters. Those parameters can default to values registered in the `REGISTERED_INITIALIZERS`
 dictionary. To expose default a value for an init parameter of your block - 
@@ -107,6 +107,65 @@ REGISTERED_INITIALIZERS = {
     "param_2": init_my_param,
 }
 ```
+
+## Serializers and deserializers for *Kinds*
+
+Support for custom serializers and deserializers was introduced in Execution Engine `v1.3.0`.
+From that version onward it is possible to point custom functions that 
+Execution Engine should use to serialize and deserialize any *[kind](/workflows/kinds.md)*.
+
+Deserializers will determine how to decode inputs send through the wire 
+into internal data representation used by blocks. Serializers, on the other hand, 
+are useful when Workflow results are to be send through the wire.
+
+Below you may find example on how to add serializer and deserializer 
+for arbitrary kind. The code should be placed in main `__init__.py` of
+your plugin:
+
+```python
+from typing import Any
+
+def serialize_kind(value: Any) -> Any:
+  # place here the code that will be used to
+  # transform internal Workflows data representation into 
+  # the external one (that can be sent through the wire in JSON, using
+  # default JSON encoder for Python).
+  pass
+
+
+def deserialize_kind(parameter_name: str, value: Any) -> Any:
+  # place here the code that will be used to decode 
+  # data sent through the wire into the Execution Engine
+  # and transform it into proper internal Workflows data representation
+  # which is understood by the blocks.
+  pass
+
+
+KINDS_SERIALIZERS = {
+    "name_of_the_kind": serialize_kind,
+}
+KINDS_DESERIALIZERS = {
+    "name_of_the_kind": deserialize_kind,
+}
+```
+
+### Tips And Tricks
+
+* Each serializer must be a function taking the value to serialize
+and returning serialized value (accepted by default Python JSON encoder)
+
+* Each deserializer must be a function accepting two parameters - name of 
+Workflow input to be deserialized and the value to be deserialized - the goal 
+of the function is to align input data with expected internal representation
+
+* *Kinds* from `roboflow_core` plugin already have reasonable serializers and 
+deserializers
+
+* If you do not like the way how data is serialized in `roboflow_core` plugin, 
+feel free to alter the serialization methods for *kinds*, simply registering
+the function in your plugin and loading it to the Execution Engine - the 
+serializer/deserializer defined as the last one will be in use. 
+
 
 ## Enabling plugin in your Workflows ecosystem
 

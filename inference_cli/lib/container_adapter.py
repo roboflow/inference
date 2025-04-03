@@ -103,8 +103,10 @@ def _get_jetpack_image(jetpack_version: str) -> str:
         return "roboflow/roboflow-inference-server-jetson-4.5.0:latest"
     if jetpack_version.startswith("4.6"):
         return "roboflow/roboflow-inference-server-jetson-4.6.1:latest"
-    if jetpack_version.startswith("5.1"):
+    if jetpack_version.startswith("5."):
         return "roboflow/roboflow-inference-server-jetson-5.1.1:latest"
+    if jetpack_version.startswith("6."):
+        return "roboflow/roboflow-inference-server-jetson-6.0.0:latest"
     raise RuntimeError(f"Jetpack version: {jetpack_version} not supported")
 
 
@@ -134,14 +136,17 @@ def start_inference_container(
     device_requests = None
     privileged = False
     docker_run_kwargs = {}
-    if "gpu" in image:
-        privileged = True
+    is_gpu = "gpu" in image and "jetson" not in image
+    is_jetson = "jetson" in image
+
+    if is_gpu:
         device_requests = [
             docker.types.DeviceRequest(device_ids=["all"], capabilities=[["gpu"]])
         ]
-    if "jetson" in image:
+    if is_jetson:
         privileged = True
         docker_run_kwargs = {"runtime": "nvidia"}
+
     environment = prepare_container_environment(
         port=port,
         project=project,
@@ -165,7 +170,28 @@ def start_inference_container(
         labels=labels,
         ports=ports,
         device_requests=device_requests,
-        environment=environment,
+        environment=environment
+        + [
+            "MODEL_CACHE_DIR=/tmp/model-cache",
+            "TRANSFORMERS_CACHE=/tmp/huggingface",
+            "YOLO_CONFIG_DIR=/tmp/yolo",
+            "MPLCONFIGDIR=/tmp/matplotlib",
+            "HOME=/tmp/home",
+        ],
+        mem_limit="4g",
+        memswap_limit="6g",
+        cpu_shares=1024,
+        security_opt=["no-new-privileges"] if not is_jetson else None,
+        cap_drop=["ALL"] if not is_jetson else None,
+        cap_add=(
+            (["NET_BIND_SERVICE"] + (["SYS_ADMIN"] if is_gpu else []))
+            if not is_jetson
+            else None
+        ),
+        read_only=not is_jetson,
+        volumes={"/tmp": {"bind": "/tmp", "mode": "rw"}},
+        network_mode="bridge",
+        ipc_mode="private" if not is_jetson else None,
         **docker_run_kwargs,
     )
 
@@ -193,6 +219,7 @@ def prepare_container_environment(
         environment["ROBOFLOW_API_KEY"] = api_key
     environment["NUM_WORKERS"] = str(num_workers)
     if development:
+        environment["ENABLE_BUILDER"] = "True"
         environment["NOTEBOOK_ENABLED"] = "True"
     return [f"{key}={value}" for key, value in environment.items()]
 

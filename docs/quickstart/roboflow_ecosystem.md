@@ -40,7 +40,7 @@ Search for models, test out their performance on your images, track model versio
 
 The `model_id` you pass into inference can be a `model_id` from Universe.
 
-- [Run Model from Roboflow Universe](/quickstart/explore_models/)
+- [Run Model from Roboflow Universe](../quickstart/explore_models.md)
 
 ### Supervision
 
@@ -53,4 +53,4 @@ https://supervision.roboflow.com/latest/
 
 ### Workflows
 
-[Workflows](/workflows/about/) are an new `inference` feature. Instead of writing code, you may chain together blocks to build your computer vision algorithms from scratch. There's an expanding [library](/workflows/blocks/) of blocks available - see if you find anything you like!
+[Workflows](../workflows/about.md) are an new `inference` feature. Instead of writing code, you may chain together blocks to build your computer vision algorithms from scratch. There's an expanding [library](/workflows/blocks) of blocks available - see if you find anything you like!

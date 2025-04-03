@@ -77,21 +77,34 @@ def construct_non_simd_step_input(
     if False in masks:
         return None
     result = {}
+    detected_empty_step_output_selector = False
     for parameter_name, parameter_spec in step_node.input_data.items():
         if parameter_spec.is_compound_input():
-            result[parameter_name] = construct_non_simd_step_compound_input(
-                step_node=step_node,
-                parameter_spec=parameter_spec,
-                runtime_parameters=runtime_parameters,
-                execution_cache=execution_cache,
+            result[parameter_name], contains_empty_step_output_selector = (
+                construct_non_simd_step_compound_input(
+                    step_node=step_node,
+                    parameter_spec=parameter_spec,
+                    runtime_parameters=runtime_parameters,
+                    execution_cache=execution_cache,
+                )
             )
         else:
-            result[parameter_name] = construct_non_simd_step_non_compound_input(
-                step_node=step_node,
-                parameter_spec=parameter_spec,
-                runtime_parameters=runtime_parameters,
-                execution_cache=execution_cache,
+            result[parameter_name], contains_empty_step_output_selector = (
+                construct_non_simd_step_non_compound_input(
+                    step_node=step_node,
+                    parameter_spec=parameter_spec,
+                    runtime_parameters=runtime_parameters,
+                    execution_cache=execution_cache,
+                )
             )
+        detected_empty_step_output_selector = (
+            detected_empty_step_output_selector or contains_empty_step_output_selector
+        )
+    if (
+        detected_empty_step_output_selector
+        and not step_node.step_manifest.accepts_empty_values()
+    ):
+        return None
     return result
 
 
@@ -100,7 +113,7 @@ def construct_non_simd_step_compound_input(
     parameter_spec: CompoundStepInputDefinition,
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
-) -> Any:
+) -> Tuple[Any, bool]:
     if parameter_spec.represents_list_of_inputs():
         return construct_non_simd_step_compound_list_input(
             step_node=step_node,
@@ -121,28 +134,11 @@ def construct_non_simd_step_compound_list_input(
     parameter_spec: CompoundStepInputDefinition,
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
-) -> List[Any]:
+) -> Tuple[List[Any], bool]:
     result = []
+    contains_empty_step_output_selector = False
     for nested_definition in parameter_spec.iterate_through_definitions():
-        nested_value = construct_non_simd_step_non_compound_input(
-            step_node=step_node,
-            parameter_spec=nested_definition,
-            runtime_parameters=runtime_parameters,
-            execution_cache=execution_cache,
-        )
-        result.append(nested_value)
-    return result
-
-
-def construct_non_simd_step_compound_dict_input(
-    step_node: StepNode,
-    parameter_spec: CompoundStepInputDefinition,
-    runtime_parameters: Dict[str, Any],
-    execution_cache: ExecutionCache,
-) -> Dict[str, Any]:
-    result = {}
-    for nested_definition in parameter_spec.iterate_through_definitions():
-        result[nested_definition.parameter_specification.nested_element_key] = (
+        nested_value, value_contains_empty_selector = (
             construct_non_simd_step_non_compound_input(
                 step_node=step_node,
                 parameter_spec=nested_definition,
@@ -150,7 +146,35 @@ def construct_non_simd_step_compound_dict_input(
                 execution_cache=execution_cache,
             )
         )
-    return result
+        result.append(nested_value)
+        contains_empty_step_output_selector = (
+            contains_empty_step_output_selector or value_contains_empty_selector
+        )
+    return result, contains_empty_step_output_selector
+
+
+def construct_non_simd_step_compound_dict_input(
+    step_node: StepNode,
+    parameter_spec: CompoundStepInputDefinition,
+    runtime_parameters: Dict[str, Any],
+    execution_cache: ExecutionCache,
+) -> Tuple[Dict[str, Any], bool]:
+    result = {}
+    contains_empty_step_output_selector = False
+    for nested_definition in parameter_spec.iterate_through_definitions():
+        (
+            result[nested_definition.parameter_specification.nested_element_key],
+            value_contains_empty_selector,
+        ) = construct_non_simd_step_non_compound_input(
+            step_node=step_node,
+            parameter_spec=nested_definition,
+            runtime_parameters=runtime_parameters,
+            execution_cache=execution_cache,
+        )
+        contains_empty_step_output_selector = (
+            contains_empty_step_output_selector or value_contains_empty_selector
+        )
+    return result, contains_empty_step_output_selector
 
 
 def construct_non_simd_step_non_compound_input(
@@ -158,7 +182,7 @@ def construct_non_simd_step_non_compound_input(
     parameter_spec: StepInputDefinition,
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
-) -> Any:
+) -> Tuple[Any, bool]:
     if parameter_spec.is_compound_input():
         raise AssumptionError(
             public_message=f"Workflows Execution Error encountered unexpected state probably related to the fact "
@@ -179,12 +203,15 @@ def construct_non_simd_step_non_compound_input(
     if parameter_spec.points_to_input():
         parameter_spec: DynamicStepInputDefinition = parameter_spec  # type: ignore
         input_name = get_last_chunk_of_selector(selector=parameter_spec.selector)
-        return runtime_parameters[input_name]
+        return runtime_parameters[input_name], False
     if parameter_spec.points_to_step_output():
         parameter_spec: DynamicStepInputDefinition = parameter_spec  # type: ignore
-        return execution_cache.get_non_batch_output(selector=parameter_spec.selector)
+        step_output = execution_cache.get_non_batch_output(
+            selector=parameter_spec.selector
+        )
+        return step_output, step_output is None
     parameter_spec: StaticStepInputDefinition = parameter_spec  # type: ignore
-    return parameter_spec.value
+    return parameter_spec.value, False
 
 
 def iterate_over_simd_step_input(
@@ -326,31 +353,42 @@ def prepare_parameters(
     result = {}
     indices_for_parameter = {}
     guard_of_indices_wrapping = GuardForIndicesWrapping()
+    compound_inputs = set()
+    contains_empty_scalar_step_output_selector = False
     for parameter_name, parameter_specs in step_node.input_data.items():
         if parameter_specs.is_compound_input():
-            result[parameter_name], indices_for_parameter[parameter_name] = (
-                get_compound_parameter_value(
-                    parameter=parameter_specs,
-                    step_execution_dimensionality=step_node.step_execution_dimensionality,
-                    masks=masks,
-                    dynamic_batches_manager=dynamic_batches_manager,
-                    runtime_parameters=runtime_parameters,
-                    execution_cache=execution_cache,
-                    guard_of_indices_wrapping=guard_of_indices_wrapping,
-                )
+            (
+                result[parameter_name],
+                indices_for_parameter[parameter_name],
+                value_contains_empty_scalar_step_output_selector,
+            ) = get_compound_parameter_value(
+                parameter=parameter_specs,
+                step_execution_dimensionality=step_node.step_execution_dimensionality,
+                masks=masks,
+                dynamic_batches_manager=dynamic_batches_manager,
+                runtime_parameters=runtime_parameters,
+                execution_cache=execution_cache,
+                guard_of_indices_wrapping=guard_of_indices_wrapping,
             )
+            compound_inputs.add(parameter_name)
         else:
-            result[parameter_name], indices_for_parameter[parameter_name] = (
-                get_non_compound_parameter_value(
-                    parameter=parameter_specs,
-                    step_execution_dimensionality=step_node.step_execution_dimensionality,
-                    masks=masks,
-                    dynamic_batches_manager=dynamic_batches_manager,
-                    runtime_parameters=runtime_parameters,
-                    execution_cache=execution_cache,
-                    guard_of_indices_wrapping=guard_of_indices_wrapping,
-                )
+            (
+                result[parameter_name],
+                indices_for_parameter[parameter_name],
+                value_contains_empty_scalar_step_output_selector,
+            ) = get_non_compound_parameter_value(
+                parameter=parameter_specs,
+                step_execution_dimensionality=step_node.step_execution_dimensionality,
+                masks=masks,
+                dynamic_batches_manager=dynamic_batches_manager,
+                runtime_parameters=runtime_parameters,
+                execution_cache=execution_cache,
+                guard_of_indices_wrapping=guard_of_indices_wrapping,
             )
+        contains_empty_scalar_step_output_selector = (
+            contains_empty_scalar_step_output_selector
+            or value_contains_empty_scalar_step_output_selector
+        )
     batch_parameters_indices = [
         i for i in indices_for_parameter.values() if i is not None
     ]
@@ -366,6 +404,11 @@ def prepare_parameters(
         )
     indices = batch_parameters_indices[0]
     if not step_node.step_manifest.accepts_empty_values():
+        if contains_empty_scalar_step_output_selector:
+            return BatchModeSIMDStepInput(
+                indices=[],
+                parameters={},
+            )
         empty_indices = get_empty_batch_elements_indices(value=result)
         indices = [e for e in indices if e not in empty_indices]
         result = remove_indices(value=result, indices=empty_indices)
@@ -383,49 +426,62 @@ def get_compound_parameter_value(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     guard_of_indices_wrapping: GuardForIndicesWrapping,
-) -> Tuple[Union[list, Dict[str, Any]], Optional[List[DynamicBatchIndex]]]:
+) -> Tuple[Union[list, Dict[str, Any]], Optional[List[DynamicBatchIndex]], bool]:
+    contains_empty_scalar_step_output_selector = False
     batch_indices = []
     if parameter.represents_list_of_inputs():
         result = []
         for nested_element in parameter.iterate_through_definitions():
-            non_compound_parameter_value, non_compound_indices = (
-                get_non_compound_parameter_value(
-                    parameter=nested_element,
-                    step_execution_dimensionality=step_execution_dimensionality,
-                    masks=masks,
-                    dynamic_batches_manager=dynamic_batches_manager,
-                    runtime_parameters=runtime_parameters,
-                    execution_cache=execution_cache,
-                    guard_of_indices_wrapping=guard_of_indices_wrapping,
-                )
+            (
+                non_compound_parameter_value,
+                non_compound_indices,
+                value_contains_empty_scalar_step_output_selector,
+            ) = get_non_compound_parameter_value(
+                parameter=nested_element,
+                step_execution_dimensionality=step_execution_dimensionality,
+                masks=masks,
+                dynamic_batches_manager=dynamic_batches_manager,
+                runtime_parameters=runtime_parameters,
+                execution_cache=execution_cache,
+                guard_of_indices_wrapping=guard_of_indices_wrapping,
             )
             result.append(non_compound_parameter_value)
+            contains_empty_scalar_step_output_selector = (
+                contains_empty_scalar_step_output_selector
+                or value_contains_empty_scalar_step_output_selector
+            )
             if non_compound_indices is not None:
                 batch_indices.append(non_compound_indices)
     else:
         result = {}
         for nested_element in parameter.iterate_through_definitions():
-            non_compound_parameter_value, non_compound_indices = (
-                get_non_compound_parameter_value(
-                    parameter=nested_element,
-                    step_execution_dimensionality=step_execution_dimensionality,
-                    masks=masks,
-                    dynamic_batches_manager=dynamic_batches_manager,
-                    runtime_parameters=runtime_parameters,
-                    execution_cache=execution_cache,
-                    guard_of_indices_wrapping=guard_of_indices_wrapping,
-                )
+            (
+                non_compound_parameter_value,
+                non_compound_indices,
+                value_contains_empty_scalar_step_output_selector,
+            ) = get_non_compound_parameter_value(
+                parameter=nested_element,
+                step_execution_dimensionality=step_execution_dimensionality,
+                masks=masks,
+                dynamic_batches_manager=dynamic_batches_manager,
+                runtime_parameters=runtime_parameters,
+                execution_cache=execution_cache,
+                guard_of_indices_wrapping=guard_of_indices_wrapping,
             )
             result[nested_element.parameter_specification.nested_element_key] = (
                 non_compound_parameter_value
             )
-            if non_compound_indices:
+            contains_empty_scalar_step_output_selector = (
+                contains_empty_scalar_step_output_selector
+                or value_contains_empty_scalar_step_output_selector
+            )
+            if non_compound_indices is not None:
                 batch_indices.append(non_compound_indices)
     ensure_compound_input_indices_match(indices=batch_indices)
     result_indices = None
-    if batch_indices:
+    if len(batch_indices) > 0:
         result_indices = batch_indices[0]
-    return result, result_indices
+    return result, result_indices, contains_empty_scalar_step_output_selector
 
 
 def get_non_compound_parameter_value(
@@ -436,16 +492,23 @@ def get_non_compound_parameter_value(
     runtime_parameters: Dict[str, Any],
     execution_cache: ExecutionCache,
     guard_of_indices_wrapping: GuardForIndicesWrapping,
-) -> Union[Any, Optional[List[DynamicBatchIndex]]]:
+) -> Union[Any, Optional[List[DynamicBatchIndex]], bool]:
     if not parameter.is_batch_oriented():
-        input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
         if parameter.points_to_input():
+            input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
             parameter_name = get_last_chunk_of_selector(
                 selector=input_parameter.selector
             )
-            return runtime_parameters[parameter_name], None
-        static_input: StaticStepInputDefinition = parameter  # type: ignore
-        return static_input.value, None
+            return runtime_parameters[parameter_name], None, False
+        elif parameter.points_to_step_output():
+            input_parameter: DynamicStepInputDefinition = parameter  # type: ignore
+            value = execution_cache.get_non_batch_output(
+                selector=input_parameter.selector
+            )
+            return value, None, value is None
+        else:
+            static_input: StaticStepInputDefinition = parameter  # type: ignore
+            return static_input.value, None, False
     dynamic_parameter: DynamicStepInputDefinition = parameter  # type: ignore
     parameter_dimensionality = dynamic_parameter.get_dimensionality()
     lineage_indices = dynamic_batches_manager.get_indices_for_data_lineage(
@@ -454,7 +517,10 @@ def get_non_compound_parameter_value(
     mask_for_dimension = masks[parameter_dimensionality]
     if dynamic_parameter.points_to_input():
         input_name = get_last_chunk_of_selector(selector=dynamic_parameter.selector)
-        batch_input = runtime_parameters[input_name]
+        batch_input = _flatten_batch_oriented_inputs(
+            runtime_parameters[input_name],
+            dimensionality=parameter_dimensionality,
+        )
         if mask_for_dimension is not None:
             if len(lineage_indices) != len(batch_input):
                 raise ExecutionEngineRuntimeError(
@@ -479,7 +545,7 @@ def get_non_compound_parameter_value(
             mask=mask_for_dimension,
         )
     if step_execution_dimensionality == parameter_dimensionality:
-        return Batch(batch_input, lineage_indices), lineage_indices
+        return Batch(batch_input, lineage_indices), lineage_indices, False
     if step_execution_dimensionality > parameter_dimensionality:
         raise ExecutionEngineRuntimeError(
             public_message=f"Detected a situation when parameter: "
@@ -513,7 +579,30 @@ def get_non_compound_parameter_value(
         data=batch_input,
         guard_of_indices_wrapping=guard_of_indices_wrapping,
     )
-    return result, result.indices
+    return result, result.indices, False
+
+
+def _flatten_batch_oriented_inputs(
+    inputs: list,
+    dimensionality: int,
+) -> List[Any]:
+    if dimensionality == 0 or not isinstance(inputs, list):
+        raise AssumptionError(
+            public_message=f"Could not prepare batch-oriented input data. This is most likely the bug. Contact "
+            f"Roboflow team through github issues (https://github.com/roboflow/inference/issues) "
+            f"providing full context of the problem - including workflow definition you use.",
+            context="workflow_execution | step_input_assembling",
+        )
+    if dimensionality == 1:
+        return inputs
+    result = []
+    for element in inputs:
+        result.extend(
+            _flatten_batch_oriented_inputs(
+                inputs=element, dimensionality=dimensionality - 1
+            )
+        )
+    return result
 
 
 def reduce_batch_dimensionality(
@@ -597,7 +686,7 @@ def remove_indices(value: Any, indices: Set[DynamicBatchIndex]) -> Any:
 
 
 def unfold_parameters(
-    parameters: Dict[str, Any]
+    parameters: Dict[str, Any],
 ) -> Generator[Dict[str, Any], None, None]:
     batch_parameters = get_batch_parameters(parameters=parameters)
     non_batch_parameters = {
@@ -629,7 +718,7 @@ def get_batch_parameters(parameters: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def iterate_over_batches(
-    batch_parameters: Dict[str, Any]
+    batch_parameters: Dict[str, Any],
 ) -> Generator[Dict[str, Any], None, None]:
     index = 0
     end = False
