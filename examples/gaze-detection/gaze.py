@@ -1,9 +1,9 @@
 import base64
+import os
 
 import cv2
 import numpy as np
 import requests
-import os
 
 IMG_PATH = "image.jpg"
 ROBOFLOW_API_KEY = os.environ["ROBOFLOW_API_KEY"]

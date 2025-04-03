@@ -1,6 +1,7 @@
 import os
 import subprocess
 
+
 def on_pre_build(config):
     """Run npm build before mkdocs build"""
     print("Building theme assets...")

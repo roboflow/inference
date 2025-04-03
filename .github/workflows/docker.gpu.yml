@@ -35,7 +35,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: 🛎️ Checkout
+      - name: Checkout
         uses: actions/checkout@v4
       - name: Read version from file
         run: echo "VERSION=$(DISABLE_VERSION_CHECK=true python ./inference/core/version.py)" >> $GITHUB_ENV
@@ -56,5 +56,41 @@ jobs:
           push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
           project: grl7ffzxd7
           tags: ${{ steps.tags.outputs.image_tags }}
+          platforms: linux/amd64
+          file: ${{ env.DOCKERFILE }}
+      - name: 'Authenticate gcloud'
+        uses: 'google-github-actions/auth@v2'
+        id: auth
+        with:
+          workload_identity_provider: 'projects/391662651862/locations/global/workloadIdentityPools/github-actions/providers/github'
+          service_account: 'github-gcloud-deployer@roboflow-artifacts.iam.gserviceaccount.com'
+          token_format: 'access_token'
+      - name: Login to Google Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: us-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Set up build variables
+        id: set_up_build_variables
+        run: |
+          TAGS=""
+          IFS=',' read -ra TAG_ARRAY <<< "${{ steps.tags.outputs.image_tags }}"
+          for tag in "${TAG_ARRAY[@]}"; do
+            if [ -n "$TAGS" ]; then
+              TAGS="${TAGS}","us-docker.pkg.dev/roboflow-artifacts/${tag}"
+            else
+              TAGS="us-docker.pkg.dev/roboflow-artifacts/${tag}"
+            fi
+          done
+          echo "PROCESSED_TAGS=${TAGS}" >> "$GITHUB_OUTPUT"
+          echo "GCP artifacts to be pushed:"
+          echo "$TAGS"
+      - name: Build and push GPU image to GCP Artifact Registry
+        uses: depot/build-push-action@v1
+        with:
+          push: ${{ github.event_name == 'release' || (github.event.inputs.force_push == 'true') }}
+          project: grl7ffzxd7
+          tags: ${{ steps.set_up_build_variables.outputs.PROCESSED_TAGS }}
           platforms: linux/amd64
           file: ${{ env.DOCKERFILE }}
