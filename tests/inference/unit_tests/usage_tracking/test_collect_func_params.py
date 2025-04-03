@@ -81,6 +81,50 @@ def test_collect_func_params_with_args_and_catchall_kwargs():
     }
 
 
+def test_collect_func_params_inspect_cache():
+    # given
+    def func(
+        arg1,
+        arg2="default val2",
+        arg3="default val3",
+        kwarg4="default val4",
+        kwarg5="default val5",
+        **kwargs
+    ):
+        pass
+
+    # when
+    func_params1 = collect_func_params(
+        func=func,
+        args=["val11", "val12"],
+        kwargs={"kwarg4": "val14", "kwarg6": "val16"},
+    )
+    func_params2 = collect_func_params(
+        func=func,
+        args=["val21", "val22"],
+        kwargs={"kwarg4": "val24", "kwarg5": "val25"},
+    )
+
+    # then
+    assert func_params1 == {
+        "arg1": "val11",
+        "arg2": "val12",
+        "arg3": "default val3",
+        "kwarg4": "val14",
+        "kwarg5": "default val5",
+        "kwarg6": "val16",
+        "kwargs": {"kwarg4": "val14", "kwarg6": "val16"},
+    }
+    assert func_params2 == {
+        "arg1": "val21",
+        "arg2": "val22",
+        "arg3": "default val3",
+        "kwarg4": "val24",
+        "kwarg5": "val25",
+        "kwargs": {"kwarg4": "val24", "kwarg5": "val25"},
+    }
+
+
 def test_collect_func_params_with_only_kwargs():
     # given
     def func(**kwargs):
