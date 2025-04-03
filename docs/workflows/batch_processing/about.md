@@ -60,6 +60,17 @@ By installing `inference-cli` you gain access to the `inference rf-cloud` comman
 managed components of the Roboflow Platform — including `batch-processing` and `data-staging`, the core components of 
 the Roboflow Batch Processing offering.
 
+!!! hint "Inference CLI setup"
+
+    To follow the tutorial you must install `inference-cli` and export your Roboflow API key.
+
+    ```bash
+    pip install inference-cli
+    export ROBOFLOW_API_KEY="YOUR-API-KEY-GOES-HERE"
+    ```
+    
+    If you struggle to find the API key, check our [guide](https://docs.roboflow.com/api-reference/authentication). 
+
 The typical flow of interaction with the CLI is as follows:
 
 First, ingest data into the platform. For images, use the following command:
@@ -89,19 +100,30 @@ Once the data is ingested - you can trigger batch job.
 For images, use the following command:
 
 ```bash
-inference rf-cloud batch-processing process-images-with-workflow --workflow-id <workflow-id> --batch-id <batch-id>
+inference rf-cloud batch-processing process-images-with-workflow \
+  --workflow-id <workflow-id> \
+  --batch-id <batch-id> \
+  --machine-type gpu
 ```
 
 For videos:
 
 ```bash
-inference rf-cloud batch-processing process-videos-with-workflow --workflow-id <workflow-id> --batch-id <batch-id>
+inference rf-cloud batch-processing process-videos-with-workflow \
+  --workflow-id <workflow-id> \
+  --batch-id <batch-id> \
+  --machine-type gpu
 ```
 
 !!! hint "How would I know `<workflow-id>`?"
 
     Workflow ID can be found in Roboflow App - open Workflow Editor of selected Workflow, hit "Deploy" button 
     and find identifier in code snippet.
+
+!!! hint "GPU vs CPU"
+
+    By default, processing run on CPU device, but if you require extra compute power - use `--machine-type gpu` 
+    option of the above commands.
 
 Command will **display the ID of the job**, which can be used to check the job status: 
 
