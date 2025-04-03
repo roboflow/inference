@@ -186,8 +186,7 @@ def get_model_type(
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
 
     # some older projects do not have type field - hence defaulting
-    if not model_type:
-        model_type = api_data.get("modelType")
+    model_type = api_data.get("modelType")
     if model_type is None or model_type == "ort":
         # some very old model versions do not have modelType reported - and API respond in a generic way -
         # then we shall attempt using default model for given task type
