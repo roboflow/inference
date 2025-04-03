@@ -28,7 +28,10 @@ def collect_func_params(
         params = {**params, **kwargs}
     defaults = set(signature.parameters.keys()).difference(set(params.keys()))
     for default_arg in defaults:
-        params[default_arg] = signature.parameters[default_arg].default
+        default = signature.parameters[default_arg].default
+        if default is inspect.Parameter.empty:
+            continue
+        params[default_arg] = default
 
     signature_params = set(signature.parameters)
     if set(params) != signature_params:
