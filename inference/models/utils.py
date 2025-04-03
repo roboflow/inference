@@ -1,6 +1,11 @@
 import warnings
 
-from inference.core.env import API_KEY, API_KEY_ENV_NAMES, QWEN_2_5_ENABLED, SMOLVLM2_ENABLED
+from inference.core.env import (
+    API_KEY,
+    API_KEY_ENV_NAMES,
+    QWEN_2_5_ENABLED,
+    SMOLVLM2_ENABLED,
+)
 from inference.core.exceptions import MissingApiKeyError
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
