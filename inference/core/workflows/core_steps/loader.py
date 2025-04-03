@@ -200,6 +200,9 @@ from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 
 from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
     SmolVLM2BlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.moondream2.v1 import (
+    Moondream2BlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen.v1 import (
     StabilityAIImageGenBlockV1,
 )
@@ -632,6 +635,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
         SmolVLM2BlockV1,
+        Moondream2BlockV1
     ]
 
 

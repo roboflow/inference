@@ -54,6 +54,7 @@ GENERIC_MODELS = {
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
     "smolvlm2": ("lmm", "smolvlm-2.2b-instruct"),
+    "moondream2": ("lmm", "moondream2"),
 }
 
 STUB_VERSION_ID = "0"

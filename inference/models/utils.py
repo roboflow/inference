@@ -5,6 +5,7 @@ from inference.core.env import (
     API_KEY_ENV_NAMES,
     QWEN_2_5_ENABLED,
     SMOLVLM2_ENABLED,
+    MOONDREAM2_ENABLED
 )
 from inference.core.exceptions import MissingApiKeyError
 from inference.core.models.base import Model
@@ -404,6 +405,18 @@ try:
 except:
     warnings.warn(
         f"Your `inference` configuration does not support SmolVLM2."
+        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
+
+try:
+    if MOONDREAM2_ENABLED:
+        from inference.models.moondream2.moondream2 import Moondream2
+
+        ROBOFLOW_MODEL_TYPES[("lmm", "moondream2")] = Moondream2
+except:
+    warnings.warn(
+        f"Your `inference` configuration does not support Moondream2."
         f"Use pip install 'inference[transformers]' to install missing requirements.",
         category=ModelDependencyMissing,
     )

@@ -82,6 +82,16 @@ class TransformerModel(RoboflowInferenceModel):
         else:
             model_id = self.cache_dir
 
+        if hasattr(self, "revision") and self.revision is not None:
+            revision = self.revision
+        else:
+            revision = None
+
+        if hasattr(self, "trust_remote_code") and self.trust_remote_code:
+            trust_remote_code = True
+        else:
+            trust_remote_code = False
+
         self.model = (
             self.transformers_class.from_pretrained(
                 model_id,
@@ -89,6 +99,8 @@ class TransformerModel(RoboflowInferenceModel):
                 device_map=DEVICE,
                 token=self.huggingface_token,
                 torch_dtype=self.default_dtype,
+                revision=revision,
+                trust_remote_code=trust_remote_code,
             )
             .eval()
             .to(self.dtype)
