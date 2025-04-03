@@ -112,7 +112,8 @@ For videos:
 inference rf-cloud batch-processing process-videos-with-workflow \
   --workflow-id <workflow-id> \
   --batch-id <batch-id> \
-  --machine-type gpu
+  --machine-type gpu \
+  --max-video-fps <your-desired-fps>
 ```
 
 !!! hint "How would I know `<workflow-id>`?"
@@ -198,7 +199,7 @@ potential costs.
 * Certain Workflow blocks requiring access to env variables and local storage (like File Sink and Environment 
 Secret Store) are blacklisted and will not execute.
 
-* Service only works with Workflows that define **singe** input image parameter.
+* Service only works with Workflows that define **single** input image parameter.
 
 
 ## Technical Details of Batch Processing
@@ -213,7 +214,7 @@ for processing (each batch is processed by a single job).
 output batch that you can retrieve later. We **advise** using `export` stage outputs, as they are optimized for 
 network transfer (content is compressed / packed into an archive).
 
-* A running job in the  `processing` tage can be aborted using both the UI and CLI.
+* A running job in the  `processing` stage can be aborted using both the UI and CLI.
 
 * An aborted or failed job can be restarted using the mentioned tools.
 
