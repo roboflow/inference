@@ -7,31 +7,31 @@ from inference.core.logger import logger
 def collect_func_params(
     func: Callable[[Any], Any], args: Iterable[Any], kwargs: Dict[Any, Any]
 ) -> Dict[str, Any]:
-    signature = func.__code__.co_varnames
-    params = dict(zip(signature, args))
+    signature = inspect.signature(func)
+    parameters = signature.parameters
 
-    for param in signature[len(args) :]:
-        if param in kwargs:
-            params[param] = kwargs[param]
+    # Initialize params with positional arguments
+    params = {param: arg_value for param, arg_value in zip(parameters.keys(), args)}
 
-    # Add missing parameters with default values
-    for i, param in enumerate(signature):
-        if param not in params:
-            try:
-                default_index = i - (func.__code__.co_argcount - len(func.__defaults__))
-                if default_index >= 0:
-                    params[param] = func.__defaults__[default_index]
-            except (AttributeError, TypeError):
-                # There is no default value for this parameter
-                continue
+    # Update params with keyword arguments
+    params.update(kwargs)
 
-    # Add *args and **kwargs if they exist in the function definition
-    if func.__code__.co_flags & 0x04:  # CO_VARARGS flag
-        params["args"] = args[len(signature) :]
-    if func.__code__.co_flags & 0x08:  # CO_VARKEYWORDS flag
-        params["kwargs"] = {k: v for k, v in kwargs.items() if k not in signature}
+    # Set default values for missing arguments
+    defaults = {
+        param: param_obj.default
+        for param, param_obj in parameters.items()
+        if param not in params
+    }
+    params.update(defaults)
 
-    if not set(params).issuperset(signature):
-        logger.error("Params mismatch for %s.%s", func.__module__, func.__name__)
+    # Verify against function signature parameters
+    signature_keys = set(parameters.keys())
+    if params.keys() != signature_keys:
+        if "kwargs" in signature_keys:
+            params["kwargs"] = kwargs
+        if "args" in signature_keys:
+            params["args"] = args
+        if not set(params).issuperset(signature_keys):
+            logger.error("Params mismatch for %s.%s", func.__module__, func.__name__)
 
     return params
