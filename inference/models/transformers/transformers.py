@@ -279,6 +279,9 @@ class LoRATransformerModel(TransformerModel):
         )
 
     def get_lora_base_from_roboflow(self, repo, revision) -> str:
+        # Normalize potential Windows path separators in repo and revision
+        repo = repo.replace("\\", "/")
+        revision = revision.replace("\\", "/")
         base_dir = os.path.join("lora-bases", repo, revision)
         cache_dir = get_cache_dir(base_dir)
         if os.path.exists(cache_dir):
