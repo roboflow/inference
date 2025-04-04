@@ -54,6 +54,7 @@ GENERIC_MODELS = {
     "paligemma": ("llm", "paligemma"),
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
+    "smolvlm2": ("lmm", "smolvlm-2.2b-instruct"),
 }
 
 STUB_VERSION_ID = "0"
@@ -79,6 +80,7 @@ class RoboflowModelRegistry(ModelRegistry):
         """
         model_type = get_model_type(model_id, api_key)
         logger.debug(f"Model type: {model_type}")
+
         if model_type not in self.registry_dict:
             raise ModelNotRecognisedError(f"Model type not supported: {model_type}")
         return self.registry_dict[model_type]
@@ -129,6 +131,7 @@ def get_model_type(
     """
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
+
     if dataset_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]
@@ -144,6 +147,7 @@ def get_model_type(
     cached_metadata = get_model_metadata_from_cache(
         dataset_id=dataset_id, version_id=version_id
     )
+
     if cached_metadata is not None:
         return cached_metadata[0], cached_metadata[1]
     if version_id == STUB_VERSION_ID:
@@ -180,6 +184,7 @@ def get_model_type(
         project_task_type = api_data.get("taskType", "object-detection")
     if api_data is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
+
     # some older projects do not have type field - hence defaulting
     model_type = api_data.get("modelType")
     if model_type is None or model_type == "ort":

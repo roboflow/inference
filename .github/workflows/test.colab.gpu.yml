@@ -1,0 +1,27 @@
+name: Google Colab GPU
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+
+jobs:
+  build:
+    if: ${{ !github.event.act }}
+    runs-on: Roboflow-GPU-VM-Runner
+    timeout-minutes: 45
+
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref }}
+      - name: 🔨 Build Docker
+        run: docker build -t inference-google-colab:gpu -f ./docker/dockerfiles/Dockerfile.google.colab.gpu .
+      - name: 🧪 Run tests
+        run: docker run -e ROBOFLOW_API_KEY=${{ secrets.API_KEY }} --runtime nvidia inference-google-colab:gpu
