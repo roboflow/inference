@@ -28,6 +28,7 @@ The models supported by Roboflow Inference have their own licenses. View the lic
 | `inference/models/yolov12`        | [AGPL-3.0](https://github.com/sunsmarterjie/yolov12?tab=AGPL-3.0-1-ov-file)          | ✅ |
 | `inference/models/smolvlm2`        | [Apache 2.0](https://huggingface.co/HuggingFaceTB/SmolVLM2-2.2B-Instruct)          | 👍 |
 | `inference/models/rfdetr`         | [Apache 2.0](https://github.com/roboflow/rf-detr/blob/main/LICENSE)                  | 👍 |
+| `inference/models/moondream2`        | [Apache 2.0](https://github.com/vikhyat/moondream/blob/main/LICENSE)          | 👍 |
 
 ## Commercial Licenses
 
