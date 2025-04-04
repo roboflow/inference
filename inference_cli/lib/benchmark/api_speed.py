@@ -258,10 +258,7 @@ def execute_infer_api_request(
     start = time.time()
     try:
         inference_result = client.infer(payload)
-        if "time" in inference_result:
-            execution_time = inference_result["time"]
-        else:
-            execution_time = 0
+        execution_time = inference_result.get("time")
         duration = time.time() - start
         results_collector.register_inference_duration(
             batch_size=request_batch_size, duration=duration, execution_time=execution_time
