@@ -46,7 +46,7 @@ class ResultsCollector:
 
     def __init__(self):
         self._benchmark_start: Optional[datetime] = None
-        self._inference_details: List[Tuple[datetime, int, float, float]] = []
+        self._inference_details: List[Tuple[datetime, int, float, Optional[float]]] = []
         self._benchmark_end: Optional[datetime] = None
         self._errors: List[Tuple[datetime, int, str]] = []
 
