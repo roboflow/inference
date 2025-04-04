@@ -58,6 +58,7 @@ class ModelManager:
             )
             return
         logger.debug("ModelManager - model initialisation...")
+
         model = self.model_registry.get_model(resolved_identifier, api_key)(
             model_id=model_id,
             api_key=api_key,
