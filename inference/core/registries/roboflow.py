@@ -13,6 +13,7 @@ from inference.core.entities.types import (
     VersionID,
 )
 from inference.core.env import (
+    CACHE_METADATA_LOCK_TIMEOUT,
     LAMBDA,
     MODEL_CACHE_DIR,
     MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
@@ -57,7 +58,6 @@ GENERIC_MODELS = {
 }
 
 STUB_VERSION_ID = "0"
-CACHE_METADATA_LOCK_TIMEOUT = 1.0
 
 
 class RoboflowModelRegistry(ModelRegistry):
