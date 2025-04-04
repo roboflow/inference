@@ -1,14 +1,17 @@
+import inspect
 import json
 import os
 import re
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple, Type
-import inspect
 
+from jinja2 import Environment, FileSystemLoader
 
 from inference.core.utils.file_system import dump_text_lines, read_text_file
 from inference.core.workflows.execution_engine.entities.base import OutputDefinition
-from inference.core.workflows.execution_engine.entities.types import STEP_AS_SELECTED_ELEMENT
+from inference.core.workflows.execution_engine.entities.types import (
+    STEP_AS_SELECTED_ELEMENT,
+)
 from inference.core.workflows.execution_engine.introspection.blocks_loader import (
     describe_available_blocks,
 )
@@ -16,15 +19,14 @@ from inference.core.workflows.execution_engine.introspection.connections_discove
     discover_blocks_connections,
 )
 from inference.core.workflows.execution_engine.introspection.entities import (
-    SelectorDefinition, BlockDescription, BlockManifestMetadata,
+    BlockDescription,
+    BlockManifestMetadata,
+    SelectorDefinition,
 )
 from inference.core.workflows.execution_engine.introspection.schema_parser import (
     parse_block_manifest,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
-
-
-from jinja2 import Environment, FileSystemLoader
 
 template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 jinja_env = Environment(loader=FileSystemLoader(template_dir))

@@ -4,6 +4,7 @@ from typing import List, Optional
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
+from inference.core.env import DISK_CACHE_CLEANUP, MEMORY_FREE_THRESHOLD
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
@@ -42,12 +43,13 @@ class WithFixedSizeCache(ModelManagerDecorator):
             return None
 
         logger.debug(f"Current capacity of ModelManager: {len(self)}/{self.max_size}")
-        while len(self) >= self.max_size:
+        while len(self) >= self.max_size or (
+            MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
+        ):
             to_remove_model_id = self._key_queue.popleft()
-            logger.debug(
-                f"Reached maximum capacity of ModelManager. Unloading model {to_remove_model_id}"
-            )
-            super().remove(to_remove_model_id)
+            super().remove(
+                to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
+            )  # LRU model overflow cleanup may or maynot need the weights removed from disk
             logger.debug(f"Model {to_remove_model_id} successfully unloaded.")
         logger.debug(f"Marking new model {queue_id} as most recently used.")
         self._key_queue.append(queue_id)
@@ -65,14 +67,14 @@ class WithFixedSizeCache(ModelManagerDecorator):
         for model_id in list(self.keys()):
             self.remove(model_id)
 
-    def remove(self, model_id: str) -> Model:
+    def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
         try:
             self._key_queue.remove(model_id)
         except ValueError:
             logger.warning(
                 f"Could not successfully purge model {model_id} from  WithFixedSizeCache models queue"
             )
-        return super().remove(model_id)
+        return super().remove(model_id, delete_from_disk=delete_from_disk)
 
     async def infer_from_request(
         self, model_id: str, request: InferenceRequest, **kwargs
@@ -141,3 +143,23 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self, model_id: str, model_id_alias: Optional[str] = None
     ) -> str:
         return model_id if model_id_alias is None else model_id_alias
+
+    def memory_pressure_detected(self) -> bool:
+        return_boolean = False
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                free_memory, total_memory = torch.cuda.mem_get_info()
+                return_boolean = (
+                    float(free_memory / total_memory) < MEMORY_FREE_THRESHOLD
+                )
+                logger.debug(
+                    f"Free memory: {free_memory}, Total memory: {total_memory}, threshold: {MEMORY_FREE_THRESHOLD}, return_boolean: {return_boolean}"
+                )
+            # TODO: Add memory calculation for other non-CUDA devices
+        except Exception as e:
+            logger.error(
+                f"Failed to check CUDA memory pressure: {e}, returning {return_boolean}"
+            )
+        return return_boolean
