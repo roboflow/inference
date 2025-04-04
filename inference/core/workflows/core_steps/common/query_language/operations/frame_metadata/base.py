@@ -15,6 +15,10 @@ from inference.core.workflows.execution_engine.entities.base import WorkflowImag
 PROPERTY_EXTRACTORS = {
     FrameMetadataProperty.FRAME_NUMBER: lambda image: image.video_metadata.frame_number,
     FrameMetadataProperty.FRAME_TIMESTAMP: lambda image: image.video_metadata.frame_timestamp,
+    FrameMetadataProperty.SECONDS_SINCE_START: lambda image: (
+        image.video_metadata.frame_number - 1
+    )
+    / image.video_metadata.fps,
 }
 
 
