@@ -1,13 +1,24 @@
 import inspect
+from threading import Lock
 from typing import Any, Callable, Dict, Iterable
 
 from inference.core.logger import logger
+
+signatures = {}
+lock = Lock()
+
+
+def get_signature(func: Callable[[Any], Any]) -> inspect.Signature:
+    with lock:
+        if func not in signatures:
+            signatures[func] = inspect.signature(func)
+        return signatures[func]
 
 
 def collect_func_params(
     func: Callable[[Any], Any], args: Iterable[Any], kwargs: Dict[Any, Any]
 ) -> Dict[str, Any]:
-    signature = inspect.signature(func)
+    signature = get_signature(func)
     parameters = signature.parameters
 
     # Initialize params with positional arguments
@@ -21,6 +32,7 @@ def collect_func_params(
         param: param_obj.default
         for param, param_obj in parameters.items()
         if param not in params
+        and param_obj is not inspect.Parameter.empty
     }
     params.update(defaults)
 
