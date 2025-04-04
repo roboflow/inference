@@ -556,3 +556,6 @@ try:
     )
 except:
     STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE = 10
+
+# Cache metadata lock timeout in seconds, default is 1.0
+CACHE_METADATA_LOCK_TIMEOUT = float(os.getenv("CACHE_METADATA_LOCK_TIMEOUT", 1.0))
