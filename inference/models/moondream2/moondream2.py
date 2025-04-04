@@ -1,13 +1,18 @@
+import os
+
 import torch
 from PIL import Image
 from transformers import AutoModelForCausalLM
 
-from inference.models.transformers import TransformerModel
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     ObjectDetectionInferenceResponse,
     ObjectDetectionPrediction,
 )
+from inference.core.env import MODEL_CACHE_DIR
+from inference.models.florence2.utils import import_class_from_file
+from inference.models.transformers import TransformerModel
+
 
 class Moondream2(TransformerModel):
     generation_includes_input = True
@@ -21,43 +26,71 @@ class Moondream2(TransformerModel):
     revision = "2025-03-27"
 
     def __init__(self, *args, **kwargs):
-        if not "model_id" in kwargs:
-            kwargs["model_id"] = self.endpoint
-        print("Loading model from:", self.endpoint)
-        super().__init__(*args, **kwargs)
+        super().__init__(self.endpoint, *args, **kwargs)
+        self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
+
+        model = import_class_from_file(
+            os.path.join(self.cache_dir, "hf_moondream.py"),
+            "HfMoondream",
+        )
+
+        self.model = model.from_pretrained(self.cache_dir)
 
     def caption(self, image_in: Image.Image, history=None, **kwargs):
+        image_in = self.model.encode_image(image_in)
         return self.model.caption(image_in, length="normal", stream=True)["caption"]
-    
+
     def query(self, image_in: Image.Image, prompt="", history=None, **kwargs):
+        image_in = self.model.encode_image(image_in)
         return self.model.query(image_in, prompt)["answer"]
-    
+
     def detect(self, image_in: Image.Image, prompt="", history=None, **kwargs):
-        return self.make_response(self.model.detect(image_in, prompt)["objects"], 
-                             image_in.size)
-    
-    def make_response(self, predictions, image_sizes):
-        responses = [
-            ObjectDetectionInferenceResponse(
-                predictions=[
+        image = self.model.encode_image(image=image_in)
+        return self.make_response(
+            [self.model.detect(image, prompt)["objects"]],
+            [image_in.size],
+            prompt=prompt,
+        )
+
+    def make_response(self, predictions, image_sizes, prompt=""):
+        responses = []
+
+        for ind, batch_predictions in enumerate(predictions):
+            predictions = []
+            for pred in batch_predictions:
+                x_min = abs(pred["x_min"]) * image_sizes[ind][0]
+                y_min = abs(pred["y_min"]) * image_sizes[ind][1]
+                x_max = abs(pred["x_max"]) * image_sizes[ind][0]
+                y_max = abs(pred["y_max"]) * image_sizes[ind][1]
+                # convert to xywh
+                width = (abs(pred["x_max"]) - abs(pred["x_min"])) * image_sizes[ind][0]
+                height = (abs(pred["y_max"]) - abs(pred["y_min"])) * image_sizes[ind][1]
+                x = (x_min + x_max) / 2
+                y = (y_min + y_max) / 2
+                predictions.append(
                     ObjectDetectionPrediction(
                         # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)
                         **{
-                            "x": pred["x"] * max(image_sizes[ind]),
-                            "y": pred["y"] * max(image_sizes[ind]),
-                            "width": pred["w"] * max(image_sizes[ind]),
-                            "height": pred["h"] * max(image_sizes[ind]),
-                            "confidence": pred["confidence"],
-                            "class": pred["class_name"],
-                            "class_id": class_names.index(pred["class_name"]),
+                            "x": x,
+                            "y": y,
+                            "width": width,
+                            "height": height,
+                            "confidence": 1.0,  # confidence is not returned by the model
+                            "class": prompt,
+                            "class_id": 0,  # you can only prompt for one object at once
                         }
                     )
-                    for pred in batch_predictions
-                ],
-                image=InferenceResponseImage(
-                    width=image_sizes[ind][0], height=image_sizes[ind][1]
-                ),
+                )
+
+            responses.append(
+                ObjectDetectionInferenceResponse(
+                    predictions=predictions,
+                    image=InferenceResponseImage(
+                        width=image_sizes[ind][0], height=image_sizes[ind][1]
+                    ),
+                )
             )
-            for ind, batch_predictions in enumerate(predictions)
-        ]
         return responses
+
+    def get_infer_bucket_file_list(self) -> list:
+        return []

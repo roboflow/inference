@@ -3,9 +3,9 @@ import warnings
 from inference.core.env import (
     API_KEY,
     API_KEY_ENV_NAMES,
+    MOONDREAM2_ENABLED,
     QWEN_2_5_ENABLED,
     SMOLVLM2_ENABLED,
-    MOONDREAM2_ENABLED
 )
 from inference.core.exceptions import MissingApiKeyError
 from inference.core.models.base import Model
