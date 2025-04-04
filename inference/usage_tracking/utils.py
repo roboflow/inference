@@ -32,7 +32,7 @@ def collect_func_params(
         param: param_obj.default
         for param, param_obj in parameters.items()
         if param not in params
-        and param_obj is not inspect.Parameter.empty
+        and param_obj.default is not inspect.Parameter.empty
     }
     params.update(defaults)
 
