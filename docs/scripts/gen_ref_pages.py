@@ -1,9 +1,9 @@
 """Generate the code reference pages."""
 
+import os
 from pathlib import Path
 
 import mkdocs_gen_files
-import os
 
 SKIP_MODULES = [
     "inference.enterprise.device_manager.command_handler",
