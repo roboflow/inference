@@ -17,6 +17,39 @@
     }
   ],
   "paths": {
+    "/{workspace}/batches": {
+      "get": {
+        "summary": "List all staged batches",
+        "description": "Retrieves a page of staged batches list with basic metadata",
+        "operationId": "listBatches",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/workspaceParam"
+          },
+          {
+            "$ref": "#/components/parameters/apiKeyParam"
+          },
+          {
+            "$ref": "#/components/parameters/pageSizeParam"
+          },
+          {
+            "$ref": "#/components/parameters/nextPageTokenParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response with batches listing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListBatchesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/{workspace}/batches/{batchId}/list": {
       "get": {
         "summary": "List batch content",
@@ -846,6 +879,21 @@
           "fileName",
           "contentType"
         ]
+      },
+      "ListBatchesResponse": {
+        "type": "object",
+        "properties": {
+          "batches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchMetadata"
+            }
+          },
+          "nextPageToken": {
+            "type": "string"
+          }
+        },
+        "required": ["batches"]
       },
       "ListBatchResponse": {
         "type": "object",
