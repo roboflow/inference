@@ -26,6 +26,12 @@ achieve your goals.
 
     * Automatic data labeling
 
+## Quick overview
+
+<div align="center">
+  <iframe width="560" height="315" src="https://www.youtube.com/embed/S7K2j2IeQrM?si=WIVN7VweAfQ6JE-z" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</div>
+
 ## Getting started
 
 To get started with Roboflow Batch Processing, first build and test your Workflow. Once it's ready, select the data you 
