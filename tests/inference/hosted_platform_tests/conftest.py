@@ -40,6 +40,8 @@ IMAGE_URL = "https://media.roboflow.com/inference/dog.jpeg"
 class PlatformEnvironment(Enum):
     ROBOFLOW_STAGING = "roboflow-staging"
     ROBOFLOW_PLATFORM = "roboflow-platform"
+    ROBOFLOW_STAGING_LOCALHOST = "roboflow-staging-localhost"
+    ROBOFLOW_PLATFORM_LOCALHOST = "roboflow-platform-localhost"
 
 
 SERVICES_URLS = {
@@ -49,6 +51,12 @@ SERVICES_URLS = {
         "classification": "https://classify.roboflow.com",
         "core-models": "https://infer.roboflow.com",
     },
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST: {
+        "object-detection": "http://127.0.0.1:9001",
+        "instance-segmentation": "http://127.0.0.1:9001",
+        "classification": "http://127.0.0.1:9001",
+        "core-models": "http://127.0.0.1:9001",
+    },
     PlatformEnvironment.ROBOFLOW_STAGING: {
         "object-detection": "https://lambda-object-detection.staging.roboflow.com",
         "instance-segmentation": "https://lambda-instance-segmentation.staging.roboflow.com",
@@ -56,6 +64,9 @@ SERVICES_URLS = {
         "core-models": "https://3hkaykeh3j.execute-api.us-east-1.amazonaws.com",
     },
 }
+SERVICES_URLS[PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST] = SERVICES_URLS[
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST
+]
 
 MODELS_TO_BE_USED = {
     PlatformEnvironment.ROBOFLOW_PLATFORM: {
@@ -75,11 +86,23 @@ MODELS_TO_BE_USED = {
         "yolov8n-pose-640": "microsoft-coco-pose/1",
     },
 }
+MODELS_TO_BE_USED[PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST] = MODELS_TO_BE_USED[
+    PlatformEnvironment.ROBOFLOW_STAGING
+]
+MODELS_TO_BE_USED[PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST] = MODELS_TO_BE_USED[
+    PlatformEnvironment.ROBOFLOW_PLATFORM
+]
 
 TARGET_PROJECTS_TO_BE_USED = {
     PlatformEnvironment.ROBOFLOW_PLATFORM: "active-learning-demo",
     PlatformEnvironment.ROBOFLOW_STAGING: "coin-counting",
 }
+TARGET_PROJECTS_TO_BE_USED[PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST] = (
+    TARGET_PROJECTS_TO_BE_USED[PlatformEnvironment.ROBOFLOW_STAGING]
+)
+TARGET_PROJECTS_TO_BE_USED[PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST] = (
+    TARGET_PROJECTS_TO_BE_USED[PlatformEnvironment.ROBOFLOW_PLATFORM]
+)
 
 INTERFACE_DISCOVERING_WORKFLOW = {
     PlatformEnvironment.ROBOFLOW_STAGING: ("paul-guerrie", "staging-test-workflow"),
@@ -88,6 +111,12 @@ INTERFACE_DISCOVERING_WORKFLOW = {
         "prod-test-workflow",
     ),
 }
+INTERFACE_DISCOVERING_WORKFLOW[PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST] = (
+    INTERFACE_DISCOVERING_WORKFLOW[PlatformEnvironment.ROBOFLOW_STAGING]
+)
+INTERFACE_DISCOVERING_WORKFLOW[PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST] = (
+    INTERFACE_DISCOVERING_WORKFLOW[PlatformEnvironment.ROBOFLOW_PLATFORM]
+)
 
 ROBOFLOW_API_KEY = os.environ["HOSTED_PLATFORM_TESTS_API_KEY"]
 OPENAI_KEY = os.getenv("OPENAI_KEY")

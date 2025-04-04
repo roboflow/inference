@@ -197,6 +197,9 @@ from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
+    SmolVLM2BlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen.v1 import (
     StabilityAIImageGenBlockV1,
 )
@@ -289,11 +292,17 @@ from inference.core.workflows.core_steps.transformations.byte_tracker.v2 import 
 from inference.core.workflows.core_steps.transformations.byte_tracker.v3 import (
     ByteTrackerBlockV3,
 )
+from inference.core.workflows.core_steps.transformations.camera_calibration.v1 import (
+    CameraCalibrationBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.detection_offset.v1 import (
     DetectionOffsetBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.detections_filter.v1 import (
     DetectionsFilterBlockV1,
+)
+from inference.core.workflows.core_steps.transformations.detections_merge.v1 import (
+    DetectionsMergeBlockV1,
 )
 from inference.core.workflows.core_steps.transformations.detections_transformation.v1 import (
     DetectionsTransformationBlockV1,
@@ -505,6 +514,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         RateLimiterBlockV1,
         PerspectiveCorrectionBlockV1,
         DeltaFilterBlockV1,
+        CameraCalibrationBlockV1,
         DynamicZonesBlockV1,
         SizeMeasurementBlockV1,
         BufferBlockV1,
@@ -520,6 +530,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         BlurVisualizationBlockV1,
         BoundingBoxVisualizationBlockV1,
         BoundingRectBlockV1,
+        DetectionsMergeBlockV1,
         ByteTrackerBlockV2,
         CacheGetBlockV1,
         CacheSetBlockV1,
@@ -620,6 +631,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LlamaVisionBlockV1,
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
+        SmolVLM2BlockV1,
     ]
 
 

@@ -38,6 +38,9 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
 from inference.core.workflows.core_steps.common.query_language.operations.dictionaries.base import (
     dictionary_to_json,
 )
+from inference.core.workflows.core_steps.common.query_language.operations.frame_metadata.base import (
+    extract_frame_metadata,
+)
 from inference.core.workflows.core_steps.common.query_language.operations.generic.base import (
     apply_lookup,
     generate_random_number,
@@ -192,6 +195,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "SequenceLength": get_sequence_length,
     "SequenceElementsCount": get_sequence_elements_count,
     "ExtractImageProperty": extract_image_property,
+    "ExtractFrameMetadata": extract_frame_metadata,
     "Multiply": multiply,
     "Divide": divide,
     "DetectionsSelection": select_detections,

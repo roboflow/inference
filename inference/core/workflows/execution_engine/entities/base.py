@@ -132,11 +132,7 @@ class Batch(Generic[B]):
 
         return cls(content=content, indices=indices)
 
-    def __init__(
-        self,
-        content: List[B],
-        indices: Optional[List[Tuple[int, ...]]],
-    ):
+    def __init__(self, content: List[B], indices: Optional[List[Tuple[int, ...]]]):
         self._content = content
         self._indices = indices
 
@@ -157,33 +153,35 @@ class Batch(Generic[B]):
         yield from self._content
 
     def remove_by_indices(self, indices_to_remove: Set[tuple]) -> "Batch":
-        content, new_indices = [], []
-        for index, element in self.iter_with_indices():
-            if index in indices_to_remove:
-                continue
-            content.append(element)
-            new_indices.append(index)
-        return Batch(
-            content=content,
-            indices=new_indices,
-        )
+        filtered_content = [
+            element
+            for index, element in zip(self._indices, self._content)
+            if index not in indices_to_remove
+        ]
+        filtered_indices = [
+            index for index in self._indices if index not in indices_to_remove
+        ]
+
+        return Batch(content=filtered_content, indices=filtered_indices)
 
     def iter_with_indices(self) -> Iterator[Tuple[Tuple[int, ...], B]]:
-        for index, element in zip(self._indices, self._content):
-            yield index, element
+        return zip(self._indices, self._content)
 
     def broadcast(self, n: int) -> "Batch":
         if n <= 0:
             raise ValueError(
-                f"Broadcast to size {n} requested which is invalid operation."
+                f"Broadcast to size {n} requested which is an invalid operation."
             )
-        if len(self._content) == n:
+
+        num_content = len(self._content)
+
+        if num_content == n:
             return self
-        if len(self._content) == 1:
-            return Batch(content=[self._content[0]] * n, indices=[self._indices[0]] * n)
-        raise ValueError(
-            f"Could not broadcast batch of size {len(self._content)} to size {n}"
-        )
+
+        if num_content == 1:
+            return Batch(content=self._content * n, indices=self._indices * n)
+
+        raise ValueError(f"Could not broadcast batch of size {num_content} to size {n}")
 
 
 class VideoMetadata(BaseModel):

@@ -25,6 +25,8 @@ ALL_ROBOFLOW_API_URLS = {
     "https://outline.roboflow.com",
     "https://classify.roboflow.com",
     "https://infer.roboflow.com",
+    "https://serverless.roboflow.com",
+    "https://serverless.roboflow.one",
 }
 
 

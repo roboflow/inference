@@ -25,6 +25,15 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
 )
 
+
+def detections_anchor_coordinates(
+    detections: sv.Detections, anchor: Position
+) -> np.ndarray:
+    return (
+        detections.get_anchors_coordinates(anchor=anchor).round().astype(int).tolist()
+    )
+
+
 PROPERTIES_EXTRACTORS = {
     DetectionsProperty.CONFIDENCE: lambda detections: detections.confidence.tolist(),
     DetectionsProperty.CLASS_NAME: lambda detections: detections.data.get(
@@ -36,6 +45,21 @@ PROPERTIES_EXTRACTORS = {
     DetectionsProperty.Y_MAX: lambda detections: detections.xyxy[:, 3].tolist(),
     DetectionsProperty.CLASS_ID: lambda detections: detections.class_id.tolist(),
     DetectionsProperty.SIZE: lambda detections: detections.box_area.tolist(),
+    DetectionsProperty.CENTER: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.CENTER
+    ),
+    DetectionsProperty.TOP_LEFT: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.TOP_LEFT
+    ),
+    DetectionsProperty.TOP_RIGHT: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.TOP_RIGHT
+    ),
+    DetectionsProperty.BOTTOM_LEFT: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.BOTTOM_LEFT
+    ),
+    DetectionsProperty.BOTTOM_RIGHT: lambda detections: detections_anchor_coordinates(
+        detections=detections, anchor=Position.BOTTOM_RIGHT
+    ),
 }
 
 
@@ -115,19 +139,19 @@ def select_top_confidence_detection(detections: sv.Detections) -> sv.Detections:
 
 def select_leftmost_detection(detections: sv.Detections) -> sv.Detections:
     if len(detections) == 0:
-        return deepcopy(detections)
+        return detections  # Directly return the original empty detections if empty
+
     centers_x = detections.get_anchors_coordinates(anchor=Position.CENTER)[:, 0]
-    min_value = centers_x.min()
-    index = np.argwhere(centers_x == min_value)[0].item()
+    index = np.argmin(centers_x)
     return detections[index]
 
 
 def select_rightmost_detection(detections: sv.Detections) -> sv.Detections:
     if len(detections) == 0:
-        return deepcopy(detections)
+        return detections
+
     centers_x = detections.get_anchors_coordinates(anchor=Position.CENTER)[:, 0]
-    max_value = centers_x.max()
-    index = np.argwhere(centers_x == max_value)[-1].item()
+    index = centers_x.argmax()
     return detections[index]
 
 
@@ -172,11 +196,11 @@ def select_detections(
 
 
 def extract_x_coordinate_of_detections_center(detections: sv.Detections) -> np.ndarray:
-    return detections.xyxy[:, 0] + (detections.xyxy[:, 2] - detections.xyxy[:, 0]) / 2
+    return (detections.xyxy[:, 0] + detections.xyxy[:, 2]) * 0.5
 
 
 def extract_y_coordinate_of_detections_center(detections: sv.Detections) -> np.ndarray:
-    return detections.xyxy[:, 1] + (detections.xyxy[:, 3] - detections.xyxy[:, 1]) / 2
+    return (detections.xyxy[:, 1] + detections.xyxy[:, 3]) * 0.5
 
 
 SORT_PROPERTIES_EXTRACT = {
