@@ -31,8 +31,7 @@ def collect_func_params(
     defaults = {
         param: param_obj.default
         for param, param_obj in parameters.items()
-        if param not in params
-        and param_obj.default is not inspect.Parameter.empty
+        if param not in params and param_obj.default is not inspect.Parameter.empty
     }
     params.update(defaults)
 
