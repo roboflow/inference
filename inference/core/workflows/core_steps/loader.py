@@ -88,16 +88,18 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_point_kind,
     deserialize_rgb_color_kind,
     deserialize_string_kind,
+    deserialize_timestamp,
     deserialize_video_metadata_kind,
-    deserialize_zone_kind, deserialize_timestamp,
+    deserialize_zone_kind,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
     serialise_sv_detections,
     serialize_secret,
+    serialize_timestamp,
     serialize_video_metadata_kind,
-    serialize_wildcard_kind, serialize_timestamp,
+    serialize_wildcard_kind,
 )
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
@@ -438,11 +440,12 @@ from inference.core.workflows.execution_engine.entities.types import (
     SECRET_KIND,
     SERIALISED_PAYLOADS_KIND,
     STRING_KIND,
+    TIMESTAMP_KIND,
     TOP_CLASS_KIND,
     VIDEO_METADATA_KIND,
     WILDCARD_KIND,
     ZONE_KIND,
-    Kind, TIMESTAMP_KIND,
+    Kind,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 

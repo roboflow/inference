@@ -17,7 +17,8 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_optional_string_kind,
     deserialize_point_kind,
     deserialize_rgb_color_kind,
-    deserialize_zone_kind, deserialize_timestamp,
+    deserialize_timestamp,
+    deserialize_zone_kind,
 )
 from inference.core.workflows.errors import RuntimeInputError
 

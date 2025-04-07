@@ -111,7 +111,7 @@ TIMESTAMP_KIND = Kind(
     description="Timestamp object",
     docs=TIMESTAMP_KIND_DOCS,
     serialised_data_type="str",
-    internal_data_type="datetime"
+    internal_data_type="datetime",
 )
 
 VIDEO_METADATA_KIND_DOCS = """

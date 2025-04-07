@@ -449,7 +449,7 @@ def deserialize_timestamp(parameter: str, value: Any) -> datetime:
     if not isinstance(value, str):
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "
-                           f"datetime, but invalid type of data found (`{type(value).__name__}`).",
+            f"datetime, but invalid type of data found (`{type(value).__name__}`).",
             context="workflow_execution | runtime_input_validation",
         )
     try:
@@ -457,7 +457,7 @@ def deserialize_timestamp(parameter: str, value: Any) -> datetime:
     except Exception as error:
         raise RuntimeInputError(
             public_message=f"Detected runtime parameter `{parameter}` declared to hold "
-                           f"datetime, but could not decode input data: {error}.",
+            f"datetime, but could not decode input data: {error}.",
             context="workflow_execution | runtime_input_validation",
         ) from error
 

@@ -59,15 +59,12 @@ def test_property_extraction_block_with_center() -> None:
         xyxy=np.array([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=np.int32),
         class_id=np.array([0, 1], dtype=np.int32),
         confidence=np.array([0.6, 0.4], dtype=np.float32),
-        data={"class": np.array(["car", "dog"])}
+        data={"class": np.array(["car", "dog"])},
     )
     operations = OperationsChain.model_validate(
         {
             "operations": [
-                {
-                    "type": "DetectionsPropertyExtract",
-                    "property_name": "center"
-                }
+                {"type": "DetectionsPropertyExtract", "property_name": "center"}
             ]
         }
     ).operations
@@ -86,15 +83,12 @@ def test_property_extraction_block_with_top_left() -> None:
         xyxy=np.array([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=np.int32),
         class_id=np.array([0, 1], dtype=np.int32),
         confidence=np.array([0.6, 0.4], dtype=np.float32),
-        data={"class": np.array(["car", "dog"])}
+        data={"class": np.array(["car", "dog"])},
     )
     operations = OperationsChain.model_validate(
         {
             "operations": [
-                {
-                    "type": "DetectionsPropertyExtract",
-                    "property_name": "top_left"
-                }
+                {"type": "DetectionsPropertyExtract", "property_name": "top_left"}
             ]
         }
     ).operations
@@ -113,15 +107,12 @@ def test_property_extraction_block_with_top_right() -> None:
         xyxy=np.array([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=np.int32),
         class_id=np.array([0, 1], dtype=np.int32),
         confidence=np.array([0.6, 0.4], dtype=np.float32),
-        data={"class": np.array(["car", "dog"])}
+        data={"class": np.array(["car", "dog"])},
     )
     operations = OperationsChain.model_validate(
         {
             "operations": [
-                {
-                    "type": "DetectionsPropertyExtract",
-                    "property_name": "top_right"
-                }
+                {"type": "DetectionsPropertyExtract", "property_name": "top_right"}
             ]
         }
     ).operations
@@ -140,15 +131,12 @@ def test_property_extraction_block_with_bottom_left() -> None:
         xyxy=np.array([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=np.int32),
         class_id=np.array([0, 1], dtype=np.int32),
         confidence=np.array([0.6, 0.4], dtype=np.float32),
-        data={"class": np.array(["car", "dog"])}
+        data={"class": np.array(["car", "dog"])},
     )
     operations = OperationsChain.model_validate(
         {
             "operations": [
-                {
-                    "type": "DetectionsPropertyExtract",
-                    "property_name": "bottom_left"
-                }
+                {"type": "DetectionsPropertyExtract", "property_name": "bottom_left"}
             ]
         }
     ).operations
@@ -167,15 +155,12 @@ def test_property_extraction_block_with_bottom_right() -> None:
         xyxy=np.array([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=np.int32),
         class_id=np.array([0, 1], dtype=np.int32),
         confidence=np.array([0.6, 0.4], dtype=np.float32),
-        data={"class": np.array(["car", "dog"])}
+        data={"class": np.array(["car", "dog"])},
     )
     operations = OperationsChain.model_validate(
         {
             "operations": [
-                {
-                    "type": "DetectionsPropertyExtract",
-                    "property_name": "bottom_right"
-                }
+                {"type": "DetectionsPropertyExtract", "property_name": "bottom_right"}
             ]
         }
     ).operations

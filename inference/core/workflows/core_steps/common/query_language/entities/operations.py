@@ -30,8 +30,9 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    TIMESTAMP_KIND,
     WILDCARD_KIND,
-    ZONE_KIND, TIMESTAMP_KIND,
+    ZONE_KIND,
 )
 
 TYPE_PARAMETER_NAME = "type"

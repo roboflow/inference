@@ -71,7 +71,9 @@ from inference.core.workflows.core_steps.common.query_language.operations.string
     string_to_upper,
     to_string,
 )
-from inference.core.workflows.core_steps.common.query_language.operations.timestamps.base import timestamp_to_iso_format
+from inference.core.workflows.core_steps.common.query_language.operations.timestamps.base import (
+    timestamp_to_iso_format,
+)
 
 
 def execute_operations(

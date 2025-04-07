@@ -291,7 +291,7 @@ def test_serializer_serialize_wildcard_kind_when_timestamps_are_present() -> Non
         "yet-another": expected_result,
     }
 
-    
+
 def test_serialize_wildcard_kind_when_list_is_given() -> None:
     # given
     np_image = np.zeros((192, 168, 3), dtype=np.uint8)
