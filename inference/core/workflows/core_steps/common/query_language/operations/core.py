@@ -71,6 +71,7 @@ from inference.core.workflows.core_steps.common.query_language.operations.string
     string_to_upper,
     to_string,
 )
+from inference.core.workflows.core_steps.common.query_language.operations.timestamps.base import timestamp_to_iso_format
 
 
 def execute_operations(
@@ -207,6 +208,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "DetectionsToDictionary": detections_to_dictionary,
     "ConvertDictionaryToJSON": dictionary_to_json,
     "PickDetectionsByParentClass": pick_detections_by_parent_class,
+    "TimestampToISOFormat": timestamp_to_iso_format,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

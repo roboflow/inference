@@ -89,7 +89,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_rgb_color_kind,
     deserialize_string_kind,
     deserialize_video_metadata_kind,
-    deserialize_zone_kind,
+    deserialize_zone_kind, deserialize_timestamp,
 )
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.core_steps.common.serializers import (
@@ -97,7 +97,7 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_sv_detections,
     serialize_secret,
     serialize_video_metadata_kind,
-    serialize_wildcard_kind,
+    serialize_wildcard_kind, serialize_timestamp,
 )
 from inference.core.workflows.core_steps.flow_control.continue_if.v1 import (
     ContinueIfBlockV1,
@@ -442,7 +442,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     VIDEO_METADATA_KIND,
     WILDCARD_KIND,
     ZONE_KIND,
-    Kind,
+    Kind, TIMESTAMP_KIND,
 )
 from inference.core.workflows.prototypes.block import WorkflowBlock
 
@@ -467,6 +467,7 @@ KINDS_SERIALIZERS = {
     BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
     SECRET_KIND.name: serialize_secret,
     WILDCARD_KIND.name: serialize_wildcard_kind,
+    TIMESTAMP_KIND.name: serialize_timestamp,
 }
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
@@ -497,6 +498,7 @@ KINDS_DESERIALIZERS = {
     PARENT_ID_KIND.name: deserialize_string_kind,
     BYTES_KIND.name: deserialize_bytes_kind,
     INFERENCE_ID_KIND.name: deserialize_string_kind,
+    TIMESTAMP_KIND.name: deserialize_timestamp,
 }
 
 
@@ -673,4 +675,5 @@ def load_kinds() -> List[Kind]:
         INFERENCE_ID_KIND,
         SECRET_KIND,
         EMBEDDING_KIND,
+        TIMESTAMP_KIND,
     ]
