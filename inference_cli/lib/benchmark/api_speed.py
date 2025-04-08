@@ -261,7 +261,9 @@ def execute_infer_api_request(
         execution_time = inference_result.get("time")
         duration = time.time() - start
         results_collector.register_inference_duration(
-            batch_size=request_batch_size, duration=duration, execution_time=execution_time
+            batch_size=request_batch_size,
+            duration=duration,
+            execution_time=execution_time,
         )
     except Exception as exc:
         duration = time.time() - start

@@ -50,7 +50,7 @@ SMOLVLM2_WORKFLOW_DEFINITION = {
 Use SmolVLM2 to ask questions about images, including documents and photos, and get answers in natural language.
     """,
     workflow_definition=SMOLVLM2_WORKFLOW_DEFINITION,
-    workflow_name_in_app="smolvlm2"
+    workflow_name_in_app="smolvlm2",
 )
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_SMOLVLM2_TEST", True)), reason="Skipping SmolVLM 2 test"
