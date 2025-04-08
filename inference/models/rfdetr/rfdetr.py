@@ -282,8 +282,34 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             xy_max = cxcy + 0.5 * wh
             boxes_xyxy = np.concatenate([xy_min, xy_max], axis=1)
 
-            scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
-            boxes_xyxy *= scale_fct
+            if self.resize_method == "Stretch to":
+                scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
+                boxes_xyxy *= scale_fct
+            else:
+                input_h, input_w = self.img_size_h, self.img_size_w
+
+                scale = min(input_w / orig_w, input_h / orig_h)
+                scaled_w = int(orig_w * scale)
+                scaled_h = int(orig_h * scale)
+
+                pad_x = (input_w - scaled_w) / 2
+                pad_y = (input_h - scaled_h) / 2
+
+                boxes_input = boxes_xyxy * np.array(
+                    [input_w, input_h, input_w, input_h], dtype=np.float32
+                )
+
+                boxes_input[:, 0] -= pad_x
+                boxes_input[:, 1] -= pad_y
+                boxes_input[:, 2] -= pad_x
+                boxes_input[:, 3] -= pad_y
+
+                boxes_xyxy = boxes_input / scale
+
+            boxes_xyxy[:, 0] = np.clip(boxes_xyxy[:, 0], 0, orig_w)
+            boxes_xyxy[:, 1] = np.clip(boxes_xyxy[:, 1], 0, orig_h)
+            boxes_xyxy[:, 2] = np.clip(boxes_xyxy[:, 2], 0, orig_w)
+            boxes_xyxy[:, 3] = np.clip(boxes_xyxy[:, 3], 0, orig_h)
 
             batch_predictions = np.column_stack(
                 (
