@@ -248,66 +248,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     def sigmoid_stable(self, x):
         return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
     
-    """
-    def postprocess(
-        self,
-        predictions: Tuple[np.ndarray, ...],
-        preproc_return_metadata: PreprocessReturnMetadata,
-        confidence: float = DEFAULT_CONFIDENCE,
-        max_detections: int = DEFAUlT_MAX_DETECTIONS,
-        **kwargs,
-    ) -> List[ObjectDetectionInferenceResponse]:
-        bboxes, logits = predictions
-        bboxes = bboxes.astype(np.float32)
-        logits = logits.astype(np.float32)
-
-        batch_size, num_queries, num_classes = logits.shape
-        logits_sigmoid = self.sigmoid_stable(logits)
-
-        img_dims = preproc_return_metadata["img_dims"]
-
-        processed_predictions = []
-
-        for batch_idx in range(batch_size):
-            orig_h, orig_w = img_dims[batch_idx]
-
-            logits_flat = logits_sigmoid[batch_idx].reshape(-1)
-
-            sorted_indices = np.argsort(-logits_flat)[:max_detections]
-            topk_scores = logits_flat[sorted_indices]
-
-            conf_mask = topk_scores > confidence
-            sorted_indices = sorted_indices[conf_mask]
-            topk_scores = topk_scores[conf_mask]
-
-            topk_boxes = sorted_indices // num_classes
-            topk_labels = sorted_indices % num_classes
-
-            selected_boxes = bboxes[batch_idx, topk_boxes]
-
-            cxcy = selected_boxes[:, :2]
-            wh = selected_boxes[:, 2:]
-            xy_min = cxcy - 0.5 * wh
-            xy_max = cxcy + 0.5 * wh
-            boxes_xyxy = np.concatenate([xy_min, xy_max], axis=1)
-
-            scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
-            boxes_xyxy *= scale_fct
-
-            batch_predictions = np.column_stack(
-                (
-                    boxes_xyxy,
-                    topk_scores,
-                    np.zeros((len(topk_scores), 1), dtype=np.float32),
-                    topk_labels,
-                )
-            )
-
-            processed_predictions.append(batch_predictions)
-
-        return self.make_response(processed_predictions, img_dims, **kwargs)
-    """
-
     def postprocess(
         self,
         predictions: Tuple[np.ndarray, ...],
