@@ -937,6 +937,4 @@ def test_record_malformed_usage():
     assert collector._usage[api_key]["model:None"]["category"] == "model"
     assert collector._usage[api_key]["model:None"]["resource_id"] == None
     assert collector._usage[api_key]["model:None"]["resource_details"] == "{}"
-    assert (
-        collector._usage[api_key]["model:None"]["api_key_hash"] == api_key
-    )
+    assert collector._usage[api_key]["model:None"]["api_key_hash"] == api_key
