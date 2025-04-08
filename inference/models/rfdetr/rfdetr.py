@@ -113,14 +113,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 preprocessed_image.permute(2, 0, 1).unsqueeze(0).contiguous().float()
             )
 
-        print("RESIZE METHOD:")
-        print(self.resize_method)
-
-        print("IMG SIZE H:")
-        print(self.img_size_h)
-        print("IMG SIZE W:")
-        print(self.img_size_w)
-
         if self.resize_method == "Stretch to":
             if isinstance(preprocessed_image, np.ndarray):
                 preprocessed_image = preprocessed_image.astype(np.float32)
