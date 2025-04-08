@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
-from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.interfaces.camera.video_source import VideoSource
 from inference.core.interfaces.stream.entities import VideoFrame
+from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import StepOutputLineageError
@@ -856,6 +856,14 @@ WORKFLOW_WITH_FRAME_TIMESTAMP_EXTRACTION = {
                 {"type": "ExtractFrameMetadata", "property_name": "frame_number"}
             ],
         },
+        {
+            "type": "PropertyDefinition",
+            "name": "seconds_since_start",
+            "data": "$inputs.image",
+            "operations": [
+                {"type": "ExtractFrameMetadata", "property_name": "seconds_since_start"}
+            ],
+        },
     ],
     "outputs": [
         {
@@ -867,6 +875,11 @@ WORKFLOW_WITH_FRAME_TIMESTAMP_EXTRACTION = {
             "type": "JsonField",
             "name": "frame_number",
             "selector": "$steps.frame_number.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "seconds_since_start",
+            "selector": "$steps.seconds_since_start.output",
         },
     ],
 }
@@ -895,6 +908,7 @@ def test_workflow_with_timestamp_extraction_from_photo(
     assert set(result[0].keys()) == {
         "frame_timestamp",
         "frame_number",
+        "seconds_since_start",
     }, "Expected all declared outputs to be delivered"
 
 
@@ -942,6 +956,7 @@ def test_workflow_with_timestamp_extraction_from_video(
     assert set(predictions[0].keys()) == {
         "frame_timestamp",
         "frame_number",
+        "seconds_since_start",
     }, "Expected all declared outputs to be delivered"
 
     for i in range(1, frames_count + 1):
@@ -949,3 +964,4 @@ def test_workflow_with_timestamp_extraction_from_video(
         assert predictions[i - 1][
             "frame_timestamp"
         ] == timestamp_created + datetime.timedelta(seconds=(i - 1) / fps)
+        assert predictions[i - 1]["seconds_since_start"] == (i - 1) / fps

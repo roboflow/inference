@@ -149,6 +149,8 @@ LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
 QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
+SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
+
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
@@ -552,3 +554,6 @@ try:
     )
 except:
     STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE = 10
+
+# Cache metadata lock timeout in seconds, default is 1.0
+CACHE_METADATA_LOCK_TIMEOUT = float(os.getenv("CACHE_METADATA_LOCK_TIMEOUT", 1.0))

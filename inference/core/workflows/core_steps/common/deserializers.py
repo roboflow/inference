@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from typing import Any, List, Optional, Tuple, Union
 from uuid import uuid4
 
@@ -440,6 +441,25 @@ def deserialize_bytes_kind(parameter: str, value: Any) -> bytes:
     if isinstance(value, bytes):
         return value
     return pybase64.b64decode(value)
+
+
+def deserialize_timestamp(parameter: str, value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"datetime, but invalid type of data found (`{type(value).__name__}`).",
+            context="workflow_execution | runtime_input_validation",
+        )
+    try:
+        return datetime.fromisoformat(value)
+    except Exception as error:
+        raise RuntimeInputError(
+            public_message=f"Detected runtime parameter `{parameter}` declared to hold "
+            f"datetime, but could not decode input data: {error}.",
+            context="workflow_execution | runtime_input_validation",
+        ) from error
 
 
 def _is_number(value: Any) -> bool:
