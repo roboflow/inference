@@ -256,9 +256,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         logits_sigmoid = self.sigmoid_stable(logits)
 
         img_dims = preproc_return_metadata["img_dims"]
-        disable_preproc_static_crop = preproc_return_metadata.get(
-            "disable_preproc_static_crop", False
-        )
 
         processed_predictions = []
 
