@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
-from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.interfaces.camera.video_source import VideoSource
 from inference.core.interfaces.stream.entities import VideoFrame
+from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import StepOutputLineageError
