@@ -113,6 +113,14 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 preprocessed_image.permute(2, 0, 1).unsqueeze(0).contiguous().float()
             )
 
+        print("RESIZE METHOD:")
+        print(self.resize_method)
+
+        print("IMG SIZE H:")
+        print(self.img_size_h)
+        print("IMG SIZE W:")
+        print(self.img_size_w)
+
         if self.resize_method == "Stretch to":
             if isinstance(preprocessed_image, np.ndarray):
                 preprocessed_image = preprocessed_image.astype(np.float32)
@@ -239,7 +247,8 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
     def sigmoid_stable(self, x):
         return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
-
+    
+    """
     def postprocess(
         self,
         predictions: Tuple[np.ndarray, ...],
@@ -284,6 +293,90 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
             scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
             boxes_xyxy *= scale_fct
+
+            batch_predictions = np.column_stack(
+                (
+                    boxes_xyxy,
+                    topk_scores,
+                    np.zeros((len(topk_scores), 1), dtype=np.float32),
+                    topk_labels,
+                )
+            )
+
+            processed_predictions.append(batch_predictions)
+
+        return self.make_response(processed_predictions, img_dims, **kwargs)
+    """
+
+    def postprocess(
+        self,
+        predictions: Tuple[np.ndarray, ...],
+        preproc_return_metadata: PreprocessReturnMetadata,
+        confidence: float = DEFAULT_CONFIDENCE,
+        max_detections: int = DEFAUlT_MAX_DETECTIONS,
+        **kwargs,
+    ) -> List[ObjectDetectionInferenceResponse]:
+        bboxes, logits = predictions
+        bboxes = bboxes.astype(np.float32)
+        logits = logits.astype(np.float32)
+
+        batch_size, num_queries, num_classes = logits.shape
+        logits_sigmoid = self.sigmoid_stable(logits)
+
+        img_dims = preproc_return_metadata["img_dims"]
+        disable_preproc_static_crop = preproc_return_metadata.get("disable_preproc_static_crop", False)
+
+        processed_predictions = []
+
+        for batch_idx in range(batch_size):
+            orig_h, orig_w = img_dims[batch_idx]
+
+            logits_flat = logits_sigmoid[batch_idx].reshape(-1)
+
+            sorted_indices = np.argsort(-logits_flat)[:max_detections]
+            topk_scores = logits_flat[sorted_indices]
+
+            conf_mask = topk_scores > confidence
+            sorted_indices = sorted_indices[conf_mask]
+            topk_scores = topk_scores[conf_mask]
+
+            topk_boxes = sorted_indices // num_classes
+            topk_labels = sorted_indices % num_classes
+
+            selected_boxes = bboxes[batch_idx, topk_boxes]
+
+            cxcy = selected_boxes[:, :2]
+            wh = selected_boxes[:, 2:]
+            xy_min = cxcy - 0.5 * wh
+            xy_max = cxcy + 0.5 * wh
+            boxes_xyxy = np.concatenate([xy_min, xy_max], axis=1)
+
+            if self.resize_method == "Stretch to":
+                scale_fct = np.array([orig_w, orig_h, orig_w, orig_h], dtype=np.float32)
+                boxes_xyxy *= scale_fct
+            else:
+                input_h, input_w = self.img_size_h, self.img_size_w
+                
+                scale = min(input_w / orig_w, input_h / orig_h)
+                scaled_w = int(orig_w * scale)
+                scaled_h = int(orig_h * scale)
+                
+                pad_x = (input_w - scaled_w) / 2
+                pad_y = (input_h - scaled_h) / 2
+                
+                boxes_input = boxes_xyxy * np.array([input_w, input_h, input_w, input_h], dtype=np.float32)
+                
+                boxes_input[:, 0] -= pad_x
+                boxes_input[:, 1] -= pad_y
+                boxes_input[:, 2] -= pad_x
+                boxes_input[:, 3] -= pad_y
+                
+                boxes_xyxy = boxes_input / scale
+
+            boxes_xyxy[:, 0] = np.clip(boxes_xyxy[:, 0], 0, orig_w)
+            boxes_xyxy[:, 1] = np.clip(boxes_xyxy[:, 1], 0, orig_h)
+            boxes_xyxy[:, 2] = np.clip(boxes_xyxy[:, 2], 0, orig_w)
+            boxes_xyxy[:, 3] = np.clip(boxes_xyxy[:, 3], 0, orig_h)
 
             batch_predictions = np.column_stack(
                 (
