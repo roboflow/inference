@@ -1,5 +1,3 @@
-import warnings
-from time import perf_counter
 from typing import Any, List, Tuple
 
 import cv2
@@ -8,12 +6,7 @@ import numpy as np
 from inference.core.env import USE_PYTORCH_FOR_PREPROCESSING
 
 if USE_PYTORCH_FOR_PREPROCESSING:
-    try:
-        import torch
-    except ImportError:
-        warnings.warn(
-            "PyTorch was requested to be used for preprocessing however it is not available. Defaulting to slower NumPy preprocessing."
-        )
+    import torch
 
 from inference.core.entities.responses.inference import (
     InferenceResponseImage,
@@ -108,7 +101,7 @@ class YOLACT(OnnxRoboflowInferenceModel):
             imgs, img_dims = zip(*imgs_with_dims)
             if isinstance(imgs[0], np.ndarray):
                 img_in = np.concatenate(imgs, axis=0)
-            elif "torch" in dir():
+            elif USE_PYTORCH_FOR_PREPROCESSING:
                 img_in = torch.cat(imgs, dim=0)
             else:
                 raise ValueError(
@@ -126,7 +119,7 @@ class YOLACT(OnnxRoboflowInferenceModel):
 
         if isinstance(img_in, np.ndarray):
             img_in = img_in.astype(np.float32)
-        elif "torch" in dir():
+        elif USE_PYTORCH_FOR_PREPROCESSING:
             img_in = img_in.float()
         else:
             raise ValueError(

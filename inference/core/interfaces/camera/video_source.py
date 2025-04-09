@@ -1,7 +1,8 @@
+import os
 import random
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
@@ -134,6 +135,7 @@ def lock_state_transition(
 
 class CV2VideoFrameProducer(VideoFrameProducer):
     def __init__(self, video: Union[str, int]):
+        self._source_ref = video
         if _consumes_camera_on_jetson(video=video):
             self.stream = cv2.VideoCapture(video, cv2.CAP_V4L2)
         else:
@@ -158,12 +160,20 @@ class CV2VideoFrameProducer(VideoFrameProducer):
         height = int(self.stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = self.stream.get(cv2.CAP_PROP_FPS)
         total_frames = int(self.stream.get(cv2.CAP_PROP_FRAME_COUNT))
+        is_file = total_frames > 0 and os.path.exists(self._source_ref)
+        timestamp_created = None
+        if is_file:
+            file_length_seconds = total_frames / fps
+            last_modified = datetime.fromtimestamp(os.path.getmtime(self._source_ref))
+            timestamp_created = last_modified - timedelta(seconds=file_length_seconds)
+
         return SourceProperties(
             width=width,
             height=height,
             total_frames=total_frames,
-            is_file=total_frames > 0,
+            is_file=is_file,
             fps=fps,
+            timestamp_created=timestamp_created,
         )
 
     def release(self):
@@ -809,6 +819,7 @@ class VideoConsumer:
         self._desired_fps = desired_fps
         self._declared_source_fps = None
         self._is_source_video_file = None
+        self._timestamp_created: Optional[datetime] = None
         self._status_update_handlers = status_update_handlers
         self._next_frame_from_video_to_accept = 1
 
@@ -846,7 +857,15 @@ class VideoConsumer:
             source_properties = video.discover_source_properties()
             self._is_source_video_file = source_properties.is_file
             self._declared_source_fps = source_properties.fps
-        frame_timestamp = datetime.now()
+            self._timestamp_created = source_properties.timestamp_created
+
+        if self._timestamp_created:
+            frame_timestamp = self._timestamp_created + timedelta(
+                seconds=self._frame_counter / self._declared_source_fps
+            )
+        else:
+            frame_timestamp = datetime.now()
+
         success = video.grab()
         self._stream_consumption_pace_monitor.tick()
         if not success:
@@ -1189,7 +1208,8 @@ def get_fps_if_tick_happens_now(fps_monitor: sv.FPSMonitor) -> float:
         return 0.0
     min_reader_timestamp = fps_monitor.all_timestamps[0]
     now = time.monotonic()
-    reader_taken_time = now - min_reader_timestamp
+    epsilon = 1e-8
+    reader_taken_time = (now - min_reader_timestamp) + epsilon
     return (len(fps_monitor.all_timestamps) + 1) / reader_taken_time
 
 
