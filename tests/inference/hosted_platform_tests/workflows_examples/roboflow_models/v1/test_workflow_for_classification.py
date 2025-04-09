@@ -122,8 +122,18 @@ MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
         {"dog"},
         {"cat", "dog"},
     ],
-    PlatformEnvironment.ROBOFLOW_PLATFORM: [{"cat", "dog"}, {"cat", "dog"}],
+    PlatformEnvironment.ROBOFLOW_PLATFORM: [{"dog"}, set()],
 }
+MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST
+] = MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_STAGING
+]
+MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST
+] = MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_PLATFORM
+]
 
 
 @pytest.mark.flaky(retries=4, delay=1)

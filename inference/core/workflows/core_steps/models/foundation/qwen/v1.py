@@ -71,9 +71,9 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/qwen25vl@v1"]
 
     model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default="qwen25-vl-7b-peft",
+        default="qwen25-vl-7b",
         description="The Qwen2.5-VL model to be used for inference.",
-        examples=["qwen25-vl-7b-peft"],
+        examples=["qwen25-vl-7b"],
     )
 
     system_prompt: Optional[str] = Field(

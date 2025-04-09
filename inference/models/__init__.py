@@ -72,7 +72,13 @@ try:
 except:
     pass
 
+try:
+    from inference.models.smolvlm import SmolVLM
+except:
+    pass
+
 from inference.models.resnet import ResNetClassification
+from inference.models.rfdetr import RFDETRObjectDetection
 from inference.models.vit import VitClassification
 from inference.models.yolact import YOLACT
 from inference.models.yolonas import YOLONASObjectDetection

@@ -1,11 +1,10 @@
 import json
 import os
-import requests
-
 from pathlib import Path
-from PIL import Image
 
+import requests
 from batch_regression_test import INFER_RESPONSE_FUNCTIONS
+from PIL import Image
 
 PORT = os.getenv("PORT", 9001)
 BASE_URL = os.getenv("BASE_URL", "http://localhost")

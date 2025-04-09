@@ -1,5 +1,5 @@
-import supervision as sv
 import numpy as np
+import supervision as sv
 
 
 def assert_localized_predictions_match(

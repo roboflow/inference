@@ -78,6 +78,7 @@ class SourceProperties:
     is_file: bool
     fps: float
     is_reconnectable: Optional[bool] = None
+    timestamp_created: Optional[datetime] = None
 
 
 class VideoFrameProducer:

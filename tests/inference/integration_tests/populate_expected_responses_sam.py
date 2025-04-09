@@ -1,8 +1,8 @@
 import json
 import os
-import requests
-
 from pathlib import Path
+
+import requests
 from PIL import Image
 
 PORT = os.getenv("PORT", 9001)

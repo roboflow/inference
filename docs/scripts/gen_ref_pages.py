@@ -1,14 +1,37 @@
 """Generate the code reference pages."""
-
+import ast
+import os
 from pathlib import Path
+from typing import Union
 
 import mkdocs_gen_files
-import os
 
 SKIP_MODULES = [
     "inference.enterprise.device_manager.command_handler",
     "inference.enterprise.parallel.celeryconfig",
 ]
+
+
+def module_has_docstrings(path: str) -> bool:
+    with open(path, "r", encoding="utf-8") as f:
+        try:
+            tree = ast.parse(f.read(), filename=path)
+        except SyntaxError:
+            return False  # skip broken files
+
+    if has_docstring(tree):
+        return True
+
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if has_docstring(node):
+                return True
+    return False
+
+
+def has_docstring(node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module]):
+    return ast.get_docstring(node) is not None
+
 
 if not os.environ.get("SKIP_CODEGEN"):
     for package in ["inference", "inference_sdk", "inference_cli"]:
@@ -16,6 +39,8 @@ if not os.environ.get("SKIP_CODEGEN"):
         src = Path(__file__).parent.parent.parent / package
 
         for path in sorted(p for p in src.rglob("*.py") if "landing" not in p.parts):
+            if not module_has_docstrings(path=path.as_posix()):
+                continue
             module_path = path.relative_to(src.parent).with_suffix("")
             doc_path = path.relative_to(src.parent).with_suffix(".md")
             full_doc_path = Path("reference", doc_path)
@@ -41,3 +66,5 @@ if not os.environ.get("SKIP_CODEGEN"):
             # print("GENERATING NAVIGATION")
             # print("\n".join(lines))
             nav_file.writelines(lines)
+
+

@@ -36,7 +36,7 @@ from inference.core.workflows.prototypes.block import WorkflowBlock
 from inference.usage_tracking.collector import usage_collector
 
 
-@usage_collector
+@usage_collector("workflows")
 @execution_phase(
     name="workflow_execution",
     categories=["execution_engine_operation"],

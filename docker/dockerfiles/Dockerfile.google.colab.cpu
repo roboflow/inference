@@ -1,0 +1,9 @@
+FROM us-docker.pkg.dev/colab-images/public/runtime:latest
+
+COPY . .
+RUN make create_wheels
+RUN pip install dist/inference_cpu*.whl
+RUN pip install -r requirements/requirements.test.colab.txt
+
+ENTRYPOINT ["pytest", "tests/google_colab/"]
+

@@ -21,6 +21,10 @@ YOLOV11_ALIASES = {
     **YOLOV11_ALIASES,
     **{k.replace("yolov11", "yolo11"): v for k, v in YOLOV11_ALIASES.items()},
 }
+RFDETR_ALIASES = {
+    "rfdetr-base": "coco/36",
+    "rfdetr-large": "coco/37",
+}
 REGISTERED_ALIASES = {
     "yolov8n-640": "coco/3",
     "yolov8n-1280": "coco/9",
@@ -74,6 +78,7 @@ REGISTERED_ALIASES = {
     "florence-2-base": "florence-pretrains/1",
     "florence-2-large": "florence-pretrains/2",
     **YOLOV11_ALIASES,
+    **RFDETR_ALIASES,
 }
 
 OCR_ENDPOINTS = {

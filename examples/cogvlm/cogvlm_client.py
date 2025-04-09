@@ -1,9 +1,10 @@
-import base64
 import asyncio
-import aiohttp
+import base64
 import os
-from PIL import Image
+
+import aiohttp
 import requests
+from PIL import Image
 
 PORT = 9001
 API_KEY = os.environ["API_KEY"]

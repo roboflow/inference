@@ -2,7 +2,6 @@ import gc
 import hashlib
 import os
 import pickle
-import threading
 import weakref
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
@@ -26,6 +25,7 @@ from inference.core.env import (
     DEVICE,
     MAX_DETECTIONS,
     MODEL_CACHE_DIR,
+    OWLV2_COMPILE_MODEL,
     OWLV2_CPU_IMAGE_CACHE_SIZE,
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
@@ -88,37 +88,6 @@ class LimitedSizeDict(OrderedDict):
                 self.popitem(last=False)
 
 
-class OWLv2ModelManager:
-    _instances = {}
-    _lock = threading.Lock()
-
-    def __new__(cls, vision_model, huggingface_id: str):
-        if huggingface_id not in cls._instances:
-            with cls._lock:
-                if huggingface_id not in cls._instances:
-                    instance = super().__new__(cls)
-                    instance._vision_model = vision_model
-                    instance._start_compilation()
-                    cls._instances[huggingface_id] = instance
-        return cls._instances[huggingface_id]
-
-    def get_vision_model(self):
-        if self._vision_model is None:
-            raise ValueError("No vision_model has been initialized")
-        return self._vision_model
-
-    def _start_compilation(self):
-        logger.info("Compiling OWLv2 model")
-        compilation_thread = threading.Thread(target=self._compile_model)
-        compilation_thread.daemon = True
-        compilation_thread.start()
-
-    def _compile_model(self):
-        logger.info("Compiling OWLv2 model in thread")
-        self._vision_model = torch.compile(self._vision_model)
-        logger.info("OWLv2 model compiled in thread")
-
-
 class Owlv2Singleton:
     _instances = weakref.WeakValueDictionary()
 
@@ -134,12 +103,10 @@ class Owlv2Singleton:
                 .eval()
                 .to(DEVICE)
             )
-            torch._dynamo.config.suppress_errors = True
-            logger.info(f"OWLv2 model loaded from {huggingface_id}")
-            owlv2_model_manager = OWLv2ModelManager(
-                vision_model=model.owlv2.vision_model, huggingface_id=huggingface_id
-            )
-            model.owlv2.vision_model = owlv2_model_manager.get_vision_model()
+
+            if OWLV2_COMPILE_MODEL:
+                torch._dynamo.config.suppress_errors = True
+                model.owlv2.vision_model = torch.compile(model.owlv2.vision_model)
             instance.model = model
             cls._instances[huggingface_id] = instance
         return cls._instances[huggingface_id]
@@ -454,7 +421,6 @@ class OwlV2(RoboflowInferenceModel):
             image_features = image_embeds.reshape(batch_size, h * w, dim)
             objectness = self.model.objectness_predictor(image_features)
             boxes = self.model.box_predictor(image_features, feature_map=image_embeds)
-
         image_class_embeds = self.model.class_head.dense0(image_features)
         image_class_embeds /= (
             torch.linalg.norm(image_class_embeds, ord=2, dim=-1, keepdim=True) + 1e-6
@@ -646,12 +612,23 @@ class OwlV2(RoboflowInferenceModel):
         ]
 
         wrapped_training_data_hash = hash_wrapped_training_data(wrapped_training_data)
+
         if (
             class_embeddings_dict := self.class_embeddings_cache.get(
                 wrapped_training_data_hash
             )
         ) is not None:
-            return class_embeddings_dict
+            if return_image_embeds:
+                # Return a dummy empty dict as the second value
+                # or extract it from CPU cache if available
+                return_image_embeds_dict = {}
+                for image_hash in self.cpu_image_embed_cache:
+                    return_image_embeds_dict[image_hash] = self.cpu_image_embed_cache[
+                        image_hash
+                    ]
+                return class_embeddings_dict, return_image_embeds_dict
+            else:
+                return class_embeddings_dict
 
         class_embeddings_dict = defaultdict(lambda: {"positive": [], "negative": []})
 
@@ -659,7 +636,6 @@ class OwlV2(RoboflowInferenceModel):
         return_image_embeds_dict = dict()
 
         for train_image in wrapped_training_data:
-            # grab and embed image
             image_hash = self.embed_image(train_image["image"])
             if return_image_embeds:
                 if (image_embeds := self.get_image_embeds(image_hash)) is None:
@@ -675,10 +651,12 @@ class OwlV2(RoboflowInferenceModel):
             coords = [tuple([c / max(image_size) for c in coord]) for coord in coords]
             classes = [box["cls"] for box in boxes]
             is_positive = [not box["negative"] for box in boxes]
-
             query_spec = {image_hash: coords}
             # compute the embeddings for the box prompts
             embeddings = self.get_query_embedding(query_spec, iou_threshold)
+
+            del train_image
+
             if embeddings is None:
                 continue
 
@@ -687,9 +665,7 @@ class OwlV2(RoboflowInferenceModel):
                     embedding
                 )
 
-            del train_image
-            gc.collect()
-
+        gc.collect()
         # Convert lists of embeddings to tensors.
         class_embeddings_dict = {
             k: {
@@ -736,6 +712,27 @@ class SerializedOwlV2(RoboflowInferenceModel):
     task_type = "object-detection"
     box_format = "xywh"
 
+    # Cache of OwlV2 instances to avoid creating new ones for each serialize_training_data call
+    # This improves performance by reusing model instances across serialization operations
+    _base_owlv2_instances = {}
+
+    @classmethod
+    def get_or_create_owlv2_instance(cls, roboflow_id: str) -> OwlV2:
+        """Get an existing OwlV2 instance from cache or create a new one if it doesn't exist.
+
+        Args:
+            roboflow_id: The model ID for the OwlV2 model
+
+        Returns:
+            An OwlV2 instance
+        """
+        if roboflow_id in cls._base_owlv2_instances:
+            return cls._base_owlv2_instances[roboflow_id]
+        else:
+            owlv2 = OwlV2(model_id=roboflow_id)
+            cls._base_owlv2_instances[roboflow_id] = owlv2
+            return owlv2
+
     @classmethod
     def serialize_training_data(
         cls,
@@ -746,25 +743,21 @@ class SerializedOwlV2(RoboflowInferenceModel):
         previous_embeddings_file: str = None,
     ):
         roboflow_id = hf_id.replace("google/", "owlv2/")
+
+        owlv2 = cls.get_or_create_owlv2_instance(roboflow_id)
+
         if previous_embeddings_file is not None:
             if DEVICE == "cpu":
                 model_data = torch.load(previous_embeddings_file, map_location="cpu")
             else:
                 model_data = torch.load(previous_embeddings_file)
-            class_names = model_data["class_names"]
+
             train_data_dict = model_data["train_data_dict"]
-            huggingface_id = model_data["huggingface_id"]
-            roboflow_id = model_data["roboflow_id"]
-            # each model can have its own OwlV2 instance because we use a singleton
-            owlv2 = OwlV2(model_id=roboflow_id)
             owlv2.cpu_image_embed_cache = model_data["image_embeds"]
-        else:
-            owlv2 = OwlV2(model_id=roboflow_id)
 
         train_data_dict, image_embeds = owlv2.make_class_embeddings_dict(
             training_data, iou_threshold, return_image_embeds=True
         )
-
         return cls.save_model(
             hf_id, roboflow_id, train_data_dict, image_embeds, save_dir
         )
@@ -854,7 +847,6 @@ class SerializedOwlV2(RoboflowInferenceModel):
         logger.info(f"OWLv2 model weights saved to cache")
 
     def load_model_artifacts_from_cache(self):
-        logger.info(f"Loading OWLv2 model artifacts from cache")
         if DEVICE == "cpu":
             self.model_data = torch.load(
                 self.cache_file(self.weights_file), map_location="cpu"
@@ -865,10 +857,9 @@ class SerializedOwlV2(RoboflowInferenceModel):
         self.train_data_dict = self.model_data["train_data_dict"]
         self.huggingface_id = self.model_data["huggingface_id"]
         self.roboflow_id = self.model_data["roboflow_id"]
-        # each model can have its own OwlV2 instance because we use a singleton
-        self.owlv2 = OwlV2(model_id=self.roboflow_id)
+        # Use the same cached OwlV2 instance mechanism to avoid creating duplicates
+        self.owlv2 = self.__class__.get_or_create_owlv2_instance(self.roboflow_id)
         self.owlv2.cpu_image_embed_cache = self.model_data["image_embeds"]
-        logger.info(f"OWLv2 model artifacts loaded from cache")
 
     weights_file_path = "weights.pt"
 

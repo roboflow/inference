@@ -271,6 +271,48 @@ def test_classes_replacement_when_replacement_to_happen_and_one_result_to_be_fil
     ], "Expected to generate new detection id"
 
 
+def test_classes_replacement_when_empty_classification_predictions():
+    # given
+    step = DetectionsClassesReplacementBlockV1()
+    detections = sv.Detections(
+        xyxy=np.array(
+            [
+                [10, 20, 30, 40],
+                [11, 21, 31, 41],
+            ]
+        ),
+        class_id=np.array([7, 7]),
+        confidence=np.array([0.36, 0.91]),
+        data={
+            "class_name": np.array(["animal", "animal"]),
+            "detection_id": np.array(["zero", "one"]),
+        },
+    )
+    first_cls_prediction = ClassificationInferenceResponse(
+        image=InferenceResponseImage(width=128, height=256),
+        predictions=[],
+    ).dict(by_alias=True, exclude_none=True)
+    first_cls_prediction["parent_id"] = "zero"
+    classification_predictions = Batch(
+        content=[
+            first_cls_prediction,
+            None,
+        ],
+        indices=[(0, 0), (0, 1)],
+    )
+
+    # when
+    result = step.run(
+        object_detection_predictions=detections,
+        classification_predictions=classification_predictions,
+    )
+
+    # then
+    assert (
+        len(result["predictions"]) == 0
+    ), "Expected sv.Detections.empty(), as empty classification was passed"
+
+
 def test_extract_leading_class_from_prediction_when_prediction_is_multi_label() -> None:
     # given
     prediction = ClassificationInferenceResponse(

@@ -1,8 +1,8 @@
 import argparse
 from typing import Union
 
-import supervision as sv
 import cv2
+import supervision as sv
 
 from inference.core.utils.preprocess import letterbox_image
 

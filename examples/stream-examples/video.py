@@ -1,6 +1,7 @@
 import cv2
-import inference
 import supervision as sv
+
+import inference
 
 box_annotator = sv.BoxAnnotator(color=sv.Color(103, 6, 206))
 trace_annotator = sv.TraceAnnotator(color=sv.Color(163, 81, 251), thickness=6)

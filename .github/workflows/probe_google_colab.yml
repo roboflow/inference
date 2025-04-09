@@ -1,0 +1,38 @@
+name: Google Colab Environment Probe
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  probe-google-colab-env:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: "read"
+      id-token: "write"
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v2
+
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: GCP Account Setup
+      uses: "google-github-actions/auth@v2"
+      with:
+        credentials_json: ${{ secrets.GOOGLE_COLAB_CI_RUNNER_SECRET }}
+
+    - name: "Set up Cloud SDK"
+      uses: "google-github-actions/setup-gcloud@v2"
+
+    - name: 📦 Install dependencies
+      run: pip install -r development/google_colab_ci/requirements.txt
+
+    - name: Google Colab Environment Probe
+      run: |
+        gcloud artifacts docker tags list us-docker.pkg.dev/colab-images/public/runtime --format json > current-google-colab-env.json
+        SLACK_TOKEN=${{ secrets.SLACK_TOKEN }} SLACK_CHANNEL=${{ secrets.SLACK_NOTIFICATIONS_CHANNEL }} python development/google_colab_ci/verify_colab_env.py --current_env_state ./current-google-colab-env.json

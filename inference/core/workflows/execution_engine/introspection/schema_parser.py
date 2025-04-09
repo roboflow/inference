@@ -228,11 +228,12 @@ def retrieve_primitive_type_from_dict_property(
     property_description: str,
     property_definition: dict,
 ) -> Optional[PrimitiveTypeDefinition]:
-    if ADDITIONAL_PROPERTIES_KEY in property_definition:
+    nested_property_definition = property_definition.get(ADDITIONAL_PROPERTIES_KEY)
+    if isinstance(nested_property_definition, dict):
         dict_value_type = retrieve_primitive_type_from_property(
             property_name=property_name,
             property_description=property_description,
-            property_definition=property_definition[ADDITIONAL_PROPERTIES_KEY],
+            property_definition=nested_property_definition,
         )
         if dict_value_type is None:
             return None
@@ -277,9 +278,8 @@ def retrieve_selectors_from_schema(
                 inputs_accepting_batches=inputs_accepting_batches,
                 inputs_accepting_batches_and_scalars=inputs_accepting_batches_and_scalars,
             )
-        elif (
-            property_definition.get(TYPE_KEY) == OBJECT_TYPE
-            and ADDITIONAL_PROPERTIES_KEY in property_definition
+        elif property_definition.get(TYPE_KEY) == OBJECT_TYPE and isinstance(
+            property_definition.get(ADDITIONAL_PROPERTIES_KEY), dict
         ):
             selector = retrieve_selectors_from_simple_property(
                 property_name=property_name,

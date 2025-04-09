@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 as builder
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 as builder
 
 WORKDIR /app
 
@@ -30,8 +30,6 @@ COPY requirements/requirements.sam.txt \
 
 RUN python3 -m pip install -U pip
 RUN python3 -m pip install \
-    --extra-index-url https://download.pytorch.org/whl/cu118 \
-    --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/ \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
@@ -55,7 +53,7 @@ RUN python3 -m pip install packaging==24.1 && rm -rf ~/.cache/pip
 RUN python3 -m pip install -r requirements.pali.flash_attn.txt --no-dependencies --no-build-isolation && rm -rf ~/.cache/pip
 
 # Start runtime stage
-FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 as runtime
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as runtime
 
 WORKDIR /app
 
@@ -101,7 +99,6 @@ ENV LMM_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
 ENV CORE_MODEL_OWLV2_ENABLED=True
 ENV ENABLE_STREAM_API=True
-ENV ENABLE_WORKFLOWS_PROFILING=True
 ENV ENABLE_PROMETHEUS=True
 ENV STREAM_API_PRELOADED_PROCESSES=2
 

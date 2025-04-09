@@ -1,8 +1,7 @@
-import socket
-import json
-import time
 import argparse
-
+import json
+import socket
+import time
 
 parser = argparse.ArgumentParser(description="Receive stream detections over UDP.")
 

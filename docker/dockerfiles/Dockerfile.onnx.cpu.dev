@@ -28,7 +28,8 @@ COPY requirements/requirements.sam.txt \
     requirements/_requirements.txt \
     ./
 
-RUN pip3 install --upgrade pip  && pip3 install \
+RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
+RUN pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
@@ -76,7 +77,6 @@ ENV API_LOGGING_ENABLED=True
 ENV CORE_MODEL_SAM2_ENABLED=True
 ENV CORE_MODEL_OWLV2_ENABLED=True
 ENV ENABLE_STREAM_API=True
-ENV ENABLE_WORKFLOWS_PROFILING=True
 ENV ENABLE_PROMETHEUS=True
 
 ENTRYPOINT watchmedo auto-restart --directory=/app/inference --pattern=*.py --recursive -- uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

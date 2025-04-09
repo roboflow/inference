@@ -59,7 +59,7 @@ class WithLogger(ModelManagerDecorator):
         logger.info(f"📥 [{model_id}] res={res}.")
         return res
 
-    def remove(self, model_id: str) -> Model:
+    def remove(self, model_id: str, delete_from_disk: bool = True) -> Model:
         """Removes a model from the manager and logs the action.
 
         Args:
@@ -69,5 +69,5 @@ class WithLogger(ModelManagerDecorator):
             Model: The removed model.
         """
         res = super().remove(model_id)
-        logger.info(f"❌ removed {model_id}")
+        logger.info(f"❌ removed {model_id}, delete_from_disk={delete_from_disk}")
         return res

@@ -10,7 +10,17 @@ from collections import defaultdict
 from functools import wraps
 from queue import Queue
 from threading import Event, Lock, Thread
-from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, TypeVar
+from typing import (
+    Any,
+    Callable,
+    DefaultDict,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    TypeVar,
+)
 from uuid import uuid4
 
 from typing_extensions import ParamSpec
@@ -18,6 +28,7 @@ from typing_extensions import ParamSpec
 from inference.core.env import (
     API_KEY,
     DEDICATED_DEPLOYMENT_ID,
+    GCP_SERVERLESS,
     LAMBDA,
     REDIS_HOST,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
@@ -30,6 +41,15 @@ from inference.core.workflows.execution_engine.v1.compiler.entities import (
 )
 
 from .config import TelemetrySettings, get_telemetry_settings
+from .decorator_helpers import (
+    get_model_id_from_kwargs,
+    get_model_resource_details_from_kwargs,
+    get_request_api_key_from_kwargs,
+    get_request_resource_details_from_kwargs,
+    get_request_resource_id_from_kwargs,
+    get_workflow_api_key_from_kwargs,
+    get_workflow_resource_details_from_kwargs,
+)
 from .payload_helpers import (
     APIKey,
     APIKeyHash,
@@ -88,11 +108,11 @@ class UsageCollector:
             api_plan_endpoint_url=self._settings.api_plan_endpoint_url,
             sqlite_cache_enabled=False,
         )
-        if LAMBDA and REDIS_HOST:
+        if (LAMBDA or GCP_SERVERLESS) and REDIS_HOST:
             logger.debug("Persistence through RedisQueue")
             self._queue: "Queue[UsagePayload]" = RedisQueue()
             self._api_keys_hashing_enabled = False
-        elif LAMBDA or self._settings.opt_out:
+        elif (LAMBDA or GCP_SERVERLESS) or self._settings.opt_out:
             logger.debug("No persistence")
             self._queue: "Queue[UsagePayload]" = Queue(
                 maxsize=self._settings.queue_size
@@ -149,12 +169,13 @@ class UsageCollector:
             "category": "",
             "resource_id": "",
             "resource_details": "{}",
-            "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID),
+            "hosted": LAMBDA or bool(DEDICATED_DEPLOYMENT_ID) or GCP_SERVERLESS,
             "api_key_hash": "",
             "is_gpu_available": False,
             "python_version": sys.version.split()[0],
             "inference_version": inference_version,
             "enterprise": False,
+            "execution_duration": 0,
         }
         if ROBOFLOW_INTERNAL_SERVICE_SECRET:
             usage_dict["roboflow_internal_secret"] = ROBOFLOW_INTERNAL_SERVICE_SECRET
@@ -202,7 +223,7 @@ class UsageCollector:
         return sha256_hash(json.dumps(resource_details, sort_keys=True))
 
     def _enqueue_payload(self, payload: UsagePayload):
-        logger.debug("Enqueuing usage payload %s", payload)
+        logger.debug("Enqueuing usage payload")
         if not payload:
             return
         with self._queue_lock:
@@ -325,6 +346,9 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
+        execution_duration: float = 0,
+        roboflow_service_name: Optional[str] = None,
+        roboflow_internal_secret: Optional[str] = None,
     ):
         source = str(source) if source else ""
         try:
@@ -359,7 +383,14 @@ class UsageCollector:
             source_usage["hostname"] = hostname
             source_usage["ip_address_hash"] = ip_address_hash
             source_usage["is_gpu_available"] = is_gpu_available
-            logger.debug("Updated usage: %s", source_usage)
+            source_usage["execution_duration"] += execution_duration
+            if (
+                roboflow_service_name
+                and roboflow_service_name != "external"
+                and roboflow_internal_secret
+            ):
+                source_usage["roboflow_service_name"] = roboflow_service_name
+                source_usage["roboflow_internal_secret"] = roboflow_internal_secret
 
     def record_usage(
         self,
@@ -371,10 +402,11 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
+        execution_duration: float = 0,
+        roboflow_service_name: Optional[str] = None,
+        roboflow_internal_secret: Optional[str] = None,
     ):
         if not api_key:
-            return
-        if self._settings.opt_out and not api_key:
             return
         self.record_system_info()
         self.record_resource_details(
@@ -392,6 +424,9 @@ class UsageCollector:
             resource_id=resource_id,
             inference_test_run=inference_test_run,
             fps=fps,
+            execution_duration=execution_duration,
+            roboflow_service_name=roboflow_service_name,
+            roboflow_internal_secret=roboflow_internal_secret,
         )
 
     async def async_record_usage(
@@ -404,6 +439,9 @@ class UsageCollector:
         resource_id: str = "",
         inference_test_run: bool = False,
         fps: float = 0,
+        execution_duration: float = 0,
+        roboflow_service_name: Optional[str] = None,
+        roboflow_internal_secret: Optional[str] = None,
     ):
         if self._async_lock:
             async with self._async_lock:
@@ -416,6 +454,9 @@ class UsageCollector:
                     resource_id=resource_id,
                     inference_test_run=inference_test_run,
                     fps=fps,
+                    execution_duration=execution_duration,
+                    roboflow_service_name=roboflow_service_name,
+                    roboflow_internal_secret=roboflow_internal_secret,
                 )
         else:
             self.record_usage(
@@ -427,6 +468,9 @@ class UsageCollector:
                 resource_id=resource_id,
                 inference_test_run=inference_test_run,
                 fps=fps,
+                execution_duration=execution_duration,
+                roboflow_service_name=roboflow_service_name,
+                roboflow_internal_secret=roboflow_internal_secret,
             )
 
     def _usage_collector(self):
@@ -487,7 +531,6 @@ class UsageCollector:
                         self._plan_details._is_enterprise_col_name
                     ]
 
-            logger.debug("Sending usage payload %s", payload)
             api_keys_hashes_failed = send_usage_payload(
                 payload=payload,
                 api_usage_endpoint_url=self._settings.api_usage_endpoint_url,
@@ -518,16 +561,6 @@ class UsageCollector:
             self.push_usage_payloads()
 
     @staticmethod
-    def _resource_details_from_workflow_json(
-        workflow_json: Dict[str, Any],
-    ) -> List[str]:
-        return [
-            f"{step.get('type', 'unknown')}:{step.get('name', 'unknown')}"
-            for step in workflow_json.get("steps", [])
-            if isinstance(step, dict)
-        ]
-
-    @staticmethod
     def _extract_usage_params_from_func_kwargs(
         usage_fps: float,
         usage_api_key: str,
@@ -535,7 +568,9 @@ class UsageCollector:
         usage_workflow_preview: bool,
         usage_inference_test_run: bool,
         usage_billable: bool,
+        execution_duration: float,
         func: Callable[[Any], Any],
+        category: Literal["model", "workflows", "request"],
         args: List[Any],
         kwargs: Dict[str, Any],
     ) -> Dict[str, Any]:
@@ -546,53 +581,47 @@ class UsageCollector:
         if DEDICATED_DEPLOYMENT_ID:
             resource_details["dedicated_deployment_id"] = DEDICATED_DEPLOYMENT_ID
         resource_id = ""
-        category = None
         # TODO: add requires_api_key, True if workflow definition comes from platform or model comes from workspace
-        if "workflow" in func_kwargs:
-            workflow: CompiledWorkflow = func_kwargs["workflow"]
-            if hasattr(workflow, "init_parameters"):
-                init_parameters = workflow.init_parameters
-                if "workflows_core.api_key" in init_parameters:
-                    usage_api_key = init_parameters["workflows_core.api_key"]
-            workflow_json = {}
-            if hasattr(workflow, "workflow_json"):
-                if isinstance(workflow.workflow_json, dict):
-                    workflow_json = workflow.workflow_json
-                else:
-                    logger.debug(
-                        "Got non-dict workflow JSON, '%s'", workflow.workflow_json
-                    )
-            resource_details["steps"] = (
-                UsageCollector._resource_details_from_workflow_json(
-                    workflow_json=workflow_json,
-                )
+        if category == "workflows":
+            workflow_api_key = get_workflow_api_key_from_kwargs(func_kwargs)
+            if workflow_api_key:
+                usage_api_key = workflow_api_key
+            workflow_resource_details = get_workflow_resource_details_from_kwargs(
+                func_kwargs
             )
-            resource_details["is_preview"] = usage_workflow_preview
+            if not usage_workflow_id:
+                if workflow_resource_details:
+                    usage_workflow_id = UsageCollector._calculate_resource_hash(
+                        resource_details=workflow_resource_details
+                    )
+                else:
+                    usage_workflow_id = "unknown"
             resource_id = usage_workflow_id
-            if not resource_id and resource_details:
-                usage_workflow_id = UsageCollector._calculate_resource_hash(
-                    resource_details=resource_details
-                )
-            category = "workflows"
-        elif "self" in func_kwargs:
-            _self = func_kwargs["self"]
-            if hasattr(_self, "dataset_id") and hasattr(_self, "version_id"):
-                model_id = str(_self.dataset_id)
-                if _self.version_id:
-                    model_id += f"/{_self.version_id}"
-                category = "model"
-                resource_id = model_id
-            elif isinstance(kwargs, dict) and "model_id" in kwargs:
-                model_id = kwargs["model_id"]
-                category = "model"
+            workflow_resource_details["is_preview"] = usage_workflow_preview
+            resource_details = {**resource_details, **workflow_resource_details}
+        elif category == "model":
+            model_id = get_model_id_from_kwargs(func_kwargs)
+            if model_id:
                 resource_id = model_id
             else:
                 resource_id = "unknown"
-                category = "unknown"
-            if isinstance(kwargs, dict) and "source" in kwargs:
-                resource_details["source"] = kwargs["source"]
-            if hasattr(_self, "task_type"):
-                resource_details["task_type"] = _self.task_type
+            model_resource_details = get_model_resource_details_from_kwargs(func_kwargs)
+            if model_resource_details:
+                resource_details = {**resource_details, **model_resource_details}
+        elif category == "request":
+            request_api_key = get_request_api_key_from_kwargs(func_kwargs)
+            request_resource_details = get_request_resource_details_from_kwargs(
+                func_kwargs
+            )
+            request_resource_id = get_request_resource_id_from_kwargs(func_kwargs)
+            if request_api_key:
+                usage_api_key = request_api_key
+            if request_resource_details:
+                resource_details = {**resource_details, **request_resource_details}
+            if request_resource_id:
+                resource_id = request_resource_id
+            else:
+                resource_id = "unknown"
         else:
             resource_id = "unknown"
             category = "unknown"
@@ -613,20 +642,23 @@ class UsageCollector:
                 source = image._image_reference
 
         if not usage_api_key:
-            _self = func_kwargs.get("self")
             if "api_key" in func_kwargs and func_kwargs["api_key"]:
                 usage_api_key = func_kwargs["api_key"]
-            elif _self and hasattr(_self, "api_key") and _self.api_key:
-                usage_api_key = _self.api_key
-            elif (
-                "kwargs" in func_kwargs
+            elif "self" in func_kwargs:
+                _self = func_kwargs.get("self")
+                if hasattr(_self, "api_key") and _self.api_key:
+                    usage_api_key = _self.api_key
+            if (
+                not usage_api_key
+                and "kwargs" in func_kwargs
                 and isinstance(func_kwargs["kwargs"], dict)
                 and "api_key" in func_kwargs["kwargs"]
                 and func_kwargs["kwargs"]["api_key"]
             ):
                 usage_api_key = func_kwargs["kwargs"]["api_key"]
-            else:
-                logger.debug("Could not obtain API key from func kwargs")
+
+        roboflow_service_name = func_kwargs.get("source_info")
+        roboflow_internal_secret = func_kwargs.get("service_secret")
 
         return {
             "source": source,
@@ -636,67 +668,83 @@ class UsageCollector:
             "resource_id": resource_id,
             "inference_test_run": usage_inference_test_run,
             "fps": usage_fps,
+            "execution_duration": execution_duration,
+            "roboflow_service_name": roboflow_service_name,
+            "roboflow_internal_secret": roboflow_internal_secret,
         }
 
-    def __call__(self, func: Callable[P, T]) -> Callable[P, T]:
-        @wraps(func)
-        def sync_wrapper(
-            *args: P.args,
-            usage_fps: float = 0,
-            usage_api_key: APIKey = "",
-            usage_workflow_id: str = "",
-            usage_workflow_preview: bool = False,
-            usage_inference_test_run: bool = False,
-            usage_billable: bool = True,
-            **kwargs: P.kwargs,
-        ) -> T:
-            res = func(*args, **kwargs)
-            self.record_usage(
-                **self._extract_usage_params_from_func_kwargs(
-                    usage_fps=usage_fps,
-                    usage_api_key=usage_api_key,
-                    usage_workflow_id=usage_workflow_id,
-                    usage_workflow_preview=usage_workflow_preview,
-                    usage_inference_test_run=usage_inference_test_run,
-                    usage_billable=usage_billable,
-                    func=func,
-                    args=args,
-                    kwargs=kwargs,
+    def __call__(
+        self, category: Literal["model", "workflows", "request"]
+    ) -> Callable[P, T]:
+        def decorator(func: Callable[P, T]) -> Callable[P, T]:
+            @wraps(func)
+            def sync_wrapper(
+                *args: P.args,
+                usage_fps: float = 0,
+                usage_api_key: APIKey = "",
+                usage_workflow_id: str = "",
+                usage_workflow_preview: bool = False,
+                usage_inference_test_run: bool = False,
+                usage_billable: bool = True,
+                **kwargs: P.kwargs,
+            ) -> T:
+                t1 = time.time()
+                res = func(*args, **kwargs)
+                t2 = time.time()
+                self.record_usage(
+                    **self._extract_usage_params_from_func_kwargs(
+                        usage_fps=usage_fps,
+                        usage_api_key=usage_api_key,
+                        usage_workflow_id=usage_workflow_id,
+                        usage_workflow_preview=usage_workflow_preview,
+                        usage_inference_test_run=usage_inference_test_run,
+                        usage_billable=usage_billable,
+                        execution_duration=(t2 - t1),
+                        func=func,
+                        category=category,
+                        args=args,
+                        kwargs=kwargs,
+                    )
                 )
-            )
-            return res
+                return res
 
-        @wraps(func)
-        async def async_wrapper(
-            *args: P.args,
-            usage_fps: float = 0,
-            usage_api_key: APIKey = "",
-            usage_workflow_id: str = "",
-            usage_workflow_preview: bool = False,
-            usage_inference_test_run: bool = False,
-            usage_billable: bool = True,
-            **kwargs: P.kwargs,
-        ) -> T:
-            res = await func(*args, **kwargs)
-            await self.async_record_usage(
-                **self._extract_usage_params_from_func_kwargs(
-                    usage_fps=usage_fps,
-                    usage_api_key=usage_api_key,
-                    usage_workflow_id=usage_workflow_id,
-                    usage_workflow_preview=usage_workflow_preview,
-                    usage_inference_test_run=usage_inference_test_run,
-                    usage_billable=usage_billable,
-                    func=func,
-                    args=args,
-                    kwargs=kwargs,
+            @wraps(func)
+            async def async_wrapper(
+                *args: P.args,
+                usage_fps: float = 0,
+                usage_api_key: APIKey = "",
+                usage_workflow_id: str = "",
+                usage_workflow_preview: bool = False,
+                usage_inference_test_run: bool = False,
+                usage_billable: bool = True,
+                **kwargs: P.kwargs,
+            ) -> T:
+                t1 = time.time()
+                res = await func(*args, **kwargs)
+                t2 = time.time()
+                await self.async_record_usage(
+                    **self._extract_usage_params_from_func_kwargs(
+                        usage_fps=usage_fps,
+                        usage_api_key=usage_api_key,
+                        usage_workflow_id=usage_workflow_id,
+                        usage_workflow_preview=usage_workflow_preview,
+                        usage_inference_test_run=usage_inference_test_run,
+                        usage_billable=usage_billable,
+                        execution_duration=(t2 - t1),
+                        func=func,
+                        category=category,
+                        args=args,
+                        kwargs=kwargs,
+                    )
                 )
-            )
-            return res
+                return res
 
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
+            if asyncio.iscoroutinefunction(func):
+                return async_wrapper
+            else:
+                return sync_wrapper
+
+        return decorator
 
     def _cleanup(self):
         self._terminate_collector_thread.set()

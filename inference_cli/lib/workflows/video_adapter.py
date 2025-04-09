@@ -1,5 +1,6 @@
 import os.path
 from collections import defaultdict
+from copy import copy
 from functools import partial
 from typing import Any, Dict, List, Optional, Union
 
@@ -10,7 +11,11 @@ import supervision as sv
 from rich.progress import Progress, TaskID
 
 from inference import InferencePipeline
-from inference.core.interfaces.camera.entities import VideoFrame
+from inference.core.interfaces.camera.entities import (
+    StatusUpdate,
+    UpdateSeverity,
+    VideoFrame,
+)
 from inference.core.interfaces.stream.entities import SinkHandler
 from inference.core.interfaces.stream.sinks import multi_sink
 from inference.core.utils.image_utils import load_image_bgr
@@ -49,6 +54,7 @@ def process_video_with_workflow(
             output_directory=output_directory,
         )
         sinks.append(video_sink.on_prediction)
+    errors_interceptor = ErrorsInterceptor()
     pipeline = InferencePipeline.init_with_workflow(
         video_reference=[input_video_path],
         workflow_specification=workflow_specification,
@@ -60,10 +66,12 @@ def process_video_with_workflow(
         serialize_results=True,
         image_input_name=image_input_name,
         max_fps=max_fps,
+        status_update_handlers=[errors_interceptor.status_handler],
     )
     progress_sink.start()
     pipeline.start(use_main_thread=True)
     pipeline.join()
+    pipeline.terminate()
     progress_sink.stop()
     structured_results_file = structured_sink.flush()[0]
     video_outputs = None
@@ -72,7 +80,27 @@ def process_video_with_workflow(
     return VideoProcessingDetails(
         structured_results_file=structured_results_file,
         video_outputs=video_outputs,
+        processing_errors=errors_interceptor.error_update_payloads,
     )
+
+
+class ErrorsInterceptor:
+
+    def __init__(self):
+        self._error_update_payloads = []
+
+    def status_handler(self, status: StatusUpdate) -> None:
+        if status.severity is not UpdateSeverity.ERROR:
+            return None
+        self._error_update_payloads.append(status.payload)
+
+    @property
+    def errors_detected(self) -> bool:
+        return len(self._error_update_payloads) > 0
+
+    @property
+    def error_update_payloads(self) -> List[dict]:
+        return copy(self._error_update_payloads)
 
 
 class WorkflowsStructuredDataSink:

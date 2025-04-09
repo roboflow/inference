@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 as base
+FROM nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 as base
 
 WORKDIR /app
 
@@ -22,7 +22,6 @@ COPY requirements/requirements.http.txt \
     ./
 
 RUN pip3 install --upgrade pip  && pip3 install \
-    --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/ \
     -r _requirements.txt \
     -r requirements.http.txt \
     -r requirements.gpu.txt \
@@ -58,7 +57,6 @@ ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=4
 ENV API_LOGGING_ENABLED=True
 ENV CORE_MODEL_TROCR_ENABLED=false
-ENV ENABLE_WORKFLOWS_PROFILING=True
 ENV ENABLE_PROMETHEUS=True
 
 ENTRYPOINT uvicorn gpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

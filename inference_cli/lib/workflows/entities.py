@@ -40,3 +40,4 @@ class ImagesDirectoryProcessingDetails:
 class VideoProcessingDetails:
     structured_results_file: Optional[str]
     video_outputs: Optional[Dict[str, str]]
+    processing_errors: List[dict] = field(default_factory=list)

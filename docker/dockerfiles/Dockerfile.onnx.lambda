@@ -1,13 +1,13 @@
-FROM public.ecr.aws/lambda/python:3.10
+FROM public.ecr.aws/lambda/python:3.12
 
 WORKDIR /app
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETPLATFORM
 
-RUN yum update -y && yum install -y \
-    libsm6 \
-    libxext6  \
+RUN dnf makecache -y && dnf install -y \
+    libSM \
+    libXext  \
     python3-pip \
     git \
     zlib-devel \
@@ -15,10 +15,9 @@ RUN yum update -y && yum install -y \
     gcc \
     mesa-libGL \
     pango \
-    wget \
     rustc \
     cargo \
-    && yum clean all
+    && dnf clean all
 
 COPY requirements/requirements.clip.txt \
     requirements/requirements.cpu.txt \
@@ -35,7 +34,7 @@ COPY requirements/requirements.clip.txt \
 
 RUN if [ "${TARGETPLATFORM}" == "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
-RUN /var/lang/bin/python3.10 -m pip install --upgrade pip && rm -rf ~/.cache/pip
+RUN /var/lang/bin/python3.12 -m pip install --upgrade pip && rm -rf ~/.cache/pip
 RUN pip3 install \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     certifi==2022.12.07 \

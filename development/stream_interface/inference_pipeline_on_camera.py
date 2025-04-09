@@ -12,7 +12,12 @@ import supervision as sv
 
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
-from inference.core.interfaces.stream.sinks import render_boxes, display_image, UDPSink, multi_sink
+from inference.core.interfaces.stream.sinks import (
+    UDPSink,
+    display_image,
+    multi_sink,
+    render_boxes,
+)
 from inference.core.interfaces.stream.watchdog import (
     BasePipelineWatchDog,
     PipelineWatchDog,

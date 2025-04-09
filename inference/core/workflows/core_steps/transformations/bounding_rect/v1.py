@@ -82,7 +82,7 @@ def calculate_minimum_bounding_rectangle(
 
     rect = cv.minAreaRect(largest_contour)
     box = cv.boxPoints(rect)
-    box = np.int0(box)
+    box = np.array(box, dtype=int)
 
     width, height = rect[1]
     angle = rect[2]

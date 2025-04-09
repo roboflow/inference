@@ -1,14 +1,14 @@
+import argparse
 import base64
+import json
 import os
 from io import BytesIO
+
 import faiss
 import numpy as np
 import requests
+from flask import Flask, render_template, request, send_from_directory
 from PIL import Image
-import argparse
-import json
-
-from flask import Flask, request, render_template, send_from_directory
 
 parser = argparse.ArgumentParser(description="Build a search engine with CLIP")
 

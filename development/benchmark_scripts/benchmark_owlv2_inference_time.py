@@ -1,7 +1,8 @@
-import requests
 import tempfile
-from PIL import Image
 import time
+
+import requests
+from PIL import Image
 
 from inference.models.owlv2.owlv2 import OwlV2
 

@@ -1,6 +1,7 @@
 import cv2
-import inference
 import supervision as sv
+
+import inference
 
 annotator = sv.BoxAnnotator()
 

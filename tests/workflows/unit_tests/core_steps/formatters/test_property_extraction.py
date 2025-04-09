@@ -1,4 +1,5 @@
-import pytest
+import numpy as np
+import supervision as sv
 
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
@@ -50,3 +51,123 @@ def test_property_extraction_block() -> None:
 
     # then
     assert result == {"output": "cat-mutated"}
+
+
+def test_property_extraction_block_with_center() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=np.int32),
+        class_id=np.array([0, 1], dtype=np.int32),
+        confidence=np.array([0.6, 0.4], dtype=np.float32),
+        data={"class": np.array(["car", "dog"])},
+    )
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "center"}
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [[20, 30], [40, 50]]}
+
+
+def test_property_extraction_block_with_top_left() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=np.int32),
+        class_id=np.array([0, 1], dtype=np.int32),
+        confidence=np.array([0.6, 0.4], dtype=np.float32),
+        data={"class": np.array(["car", "dog"])},
+    )
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "top_left"}
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [[10, 20], [30, 40]]}
+
+
+def test_property_extraction_block_with_top_right() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=np.int32),
+        class_id=np.array([0, 1], dtype=np.int32),
+        confidence=np.array([0.6, 0.4], dtype=np.float32),
+        data={"class": np.array(["car", "dog"])},
+    )
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "top_right"}
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [[30, 20], [50, 40]]}
+
+
+def test_property_extraction_block_with_bottom_left() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=np.int32),
+        class_id=np.array([0, 1], dtype=np.int32),
+        confidence=np.array([0.6, 0.4], dtype=np.float32),
+        data={"class": np.array(["car", "dog"])},
+    )
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "bottom_left"}
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [[10, 40], [30, 60]]}
+
+
+def test_property_extraction_block_with_bottom_right() -> None:
+    # given
+    detections = sv.Detections(
+        xyxy=np.array([[10, 20, 30, 40], [30, 40, 50, 60]], dtype=np.int32),
+        class_id=np.array([0, 1], dtype=np.int32),
+        confidence=np.array([0.6, 0.4], dtype=np.float32),
+        data={"class": np.array(["car", "dog"])},
+    )
+    operations = OperationsChain.model_validate(
+        {
+            "operations": [
+                {"type": "DetectionsPropertyExtract", "property_name": "bottom_right"}
+            ]
+        }
+    ).operations
+    step = PropertyDefinitionBlockV1()
+
+    # when
+    result = step.run(data=detections, operations=operations)
+
+    # then
+    assert result == {"output": [[30, 40], [50, 60]]}

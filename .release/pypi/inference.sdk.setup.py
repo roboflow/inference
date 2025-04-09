@@ -1,9 +1,9 @@
 import os
 import shutil
+import sys
 
 import setuptools
 from setuptools import find_packages
-import sys
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.append(root)

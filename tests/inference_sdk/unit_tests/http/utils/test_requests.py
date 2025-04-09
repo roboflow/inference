@@ -5,7 +5,8 @@ from inference_sdk.http.utils.requests import (
     API_KEY_PATTERN,
     api_key_safe_raise_for_status,
     deduct_api_key,
-    inject_images_into_payload, inject_nested_batches_of_images_into_payload,
+    inject_images_into_payload,
+    inject_nested_batches_of_images_into_payload,
 )
 
 

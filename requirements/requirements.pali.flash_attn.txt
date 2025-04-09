@@ -1,2 +1,2 @@
-flash-attn==2.5.9.post1
-xformers>=0.0.27.post2
+flash-attn==2.7.4.post1
+xformers>=0.0.29.post3

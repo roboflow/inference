@@ -42,7 +42,7 @@ def load_images(
     file_paths = sorted(
         list(
             chain.from_iterable(
-                glob(os.path.join(directory, e)) for e in IMAGE_EXTENSIONS
+                glob(os.path.join(directory, f"*{e}")) for e in IMAGE_EXTENSIONS
             )
         )
     )

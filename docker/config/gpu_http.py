@@ -3,10 +3,10 @@ from functools import partial
 
 from inference.core.cache import cache
 from inference.core.env import (
-    MAX_ACTIVE_MODELS,
     ACTIVE_LEARNING_ENABLED,
-    LAMBDA,
     ENABLE_STREAM_API,
+    LAMBDA,
+    MAX_ACTIVE_MODELS,
     STREAM_API_PRELOADED_PROCESSES,
 )
 from inference.core.interfaces.http.http_api import HttpInterface
@@ -21,7 +21,6 @@ from inference.core.registries.roboflow import (
     RoboflowModelRegistry,
 )
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
-
 
 if ENABLE_STREAM_API:
     multiprocessing_context = multiprocessing.get_context(method="spawn")

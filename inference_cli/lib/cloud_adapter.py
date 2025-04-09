@@ -130,6 +130,7 @@ def cloud_undeploy(cluster_name):
 
 
 def cloud_deploy(provider, compute_type, dry_run, custom, help, roboflow_api_key):
+    check_sky_installed()
     if help:
         print(
             """

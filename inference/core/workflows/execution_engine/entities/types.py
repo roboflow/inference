@@ -99,6 +99,20 @@ IMAGE_KIND = Kind(
     internal_data_type="WorkflowImageData",
 )
 
+TIMESTAMP_KIND_DOCS = """
+Representation of timestamp in Workflows. 
+
+Internally represented as `datetime.datetime` object (with time-zone info not required). 
+Can be serialized / deserialized to / from [ISO-format timestamps](https://docs.python.org/3/library/datetime.html#datetime.date.fromisoformat).
+"""
+
+TIMESTAMP_KIND = Kind(
+    name="timestamp",
+    description="Timestamp object",
+    docs=TIMESTAMP_KIND_DOCS,
+    serialised_data_type="str",
+    internal_data_type="datetime",
+)
 
 VIDEO_METADATA_KIND_DOCS = """
 

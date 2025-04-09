@@ -3,7 +3,7 @@ from typing import Annotated
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, Request, Response, File, Form
+from fastapi import FastAPI, File, Form, Request, Response
 from starlette.responses import JSONResponse
 
 from inference.core.utils.image_utils import load_image_bgr

@@ -19,10 +19,11 @@ from inference_sdk.http.utils.loaders import (
     load_image_from_string_async,
     load_image_from_url,
     load_image_from_url_async,
+    load_nested_batches_of_inference_input,
     load_static_inference_input,
     load_static_inference_input_async,
     load_stream_inference_input,
-    uri_is_http_link, load_nested_batches_of_inference_input,
+    uri_is_http_link,
 )
 
 

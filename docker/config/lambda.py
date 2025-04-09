@@ -1,8 +1,9 @@
 import json
+
 from mangum import Mangum
 
 from inference.core.cache import cache
-from inference.core.env import MAX_ACTIVE_MODELS, ACTIVE_LEARNING_ENABLED
+from inference.core.env import ACTIVE_LEARNING_ENABLED, MAX_ACTIVE_MODELS
 from inference.core.interfaces.http.http_api import HttpInterface
 from inference.core.managers.active_learning import ActiveLearningManager
 from inference.core.managers.base import ModelManager
@@ -11,7 +12,6 @@ from inference.core.registries.roboflow import (
     RoboflowModelRegistry,
 )
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
-
 
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 

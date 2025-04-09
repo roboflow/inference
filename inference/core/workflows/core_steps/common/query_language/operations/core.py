@@ -38,6 +38,9 @@ from inference.core.workflows.core_steps.common.query_language.operations.detect
 from inference.core.workflows.core_steps.common.query_language.operations.dictionaries.base import (
     dictionary_to_json,
 )
+from inference.core.workflows.core_steps.common.query_language.operations.frame_metadata.base import (
+    extract_frame_metadata,
+)
 from inference.core.workflows.core_steps.common.query_language.operations.generic.base import (
     apply_lookup,
     generate_random_number,
@@ -67,6 +70,9 @@ from inference.core.workflows.core_steps.common.query_language.operations.string
     string_to_lower,
     string_to_upper,
     to_string,
+)
+from inference.core.workflows.core_steps.common.query_language.operations.timestamps.base import (
+    timestamp_to_iso_format,
 )
 
 
@@ -192,6 +198,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "SequenceLength": get_sequence_length,
     "SequenceElementsCount": get_sequence_elements_count,
     "ExtractImageProperty": extract_image_property,
+    "ExtractFrameMetadata": extract_frame_metadata,
     "Multiply": multiply,
     "Divide": divide,
     "DetectionsSelection": select_detections,
@@ -203,6 +210,7 @@ REGISTERED_SIMPLE_OPERATIONS = {
     "DetectionsToDictionary": detections_to_dictionary,
     "ConvertDictionaryToJSON": dictionary_to_json,
     "PickDetectionsByParentClass": pick_detections_by_parent_class,
+    "TimestampToISOFormat": timestamp_to_iso_format,
 }
 
 REGISTERED_COMPOUND_OPERATIONS_BUILDERS = {

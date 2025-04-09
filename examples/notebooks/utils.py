@@ -1,10 +1,11 @@
 import getpass
-import requests
 
 import cv2
 import numpy as np
+import requests
 
 from inference.core.env import API_KEY
+
 
 def get_roboflow_api_key():
     if API_KEY is None:

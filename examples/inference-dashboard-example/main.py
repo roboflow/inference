@@ -1,10 +1,11 @@
-import cv2
-import pandas as pd
-import pickle
-import requests
-import matplotlib.pyplot as plt
 import argparse
 import os
+import pickle
+
+import cv2
+import matplotlib.pyplot as plt
+import pandas as pd
+import requests
 
 
 def parse_args():

@@ -103,6 +103,12 @@ class ImageProperty(Enum):
     ASPECT_RATIO = "aspect_ratio"
 
 
+class FrameMetadataProperty(Enum):
+    FRAME_NUMBER = "frame_number"
+    FRAME_TIMESTAMP = "frame_timestamp"
+    SECONDS_SINCE_START = "seconds_since_start"
+
+
 class DetectionsSelectionMode(Enum):
     LEFT_MOST = "left_most"
     RIGHT_MOST = "right_most"

@@ -1,4 +1,5 @@
 import base64
+from datetime import datetime
 
 import numpy as np
 import pytest
@@ -16,6 +17,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_optional_string_kind,
     deserialize_point_kind,
     deserialize_rgb_color_kind,
+    deserialize_timestamp,
     deserialize_zone_kind,
 )
 from inference.core.workflows.errors import RuntimeInputError
@@ -681,3 +683,20 @@ def test_deserialize_bytes_kind_when_base64_string_given() -> None:
 
     # then
     assert result == b"data"
+
+
+def test_deserialize_timestamp_when_valid_input_provided() -> None:
+    # given
+    timestamp = datetime.now()
+
+    # when
+    result = deserialize_timestamp(parameter="some", value=timestamp)
+
+    # then
+    assert result == timestamp
+
+
+def test_deserialize_timestamp_when_invalid_input_provided() -> None:
+    # when
+    with pytest.raises(RuntimeInputError):
+        _ = deserialize_timestamp(parameter="some", value="invalid")

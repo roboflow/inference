@@ -1,24 +1,21 @@
 import base64
 import json
 import os
-from typing import Literal
-
-import requests
 import time
-
-import pytest
-
+from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
+from typing import Literal
+
+import pytest
+import requests
 from PIL import Image
 from requests_toolbelt.multipart.encoder import MultipartEncoder
-from copy import deepcopy
 
 from tests.common import (
     assert_classification_predictions_match,
     assert_localized_predictions_match,
 )
-
 
 PIXEL_TOLERANCE = 2
 CONFIDENCE_TOLERANCE = 0.02

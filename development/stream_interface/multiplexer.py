@@ -2,7 +2,11 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from inference.core.interfaces.camera.entities import FrameTimestamp, FrameID, VideoFrame
+from inference.core.interfaces.camera.entities import (
+    FrameID,
+    FrameTimestamp,
+    VideoFrame,
+)
 from inference.core.interfaces.camera.exceptions import EndOfStreamError
 from inference.core.interfaces.camera.video_source import VideoSource
 

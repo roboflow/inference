@@ -48,6 +48,7 @@ def test_create_empty_usage_dict():
                     "python_version": sys.version.split()[0],
                     "inference_version": inference_version,
                     "enterprise": False,
+                    "execution_duration": 0,
                 }
             }
         }
@@ -72,6 +73,7 @@ def test_merge_usage_dicts_merge_with_empty():
         "timestamp_stop": 1721032989934855001,
         "processed_frames": 1,
         "source_duration": 1,
+        "execution_duration": 0,
     }
     usage_payload_2 = {"resource_id": "some", "api_key_hash": "some"}
 
@@ -105,6 +107,7 @@ def test_merge_usage_dicts():
         "timestamp_stop": 1721032989934855003,
         "processed_frames": 2,
         "source_duration": 2,
+        "execution_duration": 0,
     }
 
 
@@ -238,6 +241,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934855001,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 1,
                 },
                 "resource2": {
                     "api_key_hash": "fake_api1_hash",
@@ -246,6 +250,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934855001,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 1,
                 },
             },
             "fake_api2_hash": {
@@ -256,6 +261,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934856001,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 1,
                 },
                 "resource2": {
                     "api_key_hash": "fake_api2_hash",
@@ -264,6 +270,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934856001,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 1,
                 },
             },
         },
@@ -276,6 +283,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934855003,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 2,
                 },
                 "resource3": {
                     "api_key_hash": "fake_api1_hash",
@@ -284,6 +292,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934855001,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 1,
                 },
             },
         },
@@ -296,6 +305,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934856003,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 3,
                 },
                 "resource3": {
                     "api_key_hash": "fake_api2_hash",
@@ -304,6 +314,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934856001,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 4,
                 },
             },
         },
@@ -323,6 +334,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934855003,
                     "processed_frames": 2,
                     "source_duration": 2,
+                    "execution_duration": 3,
                 },
                 "resource2": {
                     "api_key_hash": "fake_api1_hash",
@@ -331,6 +343,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934855001,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 1,
                 },
                 "resource3": {
                     "api_key_hash": "fake_api1_hash",
@@ -339,6 +352,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934855001,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 1,
                 },
             },
             "fake_api2_hash": {
@@ -349,6 +363,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934856003,
                     "processed_frames": 2,
                     "source_duration": 2,
+                    "execution_duration": 4,
                 },
                 "resource2": {
                     "api_key_hash": "fake_api2_hash",
@@ -357,6 +372,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934856001,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 1,
                 },
                 "resource3": {
                     "api_key_hash": "fake_api2_hash",
@@ -365,6 +381,7 @@ def test_zip_usage_payloads():
                     "timestamp_stop": 1721032989934856001,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 4,
                 },
             },
         },
@@ -382,6 +399,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource
                     "is_gpu_available": False,
                     "python_version": "3.10.0",
                     "inference_version": "10.10.10",
+                    "execution_duration": 0,
                 },
             },
         },
@@ -394,6 +412,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource
                     "timestamp_stop": 1721032989934856003,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 0,
                 },
             },
         },
@@ -413,6 +432,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource
                     "timestamp_stop": 1721032989934856003,
                     "processed_frames": 1,
                     "source_duration": 1,
+                    "execution_duration": 0,
                 },
             },
         },
@@ -425,6 +445,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_no_resource
                     "is_gpu_available": False,
                     "python_version": "3.10.0",
                     "inference_version": "10.10.10",
+                    "execution_duration": 0,
                 },
             },
         },
@@ -478,6 +499,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id():
                     "is_gpu_available": False,
                     "python_version": "3.10.0",
                     "inference_version": "10.10.10",
+                    "execution_duration": 0,
                 },
             },
         },
@@ -531,6 +553,7 @@ def test_zip_usage_payloads_with_system_info_missing_resource_id_and_api_key():
                     "is_gpu_available": False,
                     "python_version": "3.10.0",
                     "inference_version": "10.10.10",
+                    "execution_duration": 0,
                 },
             },
         },
@@ -550,6 +573,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "source_duration": 1,
                     "fps": 10,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
                 "resource2": {
                     "api_key_hash": "fake_api1_hash",
@@ -558,6 +582,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934855001,
                     "processed_frames": 1,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
             },
             "fake_api2_hash": {
@@ -570,6 +595,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "source_duration": 1,
                     "fps": 10,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
                 "resource2": {
                     "api_key_hash": "fake_api2_hash",
@@ -578,6 +604,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934856001,
                     "processed_frames": 1,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
             },
         },
@@ -592,6 +619,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "source_duration": 1,
                     "fps": 10,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
                 "resource3": {
                     "api_key_hash": "fake_api1_hash",
@@ -600,6 +628,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934855003,
                     "processed_frames": 1,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
             },
         },
@@ -614,6 +643,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "source_duration": 1,
                     "fps": 10,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
                 "resource3": {
                     "api_key_hash": "fake_api2_hash",
@@ -622,6 +652,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934856003,
                     "processed_frames": 1,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
             },
         },
@@ -636,6 +667,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "source_duration": 1,
                     "fps": 10,
                     "exec_session_id": "session_2",
+                    "execution_duration": 0,
                 },
                 "resource2": {
                     "api_key_hash": "fake_api1_hash",
@@ -644,6 +676,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934855004,
                     "processed_frames": 1,
                     "exec_session_id": "session_2",
+                    "execution_duration": 0,
                 },
                 "resource3": {
                     "api_key_hash": "fake_api1_hash",
@@ -664,6 +697,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "source_duration": 1,
                     "fps": 10,
                     "exec_session_id": "session_2",
+                    "execution_duration": 0,
                 },
                 "resource2": {
                     "api_key_hash": "fake_api2_hash",
@@ -672,6 +706,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934856004,
                     "processed_frames": 1,
                     "exec_session_id": "session_2",
+                    "execution_duration": 0,
                 },
                 "resource3": {
                     "api_key_hash": "fake_api2_hash",
@@ -680,6 +715,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934856004,
                     "processed_frames": 1,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
             },
             "fake_api3_hash": {
@@ -692,6 +728,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "source_duration": 1,
                     "fps": 10,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
             },
         },
@@ -713,6 +750,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "source_duration": 2,
                     "fps": 10,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
             },
             "fake_api2_hash": {
@@ -725,6 +763,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "source_duration": 2,
                     "fps": 10,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
             },
             "fake_api3_hash": {
@@ -737,6 +776,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "source_duration": 1,
                     "fps": 10,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
             },
         },
@@ -751,6 +791,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "source_duration": 1,
                     "fps": 10,
                     "exec_session_id": "session_2",
+                    "execution_duration": 0,
                 },
             },
             "fake_api2_hash": {
@@ -763,6 +804,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "source_duration": 1,
                     "fps": 10,
                     "exec_session_id": "session_2",
+                    "execution_duration": 0,
                 },
             },
         },
@@ -775,6 +817,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934855001,
                     "processed_frames": 1,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
                 "resource3": {
                     "api_key_hash": "fake_api1_hash",
@@ -783,6 +826,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934855004,
                     "processed_frames": 2,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
             },
             "fake_api2_hash": {
@@ -793,6 +837,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934856001,
                     "processed_frames": 1,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
                 "resource3": {
                     "api_key_hash": "fake_api2_hash",
@@ -801,6 +846,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934856004,
                     "processed_frames": 2,
                     "exec_session_id": "session_1",
+                    "execution_duration": 0,
                 },
             },
         },
@@ -813,6 +859,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934855004,
                     "processed_frames": 1,
                     "exec_session_id": "session_2",
+                    "execution_duration": 0,
                 },
             },
             "fake_api2_hash": {
@@ -823,6 +870,7 @@ def test_zip_usage_payloads_with_different_exec_session_ids():
                     "timestamp_stop": 1721032989934856004,
                     "processed_frames": 1,
                     "exec_session_id": "session_2",
+                    "execution_duration": 0,
                 },
             },
         },
@@ -880,12 +928,13 @@ def test_record_malformed_usage():
     )
 
     # then
-    assert "fake" in collector._usage
-    assert "model:None" in collector._usage["fake"]
-    assert collector._usage["fake"]["model:None"]["processed_frames"] == 0
-    assert collector._usage["fake"]["model:None"]["fps"] == 0
-    assert collector._usage["fake"]["model:None"]["source_duration"] == 0
-    assert collector._usage["fake"]["model:None"]["category"] == "model"
-    assert collector._usage["fake"]["model:None"]["resource_id"] == None
-    assert collector._usage["fake"]["model:None"]["resource_details"] == "{}"
-    assert collector._usage["fake"]["model:None"]["api_key_hash"] == "fake"
+    api_key = "fake"
+    assert api_key in collector._usage
+    assert "model:None" in collector._usage[api_key]
+    assert collector._usage[api_key]["model:None"]["processed_frames"] == 0
+    assert collector._usage[api_key]["model:None"]["fps"] == 0
+    assert collector._usage[api_key]["model:None"]["source_duration"] == 0
+    assert collector._usage[api_key]["model:None"]["category"] == "model"
+    assert collector._usage[api_key]["model:None"]["resource_id"] == None
+    assert collector._usage[api_key]["model:None"]["resource_details"] == "{}"
+    assert collector._usage[api_key]["model:None"]["api_key_hash"] == api_key

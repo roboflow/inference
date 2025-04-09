@@ -1,4 +1,5 @@
 import base64
+from datetime import datetime
 
 import cv2
 import numpy as np
@@ -268,6 +269,27 @@ def test_serialize_wildcard_kind_when_dictionary_is_given() -> None:
     assert (
         recovered_image == np_image
     ).all(), "Recovered image should be equal to input image"
+
+
+def test_serializer_serialize_wildcard_kind_when_timestamps_are_present() -> None:
+    # given
+    timestamp = datetime.now()
+    expected_result = timestamp.isoformat()
+    input_value = {
+        "some": [1, 2, timestamp],
+        "other": [1, None, {"value": timestamp}],
+        "yet-another": timestamp,
+    }
+
+    # when
+    result = serialize_wildcard_kind(value=input_value)
+
+    # then
+    assert result == {
+        "some": [1, 2, expected_result],
+        "other": [1, None, {"value": expected_result}],
+        "yet-another": expected_result,
+    }
 
 
 def test_serialize_wildcard_kind_when_list_is_given() -> None:
