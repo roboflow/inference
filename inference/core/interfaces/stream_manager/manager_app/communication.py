@@ -36,8 +36,8 @@ def receive_socket_data(
 
     if payload_size <= 0:
         raise MalformedHeaderError(
-            private_message=f"Header is indicating a non-positive payload size: {payload_size}",
-            public_message=f"Header is indicating a non-positive payload size: {payload_size}",
+            private_message=f"Header is indicating a non positive payload size: {payload_size}",
+            public_message=f"Header is indicating a non positive payload size: {payload_size}",
         )
 
     # Efficiently read the payload
@@ -48,8 +48,8 @@ def receive_socket_data(
         chunk = source.recv(min(buffer_size, remaining_payload_size))
         if not chunk:
             raise TransmissionChannelClosed(
-                private_message="Socket was closed before the payload was fully received.",
-                public_message="Socket was closed before the payload was fully received.",
+                private_message="Socket was closed to read before payload was decoded.",
+                public_message="Socket was closed to read before payload was decoded.",
             )
         received.extend(chunk)
         remaining_payload_size -= len(
