@@ -335,10 +335,12 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             providers = [
                 "CUDAExecutionProvider",
                 "CPUExecutionProvider",
-            ] #"OpenVINOExecutionProvider" dropped until further investigation is done
+            ]  # "OpenVINOExecutionProvider" dropped until further investigation is done
 
             if not self.load_weights:
-                providers = ["CPUExecutionProvider"] #"OpenVINOExecutionProvider" dropped until further investigation is done
+                providers = [
+                    "CPUExecutionProvider"
+                ]  # "OpenVINOExecutionProvider" dropped until further investigation is done
 
             try:
                 session_options = onnxruntime.SessionOptions()
