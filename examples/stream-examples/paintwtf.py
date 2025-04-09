@@ -1,8 +1,9 @@
 import cv2
+
 import inference
 from inference.core.utils.postprocess import cosine_similarity
-
 from inference.models import Clip
+
 clip = Clip()
 
 prompt = "an ace of spades playing card"

@@ -1,16 +1,22 @@
 from datetime import date, datetime
+from enum import Enum
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
+
+
+class DataSource(str, Enum):
+    LOCAL_DIRECTORY = "local-directory"
+    REFERENCES_FILE = "references-file"
 
 
 class ShardDetails(BaseModel):
     shard_id: str = Field(alias="shardId")
     status_name: str = Field(alias="statusName")
     status_type: str = Field(alias="statusType")
-    is_terminal: bool = Field(alias="isTerminal")
     event_timestamp: datetime = Field(alias="eventTimestamp")
     shard_objects_count: int = Field(alias="shardObjectsCount")
+    status_metadata: Optional[dict] = Field(alias="statusMetadata", default=None)
 
 
 class BatchMetadata(BaseModel):
@@ -18,8 +24,8 @@ class BatchMetadata(BaseModel):
     batch_id: str = Field(alias="batchId")
     batch_type: str = Field(alias="batchType")
     batch_content_type: str = Field(alias="batchContentType")
-    created_date: date = Field(alias="createdDate")
-    expiry_date: date = Field(alias="expiryDate")
+    created_date: datetime = Field(alias="createdDate")
+    expiry_date: datetime = Field(alias="expiryDate")
 
 
 class ListBatchesResponse(BaseModel):
@@ -67,3 +73,19 @@ class ListBatchResponse(BaseModel):
 class DownloadLogEntry(BaseModel):
     file_metadata: FileMetadata
     local_path: str
+
+
+class ImageReferencesIngestResponse(BaseModel):
+    shard_ids: Optional[List[str]] = Field(alias="shardIds", default=None)
+    ingest_id: str = Field(alias="ingestId")
+    duplicated: Optional[bool] = Field(default=None)
+
+
+class VideoReferencesIngestResponse(BaseModel):
+    ingest_id: str = Field(alias="ingestId")
+    duplicated: Optional[bool] = Field(default=None)
+
+
+class PageOfBatchShardsStatuses(BaseModel):
+    shards: List[ShardDetails]
+    next_page_token: Optional[str] = Field(alias="nextPageToken", default=None)
