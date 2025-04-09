@@ -27,7 +27,7 @@ COPY requirements/requirements.cpu.txt \
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
-RUN pip3 install --upgrade pip && pip3 install "wheel>=0.45.0,<=0.45.1"
+RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
 RUN pip3 install \
     -r _requirements.txt \
     -r requirements.cpu.txt \
