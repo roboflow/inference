@@ -34,25 +34,25 @@ class BlockManifest(WorkflowBlockManifest):
             "short_description": "Run Depth Estimation on an image.",
             "long_description": (
                 """
-                This workflow block performs depth estimation on images using Apple's DepthPro model. It analyzes the spatial relationships
+                🎯 This workflow block performs depth estimation on images using Apple's DepthPro model. It analyzes the spatial relationships
                 and depth information in images to create a depth map where:
 
-                - Each pixel's value represents its relative distance from the camera
-                - Lower values (darker colors) indicate closer objects
-                - Higher values (lighter colors) indicate further objects
+                📊 Each pixel's value represents its relative distance from the camera
+                🔍 Lower values (darker colors) indicate closer objects
+                🔭 Higher values (lighter colors) indicate further objects
 
                 The model outputs:
-                1. A depth map showing the relative distances of objects in the scene
-                2. The camera's field of view (in degrees)
-                3. The camera's focal length
+                1. 🗺️ A depth map showing the relative distances of objects in the scene
+                2. 📐 The camera's field of view (in degrees)
+                3. 🔬 The camera's focal length
 
                 This is particularly useful for:
-                - Understanding 3D structure from 2D images
-                - Creating depth-aware visualizations
-                - Analyzing spatial relationships in scenes
-                - Applications in augmented reality and 3D reconstruction
+                - 🏗️ Understanding 3D structure from 2D images
+                - 🎨 Creating depth-aware visualizations
+                - 📏 Analyzing spatial relationships in scenes
+                - 🕶️ Applications in augmented reality and 3D reconstruction
 
-                The model runs efficiently on Apple Silicon (M1-M4) using Metal Performance Shaders (MPS) for accelerated inference.
+                ⚡ The model runs efficiently on Apple Silicon (M1-M4) using Metal Performance Shaders (MPS) for accelerated inference.
                 """
             ),
             "license": "Apache-2.0",
