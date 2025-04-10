@@ -5,7 +5,6 @@ from inference.core.env import (
     API_KEY_ENV_NAMES,
     QWEN_2_5_ENABLED,
     SMOLVLM2_ENABLED,
-    DEPTH_ESTIMATION_ENABLED,
 )
 from inference.core.exceptions import MissingApiKeyError
 from inference.core.models.base import Model
