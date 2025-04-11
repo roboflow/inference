@@ -10,7 +10,9 @@ def get_model_id_chunks(
     model_id_chunks = model_id.split("/")
     if len(model_id_chunks) != 2:
         raise InvalidModelIDError(f"Model ID: `{model_id}` is invalid.")
+        
     dataset_id, version_id = model_id_chunks[0], model_id_chunks[1]
+    
     if dataset_id.lower() in {
         "clip",
         "doctr",
@@ -24,9 +26,12 @@ def get_model_id_chunks(
         "trocr",
         "yolo_world",
         "smolvlm2",
+        "depth_estimation",
+        "depth-anything",
     }:
         return dataset_id, version_id
+        
     try:
         return dataset_id, str(int(version_id))
-    except Exception:
+    except Exception as e:
         return model_id, None

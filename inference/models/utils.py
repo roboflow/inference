@@ -17,6 +17,7 @@ from inference.core.models.stubs import (
 from inference.core.registries.roboflow import get_model_type
 from inference.core.utils.function import deprecated
 from inference.core.warnings import ModelDependencyMissing
+from inference.models.depth_estimation.depthestimation import DepthEstimator
 from inference.models import (
     YOLACT,
     ResNetClassification,
@@ -237,6 +238,7 @@ ROBOFLOW_MODEL_TYPES = {
     ("keypoint-detection", "yolov8m-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8l-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8x-pose"): YOLOv8KeypointsDetection,
+    ("depth-estimation", "Depth-Anything-V2-Small-hf"): DepthEstimator,
 }
 
 try:
@@ -408,6 +410,7 @@ except:
         category=ModelDependencyMissing,
     )
 
+
 try:
     from inference.models import DocTR
 
@@ -447,7 +450,6 @@ except:
         f"Use pip install 'inference[yolo-world]' to install missing requirements.",
         category=ModelDependencyMissing,
     )
-
 
 def get_model(model_id, api_key=API_KEY, **kwargs) -> Model:
     task, model = get_model_type(model_id, api_key=api_key)

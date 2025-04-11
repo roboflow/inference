@@ -55,6 +55,7 @@ GENERIC_MODELS = {
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
     "smolvlm2": ("lmm", "smolvlm-2.2b-instruct"),
+    "depth-anything": ("depth-estimation", "Depth-Anything-V2-Small-hf"),
 }
 
 STUB_VERSION_ID = "0"
@@ -78,12 +79,17 @@ class RoboflowModelRegistry(ModelRegistry):
         Raises:
             ModelNotRecognisedError: If the model type is not supported or found.
         """
-        model_type = get_model_type(model_id, api_key)
-        logger.debug(f"Model type: {model_type}")
+        try:
+            model_type = get_model_type(model_id, api_key)
+            logger.debug(f"Model type: {model_type}")
 
-        if model_type not in self.registry_dict:
-            raise ModelNotRecognisedError(f"Model type not supported: {model_type}")
-        return self.registry_dict[model_type]
+            if model_type not in self.registry_dict:
+                raise ModelNotRecognisedError(f"Model type not supported: {model_type}")
+                
+            model_class = self.registry_dict[model_type]
+            return model_class
+        except Exception as e:
+            raise
 
 
 @ttl_cache(ttl=MODELS_CACHE_AUTH_CACHE_TTL, maxsize=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
