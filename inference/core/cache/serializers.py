@@ -118,10 +118,8 @@ def from_instance_segmentation_response(
 
 
 def from_keypoints_detection_response(response: KeypointsDetectionInferenceResponse):
-    predictions = []
-    for pred in response.predictions:
-        for keypoint in pred.keypoints:
-            predictions.append(
-                {"class": keypoint.class_name, "confidence": keypoint.confidence}
-            )
-    return predictions
+    return [
+        {"class": keypoint.class_name, "confidence": keypoint.confidence}
+        for pred in response.predictions
+        for keypoint in pred.keypoints
+    ]

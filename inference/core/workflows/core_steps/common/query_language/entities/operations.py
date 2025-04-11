@@ -30,6 +30,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    TIMESTAMP_KIND,
     WILDCARD_KIND,
     ZONE_KIND,
 )
@@ -401,11 +402,22 @@ class ExtractFrameMetadata(OperationDefinition):
         json_schema_extra={
             "description": "Extracts specific property of frame (frame number, timestamp)",
             "input_kind": [IMAGE_KIND],
-            "output_kind": [INTEGER_KIND],
+            "output_kind": [INTEGER_KIND, FLOAT_KIND, TIMESTAMP_KIND],
         },
     )
     type: Literal["ExtractFrameMetadata"]
     property_name: FrameMetadataProperty
+
+
+class TimestampToISOFormat(OperationDefinition):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Serializes timestamp to ISO format.",
+            "input_kind": [TIMESTAMP_KIND],
+            "output_kind": [STRING_KIND],
+        },
+    )
+    type: Literal["TimestampToISOFormat"]
 
 
 class ConvertImageToJPEG(OperationDefinition):
@@ -621,6 +633,7 @@ AllOperationsType = Annotated[
         DetectionsToDictionary,
         ConvertDictionaryToJSON,
         PickDetectionsByParentClass,
+        TimestampToISOFormat,
     ],
     Field(discriminator="type"),
 ]

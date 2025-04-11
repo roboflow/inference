@@ -135,6 +135,7 @@ nav:
           - User Guide: workflows/batch_processing/about.md
           - Integration: workflows/batch_processing/integration.md
           - API Reference: workflows/batch_processing/api_reference.md
+          - Known Issues: workflows/batch_processing/known_issues.md
       - Developer Guide:
         - Workflows Definitions: workflows/definitions.md
         - Workflow Execution: workflows/workflow_execution.md

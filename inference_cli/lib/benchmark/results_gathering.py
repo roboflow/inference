@@ -32,7 +32,8 @@ class InferenceStatistics:
     def to_string(self) -> str:
         return STATISTICS_FORMAT.format(
             average_inference_latency_ms=self.average_inference_latency_ms,
-            average_execution_time_per_image_ms=self.average_execution_time_per_image_ms or "N/A",
+            average_execution_time_per_image_ms=self.average_execution_time_per_image_ms
+            or "N/A",
             requests_per_second=self.requests_per_second,
             p50_inference_latency_ms=self.p50_inference_latency_ms,
             p75_inference_latency_ms=self.p75_inference_latency_ms,
@@ -54,8 +55,12 @@ class ResultsCollector:
         if self._benchmark_start is None:
             self._benchmark_start = datetime.now()
 
-    def register_inference_duration(self, batch_size: int, duration: float, execution_time: Optional[float] = None) -> None:
-        self._inference_details.append((datetime.now(), batch_size, duration, execution_time))
+    def register_inference_duration(
+        self, batch_size: int, duration: float, execution_time: Optional[float] = None
+    ) -> None:
+        self._inference_details.append(
+            (datetime.now(), batch_size, duration, execution_time)
+        )
 
     def register_error(self, batch_size: int, status_code: str) -> None:
         self._errors.append((datetime.now(), batch_size, status_code))
