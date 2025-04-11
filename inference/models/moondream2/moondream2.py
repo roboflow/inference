@@ -34,6 +34,7 @@ class Moondream2(TransformerModel):
 
         super().__init__(self.endpoint, *args, **kwargs)
 
+    def initialize_model(self):
         model = import_class_from_file(
             os.path.join(self.cache_dir, "hf_moondream.py"),
             "HfMoondream",

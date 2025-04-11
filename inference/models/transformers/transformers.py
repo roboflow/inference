@@ -75,8 +75,8 @@ class TransformerModel(RoboflowInferenceModel):
         self.cache_model_artefacts()
 
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
-        if model_id != "moondream2/moondream2-2b":
-            self.initialize_model()
+        
+        self.initialize_model()
 
     def initialize_model(self):
         if not self.load_base_from_roboflow:
