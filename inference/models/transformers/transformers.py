@@ -84,19 +84,17 @@ class TransformerModel(RoboflowInferenceModel):
         else:
             model_id = self.cache_dir
 
-        if not self.model:
-            self.model = (
-                self.transformers_class.from_pretrained(
-                    model_id,
-                    cache_dir=model_id,
-                    device_map=DEVICE,
-                    token=self.huggingface_token,
-                    torch_dtype=self.default_dtype
-                )
-                .eval()
-                .to(self.dtype)
+        self.model = (
+            self.transformers_class.from_pretrained(
+                model_id,
+                cache_dir=model_id,
+                device_map=DEVICE,
+                token=self.huggingface_token,
+                torch_dtype=self.default_dtype
             )
-            
+            .eval()
+            .to(self.dtype)
+        )
 
         self.processor = self.processor_class.from_pretrained(
             model_id, cache_dir=cache_dir, token=self.huggingface_token
@@ -116,13 +114,16 @@ class TransformerModel(RoboflowInferenceModel):
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
     ) -> LMMInferenceResponse:
-        text = predictions[0]
-        image_dims = preprocess_return_metadata["image_dims"]
-        response = LMMInferenceResponse(
-            response=text,
-            image=InferenceResponseImage(width=image_dims[0], height=image_dims[1]),
-        )
-        return [response]
+        if kwargs.get("task_type") == "phrase-grounded-object-detection":
+            return predictions
+        else:
+            text = predictions[0]
+            image_dims = preprocess_return_metadata["image_dims"]
+            response = LMMInferenceResponse(
+                response=text,
+                image=InferenceResponseImage(width=image_dims[0], height=image_dims[1]),
+            )
+            return [response]
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         model_inputs = self.processor(

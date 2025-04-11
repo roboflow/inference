@@ -17,7 +17,7 @@ api_key = os.environ.get("API_KEY")
 @pytest.mark.skipif(
     bool_env(os.getenv("SKIP_MOONDREAM2_TEST", False))
     or bool_env(os.getenv("SKIP_LMM_TEST", False)),
-    reason="Skipping SmolVLM test",
+    reason="Skipping Moondream2 test",
 )
 @pytest.mark.parametrize("model_id", MOONDREAM2_ALIASES.keys())
 def test_moondream2_inference_object_detection(
@@ -30,7 +30,7 @@ def test_moondream2_inference_object_detection(
             "type": "url",
             "value": "https://media.roboflow.com/dog.jpeg",
         },
-        "task_type": "detect",
+        "task_type": "phrase-grounded-object-detection",
         "prompt": "dog",
         "model_id": model_id,
     }

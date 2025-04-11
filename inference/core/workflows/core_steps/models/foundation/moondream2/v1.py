@@ -1,14 +1,24 @@
 from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
-
-from inference.core.entities.requests.inference import LMMInferenceRequest
+import json
+from inference.core.entities.requests.moondream2 import Moondream2InferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
+)
+from inference.core.workflows.execution_engine.entities.types import (
+    FLOAT_ZERO_TO_ONE_KIND,
+    IMAGE_KIND,
+    LIST_OF_VALUES_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
+    STRING_KIND,
+    FloatZeroToOne,
+    ImageInputField,
+    Selector,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     DICTIONARY_KIND,
@@ -22,11 +32,31 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from inference.core.workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_batch_of_sv_detections,
+    attach_prediction_type_info_to_sv_detections_batch,
+    convert_inference_detections_batch_to_sv_detections,
+)
+SUPPORTED_TASK_TYPES_LIST = [
+    {
+        "task_type": "phrase-grounded-object-detection",
+    },
+    {
+        "task_type": "caption",
+    },
+]
+
+TaskType = Literal[tuple([task["task_type"] for task in SUPPORTED_TASK_TYPES_LIST])]
 
 
 class BlockManifest(WorkflowBlockManifest):
     # SmolVLM needs an image and a text prompt.
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
+    task_type: TaskType = Field(
+        default="phrase-grounded-object-detection",
+        description="Task type to be performed by model. "
+        "Value determines required parameters and output response."
+    )
     prompt: Optional[str] = Field(
         default=None,
         description="Optional text prompt to provide additional context to Moondream2. Otherwise it will just be None",
@@ -40,18 +70,18 @@ class BlockManifest(WorkflowBlockManifest):
             "version": "v1",
             "short_description": "Run Moondream2 on an image.",
             "long_description": (
-                "This workflow block runs Moondream2, a multimodal vision-language model. You can ask questions about images"
-                " -- including documents and photos -- and get answers in natural language."
+                "This workflow block runs Moondream2, a multimodal vision-language model. You can use this block to run zero-shot object detection.",
             ),
             "license": "Apache-2.0",
             "block_type": "model",
+            "task_type_property": "task_type",
             "search_keywords": [
                 "Moondream2",
                 "moondream",
                 "vision language model",
                 "VLM",
+                "object detection"
             ],
-            "is_vlm_block": True,
             "ui_manifest": {
                 "section": "model",
                 "icon": "fal fa-atom",
@@ -68,13 +98,16 @@ class BlockManifest(WorkflowBlockManifest):
         examples=["moondream2/moondream2"],
     )
 
+
+    @classmethod
+    def get_parameters_accepting_batches(cls) -> List[str]:
+        return ["images"]
+
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="parsed_output",
-                kind=[DICTIONARY_KIND],
-                description="A parsed version of the output, provided as a dictionary containing the text.",
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
             ),
         ]
 
@@ -112,6 +145,7 @@ class Moondream2BlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_version: str,
         prompt: Optional[str],
+        task_type: TaskType,
     ) -> BlockResult:
         if self._step_execution_mode == StepExecutionMode.LOCAL:
             return self.run_locally(
@@ -147,22 +181,32 @@ class Moondream2BlockV1(WorkflowBlock):
 
         predictions = []
         for image, single_prompt in zip(inference_images, prompts):
-            # Build an LMMInferenceRequest with both prompt and image.
-            request = LMMInferenceRequest(
+            request = Moondream2InferenceRequest(
                 api_key=self._api_key,
                 model_id=model_version,
                 image=image,
-                source="workflow-execution",
-                prompt=single_prompt,
+                text=[single_prompt]
             )
             # Run inference.
             prediction = self._model_manager.infer_from_request_sync(
                 model_id=model_version, request=request
             )
-            response_text = prediction.response
-            predictions.append(
-                {
-                    "parsed_output": response_text,
-                }
-            )
-        return predictions
+            predictions.append(prediction.model_dump(by_alias=True, exclude_none=True))
+
+        return self._post_process_result(images=images, predictions=predictions)
+
+    def _post_process_result(
+        self,
+        images: Batch[WorkflowImageData],
+        predictions: List[dict],
+    ) -> BlockResult:
+        predictions = convert_inference_detections_batch_to_sv_detections(predictions)
+        predictions = attach_prediction_type_info_to_sv_detections_batch(
+            predictions=predictions,
+            prediction_type="object-detection",
+        )
+        predictions = attach_parents_coordinates_to_batch_of_sv_detections(
+            images=images,
+            predictions=predictions,
+        )
+        return [{"predictions": prediction} for prediction in predictions]

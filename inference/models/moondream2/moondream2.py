@@ -12,7 +12,8 @@ from inference.core.entities.responses.inference import (
 from inference.core.env import MODEL_CACHE_DIR
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import TransformerModel
-
+from inference.core.models.base import PreprocessReturnMetadata
+from typing import List, Tuple
 
 class Moondream2(TransformerModel):
     generation_includes_input = True
@@ -26,8 +27,11 @@ class Moondream2(TransformerModel):
     revision = "2025-03-27"
 
     def __init__(self, *args, **kwargs):
+        # if model_id in kwargs, delete
+        if "model_id" in kwargs:
+            del kwargs["model_id"]
+        
         super().__init__(self.endpoint, *args, **kwargs)
-        self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
 
         model = import_class_from_file(
             os.path.join(self.cache_dir, "hf_moondream.py"),
@@ -36,9 +40,12 @@ class Moondream2(TransformerModel):
 
         self.model = model.from_pretrained(self.cache_dir)
 
+    def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
+        return self.detect(image_in, prompt=prompt, history=history, **kwargs)
+        
     def caption(self, image_in: Image.Image, history=None, **kwargs):
         image_in = self.model.encode_image(image_in)
-        return self.model.caption(image_in, length="normal", stream=True)["caption"]
+        return self.model.caption(image_in, length="normal")["caption"]
 
     def query(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         image_in = self.model.encode_image(image_in)
@@ -91,6 +98,11 @@ class Moondream2(TransformerModel):
                 )
             )
         return responses
-
-    def get_infer_bucket_file_list(self) -> list:
-        return []
+    
+    def postprocess(
+        self,
+        predictions: Tuple[str],
+        preprocess_return_metadata: PreprocessReturnMetadata,
+        **kwargs,
+    ) -> List[ObjectDetectionInferenceResponse]:
+        return predictions
