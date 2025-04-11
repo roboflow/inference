@@ -75,7 +75,7 @@ class TransformerModel(RoboflowInferenceModel):
         self.cache_model_artefacts()
 
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
-        
+
         self.initialize_model()
 
     def initialize_model(self):
@@ -87,7 +87,7 @@ class TransformerModel(RoboflowInferenceModel):
         self.model = (
             self.transformers_class.from_pretrained(
                 model_id,
-                cache_dir=model_id,
+                cache_dir=cache_dir,
                 device_map=DEVICE,
                 token=self.huggingface_token,
                 torch_dtype=self.default_dtype,
@@ -114,16 +114,13 @@ class TransformerModel(RoboflowInferenceModel):
         preprocess_return_metadata: PreprocessReturnMetadata,
         **kwargs,
     ) -> LMMInferenceResponse:
-        if kwargs.get("task_type") == "phrase-grounded-object-detection":
-            return predictions
-        else:
-            text = predictions[0]
-            image_dims = preprocess_return_metadata["image_dims"]
-            response = LMMInferenceResponse(
-                response=text,
-                image=InferenceResponseImage(width=image_dims[0], height=image_dims[1]),
-            )
-            return [response]
+        text = predictions[0]
+        image_dims = preprocess_return_metadata["image_dims"]
+        response = LMMInferenceResponse(
+            response=text,
+            image=InferenceResponseImage(width=image_dims[0], height=image_dims[1]),
+        )
+        return [response]
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         model_inputs = self.processor(
@@ -215,7 +212,6 @@ class TransformerModel(RoboflowInferenceModel):
         files_to_download = list(weights.keys())
         for file_name in files_to_download:
             weights_url = weights[file_name]
-            print(f"Downloading {file_name}")
             t1 = perf_counter()
             filename = weights_url.split("?")[0].split("/")[-1]
             if filename.endswith(".npz"):
