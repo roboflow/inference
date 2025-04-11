@@ -1,29 +1,30 @@
+import json
 from typing import List, Literal, Optional, Type, Union
 
 from pydantic import ConfigDict, Field
-import json
+
 from inference.core.entities.requests.moondream2 import Moondream2InferenceRequest
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
+from inference.core.workflows.core_steps.common.utils import (
+    attach_parents_coordinates_to_batch_of_sv_detections,
+    attach_prediction_type_info_to_sv_detections_batch,
+    convert_inference_detections_batch_to_sv_detections,
+)
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
     OutputDefinition,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    DICTIONARY_KIND,
     FLOAT_ZERO_TO_ONE_KIND,
     IMAGE_KIND,
     LIST_OF_VALUES_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
+    ROBOFLOW_MODEL_ID_KIND,
     STRING_KIND,
     FloatZeroToOne,
-    ImageInputField,
-    Selector,
-)
-from inference.core.workflows.execution_engine.entities.types import (
-    DICTIONARY_KIND,
-    IMAGE_KIND,
-    ROBOFLOW_MODEL_ID_KIND,
     ImageInputField,
     Selector,
 )
@@ -32,11 +33,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from inference.core.workflows.core_steps.common.utils import (
-    attach_parents_coordinates_to_batch_of_sv_detections,
-    attach_prediction_type_info_to_sv_detections_batch,
-    convert_inference_detections_batch_to_sv_detections,
-)
+
 SUPPORTED_TASK_TYPES_LIST = [
     {
         "task_type": "phrase-grounded-object-detection",
@@ -55,7 +52,7 @@ class BlockManifest(WorkflowBlockManifest):
     task_type: TaskType = Field(
         default="phrase-grounded-object-detection",
         description="Task type to be performed by model. "
-        "Value determines required parameters and output response."
+        "Value determines required parameters and output response.",
     )
     prompt: Optional[str] = Field(
         default=None,
@@ -80,7 +77,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "moondream",
                 "vision language model",
                 "VLM",
-                "object detection"
+                "object detection",
             ],
             "ui_manifest": {
                 "section": "model",
@@ -97,7 +94,6 @@ class BlockManifest(WorkflowBlockManifest):
         description="The Moondream2 model to be used for inference.",
         examples=["moondream2/moondream2"],
     )
-
 
     @classmethod
     def get_parameters_accepting_batches(cls) -> List[str]:
@@ -185,7 +181,7 @@ class Moondream2BlockV1(WorkflowBlock):
                 api_key=self._api_key,
                 model_id=model_version,
                 image=image,
-                text=[single_prompt]
+                text=[single_prompt],
             )
             # Run inference.
             prediction = self._model_manager.infer_from_request_sync(

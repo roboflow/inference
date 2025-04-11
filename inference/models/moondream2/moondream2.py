@@ -1,4 +1,5 @@
 import os
+from typing import List, Tuple
 
 import torch
 from PIL import Image
@@ -10,10 +11,10 @@ from inference.core.entities.responses.inference import (
     ObjectDetectionPrediction,
 )
 from inference.core.env import MODEL_CACHE_DIR
+from inference.core.models.base import PreprocessReturnMetadata
 from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import TransformerModel
-from inference.core.models.base import PreprocessReturnMetadata
-from typing import List, Tuple
+
 
 class Moondream2(TransformerModel):
     generation_includes_input = True
@@ -30,7 +31,7 @@ class Moondream2(TransformerModel):
         # if model_id in kwargs, delete
         if "model_id" in kwargs:
             del kwargs["model_id"]
-        
+
         super().__init__(self.endpoint, *args, **kwargs)
 
         model = import_class_from_file(
@@ -42,7 +43,7 @@ class Moondream2(TransformerModel):
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
         return self.detect(image_in, prompt=prompt, history=history, **kwargs)
-        
+
     def caption(self, image_in: Image.Image, history=None, **kwargs):
         image_in = self.model.encode_image(image_in)
         return self.model.caption(image_in, length="normal")["caption"]
@@ -98,7 +99,7 @@ class Moondream2(TransformerModel):
                 )
             )
         return responses
-    
+
     def postprocess(
         self,
         predictions: Tuple[str],

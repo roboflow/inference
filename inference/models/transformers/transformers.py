@@ -90,7 +90,7 @@ class TransformerModel(RoboflowInferenceModel):
                 cache_dir=model_id,
                 device_map=DEVICE,
                 token=self.huggingface_token,
-                torch_dtype=self.default_dtype
+                torch_dtype=self.default_dtype,
             )
             .eval()
             .to(self.dtype)
