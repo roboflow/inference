@@ -34,17 +34,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-SUPPORTED_TASK_TYPES_LIST = [
-    {
-        "task_type": "phrase-grounded-object-detection",
-    },
-    {
-        "task_type": "caption",
-    },
-]
-
-TaskType = Literal[tuple([task["task_type"] for task in SUPPORTED_TASK_TYPES_LIST])]
-
 
 class BlockManifest(WorkflowBlockManifest):
     # SmolVLM needs an image and a text prompt.
@@ -66,7 +55,6 @@ class BlockManifest(WorkflowBlockManifest):
             ),
             "license": "Apache-2.0",
             "block_type": "model",
-            "task_type_property": "task_type",
             "search_keywords": [
                 "Moondream2",
                 "moondream",
@@ -136,7 +124,6 @@ class Moondream2BlockV1(WorkflowBlock):
         images: Batch[WorkflowImageData],
         model_version: str,
         prompt: Optional[str],
-        task_type: TaskType,
     ) -> BlockResult:
         if self._step_execution_mode == StepExecutionMode.LOCAL:
             return self.run_locally(
