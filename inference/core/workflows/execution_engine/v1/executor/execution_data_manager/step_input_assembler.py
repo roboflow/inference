@@ -312,13 +312,21 @@ def get_masks_intersection_up_to_dimension(
     batch_masks: List[Set[DynamicBatchIndex]],
     dimension: int,
 ) -> Optional[Set[DynamicBatchIndex]]:
-    batch_masks_in_dimension = [
-        {mask_element[:dimension] for mask_element in batch_mask}
-        for batch_mask in batch_masks
-    ]
-    if not batch_masks_in_dimension:
+    if not batch_masks:
         return None
-    return set.intersection(*batch_masks_in_dimension)
+
+    # Initialize intersection with the first batch mask transformed up to the given dimension
+    intersection = {mask_element[:dimension] for mask_element in batch_masks[0]}
+
+    # Perform the intersection with the transformed sets of subsequent batch masks
+    for batch_mask in batch_masks[1:]:
+        intersection &= {mask_element[:dimension] for mask_element in batch_mask}
+
+        # Early exit if intersection becomes empty
+        if not intersection:
+            return set()
+
+    return intersection
 
 
 class GuardForIndicesWrapping:
