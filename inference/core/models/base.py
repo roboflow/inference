@@ -137,7 +137,7 @@ class Model(BaseInference):
             if request.id:
                 response.inference_id = request.id
 
-        if request.visualize_predictions:
+        if hasattr(request, "visualize_predictions") and request.visualize_predictions:
             for response in responses:
                 response.visualization = self.draw_predictions(request, response)
 

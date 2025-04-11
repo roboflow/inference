@@ -27,7 +27,8 @@ COPY requirements/requirements.cpu.txt \
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
-RUN pip3 install --upgrade pip  && pip3 install \
+RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
+RUN pip3 install \
     -r _requirements.txt \
     -r requirements.cpu.txt \
     -r requirements.http.txt \
@@ -61,7 +62,6 @@ ENV PORT=9001
 ENV WORKFLOWS_STEP_EXECUTION_MODE=local
 ENV WORKFLOWS_MAX_CONCURRENT_STEPS=4
 ENV API_LOGGING_ENABLED=True
-ENV ENABLE_WORKFLOWS_PROFILING=True
 ENV ENABLE_PROMETHEUS=True
 
 ENTRYPOINT uvicorn cpu_http:app --workers $NUM_WORKERS --host $HOST --port $PORT

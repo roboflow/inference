@@ -88,6 +88,7 @@ from inference.core.workflows.core_steps.common.deserializers import (
     deserialize_point_kind,
     deserialize_rgb_color_kind,
     deserialize_string_kind,
+    deserialize_timestamp,
     deserialize_video_metadata_kind,
     deserialize_zone_kind,
 )
@@ -96,6 +97,7 @@ from inference.core.workflows.core_steps.common.serializers import (
     serialise_image,
     serialise_sv_detections,
     serialize_secret,
+    serialize_timestamp,
     serialize_video_metadata_kind,
     serialize_wildcard_kind,
 )
@@ -184,6 +186,9 @@ from inference.core.workflows.core_steps.models.foundation.lmm.v1 import LMMBloc
 from inference.core.workflows.core_steps.models.foundation.lmm_classifier.v1 import (
     LMMForClassificationBlockV1,
 )
+from inference.core.workflows.core_steps.models.foundation.moondream2.v1 import (
+    Moondream2BlockV1,
+)
 from inference.core.workflows.core_steps.models.foundation.ocr.v1 import OCRModelBlockV1
 from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
     OpenAIBlockV1,
@@ -196,6 +201,9 @@ from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
 )
 from inference.core.workflows.core_steps.models.foundation.segment_anything2.v1 import (
     SegmentAnything2BlockV1,
+)
+from inference.core.workflows.core_steps.models.foundation.smolvlm.v1 import (
+    SmolVLM2BlockV1,
 )
 from inference.core.workflows.core_steps.models.foundation.stability_ai.image_gen.v1 import (
     StabilityAIImageGenBlockV1,
@@ -435,6 +443,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     SECRET_KIND,
     SERIALISED_PAYLOADS_KIND,
     STRING_KIND,
+    TIMESTAMP_KIND,
     TOP_CLASS_KIND,
     VIDEO_METADATA_KIND,
     WILDCARD_KIND,
@@ -464,6 +473,7 @@ KINDS_SERIALIZERS = {
     BAR_CODE_DETECTION_KIND.name: serialise_sv_detections,
     SECRET_KIND.name: serialize_secret,
     WILDCARD_KIND.name: serialize_wildcard_kind,
+    TIMESTAMP_KIND.name: serialize_timestamp,
 }
 KINDS_DESERIALIZERS = {
     IMAGE_KIND.name: deserialize_image_kind,
@@ -494,6 +504,7 @@ KINDS_DESERIALIZERS = {
     PARENT_ID_KIND.name: deserialize_string_kind,
     BYTES_KIND.name: deserialize_bytes_kind,
     INFERENCE_ID_KIND.name: deserialize_string_kind,
+    TIMESTAMP_KIND.name: deserialize_timestamp,
 }
 
 
@@ -628,6 +639,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         LlamaVisionBlockV1,
         ImageSlicerBlockV2,
         Qwen25VLBlockV1,
+        SmolVLM2BlockV1,
+        Moondream2BlockV1,
     ]
 
 
@@ -669,4 +682,5 @@ def load_kinds() -> List[Kind]:
         INFERENCE_ID_KIND,
         SECRET_KIND,
         EMBEDDING_KIND,
+        TIMESTAMP_KIND,
     ]

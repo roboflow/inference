@@ -147,6 +147,12 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
 
 LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
+QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
+
+SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
+
+MOONDREAM2_ENABLED = str2bool(os.getenv("MOONDREAM2_ENABLED", True))
+
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
@@ -532,6 +538,9 @@ if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
     warnings.simplefilter("ignore", ModelDependencyMissing)
 
 DISK_CACHE_CLEANUP = str2bool(os.getenv("DISK_CACHE_CLEANUP", "True"))
+MEMORY_FREE_THRESHOLD = float(
+    os.getenv("MEMORY_FREE_THRESHOLD", "0.0")
+)  # percentage of free memory, 0 disables memory pressure detection
 
 # Stream manager configuration
 try:
@@ -547,3 +556,6 @@ try:
     )
 except:
     STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE = 10
+
+# Cache metadata lock timeout in seconds, default is 1.0
+CACHE_METADATA_LOCK_TIMEOUT = float(os.getenv("CACHE_METADATA_LOCK_TIMEOUT", 1.0))

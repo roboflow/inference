@@ -1,7 +1,15 @@
+import datetime
+import os
+
+import cv2 as cv
 import numpy as np
 import pytest
 
 from inference.core.env import WORKFLOWS_MAX_CONCURRENT_STEPS
+from inference.core.interfaces.camera.video_source import VideoSource
+from inference.core.interfaces.stream.entities import VideoFrame
+from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+from inference.core.interfaces.stream.watchdog import BasePipelineWatchDog
 from inference.core.managers.base import ModelManager
 from inference.core.workflows.core_steps.common.entities import StepExecutionMode
 from inference.core.workflows.errors import StepOutputLineageError
@@ -775,3 +783,185 @@ def test_workflow_with_aspect_ratio_extraction_with_valid_input(
         "aspect_ratio",
     }, "Expected all declared outputs to be delivered"
     assert result[0]["aspect_ratio"] == 1.5, "Expected aspect ratio to be 1.5"
+
+
+WORKFLOW_WITH_FRAME_NUMBER_EXTRACTION = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "PropertyDefinition",
+            "name": "property_extraction",
+            "data": "$inputs.image",
+            "operations": [
+                {"type": "ExtractFrameMetadata", "property_name": "frame_number"}
+            ],
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "frame_number",
+            "selector": "$steps.property_extraction.output",
+        },
+    ],
+}
+
+
+def test_workflow_with_frame_number_extraction_from_photo(
+    license_plate_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_FRAME_NUMBER_EXTRACTION,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={"image": license_plate_image})
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "frame_number",
+    }, "Expected all declared outputs to be delivered"
+    assert (
+        result[0]["frame_number"] == 0
+    ), "Expected frame number to be 0 (for photos there is always only one frame)"
+
+
+WORKFLOW_WITH_FRAME_TIMESTAMP_EXTRACTION = {
+    "version": "1.0",
+    "inputs": [{"type": "WorkflowImage", "name": "image"}],
+    "steps": [
+        {
+            "type": "PropertyDefinition",
+            "name": "frame_timestamp",
+            "data": "$inputs.image",
+            "operations": [
+                {"type": "ExtractFrameMetadata", "property_name": "frame_timestamp"}
+            ],
+        },
+        {
+            "type": "PropertyDefinition",
+            "name": "frame_number",
+            "data": "$inputs.image",
+            "operations": [
+                {"type": "ExtractFrameMetadata", "property_name": "frame_number"}
+            ],
+        },
+        {
+            "type": "PropertyDefinition",
+            "name": "seconds_since_start",
+            "data": "$inputs.image",
+            "operations": [
+                {"type": "ExtractFrameMetadata", "property_name": "seconds_since_start"}
+            ],
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "frame_timestamp",
+            "selector": "$steps.frame_timestamp.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "frame_number",
+            "selector": "$steps.frame_number.output",
+        },
+        {
+            "type": "JsonField",
+            "name": "seconds_since_start",
+            "selector": "$steps.seconds_since_start.output",
+        },
+    ],
+}
+
+
+def test_workflow_with_timestamp_extraction_from_photo(
+    license_plate_image: np.ndarray,
+) -> None:
+    # given
+    workflow_init_parameters = {
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=WORKFLOW_WITH_FRAME_TIMESTAMP_EXTRACTION,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+
+    # when
+    result = execution_engine.run(runtime_parameters={"image": license_plate_image})
+
+    # then
+    assert isinstance(result, list), "Expected list to be delivered"
+    assert len(result) == 1, "Expected 1 element in the output for one input image"
+    assert set(result[0].keys()) == {
+        "frame_timestamp",
+        "frame_number",
+        "seconds_since_start",
+    }, "Expected all declared outputs to be delivered"
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.slow
+def test_workflow_with_timestamp_extraction_from_video(
+    local_video_path: str,
+) -> None:
+    # given
+    video_capture = cv.VideoCapture(local_video_path)
+    frames_count = int(round(video_capture.get(cv.CAP_PROP_FRAME_COUNT)))
+    fps = video_capture.get(cv.CAP_PROP_FPS)
+    video_capture.release()
+    last_modified = datetime.datetime.fromtimestamp(os.path.getmtime(local_video_path))
+    timestamp_created = last_modified - datetime.timedelta(seconds=frames_count / fps)
+
+    video_source = VideoSource.init(video_reference=local_video_path)
+    watchdog = BasePipelineWatchDog()
+    watchdog.register_video_sources(video_sources=[video_source])
+    predictions = []
+
+    def on_prediction(prediction: dict, video_frame: VideoFrame) -> None:
+        predictions.append(prediction)
+
+    workflow_init_parameters = {
+        "workflows_core.api_key": None,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+
+    inference_pipeline = InferencePipeline.init_with_workflow(
+        workflow_specification=WORKFLOW_WITH_FRAME_TIMESTAMP_EXTRACTION,
+        workflow_init_parameters=workflow_init_parameters,
+        video_reference=local_video_path,
+        on_prediction=on_prediction,
+        max_fps=200,
+        watchdog=watchdog,
+    )
+
+    # when
+    inference_pipeline.start()
+    inference_pipeline.join()
+
+    # then
+    assert len(predictions) == frames_count
+    assert set(predictions[0].keys()) == {
+        "frame_timestamp",
+        "frame_number",
+        "seconds_since_start",
+    }, "Expected all declared outputs to be delivered"
+
+    for i in range(1, frames_count + 1):
+        assert predictions[i - 1]["frame_number"] == i
+        assert predictions[i - 1][
+            "frame_timestamp"
+        ] == timestamp_created + datetime.timedelta(seconds=(i - 1) / fps)
+        assert predictions[i - 1]["seconds_since_start"] == (i - 1) / fps

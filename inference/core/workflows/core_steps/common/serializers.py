@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List
 
 import numpy as np
@@ -171,6 +172,8 @@ def serialize_wildcard_kind(value: Any) -> Any:
         value = serialize_list(elements=value)
     elif isinstance(value, sv.Detections):
         value = serialise_sv_detections(detections=value)
+    elif isinstance(value, datetime):
+        value = serialize_timestamp(timestamp=value)
     return value
 
 
@@ -197,3 +200,7 @@ def serialize_secret(secret: str) -> str:
     infix = "*" * MIN_SECRET_LENGTH_TO_REVEAL_PREFIX
     suffix = secret[-2:]
     return f"{prefix}{infix}{suffix}"
+
+
+def serialize_timestamp(timestamp: datetime) -> str:
+    return timestamp.isoformat()

@@ -22,7 +22,7 @@ def get_model_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional[str]:
 
 
 def get_model_resource_details_from_kwargs(
-    func_kwargs: Dict[str, Any]
+    func_kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
     resource_details = {}
     if "source" in func_kwargs:
@@ -47,7 +47,7 @@ def get_resource_details_from_workflow_json(
 
 
 def get_workflow_resource_details_from_kwargs(
-    func_kwargs: Dict[str, Any]
+    func_kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
     if "workflow" not in func_kwargs:
         return {}
@@ -123,16 +123,17 @@ def get_request_resource_id_from_kwargs(func_kwargs: Dict[str, Any]) -> Optional
 
 
 def get_request_resource_details_from_kwargs(
-    func_kwargs: Dict[str, Any]
+    func_kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
+    resource_details = {}
     if "workflow_request" in func_kwargs:
         workflow_request = func_kwargs["workflow_request"]
         if hasattr(workflow_request, "specification") and isinstance(
             workflow_request.specification, dict
         ):
-            return {
-                "steps": get_resource_details_from_workflow_json(
-                    workflow_json=workflow_request.specification,
-                )
-            }
-    return {}
+            resource_details["steps"] = get_resource_details_from_workflow_json(
+                workflow_json=workflow_request.specification,
+            )
+    if "countinference" in func_kwargs:
+        resource_details["billable"] = func_kwargs["countinference"]
+    return resource_details
