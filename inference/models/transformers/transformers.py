@@ -55,6 +55,7 @@ class TransformerModel(RoboflowInferenceModel):
     skip_special_tokens = True
     load_weights_as_transformers = False
     load_base_from_roboflow = True
+    model = None
 
     def __init__(
         self, model_id, *args, dtype=None, huggingface_token=HUGGINGFACE_TOKEN, **kwargs
@@ -74,6 +75,7 @@ class TransformerModel(RoboflowInferenceModel):
         self.cache_model_artefacts()
 
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
+
         self.initialize_model()
 
     def initialize_model(self):
@@ -241,15 +243,7 @@ class TransformerModel(RoboflowInferenceModel):
                 logger.debug(
                     "Weights download took longer than 120 seconds, refreshing API request"
                 )
-                if self.version_id is not None:
-                    api_data = get_roboflow_model_data(
-                        api_key=self.api_key,
-                        model_id=self.endpoint,
-                        endpoint_type=ModelEndpointType.ORT,
-                        device_id=self.device_id,
-                    )
-                    weights = api_data["ort"]["weights"]
-                elif self.load_weights_as_transformers:
+                if self.load_weights_as_transformers:
                     api_data = get_roboflow_model_data(
                         api_key=self.api_key,
                         model_id=self.endpoint,
@@ -257,6 +251,14 @@ class TransformerModel(RoboflowInferenceModel):
                         device_id=self.device_id,
                     )
                     weights = api_data["weights"]
+                elif self.version_id is not None:
+                    api_data = get_roboflow_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                        endpoint_type=ModelEndpointType.ORT,
+                        device_id=self.device_id,
+                    )
+                    weights = api_data["ort"]["weights"]
                 else:
                     api_data = get_roboflow_instant_model_data(
                         api_key=self.api_key,
