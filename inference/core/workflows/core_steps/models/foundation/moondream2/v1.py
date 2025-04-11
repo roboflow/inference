@@ -90,9 +90,9 @@ class BlockManifest(WorkflowBlockManifest):
     type: Literal["roboflow_core/moondream2@v1"]
 
     model_version: Union[Selector(kind=[ROBOFLOW_MODEL_ID_KIND]), str] = Field(
-        default="moondream2/moondream2",
+        default="moondream2/moondream2-2b",
         description="The Moondream2 model to be used for inference.",
-        examples=["moondream2/moondream2"],
+        examples=["moondream2/moondream2-2b"],
     )
 
     @classmethod

@@ -23,7 +23,7 @@ class Moondream2(TransformerModel):
     version_id = None
     default_dtype = torch.bfloat16
     load_weights_as_transformers = True
-    endpoint = "moondream2/moondream2"
+    endpoint = "moondream2/moondream2-2b"
     trust_remote_code = True
     revision = "2025-03-27"
 
