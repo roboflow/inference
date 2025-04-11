@@ -49,11 +49,6 @@ TaskType = Literal[tuple([task["task_type"] for task in SUPPORTED_TASK_TYPES_LIS
 class BlockManifest(WorkflowBlockManifest):
     # SmolVLM needs an image and a text prompt.
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
-    task_type: TaskType = Field(
-        default="phrase-grounded-object-detection",
-        description="Task type to be performed by model. "
-        "Value determines required parameters and output response.",
-    )
     prompt: Optional[str] = Field(
         default=None,
         description="Optional text prompt to provide additional context to Moondream2. Otherwise it will just be None",
