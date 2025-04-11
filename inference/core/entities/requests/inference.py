@@ -241,11 +241,6 @@ class LMMInferenceRequest(CVInferenceRequest):
         examples=["caption"],
         description="If set, use this prompt to guide the LMM",
     )
-    task_type: Optional[str] = Field(
-        default=None,
-        examples=["caption"],
-        description="The type of task to perform, one of 'caption', 'query', 'detect'",
-    )
 
 
 def request_from_type(model_type, request_dict):
