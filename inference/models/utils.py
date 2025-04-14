@@ -4,6 +4,7 @@ from inference.core.env import (
     API_KEY,
     API_KEY_ENV_NAMES,
     QWEN_2_5_ENABLED,
+    DEPTH_ESTIMATION_ENABLED,
     SMOLVLM2_ENABLED,
 )
 from inference.core.exceptions import MissingApiKeyError
@@ -238,7 +239,6 @@ ROBOFLOW_MODEL_TYPES = {
     ("keypoint-detection", "yolov8m-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8l-pose"): YOLOv8KeypointsDetection,
     ("keypoint-detection", "yolov8x-pose"): YOLOv8KeypointsDetection,
-    ("depth-estimation", "Depth-Anything-V2-Small-hf"): DepthEstimator,
 }
 
 try:
@@ -343,6 +343,7 @@ except:
         category=ModelDependencyMissing,
     )
 
+
 try:
     from inference.models import SegmentAnything
 
@@ -409,6 +410,20 @@ except:
         f"Use pip install 'inference[transformers]' to install missing requirements.",
         category=ModelDependencyMissing,
     )
+
+
+try:
+    if DEPTH_ESTIMATION_ENABLED:
+        from inference.models.depth_estimation.depthestimation import DepthEstimator
+
+        ROBOFLOW_MODEL_TYPES[("depth-estimation", "Depth-Anything-V2-Small-hf")] = DepthEstimator
+except:
+    warnings.warn(
+        f"Your `inference` configuration does not support Depth Estimation."
+        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
+
 
 
 try:
