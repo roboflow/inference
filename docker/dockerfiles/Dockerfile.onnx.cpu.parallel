@@ -32,7 +32,8 @@ COPY requirements/requirements.sam.txt \
 
 RUN if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then mv requirements.vino.txt requirements.cpu.txt; fi
 
-RUN pip3 install --upgrade pip  && pip3 install \
+RUN pip3 install --upgrade pip && pip3 install "wheel>=0.38.1,<=0.45.1"
+RUN pip3 install \
     -r _requirements.txt \
     -r requirements.sam.txt \
     -r requirements.clip.txt \
