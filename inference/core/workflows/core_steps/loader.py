@@ -30,6 +30,7 @@ from inference.core.workflows.core_steps.analytics.time_in_zone.v2 import (
     TimeInZoneBlockV2,
 )
 from inference.core.workflows.core_steps.analytics.velocity.v1 import VelocityBlockV1
+from inference.core.workflows.core_steps.analytics.overlap.v1 import OverlapBlockV1
 from inference.core.workflows.core_steps.cache.cache_get.v1 import CacheGetBlockV1
 from inference.core.workflows.core_steps.cache.cache_set.v1 import CacheSetBlockV1
 from inference.core.workflows.core_steps.classical_cv.camera_focus.v1 import (
@@ -620,6 +621,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         ByteTrackerBlockV3,
         WebhookSinkBlockV1,
         VelocityBlockV1,
+        OverlapBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
         RoboflowKeypointDetectionModelBlockV2,
         RoboflowClassificationModelBlockV2,
