@@ -88,9 +88,6 @@ def test_workflow_with_overlap_all(
         }
     )
 
-    print(result)
-
-    
     assert len(result)==1, "One set of images provided, so one output expected"
 
     # if overlap_type is "Any Overlap", both the apples and orange will overlap the banana

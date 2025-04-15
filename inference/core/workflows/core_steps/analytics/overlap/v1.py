@@ -9,12 +9,12 @@ from supervision.detection.utils import get_data_item
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
-    WorkflowImageData
+    WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
-    WorkflowImageSelector
+    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -27,22 +27,6 @@ SHORT_DESCRIPTION = "Filter objects overlapping some other class"
 LONG_DESCRIPTION = """
 The `OverlapFilter` is an analytics block that filters out objects overlapping instances of some other class
 """
-
-
-# trims a numpy array or list to specific indices
-# after checking for None or empty
-def trim_array(arr, idx):
-    idx = list(idx)
-    if arr is None:
-        return arr
-
-    if not arr.any():
-        return arr
-
-    if isinstance(arr, np.ndarray):
-        return arr[idx]
-    else:
-        return [arr[i] for i in idx]
 
 
 class OverlapManifest(WorkflowBlockManifest):
@@ -159,16 +143,4 @@ class OverlapBlockV1(WorkflowBlock):
             # once it's overlapped we don't need to check again
             others = [o for o in others if o[1] not in idx]
 
-        # trim Detections to the filtered indices
-        # this should be faster than iterating since each collection is copied once
-        filtered = sv.Detections.empty()
-        filtered.xyxy = trim_array(predictions.xyxy, idx)
-        filtered.mask = trim_array(predictions.mask, idx)
-        filtered.confidence = trim_array(predictions.confidence, idx)
-        filtered.tracker_id = trim_array(predictions.tracker_id, idx)
-        filtered.class_id = trim_array(predictions.class_id, idx)
-        filtered.data = {
-            k: trim_array(predictions.data[k], idx) for k in predictions.data.keys()
-        }
-
-        return {OUTPUT_KEY: filtered}
+        return {OUTPUT_KEY: predictions[list(idx)]}
