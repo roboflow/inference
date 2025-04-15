@@ -25,12 +25,12 @@ from inference.core.env import (
     DEVICE,
     MAX_DETECTIONS,
     MODEL_CACHE_DIR,
-    PRELOAD_HF_IDS,
     OWLV2_COMPILE_MODEL,
     OWLV2_CPU_IMAGE_CACHE_SIZE,
     OWLV2_IMAGE_CACHE_SIZE,
     OWLV2_MODEL_CACHE_SIZE,
     OWLV2_VERSION_ID,
+    PRELOAD_HF_IDS,
 )
 from inference.core.exceptions import InvalidModelIDError, ModelArtefactError
 from inference.core.models.roboflow import (
@@ -118,12 +118,16 @@ if PRELOAD_HF_IDS:
     if not isinstance(hf_ids, list):
         hf_ids = [hf_ids]
     for huggingface_id in hf_ids:
-        logger.info(f"Preloading OWLv2 model for {huggingface_id} (this may take a while)")
+        logger.info(
+            f"Preloading OWLv2 model for {huggingface_id} (this may take a while)"
+        )
         try:
             Owlv2Singleton(huggingface_id)
             logger.info(f"Preloaded OWLv2 model for {huggingface_id}")
         except Exception as exc:
-            logger.error("Failed to preload OWLv2 model for %s: %s", huggingface_id, exc)
+            logger.error(
+                "Failed to preload OWLv2 model for %s: %s", huggingface_id, exc
+            )
 
 
 def preprocess_image(
