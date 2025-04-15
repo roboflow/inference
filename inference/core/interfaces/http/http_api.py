@@ -5,6 +5,7 @@ import traceback
 from functools import partial, wraps
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
+from uuid import uuid4
 
 import asgi_correlation_id
 import uvicorn
