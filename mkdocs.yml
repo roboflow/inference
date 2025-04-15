@@ -107,6 +107,7 @@ nav:
           - TrOCR (OCR): foundation/trocr.md
           - Grounding DINO (Object Detection): foundation/grounding_dino.md
           - L2CS-Net (Gaze Detection): foundation/gaze.md
+          - Moondream2: foundation/moondream2.md
           - PaliGemma: foundation/paligemma.md
           - Segment Anything (Segmentation): foundation/sam.md
           - Segment Anything 2 (Segmentation): foundation/sam2.md
@@ -134,6 +135,7 @@ nav:
           - User Guide: workflows/batch_processing/about.md
           - Integration: workflows/batch_processing/integration.md
           - API Reference: workflows/batch_processing/api_reference.md
+          - Known Issues: workflows/batch_processing/known_issues.md
       - Developer Guide:
         - Workflows Definitions: workflows/definitions.md
         - Workflow Execution: workflows/workflow_execution.md

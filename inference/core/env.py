@@ -151,6 +151,8 @@ QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
 
+MOONDREAM2_ENABLED = str2bool(os.getenv("MOONDREAM2_ENABLED", True))
+
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
     os.getenv("CORE_MODEL_YOLO_WORLD_ENABLED", True)
@@ -228,6 +230,9 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
+
+# Header where correlaction ID for logging is stored
+CORRELACTION_ID_HEADER = os.getenv("CORRELACTION_ID_HEADER", "X-Request-ID")
 
 # Flag to enable legacy route, default is True
 LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
