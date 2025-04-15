@@ -1,5 +1,7 @@
 import os
-from typing import Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
+
+from cachetools.func import ttl_cache
 
 from inference.core.cache import cache
 from inference.core.devices.utils import GLOBAL_DEVICE_ID
@@ -10,11 +12,19 @@ from inference.core.entities.types import (
     TaskType,
     VersionID,
 )
-from inference.core.env import LAMBDA, MODEL_CACHE_DIR
+from inference.core.env import (
+    CACHE_METADATA_LOCK_TIMEOUT,
+    LAMBDA,
+    MODEL_CACHE_DIR,
+    MODELS_CACHE_AUTH_CACHE_MAX_SIZE,
+    MODELS_CACHE_AUTH_CACHE_TTL,
+    MODELS_CACHE_AUTH_ENABLED,
+)
 from inference.core.exceptions import (
     MissingApiKeyError,
     ModelArtefactError,
     ModelNotRecognisedError,
+    RoboflowAPINotAuthorizedError,
 )
 from inference.core.logger import logger
 from inference.core.models.base import Model
@@ -44,10 +54,11 @@ GENERIC_MODELS = {
     "paligemma": ("llm", "paligemma"),
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
+    "smolvlm2": ("lmm", "smolvlm-2.2b-instruct"),
+    "moondream2": ("lmm", "moondream2"),
 }
 
 STUB_VERSION_ID = "0"
-CACHE_METADATA_LOCK_TIMEOUT = 1.0
 
 
 class RoboflowModelRegistry(ModelRegistry):
@@ -70,9 +81,34 @@ class RoboflowModelRegistry(ModelRegistry):
         """
         model_type = get_model_type(model_id, api_key)
         logger.debug(f"Model type: {model_type}")
+
         if model_type not in self.registry_dict:
             raise ModelNotRecognisedError(f"Model type not supported: {model_type}")
         return self.registry_dict[model_type]
+
+
+@ttl_cache(ttl=MODELS_CACHE_AUTH_CACHE_TTL, maxsize=MODELS_CACHE_AUTH_CACHE_MAX_SIZE)
+def _check_if_api_key_has_access_to_model(
+    api_key: str,
+    model_id: str,
+) -> bool:
+    _, version_id = get_model_id_chunks(model_id=model_id)
+    try:
+        if version_id is not None:
+            get_roboflow_model_data(
+                api_key=api_key,
+                model_id=model_id,
+                endpoint_type=ModelEndpointType.ORT,
+                device_id=GLOBAL_DEVICE_ID,
+            ).get("ort")
+        else:
+            get_roboflow_instant_model_data(
+                api_key=api_key,
+                model_id=model_id,
+            )
+    except RoboflowAPINotAuthorizedError:
+        return False
+    return True
 
 
 def get_model_type(
@@ -96,12 +132,23 @@ def get_model_type(
     """
     model_id = resolve_roboflow_model_alias(model_id=model_id)
     dataset_id, version_id = get_model_id_chunks(model_id=model_id)
+
     if dataset_id in GENERIC_MODELS:
         logger.debug(f"Loading generic model: {dataset_id}.")
         return GENERIC_MODELS[dataset_id]
+
+    if MODELS_CACHE_AUTH_ENABLED:
+        if not _check_if_api_key_has_access_to_model(
+            api_key=api_key, model_id=model_id
+        ):
+            raise RoboflowAPINotAuthorizedError(
+                f"API key {api_key} does not have access to model {model_id}"
+            )
+
     cached_metadata = get_model_metadata_from_cache(
         dataset_id=dataset_id, version_id=version_id
     )
+
     if cached_metadata is not None:
         return cached_metadata[0], cached_metadata[1]
     if version_id == STUB_VERSION_ID:
@@ -138,6 +185,7 @@ def get_model_type(
         project_task_type = api_data.get("taskType", "object-detection")
     if api_data is None:
         raise ModelArtefactError("Error loading model artifacts from Roboflow API.")
+
     # some older projects do not have type field - hence defaulting
     model_type = api_data.get("modelType")
     if model_type is None or model_type == "ort":

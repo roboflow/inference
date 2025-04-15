@@ -23,6 +23,8 @@ def get_model_id_chunks(
         "owlv2",
         "trocr",
         "yolo_world",
+        "smolvlm2",
+        "moondream2",
     }:
         return dataset_id, version_id
     try:

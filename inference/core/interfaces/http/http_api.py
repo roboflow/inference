@@ -3,18 +3,15 @@ import base64
 import os
 import traceback
 from functools import partial, wraps
-from pathlib import Path as Pathlib
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
 
 import asgi_correlation_id
 import uvicorn
 from fastapi import BackgroundTasks, Depends, FastAPI, Path, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi_cprofile.profiler import CProfileMiddleware
-from starlette.convertors import StringConvertor, register_url_convertor
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from inference.core import logger
@@ -100,6 +97,7 @@ from inference.core.entities.responses.workflows import (
 from inference.core.env import (
     ALLOW_ORIGINS,
     API_KEY,
+    BUILDER_ORIGIN,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
     CORE_MODEL_GAZE_ENABLED,
@@ -117,6 +115,7 @@ from inference.core.env import (
     ENABLE_PROMETHEUS,
     ENABLE_STREAM_API,
     ENABLE_WORKFLOWS_PROFILING,
+    GCP_SERVERLESS,
     LAMBDA,
     LEGACY_ROUTE_ENABLED,
     LMM_ENABLED,
@@ -162,6 +161,7 @@ from inference.core.interfaces.http.handlers.workflows import (
     handle_describe_workflows_blocks_request,
     handle_describe_workflows_interface,
 )
+from inference.core.interfaces.http.middlewares.cors import PathAwareCORSMiddleware
 from inference.core.interfaces.http.middlewares.gzip import gzip_response_if_requested
 from inference.core.interfaces.http.orjson_utils import orjson_response
 from inference.core.interfaces.stream_manager.api.entities import (
@@ -265,7 +265,8 @@ def with_route_exceptions(route):
     async def wrapped_route(*args, **kwargs):
         try:
             return await route(*args, **kwargs)
-        except ContentTypeInvalid:
+        except ContentTypeInvalid as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -273,27 +274,31 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
-        except ContentTypeMissing:
+        except ContentTypeMissing as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={"message": "Content-Type header not provided with request."},
             )
             traceback.print_exc()
-        except InputImageLoadError as e:
+        except InputImageLoadError as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
-                    "message": f"Could not load input image. Cause: {e.get_public_error_details()}"
+                    "message": f"Could not load input image. Cause: {error.get_public_error_details()}"
                 },
             )
             traceback.print_exc()
-        except InvalidModelIDError:
+        except InvalidModelIDError as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={"message": "Invalid Model ID sent in request."},
             )
             traceback.print_exc()
-        except InvalidMaskDecodeArgument:
+        except InvalidMaskDecodeArgument as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -302,7 +307,8 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
-        except MissingApiKeyError:
+        except MissingApiKeyError as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -317,6 +323,7 @@ def with_route_exceptions(route):
             ExecutionGraphStructureError,
             StepInputDimensionalityError,
         ) as error:
+            logger.error("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
@@ -336,6 +343,7 @@ def with_route_exceptions(route):
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -351,6 +359,7 @@ def with_route_exceptions(route):
             MalformedPayloadError,
             MessageToBigError,
         ) as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -359,7 +368,11 @@ def with_route_exceptions(route):
                     "inner_error_type": error.inner_error_type,
                 },
             )
-        except (RoboflowAPINotAuthorizedError, ProcessesManagerAuthorisationError):
+        except (
+            RoboflowAPINotAuthorizedError,
+            ProcessesManagerAuthorisationError,
+        ) as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=401,
                 content={
@@ -369,7 +382,8 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
-        except (RoboflowAPINotNotFoundError, InferenceModelNotFound):
+        except (RoboflowAPINotNotFoundError, InferenceModelNotFound) as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=404,
                 content={
@@ -379,6 +393,7 @@ def with_route_exceptions(route):
             )
             traceback.print_exc()
         except ProcessesManagerNotFoundError as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=404,
                 content={
@@ -392,7 +407,8 @@ def with_route_exceptions(route):
             InvalidEnvironmentVariableError,
             MissingServiceSecretError,
             ServiceConfigurationError,
-        ):
+        ) as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500, content={"message": "Service misconfiguration."}
             )
@@ -400,7 +416,8 @@ def with_route_exceptions(route):
         except (
             PreProcessingError,
             PostProcessingError,
-        ):
+        ) as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500,
                 content={
@@ -408,12 +425,14 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
-        except ModelArtefactError:
+        except ModelArtefactError as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500, content={"message": "Model package is broken."}
             )
             traceback.print_exc()
-        except OnnxProviderNotAvailable:
+        except OnnxProviderNotAvailable as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=501,
                 content={
@@ -427,13 +446,15 @@ def with_route_exceptions(route):
             RoboflowAPIUnsuccessfulRequestError,
             WorkspaceLoadError,
             MalformedWorkflowResponseError,
-        ):
+        ) as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=502,
                 content={"message": "Internal error. Request to Roboflow API failed."},
             )
             traceback.print_exc()
-        except RoboflowAPIConnectionError:
+        except RoboflowAPIConnectionError as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=503,
                 content={
@@ -441,7 +462,8 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
-        except RoboflowAPITimeoutError:
+        except RoboflowAPITimeoutError as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=504,
                 content={
@@ -450,6 +472,7 @@ def with_route_exceptions(route):
             )
             traceback.print_exc()
         except StepExecutionError as error:
+            logger.error("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
@@ -469,6 +492,7 @@ def with_route_exceptions(route):
             )
             traceback.print_exc()
         except WorkflowError as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500,
                 content={
@@ -484,6 +508,7 @@ def with_route_exceptions(route):
             ProcessesManagerClientError,
             CommunicationProtocolError,
         ) as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500,
                 content={
@@ -493,7 +518,8 @@ def with_route_exceptions(route):
                 },
             )
             traceback.print_exc()
-        except Exception:
+        except Exception as error:
+            logger.error("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
             traceback.print_exc()
         return resp
@@ -555,6 +581,17 @@ class HttpInterface(BaseInterface):
             root_path=root_path,
         )
 
+        app.mount(
+            "/static",
+            StaticFiles(directory="./inference/landing/out/static", html=True),
+            name="static",
+        )
+        app.mount(
+            "/_next/static",
+            StaticFiles(directory="./inference/landing/out/_next/static", html=True),
+            name="_next_static",
+        )
+
         @app.on_event("shutdown")
         async def on_shutdown():
             logger.info("Shutting down %s", description)
@@ -573,8 +610,10 @@ class HttpInterface(BaseInterface):
             app.add_middleware(LambdaMiddleware)
 
         if len(ALLOW_ORIGINS) > 0:
+            # Add CORS Middleware (but not for /build**, which is controlled separately)
             app.add_middleware(
-                CORSMiddleware,
+                PathAwareCORSMiddleware,
+                match_paths=r"^(?!/build).*",
                 allow_origins=ALLOW_ORIGINS,
                 allow_credentials=True,
                 allow_methods=["*"],
@@ -611,7 +650,7 @@ class HttpInterface(BaseInterface):
                     self.model_manager.num_errors += 1
                 return response
 
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get("/device/stats")
             async def device_stats():
@@ -911,7 +950,7 @@ class HttpInterface(BaseInterface):
             )
 
         # The current AWS Lambda authorizer only supports path parameters, therefore we can only use the legacy infer route. This case statement excludes routes which won't work for the current Lambda authorizer.
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get(
                 "/model/registry",
@@ -1004,6 +1043,9 @@ class HttpInterface(BaseInterface):
                     models_descriptions=models_descriptions
                 )
 
+        # these NEW endpoints need authentication protection
+        if not LAMBDA and not GCP_SERVERLESS:
+
             @app.post(
                 "/infer/object_detection",
                 response_model=Union[
@@ -1016,6 +1058,7 @@ class HttpInterface(BaseInterface):
                 response_model_exclude_none=True,
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_object_detection(
                 inference_request: ObjectDetectionInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1045,6 +1088,7 @@ class HttpInterface(BaseInterface):
                 description="Run inference with the specified instance segmentation model",
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_instance_segmentation(
                 inference_request: InstanceSegmentationInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1076,6 +1120,7 @@ class HttpInterface(BaseInterface):
                 description="Run inference with the specified classification model",
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_classification(
                 inference_request: ClassificationInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1103,6 +1148,7 @@ class HttpInterface(BaseInterface):
                 description="Run inference with the specified keypoints detection model",
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_keypoints(
                 inference_request: KeypointsDetectionInferenceRequest,
             ):
@@ -1131,6 +1177,7 @@ class HttpInterface(BaseInterface):
                     response_model_exclude_none=True,
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def infer_lmm(
                     inference_request: LMMInferenceRequest,
                 ):
@@ -1198,6 +1245,7 @@ class HttpInterface(BaseInterface):
                 deprecated=True,
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_from_predefined_workflow(
                 workspace_name: str,
                 workflow_id: str,
@@ -1231,7 +1279,9 @@ class HttpInterface(BaseInterface):
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_specification,
-                    background_tasks=background_tasks if not LAMBDA else None,
+                    background_tasks=(
+                        background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
+                    ),
                     profiler=profiler,
                 )
 
@@ -1249,6 +1299,7 @@ class HttpInterface(BaseInterface):
                 deprecated=True,
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def infer_from_workflow(
                 workflow_request: WorkflowSpecificationInferenceRequest,
                 background_tasks: BackgroundTasks,
@@ -1263,7 +1314,9 @@ class HttpInterface(BaseInterface):
                 return process_workflow_inference_request(
                     workflow_request=workflow_request,
                     workflow_specification=workflow_request.specification,
-                    background_tasks=background_tasks if not LAMBDA else None,
+                    background_tasks=(
+                        background_tasks if not (LAMBDA or GCP_SERVERLESS) else None
+                    ),
                     profiler=profiler,
                 )
 
@@ -1500,7 +1553,7 @@ class HttpInterface(BaseInterface):
         if (
             (PRELOAD_MODELS or DEDICATED_DEPLOYMENT_WORKSPACE_URL)
             and API_KEY
-            and not LAMBDA
+            and not (LAMBDA or GCP_SERVERLESS)
         ):
 
             class ModelInitState:
@@ -1589,6 +1642,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Open AI CLIP model to embed image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def clip_embed_image(
                     inference_request: ClipImageEmbeddingRequest,
                     request: Request,
@@ -1627,6 +1681,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Open AI CLIP model to embed text data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def clip_embed_text(
                     inference_request: ClipTextEmbeddingRequest,
                     request: Request,
@@ -1665,6 +1720,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Open AI CLIP model to compute similarity scores.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def clip_compare(
                     inference_request: ClipCompareRequest,
                     request: Request,
@@ -1705,6 +1761,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Grounding DINO zero-shot object detection model.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def grounding_dino_infer(
                     inference_request: GroundingDINOInferenceRequest,
                     request: Request,
@@ -1748,6 +1805,7 @@ class HttpInterface(BaseInterface):
                     response_model_exclude_none=True,
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def yolo_world_infer(
                     inference_request: YOLOWorldInferenceRequest,
                     request: Request,
@@ -1793,6 +1851,7 @@ class HttpInterface(BaseInterface):
                     description="Run the DocTR OCR model to retrieve text in an image.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def doctr_retrieve_text(
                     inference_request: DoctrOCRInferenceRequest,
                     request: Request,
@@ -1835,6 +1894,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Meta AI Segmant Anything Model to embed image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def sam_embed_image(
                     inference_request: SamEmbeddingRequest,
                     request: Request,
@@ -1878,6 +1938,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Meta AI Segmant Anything Model to generate segmenations for image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def sam_segment_image(
                     inference_request: SamSegmentationRequest,
                     request: Request,
@@ -1923,6 +1984,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Meta AI Segment Anything 2 Model to embed image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def sam2_embed_image(
                     inference_request: Sam2EmbeddingRequest,
                     request: Request,
@@ -1956,6 +2018,7 @@ class HttpInterface(BaseInterface):
                     description="Run the Meta AI Segment Anything 2 Model to generate segmenations for image data.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def sam2_segment_image(
                     inference_request: Sam2SegmentationRequest,
                     request: Request,
@@ -1996,6 +2059,7 @@ class HttpInterface(BaseInterface):
                     description="Run the google owlv2 model to few-shot object detect",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def owlv2_infer(
                     inference_request: OwlV2InferenceRequest,
                     request: Request,
@@ -2031,6 +2095,7 @@ class HttpInterface(BaseInterface):
                     description="Run the gaze detection model to detect gaze.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def gaze_detection(
                     inference_request: GazeDetectionInferenceRequest,
                     request: Request,
@@ -2071,6 +2136,7 @@ class HttpInterface(BaseInterface):
                     description="Run the TrOCR model to retrieve text in an image.",
                 )
                 @with_route_exceptions
+                @usage_collector("request")
                 async def trocr_retrieve_text(
                     inference_request: TrOCRInferenceRequest,
                     request: Request,
@@ -2104,7 +2170,7 @@ class HttpInterface(BaseInterface):
                         trackUsage(trocr_model_id, actor)
                     return response
 
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
 
             @app.get(
                 "/notebook/start",
@@ -2149,23 +2215,23 @@ class HttpInterface(BaseInterface):
                 router as builder_router,
             )
 
+            # Allow CORS on only the API, but not the builder UI/iframe (where the CSRF is passed)
+            app.add_middleware(
+                PathAwareCORSMiddleware,
+                match_paths=r"^/build/api.*",
+                allow_origins=[BUILDER_ORIGIN],
+                allow_methods=["*"],
+                allow_headers=["*"],
+                allow_credentials=True,
+            )
+
             # Attach all routes from builder to the /build prefix
             app.include_router(builder_router, prefix="/build", tags=["builder"])
 
         if LEGACY_ROUTE_ENABLED:
-
-            class IntStringConvertor(StringConvertor):
-                """
-                Match digits but keep them as string.
-                """
-
-                regex = "\d+"
-
-            register_url_convertor("int_string", IntStringConvertor())
-
             # Legacy object detection inference path for backwards compatability
             @app.get(
-                "/{dataset_id}/{version_id:int_string}",
+                "/{dataset_id}/{version_id:str}",
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
                 response_model=Union[
                     InstanceSegmentationInferenceResponse,
@@ -2179,7 +2245,7 @@ class HttpInterface(BaseInterface):
                 response_model_exclude_none=True,
             )
             @app.post(
-                "/{dataset_id}/{version_id:int_string}",
+                "/{dataset_id}/{version_id:str}",
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
                 response_model=Union[
                     InstanceSegmentationInferenceResponse,
@@ -2193,14 +2259,15 @@ class HttpInterface(BaseInterface):
                 response_model_exclude_none=True,
             )
             @with_route_exceptions
+            @usage_collector("request")
             async def legacy_infer_from_request(
                 background_tasks: BackgroundTasks,
                 request: Request,
                 dataset_id: str = Path(
-                    description="ID of a Roboflow dataset corresponding to the model to use for inference"
+                    description="ID of a Roboflow dataset corresponding to the model to use for inference OR workspace ID"
                 ),
                 version_id: str = Path(
-                    description="ID of a Roboflow dataset version corresponding to the model to use for inference"
+                    description="ID of a Roboflow dataset version corresponding to the model to use for inference OR model ID"
                 ),
                 api_key: Optional[str] = Query(
                     None,
@@ -2294,8 +2361,8 @@ class HttpInterface(BaseInterface):
 
                 Args:
                     background_tasks: (BackgroundTasks) pool of fastapi background tasks
-                    dataset_id (str): ID of a Roboflow dataset corresponding to the model to use for inference.
-                    version_id (str): ID of a Roboflow dataset version corresponding to the model to use for inference.
+                    dataset_id (str): ID of a Roboflow dataset corresponding to the model to use for inference OR workspace ID
+                    version_id (str): ID of a Roboflow dataset version corresponding to the model to use for inference OR model ID
                     api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
                     # Other parameters described in the function signature...
 
@@ -2348,6 +2415,7 @@ class HttpInterface(BaseInterface):
                         "Service secret is required to disable inference usage tracking"
                     )
                 if LAMBDA:
+                    logger.debug("request.scope: %s", request.scope)
                     request_model_id = (
                         request.scope["aws.event"]["requestContext"]["authorizer"][
                             "lambda"
@@ -2428,7 +2496,7 @@ class HttpInterface(BaseInterface):
                 else:
                     return orjson_response(inference_response)
 
-        if not LAMBDA:
+        if not (LAMBDA or GCP_SERVERLESS):
             # Legacy clear cache endpoint for backwards compatability
             @app.get("/clear_cache", response_model=str)
             async def legacy_clear_cache():
@@ -2478,7 +2546,7 @@ class HttpInterface(BaseInterface):
         app.mount(
             "/",
             StaticFiles(directory="./inference/landing/out", html=True),
-            name="static",
+            name="root",
         )
 
     def run(self):

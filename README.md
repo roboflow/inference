@@ -55,7 +55,7 @@ pip install inference-cli && inference server start --dev
 This will pull the proper image for your machine and start it in development mode.
 
 In development mode, a Jupyter notebook server with a quickstart guide runs on 
-[`localhost:9002`](http://localhost:9002). Dive in there for a whirlwind tour
+[http://localhost:9001/notebook/start](http://localhost:9001/notebook/start). Dive in there for a whirlwind tour
 of your new Inference Server's functionality!
 
 Now you're ready to connect your camera streams and

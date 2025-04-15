@@ -56,9 +56,9 @@ class DocTR(RoboflowCoreModel):
         )
         self.task_type = "ocr"
 
-    def clear_cache(self) -> None:
-        self.det_model.clear_cache()
-        self.rec_model.clear_cache()
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        self.det_model.clear_cache(delete_from_disk=delete_from_disk)
+        self.rec_model.clear_cache(delete_from_disk=delete_from_disk)
 
     def preprocess_image(self, image: Image.Image) -> Image.Image:
         """
@@ -130,11 +130,12 @@ class DocTRRec(RoboflowCoreModel):
             *args: Variable length argument list.
             **kwargs: Arbitrary keyword arguments.
         """
-        pass
-
         self.get_infer_bucket_file_list()
 
         super().__init__(*args, model_id=model_id, **kwargs)
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        super().clear_cache(delete_from_disk=delete_from_disk)
 
     def get_infer_bucket_file_list(self) -> list:
         """Get the list of required files for inference.
@@ -164,6 +165,9 @@ class DocTRDet(RoboflowCoreModel):
         self.get_infer_bucket_file_list()
 
         super().__init__(*args, model_id=model_id, **kwargs)
+
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        super().clear_cache(delete_from_disk=delete_from_disk)
 
     def get_infer_bucket_file_list(self) -> list:
         """Get the list of required files for inference.

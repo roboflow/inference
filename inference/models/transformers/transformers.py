@@ -53,12 +53,16 @@ class TransformerModel(RoboflowInferenceModel):
     generation_includes_input = False
     needs_hf_token = False
     skip_special_tokens = True
+    load_weights_as_transformers = False
+    load_base_from_roboflow = True
+    model = None
 
     def __init__(
         self, model_id, *args, dtype=None, huggingface_token=HUGGINGFACE_TOKEN, **kwargs
     ):
         super().__init__(model_id, *args, **kwargs)
         self.huggingface_token = huggingface_token
+
         if self.needs_hf_token and self.huggingface_token is None:
             raise RuntimeError(
                 "Must set environment variable HUGGINGFACE_TOKEN to load LoRA "
@@ -67,24 +71,33 @@ class TransformerModel(RoboflowInferenceModel):
         self.dtype = dtype
         if self.dtype is None:
             self.dtype = self.default_dtype
+
         self.cache_model_artefacts()
 
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
+
         self.initialize_model()
 
     def initialize_model(self):
+        if not self.load_base_from_roboflow:
+            model_id = self.dataset_id
+        else:
+            model_id = self.cache_dir
+
         self.model = (
             self.transformers_class.from_pretrained(
-                self.cache_dir,
+                model_id,
+                cache_dir=cache_dir,
                 device_map=DEVICE,
                 token=self.huggingface_token,
+                torch_dtype=self.default_dtype,
             )
             .eval()
             .to(self.dtype)
         )
 
         self.processor = self.processor_class.from_pretrained(
-            self.cache_dir, token=self.huggingface_token
+            model_id, cache_dir=cache_dir, token=self.huggingface_token
         )
 
     def preprocess(
@@ -158,7 +171,19 @@ class TransformerModel(RoboflowInferenceModel):
         ]
 
     def download_model_artifacts_from_roboflow_api(self) -> None:
-        if self.version_id is not None:
+        if self.load_weights_as_transformers:
+            api_data = get_roboflow_model_data(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.CORE_MODEL,
+                device_id=self.device_id,
+            )
+            if "weights" not in api_data:
+                raise ModelArtefactError(
+                    f"`weights` key not available in Roboflow API response while downloading model weights."
+                )
+            weights = api_data["weights"]
+        elif self.version_id is not None:
             api_data = get_roboflow_model_data(
                 api_key=self.api_key,
                 model_id=self.endpoint,
@@ -184,7 +209,9 @@ class TransformerModel(RoboflowInferenceModel):
                     f"`transformers` key not available in Roboflow API response while downloading model weights."
                 )
             weights = api_data["modelFiles"]["transformers"]
-        for weights_url in weights.values():
+        files_to_download = list(weights.keys())
+        for file_name in files_to_download:
+            weights_url = weights[file_name]
             t1 = perf_counter()
             filename = weights_url.split("?")[0].split("/")[-1]
             if filename.endswith(".npz"):
@@ -216,18 +243,28 @@ class TransformerModel(RoboflowInferenceModel):
                 logger.debug(
                     "Weights download took longer than 120 seconds, refreshing API request"
                 )
-                if self.version_id is not None:
+                if self.load_weights_as_transformers:
+                    api_data = get_roboflow_model_data(
+                        api_key=self.api_key,
+                        model_id=self.endpoint,
+                        endpoint_type=ModelEndpointType.CORE_MODEL,
+                        device_id=self.device_id,
+                    )
+                    weights = api_data["weights"]
+                elif self.version_id is not None:
                     api_data = get_roboflow_model_data(
                         api_key=self.api_key,
                         model_id=self.endpoint,
                         endpoint_type=ModelEndpointType.ORT,
                         device_id=self.device_id,
                     )
+                    weights = api_data["ort"]["weights"]
                 else:
                     api_data = get_roboflow_instant_model_data(
                         api_key=self.api_key,
                         model_id=self.endpoint,
                     )
+                    weights = api_data["modelFiles"]["transformers"]
 
     @property
     def weights_file(self) -> None:
