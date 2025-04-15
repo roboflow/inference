@@ -25,7 +25,7 @@ def test_depth_estimation_inference(
             "type": "url",
             "value": "https://media.roboflow.com/dog.jpeg",
         },
-        "model_id": "depth-anything/Depth-Anything-V2-Small-hf",
+        "model_id": "depth-anything-v2/small",
     }
 
     # when

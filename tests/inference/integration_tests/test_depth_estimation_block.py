@@ -33,7 +33,7 @@ def test_depth_estimation_block_inference(
         "type": "roboflow_core/depth_estimation@v1",
         "name": "depth_estimation",
         "images": {"type": "WorkflowImageData", "value": workflow_image},
-        "model_version": "depth-anything/Depth-Anything-V2-Small-hf"
+        "model_version": "depth-anything-v2/small"
     }
 
     # when

@@ -63,9 +63,9 @@ class TransformerModel(RoboflowInferenceModel):
     load_base_from_roboflow = True
 
     def __init__(
-        self, model_id, *args, dtype=None, huggingface_token=HUGGINGFACE_TOKEN, **kwargs
+        self, *args, dtype=None, huggingface_token=HUGGINGFACE_TOKEN, **kwargs
     ):
-        super().__init__(model_id, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.huggingface_token = huggingface_token
 
         if self.needs_hf_token and self.huggingface_token is None:
@@ -77,24 +77,35 @@ class TransformerModel(RoboflowInferenceModel):
         if self.dtype is None:
             self.dtype = self.default_dtype
 
-        self.cache_model_artefacts()
-
         self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
-        self.initialize_model()
+        
+        # Try to initialize model from cache first
+        try:
+            self.initialize_model()
+        except Exception as e:
+            # If loading from cache fails, try downloading and caching
+            self.cache_model_artefacts()
+            self.initialize_model()
 
     def initialize_model(self) -> None:
         """Initialize the model and processor."""
         if self.load_base_from_roboflow:
-            model = self.transformers_class.from_pretrained(
-                self.dataset_id,
-                revision=self.version_id,
-                token=self.api_key,
-                torch_dtype=self.default_dtype,
-            )
+            try:
+                model = self.transformers_class.from_pretrained(
+                    self.cache_dir,  # Use cache directory instead of dataset_id
+                    torch_dtype=self.default_dtype,
+                )
+            except Exception as e:
+                model = self.transformers_class.from_pretrained(
+                    self.dataset_id,
+                    revision=self.version_id,
+                    token=self.api_key,
+                    torch_dtype=self.default_dtype,
+                )
         else:
             try:
                 model = self.transformers_class.from_pretrained(
-                    self.model_id,
+                    self.endpoint,
                     token=self.huggingface_token,
                     torch_dtype=self.default_dtype,
                 )
@@ -103,8 +114,7 @@ class TransformerModel(RoboflowInferenceModel):
         
         try:
             processor = self.processor_class.from_pretrained(
-                self.model_id,
-                token=self.huggingface_token,
+                self.cache_dir,  # Use cache directory for processor too
             )
         except Exception as e:
             raise
@@ -231,7 +241,9 @@ class TransformerModel(RoboflowInferenceModel):
                     f"`transformers` key not available in Roboflow API response while downloading model weights."
                 )
             weights = api_data["modelFiles"]["transformers"]
+        
         files_to_download = list(weights.keys())
+        
         for file_name in files_to_download:
             weights_url = weights[file_name]
             t1 = perf_counter()
@@ -298,10 +310,6 @@ class TransformerModel(RoboflowInferenceModel):
     def cache_model_artefacts(self):
         """Cache model artifacts from either S3 or Roboflow API."""
         if self.load_weights_as_transformers and not self.load_base_from_roboflow:
-            # Skip downloading if loading directly from transformers
-            return None
-        if self.load_weights_as_transformers:
-            self.download_model_artefacts_from_s3()
             return None
         self.download_model_artifacts_from_roboflow_api()
 
@@ -387,3 +395,7 @@ class LoRATransformerModel(TransformerModel):
             "preprocessor_config.json",
             "tokenizer_config.json",
         ]
+
+
+
+

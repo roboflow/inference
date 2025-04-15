@@ -55,7 +55,7 @@ GENERIC_MODELS = {
     "yolo_world": ("object-detection", "yolo-world"),
     "owlv2": ("object-detection", "owlv2"),
     "smolvlm2": ("lmm", "smolvlm-2.2b-instruct"),
-    "depth-anything": ("depth-estimation", "Depth-Anything-V2-Small-hf"),
+    "depth-anything-v2": ("depth-estimation", "small"),
 }
 
 STUB_VERSION_ID = "0"

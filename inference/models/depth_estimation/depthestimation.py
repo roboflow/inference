@@ -17,49 +17,19 @@ from inference.models.transformers import TransformerModel
 class DepthEstimator(TransformerModel):
     transformers_class = AutoModelForDepthEstimation
     processor_class = AutoImageProcessor
-    load_base_from_roboflow = False
-    needs_hf_token = True
+    load_base_from_roboflow = True
+    needs_hf_token = False
     version_id = None
     default_dtype = torch.bfloat16
     load_weights_as_transformers = True
-    endpoint = "depth-anything/Depth-Anything-V2-Small-hf"
+    endpoint = "depth-anything-v2/small"
     task_type = "depth-estimation"
-    model_id = "depth-anything/Depth-Anything-V2-Small-hf"
 
     def __init__(self, *args, **kwargs):
-        # Handle model_id mapping
-        input_model_id = kwargs.get('model_id', self.model_id)
-        if input_model_id != self.model_id:
-            kwargs["model_id"] = self.model_id
-        
-        # Check for Hugging Face token
-        hf_token = os.environ.get("HUGGING_FACE_HUB_TOKEN")
-        hf_token_alt = os.environ.get("HUGGINGFACE_TOKEN")
-        
-        if not hf_token and not hf_token_alt:
-            raise RuntimeError(
-                "Hugging Face credentials required. Please set up your Hugging Face credentials by:\n"
-                "1. Creating a Hugging Face account at https://huggingface.co/\n"
-                "2. Getting your access token from https://huggingface.co/settings/tokens\n"
-                "3. Setting the token in your environment: export HUGGING_FACE_HUB_TOKEN=your_token_here\n"
-                "Or by logging in with: huggingface-cli login"
-            )
-        
-        # Set the token in kwargs if it's not already there
-        if "huggingface_token" not in kwargs:
-            kwargs["huggingface_token"] = hf_token or hf_token_alt
-        
         try:
             super().__init__(*args, **kwargs)
         except Exception as e:
-            if "401" in str(e) or "Unauthorized" in str(e):
-                raise RuntimeError(
-                    "Hugging Face credentials required. Please set up your Hugging Face credentials by:\n"
-                    "1. Creating a Hugging Face account at https://huggingface.co/\n"
-                    "2. Getting your access token from https://huggingface.co/settings/tokens\n"
-                    "3. Setting the token in your environment: export HUGGING_FACE_HUB_TOKEN=your_token_here\n"
-                    "Or by logging in with: huggingface-cli login"
-                ) from e
+            print(f"Error initializing depth estimation model: {str(e)}")
             raise
         
         # Set appropriate dtype based on device

@@ -77,9 +77,9 @@ class BlockManifest(WorkflowBlockManifest):
     images: Selector(kind=[IMAGE_KIND]) = ImageInputField
 
     model_version: str = Field(
-        default="depth-anything/Depth-Anything-V2-Small-hf",
+        default="depth-anything-v2/small",
         description="The Depth Estimation model to be used for inference.",
-        examples=["depth-anything/Depth-Anything-V2-Small-hf"],
+        examples=["depth-anything-v2/small"],
     )
 
     @classmethod
@@ -121,7 +121,7 @@ class DepthEstimationBlockV1(WorkflowBlock):
     def run(
         self,
         images: Batch[WorkflowImageData],
-        model_version: str = "depth-anything/Depth-Anything-V2-Small-hf",
+        model_version: str = "depth-anything-v2/small",
     ) -> BlockResult:
         if self._step_execution_mode == StepExecutionMode.LOCAL:
             return self.run_locally(
@@ -140,7 +140,7 @@ class DepthEstimationBlockV1(WorkflowBlock):
     def run_locally(
         self,
         images: Batch[WorkflowImageData],
-        model_version: str = "depth-anything/Depth-Anything-V2-Small-hf",
+        model_version: str = "depth-anything-v2/small",
     ) -> BlockResult:
         # Convert each image to the format required by the model.
         inference_images = [
