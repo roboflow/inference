@@ -3,9 +3,8 @@ from typing import List, Optional, Union
 import numpy as np
 import supervision as sv
 from pydantic import ConfigDict, Field
-from typing_extensions import Literal, Type
 from supervision.detection.utils import get_data_item
-
+from typing_extensions import Literal, Type
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
@@ -85,11 +84,21 @@ class OverlapManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+
 def test_coords_overlap():
-    assert not OverlapBlockV1.coords_overlap([0,0,20,20],[15,15,35,35],"Center Overlap")
-    assert not OverlapBlockV1.coords_overlap([10,10,20,20],[30,30,40,40],"Any Overlap")
-    assert OverlapBlockV1.coords_overlap([20,20,30,30],[15,15,35,35],"Center Overlap")
-    assert OverlapBlockV1.coords_overlap([0,0,20,20],[15,15,35,35],"Any Overlap")
+    assert not OverlapBlockV1.coords_overlap(
+        [0, 0, 20, 20], [15, 15, 35, 35], "Center Overlap"
+    )
+    assert not OverlapBlockV1.coords_overlap(
+        [10, 10, 20, 20], [30, 30, 40, 40], "Any Overlap"
+    )
+    assert OverlapBlockV1.coords_overlap(
+        [20, 20, 30, 30], [15, 15, 35, 35], "Center Overlap"
+    )
+    assert OverlapBlockV1.coords_overlap(
+        [0, 0, 20, 20], [15, 15, 35, 35], "Any Overlap"
+    )
+
 
 class OverlapBlockV1(WorkflowBlock):
     def __init__(self):
