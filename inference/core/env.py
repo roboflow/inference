@@ -98,7 +98,7 @@ OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 # OWLv2 compile model, default is True
 OWLV2_COMPILE_MODEL = str2bool(os.getenv("OWLV2_COMPILE_MODEL", True))
 
-# Preload OWLv2 models
+# Preload comma separated list of Huggingface IDs for OWLv2 models
 PRELOAD_HF_IDS = os.getenv("PRELOAD_HF_IDS")
 if PRELOAD_HF_IDS:
     PRELOAD_HF_IDS = [id.strip() for id in PRELOAD_HF_IDS.split(",")]
