@@ -20,6 +20,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from functools import lru_cache
 
 OUTPUT_KEY: str = "overlaps"
 SHORT_DESCRIPTION = "Filter objects overlapping some other class"
@@ -70,6 +71,7 @@ class OverlapManifest(WorkflowBlockManifest):
     )
 
     @classmethod
+    @lru_cache(maxsize=None)
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
