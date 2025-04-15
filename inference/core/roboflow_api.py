@@ -303,7 +303,7 @@ def get_roboflow_instant_model_data(
 def get_roboflow_base_lora(
     api_key: str, repo: str, revision: str, device_id: str
 ) -> dict:
-    full_path = os.path.join(repo, revision)
+    full_path = f"{repo.strip('/')}/{revision.strip('/')}"
     api_data_cache_key = f"roboflow_api_data:lora-bases:{full_path}"
     api_data = cache.get(api_data_cache_key)
     if api_data is not None:
