@@ -119,11 +119,11 @@ if PRELOAD_HF_IDS:
         hf_ids = [hf_ids]
     for huggingface_id in hf_ids:
         logger.info(
-            f"Preloading OWLv2 model for {huggingface_id} (this may take a while)"
+            "Preloading OWLv2 model for %s (this may take a while)", huggingface_id
         )
         try:
             Owlv2Singleton(huggingface_id)
-            logger.info(f"Preloaded OWLv2 model for {huggingface_id}")
+            logger.info("Preloaded OWLv2 model for %s", huggingface_id)
         except Exception as exc:
             logger.error(
                 "Failed to preload OWLv2 model for %s: %s", huggingface_id, exc
