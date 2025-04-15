@@ -9,10 +9,12 @@ from supervision.detection.utils import get_data_item
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
+    WorkflowImageData
 )
 from inference.core.workflows.execution_engine.entities.types import (
     OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
+    WorkflowImageSelector
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -59,6 +61,11 @@ class OverlapManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/overlap@v1", "Overlap"]
+    image: Union[WorkflowImageSelector] = Field(
+        title="Image",
+        description="The input image for this step.",
+        examples=["$inputs.image", "$steps.cropping.crops"],
+    )
     predictions: Selector(
         kind=[
             OBJECT_DETECTION_PREDICTION_KIND,
@@ -123,6 +130,7 @@ class OverlapBlockV1(WorkflowBlock):
 
     def run(
         self,
+        image: WorkflowImageData,
         predictions: sv.Detections,
         overlap_type: str,
         overlap_class_name: str,
