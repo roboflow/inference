@@ -2,6 +2,7 @@ import gc
 import hashlib
 import os
 import pickle
+import time
 import weakref
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, NewType, Optional, Tuple, Union
@@ -51,6 +52,7 @@ from inference.core.utils.image_utils import (
 )
 
 CPU_IMAGE_EMBED_CACHE_SIZE = OWLV2_CPU_IMAGE_CACHE_SIZE
+PRELOADED_HF_MODELS = {}
 
 # TYPES
 Hash = NewType("Hash", str)
@@ -93,6 +95,9 @@ class Owlv2Singleton:
     _instances = weakref.WeakValueDictionary()
 
     def __new__(cls, huggingface_id: str):
+        if huggingface_id in PRELOADED_HF_MODELS:
+            logger.info(f"Using preloaded OWLv2 instance for {huggingface_id}")
+            return PRELOADED_HF_MODELS[huggingface_id]
         if huggingface_id not in cls._instances:
             logger.info(f"Creating new OWLv2 instance for {huggingface_id}")
             instance = super().__new__(cls)
@@ -111,23 +116,6 @@ class Owlv2Singleton:
             instance.model = model
             cls._instances[huggingface_id] = instance
         return cls._instances[huggingface_id]
-
-
-if PRELOAD_HF_IDS:
-    hf_ids = PRELOAD_HF_IDS
-    if not isinstance(hf_ids, list):
-        hf_ids = [hf_ids]
-    for huggingface_id in hf_ids:
-        logger.info(
-            "Preloading OWLv2 model for %s (this may take a while)", huggingface_id
-        )
-        try:
-            Owlv2Singleton(huggingface_id)
-            logger.info("Preloaded OWLv2 model for %s", huggingface_id)
-        except Exception as exc:
-            logger.error(
-                "Failed to preload OWLv2 model for %s: %s", huggingface_id, exc
-            )
 
 
 def preprocess_image(
@@ -173,6 +161,55 @@ def preprocess_image(
     padded_image_tensor = (padded_image_tensor - image_mean) / image_std
 
     return padded_image_tensor
+
+
+@torch.no_grad()
+def dummy_infer(hf_id: str):
+    # Below code is copied from Owlv2.__init__
+    singleton = Owlv2Singleton(hf_id)
+    model = singleton.model
+    processor = Owlv2Processor.from_pretrained(hf_id)
+    image_size = tuple(processor.image_processor.size.values())
+    image_mean = torch.tensor(
+        processor.image_processor.image_mean, device=DEVICE
+    ).view(1, 3, 1, 1)
+    image_std = torch.tensor(
+        processor.image_processor.image_std, device=DEVICE
+    ).view(1, 3, 1, 1)
+
+    np_image = np.zeros((image_size[0], image_size[1], 3))
+    pixel_values = preprocess_image(
+        np_image, image_size, image_mean, image_std
+    )
+
+    # Below code is copied from Owlv2.embed_image
+    device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
+    with torch.autocast(
+        device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
+    ):
+        model.image_embedder(pixel_values=pixel_values)
+    return singleton
+
+
+if PRELOAD_HF_IDS:
+    hf_ids = PRELOAD_HF_IDS
+    if not isinstance(hf_ids, list):
+        hf_ids = [hf_ids]
+    for hf_id in hf_ids:
+        logger.info(
+            "Preloading OWLv2 model for %s (this may take a while)", hf_id
+        )
+        try:
+            t1 = time.time()
+            singleton = dummy_infer(hf_id)
+            t2 = time.time()
+            logger.info("Preloaded OWLv2 model for %s in %0.2f seconds", hf_id, t2 - t1)
+            # Store the singleton instance directly in PRELOADED_HF_MODELS
+            PRELOADED_HF_MODELS[hf_id] = singleton
+        except Exception as exc:
+            logger.error(
+                "Failed to preload OWLv2 model for %s: %s", hf_id, exc
+            )
 
 
 def filter_tensors_by_objectness(
