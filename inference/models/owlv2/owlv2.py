@@ -25,6 +25,7 @@ from inference.core.env import (
     DEVICE,
     MAX_DETECTIONS,
     MODEL_CACHE_DIR,
+    PRELOAD_HF_IDS,
     OWLV2_COMPILE_MODEL,
     OWLV2_CPU_IMAGE_CACHE_SIZE,
     OWLV2_IMAGE_CACHE_SIZE,
@@ -110,6 +111,17 @@ class Owlv2Singleton:
             instance.model = model
             cls._instances[huggingface_id] = instance
         return cls._instances[huggingface_id]
+
+
+if PRELOAD_HF_IDS:
+    hf_ids = PRELOAD_HF_IDS
+    if not isinstance(hf_ids, list):
+        hf_ids = [hf_ids]
+    for huggingface_id in hf_ids:
+        try:
+            Owlv2Singleton(huggingface_id)
+        except Exception as exc:
+            logger.error("Failed to preload OWLv2 model for %s: %s", huggingface_id, exc)
 
 
 def preprocess_image(
