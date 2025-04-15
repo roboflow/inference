@@ -4,6 +4,7 @@ import os
 import re
 import urllib.parse
 from enum import Enum
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
@@ -302,7 +303,7 @@ def get_roboflow_instant_model_data(
 def get_roboflow_base_lora(
     api_key: str, repo: str, revision: str, device_id: str
 ) -> dict:
-    full_path = os.path.join(repo, revision)
+    full_path = f"{repo.strip('/')}/{revision.strip('/')}"
     api_data_cache_key = f"roboflow_api_data:lora-bases:{full_path}"
     api_data = cache.get(api_data_cache_key)
     if api_data is not None:
@@ -555,8 +556,9 @@ def get_workflow_specification(
         if not re.match(r"^[\w\-]+$", workflow_id):
             raise ValueError("Invalid workflow id")
 
+        workflow_hash = sha256(workflow_id.encode()).hexdigest()
         local_file_path = (
-            Path(MODEL_CACHE_DIR) / "workflow" / "local" / f"{workflow_id}.json"
+            Path(MODEL_CACHE_DIR) / "workflow" / "local" / f"{workflow_hash}.json"
         )
         if not local_file_path.exists():
             raise FileNotFoundError(f"Local workflow file not found: {local_file_path}")

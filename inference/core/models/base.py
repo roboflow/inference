@@ -16,7 +16,7 @@ class BaseInference:
     This class provides a basic interface for inference tasks.
     """
 
-    @usage_collector
+    @usage_collector("model")
     def infer(self, image: Any, **kwargs) -> Any:
         """Runs inference on given data.
         - image:
@@ -92,8 +92,12 @@ class Model(BaseInference):
         """
         print(m)
 
-    def clear_cache(self):
-        """Clears any cache if necessary. This method should be implemented in derived classes as needed."""
+    def clear_cache(self, delete_from_disk: bool = True) -> None:
+        """Clears any cache if necessary. This method should be implemented in derived classes as needed.
+
+        Args:
+            delete_from_disk (bool, optional): Whether to delete cached files from disk. Defaults to True.
+        """
         pass
 
     def infer_from_request(
@@ -133,7 +137,7 @@ class Model(BaseInference):
             if request.id:
                 response.inference_id = request.id
 
-        if request.visualize_predictions:
+        if hasattr(request, "visualize_predictions") and request.visualize_predictions:
             for response in responses:
                 response.visualization = self.draw_predictions(request, response)
 

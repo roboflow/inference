@@ -1,15 +1,17 @@
 import base64
 import json
 import os
-import requests
 import time
-
-import pytest
-
 from io import BytesIO
 from pathlib import Path
+
+import pytest
+import requests
 from PIL import Image
-from tests.inference.integration_tests.regression_test import compare_prediction_response
+
+from tests.inference.integration_tests.regression_test import (
+    compare_prediction_response,
+)
 
 PIXEL_TOLERANCE = 2
 CONFIDENCE_TOLERANCE = 0.005

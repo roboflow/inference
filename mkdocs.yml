@@ -41,7 +41,7 @@ nav:
           - Alternatives: understand/alternatives.md
       - Cloud Hosting:
           - managed/index.md
-          - "Serverless API »": "https://docs.roboflow.com/deploy/hosted-api"
+          - "Serverless API »": "https://docs.roboflow.com/deploy/serverless"
           - "Dedicated Deployments »": "https://docs.roboflow.com/deploy/dedicated-deployments"
           - "Bring Your Own Cloud": "install/cloud/index.md"
       - Self Hosting:
@@ -72,6 +72,13 @@ nav:
       #         - Basler: inputs/industrial/basler.md
       #         - Lucid: inputs/industrial/lucid.md
       #         - FLIR: inputs/industrial/flir.md
+      
+      - Start Building ⭐️:
+          - Hello World: guides/hello-world.md
+          - Compare Models: guides/compare-models.md
+          - Detect Small Objects: guides/detect-small-objects.md
+          # - Count Things in Video: guides/count-things.md
+
       - Next Steps: start/next.md
       - More Resources: resources.md
 
@@ -82,6 +89,7 @@ nav:
       - Predict on a Video, Webcam or RTSP Stream: quickstart/run_model_on_rtsp_webcam.md
       - 'Fine-Tuned Models':
           - quickstart/explore_models.md
+          - RF-DETR: fine-tuned/rfdetr.md
           - YOLOv11: fine-tuned/yolov11.md
           - YOLOv10: fine-tuned/yolov10.md
           - YOLOv9: fine-tuned/yolov9.md
@@ -99,9 +107,11 @@ nav:
           - TrOCR (OCR): foundation/trocr.md
           - Grounding DINO (Object Detection): foundation/grounding_dino.md
           - L2CS-Net (Gaze Detection): foundation/gaze.md
+          - Moondream2: foundation/moondream2.md
           - PaliGemma: foundation/paligemma.md
           - Segment Anything (Segmentation): foundation/sam.md
           - Segment Anything 2 (Segmentation): foundation/sam2.md
+          - SmolVLM2: foundation/smolvlm.md
           - YOLO-World (Object Detection): foundation/yolo_world.md
           - OwlV2 (Object Detection): foundation/owlv2.md
       - Deploy a Model:
@@ -121,6 +131,11 @@ nav:
         - Video Processing: workflows/video_processing/overview.md
       - Examples: workflows/gallery/
       - Block Gallery: workflows/blocks/
+      - Batch Processing:
+          - User Guide: workflows/batch_processing/about.md
+          - Integration: workflows/batch_processing/integration.md
+          - API Reference: workflows/batch_processing/api_reference.md
+          - Known Issues: workflows/batch_processing/known_issues.md
       - Developer Guide:
         - Workflows Definitions: workflows/definitions.md
         - Workflow Execution: workflows/workflow_execution.md
@@ -249,6 +264,7 @@ extra_javascript:
   - 'https://unpkg.com/@rive-app/canvas'
   - 'https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js'
   - 'assets/home.js'
+  - 'js/segment.js'
 
 hooks:
   - theme/build.py

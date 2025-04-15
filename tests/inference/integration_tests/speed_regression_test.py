@@ -1,11 +1,10 @@
 import base64
 import os
-import requests
 import time
+from io import BytesIO
 
 import pytest
-
-from io import BytesIO
+import requests
 from PIL import Image
 
 api_key = os.environ.get("API_KEY")

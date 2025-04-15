@@ -17,6 +17,8 @@ from inference.core.workflows.core_steps.transformations.dynamic_zones.v1 import
 )
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     OUTPUT_DETECTIONS_KEY as PERSPECTIVE_CORRECTION_OUTPUT_DETECTIONS_KEY,
+)
+from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
     OUTPUT_IMAGE_KEY as PERSPECTIVE_CORRECTION_OUTPUT_IMAGE_KEY,
 )
 from inference.core.workflows.core_steps.transformations.perspective_correction.v1 import (
