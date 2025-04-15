@@ -1,6 +1,12 @@
 import warnings
 
-from inference.core.env import API_KEY, API_KEY_ENV_NAMES
+from inference.core.env import (
+    API_KEY,
+    API_KEY_ENV_NAMES,
+    MOONDREAM2_ENABLED,
+    QWEN_2_5_ENABLED,
+    SMOLVLM2_ENABLED,
+)
 from inference.core.exceptions import MissingApiKeyError
 from inference.core.models.base import Model
 from inference.core.models.stubs import (
@@ -15,6 +21,7 @@ from inference.core.warnings import ModelDependencyMissing
 from inference.models import (
     YOLACT,
     ResNetClassification,
+    RFDETRObjectDetection,
     VitClassification,
     YOLONASObjectDetection,
     YOLOv5InstanceSegmentation,
@@ -86,6 +93,8 @@ ROBOFLOW_MODEL_TYPES = {
     ("object-detection", "yolov12m"): YOLOv12ObjectDetection,
     ("object-detection", "yolov12l"): YOLOv12ObjectDetection,
     ("object-detection", "yolov12x"): YOLOv12ObjectDetection,
+    ("object-detection", "rfdetr-base"): RFDETRObjectDetection,
+    ("object-detection", "rfdetr-large"): RFDETRObjectDetection,
     (
         "instance-segmentation",
         "yolov11n",
@@ -318,13 +327,14 @@ except:
     )
 
 try:
-    from inference.models import LoRAQwen25VL, Qwen25VL
+    if QWEN_2_5_ENABLED:
+        from inference.models import LoRAQwen25VL, Qwen25VL
 
-    qwen25vl_models = {
-        ("text-image-pairs", "qwen25-vl-7b"): Qwen25VL,
-        ("text-image-pairs", "qwen25-vl-7b-peft"): LoRAQwen25VL,
-    }
-    ROBOFLOW_MODEL_TYPES.update(qwen25vl_models)
+        qwen25vl_models = {
+            ("text-image-pairs", "qwen25-vl-7b"): Qwen25VL,
+            ("text-image-pairs", "qwen25-vl-7b-peft"): LoRAQwen25VL,
+        }
+        ROBOFLOW_MODEL_TYPES.update(qwen25vl_models)
 except:
     warnings.warn(
         f"Your `inference` configuration does not support Qwen2.5-VL model. "
@@ -384,6 +394,30 @@ except:
     warnings.warn(
         f"Your `inference` configuration does not support Gaze Detection model. "
         f"Use pip install 'inference[gaze]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
+
+try:
+    if SMOLVLM2_ENABLED:
+        from inference.models.smolvlm.smolvlm import SmolVLM
+
+        ROBOFLOW_MODEL_TYPES[("lmm", "smolvlm-2.2b-instruct")] = SmolVLM
+except:
+    warnings.warn(
+        f"Your `inference` configuration does not support SmolVLM2."
+        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
+
+try:
+    if MOONDREAM2_ENABLED:
+        from inference.models.moondream2.moondream2 import Moondream2
+
+        ROBOFLOW_MODEL_TYPES[("lmm", "moondream2")] = Moondream2
+except:
+    warnings.warn(
+        f"Your `inference` configuration does not support Moondream2."
+        f"Use pip install 'inference[transformers]' to install missing requirements.",
         category=ModelDependencyMissing,
     )
 

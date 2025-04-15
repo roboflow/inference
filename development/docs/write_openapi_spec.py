@@ -16,11 +16,7 @@ from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCac
 from inference.core.registries.roboflow import (
     RoboflowModelRegistry,
 )
-
-
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
-
-
 
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 
@@ -35,9 +31,10 @@ app = interface.app
 
 
 
-from fastapi.openapi.utils import get_openapi
 import json
 import os
+
+from fastapi.openapi.utils import get_openapi
 
 DOCS_ROOT_DIR = os.path.abspath(
     os.path.join(

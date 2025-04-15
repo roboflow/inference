@@ -95,6 +95,9 @@ OWLV2_MODEL_CACHE_SIZE = int(os.getenv("OWLV2_MODEL_CACHE_SIZE", 100))
 # OWLv2 CPU image cache size, default is 10000
 OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 
+# OWLv2 compile model, default is True
+OWLV2_COMPILE_MODEL = str2bool(os.getenv("OWLV2_COMPILE_MODEL", True))
+
 # Maximum batch size for GAZE, default is 8
 GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
 
@@ -143,6 +146,12 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
 )
 
 LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
+
+QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
+
+SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
+
+MOONDREAM2_ENABLED = str2bool(os.getenv("MOONDREAM2_ENABLED", True))
 
 # Flag to enable YOLO-World core model, default is True
 CORE_MODEL_YOLO_WORLD_ENABLED = str2bool(
@@ -219,6 +228,9 @@ JSON_RESPONSE = str2bool(os.getenv("JSON_RESPONSE", True))
 # Lambda flag, default is False
 LAMBDA = str2bool(os.getenv("LAMBDA", False))
 
+# Whether is's GCP serverless service
+GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
+
 # Flag to enable legacy route, default is True
 LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
@@ -251,9 +263,18 @@ MAX_DETECTIONS = int(os.getenv(MAX_DETECTIONS_ENV, DEFAULT_MAX_DETECTIONS))
 # Loop interval for expiration of memory cache, default is 5
 MEMORY_CACHE_EXPIRE_INTERVAL = int(os.getenv("MEMORY_CACHE_EXPIRE_INTERVAL", 5))
 
+# Enable models cache auth
+MODELS_CACHE_AUTH_ENABLED = str2bool(os.getenv("MODELS_CACHE_AUTH_ENABLED", False))
+
+# Models cache auth cache ttl, default is 15 minutes
+MODELS_CACHE_AUTH_CACHE_TTL = int(os.getenv("MODELS_CACHE_AUTH_CACHE_TTL", 15 * 60))
+
+# Models cache auth cache max size, default is 0 (unlimited)
+MODELS_CACHE_AUTH_CACHE_MAX_SIZE = int(os.getenv("MODELS_CACHE_AUTH_CACHE_MAX_SIZE", 0))
+
 # Metrics enabled flag, default is True
 METRICS_ENABLED = str2bool(os.getenv("METRICS_ENABLED", True))
-if LAMBDA:
+if LAMBDA or GCP_SERVERLESS:
     METRICS_ENABLED = False
 
 # Interval for metrics aggregation, default is 60
@@ -515,3 +536,26 @@ IGNORE_MODEL_DEPENDENCIES_WARNINGS = str2bool(
 )
 if IGNORE_MODEL_DEPENDENCIES_WARNINGS:
     warnings.simplefilter("ignore", ModelDependencyMissing)
+
+DISK_CACHE_CLEANUP = str2bool(os.getenv("DISK_CACHE_CLEANUP", "True"))
+MEMORY_FREE_THRESHOLD = float(
+    os.getenv("MEMORY_FREE_THRESHOLD", "0.0")
+)  # percentage of free memory, 0 disables memory pressure detection
+
+# Stream manager configuration
+try:
+    STREAM_MANAGER_MAX_RAM_MB: Optional[float] = abs(
+        float(os.getenv("STREAM_MANAGER_MAX_RAM_MB"))
+    )
+except:
+    STREAM_MANAGER_MAX_RAM_MB: Optional[float] = None
+
+try:
+    STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE: int = abs(
+        int(os.getenv("STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE"))
+    )
+except:
+    STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE = 10
+
+# Cache metadata lock timeout in seconds, default is 1.0
+CACHE_METADATA_LOCK_TIMEOUT = float(os.getenv("CACHE_METADATA_LOCK_TIMEOUT", 1.0))

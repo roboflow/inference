@@ -1,10 +1,11 @@
+import argparse
+import os
 import pickle
+from typing import List
+
 import cv2
 import requests
 import supervision as sv
-import argparse
-import os
-from typing import List
 
 
 def parse_arguments() -> argparse.Namespace:
