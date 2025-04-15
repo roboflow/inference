@@ -287,7 +287,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
                 topk_scores = topk_scores[class_filter_mask]
                 topk_labels = topk_labels[class_filter_mask]
-                topk_boxes_indices = topk_boxes_indices[class_filter_mask]
+                topk_boxes = topk_boxes[class_filter_mask]
 
             selected_boxes = bboxes[batch_idx, topk_boxes]
 
