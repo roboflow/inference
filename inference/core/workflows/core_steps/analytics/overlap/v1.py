@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import List, Optional, Union
 
 import numpy as np
@@ -17,7 +18,6 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
-from functools import lru_cache
 
 OUTPUT_KEY: str = "overlaps"
 SHORT_DESCRIPTION = "Filter objects overlapping some other class"
