@@ -17,6 +17,7 @@ from inference.core.workflows.core_steps.analytics.line_counter.v1 import (
 from inference.core.workflows.core_steps.analytics.line_counter.v2 import (
     LineCounterBlockV2,
 )
+from inference.core.workflows.core_steps.analytics.overlap.v1 import OverlapBlockV1
 from inference.core.workflows.core_steps.analytics.path_deviation.v1 import (
     PathDeviationAnalyticsBlockV1,
 )
@@ -645,6 +646,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         Qwen25VLBlockV1,
         SmolVLM2BlockV1,
         Moondream2BlockV1,
+        OverlapBlockV1,
     ]
 
 
