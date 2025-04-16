@@ -517,6 +517,9 @@ class OwlV2(RoboflowInferenceModel):
 
         # Explicitly delete temporary tensors to free memory.
         del pixel_values, np_image, image_features, image_embeds
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         if isinstance(image, LazyImageRetrievalWrapper):
             image.unload_numpy_image()  # Clears both _image_as_numpy and image if needed.
