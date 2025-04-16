@@ -170,17 +170,15 @@ def dummy_infer(hf_id: str):
     model = singleton.model
     processor = Owlv2Processor.from_pretrained(hf_id)
     image_size = tuple(processor.image_processor.size.values())
-    image_mean = torch.tensor(
-        processor.image_processor.image_mean, device=DEVICE
-    ).view(1, 3, 1, 1)
-    image_std = torch.tensor(
-        processor.image_processor.image_std, device=DEVICE
-    ).view(1, 3, 1, 1)
+    image_mean = torch.tensor(processor.image_processor.image_mean, device=DEVICE).view(
+        1, 3, 1, 1
+    )
+    image_std = torch.tensor(processor.image_processor.image_std, device=DEVICE).view(
+        1, 3, 1, 1
+    )
 
     np_image = np.zeros((image_size[0], image_size[1], 3))
-    pixel_values = preprocess_image(
-        np_image, image_size, image_mean, image_std
-    )
+    pixel_values = preprocess_image(np_image, image_size, image_mean, image_std)
 
     # Below code is copied from Owlv2.embed_image
     device_str = "cuda" if str(DEVICE).startswith("cuda") else "cpu"
@@ -196,9 +194,7 @@ if PRELOAD_HF_IDS:
     if not isinstance(hf_ids, list):
         hf_ids = [hf_ids]
     for hf_id in hf_ids:
-        logger.info(
-            "Preloading OWLv2 model for %s (this may take a while)", hf_id
-        )
+        logger.info("Preloading OWLv2 model for %s (this may take a while)", hf_id)
         try:
             t1 = time.time()
             singleton = dummy_infer(hf_id)
@@ -207,9 +203,7 @@ if PRELOAD_HF_IDS:
             # Store the singleton instance directly in PRELOADED_HF_MODELS
             PRELOADED_HF_MODELS[hf_id] = singleton
         except Exception as exc:
-            logger.error(
-                "Failed to preload OWLv2 model for %s: %s", hf_id, exc
-            )
+            logger.error("Failed to preload OWLv2 model for %s: %s", hf_id, exc)
 
 
 def filter_tensors_by_objectness(
