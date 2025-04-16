@@ -85,21 +85,6 @@ class OverlapManifest(WorkflowBlockManifest):
         return ">=1.3.0,<2.0.0"
 
 
-def test_coords_overlap():
-    assert not OverlapBlockV1.coords_overlap(
-        [0, 0, 20, 20], [15, 15, 35, 35], "Center Overlap"
-    )
-    assert not OverlapBlockV1.coords_overlap(
-        [10, 10, 20, 20], [30, 30, 40, 40], "Any Overlap"
-    )
-    assert OverlapBlockV1.coords_overlap(
-        [20, 20, 30, 30], [15, 15, 35, 35], "Center Overlap"
-    )
-    assert OverlapBlockV1.coords_overlap(
-        [0, 0, 20, 20], [15, 15, 35, 35], "Any Overlap"
-    )
-
-
 class OverlapBlockV1(WorkflowBlock):
     def __init__(self):
         pass
