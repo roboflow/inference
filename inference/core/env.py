@@ -236,6 +236,9 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
+# Header where correlaction ID for logging is stored
+CORRELACTION_ID_HEADER = os.getenv("CORRELACTION_ID_HEADER", "X-Request-ID")
+
 # Flag to enable legacy route, default is True
 LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
 
