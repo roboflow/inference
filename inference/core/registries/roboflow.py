@@ -57,7 +57,6 @@ GENERIC_MODELS = {
     "smolvlm2": ("lmm", "smolvlm-2.2b-instruct"),
     "depth-anything-v2": ("depth-estimation", "small"),
     "moondream2": ("lmm", "moondream2"),
-
 }
 
 STUB_VERSION_ID = "0"

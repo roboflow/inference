@@ -88,6 +88,7 @@ class CVInferenceRequest(InferenceRequest):
         description="If true, the static crop preprocessing step is disabled for this call.",
     )
 
+
 class DepthEstimationRequest(BaseRequest):
     """Request for depth estimation.
 
@@ -102,6 +103,7 @@ class DepthEstimationRequest(BaseRequest):
         examples=[False],
         description="If true, the predictions will be drawn on the original image and returned as a base64 string",
     )
+
 
 class ObjectDetectionInferenceRequest(CVInferenceRequest):
     """Object Detection inference request.

@@ -3,9 +3,9 @@ import warnings
 from inference.core.env import (
     API_KEY,
     API_KEY_ENV_NAMES,
+    DEPTH_ESTIMATION_ENABLED,
     MOONDREAM2_ENABLED,
     QWEN_2_5_ENABLED,
-    DEPTH_ESTIMATION_ENABLED,
     SMOLVLM2_ENABLED,
 )
 from inference.core.exceptions import MissingApiKeyError
@@ -19,7 +19,6 @@ from inference.core.models.stubs import (
 from inference.core.registries.roboflow import get_model_type
 from inference.core.utils.function import deprecated
 from inference.core.warnings import ModelDependencyMissing
-from inference.models.depth_estimation.depthestimation import DepthEstimator
 from inference.models import (
     YOLACT,
     ResNetClassification,
@@ -38,6 +37,7 @@ from inference.models import (
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
 )
+from inference.models.depth_estimation.depthestimation import DepthEstimator
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 from inference.models.yolov11.yolov11_keypoints_detection import (
     YOLOv11KeypointsDetection,
@@ -426,7 +426,6 @@ except:
     )
 
 
-
 try:
     if MOONDREAM2_ENABLED:
         from inference.models.moondream2.moondream2 import Moondream2
@@ -478,6 +477,7 @@ except:
         f"Use pip install 'inference[yolo-world]' to install missing requirements.",
         category=ModelDependencyMissing,
     )
+
 
 def get_model(model_id, api_key=API_KEY, **kwargs) -> Model:
     task, model = get_model_type(model_id, api_key=api_key)

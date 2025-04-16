@@ -62,7 +62,7 @@ class BlockManifest(WorkflowBlockManifest):
                 "Depth Anything",
                 "Depth Anything V2",
                 "Hugging Face",
-                "HuggingFace"
+                "HuggingFace",
             ],
             "is_vlm_block": True,
             "ui_manifest": {
@@ -146,7 +146,7 @@ class DepthEstimationBlockV1(WorkflowBlock):
         inference_images = [
             i.to_inference_format(numpy_preferred=False) for i in images
         ]
-        
+
         # Register Depth Estimation with the model manager.
         try:
             self._model_manager.add_model(model_id=model_version, api_key=self._api_key)
@@ -159,7 +159,7 @@ class DepthEstimationBlockV1(WorkflowBlock):
             request = DepthEstimationRequest(
                 image=image,
             )
-            
+
             try:
                 prediction = self._model_manager.infer_from_request_sync(
                     model_id=model_version, request=request
@@ -168,7 +168,5 @@ class DepthEstimationBlockV1(WorkflowBlock):
                 predictions.append(response_text)
             except Exception as e:
                 raise
-                
+
         return predictions
-
-

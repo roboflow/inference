@@ -22,17 +22,28 @@ def test_depth_estimation_block_inference(
     # Create a test image
     test_image = np.zeros((224, 224, 3), dtype=np.uint8)
     test_image[50:150, 50:150] = 255  # Add a white square
-    parent_metadata = ImageParentMetadata(parent_id="test_image")
-    workflow_image = WorkflowImageData(
-        numpy_image=test_image,
-        parent_metadata=parent_metadata
-    )
-
-    # Create the block configuration
+    
+    # Convert numpy array to base64 string
+    from base64 import b64encode
+    import io
+    img = Image.fromarray(test_image)
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = b64encode(buffered.getvalue()).decode()
+    
+    # Create the block configuration with serializable data
     block_config = {
         "type": "roboflow_core/depth_estimation@v1",
         "name": "depth_estimation",
-        "images": {"type": "WorkflowImageData", "value": workflow_image},
+        "images": {
+            "type": "WorkflowImageData",
+            "value": {
+                "numpy_image": img_str,
+                "parent_metadata": {
+                    "parent_id": "test_image"
+                }
+            }
+        },
         "model_version": "depth-anything-v2/small"
     }
 
