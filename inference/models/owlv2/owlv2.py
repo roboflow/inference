@@ -141,24 +141,19 @@ def preprocess_image(
     r = min(image_size[0] / current_size[0], image_size[1] / current_size[1])
     target_size = (int(r * current_size[0]), int(r * current_size[1]))
 
-    torch_image = (
-        torch.tensor(np_image)
-        .permute(2, 0, 1)
-        .unsqueeze(0)
-        .to(DEVICE)
-        .to(dtype=torch.float32)
-        / 255.0
-    )
+    torch_image = torch.tensor(np_image, dtype=torch.float32, device=DEVICE).permute(
+        2, 0, 1
+    ) / (255.0).unsqueeze(0)
+
     torch_image = F.interpolate(
         torch_image, size=target_size, mode="bilinear", align_corners=False
     )
 
-    padded_image_tensor = torch.ones((1, 3, *image_size), device=DEVICE) * 0.5
-    padded_image_tensor[:, :, : torch_image.shape[2], : torch_image.shape[3]] = (
-        torch_image
-    )
+    padded_image_tensor = torch.full((1, 3, *image_size), 0.5, device=DEVICE)
+    padded_image_tensor[:, :, : target_size[0], : target_size[1]].copy_(torch_image)
 
-    padded_image_tensor = (padded_image_tensor - image_mean) / image_std
+    # Normalize the padded tensor (in-place normalization)
+    padded_image_tensor.sub_(image_mean).div_(image_std)
 
     return padded_image_tensor
 
@@ -177,7 +172,7 @@ def dummy_infer(hf_id: str):
         1, 3, 1, 1
     )
 
-    np_image = np.zeros((image_size[0], image_size[1], 3))
+    np_image = np.zeros((image_size[0], image_size[1], 3), dtype=np.float32)
     pixel_values = preprocess_image(np_image, image_size, image_mean, image_std)
 
     # Below code is copied from Owlv2.embed_image
