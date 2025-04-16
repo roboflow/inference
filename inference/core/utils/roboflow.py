@@ -26,6 +26,7 @@ def get_model_id_chunks(
         "trocr",
         "yolo_world",
         "smolvlm2",
+        "moondream2",
         "depth-anything-v2",
     }:
         return dataset_id, version_id

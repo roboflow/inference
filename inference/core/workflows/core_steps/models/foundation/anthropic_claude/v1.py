@@ -164,7 +164,12 @@ class BlockManifest(WorkflowBlockManifest):
     model_version: Union[
         Selector(kind=[STRING_KIND]),
         Literal[
-            "claude-3-5-sonnet", "claude-3-opus", "claude-3-sonnet", "claude-3-haiku"
+            "claude-3-7-sonnet",
+            "claude-3-5-sonnet-v2",
+            "claude-3-5-haiku",
+            "claude-3-5-sonnet",
+            "claude-3-opus",
+            "claude-3-haiku",
         ],
     ] = Field(
         default="claude-3-5-sonnet",
@@ -357,9 +362,11 @@ def execute_claude_requests(
 
 
 EXACT_MODELS_VERSIONS_MAPPING = {
+    "claude-3-7-sonnet": "claude-3-7-sonnet-20250219",
+    "claude-3-5-sonnet-v2": "claude-3-5-sonnet-20241022",
+    "claude-3-5-haiku": "claude-3-5-haiku-20241022",
     "claude-3-5-sonnet": "claude-3-5-sonnet-20240620",
     "claude-3-opus": "claude-3-opus-20240229",
-    "claude-3-sonnet": "claude-3-sonnet-20240229",
     "claude-3-haiku": "claude-3-haiku-20240307",
 }
 
