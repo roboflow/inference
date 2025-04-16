@@ -6,14 +6,11 @@ from pydantic import ConfigDict, Field
 from supervision.detection.utils import get_data_item
 from typing_extensions import Literal, Type
 
-from inference.core.workflows.execution_engine.entities.base import (
-    OutputDefinition,
-    WorkflowImageData,
-)
+from inference.core.workflows.execution_engine.entities.base import OutputDefinition
 from inference.core.workflows.execution_engine.entities.types import (
+    INSTANCE_SEGMENTATION_PREDICTION_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
-    WorkflowImageSelector,
 )
 from inference.core.workflows.prototypes.block import (
     BlockResult,
@@ -25,6 +22,13 @@ OUTPUT_KEY: str = "overlaps"
 SHORT_DESCRIPTION = "Filter objects overlapping some other class"
 LONG_DESCRIPTION = """
 The `OverlapFilter` is an analytics block that filters out objects overlapping instances of some other class
+
+For instance, for filtering people on bicycles, "bicycle" could be used as the overlap class.
+
+Examples applications: people in a car, items on a pallet
+
+The filter will remove the overlap class from the results, and only return the objects that overlap it. So
+in the case above, bicycle will also be removed from the results. 
 """
 
 
@@ -43,23 +47,16 @@ class OverlapManifest(WorkflowBlockManifest):
             },
         }
     )
-    type: Literal["roboflow_core/overlap@v1", "Overlap"]
-    image: Union[WorkflowImageSelector] = Field(
-        title="Image",
-        description="The input image for this step.",
-        examples=["$inputs.image", "$steps.cropping.crops"],
-    )
+    type: Literal["roboflow_core/overlap@v1"]
     predictions: Selector(
-        kind=[
-            OBJECT_DETECTION_PREDICTION_KIND,
-        ]
+        kind=[OBJECT_DETECTION_PREDICTION_KIND, INSTANCE_SEGMENTATION_PREDICTION_KIND]
     ) = Field(  # type: ignore
         description="Object predictions",
         examples=["$steps.object_detection_model.predictions"],
     )
     overlap_type: Literal["Center Overlap", "Any Overlap"] = Field(
         default="Center Overlap",
-        description="Overlap Type.",
+        description="Select center for centerpoint overlap, any for any overlap",
         examples=["Center Overlap", "Any Overlap"],
     )
     overlap_class_name: Union[str] = Field(
@@ -86,15 +83,18 @@ class OverlapManifest(WorkflowBlockManifest):
 
 
 class OverlapBlockV1(WorkflowBlock):
-    def __init__(self):
-        pass
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return OverlapManifest
 
     @classmethod
-    def coords_overlap(cls, overlap, other, overlap_type):
+    def coords_overlap(
+        cls,
+        overlap: list[int],
+        other: list[int],
+        overlap_type: Literal["Center Overlap", "Any Overlap"],
+    ):
 
         # coords are [x1, y1, x2, y2]
         if overlap_type == "Center Overlap":
@@ -113,33 +113,34 @@ class OverlapBlockV1(WorkflowBlock):
 
     def run(
         self,
-        image: WorkflowImageData,
         predictions: sv.Detections,
-        overlap_type: str,
+        overlap_type: Literal["Center Overlap", "Any Overlap"],
         overlap_class_name: str,
     ) -> BlockResult:
 
         overlaps = []
-        others = []
+        others = {}
         for i in range(len(predictions.xyxy)):
             data = get_data_item(predictions.data, i)
             if data["class_name"] == overlap_class_name:
                 overlaps.append(predictions.xyxy[i])
             else:
-                others.append((predictions.xyxy[i], i))
+                others[i] = predictions.xyxy[i]
 
+        # set of indices representing the overlapped objects
         idx = set()
         for overlap in overlaps:
             if not others:
                 break
-            idx = idx.union(
-                {
-                    other[1]
-                    for other in others
-                    if OverlapBlockV1.coords_overlap(overlap, other[0], overlap_type)
-                }
-            )
+            overlapped = {
+                k
+                for k in others
+                if OverlapBlockV1.coords_overlap(overlap, others[k], overlap_type)
+            }
             # once it's overlapped we don't need to check again
-            others = [o for o in others if o[1] not in idx]
+            for k in overlapped:
+                del others[k]
+
+            idx = idx.union(overlapped)
 
         return {OUTPUT_KEY: predictions[list(idx)]}

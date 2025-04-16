@@ -26,7 +26,6 @@ OVERLAP_WORKFLOW = {
             "predictions": "$steps.model.predictions",
             "overlap_class_name": "banana",
             "overlap_type": "Any Overlap",
-            "image": "$inputs.image"
         },
         {
             "type": "roboflow_core/overlap@v1",
@@ -34,7 +33,6 @@ OVERLAP_WORKFLOW = {
             "predictions": "$steps.model.predictions",
             "overlap_class_name": "banana",
             "overlap_type": "Center Overlap",
-            "image": "$inputs.image"
         }
     ],
     "outputs": [
