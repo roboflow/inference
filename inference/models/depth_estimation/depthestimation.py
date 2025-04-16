@@ -64,7 +64,7 @@ class DepthEstimator(TransformerModel):
                 
                 # Extract depth map
                 depth_map = post_processed_outputs[0]['predicted_depth']
-                depth_map = depth_map.cpu().numpy()
+                depth_map = depth_map.to(torch.float32).cpu().numpy()
                 
                 # Normalize depth values
                 depth_min = depth_map.min()

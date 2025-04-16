@@ -29,10 +29,10 @@ DEPTH_ESTIMATION_WORKFLOW_DEFINITION = {
     ],
     "outputs": [
         {
-        "type": "JsonField",
-        "name": "depth_estimation",
-        "coordinates_system": "own",
-        "selector": "$steps.depth_estimation.image"
+            "type": "JsonField",
+            "name": "model_predictions",
+            "coordinates_system": "own",
+            "selector": "$steps.depth_estimation.*",
         }
     ],
 }
