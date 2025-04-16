@@ -30,8 +30,10 @@ class ModelRegistry:
         Raises:
             ModelNotRecognisedError: If the model_type is not found in the registry_dict.
         """
-        if model_type not in self.registry_dict:
+        # Combining lookup and retrieval into a single step
+        try:
+            return self.registry_dict[model_type]
+        except KeyError:
             raise ModelNotRecognisedError(
                 f"Could not find model of type: {model_type} in configured registry."
             )
-        return self.registry_dict[model_type]

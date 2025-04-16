@@ -48,9 +48,7 @@ class ModelManager:
             model_id (str): The identifier of the model.
             model (Model): The model instance.
         """
-        logger.debug(
-            f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
-        )
+        # Minimize logging overhead by combining log messages
         resolved_identifier = model_id if model_id_alias is None else model_id_alias
         if resolved_identifier in self._models:
             logger.debug(
@@ -58,15 +56,18 @@ class ModelManager:
             )
             return
 
-        logger.debug("ModelManager - model initialisation...")
+        logger.debug(
+            f"ModelManager - Adding and initializing model with model_id={model_id}, model_id_alias={model_id_alias}"
+        )
 
         try:
+            # Call the model constructor directly
             model = self.model_registry.get_model(resolved_identifier, api_key)(
                 model_id=model_id,
                 api_key=api_key,
             )
-            logger.debug("ModelManager - model successfully loaded.")
             self._models[resolved_identifier] = model
+            logger.debug("ModelManager - model successfully loaded.")
         except Exception as e:
             raise
 
