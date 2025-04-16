@@ -26,6 +26,7 @@ class DepthEstimator(TransformerModel):
     task_type = "depth-estimation"
 
     def __init__(self, *args, **kwargs):
+            
         try:
             super().__init__(*args, **kwargs)
         except Exception as e:

@@ -41,15 +41,9 @@ from inference.core.roboflow_api import (
 )
 from inference.core.utils.image_utils import load_image_rgb
 
-# Update device selection logic
-def get_device():
-    if torch.cuda.is_available():
-        return "cuda:0"
-    elif torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
+if DEVICE is None:
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-DEVICE = get_device()
 
 class TransformerModel(RoboflowInferenceModel):
     task_type = "lmm"
@@ -63,9 +57,9 @@ class TransformerModel(RoboflowInferenceModel):
     load_base_from_roboflow = True
 
     def __init__(
-        self, *args, dtype=None, huggingface_token=HUGGINGFACE_TOKEN, **kwargs
+        self, model_id, *args, dtype=None, huggingface_token=HUGGINGFACE_TOKEN, **kwargs
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(model_id, *args, **kwargs)
         self.huggingface_token = huggingface_token
 
         if self.needs_hf_token and self.huggingface_token is None:
@@ -77,52 +71,32 @@ class TransformerModel(RoboflowInferenceModel):
         if self.dtype is None:
             self.dtype = self.default_dtype
 
-        self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
-        
-        # Try to initialize model from cache first
-        try:
-            self.initialize_model()
-        except Exception as e:
-            # If loading from cache fails, try downloading and caching
-            self.cache_model_artefacts()
-            self.initialize_model()
+        self.cache_model_artefacts()
 
-    def initialize_model(self) -> None:
-        """Initialize the model and processor."""
-        if self.load_base_from_roboflow:
-            try:
-                model = self.transformers_class.from_pretrained(
-                    self.cache_dir,  # Use cache directory instead of dataset_id
-                    torch_dtype=self.default_dtype,
-                )
-            except Exception as e:
-                model = self.transformers_class.from_pretrained(
-                    self.dataset_id,
-                    revision=self.version_id,
-                    token=self.api_key,
-                    torch_dtype=self.default_dtype,
-                )
+        self.cache_dir = os.path.join(MODEL_CACHE_DIR, self.endpoint + "/")
+        self.initialize_model()
+
+    def initialize_model(self):
+        if not self.load_base_from_roboflow:
+            model_id = self.dataset_id
         else:
-            try:
-                model = self.transformers_class.from_pretrained(
-                    self.endpoint,
-                    token=self.huggingface_token,
-                    torch_dtype=self.default_dtype,
-                )
-            except Exception as e:
-                raise
-        
-        try:
-            processor = self.processor_class.from_pretrained(
-                self.cache_dir,  # Use cache directory for processor too
+            model_id = self.cache_dir
+
+        self.model = (
+            self.transformers_class.from_pretrained(
+                model_id,
+                cache_dir=cache_dir,
+                device_map=DEVICE,
+                token=self.huggingface_token,
+                torch_dtype=self.default_dtype,
             )
-        except Exception as e:
-            raise
-        
-        self.model = model
-        self.processor = processor
-        
-        self.model = self.model.to(DEVICE)
+            .eval()
+            .to(self.dtype)
+        )
+
+        self.processor = self.processor_class.from_pretrained(
+            model_id, cache_dir=cache_dir, token=self.huggingface_token
+        )
 
     def preprocess(
         self, image: Any, **kwargs
@@ -147,40 +121,32 @@ class TransformerModel(RoboflowInferenceModel):
         return [response]
 
     def predict(self, image_in: Image.Image, prompt="", history=None, **kwargs):
-        if self.task_type == "llm":
-            model_inputs = self.processor(
-                text=prompt, images=image_in, return_tensors="pt"
-            ).to(self.model.device)
-            input_len = model_inputs["input_ids"].shape[-1]
+        model_inputs = self.processor(
+            text=prompt, images=image_in, return_tensors="pt"
+        ).to(self.model.device)
+        input_len = model_inputs["input_ids"].shape[-1]
 
-            with torch.inference_mode():
-                prepared_inputs = self.prepare_generation_params(
-                    preprocessed_inputs=model_inputs
-                )
-                generation = self.model.generate(
-                    **prepared_inputs,
-                    max_new_tokens=1000,
-                    do_sample=False,
-                    early_stopping=False,
-                    no_repeat_ngram_size=0,
-                )
-                generation = generation[0]
-                if self.generation_includes_input:
-                    generation = generation[input_len:]
+        with torch.inference_mode():
+            prepared_inputs = self.prepare_generation_params(
+                preprocessed_inputs=model_inputs
+            )
+            generation = self.model.generate(
+                **prepared_inputs,
+                max_new_tokens=1000,
+                do_sample=False,
+                early_stopping=False,
+                no_repeat_ngram_size=0,
+            )
+            generation = generation[0]
+            if self.generation_includes_input:
+                generation = generation[input_len:]
 
-                decoded = self.processor.decode(
-                    generation, skip_special_tokens=self.skip_special_tokens
-                )
+            decoded = self.processor.decode(
+                generation, skip_special_tokens=self.skip_special_tokens
+            )
 
-            return (decoded,)
-        elif self.task_type == "depth-estimation":
-            inputs = self.processor(images=image_in, return_tensors="pt").to(self.model.device)
-            with torch.inference_mode():
-                outputs = self.model(**inputs)
-            post_processed_outputs = self.processor.post_process_depth_estimation(outputs, target_sizes=[(image_in.height, image_in.width)])
-            return (post_processed_outputs,)
-        else:
-            raise ValueError(f"Unsupported task type: {self.task_type}")
+        return (decoded,)
+
     def prepare_generation_params(
         self, preprocessed_inputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -241,9 +207,7 @@ class TransformerModel(RoboflowInferenceModel):
                     f"`transformers` key not available in Roboflow API response while downloading model weights."
                 )
             weights = api_data["modelFiles"]["transformers"]
-        
         files_to_download = list(weights.keys())
-        
         for file_name in files_to_download:
             weights_url = weights[file_name]
             t1 = perf_counter()
@@ -306,12 +270,6 @@ class TransformerModel(RoboflowInferenceModel):
 
     def download_model_artefacts_from_s3(self) -> None:
         raise NotImplementedError()
-
-    def cache_model_artefacts(self):
-        """Cache model artifacts from either S3 or Roboflow API."""
-        if self.load_weights_as_transformers and not self.load_base_from_roboflow:
-            return None
-        self.download_model_artifacts_from_roboflow_api()
 
 
 class LoRATransformerModel(TransformerModel):
@@ -395,7 +353,3 @@ class LoRATransformerModel(TransformerModel):
             "preprocessor_config.json",
             "tokenizer_config.json",
         ]
-
-
-
-
