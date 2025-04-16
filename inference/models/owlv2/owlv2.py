@@ -104,11 +104,11 @@ class Owlv2Singleton:
             instance.huggingface_id = huggingface_id
             # Load model directly in the instance
             logger.info(f"Loading OWLv2 model from {huggingface_id}")
-            dtype = torch.float16 if str(DEVICE).startswith("cuda") else torch.float32
+            # TODO: to further reduce GPU memory usage we could use torch.float16
+            # torch_dtype = torch.float16 if str(DEVICE).startswith("cuda") else torch.float32
             model = (
                 Owlv2ForObjectDetection.from_pretrained(
                     huggingface_id,
-                    torch_dtype=dtype,
                     device_map=DEVICE if str(DEVICE).startswith("cuda") else None,
                 )
                 .eval()
