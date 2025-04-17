@@ -57,13 +57,18 @@ class ModelManager:
                 f"ModelManager - model with model_id={resolved_identifier} is already loaded."
             )
             return
+
         logger.debug("ModelManager - model initialisation...")
-        model = self.model_registry.get_model(resolved_identifier, api_key)(
-            model_id=model_id,
-            api_key=api_key,
-        )
-        logger.debug("ModelManager - model successfully loaded.")
-        self._models[resolved_identifier] = model
+
+        try:
+            model = self.model_registry.get_model(resolved_identifier, api_key)(
+                model_id=model_id,
+                api_key=api_key,
+            )
+            logger.debug("ModelManager - model successfully loaded.")
+            self._models[resolved_identifier] = model
+        except Exception as e:
+            raise
 
     def check_for_model(self, model_id: str) -> None:
         """Checks whether the model with the given ID is in the manager.

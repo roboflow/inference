@@ -103,13 +103,16 @@ nav:
           - foundation/about.md
           - CLIP (Classification, Embeddings): foundation/clip.md
           - DocTR (OCR): foundation/doctr.md
+          - Depth Estimation (Depth Anything V2 Small): foundation/depth_estimation.md
           - Florence-2: foundation/florence2.md
           - TrOCR (OCR): foundation/trocr.md
           - Grounding DINO (Object Detection): foundation/grounding_dino.md
           - L2CS-Net (Gaze Detection): foundation/gaze.md
+          - Moondream2: foundation/moondream2.md
           - PaliGemma: foundation/paligemma.md
           - Segment Anything (Segmentation): foundation/sam.md
           - Segment Anything 2 (Segmentation): foundation/sam2.md
+          - SmolVLM2: foundation/smolvlm.md
           - YOLO-World (Object Detection): foundation/yolo_world.md
           - OwlV2 (Object Detection): foundation/owlv2.md
       - Deploy a Model:
@@ -132,6 +135,8 @@ nav:
       - Batch Processing:
           - User Guide: workflows/batch_processing/about.md
           - Integration: workflows/batch_processing/integration.md
+          - API Reference: workflows/batch_processing/api_reference.md
+          - Known Issues: workflows/batch_processing/known_issues.md
       - Developer Guide:
         - Workflows Definitions: workflows/definitions.md
         - Workflow Execution: workflows/workflow_execution.md

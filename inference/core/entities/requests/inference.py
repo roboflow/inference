@@ -89,6 +89,22 @@ class CVInferenceRequest(InferenceRequest):
     )
 
 
+class DepthEstimationRequest(BaseRequest):
+    """Request for depth estimation.
+
+    Attributes:
+        image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) to be estimated.
+    """
+
+    image: Union[List[InferenceRequestImage], InferenceRequestImage]
+
+    visualize_predictions: Optional[bool] = Field(
+        default=False,
+        examples=[False],
+        description="If true, the predictions will be drawn on the original image and returned as a base64 string",
+    )
+
+
 class ObjectDetectionInferenceRequest(CVInferenceRequest):
     """Object Detection inference request.
 
@@ -252,6 +268,6 @@ def request_from_type(model_type, request_dict):
     elif model_type == "object-detection":
         request = ObjectDetectionInferenceRequest(**request_dict)
     else:
-        raise ValueError(f"Uknown task type {model_type}")
+        raise ValueError(f"Unknown task type {model_type}")
     request.id = request_dict.get("id", request.id)
     return request
