@@ -98,6 +98,15 @@ OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 # OWLv2 compile model, default is True
 OWLV2_COMPILE_MODEL = str2bool(os.getenv("OWLV2_COMPILE_MODEL", True))
 
+# Preload comma separated list of Huggingface IDs for OWLv2 models
+# NOTE: this will result in ALL inference processes to preload the models
+#       (e.g. InferencePipelineManager, InferencePipeline, etc.)
+#       Ensure NUM_WORKERS environmental variable is set to 1
+#       and also ENABLE_STREAM_API environmental variable is set to False
+PRELOAD_HF_IDS = os.getenv("PRELOAD_HF_IDS")
+if PRELOAD_HF_IDS:
+    PRELOAD_HF_IDS = [id.strip() for id in PRELOAD_HF_IDS.split(",")]
+
 # Maximum batch size for GAZE, default is 8
 GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
 
@@ -148,6 +157,8 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
 LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
 QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
+
+DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
 
