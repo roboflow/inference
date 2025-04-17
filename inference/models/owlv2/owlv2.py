@@ -146,11 +146,15 @@ def preprocess_image(
     r = min(image_size[0] / current_size[0], image_size[1] / current_size[1])
     target_size = (int(r * current_size[0]), int(r * current_size[1]))
 
+    # Convert numpy array to torch tensor, normalize and resize in one step
     torch_image = (
-        torch.tensor(np_image, dtype=torch.float32, device=DEVICE).permute(2, 0, 1)
-        / (255.0)
-    ).unsqueeze(0)
+        torch.tensor(np_image, dtype=torch.float32, device=DEVICE)
+        .permute(2, 0, 1)
+        .div_(255.0)
+        .unsqueeze(0)
+    )
 
+    # Use combined operations to avoid redundant steps
     torch_image = F.interpolate(
         torch_image, size=target_size, mode="bilinear", align_corners=False
     )
@@ -513,6 +517,9 @@ class OwlV2(RoboflowInferenceModel):
 
         # Explicitly delete temporary tensors to free memory.
         del pixel_values, np_image, image_features, image_embeds
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         if isinstance(image, LazyImageRetrievalWrapper):
             image.unload_numpy_image()  # Clears both _image_as_numpy and image if needed.
