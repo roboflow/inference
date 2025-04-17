@@ -3,6 +3,7 @@ import warnings
 from inference.core.env import (
     API_KEY,
     API_KEY_ENV_NAMES,
+    DEPTH_ESTIMATION_ENABLED,
     MOONDREAM2_ENABLED,
     QWEN_2_5_ENABLED,
     SMOLVLM2_ENABLED,
@@ -36,6 +37,7 @@ from inference.models import (
     YOLOv11ObjectDetection,
     YOLOv12ObjectDetection,
 )
+from inference.models.depth_estimation.depthestimation import DepthEstimator
 from inference.models.yolov8.yolov8_keypoints_detection import YOLOv8KeypointsDetection
 from inference.models.yolov11.yolov11_keypoints_detection import (
     YOLOv11KeypointsDetection,
@@ -342,6 +344,7 @@ except:
         category=ModelDependencyMissing,
     )
 
+
 try:
     from inference.models import SegmentAnything
 
@@ -408,6 +411,20 @@ except:
         f"Use pip install 'inference[transformers]' to install missing requirements.",
         category=ModelDependencyMissing,
     )
+
+
+try:
+    if DEPTH_ESTIMATION_ENABLED:
+        from inference.models.depth_estimation.depthestimation import DepthEstimator
+
+        ROBOFLOW_MODEL_TYPES[("depth-estimation", "small")] = DepthEstimator
+except:
+    warnings.warn(
+        f"Your `inference` configuration does not support Depth Estimation."
+        f"Use pip install 'inference[transformers]' to install missing requirements.",
+        category=ModelDependencyMissing,
+    )
+
 
 try:
     if MOONDREAM2_ENABLED:
