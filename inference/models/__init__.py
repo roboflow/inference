@@ -1,5 +1,6 @@
-from typing import Any
 import importlib
+from typing import Any
+
 from inference.core.env import (
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,

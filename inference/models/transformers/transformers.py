@@ -1,12 +1,12 @@
 from __future__ import annotations
+
 import os
 import re
 import subprocess
 import tarfile
 from time import perf_counter
-from typing import Any, Dict, Tuple, TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Any, Dict, Tuple, Type
 
-from inference.core.env import HUGGINGFACE_TOKEN, MODEL_CACHE_DIR, DEVICE
 from inference.core.cache.model_artifacts import (
     get_cache_dir,
     get_cache_file_path,
@@ -16,6 +16,7 @@ from inference.core.entities.responses.inference import (
     InferenceResponseImage,
     LMMInferenceResponse,
 )
+from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
 from inference.core.exceptions import ModelArtefactError
 from inference.core.logger import logger
 from inference.core.models.base import PreprocessReturnMetadata
@@ -30,10 +31,11 @@ from inference.core.roboflow_api import (
 from inference.core.utils.image_utils import load_image_rgb
 
 if TYPE_CHECKING:
-    from PIL import Image
-    from inference.core.entities.responses.inference import InferenceResponseImage
-    from transformers import AutoModel, AutoProcessor
     import torch
+    from PIL import Image
+    from transformers import AutoModel, AutoProcessor
+
+    from inference.core.entities.responses.inference import InferenceResponseImage
 
 
 class TransformerModel(RoboflowInferenceModel):
@@ -288,9 +290,9 @@ class LoRATransformerModel(TransformerModel):
     load_base_from_roboflow = False
 
     def initialize_model(self):
+        import torch
         from peft import LoraConfig
         from peft.peft_model import PeftModel
-        import torch
 
         lora_config = LoraConfig.from_pretrained(self.cache_dir, device_map=DEVICE)
         model_id = lora_config.base_model_name_or_path
