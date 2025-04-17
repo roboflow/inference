@@ -6,7 +6,6 @@ import numpy as np
 from PIL import Image
 
 from tests.inference.integration_tests.regression_test import bool_env
-from inference.core.workflows.execution_engine.entities.base import WorkflowImageData, ImageParentMetadata
 
 api_key = os.environ.get("API_KEY")
 
