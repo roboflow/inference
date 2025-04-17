@@ -95,7 +95,7 @@ class TransformerModel(RoboflowInferenceModel):
         self.model = (
             self.transformers_class.from_pretrained(
                 model_id,
-                cache_dir=cache_dir,
+                cache_dir=self.cache_dir,
                 device_map=DEVICE,
                 token=self.huggingface_token,
                 torch_dtype=self.default_dtype,
@@ -105,7 +105,7 @@ class TransformerModel(RoboflowInferenceModel):
         )
 
         self.processor = self.processor_class.from_pretrained(
-            model_id, cache_dir=cache_dir, token=self.huggingface_token
+            model_id, cache_dir=self.cache_dir, token=self.huggingface_token
         )
 
     def preprocess(
