@@ -260,7 +260,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         processed_predictions = []
 
         background_class_index = -1  # Default to -1 (won't match valid indices)
-        background_class_name = "background_class8342"
+        background_class_name = "background_class83422"
         try:
             background_class_index = self.class_names.index(background_class_name)
         except ValueError:
