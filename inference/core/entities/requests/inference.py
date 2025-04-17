@@ -89,22 +89,6 @@ class CVInferenceRequest(InferenceRequest):
     )
 
 
-class DepthEstimationRequest(BaseRequest):
-    """Request for depth estimation.
-
-    Attributes:
-        image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) to be estimated.
-    """
-
-    image: Union[List[InferenceRequestImage], InferenceRequestImage]
-
-    visualize_predictions: Optional[bool] = Field(
-        default=False,
-        examples=[False],
-        description="If true, the predictions will be drawn on the original image and returned as a base64 string",
-    )
-
-
 class ObjectDetectionInferenceRequest(CVInferenceRequest):
     """Object Detection inference request.
 

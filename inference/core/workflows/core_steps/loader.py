@@ -167,9 +167,6 @@ from inference.core.workflows.core_steps.models.foundation.clip_comparison.v2 im
 from inference.core.workflows.core_steps.models.foundation.cog_vlm.v1 import (
     CogVLMBlockV1,
 )
-from inference.core.workflows.core_steps.models.foundation.depth_estimation.v1 import (
-    DepthEstimationBlockV1,
-)
 from inference.core.workflows.core_steps.models.foundation.florence2.v1 import (
     Florence2BlockV1,
 )
@@ -518,7 +515,6 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         DynamicCropBlockV1,
         DetectionsFilterBlockV1,
         DetectionOffsetBlockV1,
-        DepthEstimationBlockV1,
         ByteTrackerBlockV1,
         RelativeStaticCropBlockV1,
         DetectionsTransformationBlockV1,

@@ -149,8 +149,6 @@ LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
 QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
 
-DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
-
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
 
 MOONDREAM2_ENABLED = str2bool(os.getenv("MOONDREAM2_ENABLED", True))
