@@ -1,7 +1,7 @@
 from typing import Any, ClassVar, List, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, validator
 
 from inference.core.entities.common import ApiKey, ModelID, ModelType
 
@@ -89,21 +89,32 @@ class CVInferenceRequest(InferenceRequest):
     )
 
 
-class DepthEstimationRequest(BaseRequest):
+class DepthEstimationRequest(InferenceRequest):
     """Request for depth estimation.
 
     Attributes:
         image (Union[List[InferenceRequestImage], InferenceRequestImage]): Image(s) to be estimated.
+        model_id (str): The model ID to use for depth estimation.
+        depth_version_id (Optional[str]): The version ID of the depth estimation model.
     """
 
     image: Union[List[InferenceRequestImage], InferenceRequestImage]
-
-    visualize_predictions: Optional[bool] = Field(
-        default=False,
-        examples=[False],
-        description="If true, the predictions will be drawn on the original image and returned as a base64 string",
+    model_id: Optional[str] = Field(None)
+    depth_version_id: Optional[str] = Field(
+        default="small",
+        examples=["small"],
+        description="The version ID of the depth estimation model",
     )
 
+    @validator("model_id", always=True)
+    def validate_model_id(cls, value, values):
+        if value is not None:
+            return value
+        if values.get("depth_version_id") is None:
+            return None
+        return f"depth-anything-v2/{values['depth_version_id']}"
+
+  
 
 class ObjectDetectionInferenceRequest(CVInferenceRequest):
     """Object Detection inference request.

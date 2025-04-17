@@ -316,6 +316,25 @@ class FaceDetectionPrediction(ObjectDetectionPrediction):
     landmarks: Union[List[Point], List[Point3D]]
 
 
+class DepthEstimationResponse(BaseModel):
+    """Response for depth estimation inference.
+
+    Attributes:
+        normalized_depth (List[List[float]]): The normalized depth map as a 2D array of floats between 0 and 1.
+        image (Optional[str]): Base64 encoded visualization of the depth map if visualize_predictions is True.
+        time (float): The processing time in seconds.
+        visualization (Optional[str]): Base64 encoded visualization of the depth map if visualize_predictions is True.
+    """
+
+    normalized_depth: List[List[float]] = Field(
+        description="The normalized depth map as a 2D array of floats between 0 and 1"
+    )
+    image: Optional[str] = Field(
+        None,
+        description="Base64 encoded visualization of the depth map if visualize_predictions is True",
+    )
+   
+
 def response_from_type(model_type, response_dict):
     if model_type == "classification":
         try:

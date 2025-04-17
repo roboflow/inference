@@ -33,6 +33,7 @@ from inference.core.entities.requests.inference import (
     KeypointsDetectionInferenceRequest,
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
+    DepthEstimationRequest,
 )
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.sam import (
@@ -64,13 +65,14 @@ from inference.core.entities.responses.clip import (
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
-    InferenceResponse,
+    DepthEstimationResponse,
     InstanceSegmentationInferenceResponse,
     KeypointsDetectionInferenceResponse,
     LMMInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
     StubResponse,
+    InferenceResponse,
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
 from inference.core.entities.responses.ocr import OCRInferenceResponse
@@ -109,6 +111,7 @@ from inference.core.env import (
     CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
+    DEPTH_ESTIMATION_ENABLED,
     CORRELACTION_ID_HEADER,
     DEDICATED_DEPLOYMENT_ID,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
@@ -933,8 +936,18 @@ class HttpInterface(BaseInterface):
         The YOLO World model ID.
         """
 
+        load_depth_model = partial(load_core_model, core_model="depth-anything-v2")
+        """Loads the depth estimation model into the model manager.
+
+        Args:
+        inference_request: The request containing version and other details.
+        api_key: The API key for the request.
+        """
+
         load_trocr_model = partial(load_core_model, core_model="trocr")
         """Loads the TrOCR model into the model manager.
+
+        
 
         Args:
         inference_request: The request containing version and other details.
@@ -2140,6 +2153,57 @@ class HttpInterface(BaseInterface):
                         trackUsage(gaze_model_id, actor)
                     return response
 
+            if DEPTH_ESTIMATION_ENABLED:
+
+                @app.post(
+                    "/infer/depth-estimation",
+                    response_model=DepthEstimationResponse,
+                    summary="Depth Estimation",
+                    description="Run the depth estimation model to generate a depth map.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                async def depth_estimation(
+                    inference_request: DepthEstimationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Generate a depth map using the depth estimation model.
+
+                    Args:
+                        inference_request (DepthEstimationRequest): The request containing the image to estimate depth for.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        DepthEstimationResponse: The response containing the normalized depth map and optional visualization.
+                    """
+                    logger.debug(f"Reached /infer/depth-estimation")
+                    depth_model_id = inference_request.model_id 
+                    self.model_manager.add_model(depth_model_id, inference_request.api_key)
+                    response = await self.model_manager.infer_from_request(
+                        depth_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(depth_model_id, actor)
+                    
+
+                    # Extract data from nested response structure
+                    depth_data = response.response
+                    depth_response = DepthEstimationResponse(
+                        normalized_depth=depth_data['normalized_depth'].tolist(),
+                        image=depth_data['image'].numpy_image.tobytes().hex(),
+                    )
+                    return depth_response
+
+
             if CORE_MODEL_TROCR_ENABLED:
 
                 @app.post(
@@ -2564,3 +2628,19 @@ class HttpInterface(BaseInterface):
 
     def run(self):
         uvicorn.run(self.app, host="127.0.0.1", port=8080)
+
+
+def load_gaze_model(
+    inference_request: GazeDetectionInferenceRequest, api_key: Optional[str] = None
+) -> str:
+    """Loads the gaze detection model.
+
+    Args:
+        inference_request (GazeDetectionInferenceRequest): The inference request.
+        api_key (Optional[str], default None): The Roboflow API key.
+
+    Returns:
+        str: The model ID.
+    """
+    return inference_request.model_id
+

@@ -164,8 +164,7 @@ class DepthEstimationBlockV1(WorkflowBlock):
                 prediction = self._model_manager.infer_from_request_sync(
                     model_id=model_version, request=request
                 )
-                response_text = prediction.response
-                predictions.append(response_text)
+                predictions.append(prediction.response)
             except Exception as e:
                 raise
 
