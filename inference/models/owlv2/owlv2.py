@@ -146,9 +146,10 @@ def preprocess_image(
     r = min(image_size[0] / current_size[0], image_size[1] / current_size[1])
     target_size = (int(r * current_size[0]), int(r * current_size[1]))
 
-    torch_image = torch.tensor(np_image, dtype=torch.float32, device=DEVICE).permute(
-        2, 0, 1
-    ) / (255.0).unsqueeze(0)
+    torch_image = (
+        torch.tensor(np_image, dtype=torch.float32, device=DEVICE).permute(2, 0, 1)
+        / (255.0)
+    ).unsqueeze(0)
 
     torch_image = F.interpolate(
         torch_image, size=target_size, mode="bilinear", align_corners=False
