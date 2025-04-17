@@ -104,8 +104,13 @@ class Owlv2Singleton:
             instance.huggingface_id = huggingface_id
             # Load model directly in the instance
             logger.info(f"Loading OWLv2 model from {huggingface_id}")
+            # TODO: to further reduce GPU memory usage we could use torch.float16
+            # torch_dtype = torch.float16 if str(DEVICE).startswith("cuda") else torch.float32
             model = (
-                Owlv2ForObjectDetection.from_pretrained(huggingface_id)
+                Owlv2ForObjectDetection.from_pretrained(
+                    huggingface_id,
+                    device_map=DEVICE if str(DEVICE).startswith("cuda") else None,
+                )
                 .eval()
                 .to(DEVICE)
             )
@@ -172,7 +177,7 @@ def dummy_infer(hf_id: str):
         1, 3, 1, 1
     )
 
-    np_image = np.zeros((image_size[0], image_size[1], 3), dtype=np.float32)
+    np_image = np.zeros((image_size[0] // 2, image_size[1] // 2, 3), dtype=np.float32)
     pixel_values = preprocess_image(np_image, image_size, image_mean, image_std)
 
     # Below code is copied from Owlv2.embed_image
@@ -180,7 +185,11 @@ def dummy_infer(hf_id: str):
     with torch.autocast(
         device_type=device_str, dtype=torch.float16, enabled=device_str == "cuda"
     ):
-        model.image_embedder(pixel_values=pixel_values)
+        image_embeds, _ = model.image_embedder(pixel_values=pixel_values)
+    del pixel_values, np_image, image_embeds
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return singleton
 
 
@@ -191,10 +200,21 @@ if PRELOAD_HF_IDS:
     for hf_id in hf_ids:
         logger.info("Preloading OWLv2 model for %s (this may take a while)", hf_id)
         try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                allocated_gpu_memory = torch.cuda.memory_allocated() / (1024**3)
+                logger.info(
+                    f"Allocated GPU memory before loading model: {allocated_gpu_memory:.2f} GB"
+                )
             t1 = time.time()
             singleton = dummy_infer(hf_id)
             t2 = time.time()
             logger.info("Preloaded OWLv2 model for %s in %0.2f seconds", hf_id, t2 - t1)
+            if torch.cuda.is_available():
+                allocated_gpu_memory = torch.cuda.memory_allocated() / (1024**3)
+                logger.info(
+                    f"Allocated GPU memory after loading model: {allocated_gpu_memory:.2f} GB"
+                )
             # Store the singleton instance directly in PRELOADED_HF_MODELS
             PRELOADED_HF_MODELS[hf_id] = singleton
         except Exception as exc:
