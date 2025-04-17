@@ -114,7 +114,6 @@ class DepthEstimationRequest(InferenceRequest):
             return None
         return f"depth-anything-v2/{values['depth_version_id']}"
 
-  
 
 class ObjectDetectionInferenceRequest(CVInferenceRequest):
     """Object Detection inference request.

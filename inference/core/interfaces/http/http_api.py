@@ -27,13 +27,13 @@ from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
+    DepthEstimationRequest,
     InferenceRequest,
     InferenceRequestImage,
     InstanceSegmentationInferenceRequest,
     KeypointsDetectionInferenceRequest,
     LMMInferenceRequest,
     ObjectDetectionInferenceRequest,
-    DepthEstimationRequest,
 )
 from inference.core.entities.requests.owlv2 import OwlV2InferenceRequest
 from inference.core.entities.requests.sam import (
@@ -66,13 +66,13 @@ from inference.core.entities.responses.gaze import GazeDetectionInferenceRespons
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
     DepthEstimationResponse,
+    InferenceResponse,
     InstanceSegmentationInferenceResponse,
     KeypointsDetectionInferenceResponse,
     LMMInferenceResponse,
     MultiLabelClassificationInferenceResponse,
     ObjectDetectionInferenceResponse,
     StubResponse,
-    InferenceResponse,
 )
 from inference.core.entities.responses.notebooks import NotebookStartResponse
 from inference.core.entities.responses.ocr import OCRInferenceResponse
@@ -111,10 +111,10 @@ from inference.core.env import (
     CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
-    DEPTH_ESTIMATION_ENABLED,
     CORRELACTION_ID_HEADER,
     DEDICATED_DEPLOYMENT_ID,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
+    DEPTH_ESTIMATION_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
     DOCKER_SOCKET_PATH,
     ENABLE_BUILDER,
@@ -934,14 +934,6 @@ class HttpInterface(BaseInterface):
 
         Returns:
         The YOLO World model ID.
-        """
-
-        load_depth_model = partial(load_core_model, core_model="depth-anything-v2")
-        """Loads the depth estimation model into the model manager.
-
-        Args:
-        inference_request: The request containing version and other details.
-        api_key: The API key for the request.
         """
 
         load_trocr_model = partial(load_core_model, core_model="trocr")
@@ -2183,8 +2175,10 @@ class HttpInterface(BaseInterface):
                         DepthEstimationResponse: The response containing the normalized depth map and optional visualization.
                     """
                     logger.debug(f"Reached /infer/depth-estimation")
-                    depth_model_id = inference_request.model_id 
-                    self.model_manager.add_model(depth_model_id, inference_request.api_key)
+                    depth_model_id = inference_request.model_id
+                    self.model_manager.add_model(
+                        depth_model_id, inference_request.api_key
+                    )
                     response = await self.model_manager.infer_from_request(
                         depth_model_id, inference_request
                     )
@@ -2193,16 +2187,14 @@ class HttpInterface(BaseInterface):
                             "authorizer"
                         ]["lambda"]["actor"]
                         trackUsage(depth_model_id, actor)
-                    
 
                     # Extract data from nested response structure
                     depth_data = response.response
                     depth_response = DepthEstimationResponse(
-                        normalized_depth=depth_data['normalized_depth'].tolist(),
-                        image=depth_data['image'].numpy_image.tobytes().hex(),
+                        normalized_depth=depth_data["normalized_depth"].tolist(),
+                        image=depth_data["image"].numpy_image.tobytes().hex(),
                     )
                     return depth_response
-
 
             if CORE_MODEL_TROCR_ENABLED:
 
@@ -2643,4 +2635,3 @@ def load_gaze_model(
         str: The model ID.
     """
     return inference_request.model_id
-

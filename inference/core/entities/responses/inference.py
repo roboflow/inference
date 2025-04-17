@@ -333,7 +333,7 @@ class DepthEstimationResponse(BaseModel):
         None,
         description="Base64 encoded visualization of the depth map if visualize_predictions is True",
     )
-   
+
 
 def response_from_type(model_type, response_dict):
     if model_type == "classification":
