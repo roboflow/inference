@@ -111,7 +111,7 @@ from inference.core.env import (
     CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
-    CORRELACTION_ID_HEADER,
+    CORRELATION_ID_HEADER,
     DEDICATED_DEPLOYMENT_ID,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DEPTH_ESTIMATION_ENABLED,
@@ -639,7 +639,7 @@ class HttpInterface(BaseInterface):
         if DEDICATED_DEPLOYMENT_ID or GCP_SERVERLESS:
             app.add_middleware(
                 asgi_correlation_id.CorrelationIdMiddleware,
-                header_name=CORRELACTION_ID_HEADER,
+                header_name=CORRELATION_ID_HEADER,
                 update_request_header=True,
                 generator=lambda: uuid4().hex,
                 validator=lambda a: True,

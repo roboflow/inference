@@ -243,7 +243,10 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
 # Header where correlaction ID for logging is stored
-CORRELACTION_ID_HEADER = os.getenv("CORRELACTION_ID_HEADER", "X-Request-ID")
+CORRELATION_ID_HEADER = os.getenv("CORRELATION_ID_HEADER", "X-Request-ID")
+
+# Header where correlaction ID for logging is stored
+CORRELATION_ID_LOG_KEY = os.getenv("CORRELATION_ID_LOG_KEY", "request_id")
 
 # Flag to enable legacy route, default is True
 LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))
