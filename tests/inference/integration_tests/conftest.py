@@ -12,6 +12,7 @@ api_key = os.environ.get("API_KEY")
 port = os.environ.get("PORT", 9001)
 base_url = os.environ.get("BASE_URL", "http://localhost")
 
+print(base_url, port)
 
 @pytest.fixture(scope="session", autouse=True)
 def server_url() -> str:
