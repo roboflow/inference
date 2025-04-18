@@ -26,7 +26,10 @@ CORE_MODELS = {
         CORE_MODEL_GROUNDINGDINO_ENABLED,
     ),
     "YOLOWorld": ("inference.models.yolo_world", CORE_MODEL_YOLO_WORLD_ENABLED),
-    "DepthEstimator": ("inference.models.depth_estimation.depthestimation", DEPTH_ESTIMATION_ENABLED),
+    "DepthEstimator": (
+        "inference.models.depth_estimation.depthestimation",
+        DEPTH_ESTIMATION_ENABLED,
+    ),
 }
 
 OPTIONAL_MODELS = {
