@@ -264,7 +264,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         try:
             background_class_index = self.class_names.index(background_class_name)
         except ValueError:
-            print(f"Background class {background_class_name} not found in class_names")
             pass
 
         for batch_idx in range(batch_size):
