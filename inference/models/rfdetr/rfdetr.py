@@ -26,6 +26,7 @@ from inference.core.models.utils.onnx import has_trt
 from inference.core.utils.image_utils import load_image
 from inference.core.utils.onnx import ImageMetaType, run_session_via_iobinding
 from inference.core.utils.preprocess import letterbox_image
+from inference.core.entities.responses.inference import ObjectDetectionInferenceResponse
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
@@ -253,7 +254,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         logits = logits.astype(np.float32)
 
         batch_size, num_queries, num_classes = logits.shape
-        logits_sigmoid = self.sigmoid_stable(logits)
+        logits_sigmoid = sigmoid_stable(logits)
 
         img_dims = preproc_return_metadata["img_dims"]
 
@@ -270,7 +271,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             orig_h, orig_w = img_dims[batch_idx]
 
             logits_flat = logits_sigmoid[batch_idx].reshape(-1)
-
             sorted_indices = np.argsort(-logits_flat)[:max_detections]
             topk_scores = logits_flat[sorted_indices]
 
@@ -283,7 +283,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
             if background_class_index != -1:
                 class_filter_mask = topk_labels != background_class_index
-
                 topk_scores = topk_scores[class_filter_mask]
                 topk_labels = topk_labels[class_filter_mask]
                 topk_boxes = topk_boxes[class_filter_mask]
@@ -301,7 +300,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 boxes_xyxy *= scale_fct
             else:
                 input_h, input_w = self.img_size_h, self.img_size_w
-
                 scale = min(input_w / orig_w, input_h / orig_h)
                 scaled_w = int(orig_w * scale)
                 scaled_h = int(orig_h * scale)
@@ -312,18 +310,18 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
                 boxes_input = boxes_xyxy * np.array(
                     [input_w, input_h, input_w, input_h], dtype=np.float32
                 )
-
                 boxes_input[:, 0] -= pad_x
                 boxes_input[:, 1] -= pad_y
                 boxes_input[:, 2] -= pad_x
                 boxes_input[:, 3] -= pad_y
-
                 boxes_xyxy = boxes_input / scale
 
-            boxes_xyxy[:, 0] = np.clip(boxes_xyxy[:, 0], 0, orig_w)
-            boxes_xyxy[:, 1] = np.clip(boxes_xyxy[:, 1], 0, orig_h)
-            boxes_xyxy[:, 2] = np.clip(boxes_xyxy[:, 2], 0, orig_w)
-            boxes_xyxy[:, 3] = np.clip(boxes_xyxy[:, 3], 0, orig_h)
+            np.clip(
+                boxes_xyxy,
+                [0, 0, 0, 0],
+                [orig_w, orig_h, orig_w, orig_h],
+                out=boxes_xyxy,
+            )
 
             batch_predictions = np.column_stack(
                 (
@@ -446,3 +444,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
     def validate_model_classes(self) -> None:
         pass
+
+
+def sigmoid_stable(x):
+    return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))

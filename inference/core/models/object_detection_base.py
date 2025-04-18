@@ -8,6 +8,15 @@ from inference.core.env import (
     USE_PYTORCH_FOR_PREPROCESSING,
 )
 from inference.core.logger import logger
+from inference.core.entities.responses.inference import (
+    InferenceResponseImage,
+    ObjectDetectionInferenceResponse,
+    ObjectDetectionPrediction,
+)
+from inference.core.models.defaults import DEFAULT_CONFIDENCE, DEFAUlT_MAX_DETECTIONS
+from inference.core.models.object_detection_base import ObjectDetectionInferenceResponse
+from inference.core.models.roboflow import OnnxRoboflowInferenceModel
+from inference.core.models.types import PreprocessReturnMetadata
 
 if USE_PYTORCH_FOR_PREPROCESSING:
     import torch
@@ -115,18 +124,14 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
         Returns:
             List[ObjectDetectionInferenceResponse]: A list of response objects containing object detection predictions.
         """
-
         if isinstance(img_dims, dict) and "img_dims" in img_dims:
             img_dims = img_dims["img_dims"]
 
-        predictions = predictions[
-            : len(img_dims)
-        ]  # If the batch size was fixed we have empty preds at the end
+        len_img_dims = len(img_dims)
         responses = [
             ObjectDetectionInferenceResponse(
                 predictions=[
                     ObjectDetectionPrediction(
-                        # Passing args as a dictionary here since one of the args is 'class' (a protected term in Python)
                         **{
                             "x": (pred[0] + pred[2]) / 2,
                             "y": (pred[1] + pred[3]) / 2,
@@ -145,7 +150,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
                     width=img_dims[ind][1], height=img_dims[ind][0]
                 ),
             )
-            for ind, batch_predictions in enumerate(predictions)
+            for ind, batch_predictions in enumerate(predictions[:len_img_dims])
         ]
         return responses
 
@@ -322,3 +327,7 @@ class ObjectDetectionBaseOnnxRoboflowInferenceModel(OnnxRoboflowInferenceModel):
             raise ValueError(
                 f"Number of classes in model ({num_classes}) does not match the number of classes in the environment ({self.num_classes})"
             )
+
+
+def sigmoid_stable(x):
+    return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
