@@ -37,6 +37,8 @@ version.deploy("model-type", "path/to/training/results/")
 
 |Model Architecture|Task      |Model Type ID                 |
 |------------------|----------------|-------------------|
+|RF-DETR           |Object Detection|rfdetr-base        |
+|RF-DETR           |Object Detection|rfdetr-large       |
 |YOLOv5            |Object Detection|yolov5             |
 |YOLOv5            |Segmentation    |yolov5-seg         |
 |YOLOv7            |Object Detection|yolov7-seg         |
