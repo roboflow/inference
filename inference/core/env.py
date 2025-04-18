@@ -242,6 +242,9 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
 
+# Flag to enable API logging, default is False
+API_LOGGING_ENABLED = str2bool(os.getenv("API_LOGGING_ENABLED", "False"))
+
 # Header where correlaction ID for logging is stored
 CORRELATION_ID_HEADER = os.getenv("CORRELATION_ID_HEADER", "X-Request-ID")
 

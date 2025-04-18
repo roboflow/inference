@@ -100,6 +100,7 @@ from inference.core.entities.responses.workflows import (
 from inference.core.env import (
     ALLOW_ORIGINS,
     API_KEY,
+    API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
@@ -112,7 +113,6 @@ from inference.core.env import (
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
     CORRELATION_ID_HEADER,
-    DEDICATED_DEPLOYMENT_ID,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
     DEPTH_ESTIMATION_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
@@ -636,7 +636,7 @@ class HttpInterface(BaseInterface):
                 strip_dirs=False,
                 sort_by="cumulative",
             )
-        if DEDICATED_DEPLOYMENT_ID or GCP_SERVERLESS:
+        if API_LOGGING_ENABLED:
             app.add_middleware(
                 asgi_correlation_id.CorrelationIdMiddleware,
                 header_name=CORRELATION_ID_HEADER,
