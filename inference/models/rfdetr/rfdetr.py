@@ -259,13 +259,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
         processed_predictions = []
 
-        background_class_index = -1  # Default to -1 (won't match valid indices)
-        background_class_name = "background_class83422"
-        try:
-            background_class_index = self.class_names.index(background_class_name)
-        except ValueError:
-            pass
-
         for batch_idx in range(batch_size):
             orig_h, orig_w = img_dims[batch_idx]
 
@@ -280,13 +273,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
             topk_boxes = sorted_indices // num_classes
             topk_labels = sorted_indices % num_classes
-
-            if background_class_index != -1:
-                class_filter_mask = topk_labels != background_class_index
-
-                topk_scores = topk_scores[class_filter_mask]
-                topk_labels = topk_labels[class_filter_mask]
-                topk_boxes = topk_boxes[class_filter_mask]
 
             selected_boxes = bboxes[batch_idx, topk_boxes]
 
