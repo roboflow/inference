@@ -7,6 +7,7 @@ from inference.core.env import (
     CORE_MODEL_SAM_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
+    DEPTH_ESTIMATION_ENABLED,
 )
 
 if CORE_MODELS_ENABLED:
@@ -19,6 +20,12 @@ if CORE_MODELS_ENABLED:
     if CORE_MODEL_GAZE_ENABLED:
         try:
             from inference.models.gaze import Gaze
+        except:
+            pass
+
+    if DEPTH_ESTIMATION_ENABLED:
+        try:
+            from inference.models.depth_estimation.depthestimation import DepthEstimator
         except:
             pass
 
