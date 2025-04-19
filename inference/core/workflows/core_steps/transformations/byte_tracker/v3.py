@@ -14,8 +14,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
-    OBJECT_DETECTION_PREDICTION_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
+    OBJECT_DETECTION_PREDICTION_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import (
