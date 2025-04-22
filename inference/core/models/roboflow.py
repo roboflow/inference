@@ -961,7 +961,8 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
 
     def get_cached_session(self) -> Tuple[Optional[str], bool]:
         try:
-            signature = generate_hardware_signature_string() + f"-bs{self.current_batch_size}"
+            # no way to easily get trt session right now
+            signature = generate_hardware_signature_string() + f"-bs{1}"
             # check if the engine file exists
             cache_dir = os.path.join(TENSORRT_CACHE_PATH, self.endpoint)
             engine_file = [f for f in os.listdir(cache_dir) if f.endswith(".engine")]
