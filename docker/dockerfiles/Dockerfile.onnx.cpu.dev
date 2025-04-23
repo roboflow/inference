@@ -9,6 +9,7 @@ RUN apt update -y && apt install -y \
     python3-pip \
     git \
     libgdal-dev \
+    libvips-dev \
     cmake \
     rustc \
     cargo \

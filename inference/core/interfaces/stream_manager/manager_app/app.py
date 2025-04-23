@@ -22,6 +22,9 @@ from inference.core.env import (
     STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE,
 )
 from inference.core.interfaces.camera.video_source import StreamState
+from inference.core.interfaces.stream.inference_pipeline import (
+    INFERENCE_THREAD_FINISHED_EVENT,
+)
 from inference.core.interfaces.stream_manager.manager_app.communication import (
     receive_socket_data,
     send_data_trough_socket,
@@ -33,6 +36,7 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     STATE_KEY,
     STATUS_KEY,
     TYPE_KEY,
+    VIDEO_SOURCE_STATUS_UPDATES_KEY,
     CommandType,
     ErrorType,
     OperationStatus,
@@ -66,6 +70,7 @@ class ManagedInferencePipeline:
             maxlen=min(max(STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE, 10), 10)
         )
     )
+    is_terminating: bool = False
 
 
 PROCESSES_TABLE: Dict[str, ManagedInferencePipeline] = {}
@@ -226,6 +231,10 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
     def _terminate_pipeline(
         self, request_id: str, pipeline_id: str, command: dict
     ) -> None:
+        with PROCESSES_TABLE_LOCK:
+            # signal termination to avoid deadlock with health check
+            pipeline = self._processes_table[pipeline_id]
+            pipeline.is_terminating = True
         response = handle_command(
             processes_table=self._processes_table,
             request_id=request_id,
@@ -242,6 +251,10 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
             logger.info(
                 f"Joined inference pipeline. pipeline_id={pipeline_id} request_id={request_id}"
             )
+            with PROCESSES_TABLE_LOCK:
+                # termination ended
+                pipeline = self._processes_table[pipeline_id]
+                pipeline.is_terminating = False
         serialised_response = prepare_response(
             request_id=request_id, response=response, pipeline_id=pipeline_id
         )
@@ -322,6 +335,10 @@ def check_process_health() -> None:
                 process_ram_usage_mb = _get_process_memory_usage_mb(process=process)
                 managed_pipeline.ram_usage_queue.append(process_ram_usage_mb)
 
+                if managed_pipeline.is_terminating:
+                    # skip pipelines that are receiving a termination command
+                    continue
+
                 if not process.is_alive():
                     logger.warning(
                         "Process for pipeline_id=%s is not alive. Terminating...",
@@ -371,6 +388,27 @@ def check_process_health() -> None:
                     logger.info(
                         "All sources depleted in pipeline %s, terminating", pipeline_id
                     )
+
+                    status_updates = response[REPORT_KEY].get(
+                        VIDEO_SOURCE_STATUS_UPDATES_KEY, []
+                    )
+                    pipeline_status_updates = [
+                        s
+                        for s in status_updates
+                        if s["context"] == "inference_pipeline"
+                    ]
+                    if not pipeline_status_updates:
+                        continue
+
+                    if (
+                        pipeline_status_updates[-1]["event_type"]
+                        == INFERENCE_THREAD_FINISHED_EVENT
+                    ):
+                        # pipeline was already terminated
+                        process.join()
+                        del PROCESSES_TABLE[pipeline_id]
+                        continue
+
                     command = {
                         TYPE_KEY: CommandType.TERMINATE,
                         PIPELINE_ID_KEY: pipeline_id,
