@@ -66,6 +66,7 @@ class ManagedInferencePipeline:
             maxlen=min(max(STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE, 10), 10)
         )
     )
+    is_terminating: bool = False
 
 
 PROCESSES_TABLE: Dict[str, ManagedInferencePipeline] = {}
@@ -226,6 +227,10 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
     def _terminate_pipeline(
         self, request_id: str, pipeline_id: str, command: dict
     ) -> None:
+        with PROCESSES_TABLE_LOCK:
+            # signal termination to avoid deadlock with health check
+            pipeline = self._processes_table[pipeline_id]
+            pipeline.is_terminating = True
         response = handle_command(
             processes_table=self._processes_table,
             request_id=request_id,
@@ -318,6 +323,10 @@ def check_process_health() -> None:
         total_ram_usage: int = _get_current_process_ram_usage_mb()
         with PROCESSES_TABLE_LOCK:
             for pipeline_id, managed_pipeline in list(PROCESSES_TABLE.items()):
+                if managed_pipeline.is_terminating:
+                    # skip terminating pipelines
+                    continue
+
                 process = managed_pipeline.pipeline_manager
                 process_ram_usage_mb = _get_process_memory_usage_mb(process=process)
                 managed_pipeline.ram_usage_queue.append(process_ram_usage_mb)
