@@ -12,6 +12,7 @@ from inference.core.interfaces.camera.video_source import (
 STATUS_KEY = "status"
 STATE_KEY = "state"
 SOURCES_METADATA_KEY = "sources_metadata"
+VIDEO_SOURCE_STATUS_UPDATES_KEY = "video_source_status_updates"
 REPORT_KEY = "report"
 TYPE_KEY = "type"
 ERROR_TYPE_KEY = "error_type"
