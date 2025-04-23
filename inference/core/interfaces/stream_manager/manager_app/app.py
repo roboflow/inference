@@ -22,6 +22,9 @@ from inference.core.env import (
     STREAM_MANAGER_RAM_USAGE_QUEUE_SIZE,
 )
 from inference.core.interfaces.camera.video_source import StreamState
+from inference.core.interfaces.stream.inference_pipeline import (
+    INFERENCE_THREAD_FINISHED_EVENT,
+)
 from inference.core.interfaces.stream_manager.manager_app.communication import (
     receive_socket_data,
     send_data_trough_socket,
@@ -30,10 +33,10 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
     PIPELINE_ID_KEY,
     REPORT_KEY,
     SOURCES_METADATA_KEY,
-    VIDEO_SOURCE_STATUS_UPDATES_KEY,
     STATE_KEY,
     STATUS_KEY,
     TYPE_KEY,
+    VIDEO_SOURCE_STATUS_UPDATES_KEY,
     CommandType,
     ErrorType,
     OperationStatus,
@@ -52,7 +55,6 @@ from inference.core.interfaces.stream_manager.manager_app.serialisation import (
 from inference.core.interfaces.stream_manager.manager_app.tcp_server import (
     RoboflowTCPServer,
 )
-from inference.core.interfaces.stream.inference_pipeline import INFERENCE_THREAD_FINISHED_EVENT
 
 
 @dataclass
@@ -329,10 +331,6 @@ def check_process_health() -> None:
         total_ram_usage: int = _get_current_process_ram_usage_mb()
         with PROCESSES_TABLE_LOCK:
             for pipeline_id, managed_pipeline in list(PROCESSES_TABLE.items()):
-                if managed_pipeline.is_terminating:
-                    # skip terminating pipelines
-                    continue
-
                 process = managed_pipeline.pipeline_manager
                 process_ram_usage_mb = _get_process_memory_usage_mb(process=process)
                 managed_pipeline.ram_usage_queue.append(process_ram_usage_mb)
@@ -391,12 +389,21 @@ def check_process_health() -> None:
                         "All sources depleted in pipeline %s, terminating", pipeline_id
                     )
 
-                    status_updates = response[REPORT_KEY].get(VIDEO_SOURCE_STATUS_UPDATES_KEY, [])
-                    pipeline_status_updates = [s for s in status_updates if s["context"] == "inference_pipeline"]
+                    status_updates = response[REPORT_KEY].get(
+                        VIDEO_SOURCE_STATUS_UPDATES_KEY, []
+                    )
+                    pipeline_status_updates = [
+                        s
+                        for s in status_updates
+                        if s["context"] == "inference_pipeline"
+                    ]
                     if not pipeline_status_updates:
                         continue
 
-                    if pipeline_status_updates[-1]["event_type"] == INFERENCE_THREAD_FINISHED_EVENT:
+                    if (
+                        pipeline_status_updates[-1]["event_type"]
+                        == INFERENCE_THREAD_FINISHED_EVENT
+                    ):
                         # pipeline was already terminated
                         process.join()
                         del PROCESSES_TABLE[pipeline_id]
