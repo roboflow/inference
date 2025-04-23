@@ -26,6 +26,7 @@ from inference.core.entities.types import (
 )
 from inference.core.env import (
     API_BASE_URL,
+    INTERNAL_WEIGHTS_URL_SUFFIX,
     MODEL_CACHE_DIR,
     RETRY_CONNECTION_ERRORS_TO_ROBOFLOW_API,
     ROBOFLOW_API_EXTRA_HEADERS,
@@ -250,8 +251,9 @@ def get_roboflow_model_data(
         ]
         if api_key is not None:
             params.append(("api_key", api_key))
+        api_base_url = urllib.parse.urljoin(API_BASE_URL, INTERNAL_WEIGHTS_URL_SUFFIX)
         api_url = _add_params_to_url(
-            url=f"{API_BASE_URL}/{endpoint_type.value}/{model_id}",
+            url=f"{api_base_url}/{endpoint_type.value}/{model_id}",
             params=params,
         )
         api_data = _get_from_url(url=api_url)
@@ -283,8 +285,9 @@ def get_roboflow_instant_model_data(
         ]
         if api_key is not None:
             params.append(("api_key", api_key))
+        api_base_url = urllib.parse.urljoin(API_BASE_URL, INTERNAL_WEIGHTS_URL_SUFFIX)
         api_url = _add_params_to_url(
-            url=f"{API_BASE_URL}/getWeights",
+            url=f"{api_base_url}/getWeights",
             params=params,
         )
         api_data = _get_from_url(url=api_url)
