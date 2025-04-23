@@ -8,7 +8,10 @@ from openai import OpenAI
 from openai._types import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS, API_BASE_URL
+from inference.core.env import (
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+    API_BASE_URL,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
@@ -81,7 +84,6 @@ TASKS_REQUIRING_CLASSES = {
 TASKS_REQUIRING_OUTPUT_STRUCTURE = {
     "structured-answering",
 }
-
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -329,7 +331,7 @@ def run_gpt_4v_llm_prompting(
 
 
 def execute_gpt_4v_requests(
-    roboflow_api_key:str,
+    roboflow_api_key: str,
     openai_api_key: str,
     gpt4_prompts: List[List[dict]],
     gpt_model_version: str,
@@ -373,9 +375,8 @@ def _execute_proxied_openai_request(
         "messages": prompt,
         "max_tokens": max_tokens,
         "openai_api_key": openai_api_key,
+        **({"temperature": temperature} if temperature is not None else {}),
     }
-    if temperature is not None:
-        payload["temperature"] = temperature
 
     try:
         endpoint = f"{API_BASE_URL}/apiproxy/openai?api_key={roboflow_api_key}"
@@ -401,7 +402,7 @@ def _execute_openai_request(
     """Executes OpenAI request directly."""
     temp_value = temperature if temperature is not None else NOT_GIVEN
     try:
-        client = OpenAI(api_key=openai_api_key)
+        client = get_openai_client(openai_api_key)
         response = client.chat.completions.create(
             model=gpt_model_version,
             messages=prompt,
@@ -421,6 +422,10 @@ def execute_gpt_4v_request(
     max_tokens: int,
     temperature: Optional[float],
 ) -> str:
+    """
+    Executes a request to GPT-4v model, using a proxy if required.
+    Determines whether to send the request through Roboflow or directly to OpenAI.
+    """
     if openai_api_key.startswith("rf_key:account") or openai_api_key.startswith(
         "rf_key:user:"
     ):
@@ -639,6 +644,12 @@ def prepare_structured_answering_prompt(
             ],
         },
     ]
+
+
+def get_openai_client(api_key: str) -> OpenAI:
+    if api_key not in openai_clients:
+        openai_clients[api_key] = OpenAI(api_key=api_key)
+    return openai_clients[api_key]
 
 
 PROMPT_BUILDERS = {
