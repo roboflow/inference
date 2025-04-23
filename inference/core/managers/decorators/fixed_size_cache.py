@@ -49,6 +49,10 @@ class WithFixedSizeCache(ModelManagerDecorator):
             if not self._key_queue:
                 logger.error(
                     "Tried to remove model from cache even though key queue is already empty!"
+                    "(max_size: %s, len(self): %s, MEMORY_FREE_THRESHOLD: %s)",
+                    self.max_size,
+                    len(self),
+                    MEMORY_FREE_THRESHOLD,
                 )
                 break
             to_remove_model_id = self._key_queue.popleft()
