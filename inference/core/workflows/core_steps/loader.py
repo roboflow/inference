@@ -200,6 +200,9 @@ from inference.core.workflows.core_steps.models.foundation.openai.v1 import (
 from inference.core.workflows.core_steps.models.foundation.openai.v2 import (
     OpenAIBlockV2,
 )
+from inference.core.workflows.core_steps.models.foundation.openai.v3 import (
+    OpenAIBlockV3,
+)
 from inference.core.workflows.core_steps.models.foundation.qwen.v1 import (
     Qwen25VLBlockV1,
 )
@@ -587,6 +590,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         OCRModelBlockV1,
         OpenAIBlockV1,
         OpenAIBlockV2,
+        OpenAIBlockV3,
         PathDeviationAnalyticsBlockV1,
         PathDeviationAnalyticsBlockV2,
         PixelateVisualizationBlockV1,
