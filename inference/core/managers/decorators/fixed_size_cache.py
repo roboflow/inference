@@ -1,5 +1,5 @@
-from collections import deque
 import gc
+from collections import deque
 from typing import List, Optional
 
 from inference.core import logger
