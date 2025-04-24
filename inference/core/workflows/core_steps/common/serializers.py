@@ -126,8 +126,8 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
         serialized_detections.append(detection_dict)
 
     image_metadata = {
-        "width": image_dimensions[1].item() if image_dimensions else None,
-        "height": image_dimensions[0].item() if image_dimensions else None,
+        "width": image_dimensions[1].item() if image_dimensions is not None else None,
+        "height": image_dimensions[0].item() if image_dimensions is not None else None,
     }
 
     return {"image": image_metadata, "predictions": serialized_detections}
