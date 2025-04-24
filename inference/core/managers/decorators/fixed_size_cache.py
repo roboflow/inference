@@ -1,3 +1,4 @@
+import gc
 from collections import deque
 from typing import List, Optional
 
@@ -8,7 +9,7 @@ from inference.core.env import DISK_CACHE_CLEANUP, MEMORY_FREE_THRESHOLD
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
-import gc
+
 
 class WithFixedSizeCache(ModelManagerDecorator):
     def __init__(self, model_manager: ModelManager, max_size: int = 8):
@@ -43,9 +44,10 @@ class WithFixedSizeCache(ModelManagerDecorator):
             return None
 
         logger.debug(f"Current capacity of ModelManager: {len(self)}/{self.max_size}")
-        while self._key_queue and (len(self) >= self.max_size or (
-            MEMORY_FREE_THRESHOLD and self.memory_pressure_detected()
-        )):
+        while self._key_queue and (
+            len(self) >= self.max_size
+            or (MEMORY_FREE_THRESHOLD and self.memory_pressure_detected())
+        ):
             # To prevent flapping around the threshold, remove 3 models to make some space.
             for _ in range(3):
                 if not self._key_queue:
