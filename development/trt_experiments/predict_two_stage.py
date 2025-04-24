@@ -3,6 +3,7 @@ import time
 from typing import Tuple, List
 
 import torchvision
+from torchvision.ops import roi_align
 from tqdm import tqdm
 
 import tensorrt as trt
@@ -18,7 +19,8 @@ IMAGE_PATH = os.getenv("IMAGE_PATH")
 DETECTOR_PATH = os.environ["DETECTOR_PATH"]
 CLASSIFIER_PATH = os.environ["CLASSIFIER_PATH"]
 DETECTOR_MAX_BATCH_SIZE = 16
-CLASSIFIER_MAX_BATCH_SIZE = 64
+CLASSIFIER_MAX_BATCH_SIZE = int(os.getenv("CLASSIFIER_MAX_BATCH_SIZE", "64"))
+CLASSIFIER_INPUT_SIZE = int(os.getenv("CLASSIFIER_INPUT_SIZE", "224"))
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 DEVICE = torch.device("cuda:0")
 
@@ -28,7 +30,7 @@ def main() -> None:
         image = load_image(image_url=IMAGE_URL)
     else:
         image = cv2.imread(IMAGE_PATH)
-    images = [torch.from_numpy(image).to(device=DEVICE) for _ in range(24)]
+    images = [torch.from_numpy(image).to(device=DEVICE) for _ in range(16)]
     detector_engine = load_model(model_path=DETECTOR_PATH)
     detector_context = detector_engine.create_execution_context()
     classifier_engine = load_model(model_path=CLASSIFIER_PATH)
@@ -96,10 +98,10 @@ def run_processing(
     end_e = time.monotonic()
     print(f"DETECTIONS RESCALING: {round((end_e - start_e) * 1000, 2)}ms")
     start_f = time.monotonic()
-    crops, crops_metadata = crop_and_resize(
+    crops, crops_metadata = crop_and_resize_fast(
         images=images,
         detections=rescaled_detections,
-        target_size=(224, 224),
+        target_size=(CLASSIFIER_INPUT_SIZE, CLASSIFIER_INPUT_SIZE),
     )
     end_f = time.monotonic()
     print(f"CLASSIFIER PRE-PROCESSING: {round((end_f - start_f) * 1000, 2)}ms")
@@ -120,13 +122,14 @@ def run_processing(
     all_classification_results = torch.cat(classifier_results, dim=0)
     scaled_probabs = torch.nn.functional.softmax(all_classification_results, dim=1)
     max_probs, class_indices = torch.max(scaled_probabs, dim=1)
+    concatenated = torch.stack((max_probs, class_indices), dim=1)
     end_h = time.monotonic()
     print(f"CLASSIFIER POST-PROCESSING: {round((end_h - start_h) * 1000, 2)}ms")
     start_i = time.monotonic()
-    for crop_meta, max_prob, cls_idx in zip(crops_metadata, max_probs, class_indices):
-        image_id, det_id = crop_meta["image_id"], crop_meta["detection_id"]
-        rescaled_detections[image_id][det_id, 4] = max_prob
-        rescaled_detections[image_id][det_id, 5] = cls_idx
+    offset = 0
+    for image_detections in rescaled_detections:
+        image_detections[:, 4:] = concatenated[offset:offset+len(image_detections), :]
+        offset += len(image_detections)
     end_i = time.monotonic()
     print(f"CLASSES REPLACEMENT: {round((end_i - start_i) * 1000, 2)}ms")
     return rescaled_detections
@@ -274,15 +277,58 @@ def crop_and_resize(
 ) -> Tuple[torch.Tensor, List[dict]]:
     pre_processed_images = []
     metadata = []
+    shapes = []
     for i, (image, image_detections) in enumerate(zip(images, detections)):
         image_rgb = (image[..., [2, 1, 0]]).permute(2, 0, 1) / 255.0
         for j, detection in enumerate(image_detections):
             x_min, y_min, x_max, y_max = detection[:4].to(torch.int)
             crop = image_rgb[:, y_min:y_max, x_min:x_max]
             scaled_crop = functional.resize(crop, list(target_size), interpolation=functional.InterpolationMode.BILINEAR)
+            shapes.append(crop.shape)
             pre_processed_images.append(scaled_crop)
             metadata.append({"image_id": i, "detection_id": j})
+    avg_h = round(sum([s[1] for s in shapes]) / len(shapes))
+    avg_w = round(sum([s[2] for s in shapes]) / len(shapes))
+    print(f"AVG DETECTION SIZE: {avg_h}x{avg_w}")
     return torch.stack(pre_processed_images).contiguous(), metadata
+
+
+def crop_and_resize_fast(
+    images: List[torch.Tensor],
+    detections: List[torch.Tensor],
+    target_size: Tuple[int, int],
+) -> Tuple[torch.Tensor, List[dict]]:
+    # Prepare data
+    device = images[0].device
+    all_images = []
+    all_boxes = []
+    batch_indices = []
+    metadata = []
+
+    for i, (image, image_detections) in enumerate(zip(images, detections)):
+        image_rgb = (image[..., [2, 1, 0]]).permute(2, 0, 1) / 255.0
+        num_detections = image_detections.shape[0]
+
+        all_images.append(image_rgb.unsqueeze(0))  # add batch dim
+        all_boxes.append(image_detections[:, :4])  # xyxy
+        batch_indices.append(torch.full((num_detections,), i, dtype=torch.int, device=device))
+
+        for j in range(num_detections):
+            metadata.append({"image_id": i, "detection_id": j})
+
+    all_images = torch.cat(all_images, dim=0)  # (B, 3, H, W)
+    all_boxes = torch.cat(all_boxes, dim=0)    # (N, 4)
+    batch_indices = torch.cat(batch_indices, dim=0)  # (N,)
+    # Build rois: (batch_idx, x1, y1, x2, y2)
+    rois = torch.cat([batch_indices.unsqueeze(1).float(), all_boxes], dim=1)  # (N, 5)
+    # Apply roi_align
+    crops = roi_align(
+        input=all_images,
+        boxes=rois,
+        output_size=target_size,
+        aligned=True
+    )
+    return crops.contiguous(), metadata
 
 
 if __name__ == '__main__':

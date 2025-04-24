@@ -2,6 +2,7 @@ import os
 from typing import Tuple, List, Optional, Union
 
 import torchvision
+from torchvision.ops import roi_align
 from tqdm import tqdm
 
 import tensorrt as trt
@@ -18,12 +19,13 @@ from inference.core.interfaces.camera.entities import VideoFrame
 from inference.core.interfaces.stream.entities import AnyPrediction
 
 DETECTOR_MAX_BATCH_SIZE = 16
-CLASSIFIER_MAX_BATCH_SIZE = 64
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 DEVICE = torch.device("cuda:0")
 DETECTOR_PATH = os.environ["DETECTOR_PATH"]
 CLASSIFIER_PATH = os.environ["CLASSIFIER_PATH"]
 VIDEO_REFERENCE = os.environ["VIDEO_REFERENCE"]
+CLASSIFIER_MAX_BATCH_SIZE = int(os.getenv("CLASSIFIER_MAX_BATCH_SIZE", "64"))
+CLASSIFIER_INPUT_SIZE = int(os.getenv("CLASSIFIER_INPUT_SIZE", "224"))
 
 
 def main() -> None:
@@ -32,7 +34,7 @@ def main() -> None:
         video_reference=[VIDEO_REFERENCE] * 6,
         on_video_frame=model.on_video_frame,
         on_prediction=model.on_prediction,
-        batch_collection_timeout=0.02,
+        batch_collection_timeout=0.01,
     )
     pipeline.start()
     pipeline.join()
@@ -100,10 +102,10 @@ def run_processing(
     detections = torch.cat(results, dim=0)
     detections_after_nms = run_nms(detections)
     rescaled_detections = rescale_detections(detections_after_nms, images_metadata)
-    crops, crops_metadata = crop_and_resize(
+    crops, crops_metadata = crop_and_resize_fast(
         images=images,
         detections=rescaled_detections,
-        target_size=(224, 224),
+        target_size=(CLASSIFIER_INPUT_SIZE, CLASSIFIER_INPUT_SIZE),
     )
     classifier_results = []
     for i in range(0, crops.shape[0], CLASSIFIER_MAX_BATCH_SIZE):
@@ -279,6 +281,44 @@ def crop_and_resize(
             pre_processed_images.append(scaled_crop)
             metadata.append({"image_id": i, "detection_id": j})
     return torch.stack(pre_processed_images).contiguous(), metadata
+
+
+def crop_and_resize_fast(
+    images: List[torch.Tensor],
+    detections: List[torch.Tensor],
+    target_size: Tuple[int, int],
+) -> Tuple[torch.Tensor, List[dict]]:
+    # Prepare data
+    device = images[0].device
+    all_images = []
+    all_boxes = []
+    batch_indices = []
+    metadata = []
+
+    for i, (image, image_detections) in enumerate(zip(images, detections)):
+        image_rgb = (image[..., [2, 1, 0]]).permute(2, 0, 1) / 255.0
+        num_detections = image_detections.shape[0]
+
+        all_images.append(image_rgb.unsqueeze(0))  # add batch dim
+        all_boxes.append(image_detections[:, :4])  # xyxy
+        batch_indices.append(torch.full((num_detections,), i, dtype=torch.int, device=device))
+
+        for j in range(num_detections):
+            metadata.append({"image_id": i, "detection_id": j})
+
+    all_images = torch.cat(all_images, dim=0)  # (B, 3, H, W)
+    all_boxes = torch.cat(all_boxes, dim=0)    # (N, 4)
+    batch_indices = torch.cat(batch_indices, dim=0)  # (N,)
+    # Build rois: (batch_idx, x1, y1, x2, y2)
+    rois = torch.cat([batch_indices.unsqueeze(1).float(), all_boxes], dim=1)  # (N, 5)
+    # Apply roi_align
+    crops = roi_align(
+        input=all_images,
+        boxes=rois,
+        output_size=target_size,
+        aligned=True
+    )
+    return crops.contiguous(), metadata
 
 
 def load_model(model_path: str):
