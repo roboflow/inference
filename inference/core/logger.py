@@ -24,12 +24,27 @@ def add_correlation(
     return event_dict
 
 
+def add_gcp_severity(
+    logger: logging.Logger, method_name: str, event_dict: Dict[str, Any]
+) -> Dict[str, Any]:
+    level_to_severity = {
+        "debug": "DEBUG",
+        "info": "INFO",
+        "warning": "WARNING",
+        "error": "ERROR",
+        "critical": "CRITICAL",
+    }
+    event_dict["severity"] = level_to_severity.get(method_name, "DEFAULT")
+    return event_dict
+
+
 if API_LOGGING_ENABLED:
     import structlog
 
     structlog.configure(
         processors=[
             add_correlation,
+            add_gcp_severity,
             structlog.stdlib.filter_by_level,
             structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M.%S"),
             structlog.processors.StackInfoRenderer(),
