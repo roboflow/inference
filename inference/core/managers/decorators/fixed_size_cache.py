@@ -4,10 +4,16 @@ from typing import List, Optional
 from inference.core import logger
 from inference.core.entities.requests.inference import InferenceRequest
 from inference.core.entities.responses.inference import InferenceResponse
-from inference.core.env import DISK_CACHE_CLEANUP, MEMORY_FREE_THRESHOLD
+from inference.core.env import (
+    DISK_CACHE_CLEANUP,
+    MEMORY_FREE_THRESHOLD,
+    MODELS_CACHE_AUTH_ENABLED,
+)
+from inference.core.exceptions import RoboflowAPINotAuthorizedError
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
+from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
 
 
 class WithFixedSizeCache(ModelManagerDecorator):
@@ -31,6 +37,14 @@ class WithFixedSizeCache(ModelManagerDecorator):
             model_id (str): The identifier of the model.
             model (Model): The model instance.
         """
+        if MODELS_CACHE_AUTH_ENABLED:
+            if not _check_if_api_key_has_access_to_model(
+                api_key=api_key, model_id=model_id
+            ):
+                raise RoboflowAPINotAuthorizedError(
+                    f"API key {api_key} does not have access to model {model_id}"
+                )
+
         queue_id = self._resolve_queue_id(
             model_id=model_id, model_id_alias=model_id_alias
         )
