@@ -1,4 +1,5 @@
 from collections import deque
+import gc
 from typing import List, Optional
 
 from inference.core import logger
@@ -59,6 +60,7 @@ class WithFixedSizeCache(ModelManagerDecorator):
             super().remove(
                 to_remove_model_id, delete_from_disk=DISK_CACHE_CLEANUP
             )  # LRU model overflow cleanup may or maynot need the weights removed from disk
+            gc.collect()
             logger.debug(f"Model {to_remove_model_id} successfully unloaded.")
         logger.debug(f"Marking new model {queue_id} as most recently used.")
         self._key_queue.append(queue_id)
