@@ -22,6 +22,10 @@ RUN apt-get update -y && \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
+COPY build_scripts/compile_opencv_jetpack_6_2.sh compile_opencv_jetpack_6_2.sh
+RUN chmod ugo+x compile_opencv_jetpack_6_2.sh
+RUN ./compile_opencv_jetpack_6_2.sh
+
 # Copy all requirements files
 COPY requirements/ ./requirements/
 
