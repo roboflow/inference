@@ -576,8 +576,11 @@ AGGREGATION_MODE2CLASS_SELECTOR = {
 
 
 def get_average_bounding_box(detections: sv.Detections) -> Tuple[int, int, int, int]:
-    avg_xyxy: np.ndarray = sum(detections.xyxy) / len(detections)
-    return tuple(avg_xyxy.astype(float))
+    if len(detections) == 0:
+        return (0.0, 0.0, 0.0, 0.0)
+
+    avg_xyxy = np.mean(detections.xyxy, axis=0)
+    return tuple(avg_xyxy)
 
 
 def get_smallest_bounding_box(detections: sv.Detections) -> Tuple[int, int, int, int]:

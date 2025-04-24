@@ -612,57 +612,6 @@
         }
       }
     },
-    "/{workspace}/batches/{batchId}/export": {
-      "get": {
-        "summary": "Export batch data",
-        "description": "Export data from a batch with download URLs",
-        "operationId": "exportBatchData",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/workspaceParam"
-          },
-          {
-            "$ref": "#/components/parameters/batchIdParam"
-          },
-          {
-            "$ref": "#/components/parameters/apiKeyParam"
-          },
-          {
-            "$ref": "#/components/parameters/pageSizeParam"
-          },
-          {
-            "$ref": "#/components/parameters/nextPageTokenParam"
-          },
-          {
-            "$ref": "#/components/parameters/partNameParam"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successfully exported batch data",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BatchExportResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
-          }
-        }
-      }
-    },
     "/{workspace}/batches/{batchId}/shards": {
       "get": {
         "summary": "Get batch shards statuses",
@@ -910,23 +859,6 @@
         },
         "required": [
           "filesMetadata"
-        ]
-      },
-      "BatchExportResponse": {
-        "type": "object",
-        "properties": {
-          "urls": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "nextPageToken": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "urls"
         ]
       },
       "ImageReferencesIngestResponse": {

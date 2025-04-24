@@ -6,7 +6,7 @@ from typing import Any, Dict
 from rich.logging import RichHandler
 from structlog.processors import CallsiteParameter
 
-from inference.core.env import LOG_LEVEL
+from inference.core.env import API_LOGGING_ENABLED, CORRELATION_ID_LOG_KEY, LOG_LEVEL
 from inference.core.utils.environment import str2bool
 
 if LOG_LEVEL == "ERROR" or LOG_LEVEL == "FATAL":
@@ -20,11 +20,11 @@ def add_correlation(
 
     request_id = correlation_id.get()
     if request_id:
-        event_dict["request_id"] = request_id
+        event_dict[CORRELATION_ID_LOG_KEY] = request_id
     return event_dict
 
 
-if str2bool(os.getenv("API_LOGGING_ENABLED", "False")):
+if API_LOGGING_ENABLED:
     import structlog
 
     structlog.configure(
