@@ -7,24 +7,96 @@ systems on the client’s end.
 This documentation provides a detailed guide on integration strategies, covering best practices 
 and implementation approaches.
 
+## Overview
 
-## Manual interactions with Batch Processing
+The following bullet-points illustrate the interaction with Roboflow Batch Processing:
 
-We will begin by outlining the manual interaction flow with this feature, providing a foundational understanding. 
+* **Workflow Creation:** A workflow is created to process the data.
+
+* **Data Ingestion:** The data is ingested, creating a batch in Data Staging, which serves as ephemeral storage 
+for both input and output batch processing data.
+
+* **Processing:** The data undergoes processing, which involves multiple (typically two) stages. Usually `processing` 
+stage is responsible for running the Workflow against ingested data producing predictions. This stage results in 
+CSV / JSONL files being created. This stage is usually followed by `export`, which is responsible for creating archives 
+with processing results for convenient extraction from Roboflow platform.
+
+* **Data Export:** The data is exported from one of the output batches created during processing. Data is exposed 
+through download links which can be used to pull the data. 
+
+
+## Basic interactions with Batch Processing
+
+We will begin by outlining the basic interactions with this feature, providing a foundational understanding. 
 Building on this, we will explore more advanced concepts later in the documentation.
 
-For demonstration, we will use `inference-cli` commands, though the same functionality is available through the UI.
+For demonstration, we will use `inference-cli` commands and cURL, though the same functionality is available through the UI.
 
 The first step in batch processing is ingesting the data. Roboflow supports both video and image ingestion, 
 with options for individual uploads and optimized bulk ingestion.
+
+!!! hint "`inference-cli` installation"
+
+    If you plan to use `inference-cli` snippets - please make sure that the package is installed in your environment
+    
+    ```bash
+    pip install inference-cli
+    ```
+
+    For convenience, we recommend exporting Roboflow API key as env variable:
+
+    ```bash
+    export ROBOFLOW_API_KEY=YOUR_API_KEY
+    ```
+
 
 ### Video ingestion
 The simplest approach is uploading videos one by one. Once the request succeeds, the videos are ready for use. Use the 
 following command to ingest videos:
 
-```bash
-inference rf-cloud data-staging create-batch-of-videos --videos-dir <your-images-dir-path> --batch-id <your-batch-id>
-```
+=== "inference-cli"
+    ```bash
+    inference rf-cloud data-staging create-batch-of-videos --videos-dir <your-images-dir-path> --batch-id <your-batch-id>
+    ```
+
+=== "cURL"
+    
+    Ingesting video file is in fact requesting upload URL from Roboflow API and uploading the data 
+    to the pointed location.
+    
+    ```bash
+    curl -X POST "https://api.roboflow.com/data-staging/v1/external/{workspace}/batches/{batch_id}/upload/video" \
+      -G \
+      --data-urlencode "api_key=YOUR_API_KEY" \
+      --data-urlencode "fileName=your_video.mp4"
+    ```
+
+    Response contains `"signedURLDetails"` key with the following details:
+    
+    * `"uploadURL"` - the URL to PUT the video
+
+    * `"extensionHeaders"` - additional headers to include
+
+    To upload the video, send the following request:
+    
+    ```bash
+    curl -X PUT <url-from-the-response> -H "Name: value" --upload-file <path-to-your-video>
+    ```
+    
+    with all headers from `"extensionHeaders"` response field.
+
+    You can find full API reference [here](workflows/batch_processing/api_reference.md).
+
+
+!!! warning "`batch_id` constraints"
+
+    Currently, the client is in controll of `batch_id` and must meet the following 
+    constraints:
+    
+    * only lower-cased ASCII letters, digits, hypen (`-`) and underscore (`_`) characters are allowed
+
+    * `batch_id` must be at most 64 characters long
+
 
 ### Image Ingestion
 
@@ -36,9 +108,75 @@ performance. Clients can bundle up to 500 images into a single `*.tar` archive a
     When performing bulk ingestion, Roboflow indexes the data in the background. This means that after the command 
     completes, there may be a short delay before the data is fully available, depending on batch size.
 
-```bash
-inference rf-cloud data-staging create-batch-of-images --images-dir <your-images-dir-path> --batch-id <your-batch-id>
-```
+=== "inference-cli"
+    
+    ```bash
+    inference rf-cloud data-staging create-batch-of-images --images-dir <your-images-dir-path> --batch-id <your-batch-id>
+    ```
+
+=== "cURL (single image)"
+    
+    The approach presented below is simplified version of bulk images ingest which let clients upload 
+    images one-by-one. Due to speed limitations, **we recommend using this method for batches up to 5000 images.** 
+    It is also important to note that **this method cannot be used along with bulk ingest for the same batch.**
+
+    ```bash
+    curl -X POST "https://api.roboflow.com/data-staging/v1/external/{workspace}/batches/{batch_id}/upload/image" \
+      -G \
+      --data-urlencode "api_key=YOUR_API_KEY" \
+      --data-urlencode "fileName=your_image.jpg" \
+      -F "your_image.jpg=@/path/to/your/image.jpg"
+    ```
+
+    You can find full API reference [here](workflows/batch_processing/api_reference.md).
+
+
+=== "cURL (bulk upload)"
+    
+    To optimise ingest speed, we recommend using **bulk ingests for batches of size exceeding 5000 images.** 
+    The procedure contains three steps:
+    
+    * requesting upload URL from Roboflow API
+
+    * packing images to `*.tar` archive according to limits of size and files number dictated by API
+
+    * uploading the archive to URL obtained from Roboflow API
+    
+    ```bash
+    curl -X POST "https://api.roboflow.com/data-staging/v1/external/{workspace}/batches/{batch_id}/bulk-upload/image-files" \
+      -G \
+      --data-urlencode "api_key=YOUR_API_KEY"
+    ```
+    
+    Response contains `"signedURLDetails"` key with the following details:
+    
+    * `"uploadURL"` - the URL to PUT the video
+
+    * `"extensionHeaders"` - additional headers to include
+    
+
+    To upload the archive, send the following request:
+    
+    ```bash
+    curl -X PUT <url-from-the-response> -H "Name: value" --upload-file <path-to-your-video>
+    ```
+    
+    with all headers from `"extensionHeaders"` response field.
+
+    Please remember, that bach created with bulk upload cannot be further filled with data ingested with simple upload 
+    due to internal data organisation enforced by the upload method.
+    
+    You can find full API reference [here](workflows/batch_processing/api_reference.md).
+
+!!! warning "`batch_id` constraints"
+
+    Currently, the client is in controll of `batch_id` and must meet the following 
+    constraints:
+    
+    * only lower-cased ASCII letters, digits, hypen (`-`) and underscore (`_`) characters are allowed
+
+    * `batch_id` must be at most 64 characters long
+
 
 ### Before starting the job
 Once data ingestion is complete, the next step is to start a job. However, since some background processing occurs, 
@@ -47,15 +185,42 @@ it's important to determine **when the data is fully ready.**
 The simplest approach is to check the batch status by polling the system. This allows you to verify how many files 
 have been successfully ingested before proceeding. Use the following command:
 
-```bash
-inference rf-cloud data-staging show-batch-details --batch-id <your-batch-id>
-```
+=== "inference-cli"
+    ```bash
+    inference rf-cloud data-staging show-batch-details --batch-id <your-batch-id>
+    ```
+
+=== "cURL"
+    ```bash
+    curl -X GET "https://api.roboflow.com/data-staging/v1/external/{workspace}/batches/{batch_id}/count" \
+      -G \
+      --data-urlencode "api_key=YOUR_API_KEY"
+    ```
+
+    You can find full API reference [here](workflows/batch_processing/api_reference.md).
+
 
 To identify potential issues during data ingestion, you can fetch status updates using the following command:
 
-```bash
-inference rf-cloud data-staging list-ingest-details --batch-id <your-batch-id>
-```
+=== "inference-cli"
+    ```bash
+    inference rf-cloud data-staging list-ingest-details --batch-id <your-batch-id>
+    ```
+
+=== "cURL"
+    Endpoint to fetch shard upload details supports pagination, as the number of shards may be huge. Use 
+    `nextPageToken` in consecutive requests, based on previous responses (first request do not need to have this 
+    parameter attached).
+
+    ```bash
+    curl -X GET "https://api.roboflow.com/data-staging/v1/external/{workspace}/batches/{batch_id}/shards" \
+      -G \
+      --data-urlencode "api_key=YOUR_API_KEY" \
+      --data-urlencode "nextPageToken=OptionalNextPageToken"
+    ```
+
+    You can find full API reference [here](workflows/batch_processing/api_reference.md).
+
 
 Only after confirming that the expected number of files is available can the data be considered ready for processing.
 
@@ -63,23 +228,140 @@ Only after confirming that the expected number of files is available can the dat
 
 Once data ingestion is complete, you can start processing the batch. For image processing, use the following command:
 
-```bash
-inference rf-cloud batch-processing process-images-with-workflow --workflow-id <workflow-id> --batch-id <batch-id>
-```
+=== "inference-cli"
+    ```bash
+    inference rf-cloud batch-processing process-images-with-workflow --workflow-id <workflow-id> --batch-id <batch-id>
+    ```
+
+=== "cURL"
+    
+    ```bash
+    curl -X POST "https://api.roboflow.com/batch-processing/v1/external/{workspace}/jobs/{job_id}" \
+      -G \
+      --data-urlencode "api_key=YOUR_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "type": "simple-image-processing-v1",
+        "jobInput": {
+            "type": "staging-batch-input-v1",
+            "batchId": "{batch_id}"
+        },
+        "computeConfiguration": {
+            "type": "compute-configuration-v2",
+            "machineType": "cpu",
+            "workersPerMachine": 4
+        },
+        "processingTimeoutSeconds": 3600,
+        "processingSpecification": {
+            "type": "workflows-processing-specification-v1",
+            "workspace": "{workspace}",
+            "workflowId": "{workflow_id}",
+            "aggregationFormat": "jsonl"
+        }
+    }'
+    ```
+
+    This example does not cover all of the parameters that can be used. 
+    You can find full API reference [here](workflows/batch_processing/api_reference.md).
+
+
+!!! warning "`job_id` constraints"
+
+    Currently, the client is in controll of `job_id` and must meet the following 
+    constraints:
+    
+    * only lower-cased ASCII letters, digits, hypen (`-`) and underscore (`_`) characters are allowed
+
+    * `job_id` must be at most 20 characters long
+    
 
 Batch processing jobs can take time to complete. To determine when results are ready for export, you need to 
 periodically check the job status:
 
-```bash
-inference rf-cloud batch-processing show-job-details --job-id <your-job-id>
-```
+
+=== "inference-cli"
+    ```bash
+    inference rf-cloud batch-processing show-job-details --job-id <your-job-id>
+    ```
+
+=== "cURL"
+    
+    Since job contains several stages, checking job status may be performed at different 
+    level of granularity.
+
+    To check the general status of a job:
+    ```bash
+    curl -X GET "https://api.roboflow.com/batch-processing/v1/external/{workspace}/jobs/{job_id}" \
+      -G \
+      --data-urlencode "api_key=YOUR_API_KEY"
+    ```
+    
+    To list job stages:
+    ```bash
+    curl -X GET "https://api.roboflow.com/batch-processing/v1/external/{workspace}/jobs/{job_id}/stages" \
+      -G \
+      --data-urlencode "api_key=YOUR_API_KEY"
+    ```
+
+    To list job stage tasks (fundamental units of processing):
+    ```bash
+    curl -X GET "https://api.roboflow.com/batch-processing/v1/external/{workspace}/jobs/{job_id}/stages/{stage_id}/tasks" \
+      -G \
+      --data-urlencode "api_key=YOUR_API_KEY" \
+      --data-urlencode "nextPageToken={next_page_token}"
+    ```
+    The endpoint supports pagination - use `nextPageToken` in consecutive requests, based on previous responses 
+    (first request do not need to have this parameter attached).
+
+    You can find full API reference [here](workflows/batch_processing/api_reference.md).
+
+
 
 ### Data export
-Once the batch processing job is complete, you can download the results using the following command:
+Once the batch processing job is complete, you can download the results using the following command. 
+**Figuring out `batch-id` would require listing job stages and choosing which stage output to export.** 
+Typically `export` stage output is exported, as it contains archives that are easy to be transferred, but 
+one may choose to export results of other stages if needed.
 
-```bash
-inference rf-cloud data-staging export-batch --target-dir <dir-to-export-result> --batch-id <output-batch-of-a-job>
-```
+=== "inference-cli"
+    ```bash
+    inference rf-cloud data-staging export-batch --target-dir <dir-to-export-result> --batch-id <output-batch-of-a-job>
+    ```
+
+=== "cURL"
+    
+    The Batch Processing service creates "multipart" batches to store results. The term "multipart" refers to 
+    nested nature of batch - namely it contains multiple "parts" of data, each being nested batch. To export such
+    data batch, you may want to list its parts first:
+
+    ```bash
+    curl -X GET "https://api.roboflow.com/data-staging/v1/external/{workspace}/batches/{batch_id}/parts" \
+      -G \
+      --data-urlencode "api_key=YOUR_API_KEY"
+    ```
+
+    Then, for each part, list operation can be performed. As a result - download URL for each batch element will be 
+    exposed:
+
+    ```bash
+    curl -X GET "https://api.roboflow.com/data-staging/v1/external/{workspace}/batches/{batch_id}/list" \
+      -G \
+      --data-urlencode "api_key=YOUR_API_KEY" \
+      --data-urlencode "nextPageToken=YOUR_NEXT_PAGE_TOKEN" \
+      --data-urlencode "partName=YOUR_PART_NAME"
+    ```
+    The endpoint supports pagination - use `nextPageToken` in consecutive requests, based on previous responses 
+    (first request do not need to have this parameter attached).
+
+    Having download URL for each batch element, the following `curl` command can be used to pull the data.
+    
+    ```bash
+    curl <download-url> -o <downlaod-file-location>
+    ```
+
+    You can find full API reference [here](workflows/batch_processing/api_reference.md).
+
+
 
 As seen in this workflow, multiple manual interactions are required to complete the process. To efficiently handle 
 large volumes of data on a recurring basis, automation is essential. The next section will explore strategies for 
@@ -120,6 +402,11 @@ commands support additional parameters to enable webhook notifications and inges
     * `ingest-status` *(default)* - notifications about the overall ingestion process.
     
     * `files-status` - notifications for individual file processing.`
+
+!!! important "API reference"
+
+    Use [API reference](./api_reference.md) document to find out how to enforce 
+    Batch Processing service notifications when integrating directly with API.
 
 
 !!! important "Limited access to the feature"
