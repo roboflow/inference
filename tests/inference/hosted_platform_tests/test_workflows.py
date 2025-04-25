@@ -7,6 +7,7 @@ from tests.inference.hosted_platform_tests.conftest import ROBOFLOW_API_KEY
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_getting_block_descriptions_from_legacy_get_endpoint(
     object_detection_service_url: str,
 ) -> None:
@@ -35,6 +36,7 @@ def test_getting_block_descriptions_from_legacy_get_endpoint(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_getting_block_descriptions_from_new_post_endpoint(
     object_detection_service_url: str,
 ) -> None:
@@ -65,6 +67,7 @@ def test_getting_block_descriptions_from_new_post_endpoint(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_getting_schemas_from_new_post_endpoint_when_matching_execution_engine_version_is_requested(
     object_detection_service_url: str,
 ) -> None:
@@ -96,6 +99,7 @@ def test_getting_schemas_from_new_post_endpoint_when_matching_execution_engine_v
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_getting_schemas_from_new_post_endpoint_when_not_matching_execution_engine_version_is_requested(
     object_detection_service_url: str,
 ) -> None:
@@ -120,6 +124,7 @@ def test_getting_schemas_from_new_post_endpoint_when_not_matching_execution_engi
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_get_versions_of_execution_engine(object_detection_service_url: str) -> None:
     # when
     response = requests.get(
@@ -189,6 +194,7 @@ DYNAMIC_BLOCKS_DEFINITION = [
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_getting_block_descriptions_from_new_post_endpoint_with_dynamic_blocks(
     object_detection_service_url: str,
 ) -> None:
@@ -207,6 +213,7 @@ def test_getting_block_descriptions_from_new_post_endpoint_with_dynamic_blocks(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_getting_block_schema_from_get_endpoint(
     object_detection_service_url: str,
 ) -> None:
@@ -230,6 +237,7 @@ def test_getting_block_schema_from_get_endpoint(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_getting_dynamic_outputs(object_detection_service_url: str) -> None:
     # when
     response = requests.post(
@@ -262,6 +270,7 @@ def test_getting_dynamic_outputs(object_detection_service_url: str) -> None:
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_compilation_endpoint_when_compilation_succeeds(
     object_detection_service_url: str,
 ) -> None:
@@ -300,6 +309,7 @@ def test_compilation_endpoint_when_compilation_succeeds(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_compilation_endpoint_when_compilation_fails_due_to_invalid_requested_execution_engine_version(
     object_detection_service_url: str,
 ) -> None:
@@ -338,6 +348,7 @@ def test_compilation_endpoint_when_compilation_fails_due_to_invalid_requested_ex
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_compilation_endpoint_when_compilation_fails(
     object_detection_service_url: str,
 ) -> None:
@@ -405,6 +416,7 @@ SIMPLE_WORKFLOW_DEFINITION = {
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_simple_workflow_run_when_run_expected_to_succeed(
     object_detection_service_url: str, detection_model_id: str
 ) -> None:
@@ -439,6 +451,7 @@ def test_simple_workflow_run_when_run_expected_to_succeed(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_simple_workflow_run_when_parameter_is_missing(
     object_detection_service_url: str, detection_model_id: str
 ) -> None:
@@ -456,6 +469,7 @@ def test_simple_workflow_run_when_parameter_is_missing(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_simple_workflow_run_when_api_key_is_invalid(
     object_detection_service_url: str, detection_model_id: str
 ) -> None:
@@ -509,6 +523,7 @@ CLIP_WORKFLOW_DEFINITION = {
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_clip_workflow_run_when_run_expected_to_succeed(
     object_detection_service_url: str, detection_model_id: str
 ) -> None:
@@ -564,6 +579,7 @@ OCR_WORKFLOW_DEFINITION = {
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_ocr_workflow_run_when_run_expected_to_succeed(
     object_detection_service_url: str, detection_model_id: str
 ) -> None:
@@ -621,6 +637,7 @@ YOLO_WORLD_WORKFLOW_DEFINITION = {
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_yolo_world_workflow_run_when_run_expected_to_succeed(
     object_detection_service_url: str,
 ) -> None:
@@ -718,6 +735,7 @@ WORKFLOW_WITH_PYTHON_BLOCK_RUNNING_ON_BATCH = {
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_workflow_run_with_dynamic_blocks(
     object_detection_service_url: str, detection_model_id: str
 ) -> None:
@@ -749,6 +767,7 @@ def test_workflow_run_with_dynamic_blocks(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_workflow_validate_with_dynamic_blocks(
     object_detection_service_url: str, detection_model_id: str
 ) -> None:
@@ -767,6 +786,7 @@ def test_workflow_validate_with_dynamic_blocks(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_getting_block_schema_using_get_endpoint(
     object_detection_service_url: str,
 ) -> None:
@@ -790,6 +810,7 @@ def test_getting_block_schema_using_get_endpoint(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_discovering_interface_of_saved_workflow(
     object_detection_service_url: str,
     interface_discovering_workflow: Tuple[str, str],
@@ -828,6 +849,7 @@ def test_discovering_interface_of_saved_workflow(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_discovering_interface_of_valid_workflow_from_payload(
     object_detection_service_url: str,
 ) -> None:
@@ -901,6 +923,7 @@ def test_discovering_interface_of_valid_workflow_from_payload(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_discovering_interface_of_invalid_workflow_from_payload(
     object_detection_service_url: str,
 ) -> None:
@@ -976,6 +999,7 @@ WORKFLOW_WITH_ENV_SECRET_STORE = {
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_extracting_secrets_from_env_based_secret_store(
     object_detection_service_url: str,
 ) -> None:

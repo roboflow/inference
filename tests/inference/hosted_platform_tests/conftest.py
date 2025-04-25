@@ -50,6 +50,10 @@ SERVICES_URLS = {
         "instance-segmentation": "https://outline.roboflow.com",
         "classification": "https://classify.roboflow.com",
         "core-models": "https://infer.roboflow.com",
+        "object-detection-v2": "https://serverless.roboflow.com",
+        "instance-segmentation-v2": "https://serverless.roboflow.com",
+        "classification-v2": "https://serverless.roboflow.com",
+        "core-models-v2": "https://serverless.roboflow.com",
     },
     PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST: {
         "object-detection": "http://127.0.0.1:9001",
@@ -62,6 +66,10 @@ SERVICES_URLS = {
         "instance-segmentation": "https://lambda-instance-segmentation.staging.roboflow.com",
         "classification": "https://lambda-classification.staging.roboflow.com",
         "core-models": "https://3hkaykeh3j.execute-api.us-east-1.amazonaws.com",
+        "object-detection-v2": "https://serverless.roboflow.one",
+        "instance-segmentation-v2": "https://serverless.roboflow.one",
+        "classification-v2": "https://serverless.roboflow.one",
+        "core-models-v2": "https://serverless.roboflow.one",
     },
 }
 SERVICES_URLS[PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST] = SERVICES_URLS[
@@ -84,7 +92,7 @@ MODELS_TO_BE_USED = {
         "multi_class_classification": "car-classification/23",
         "yolov8n-640": "microsoft-coco-obj-det/8",
         "yolov8n-pose-640": "microsoft-coco-pose/1",
-    },
+    }
 }
 MODELS_TO_BE_USED[PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST] = MODELS_TO_BE_USED[
     PlatformEnvironment.ROBOFLOW_STAGING
@@ -131,23 +139,63 @@ def platform_environment() -> PlatformEnvironment:
 
 
 @pytest.fixture(scope="session")
-def classification_service_url(platform_environment: PlatformEnvironment) -> str:
-    return SERVICES_URLS[platform_environment]["classification"]
+def classification_service_url(request: FixtureRequest, platform_environment: PlatformEnvironment) -> str:
+    try:
+        version_param = request.param  # Will be "1" or "2" from parametrize
+    except AttributeError:
+        version_param = "1" # Default if not parametrized
+
+    if version_param == "2":
+        # Assumes key "classification-v2" exists
+        return SERVICES_URLS[platform_environment].get("classification-v2", SERVICES_URLS[platform_environment]["classification"])
+    else:
+        # Default to v1
+        return SERVICES_URLS[platform_environment]["classification"]
 
 
 @pytest.fixture(scope="session")
-def object_detection_service_url(platform_environment: PlatformEnvironment) -> str:
-    return SERVICES_URLS[platform_environment]["object-detection"]
+def object_detection_service_url(request: FixtureRequest, platform_environment: PlatformEnvironment) -> str:
+    try:
+        version_param = request.param  # Will be "1" or "2" from parametrize
+    except AttributeError:
+        version_param = "1" # Default if not parametrized
+
+    if version_param == "2":
+        # Assumes key "object-detection-v2" exists
+        return SERVICES_URLS[platform_environment].get("object-detection-v2", SERVICES_URLS[platform_environment]["object-detection"])
+    else:
+        # Default to v1
+        return SERVICES_URLS[platform_environment]["object-detection"]
 
 
 @pytest.fixture(scope="session")
-def instance_segmentation_service_url(platform_environment: PlatformEnvironment) -> str:
-    return SERVICES_URLS[platform_environment]["instance-segmentation"]
+def instance_segmentation_service_url(request: FixtureRequest, platform_environment: PlatformEnvironment) -> str:
+    try:
+        version_param = request.param  # Will be "1" or "2" from parametrize
+    except AttributeError:
+        version_param = "1" # Default if not parametrized
+
+    if version_param == "2":
+        # Assumes key "instance-segmentation-v2" exists
+        return SERVICES_URLS[platform_environment].get("instance-segmentation-v2", SERVICES_URLS[platform_environment]["instance-segmentation"])
+    else:
+        # Default to v1
+        return SERVICES_URLS[platform_environment]["instance-segmentation"]
 
 
 @pytest.fixture(scope="session")
-def core_models_service_url(platform_environment: PlatformEnvironment) -> str:
-    return SERVICES_URLS[platform_environment]["core-models"]
+def core_models_service_url(request: FixtureRequest, platform_environment: PlatformEnvironment) -> str:
+    try:
+        version_param = request.param  # Will be "1" or "2" from parametrize
+    except AttributeError:
+        version_param = "1" # Default if not parametrized
+
+    if version_param == "2":
+        # Assumes key "core-models-v2" exists
+        return SERVICES_URLS[platform_environment].get("core-models-v2", SERVICES_URLS[platform_environment]["core-models"])
+    else:
+        # Default to v1
+        return SERVICES_URLS[platform_environment]["core-models"]
 
 
 @pytest.fixture(scope="session")

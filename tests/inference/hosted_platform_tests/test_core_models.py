@@ -7,6 +7,7 @@ from tests.inference.hosted_platform_tests.conftest import IMAGE_URL, ROBOFLOW_A
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("core_models_service_url", ["1", "2"], indirect=True)
 def test_infer_from_core_model_without_api_key(
     core_models_service_url: str,
 ) -> None:
@@ -24,6 +25,7 @@ def test_infer_from_core_model_without_api_key(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("core_models_service_url", ["1", "2"], indirect=True)
 def test_infer_from_core_model_with_invalid_api_key(
     core_models_service_url: str,
 ) -> None:
@@ -41,6 +43,7 @@ def test_infer_from_core_model_with_invalid_api_key(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("core_models_service_url", ["1", "2"], indirect=True)
 def test_infer_from_ocr_model_when_valid_input_given(
     core_models_service_url: str,
 ) -> None:
@@ -63,6 +66,7 @@ def test_infer_from_ocr_model_when_valid_input_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("core_models_service_url", ["1", "2"], indirect=True)
 def test_infer_from_ocr_model_when_non_https_input_url_given(
     core_models_service_url: str,
 ) -> None:
@@ -86,6 +90,7 @@ def test_infer_from_ocr_model_when_non_https_input_url_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("core_models_service_url", ["1", "2"], indirect=True)
 def test_infer_from_ocr_model_when_ip_based_input_url_given(
     core_models_service_url: str,
 ) -> None:
@@ -109,6 +114,7 @@ def test_infer_from_ocr_model_when_ip_based_input_url_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("core_models_service_url", ["1", "2"], indirect=True)
 def test_infer_from_clip_model_when_valid_input_given(
     core_models_service_url: str,
 ) -> None:
@@ -133,6 +139,7 @@ def test_infer_from_clip_model_when_valid_input_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("core_models_service_url", ["1", "2"], indirect=True)
 def test_infer_from_clip_model_when_non_https_input_url_given(
     core_models_service_url: str,
 ) -> None:
@@ -157,6 +164,7 @@ def test_infer_from_clip_model_when_non_https_input_url_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("core_models_service_url", ["1", "2"], indirect=True)
 def test_infer_from_clip_model_when_ip_based_input_url_given(
     core_models_service_url: str,
 ) -> None:
@@ -181,6 +189,7 @@ def test_infer_from_clip_model_when_ip_based_input_url_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("core_models_service_url", ["1", "2"], indirect=True)
 def test_infer_from_yolo_world_model_when_valid_input_given(
     core_models_service_url: str,
 ) -> None:
@@ -204,6 +213,7 @@ def test_infer_from_yolo_world_model_when_valid_input_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("core_models_service_url", ["1", "2"], indirect=True)
 def test_infer_from_yolo_world_model_when_non_https_input_url_given(
     core_models_service_url: str,
 ) -> None:
@@ -228,6 +238,7 @@ def test_infer_from_yolo_world_model_when_non_https_input_url_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("core_models_service_url", ["1", "2"], indirect=True)
 def test_infer_from_yolo_world_model_when_ip_based_input_url_given(
     core_models_service_url: str,
 ) -> None:

@@ -13,6 +13,7 @@ from tests.inference.hosted_platform_tests.conftest import IMAGE_URL, ROBOFLOW_A
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_infer_from_object_detection_model_without_api_key(
     object_detection_service_url: str,
     detection_model_id: str,
@@ -30,6 +31,7 @@ def test_infer_from_object_detection_model_without_api_key(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_infer_from_object_detection_model_with_invalid_api_key(
     object_detection_service_url: str,
     detection_model_id: str,
@@ -48,6 +50,7 @@ def test_infer_from_object_detection_model_with_invalid_api_key(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_infer_from_object_detection_model_with_invalid_model_id(
     object_detection_service_url: str,
 ) -> None:
@@ -67,6 +70,7 @@ def test_infer_from_object_detection_model_with_invalid_model_id(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_infer_from_object_detection_model_when_non_https_image_url_given(
     object_detection_service_url: str,
     detection_model_id: str,
@@ -89,6 +93,7 @@ def test_infer_from_object_detection_model_when_non_https_image_url_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_infer_from_object_detection_model_when_ip_address_as_url_given(
     object_detection_service_url: str,
     detection_model_id: str,
@@ -111,6 +116,7 @@ def test_infer_from_object_detection_model_when_ip_address_as_url_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_infer_from_object_detection_model_when_numpy_array_given(
     object_detection_service_url: str,
     detection_model_id: str,
@@ -139,6 +145,7 @@ def test_infer_from_object_detection_model_when_numpy_array_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_infer_from_object_detection_model_when_valid_response_expected(
     object_detection_service_url: str,
     detection_model_id: str,
@@ -163,6 +170,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_infer_from_object_detection_model_when_valid_response_expected_with_visualisation(
     object_detection_service_url: str,
     detection_model_id: str,
@@ -195,6 +203,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected_with_vis
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("object_detection_service_url", ["1", "2"], indirect=True)
 def test_infer_from_object_detection_model_when_valid_response_expected_with_visualisation_and_payload(
     object_detection_service_url: str,
     detection_model_id: str,
@@ -231,6 +240,7 @@ def test_infer_from_object_detection_model_when_valid_response_expected_with_vis
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("instance_segmentation_service_url", ["1", "2"], indirect=True)
 def test_infer_from_instance_segmentation_model_without_api_key(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
@@ -248,6 +258,7 @@ def test_infer_from_instance_segmentation_model_without_api_key(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("instance_segmentation_service_url", ["1", "2"], indirect=True)
 def test_infer_from_instance_segmentation_model_with_invalid_api_key(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
@@ -266,6 +277,7 @@ def test_infer_from_instance_segmentation_model_with_invalid_api_key(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("instance_segmentation_service_url", ["1", "2"], indirect=True)
 def test_infer_from_instance_segmentation_model_with_invalid_model_id(
     instance_segmentation_service_url: str,
 ) -> None:
@@ -285,6 +297,7 @@ def test_infer_from_instance_segmentation_model_with_invalid_model_id(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("instance_segmentation_service_url", ["1", "2"], indirect=True)
 def test_infer_from_instance_segmentation_model_when_non_https_image_url_given(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
@@ -307,6 +320,7 @@ def test_infer_from_instance_segmentation_model_when_non_https_image_url_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("instance_segmentation_service_url", ["1", "2"], indirect=True)
 def test_infer_from_instance_segmentation_model_when_ip_address_as_url_given(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
@@ -329,6 +343,7 @@ def test_infer_from_instance_segmentation_model_when_ip_address_as_url_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("instance_segmentation_service_url", ["1", "2"], indirect=True)
 def test_infer_from_instance_segmentation_model_when_numpy_array_given(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
@@ -357,6 +372,7 @@ def test_infer_from_instance_segmentation_model_when_numpy_array_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("instance_segmentation_service_url", ["1", "2"], indirect=True)
 def test_infer_from_instance_segmentation_model_when_valid_response_expected(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
@@ -381,6 +397,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("instance_segmentation_service_url", ["1", "2"], indirect=True)
 def test_infer_from_instance_segmentation_model_when_valid_response_expected_with_visualisation(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
@@ -413,6 +430,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected_wit
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("instance_segmentation_service_url", ["1", "2"], indirect=True)
 def test_infer_from_instance_segmentation_model_when_valid_response_expected_with_visualisation_and_payload(
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
@@ -449,6 +467,7 @@ def test_infer_from_instance_segmentation_model_when_valid_response_expected_wit
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("classification_service_url", ["1", "2"], indirect=True)
 def test_infer_from_classification_model_without_api_key(
     classification_service_url: str,
     classification_model_id: str,
@@ -466,6 +485,7 @@ def test_infer_from_classification_model_without_api_key(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("classification_service_url", ["1", "2"], indirect=True)
 def test_infer_from_classification_model_with_invalid_api_key(
     classification_service_url: str,
     classification_model_id: str,
@@ -484,6 +504,7 @@ def test_infer_from_classification_model_with_invalid_api_key(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("classification_service_url", ["1", "2"], indirect=True)
 def test_infer_from_classification_model_with_invalid_model_id(
     classification_service_url: str,
 ) -> None:
@@ -503,6 +524,7 @@ def test_infer_from_classification_model_with_invalid_model_id(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("classification_service_url", ["1", "2"], indirect=True)
 def test_infer_from_classification_model_when_non_https_image_url_given(
     classification_service_url: str,
     classification_model_id: str,
@@ -525,6 +547,7 @@ def test_infer_from_classification_model_when_non_https_image_url_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("classification_service_url", ["1", "2"], indirect=True)
 def test_infer_from_classification_model_when_ip_address_as_url_given(
     classification_service_url: str,
     classification_model_id: str,
@@ -547,6 +570,7 @@ def test_infer_from_classification_model_when_ip_address_as_url_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("classification_service_url", ["1", "2"], indirect=True)
 def test_infer_from_classification_model_when_numpy_array_given(
     classification_service_url: str,
     classification_model_id: str,
@@ -575,6 +599,7 @@ def test_infer_from_classification_model_when_numpy_array_given(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("classification_service_url", ["1", "2"], indirect=True)
 def test_infer_from_classification_model_when_valid_response_expected(
     classification_service_url: str,
     classification_model_id: str,
@@ -600,6 +625,7 @@ def test_infer_from_classification_model_when_valid_response_expected(
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("classification_service_url", ["1", "2"], indirect=True)
 def test_infer_from_classification_model_when_valid_response_expected_with_visualisation(
     classification_service_url: str,
     classification_model_id: str,
@@ -632,6 +658,7 @@ def test_infer_from_classification_model_when_valid_response_expected_with_visua
 
 
 @pytest.mark.flaky(retries=4, delay=1)
+@pytest.mark.parametrize("classification_service_url", ["1", "2"], indirect=True)
 def test_infer_from_classification_model_when_valid_response_expected_with_visualisation_and_payload(
     classification_service_url: str,
     classification_model_id: str,
