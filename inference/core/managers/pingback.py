@@ -137,10 +137,9 @@ class PingbackInfo:
 
         except Exception as e:
             try:
-                logger.debug(
+                logger.exception(
                     f"Error sending metrics to Roboflow, if you want to disable this feature unset the METRICS_ENABLED environment variable. Error was: {e}. Data was: {all_data}"
                 )
-                traceback.print_exc()
 
             except Exception as e2:
                 logger.debug(
