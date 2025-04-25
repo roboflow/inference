@@ -285,11 +285,14 @@ class LoRAQwen25VL(LoRATransformerModel):
                 token=token,
             )
 
-        self.model = (
-            PeftModel.from_pretrained(self.base_model, self.cache_dir)
-            .eval()
-            .to(self.dtype)
-        )
+        if model_load_id != "qwen-pretrains/1":
+            self.model = (
+                PeftModel.from_pretrained(self.base_model, self.cache_dir)
+                .eval()
+                .to(self.dtype)
+            )
+        else:
+            self.model = self.base_model.eval().to(self.dtype)
 
         self.model.merge_and_unload()
         preprocessor_config_path = os.path.join(self.cache_dir, "chat_template.json")
