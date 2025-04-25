@@ -31,7 +31,8 @@ COPY requirements/ ./requirements/
 
 # Upgrade pip and install Python packages
 RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install --upgrade \
+    python3 -m pip install "torch>=2.0.1,<2.8.0" "torchvision>=0.15.2" --index-url https://pypi.jetson-ai-lab.dev/jp6/cu126 && \
+    python3 -m pip install \
     -r requirements/_requirements.txt \
     -r requirements/requirements.clip.txt \
     -r requirements/requirements.http.txt \

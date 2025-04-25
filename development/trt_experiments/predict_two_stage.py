@@ -30,7 +30,7 @@ def main() -> None:
         image = load_image(image_url=IMAGE_URL)
     else:
         image = cv2.imread(IMAGE_PATH)
-    images = [torch.from_numpy(image).to(device=DEVICE) for _ in range(16)]
+    images = [torch.from_numpy(image).to(device=DEVICE) for _ in range(6)]
     detector_engine = load_model(model_path=DETECTOR_PATH)
     detector_context = detector_engine.create_execution_context()
     classifier_engine = load_model(model_path=CLASSIFIER_PATH)
@@ -74,17 +74,17 @@ def run_processing(
     print(f"DETECTOR PRE-PROCESSING: {round((end_a - start_a) * 1000, 2)}ms")
     results = []
     for i in range(0, pre_processed_images.shape[0], DETECTOR_MAX_BATCH_SIZE):
-        batch = pre_processed_images[i:i+DETECTOR_MAX_BATCH_SIZE]
         start_b = time.monotonic()
+        batch = pre_processed_images[i:i+DETECTOR_MAX_BATCH_SIZE]
         batch_results = perform_inference_from_detector(
             batch,
             engine=detector_engine,
             context=detector_context,
             device=device,
         )
+        results.append(batch_results)
         end_b = time.monotonic()
         print(f"DETECTOR BATCH INFERENCE: {round((end_b - start_b) * 1000, 2)}ms - {len(batch)} items")
-        results.append(batch_results)
     start_c = time.monotonic()
     detections = torch.cat(results, dim=0)
     end_c = time.monotonic()
@@ -107,17 +107,17 @@ def run_processing(
     print(f"CLASSIFIER PRE-PROCESSING: {round((end_f - start_f) * 1000, 2)}ms")
     classifier_results = []
     for i in range(0, crops.shape[0], CLASSIFIER_MAX_BATCH_SIZE):
-        batch = crops[i:i+CLASSIFIER_MAX_BATCH_SIZE]
         start_g = time.monotonic()
+        batch = crops[i:i+CLASSIFIER_MAX_BATCH_SIZE]
         batch_results = perform_inference_from_classifier(
             batch,
             engine=classifier_engine,
             context=classifier_context,
             device=device,
         )
+        classifier_results.append(batch_results)
         end_g = time.monotonic()
         print(f"CLASSIFIER BATCH INFERENCE: {round((end_g - start_g) * 1000, 2)}ms - {len(batch)} items")
-        classifier_results.append(batch_results)
     start_h = time.monotonic()
     all_classification_results = torch.cat(classifier_results, dim=0)
     scaled_probabs = torch.nn.functional.softmax(all_classification_results, dim=1)

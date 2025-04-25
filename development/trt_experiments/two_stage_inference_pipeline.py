@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Tuple, List, Optional, Union
 
 import torchvision
@@ -52,12 +53,13 @@ class TwoStageModel:
         self._inference_done = datetime.now()
 
     def on_video_frame(self, frames: List[VideoFrame]) -> List[torch.Tensor]:
+        start = datetime.now()
         since_last_frames = round((datetime.now() - self._last_frames).total_seconds() * 1000, 2)
         since_last_inference_results = round((datetime.now() - self._inference_done).total_seconds() * 1000, 2)
         self._last_frames = datetime.now()
         print(f"SINCE LAST FRAMES: {since_last_frames}ms; LAST INFERENCE: {since_last_inference_results}ms")
         frames_tensors = [torch.from_numpy(frame.image).to(device=DEVICE) for frame in frames]
-        return run_processing(
+        result = run_processing(
             images=frames_tensors,
             detector_engine=self._detector_engine,
             detector_context=self._detector_context,
@@ -65,6 +67,8 @@ class TwoStageModel:
             classifier_context=self._classifier_context,
             device=DEVICE
         )
+        print(f"INFERENCE TOOK: {round((datetime.now() - start).total_seconds() * 1000, 2)}")
+        return result
 
     def on_prediction(
         self,
@@ -88,9 +92,13 @@ def run_processing(
     classifier_context,
     device: torch.device,
 ) -> List[torch.Tensor]:
+    start_a = time.monotonic()
     pre_processed_images, images_metadata = preprocess_images_for_detector(images, (640, 640))
+    end_a = time.monotonic()
+    print(f"DETECTOR PRE-PROCESSING: {round((end_a - start_a) * 1000, 2)}ms")
     results = []
     for i in range(0, pre_processed_images.shape[0], DETECTOR_MAX_BATCH_SIZE):
+        start_b = time.monotonic()
         batch = pre_processed_images[i:i+DETECTOR_MAX_BATCH_SIZE]
         batch_results = perform_inference_from_detector(
             batch,
@@ -99,16 +107,31 @@ def run_processing(
             device=device,
         )
         results.append(batch_results)
+        end_b = time.monotonic()
+        print(f"DETECTOR BATCH INFERENCE: {round((end_b - start_b) * 1000, 2)}ms - {len(batch)} items")
+    start_c = time.monotonic()
     detections = torch.cat(results, dim=0)
+    end_c = time.monotonic()
+    print(f"DETECTOR RESULTS CONSOLIDATION: {round((end_c - start_c) * 1000, 2)}ms")
+    start_d = time.monotonic()
     detections_after_nms = run_nms(detections)
+    end_d = time.monotonic()
+    print(f"NMS: {round((end_d - start_d) * 1000, 2)}ms")
+    start_e = time.monotonic()
     rescaled_detections = rescale_detections(detections_after_nms, images_metadata)
+    end_e = time.monotonic()
+    print(f"DETECTIONS RESCALING: {round((end_e - start_e) * 1000, 2)}ms")
+    start_f = time.monotonic()
     crops, crops_metadata = crop_and_resize_fast(
         images=images,
         detections=rescaled_detections,
         target_size=(CLASSIFIER_INPUT_SIZE, CLASSIFIER_INPUT_SIZE),
     )
+    end_f = time.monotonic()
+    print(f"CLASSIFIER PRE-PROCESSING: {round((end_f - start_f) * 1000, 2)}ms")
     classifier_results = []
     for i in range(0, crops.shape[0], CLASSIFIER_MAX_BATCH_SIZE):
+        start_g = time.monotonic()
         batch = crops[i:i+CLASSIFIER_MAX_BATCH_SIZE]
         batch_results = perform_inference_from_classifier(
             batch,
@@ -117,13 +140,22 @@ def run_processing(
             device=device,
         )
         classifier_results.append(batch_results)
+        end_g = time.monotonic()
+        print(f"CLASSIFIER BATCH INFERENCE: {round((end_g - start_g) * 1000, 2)}ms - {len(batch)} items")
+    start_h = time.monotonic()
     all_classification_results = torch.cat(classifier_results, dim=0)
     scaled_probabs = torch.nn.functional.softmax(all_classification_results, dim=1)
     max_probs, class_indices = torch.max(scaled_probabs, dim=1)
-    for crop_meta, max_prob, cls_idx in zip(crops_metadata, max_probs, class_indices):
-        image_id, det_id = crop_meta["image_id"], crop_meta["detection_id"]
-        rescaled_detections[image_id][det_id, 4] = max_prob
-        rescaled_detections[image_id][det_id, 5] = cls_idx
+    concatenated = torch.stack((max_probs, class_indices), dim=1)
+    end_h = time.monotonic()
+    print(f"CLASSIFIER POST-PROCESSING: {round((end_h - start_h) * 1000, 2)}ms")
+    start_i = time.monotonic()
+    offset = 0
+    for image_detections in rescaled_detections:
+        image_detections[:, 4:] = concatenated[offset:offset + len(image_detections), :]
+        offset += len(image_detections)
+    end_i = time.monotonic()
+    print(f"CLASSES REPLACEMENT: {round((end_i - start_i) * 1000, 2)}ms")
     return rescaled_detections
 
 
