@@ -23,6 +23,7 @@ CLASSIFIER_MAX_BATCH_SIZE = int(os.getenv("CLASSIFIER_MAX_BATCH_SIZE", "64"))
 CLASSIFIER_INPUT_SIZE = int(os.getenv("CLASSIFIER_INPUT_SIZE", "224"))
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 DEVICE = torch.device("cuda:0")
+WITH_NMS = bool(int(os.getenv("WITH_NMS", "1")))
 
 
 def main() -> None:
@@ -90,7 +91,10 @@ def run_processing(
     end_c = time.monotonic()
     print(f"DETECTOR RESULTS CONSOLIDATION: {round((end_c - start_c) * 1000, 2)}ms")
     start_d = time.monotonic()
-    detections_after_nms = run_nms(detections)
+    if WITH_NMS:
+        detections_after_nms = run_nms(detections)
+    else:
+        detections_after_nms = post_process_detections(detections)
     end_d = time.monotonic()
     print(f"NMS: {round((end_d - start_d) * 1000, 2)}ms")
     start_e = time.monotonic()
@@ -255,6 +259,30 @@ def run_nms(
         ], dim=1)  # [x1, y1, x2, y2, conf, cls]
 
         results.append(detections)
+    return results
+
+
+
+def post_process_detections(
+    output: torch.Tensor,
+    conf_thresh: float = 0.25,
+    max_detections: int = 100,
+) -> List[torch.Tensor]:
+    results = []
+    for batch_out in output:
+        print(batch_out.shape)
+        # Apply confidence threshold
+        mask = batch_out[:, 4] > conf_thresh
+        if mask.sum() == 0:
+            results.append(torch.zeros((0, 6), device=output.device))
+            continue
+        filtered = batch_out[mask]
+
+        # Limit to max detections
+        filtered = filtered[:max_detections]
+        results.append(filtered)
+        # export bug all of the elements other than first are zeroed!
+        return [filtered.clone() for _ in range(output.shape[0])]
     return results
 
 
