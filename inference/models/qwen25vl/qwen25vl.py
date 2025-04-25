@@ -4,12 +4,19 @@ import os
 import torch
 from peft import LoraConfig, PeftModel
 from PIL import Image
-from transformers import AutoModelForCausalLM, Qwen2_5_VLConfig, Qwen2_5_VLForConditionalGeneration, BitsAndBytesConfig
+from transformers import (
+    AutoModelForCausalLM,
+    BitsAndBytesConfig,
+    Qwen2_5_VLConfig,
+    Qwen2_5_VLForConditionalGeneration,
+)
 
 from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
-AutoModelForCausalLM.register(config_class=Qwen2_5_VLConfig, model_class=Qwen2_5_VLForConditionalGeneration)
+AutoModelForCausalLM.register(
+    config_class=Qwen2_5_VLConfig, model_class=Qwen2_5_VLForConditionalGeneration
+)
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -17,6 +24,7 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_quant_type="nf4",
     bnb_4bit_quant_storage=torch.bfloat16,
 )
+
 
 def _patch_preprocessor_config(cache_dir: str):
     """
@@ -42,6 +50,7 @@ def _patch_preprocessor_config(cache_dir: str):
     else:
         raise ValueError(f"'{target_key}' not found in {config_path}")
 
+
 class Qwen25VL(TransformerModel):
     generation_includes_input = True
     transformers_class = AutoModelForCausalLM
@@ -59,7 +68,7 @@ class Qwen25VL(TransformerModel):
         dtype=None,
         huggingface_token=HUGGINGFACE_TOKEN,
         use_quantization=True,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(model_id, *args, **kwargs)
         self.huggingface_token = huggingface_token
@@ -254,7 +263,7 @@ class LoRAQwen25VL(LoRATransformerModel):
             cache_dir = model_load_id
             revision = None
             token = None
-        
+
         files_folder = MODEL_CACHE_DIR + "lora-bases/qwen/qwen25vl-7b/main/"
         _patch_preprocessor_config(files_folder)
 
