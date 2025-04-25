@@ -1,18 +1,15 @@
 import json
 import os
-from typing import Any, Dict
 
 import torch
-import transformers
 from peft import LoraConfig, PeftModel
 from PIL import Image
-from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, Qwen2_5_VLConfig, Qwen2_5_VLForConditionalGeneration, BitsAndBytesConfig
 
-from inference.core.entities.responses.inference import LMMInferenceResponse
 from inference.core.env import DEVICE, HUGGINGFACE_TOKEN, MODEL_CACHE_DIR
-from inference.core.models.types import PreprocessReturnMetadata
-from inference.models.florence2.utils import import_class_from_file
 from inference.models.transformers import LoRATransformerModel, TransformerModel
+
+AutoModelForCausalLM.register(config_class=Qwen2_5_VLConfig, model_class=Qwen2_5_VLForConditionalGeneration)
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -21,6 +18,29 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_quant_storage=torch.bfloat16,
 )
 
+def _patch_preprocessor_config(cache_dir: str):
+    """
+    Checks and patches the preprocessor_config.json in the given cache directory
+    to ensure the image_processor_type is recognized.
+    """
+    config_path = os.path.join(cache_dir, "preprocessor_config.json")
+    target_key = "image_processor_type"
+    correct_value = "Qwen2VLImageProcessor"
+
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Preprocessor config not found at {config_path}")
+
+    with open(config_path, "r") as f:
+        data = json.load(f)
+
+    if target_key in data and data[target_key] != correct_value:
+        data[target_key] = correct_value
+        with open(config_path, "w") as f:
+            json.dump(data, f, indent=4)
+    elif target_key in data:
+        pass
+    else:
+        raise ValueError(f"'{target_key}' not found in {config_path}")
 
 class Qwen25VL(TransformerModel):
     generation_includes_input = True
@@ -58,20 +78,6 @@ class Qwen25VL(TransformerModel):
         self.initialize_model()
 
     def initialize_model(self):
-        self.transformers_class = import_class_from_file(
-            os.path.join(self.cache_dir, "modeling_qwen2_5_vl.py"),
-            "Qwen2_5_VLForConditionalGeneration",
-        )
-        self.processor_class = import_class_from_file(
-            os.path.join(self.cache_dir, "processing_qwen2_5_vl.py"),
-            "Qwen2_5_VLProcessor",
-        )
-        self.image_processor_class = import_class_from_file(
-            os.path.join(self.cache_dir, "image_processing_qwen2_5_vl.py"),
-            "Qwen2_5_VLImageProcessor",
-            "transformers.Qwen2_5_VLImageProcessor",
-        )
-        transformers.Qwen2_5_VLImageProcessor = self.image_processor_class
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
         with open(config_file, "r") as file:
@@ -103,6 +109,9 @@ class Qwen25VL(TransformerModel):
             cache_dir = model_load_id
             revision = None
             token = None
+
+        files_folder = MODEL_CACHE_DIR + "lora-bases/qwen/qwen25vl-7b/main/"
+        _patch_preprocessor_config(files_folder)
 
         if self.use_quantization:
             self.base_model = self.transformers_class.from_pretrained(
@@ -214,23 +223,6 @@ class LoRAQwen25VL(LoRATransformerModel):
         return cache_dir
 
     def initialize_model(self):
-        self.transformers_class = import_class_from_file(
-            os.path.join(self.cache_dir, "modeling_qwen2_5_vl.py"),
-            "Qwen2_5_VLForConditionalGeneration",
-        )
-
-        self.processor_class = import_class_from_file(
-            os.path.join(self.cache_dir, "processing_qwen2_5_vl.py"),
-            "Qwen2_5_VLProcessor",
-        )
-        self.image_processor_class = import_class_from_file(
-            os.path.join(self.cache_dir, "image_processing_qwen2_5_vl.py"),
-            "Qwen2_5_VLImageProcessor",
-            "transformers.Qwen2_5_VLImageProcessor",
-        )
-
-        transformers.Qwen2_5_VLImageProcessor = self.image_processor_class
-
         config_file = os.path.join(self.cache_dir, "adapter_config.json")
 
         with open(config_file, "r") as file:
@@ -262,6 +254,9 @@ class LoRAQwen25VL(LoRATransformerModel):
             cache_dir = model_load_id
             revision = None
             token = None
+        
+        files_folder = MODEL_CACHE_DIR + "lora-bases/qwen/qwen25vl-7b/main/"
+        _patch_preprocessor_config(files_folder)
 
         if self.use_quantization:
             self.base_model = self.transformers_class.from_pretrained(

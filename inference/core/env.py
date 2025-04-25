@@ -309,7 +309,7 @@ METRICS_INTERVAL = int(os.getenv("METRICS_INTERVAL", 60))
 METRICS_URL = os.getenv("METRICS_URL", f"{API_BASE_URL}/inference-stats")
 
 # Model cache directory, default is "/tmp/cache"
-MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/tmp/cache")
+MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "/")
 
 # Model ID, default is None
 MODEL_ID = os.getenv("MODEL_ID")
