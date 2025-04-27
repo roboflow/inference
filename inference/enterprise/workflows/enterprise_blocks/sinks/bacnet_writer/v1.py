@@ -58,9 +58,9 @@ LONG_DESCRIPTION = """
 This **BACnet IP** block integrates a Roboflow Workflow with a BACnet device via UDP.
 It can write to the present value property of listed BACnet object class types.
 
-Note this block requires privilaged access to the network interface card. If inference
-is running in a docker container, this can be provided using --network=host or ideally
-by setting up a bridged VLAN (ex. Macvlan).
+Note discovery (using the device ID) requires privilaged access to the network interface
+card. If inference is running in a docker container, this can be provided using
+--network=host or preferrably by setting up a bridged VLAN (ex. Macvlan).
 """
 
 # BACnet class names vs. class ids
@@ -143,7 +143,7 @@ class BacnetIpManifest(WorkflowBlockManifest):
     network_interface: Union[
         Literal[tuple(get_ip_and_subnet_info().keys())],
     ] = Field(
-        default="eth0" if "eth0" in get_ip_and_subnet_info() else None if not get_ip_and_subnet_info() else get_ip_and_subnet_info().keys()[0],
+        default="eth0" if "eth0" in get_ip_and_subnet_info() else None,
         description="The network adapter to bind to",
     )
     value_to_write: Union[str] = Field(
@@ -194,7 +194,7 @@ class BacnetIpManifest(WorkflowBlockManifest):
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         get_ip_and_subnet_info()
-        return [OutputDefinition(name="write_reply", kind=[LIST_OF_VALUES_KIND])]
+        return [OutputDefinition(name="write_reply", kind=[LIST_OF_VALUES_KIND]),OutputDefinition(name="success", kind=[BOOLEAN_KIND])]
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -210,29 +210,27 @@ class BacnetIpV1(WorkflowBlock):
 
     iocb_responded = threading.Event()
 
+
     class BacnetApplication(BIPSimpleApplication):
+        # dictionary of device id to source
+        source_bindings = {}
+
         def __init__(self, *args):
             BIPSimpleApplication.__init__(self, *args)
 
-            # keep track of requests to line up responses
-            self._request = None
-
-        def request(self, apdu):
-            # save a copy of the request
-            if isinstance(apdu, WhoIsRequest):
-                self._request = apdu
-
-            # forward it along
-            BIPSimpleApplication.request(self, apdu)
-
+        # this is a message from some other device, like an IAm
         def indication(self, apdu):
-            print("response: {}", apdu)  
-            # response?
+
+            if isinstance(apdu, IAmRequest):                                
+                if apdu.iAmDeviceIdentifier:
+                    print(f"iam from {apdu.pduSource} is {apdu.iAmDeviceIdentifier}")
+                    self.source_bindings[apdu.iAmDeviceIdentifier[1]] = apdu.pduSource
+                    
             BIPSimpleApplication.indication(self, apdu)
 
+        # this is an ack (ex. write reply)
         def confirmation(self, apdu):
-            print("confirmation: {}", apdu)  
-            # forward it along
+            print("confirmation: {}", apdu)              
             BIPSimpleApplication.confirmation(self, apdu)
 
     # static wrapper class
@@ -303,11 +301,8 @@ class BacnetIpV1(WorkflowBlock):
         def app(self):
             return self.app
 
-        def who_is(self):
-            
+        def who_is(self):            
             print(f"whois {self.app.who_is(None, None, GlobalBroadcast())}")
-            #print(f"whois {self.app.who_is(None, None, Address('172.17.255.255'))}")
-            #self.app.i_am()
 
         def request_io(self,request):
             print("request")
@@ -343,9 +338,8 @@ class BacnetIpV1(WorkflowBlock):
             request.pduDestination = Address(device_id)
             print(f"destination: {request.pduDestination}")
         else:
-            if device_id in self._ip_bindings:
-                #request.pduDestination = Address(self._ip_bindings[device_id])
-                request.pduDestination = device_id
+            if device_id in self.app.source_bindings:
+                request.pduDestination = Address(self.app.source_bindings[device_id])                
             else:
                 raise ValueError(
                     f"BACnet device id binding unknown: {device_id}"
@@ -367,6 +361,8 @@ class BacnetIpV1(WorkflowBlock):
         # response callback        
         iocb.add_callback(self.on_response)
 
+        # TODO: we need to make sure the response is the right device and invoke id
+        # this will set on any response
         self.iocb_responded.clear()
         deferred(self.bacnet_app.request_io, iocb)
 
@@ -375,6 +371,7 @@ class BacnetIpV1(WorkflowBlock):
         
         return iocb
 
+    # TODO: iostate here is what we want
     def on_response(self, iocb):
         self.iocb_responded.set()
         print(f"iocb {iocb.ioComplete.is_set()} {iocb.ioState}")
@@ -415,23 +412,22 @@ class BacnetIpV1(WorkflowBlock):
             # write the value and wait for a response
             iocb = self.write_value(device_id_to_write,write_bacoid,encodable_value,priority,fire_and_forget,response_timeout)
 
-            # return the response
-            
+            # return the response            
             if not isinstance(iocb.ioResponse, SimpleAckPDU):
-                return {"write_reply": ["write response is not an ack"]}   
+                return {"write_reply": ["write response is not an ack"], "success": False}
             if iocb.ioError:
-                print(f"iocb_err:{str(iocb.ioError)}")
-                return {"write_reply": [str(iocb.ioError)]}    
+                print(f"iocb_err:{vars(iocb.ioError)}")
+                return {"write_reply": [vars(iocb.ioError)], "success": False}    
             else:
-                print(f"iocb_err:{str(iocb.ioResponse)}")
-                return {"write_reply": [str(iocb.ioResponse)]}
+                print(f"iocb_success:{vars(iocb.ioResponse)}")
+                return {"write_reply": [vars(iocb.ioResponse)], "success": True}
             
             #return {"write_reply": [str(f"{iocb}")]}
             #return {"write_reply": [None]}
 
         elif self._step_execution_mode == StepExecutionMode.REMOTE:
             raise NotImplementedError(
-                "Remote execution is not supported for Depth Estimation. Please use a local or dedicated inference server."
+                "Remote execution is not supported for BACnet. Please use a local or dedicated inference server."
             )
         else:
             raise ValueError(
