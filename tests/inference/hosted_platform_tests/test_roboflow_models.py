@@ -280,7 +280,7 @@ def test_infer_from_instance_segmentation_model_with_invalid_api_key(
 @pytest.mark.parametrize("instance_segmentation_service_url", ["1", "2"], indirect=True)
 def test_infer_from_instance_segmentation_model_with_invalid_model_id(
     instance_segmentation_service_url: str,
-) -> Noneh
+) -> None:
     # when
     response = requests.post(
         f"{instance_segmentation_service_url}/some/38",
