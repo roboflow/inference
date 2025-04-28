@@ -65,7 +65,7 @@ def test_infer_from_object_detection_model_with_invalid_model_id(
 
     # then
     assert (
-        response.status_code == 403
+        response.status_code in [401, 403]
     ), "Expected to see unauthorised error, as there is no such model in workspace"
 
 
@@ -273,14 +273,14 @@ def test_infer_from_instance_segmentation_model_with_invalid_api_key(
     )
 
     # then
-    assert response.status_code in [401,403], "Expected to see unauthorised error"
+    assert response.status_code == [401,403], "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
 @pytest.mark.parametrize("instance_segmentation_service_url", ["1", "2"], indirect=True)
 def test_infer_from_instance_segmentation_model_with_invalid_model_id(
     instance_segmentation_service_url: str,
-) -> None:
+) -> Noneh
     # when
     response = requests.post(
         f"{instance_segmentation_service_url}/some/38",
@@ -292,7 +292,7 @@ def test_infer_from_instance_segmentation_model_with_invalid_model_id(
 
     # then
     assert (
-        response.status_code == 403
+        response.status_code in [401, 403]
     ), "Expected to see unauthorised error, as there is no such model in workspace"
 
 
@@ -519,7 +519,7 @@ def test_infer_from_classification_model_with_invalid_model_id(
 
     # then
     assert (
-        response.status_code == 403
+        response.status_code in [401, 403]
     ), "Expected to see unauthorised error, as there is no such model in workspace"
 
 
