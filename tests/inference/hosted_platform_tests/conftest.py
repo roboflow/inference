@@ -6,7 +6,7 @@ from typing import Any, Tuple
 
 import numpy as np
 import pytest
-
+from _pytest.fixtures import FixtureRequest
 from inference_sdk import InferenceHTTPClient
 
 
