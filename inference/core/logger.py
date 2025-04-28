@@ -1,10 +1,16 @@
 import logging
 import os
+import sys
+import traceback
 import warnings
 from typing import Any, Dict
 
+import structlog
 from rich.logging import RichHandler
+from structlog import BoundLogger
 from structlog.processors import CallsiteParameter
+from structlog.stdlib import _FixedFindCallerLogger
+from structlog.typing import EventDict, WrappedLogger
 
 from inference.core.env import (
     API_LOGGING_ENABLED,
@@ -51,8 +57,50 @@ class GCPCloudLoggingProcessor:
         return event_dict
 
 
+class NoTracebackFormatter(logging.Formatter):
+    def format(self, record):
+        # Remove exc_info before formatting
+        record.exc_info = None
+        return super().format(record)
+
+
+def structlog_exception_formatter(
+    logger_instance: WrappedLogger, name: str, event_dict: EventDict
+) -> EventDict:
+    exc_info = event_dict.pop("exc_info", None)
+    if not exc_info:
+        return event_dict
+    if isinstance(exc_info, BaseException):
+        exc_type, exc_value, exc_tb = (
+            exc_info.__class__,
+            exc_info,
+            exc_info.__traceback__,
+        )
+    elif isinstance(exc_info, tuple):
+        exc_type, exc_value, exc_tb = exc_info
+    else:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+    if exc_tb:
+        tb_list = traceback.extract_tb(exc_tb)
+    else:
+        tb_list = []
+    event_dict["exception"] = {
+        "type": exc_type.__name__ if exc_type else "N/A",
+        "message": str(exc_value) if exc_value else "N/A",
+        "stacktrace": [
+            {
+                "filename": tb.filename,
+                "lineno": tb.lineno,
+                "function": tb.name,
+                "code": tb.line,
+            }
+            for tb in tb_list
+        ],
+    }
+    return event_dict
+
+
 if API_LOGGING_ENABLED:
-    import structlog
 
     is_gcp_environment = GCP_SERVERLESS or DEDICATED_DEPLOYMENT_ID is not None
 
@@ -68,7 +116,7 @@ if API_LOGGING_ENABLED:
         structlog.stdlib.filter_by_level,
         structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M.%S"),
         structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
+        structlog_exception_formatter,
         structlog.processors.CallsiteParameterAdder(
             [
                 CallsiteParameter.FILENAME,
@@ -92,6 +140,10 @@ if API_LOGGING_ENABLED:
     )
     logger = structlog.get_logger("inference")
     logger.setLevel(LOG_LEVEL)
+    bounded_logger = logger.bind()
+    handler = logging.StreamHandler()
+    handler.setFormatter(NoTracebackFormatter("[%(levelname)s] %(message)s"))
+    bounded_logger._logger.addHandler(handler)
 else:
     logger = logging.getLogger("inference")
     logger.setLevel(LOG_LEVEL)
