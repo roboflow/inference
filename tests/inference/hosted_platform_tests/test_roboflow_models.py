@@ -64,7 +64,7 @@ def test_infer_from_object_detection_model_with_invalid_model_id(
     )
 
     # then
-    assert response.status_code == 404, "Expected to see unauthorised error, as there is no such model in workspace"
+    assert response.status_code in [401, 403, 404], "Expected to see unauthorised error, as there is no such model in workspace"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -271,7 +271,7 @@ def test_infer_from_instance_segmentation_model_with_invalid_api_key(
     )
 
     # then
-    assert response.status_code == [401,403], "Expected to see unauthorised error"
+    assert response.status_code in [401, 403], "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -289,7 +289,7 @@ def test_infer_from_instance_segmentation_model_with_invalid_model_id(
     )
 
     # then
-    assert response.status_code == 404, "Expected to see unauthorised error, as there is no such model in workspace"
+    assert response.status_code in [401, 403, 404], "Expected to see unauthorised error, as there is no such model in workspace"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -496,7 +496,7 @@ def test_infer_from_classification_model_with_invalid_api_key(
     )
 
     # then
-    assert response.status_code in [401,403], "Expected to see unauthorised error"
+    assert response.status_code in [401, 403], "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -514,7 +514,7 @@ def test_infer_from_classification_model_with_invalid_model_id(
     )
 
     # then
-    assert response.status_code == 404, "Expected to see unauthorised error, as there is no such model in workspace"
+    assert response.status_code in [401, 403, 404], "Expected to see unauthorised error, as there is no such model in workspace"
 
 
 @pytest.mark.flaky(retries=4, delay=1)

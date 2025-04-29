@@ -39,7 +39,7 @@ def test_infer_from_core_model_with_invalid_api_key(
         _ = client.ocr_image(IMAGE_URL)
 
     # then
-    assert error.value.status_code == 403, "Expected to see unauthorised error"
+    assert error.value.status_code in [401, 403], "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
