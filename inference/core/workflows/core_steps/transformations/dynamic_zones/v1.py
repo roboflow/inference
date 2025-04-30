@@ -98,38 +98,54 @@ class DynamicZonesManifest(WorkflowBlockManifest):
 def calculate_simplified_polygon(
     mask: np.ndarray, required_number_of_vertices: int, max_steps: int = 1000
 ) -> np.ndarray:
+    # Extract polygons from mask and select the largest
     contours = sv.mask_to_polygons(mask)
     largest_contour = max(contours, key=len)
 
-    # https://docs.opencv.org/4.x/d3/dc0/group__imgproc__shape.html#ga014b28e56cb8854c0de4a211cb2be656
+    # Compute convex hull of the largest polygon
     convex_contour = cv.convexHull(
         points=largest_contour,
         returnPoints=True,
         clockwise=True,
     )
-    # https://docs.opencv.org/4.9.0/d3/dc0/group__imgproc__shape.html#ga8d26483c636be6b35c3ec6335798a47c
+    # Calculate the perimeter for epsilons
     perimeter = cv.arcLength(curve=convex_contour, closed=True)
+    lower_epsilon = 1e-7  # avoid degenerate case
     upper_epsilon = perimeter
-    lower_epsilon = 0.0000001
-    epsilon = lower_epsilon + upper_epsilon / 2
-    # https://docs.opencv.org/4.9.0/d3/dc0/group__imgproc__shape.html#ga0012a5fdaea70b8a9970165d98722b4c
-    simplified_polygon = cv.approxPolyDP(
-        curve=convex_contour, epsilon=epsilon, closed=True
-    )
+
+    # Store best found solution closest to required_number_of_vertices
+    best_polygon = None
+    best_diff = float("inf")
+
     for _ in range(max_steps):
-        if len(simplified_polygon) == required_number_of_vertices:
-            break
-        if len(simplified_polygon) > required_number_of_vertices:
-            lower_epsilon = epsilon
-        else:
-            upper_epsilon = epsilon
-        epsilon = lower_epsilon + (upper_epsilon - lower_epsilon) / 2
+        epsilon = (lower_epsilon + upper_epsilon) / 2
+        # Try to simplify the convex contour
         simplified_polygon = cv.approxPolyDP(
             curve=convex_contour, epsilon=epsilon, closed=True
         )
-    while len(simplified_polygon.shape) > 2:
-        simplified_polygon = np.concatenate(simplified_polygon)
-    return simplified_polygon
+        num_vertices = len(simplified_polygon)
+
+        # Track best approximation
+        diff = abs(num_vertices - required_number_of_vertices)
+        if diff < best_diff:
+            best_polygon = simplified_polygon
+            best_diff = diff
+            if diff == 0:
+                break  # Exact match
+
+        # Binary search adjustment
+        if num_vertices > required_number_of_vertices:
+            lower_epsilon = epsilon
+        else:
+            upper_epsilon = epsilon
+
+        # If further search won't yield a different vertex count, break early
+        if upper_epsilon - lower_epsilon < 1e-7:
+            break
+
+    # Flatten the result to 2D array (N,2) for output
+    polygon_2d = best_polygon.reshape(-1, 2)
+    return polygon_2d
 
 
 def scale_polygon(polygon: np.ndarray, scale: float) -> np.ndarray:
