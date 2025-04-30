@@ -97,7 +97,7 @@ class DynamicZonesManifest(WorkflowBlockManifest):
 
 def calculate_simplified_polygon(
     mask: np.ndarray, required_number_of_vertices: int, max_steps: int = 1000
-) -> np.array:
+) -> np.ndarray:
     contours = sv.mask_to_polygons(mask)
     largest_contour = max(contours, key=len)
 
@@ -180,6 +180,14 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     mask=mask,
                     required_number_of_vertices=required_number_of_vertices,
                 )
+                vertices_count, _ = simplified_polygon.shape
+                if vertices_count < required_number_of_vertices:
+                    for _ in range(required_number_of_vertices - vertices_count):
+                        simplified_polygon = np.append(
+                            simplified_polygon,
+                            [simplified_polygon[-1]],
+                            axis=0,
+                        )
                 updated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(
                     [simplified_polygon]
                 )
@@ -193,7 +201,7 @@ class DynamicZonesBlockV1(WorkflowBlock):
                         [
                             sv.polygon_to_mask(
                                 polygon=simplified_polygon,
-                                resolution_wh=mask.shape,
+                                resolution_wh=mask.shape[::-1],
                             )
                         ]
                     )
