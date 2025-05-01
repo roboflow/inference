@@ -225,6 +225,10 @@ def extend_perspective_polygon(
         return polygon
     points = detections.get_anchors_coordinates(anchor=bbox_position)
     bottom_left, top_left, top_right, bottom_right = polygon
+    left_bottom_to_top = top_left[0] - bottom_left[0], top_left[1] - bottom_left[1]
+    right_bottom_to_top = top_right[0] - bottom_right[0], top_right[1] - bottom_right[1]
+    top_left_to_right = top_right[0] - top_left[0], top_right[1] - top_left[1]
+    bottom_left_to_right = bottom_right[0] - bottom_left[0], bottom_right[1] - bottom_left[1]
     for x, y in points:
         bottom_left = min(x, bottom_left[0]), bottom_left[1]
         top_left = min(x, top_left[0]), top_left[1]
