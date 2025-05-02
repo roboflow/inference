@@ -1,5 +1,5 @@
 import math
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import cv2 as cv
 import numpy as np
@@ -216,6 +216,107 @@ def roll_polygon_vertices_to_start_from_leftmost_bottom(
     return closest
 
 
+def ccw(x1, y1, x2, y2, x3, y3):
+    return (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1) > 0
+
+
+def calculate_line_coeffs(
+    x1: int, y1: int, x2: int, y2: int
+) -> Tuple[Optional[float], float]:
+    if x1 == x2:
+        return None, x1
+    # Solved a and b for ax + b = y
+    return (y2 - y1) / (x2 - x1), (y1 * x2 - y2 * x1) / (x2 - x1)
+
+
+def calculate_line_intercept_to_contain_point(
+    a: Optional[float],
+    x: int,
+    y: int,
+) -> float:
+    if a is None:
+        return x
+    return y - a * x
+
+
+def solve_line_intersection(
+    a1: Optional[float],
+    b1: float,
+    a2: Optional[float],
+    b2: float,
+) -> Tuple[float, float]:
+    if a1 is None and a2 is None:
+        raise ValueError("Both lines are vertical")
+    if a1 is None:
+        x = b1
+        y = a2 * x + b2
+    elif a2 is None:
+        x = b2
+        y = a1 * x + b1
+    else:
+        x = (b2 - b1) / (a1 - a2)
+        y = a1 * x + b1
+    return x, y
+
+
+def calculate_vertices_to_contain_point(
+    vertex_1: np.ndarray,
+    vertex_2: np.ndarray,
+    vertex_3_from_1: np.ndarray,
+    vertex_4_from_2: np.ndarray,
+    x: int,
+    y: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    a, _ = calculate_line_coeffs(
+        x1=vertex_1[0],
+        y1=vertex_1[1],
+        x2=vertex_2[0],
+        y2=vertex_2[1],
+    )
+    b = calculate_line_intercept_to_contain_point(
+        a=a,
+        x=x,
+        y=y,
+    )
+    a_3_1, b_3_1 = calculate_line_coeffs(
+        x1=vertex_1[0],
+        y1=vertex_1[1],
+        x2=vertex_3_from_1[0],
+        y2=vertex_3_from_1[1],
+    )
+    vertex_1 = (
+        np.array(
+            solve_line_intersection(
+                a1=a_3_1,
+                b1=b_3_1,
+                a2=a,
+                b2=b,
+            )
+        )
+        .round()
+        .astype(int)
+    )
+    a_4_2, b_4_2 = calculate_line_coeffs(
+        x1=vertex_2[0],
+        y1=vertex_2[1],
+        x2=vertex_4_from_2[0],
+        y2=vertex_4_from_2[1],
+    )
+    vertex_2 = (
+        np.array(
+            solve_line_intersection(
+                a1=a_4_2,
+                b1=b_4_2,
+                a2=a,
+                b2=b,
+            )
+        )
+        .round()
+        .astype(int)
+    )
+    return vertex_1, vertex_2
+
+
 def extend_perspective_polygon(
     polygon: List[np.ndarray],
     detections: sv.Detections,
@@ -225,20 +326,77 @@ def extend_perspective_polygon(
         return polygon
     points = detections.get_anchors_coordinates(anchor=bbox_position)
     bottom_left, top_left, top_right, bottom_right = polygon
-    left_bottom_to_top = top_left[0] - bottom_left[0], top_left[1] - bottom_left[1]
-    right_bottom_to_top = top_right[0] - bottom_right[0], top_right[1] - bottom_right[1]
-    top_left_to_right = top_right[0] - top_left[0], top_right[1] - top_left[1]
-    bottom_left_to_right = bottom_right[0] - bottom_left[0], bottom_right[1] - bottom_left[1]
     for x, y in points:
-        bottom_left = min(x, bottom_left[0]), bottom_left[1]
-        top_left = min(x, top_left[0]), top_left[1]
-        top_right = max(x, top_right[0]), top_right[1]
-        bottom_right = max(x, bottom_right[0]), bottom_right[1]
-
-        bottom_left = bottom_left[0], max(y, bottom_left[1])
-        bottom_right = bottom_right[0], max(y, bottom_right[1])
-        top_right = top_right[0], min(y, top_right[1])
-        top_left = top_left[0], min(y, top_left[1])
+        if cv.pointPolygonTest(np.array(polygon), (x, y), False) >= 0:
+            continue
+        # extend to the left
+        if not ccw(
+            x1=bottom_left[0],
+            y1=bottom_left[1],
+            x2=top_left[0],
+            y2=top_left[1],
+            x3=x,
+            y3=y,
+        ):
+            bottom_left, top_left = calculate_vertices_to_contain_point(
+                vertex_1=bottom_left,
+                vertex_2=top_left,
+                vertex_3_from_1=bottom_right,
+                vertex_4_from_2=top_right,
+                x=x,
+                y=y,
+            )
+        # extend to the right
+        if not ccw(
+            x1=top_right[0],
+            y1=top_right[1],
+            x2=bottom_right[0],
+            y2=bottom_right[1],
+            x3=x,
+            y3=y,
+        ):
+            top_right, bottom_right = calculate_vertices_to_contain_point(
+                vertex_1=top_right,
+                vertex_2=bottom_right,
+                vertex_3_from_1=top_left,
+                vertex_4_from_2=bottom_left,
+                x=x,
+                y=y,
+            )
+        # extend to the bottom
+        if not ccw(
+            x1=bottom_right[0],
+            y1=bottom_right[1],
+            x2=bottom_left[0],
+            y2=bottom_left[1],
+            x3=x,
+            y3=y,
+        ):
+            bottom_right, bottom_left = calculate_vertices_to_contain_point(
+                vertex_1=bottom_right,
+                vertex_2=bottom_left,
+                vertex_3_from_1=top_right,
+                vertex_4_from_2=top_left,
+                x=x,
+                y=y,
+            )
+        # extend to the top
+        if not ccw(
+            x1=top_left[0],
+            y1=top_left[1],
+            x2=top_right[0],
+            y2=top_right[1],
+            x3=x,
+            y3=y,
+        ):
+            top_left, top_right = calculate_vertices_to_contain_point(
+                vertex_1=top_left,
+                vertex_2=top_right,
+                vertex_3_from_1=bottom_left,
+                vertex_4_from_2=bottom_right,
+                x=x,
+                y=y,
+            )
     return np.array(
         [
             bottom_left,
