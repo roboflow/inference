@@ -1,4 +1,10 @@
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from inference.core.interfaces.stream.inference_pipeline import InferencePipeline
+    from inference.core.interfaces.stream.stream import Stream
+    from inference.models.utils import get_model, get_roboflow_model
+    from inference.core.models.base import Model
 
 _LAZY_ATTRIBUTES: dict[str, Callable[[], Any]] = {
     "Stream": lambda: _import_from("inference.core.interfaces.stream.stream", "Stream"),
@@ -19,7 +25,7 @@ def _import_from(module_path: str, attribute_name: str) -> Any:
 
 
 def _import_model_util(name: str) -> Any:
-    from inference.models.utils import get_model, get_roboflow_model
+    from inference.models.utils import get_model, get_roboflow_model  # noqa: F401
 
     return locals()[name]
 
@@ -29,3 +35,12 @@ def __getattr__(name: str) -> Any:
     if name in _LAZY_ATTRIBUTES:
         return _LAZY_ATTRIBUTES[name]()
     raise AttributeError(f"module 'inference' has no attribute '{name}'")
+
+
+__all__ = [
+    "InferencePipeline",
+    "Stream",
+    "get_model",
+    "get_roboflow_model",
+    "Model",
+]
