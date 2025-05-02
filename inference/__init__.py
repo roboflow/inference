@@ -11,8 +11,10 @@ _LAZY_ATTRIBUTES: dict[str, Callable[[], Any]] = {
     "InferencePipeline": lambda: _import_from(
         "inference.core.interfaces.stream.inference_pipeline", "InferencePipeline"
     ),
-    "get_model": lambda: _import_model_util("get_model"),
-    "get_roboflow_model": lambda: _import_model_util("get_roboflow_model"),
+    "get_model": lambda: _import_from("inference.models.utils", "get_model"),
+    "get_roboflow_model": lambda: _import_from(
+        "inference.models.utils", "get_roboflow_model"
+    ),
 }
 
 
@@ -22,12 +24,6 @@ def _import_from(module_path: str, attribute_name: str) -> Any:
 
     module = importlib.import_module(module_path)
     return getattr(module, attribute_name)
-
-
-def _import_model_util(name: str) -> Any:
-    from inference.models.utils import get_model, get_roboflow_model  # noqa: F401
-
-    return locals()[name]
 
 
 def __getattr__(name: str) -> Any:
