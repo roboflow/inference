@@ -217,7 +217,8 @@ def test_extend_rectangular_perspective_polygon_detections_outside_polygon():
 
     # then
     assert np.array_equal(
-        extended_polygon, np.array([[121, 122], [121, 92], [91, 92], [91, 122]])
+        extended_polygon,
+        np.array([[91, 122], [91, 92], [121, 92], [121, 122]]),
     ), "Detections outside of polygon should extend it"
 
 
