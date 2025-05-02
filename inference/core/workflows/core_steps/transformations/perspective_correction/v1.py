@@ -44,6 +44,7 @@ coordinates of detections based on transformation defined by two polygons.
 This block is best suited when produced coordinates should be considered as if camera
 was placed directly above the scene and was not introducing distortions.
 """
+ALL_POSITIONS = "ALL"
 
 
 class PerspectiveCorrectionManifest(WorkflowBlockManifest):
@@ -93,7 +94,8 @@ class PerspectiveCorrectionManifest(WorkflowBlockManifest):
         description="Transformed rect height", default=1000, examples=[1000]
     )
     extend_perspective_polygon_by_detections_anchor: Union[str, Selector(kind=[STRING_KIND])] = Field(  # type: ignore
-        description=f"If set, perspective polygons will be extended to contain all bounding boxes. Allowed values: {', '.join(sv.Position.list())}",
+        description=f"If set, perspective polygons will be extended to contain all bounding boxes. Allowed values: {', '.join(sv.Position.list())}"
+        + f" and {ALL_POSITIONS} to extend to contain whole bounding box",
         default="",
         examples=["CENTER"],
     )
@@ -320,83 +322,153 @@ def calculate_vertices_to_contain_point(
 def extend_perspective_polygon(
     polygon: List[np.ndarray],
     detections: sv.Detections,
-    bbox_position: Optional[sv.Position],
+    bbox_position: Union[sv.Position, Literal[ALL_POSITIONS]],
 ) -> np.ndarray:
     if not bbox_position:
         return polygon
-    points = detections.get_anchors_coordinates(anchor=bbox_position)
     bottom_left, top_left, top_right, bottom_right = polygon
-    for x, y in points:
-        if cv.pointPolygonTest(np.array(polygon), (x, y), False) >= 0:
-            continue
+    for i in range(len(detections)):
+        det = detections[i]
         # extend to the left
-        if not ccw(
-            x1=bottom_left[0],
-            y1=bottom_left[1],
-            x2=top_left[0],
-            y2=top_left[1],
-            x3=x,
-            y3=y,
-        ):
-            bottom_left, top_left = calculate_vertices_to_contain_point(
-                vertex_1=bottom_left,
-                vertex_2=top_left,
-                vertex_3_from_1=bottom_right,
-                vertex_4_from_2=top_right,
-                x=x,
-                y=y,
+        points = []
+        if bbox_position == ALL_POSITIONS:
+            points.append(
+                det.get_anchors_coordinates(anchor=sv.Position.BOTTOM_LEFT)[0]
             )
+            points.append(det.get_anchors_coordinates(anchor=sv.Position.TOP_LEFT)[0])
+        else:
+            points.append(det.get_anchors_coordinates(anchor=bbox_position)[0])
+        for x, y in points:
+            if (
+                cv.pointPolygonTest(
+                    np.array([bottom_left, top_left, top_right, bottom_right]),
+                    (x, y),
+                    False,
+                )
+                >= 0
+            ):
+                continue
+            if not ccw(
+                x1=bottom_left[0],
+                y1=bottom_left[1],
+                x2=top_left[0],
+                y2=top_left[1],
+                x3=x,
+                y3=y,
+            ):
+                bottom_left, top_left = calculate_vertices_to_contain_point(
+                    vertex_1=bottom_left,
+                    vertex_2=top_left,
+                    vertex_3_from_1=bottom_right,
+                    vertex_4_from_2=top_right,
+                    x=x,
+                    y=y,
+                )
         # extend to the right
-        if not ccw(
-            x1=top_right[0],
-            y1=top_right[1],
-            x2=bottom_right[0],
-            y2=bottom_right[1],
-            x3=x,
-            y3=y,
-        ):
-            top_right, bottom_right = calculate_vertices_to_contain_point(
-                vertex_1=top_right,
-                vertex_2=bottom_right,
-                vertex_3_from_1=top_left,
-                vertex_4_from_2=bottom_left,
-                x=x,
-                y=y,
+        points = []
+        if bbox_position == ALL_POSITIONS:
+            points.append(
+                det.get_anchors_coordinates(anchor=sv.Position.BOTTOM_RIGHT)[0]
             )
+            points.append(det.get_anchors_coordinates(anchor=sv.Position.TOP_RIGHT)[0])
+        else:
+            points.append(det.get_anchors_coordinates(anchor=bbox_position)[0])
+        for x, y in points:
+            if (
+                cv.pointPolygonTest(
+                    np.array([bottom_left, top_left, top_right, bottom_right]),
+                    (x, y),
+                    False,
+                )
+                >= 0
+            ):
+                continue
+            if not ccw(
+                x1=top_right[0],
+                y1=top_right[1],
+                x2=bottom_right[0],
+                y2=bottom_right[1],
+                x3=x,
+                y3=y,
+            ):
+                top_right, bottom_right = calculate_vertices_to_contain_point(
+                    vertex_1=top_right,
+                    vertex_2=bottom_right,
+                    vertex_3_from_1=top_left,
+                    vertex_4_from_2=bottom_left,
+                    x=x,
+                    y=y,
+                )
         # extend to the bottom
-        if not ccw(
-            x1=bottom_right[0],
-            y1=bottom_right[1],
-            x2=bottom_left[0],
-            y2=bottom_left[1],
-            x3=x,
-            y3=y,
-        ):
-            bottom_right, bottom_left = calculate_vertices_to_contain_point(
-                vertex_1=bottom_right,
-                vertex_2=bottom_left,
-                vertex_3_from_1=top_right,
-                vertex_4_from_2=top_left,
-                x=x,
-                y=y,
+        points = []
+        if bbox_position == ALL_POSITIONS:
+            points.append(
+                det.get_anchors_coordinates(anchor=sv.Position.BOTTOM_RIGHT)[0]
             )
+            points.append(
+                det.get_anchors_coordinates(anchor=sv.Position.BOTTOM_LEFT)[0]
+            )
+        else:
+            points.append(det.get_anchors_coordinates(anchor=bbox_position)[0])
+        for x, y in points:
+            if (
+                cv.pointPolygonTest(
+                    np.array([bottom_left, top_left, top_right, bottom_right]),
+                    (x, y),
+                    False,
+                )
+                >= 0
+            ):
+                continue
+            if not ccw(
+                x1=bottom_right[0],
+                y1=bottom_right[1],
+                x2=bottom_left[0],
+                y2=bottom_left[1],
+                x3=x,
+                y3=y,
+            ):
+                bottom_right, bottom_left = calculate_vertices_to_contain_point(
+                    vertex_1=bottom_right,
+                    vertex_2=bottom_left,
+                    vertex_3_from_1=top_right,
+                    vertex_4_from_2=top_left,
+                    x=x,
+                    y=y,
+                )
         # extend to the top
-        if not ccw(
-            x1=top_left[0],
-            y1=top_left[1],
-            x2=top_right[0],
-            y2=top_right[1],
-            x3=x,
-            y3=y,
-        ):
-            top_left, top_right = calculate_vertices_to_contain_point(
-                vertex_1=top_left,
-                vertex_2=top_right,
-                vertex_3_from_1=bottom_left,
-                vertex_4_from_2=bottom_right,
-                x=x,
-                y=y,
-            )
+        points = []
+        if bbox_position == ALL_POSITIONS:
+            points.append(det.get_anchors_coordinates(anchor=sv.Position.TOP_RIGHT)[0])
+            points.append(det.get_anchors_coordinates(anchor=sv.Position.TOP_LEFT)[0])
+        else:
+            points.append(det.get_anchors_coordinates(anchor=bbox_position)[0])
+        for x, y in points:
+            if (
+                cv.pointPolygonTest(
+                    np.array([bottom_left, top_left, top_right, bottom_right]),
+                    (x, y),
+                    False,
+                )
+                >= 0
+            ):
+                continue
+            if not ccw(
+                x1=top_left[0],
+                y1=top_left[1],
+                x2=top_right[0],
+                y2=top_right[1],
+                x3=x,
+                y3=y,
+            ):
+                top_left, top_right = calculate_vertices_to_contain_point(
+                    vertex_1=top_left,
+                    vertex_2=top_right,
+                    vertex_3_from_1=bottom_left,
+                    vertex_4_from_2=bottom_right,
+                    x=x,
+                    y=y,
+                )
     return np.array(
         [
             bottom_left,
@@ -528,7 +600,9 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
         ],
         transformed_rect_width: int,
         transformed_rect_height: int,
-        extend_perspective_polygon_by_detections_anchor: Optional[str],
+        extend_perspective_polygon_by_detections_anchor: Union[
+            sv.Position, Literal[ALL_POSITIONS]
+        ],
         warp_image: Optional[bool],
     ) -> BlockResult:
         if not predictions and not images:
