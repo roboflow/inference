@@ -99,36 +99,40 @@ def calculate_simplified_polygon(
     mask: np.ndarray, required_number_of_vertices: int, max_steps: int = 1000
 ) -> np.ndarray:
     contours = sv.mask_to_polygons(mask)
-    largest_contour = max(contours, key=len)
+    # Skip sorting, just use argmax for direct access to the largest
+    largest_contour = contours[np.argmax([c.shape[0] for c in contours])]
 
     # https://docs.opencv.org/4.x/d3/dc0/group__imgproc__shape.html#ga014b28e56cb8854c0de4a211cb2be656
     convex_contour = cv.convexHull(
-        points=largest_contour,
+        largest_contour,
         returnPoints=True,
         clockwise=True,
     )
     # https://docs.opencv.org/4.9.0/d3/dc0/group__imgproc__shape.html#ga8d26483c636be6b35c3ec6335798a47c
-    perimeter = cv.arcLength(curve=convex_contour, closed=True)
+    perimeter = cv.arcLength(convex_contour, closed=True)
     upper_epsilon = perimeter
-    lower_epsilon = 0.0000001
+    lower_epsilon = 1e-7
     epsilon = lower_epsilon + upper_epsilon / 2
-    # https://docs.opencv.org/4.9.0/d3/dc0/group__imgproc__shape.html#ga0012a5fdaea70b8a9970165d98722b4c
-    simplified_polygon = cv.approxPolyDP(
-        curve=convex_contour, epsilon=epsilon, closed=True
-    )
+
+    simplified_polygon = cv.approxPolyDP(convex_contour, epsilon=epsilon, closed=True)
+
     for _ in range(max_steps):
-        if len(simplified_polygon) == required_number_of_vertices:
+        n = len(simplified_polygon)
+        if n == required_number_of_vertices:
             break
-        if len(simplified_polygon) > required_number_of_vertices:
+        if n > required_number_of_vertices:
             lower_epsilon = epsilon
         else:
             upper_epsilon = epsilon
-        epsilon = lower_epsilon + (upper_epsilon - lower_epsilon) / 2
+        epsilon = lower_epsilon + (upper_epsilon - lower_epsilon) * 0.5
         simplified_polygon = cv.approxPolyDP(
-            curve=convex_contour, epsilon=epsilon, closed=True
+            convex_contour, epsilon=epsilon, closed=True
         )
-    while len(simplified_polygon.shape) > 2:
-        simplified_polygon = np.concatenate(simplified_polygon)
+
+    # Remove extra nesting (e.g. shape Nx1x2 -> Nx2)
+    if len(simplified_polygon.shape) == 3 and simplified_polygon.shape[1] == 1:
+        simplified_polygon = simplified_polygon[:, 0, :]
+
     return simplified_polygon
 
 
@@ -137,18 +141,17 @@ def scale_polygon(polygon: np.ndarray, scale: float) -> np.ndarray:
         return polygon
 
     M = cv.moments(polygon)
-
     if M["m00"] == 0:
         return polygon
 
     centroid_x = M["m10"] / M["m00"]
     centroid_y = M["m01"] / M["m00"]
 
-    shifted = polygon - [centroid_x, centroid_y]
+    shifted = polygon - np.array([centroid_x, centroid_y])
     scaled = shifted * scale
-    result = scaled + [centroid_x, centroid_y]
+    result = scaled + np.array([centroid_x, centroid_y])
 
-    return result.round().astype(np.int32)
+    return np.round(result).astype(np.int32)
 
 
 class DynamicZonesBlockV1(WorkflowBlock):
@@ -167,44 +170,62 @@ class DynamicZonesBlockV1(WorkflowBlock):
             if detections is None:
                 result.append({OUTPUT_KEY: None})
                 continue
-            simplified_polygons = []
-            updated_detections = []
             if detections.mask is None:
                 result.append({OUTPUT_KEY: []})
                 continue
-            for i, mask in enumerate(detections.mask):
-                # copy
-                updated_detection = detections[i]
+
+            simplified_polygons = []
+            updated_detections = []
+
+            masks = detections.mask
+            n_masks = len(masks)
+
+            # Pre-fetch updated detections as a list, avoid repeated attribute access
+            updated_detection_list = list(detections)
+            for i in range(n_masks):
+                mask = masks[i]
+                updated_detection = updated_detection_list[i]
 
                 simplified_polygon = calculate_simplified_polygon(
                     mask=mask,
                     required_number_of_vertices=required_number_of_vertices,
                 )
-                vertices_count, _ = simplified_polygon.shape
+
+                # Pad polygon if too small
+                vertices_count = simplified_polygon.shape[0]
                 if vertices_count < required_number_of_vertices:
-                    for _ in range(required_number_of_vertices - vertices_count):
-                        simplified_polygon = np.append(
+                    last_point = simplified_polygon[-1][np.newaxis, :]
+                    repeat_times = required_number_of_vertices - vertices_count
+                    simplified_polygon = np.vstack(
+                        [
                             simplified_polygon,
-                            [simplified_polygon[-1]],
-                            axis=0,
-                        )
-                updated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(
-                    [simplified_polygon]
-                )
-                simplified_polygon = scale_polygon(
-                    polygon=simplified_polygon,
+                            np.repeat(last_point, repeat_times, axis=0),
+                        ]
+                    )
+
+                # Assign polygon
+                updated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = simplified_polygon[
+                    np.newaxis, :
+                ]
+
+                # Scale polygon
+                scaled_polygon = scale_polygon(
+                    simplified_polygon,
                     scale=scale_ratio,
                 )
-                simplified_polygons.append(simplified_polygon)
+                simplified_polygons.append(scaled_polygon)
+
+                # Mask of scaled polygon
                 updated_detection.mask = np.array(
                     [
                         sv.polygon_to_mask(
-                            polygon=simplified_polygon,
+                            polygon=scaled_polygon,
                             resolution_wh=mask.shape[::-1],
                         )
                     ]
                 )
                 updated_detections.append(updated_detection)
+
             result.append(
                 {
                     OUTPUT_KEY: simplified_polygons,
