@@ -484,7 +484,7 @@ def generate_transformation_matrix(
     transformed_rect_width: int,
     transformed_rect_height: int,
     detections: Optional[sv.Detections] = None,
-    detections_anchor: Optional[sv.Position] = None,
+    detections_anchor: Optional[Union[sv.Position, Literal[ALL_POSITIONS]]] = None,
 ) -> np.ndarray:
     polygon_with_vertices_clockwise = sort_polygon_vertices_clockwise(
         polygon=src_polygon
@@ -496,7 +496,11 @@ def generate_transformation_matrix(
         src_polygon = extend_perspective_polygon(
             polygon=src_polygon,
             detections=detections,
-            bbox_position=sv.Position(detections_anchor),
+            bbox_position=(
+                sv.Position(detections_anchor)
+                if detections_anchor != ALL_POSITIONS
+                else detections_anchor
+            ),
         )
     src_polygon = src_polygon.astype(np.float32)
     dst_polygon = np.array(
