@@ -64,7 +64,7 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
         detection_dict[CLASS_ID_KEY] = int(class_id)
         if mask is not None:
             if POLYGON_KEY_IN_SV_DETECTIONS in data:
-                polygon = data[POLYGON_KEY_IN_SV_DETECTIONS]
+                polygon = [data[POLYGON_KEY_IN_SV_DETECTIONS]]
             else:
                 polygon = sv.mask_to_polygons(mask=mask)
             detection_dict[POLYGON_KEY] = []
@@ -88,9 +88,13 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
                 TIME_IN_ZONE_KEY_IN_SV_DETECTIONS
             ]
         if POLYGON_KEY_IN_SV_DETECTIONS in data:
-            detection_dict[POLYGON_KEY_IN_INFERENCE_RESPONSE] = data[
-                POLYGON_KEY_IN_SV_DETECTIONS
-            ]
+            detection_dict[POLYGON_KEY_IN_INFERENCE_RESPONSE] = (
+                data[POLYGON_KEY_IN_SV_DETECTIONS]
+                .astype(float)
+                .round()
+                .astype(int)
+                .tolist()
+            )
         if (
             BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS in data
             and BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS in data
