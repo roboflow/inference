@@ -9,7 +9,20 @@ from inference_sdk import (
     InferenceHTTPClient,
     VisualisationResponseFormat,
 )
-from tests.inference.hosted_platform_tests.conftest import IMAGE_URL, ROBOFLOW_API_KEY
+from tests.inference.hosted_platform_tests.conftest import (
+    IMAGE_URL,
+    ROBOFLOW_API_KEY,
+    PlatformEnvironment,
+)
+
+EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT = {
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: 403,
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: 403,
+    PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS: 401,
+    PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS: 401,
+    PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST: 403,
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST: 403,
+}
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -31,6 +44,7 @@ def test_infer_from_object_detection_model_without_api_key(
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_object_detection_model_with_invalid_api_key(
+    platform_environment: PlatformEnvironment,
     object_detection_service_url: str,
     detection_model_id: str,
 ) -> None:
@@ -44,11 +58,15 @@ def test_infer_from_object_detection_model_with_invalid_api_key(
     )
 
     # then
-    assert response.status_code == 403, "Expected to see unauthorised error"
+    assert (
+        response.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+    ), "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_object_detection_model_with_invalid_model_id(
+    platform_environment: PlatformEnvironment,
     object_detection_service_url: str,
 ) -> None:
     # when
@@ -62,7 +80,8 @@ def test_infer_from_object_detection_model_with_invalid_model_id(
 
     # then
     assert (
-        response.status_code == 403
+        response.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
     ), "Expected to see unauthorised error, as there is no such model in workspace"
 
 
@@ -249,6 +268,7 @@ def test_infer_from_instance_segmentation_model_without_api_key(
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_instance_segmentation_model_with_invalid_api_key(
+    platform_environment: PlatformEnvironment,
     instance_segmentation_service_url: str,
     segmentation_model_id: str,
 ) -> None:
@@ -262,11 +282,15 @@ def test_infer_from_instance_segmentation_model_with_invalid_api_key(
     )
 
     # then
-    assert response.status_code == 403, "Expected to see unauthorised error"
+    assert (
+        response.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+    ), "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_instance_segmentation_model_with_invalid_model_id(
+    platform_environment: PlatformEnvironment,
     instance_segmentation_service_url: str,
 ) -> None:
     # when
@@ -280,7 +304,8 @@ def test_infer_from_instance_segmentation_model_with_invalid_model_id(
 
     # then
     assert (
-        response.status_code == 403
+        response.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
     ), "Expected to see unauthorised error, as there is no such model in workspace"
 
 
@@ -467,6 +492,7 @@ def test_infer_from_classification_model_without_api_key(
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_classification_model_with_invalid_api_key(
+    platform_environment: PlatformEnvironment,
     classification_service_url: str,
     classification_model_id: str,
 ) -> None:
@@ -480,11 +506,15 @@ def test_infer_from_classification_model_with_invalid_api_key(
     )
 
     # then
-    assert response.status_code == 403, "Expected to see unauthorised error"
+    assert (
+        response.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+    ), "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_classification_model_with_invalid_model_id(
+    platform_environment: PlatformEnvironment,
     classification_service_url: str,
 ) -> None:
     # when
@@ -498,7 +528,8 @@ def test_infer_from_classification_model_with_invalid_model_id(
 
     # then
     assert (
-        response.status_code == 403
+        response.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
     ), "Expected to see unauthorised error, as there is no such model in workspace"
 
 

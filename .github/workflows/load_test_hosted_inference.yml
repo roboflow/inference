@@ -5,13 +5,19 @@ on:
     inputs:
       environment:
         type: choice
-        description: Which environment to test?
+        description: "Which environment to test?"
         options:
           - staging
           - production
+      test_target:
+        type: choice
+        description: "Which service you want to test?"
+        options:
+          - aws-lambda-serving
+          - serverless-v2
       model_type:
         type: choice
-        description: Which model type to test?
+        description: "Which model type to test?"
         options:
           - object-detection
           - instance-segmentation
@@ -46,39 +52,71 @@ jobs:
           pip install --upgrade setuptools
           pip install -r requirements/requirements.cli.txt -r requirements/requirements.test.unit.txt -r requirements/requirements.sdk.http.txt
 
-      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 | object-detection 🔥🔥🔥🔥
-        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'object-detection' }}
+      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 AWS LAMDA | object-detection 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'object-detection' && github.event.inputs.test_target == 'aws-lambda-serving' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m coco/16 -d coco -rps 5 -br 500 -h https://detect.roboflow.com --yes --output_location test_results.json --max_error_rate 5.0
-      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 | instance-segmentation 🔥🔥🔥🔥
-        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'instance-segmentation' }}
+      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 SERVERLESS V2 | object-detection 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'object-detection' && github.event.inputs.test_target == 'serverless-v2' }}
+        run: |
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m coco/16 -d coco -rps 5 -br 500 -h https://serverless.roboflow.com --yes --output_location test_results.json --max_error_rate 5.0
+      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 AWS LAMBDA | instance-segmentation 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'instance-segmentation' && github.event.inputs.test_target == 'aws-lambda-serving' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m asl-poly-instance-seg/53 -d coco -rps 5 -br 500 -h https://outline.roboflow.com --yes --output_location test_results.json --max_error_rate 5.0
-      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 | classification 🔥🔥🔥🔥
-        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'classification' }}
+      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 SERVERLESS V2 | instance-segmentation 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'instance-segmentation' && github.event.inputs.test_target == 'serverless-v2' }}
+        run: |
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m asl-poly-instance-seg/53 -d coco -rps 5 -br 500 -h https://serverless.roboflow.com --yes --output_location test_results.json --max_error_rate 5.0
+      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 AWS LAMBDA | classification 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'classification' && github.event.inputs.test_target == 'aws-lambda-serving' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m vehicle-classification-eapcd/2 -d coco -rps 5 -br 500 -h https://classify.roboflow.com --yes --output_location test_results.json --max_error_rate 5.0
-      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 | workflows 🔥🔥🔥🔥
-        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'workflows' }}
+      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 SERVERLESS V2 | classification 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'classification' && github.event.inputs.test_target == 'serverless-v2' }}
+        run: |
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -m vehicle-classification-eapcd/2 -d coco -rps 5 -br 500 -h https://serverless.roboflow.com --yes --output_location test_results.json --max_error_rate 5.0
+      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 AWS LAMBDA | workflows 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'workflows' && github.event.inputs.test_target == 'aws-lambda-serving' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -wid workflows-production-test -wn paul-guerrie-tang1 -d coco -rps 5 -br 500 -h https://classify.roboflow.com --yes --output_location test_results.json --max_error_rate 5.0
+      - name: 🏋️‍♂️ Load test 🚨 PRODUCTION 🚨 SERVERLESS V2 | workflows 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'production' && github.event.inputs.model_type == 'workflows' && github.event.inputs.test_target == 'serverless-v2' }}
+        run: |
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_PRODUCTION_API_KEY }} python -m inference_cli.main benchmark api-speed -wid workflows-production-test -wn paul-guerrie-tang1 -d coco -rps 5 -br 500 -h https://serverless.roboflow.com --yes --output_location test_results.json --max_error_rate 5.0
 
-      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 | object-detection 🔥🔥🔥🔥
-        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'object-detection' }}
+      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 AWS LAMBDA | object-detection 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'object-detection' && github.event.inputs.test_target == 'aws-lambda-serving' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m eye-detection/35  -d coco -rps 5 -br 500 -h https://lambda-object-detection.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
-      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 | instance-segmentation 🔥🔥🔥🔥
-        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'instance-segmentation' }}
+      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 SERVERLESS V2 | object-detection 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'object-detection' && github.event.inputs.test_target == 'serverless-v2' }}
+        run: |
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m eye-detection/35  -d coco -rps 5 -br 500 -h https://serverless.roboflow.one --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
+      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 AWS LAMBDA | instance-segmentation 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'instance-segmentation' && github.event.inputs.test_target == 'aws-lambda-serving' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m asl-instance-seg/116 -d coco -rps 5 -br 500 -h https://lambda-instance-segmentation.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
-      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 | classification 🔥🔥🔥🔥
-        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'classification' }}
+      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 SERVERLESS V2 | instance-segmentation 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'instance-segmentation' && github.event.inputs.test_target == 'serverless-v2' }}
+        run: |
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m asl-instance-seg/116 -d coco -rps 5 -br 500 -h https://serverless.roboflow.one --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
+      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 AWS LAMBDA | classification 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'classification' && github.event.inputs.test_target == 'aws-lambda-serving' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m catdog/28 -d coco -rps 5 -br 500 -h https://lambda-classification.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
-      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 | workflows 🔥🔥🔥🔥
-        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'workflows' }}
+      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 SERVERLESS V2 | classification 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'classification' && github.event.inputs.test_target == 'serverless-v2' }}
+        run: |
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -m catdog/28 -d coco -rps 5 -br 500 -h https://serverless.roboflow.one --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
+      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 AWS LAMBDA | workflows 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'workflows' && github.event.inputs.test_target == 'aws-lambda-serving' }}
         run: |
           ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -wid workflows-staging-test -wn paul-guerrie -d coco -rps 5 -br 500 -h https://lambda-classification.staging.roboflow.com --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
+      - name: 🏋️‍♂️ Load test 😎 STAGING 😎 AWS LAMBDA | workflows 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.environment == 'staging' && github.event.inputs.model_type == 'workflows' && github.event.inputs.test_target == 'serverless-v2' }}
+        run: |
+          ROBOFLOW_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} python -m inference_cli.main benchmark api-speed -wid workflows-staging-test -wn paul-guerrie -d coco -rps 5 -br 500 -h https://serverless.roboflow.one --legacy-endpoints --yes --output_location test_results.json --max_error_rate 5.0
       - name: 📈 RESULTS
         run: cat test_results.json | jq
         if: always()

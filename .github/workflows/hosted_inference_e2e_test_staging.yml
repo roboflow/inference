@@ -7,7 +7,12 @@ on:
         type: boolean
         description: "Do you want to skip services warmup?"
         default: false
-
+      test_target:
+        type: choice
+        description: "Which service you want to test?"
+        options:
+          - aws-lambda-serving
+          - serverless-v2
 jobs:
   build:
     runs-on:
@@ -32,6 +37,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements/requirements.test.unit.txt -r requirements/requirements.test.integration.txt -r requirements/requirements.sdk.http.txt
-      - name: 📝 E2E test of HOSTED INFERENCE at 😎 STAGING 😎 🔥🔥🔥🔥
+      - name: 📝 E2E test of HOSTED INFERENCE at 😎 STAGING LAMBDA 😎 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.test_target == 'aws-lambda-serving' }}
         run:
-          SKIP_WARMUP=${{ github.event.inputs.skip_warmup }} HOSTED_PLATFORM_TESTS_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} HOSTED_PLATFORM_TESTS_PROJECT=roboflow-staging OPENAI_KEY=${{ secrets.OPEN_AI_API_KEY }} GOOGLE_API_KEY=${{ secrets.GEMINI_API_KEY }} ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} GOOGLE_VISION_API_KEY=${{ secrets.GOOGLE_VISION_API_KEY }} pytest tests/inference/hosted_platform_tests/
+          SKIP_WARMUP=${{ github.event.inputs.skip_warmup }} HOSTED_PLATFORM_TESTS_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} HOSTED_PLATFORM_TESTS_PROJECT=roboflow-staging-lambda OPENAI_KEY=${{ secrets.OPEN_AI_API_KEY }} GOOGLE_API_KEY=${{ secrets.GEMINI_API_KEY }} ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} GOOGLE_VISION_API_KEY=${{ secrets.GOOGLE_VISION_API_KEY }} pytest tests/inference/hosted_platform_tests/
+      - name: 📝 E2E test of HOSTED INFERENCE at 😎 STAGING SERVERLESS 😎 🔥🔥🔥🔥
+        if: ${{ github.event.inputs.test_target == 'serverless-v2' }}
+        run:
+          SKIP_WARMUP=${{ github.event.inputs.skip_warmup }} HOSTED_PLATFORM_TESTS_API_KEY=${{ secrets.LOAD_TEST_STAGING_API_KEY }} HOSTED_PLATFORM_TESTS_PROJECT=roboflow-staging-serverless OPENAI_KEY=${{ secrets.OPEN_AI_API_KEY }} GOOGLE_API_KEY=${{ secrets.GEMINI_API_KEY }} ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} GOOGLE_VISION_API_KEY=${{ secrets.GOOGLE_VISION_API_KEY }} pytest tests/inference/hosted_platform_tests/
