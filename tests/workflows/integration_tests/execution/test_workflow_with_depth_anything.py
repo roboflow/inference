@@ -22,9 +22,9 @@ DEPTH_ESTIMATION_WORKFLOW_DEFINITION = {
     ],
     "steps": [
         {
-        "type": "roboflow_core/depth_estimation@v1",
-        "name": "depth_estimation",
-        "images": "$inputs.image"
+            "type": "roboflow_core/depth_estimation@v1",
+            "name": "depth_estimation",
+            "images": "$inputs.image",
         }
     ],
     "outputs": [
@@ -50,7 +50,8 @@ Use Depth Estimation to estimate the depth of an image.
     workflow_name_in_app="depth_estimation",
 )
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_DEPTH_ESTIMATION_TEST", True)), reason="Skipping Depth Estimation test"
+    bool_env(os.getenv("SKIP_DEPTH_ESTIMATION_TEST", True)),
+    reason="Skipping Depth Estimation test",
 )
 def test_depth_estimation_inference(
     model_manager: ModelManager,
