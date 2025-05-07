@@ -131,7 +131,10 @@ TARGET_PROJECTS_TO_BE_USED[PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST] = (
 )
 
 INTERFACE_DISCOVERING_WORKFLOW = {
-    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: ("paul-guerrie", "staging-test-workflow"),
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: (
+        "paul-guerrie",
+        "staging-test-workflow",
+    ),
     PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: (
         "paul-guerrie-tang1",
         "prod-test-workflow",

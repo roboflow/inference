@@ -58,7 +58,10 @@ def test_infer_from_object_detection_model_with_invalid_api_key(
     )
 
     # then
-    assert response.status_code == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment], "Expected to see unauthorised error"
+    assert (
+        response.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+    ), "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -77,7 +80,8 @@ def test_infer_from_object_detection_model_with_invalid_model_id(
 
     # then
     assert (
-        response.status_code == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+        response.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
     ), "Expected to see unauthorised error, as there is no such model in workspace"
 
 
@@ -278,7 +282,10 @@ def test_infer_from_instance_segmentation_model_with_invalid_api_key(
     )
 
     # then
-    assert response.status_code == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment], "Expected to see unauthorised error"
+    assert (
+        response.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+    ), "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -297,7 +304,8 @@ def test_infer_from_instance_segmentation_model_with_invalid_model_id(
 
     # then
     assert (
-        response.status_code == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+        response.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
     ), "Expected to see unauthorised error, as there is no such model in workspace"
 
 
@@ -498,7 +506,10 @@ def test_infer_from_classification_model_with_invalid_api_key(
     )
 
     # then
-    assert response.status_code == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment], "Expected to see unauthorised error"
+    assert (
+        response.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+    ), "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -517,7 +528,8 @@ def test_infer_from_classification_model_with_invalid_model_id(
 
     # then
     assert (
-        response.status_code == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+        response.status_code
+        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
     ), "Expected to see unauthorised error, as there is no such model in workspace"
 
 
