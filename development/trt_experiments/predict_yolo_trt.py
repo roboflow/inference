@@ -22,7 +22,7 @@ MODEL_PATH = os.environ["MODEL_PATH"]
 IMAGE_PATH = os.getenv("IMAGE_PATH")
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 DEVICE = torch.device("cuda:0")
-
+WITH_NMS = bool(int(os.getenv("WITH_NMS", "1")))
 
 def main() -> None:
     if IMAGE_PATH is None:
@@ -31,52 +31,54 @@ def main() -> None:
         image = cv2.imread(IMAGE_PATH)
     engine = load_model(model_path=MODEL_PATH)
     context = engine.create_execution_context()
-    # print("SINGULAR OPERATIONS")
-    # pre_processed_image = pre_process_image(image=image, device=DEVICE, target_size=(640, 640), batch_size=1)
-    # pre_processing_times = []
-    # for _ in tqdm(range(1000), total=1000):
-    #     start = time.monotonic()
-    #     pre_processed_image = pre_process_image(image=image, device=DEVICE, target_size=(640, 640), batch_size=1)
-    #     end = time.monotonic()
-    #     pre_processing_times.append((end - start))
-    # print(f"PRE PROCESSING MEDIAN: {np.round((np.median(pre_processing_times) * 1000), 2)}ms")
-    # inference_times = []
-    # for _ in tqdm(range(1000), total=1000):
-    #     start = time.monotonic()
-    #     results = perform_inference(pre_processed_image, engine, context, DEVICE)
-    #     end = time.monotonic()
-    #     inference_times.append((end - start))
-    # print(f"INFERENCE MEDIAN: {np.round((np.median(inference_times) * 1000), 2)}ms")
-    # post_processing_time_times = []
-    # for _ in tqdm(range(1000), total=1000):
-    #     start = time.monotonic()
-    #     after_nms = run_nms(output=results)
-    #     end = time.monotonic()
-    #     post_processing_time_times.append((end - start))
-    # print(f"POST PROCESSING MEDIAN: {np.round((np.median(post_processing_time_times) * 1000), 2)}ms")
-    #
-    # print("OPERATIONS IN SEQUENCE")
-    # for bs in [1, 8, 16]:
-    #     print(f"FOR BATCH SIZE={bs}")
-    #     pre_processing_times = []
-    #     inference_times = []
-    #     post_processing_time_times = []
-    #     for _ in tqdm(range(200), total=200):
-    #         start = time.monotonic()
-    #         pre_processed_image = pre_process_image(image=image, device=DEVICE, target_size=(640, 640), batch_size=bs)
-    #         end = time.monotonic()
-    #         pre_processing_times.append((end - start))
-    #         start = time.monotonic()
-    #         results = perform_inference(pre_processed_image, engine, context, DEVICE)
-    #         end = time.monotonic()
-    #         inference_times.append((end - start))
-    #         start = time.monotonic()
-    #         after_nms = run_nms(output=results)
-    #         end = time.monotonic()
-    #         post_processing_time_times.append((end - start))
-    #     print(f"PRE PROCESSING MEDIAN (per image): {np.round((np.median(pre_processing_times) * 1000 / bs), 2)}ms")
-    #     print(f"INFERENCE MEDIAN (per image): {np.round((np.median(inference_times) * 1000 / bs), 2)}ms")
-    #     print(f"POST PROCESSING MEDIAN (per image): {np.round((np.median(post_processing_time_times) * 1000 / bs), 2)}ms")
+    print("SINGULAR OPERATIONS")
+    pre_processed_image = pre_process_image(image=image, device=DEVICE, target_size=(640, 640), batch_size=1)
+    pre_processing_times = []
+    for _ in tqdm(range(1000), total=1000):
+        start = time.monotonic()
+        pre_processed_image = pre_process_image(image=image, device=DEVICE, target_size=(640, 640), batch_size=1)
+        end = time.monotonic()
+        pre_processing_times.append((end - start))
+    print(f"PRE PROCESSING MEDIAN: {np.round((np.median(pre_processing_times) * 1000), 2)}ms")
+    inference_times = []
+    for _ in tqdm(range(1000), total=1000):
+        start = time.monotonic()
+        results = perform_inference(pre_processed_image, engine, context, DEVICE)
+        end = time.monotonic()
+        inference_times.append((end - start))
+    if WITH_NMS:
+        print(f"INFERENCE MEDIAN: {np.round((np.median(inference_times) * 1000), 2)}ms")
+        post_processing_time_times = []
+        for _ in tqdm(range(1000), total=1000):
+            start = time.monotonic()
+            after_nms = run_nms(output=results)
+            end = time.monotonic()
+            post_processing_time_times.append((end - start))
+        print(f"POST PROCESSING MEDIAN: {np.round((np.median(post_processing_time_times) * 1000), 2)}ms")
+
+    print("OPERATIONS IN SEQUENCE")
+    for bs in [1, 8, 16]:
+        print(f"FOR BATCH SIZE={bs}")
+        pre_processing_times = []
+        inference_times = []
+        post_processing_time_times = []
+        for _ in tqdm(range(200), total=200):
+            start = time.monotonic()
+            pre_processed_image = pre_process_image(image=image, device=DEVICE, target_size=(640, 640), batch_size=bs)
+            end = time.monotonic()
+            pre_processing_times.append((end - start))
+            start = time.monotonic()
+            results = perform_inference(pre_processed_image, engine, context, DEVICE)
+            end = time.monotonic()
+            inference_times.append((end - start))
+            start = time.monotonic()
+            if WITH_NMS:
+                after_nms = run_nms(output=results)
+            end = time.monotonic()
+            post_processing_time_times.append((end - start))
+        print(f"PRE PROCESSING MEDIAN (per image): {np.round((np.median(pre_processing_times) * 1000 / bs), 2)}ms")
+        print(f"INFERENCE MEDIAN (per image): {np.round((np.median(inference_times) * 1000 / bs), 2)}ms")
+        print(f"POST PROCESSING MEDIAN (per image): {np.round((np.median(post_processing_time_times) * 1000 / bs), 2)}ms")
     # # detections = sv.Detections(
     # #     xyxy=((after_nms[0][:, :4].cpu().numpy() - (140, 0, 140, 0)) * 2).astype(np.int32),
     # #     confidence=after_nms[0][:, 4].cpu().numpy(),
@@ -108,32 +110,32 @@ def main() -> None:
     # # box_annotator = sv.BoxAnnotator()
     # # annotated = box_annotator.annotate(image.copy(), detections)
     # # cv2.imwrite("annotated.jpg", annotated)
-    pre_processing_queue, inference_queue, post_processing_queue = Queue(maxsize=32), Queue(maxsize=32), Queue(maxsize=32)
-    for bs in [1, 8, 16]:
-        print(f"RUNNING PIPELINED PROCESSING BS={bs}")
-        pre_processed_images = {}
-        results_registry = {}
-        preproc_thread = Thread(
-            target=pre_processing_thread,
-            args=(image, bs, pre_processed_images, pre_processing_queue, inference_queue)
-        )
-        preproc_thread.start()
-        infer_thread = Thread(
-            target=inference_thread,
-            args=(inference_queue, post_processing_queue, engine, context, pre_processed_images, results_registry)
-        )
-        infer_thread.start()
-        post_proc_thread = Thread(
-            target=post_processing_thread,
-            args=(post_processing_queue, results_registry)
-        )
-        post_proc_thread.start()
-        for _ in range(1000):
-            pre_processing_queue.put(True)
-        pre_processing_queue.put(None)
-        preproc_thread.join()
-        infer_thread.join()
-        post_proc_thread.join()
+    # pre_processing_queue, inference_queue, post_processing_queue = Queue(maxsize=32), Queue(maxsize=32), Queue(maxsize=32)
+    # for bs in [1, 8, 16]:
+    #     print(f"RUNNING PIPELINED PROCESSING BS={bs}")
+    #     pre_processed_images = {}
+    #     results_registry = {}
+    #     preproc_thread = Thread(
+    #         target=pre_processing_thread,
+    #         args=(image, bs, pre_processed_images, pre_processing_queue, inference_queue)
+    #     )
+    #     preproc_thread.start()
+    #     infer_thread = Thread(
+    #         target=inference_thread,
+    #         args=(inference_queue, post_processing_queue, engine, context, pre_processed_images, results_registry)
+    #     )
+    #     infer_thread.start()
+    #     post_proc_thread = Thread(
+    #         target=post_processing_thread,
+    #         args=(post_processing_queue, results_registry)
+    #     )
+    #     post_proc_thread.start()
+    #     for _ in range(1000):
+    #         pre_processing_queue.put(True)
+    #     pre_processing_queue.put(None)
+    #     preproc_thread.join()
+    #     infer_thread.join()
+    #     post_proc_thread.join()
 
 
 
