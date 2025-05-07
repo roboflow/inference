@@ -188,6 +188,10 @@ class DynamicZonesBlockV1(WorkflowBlock):
                             [simplified_polygon[-1]],
                             axis=0,
                         )
+                elif vertices_count > required_number_of_vertices:
+                    simplified_polygon = simplified_polygon[
+                        :required_number_of_vertices
+                    ]
                 updated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(
                     [simplified_polygon]
                 )

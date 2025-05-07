@@ -63,7 +63,11 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
         detection_dict[CONFIDENCE_KEY] = float(confidence)
         detection_dict[CLASS_ID_KEY] = int(class_id)
         if mask is not None:
-            if POLYGON_KEY_IN_SV_DETECTIONS in data:
+            if (
+                POLYGON_KEY_IN_SV_DETECTIONS in data
+                and data[POLYGON_KEY_IN_SV_DETECTIONS]
+                and len(data[POLYGON_KEY_IN_SV_DETECTIONS]) > 2
+            ):
                 polygon = [data[POLYGON_KEY_IN_SV_DETECTIONS]]
             else:
                 polygon = sv.mask_to_polygons(mask=mask)
