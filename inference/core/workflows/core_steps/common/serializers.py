@@ -65,7 +65,7 @@ def serialise_sv_detections(detections: sv.Detections) -> dict:
         if mask is not None:
             if (
                 POLYGON_KEY_IN_SV_DETECTIONS in data
-                and data[POLYGON_KEY_IN_SV_DETECTIONS]
+                and data[POLYGON_KEY_IN_SV_DETECTIONS] is not None
                 and len(data[POLYGON_KEY_IN_SV_DETECTIONS]) > 2
             ):
                 polygon = [data[POLYGON_KEY_IN_SV_DETECTIONS]]
