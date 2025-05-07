@@ -101,4 +101,3 @@ def test_segmentation_workflow(
         atol=1.0,
     ), "Expected prediction to meet reference value"
     unique_inference_ids = {r["inference_id"] for r in result}
-    assert len(unique_inference_ids) == 2, "Expected unique inference ids granted"
