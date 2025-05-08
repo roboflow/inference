@@ -251,7 +251,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         text_padding: Optional[int],
         thickness: Optional[int],
         radius: Optional[int],
-        edges: Optional[List[Tuple[int, int]]],
+        edges: Optional[List[Tuple[int, int]]] = None,
     ) -> BlockResult:
         annotator: sv.EdgeAnnotator = self.getAnnotator(
             color,
