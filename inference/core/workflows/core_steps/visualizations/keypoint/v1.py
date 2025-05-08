@@ -178,48 +178,41 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         annotator_type: str,
         edges: List[Tuple[int, int]],
     ) -> sv.annotators.base.BaseAnnotator:
-        key = "_".join(
-            map(
-                str,
-                [
-                    color,
-                    text_color,
-                    text_scale,
-                    text_thickness,
-                    text_padding,
-                    thickness,
-                    radius,
-                    annotator_type,
-                ],
-            )
+        cache = self.annotatorCache
+        # Use a tuple as the cache key for faster hash and comparison
+        key = (
+            color,
+            text_color,
+            text_scale,
+            text_thickness,
+            text_padding,
+            thickness,
+            radius,
+            annotator_type,
         )
 
-        if key not in self.annotatorCache:
-            color = str_to_color(color)
-            text_color = str_to_color(text_color)
-
+        if key not in cache:
             if annotator_type == "edge":
-                self.annotatorCache[key] = sv.EdgeAnnotator(
-                    color=color,
+                cache[key] = sv.EdgeAnnotator(
+                    color=str_to_color(color),
                     thickness=thickness,
                     edges=edges,
                 )
             elif annotator_type == "vertex":
-                self.annotatorCache[key] = sv.VertexAnnotator(
-                    color=color,
+                cache[key] = sv.VertexAnnotator(
+                    color=str_to_color(color),
                     radius=radius,
                 )
             elif annotator_type == "vertex_label":
-                self.annotatorCache[key] = sv.VertexLabelAnnotator(
-                    color=color,
-                    text_color=text_color,
+                cache[key] = sv.VertexLabelAnnotator(
+                    color=str_to_color(color),
+                    text_color=str_to_color(text_color),
                     text_scale=text_scale,
                     text_thickness=text_thickness,
                     text_padding=text_padding,
                     border_radius=radius,
                 )
-
-        return self.annotatorCache[key]
+        return cache[key]
 
     # Function to convert detections to keypoints
     def convert_detections_to_keypoints(self, detections):
