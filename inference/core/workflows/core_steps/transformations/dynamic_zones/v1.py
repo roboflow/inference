@@ -28,7 +28,7 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_KEY: str = "zones"
 OUTPUT_KEY_DETECTIONS: str = "predictions"
-OUTPUT_KEY_ALL_CONVERGED: str = "all_converged"
+OUTPUT_KEY_SIMPLIFICATION_CONVERGED: str = "simplification_converged"
 TYPE: str = "roboflow_core/dynamic_zone@v1"
 SHORT_DESCRIPTION = (
     "Simplify polygons so they are geometrically convex "
@@ -90,7 +90,9 @@ class DynamicZonesManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name=OUTPUT_KEY_DETECTIONS, kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
             ),
-            OutputDefinition(name=OUTPUT_KEY_ALL_CONVERGED, kind=[BOOLEAN_KIND]),
+            OutputDefinition(
+                name=OUTPUT_KEY_SIMPLIFICATION_CONVERGED, kind=[BOOLEAN_KIND]
+            ),
         ]
 
     @classmethod
@@ -219,7 +221,7 @@ class DynamicZonesBlockV1(WorkflowBlock):
                 {
                     OUTPUT_KEY: simplified_polygons,
                     OUTPUT_KEY_DETECTIONS: sv.Detections.merge(updated_detections),
-                    OUTPUT_KEY_ALL_CONVERGED: all_converged,
+                    OUTPUT_KEY_SIMPLIFICATION_CONVERGED: all_converged,
                 }
             )
         return result
