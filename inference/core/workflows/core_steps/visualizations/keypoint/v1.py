@@ -15,8 +15,8 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_KIND,
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
-    STRING_KIND,
     LIST_OF_VALUES_KIND,
+    STRING_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
@@ -252,7 +252,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         radius: Optional[int],
         edges: Optional[List[Tuple[int, int]]],
     ) -> BlockResult:
-        annotator = self.getAnnotator(
+        annotator: sv.EdgeAnnotator = self.getAnnotator(
             color,
             text_color,
             text_scale,
