@@ -148,6 +148,7 @@ class KeypointManifest(VisualizationManifest):
     )
     edges: Union[list, Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
         description="Mapping of keypoints to edges. List of pairs of indices.",
+        default=None,
         examples=["$inputs.edges"],
     )
 
