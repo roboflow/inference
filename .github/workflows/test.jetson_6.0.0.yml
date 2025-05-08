@@ -1,5 +1,6 @@
 name: Code Quality & Regression Tests - Jetson 6.0.0
-
+permissions:
+  contents: read
 on:
   workflow_dispatch:
 

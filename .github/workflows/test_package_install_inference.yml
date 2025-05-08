@@ -1,5 +1,6 @@
 name: Test package install - inference
-
+permissions:
+  contents: read
 on:
   push:
     branches: [main]
