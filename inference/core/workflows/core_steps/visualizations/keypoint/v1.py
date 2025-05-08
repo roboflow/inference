@@ -250,6 +250,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         text_padding: Optional[int],
         thickness: Optional[int],
         radius: Optional[int],
+        edges: Optional[List[Tuple[int, int]]],
     ) -> BlockResult:
         annotator = self.getAnnotator(
             color,
@@ -260,6 +261,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
             thickness,
             radius,
             annotator_type,
+            edges,
         )
 
         keypoints = self.convert_detections_to_keypoints(predictions)
