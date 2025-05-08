@@ -1,5 +1,6 @@
 name: Codeflash Optimization
-
+permissions:
+  contents: read
 on:
   pull_request:
     paths:
@@ -12,7 +13,7 @@ concurrency:
 
 jobs:
   optimize:
-    if: ${{ github.actor != 'codeflash-ai[bot]' }}
+    if: ${{ github.actor != 'codeflash-ai[bot]' || github.event.pull_request.head.repo.fork == true }}
     runs-on: ubuntu-latest
     env:
       CODEFLASH_API_KEY: ${{ secrets.CODEFLASH_API_KEY }}

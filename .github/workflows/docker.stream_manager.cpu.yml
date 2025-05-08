@@ -1,5 +1,6 @@
 name: Build and Push Container with Stream Manager CPU
-
+permissions:
+  contents: read
 on:
   release:
     types: [created]

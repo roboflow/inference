@@ -1,4 +1,6 @@
 name: E2E TEST - hosted inference - STAGING
+permissions:
+  contents: read
 
 on:
   workflow_dispatch:

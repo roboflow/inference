@@ -1,5 +1,6 @@
 name: Build CPU Lambda container CORE MODELS
-
+permissions:
+  contents: read
 on:
   push:
     branches: [main]

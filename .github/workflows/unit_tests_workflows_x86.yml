@@ -1,4 +1,6 @@
 name: UNIT TESTS - workflows
+permissions:
+  contents: read
 
 on:
   pull_request:
