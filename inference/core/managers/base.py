@@ -13,14 +13,19 @@ from inference.core.env import (
     DISABLE_INFERENCE_CACHE,
     METRICS_ENABLED,
     METRICS_INTERVAL,
+    MODELS_CACHE_AUTH_ENABLED,
     ROBOFLOW_SERVER_UUID,
 )
-from inference.core.exceptions import InferenceModelNotFound
+from inference.core.exceptions import (
+    InferenceModelNotFound,
+    RoboflowAPINotAuthorizedError,
+)
 from inference.core.logger import logger
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model, PreprocessReturnMetadata
 from inference.core.registries.base import ModelRegistry
+from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
 
 
 class ModelManager:
@@ -48,6 +53,14 @@ class ModelManager:
             model_id (str): The identifier of the model.
             model (Model): The model instance.
         """
+        if MODELS_CACHE_AUTH_ENABLED:
+            if not _check_if_api_key_has_access_to_model(
+                api_key=api_key, model_id=model_id
+            ):
+                raise RoboflowAPINotAuthorizedError(
+                    f"API key {api_key} does not have access to model {model_id}"
+                )
+
         logger.debug(
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )
@@ -57,14 +70,18 @@ class ModelManager:
                 f"ModelManager - model with model_id={resolved_identifier} is already loaded."
             )
             return
+
         logger.debug("ModelManager - model initialisation...")
 
-        model = self.model_registry.get_model(resolved_identifier, api_key)(
-            model_id=model_id,
-            api_key=api_key,
-        )
-        logger.debug("ModelManager - model successfully loaded.")
-        self._models[resolved_identifier] = model
+        try:
+            model = self.model_registry.get_model(resolved_identifier, api_key)(
+                model_id=model_id,
+                api_key=api_key,
+            )
+            logger.debug("ModelManager - model successfully loaded.")
+            self._models[resolved_identifier] = model
+        except Exception as e:
+            raise
 
     def check_for_model(self, model_id: str) -> None:
         """Checks whether the model with the given ID is in the manager.

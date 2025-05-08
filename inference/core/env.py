@@ -48,6 +48,11 @@ API_BASE_URL = os.getenv(
         else "https://api.roboflow.one"
     ),
 )
+
+# Suffix path to be appended to API_BASE_URL for endpoints that serve model weights.
+# This is only expected to be used in Roboflow internal hosting environments.
+INTERNAL_WEIGHTS_URL_SUFFIX = os.getenv("INTERNAL_WEIGHTS_URL_SUFFIX", "")
+
 # Base URL for metrics collector
 METRICS_COLLECTOR_BASE_URL = os.getenv(
     "METRICS_COLLECTOR_BASE_URL",
@@ -97,6 +102,15 @@ OWLV2_CPU_IMAGE_CACHE_SIZE = int(os.getenv("OWLV2_CPU_IMAGE_CACHE_SIZE", 1000))
 
 # OWLv2 compile model, default is True
 OWLV2_COMPILE_MODEL = str2bool(os.getenv("OWLV2_COMPILE_MODEL", True))
+
+# Preload comma separated list of Huggingface IDs for OWLv2 models
+# NOTE: this will result in ALL inference processes to preload the models
+#       (e.g. InferencePipelineManager, InferencePipeline, etc.)
+#       Ensure NUM_WORKERS environmental variable is set to 1
+#       and also ENABLE_STREAM_API environmental variable is set to False
+PRELOAD_HF_IDS = os.getenv("PRELOAD_HF_IDS")
+if PRELOAD_HF_IDS:
+    PRELOAD_HF_IDS = [id.strip() for id in PRELOAD_HF_IDS.split(",")]
 
 # Maximum batch size for GAZE, default is 8
 GAZE_MAX_BATCH_SIZE = int(os.getenv("GAZE_MAX_BATCH_SIZE", 8))
@@ -148,6 +162,8 @@ CORE_MODEL_GROUNDINGDINO_ENABLED = str2bool(
 LMM_ENABLED = str2bool(os.getenv("LMM_ENABLED", False))
 
 QWEN_2_5_ENABLED = str2bool(os.getenv("QWEN_2_5_ENABLED", True))
+
+DEPTH_ESTIMATION_ENABLED = str2bool(os.getenv("DEPTH_ESTIMATION_ENABLED", True))
 
 SMOLVLM2_ENABLED = str2bool(os.getenv("SMOLVLM2_ENABLED", True))
 
@@ -230,6 +246,15 @@ LAMBDA = str2bool(os.getenv("LAMBDA", False))
 
 # Whether is's GCP serverless service
 GCP_SERVERLESS = str2bool(os.getenv("GCP_SERVERLESS", "False"))
+
+# Flag to enable API logging, default is False
+API_LOGGING_ENABLED = str2bool(os.getenv("API_LOGGING_ENABLED", "False"))
+
+# Header where correlaction ID for logging is stored
+CORRELATION_ID_HEADER = os.getenv("CORRELATION_ID_HEADER", "X-Request-ID")
+
+# Header where correlaction ID for logging is stored
+CORRELATION_ID_LOG_KEY = os.getenv("CORRELATION_ID_LOG_KEY", "request_id")
 
 # Flag to enable legacy route, default is True
 LEGACY_ROUTE_ENABLED = str2bool(os.getenv("LEGACY_ROUTE_ENABLED", True))

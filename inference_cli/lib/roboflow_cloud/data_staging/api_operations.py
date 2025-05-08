@@ -1512,46 +1512,6 @@ def download_and_unpack_archive(
             tar_file.extract(member, target_dir)
 
 
-@backoff.on_exception(
-    backoff.constant,
-    exception=RetryError,
-    max_tries=3,
-    interval=1,
-)
-def export_batch_data(
-    workspace: str,
-    batch_id: str,
-    api_key: str,
-    page_size: Optional[int] = None,
-    next_page_token: Optional[str] = None,
-    part_name: Optional[str] = None,
-) -> BatchExportResponse:
-    params = {}
-    if api_key is not None:
-        params["api_key"] = api_key
-    if page_size is not None:
-        params["pageSize"] = page_size
-    if next_page_token is not None:
-        params["nextPageToken"] = next_page_token
-    if part_name is not None:
-        params["partName"] = part_name
-    try:
-        response = requests.get(
-            f"{API_BASE_URL}/data-staging/v1/external/{workspace}/batches/{batch_id}/export",
-            params=params,
-            timeout=REQUEST_TIMEOUT,
-        )
-    except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
-        raise RetryError(
-            f"Connectivity error. Try reaching Roboflow API in browser: {API_BASE_URL}"
-        )
-    handle_response_errors(response=response, operation_name="list batches")
-    try:
-        return BatchExportResponse.model_validate(response.json())
-    except ValueError as error:
-        raise RFAPICallError("Could not decode Roboflow API response.") from error
-
-
 def list_ingest_details(
     batch_id: str,
     api_key: str,

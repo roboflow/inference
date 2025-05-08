@@ -1,5 +1,6 @@
 name: "[STAGING] BUILD & PUSH - hosted inference docker"
-
+permissions:
+  contents: read
 on:
   workflow_dispatch:
     inputs:

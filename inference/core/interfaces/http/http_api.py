@@ -5,6 +5,7 @@ import traceback
 from functools import partial, wraps
 from time import sleep
 from typing import Any, Dict, List, Optional, Union
+from uuid import uuid4
 
 import asgi_correlation_id
 import uvicorn
@@ -26,6 +27,7 @@ from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.groundingdino import GroundingDINOInferenceRequest
 from inference.core.entities.requests.inference import (
     ClassificationInferenceRequest,
+    DepthEstimationRequest,
     InferenceRequest,
     InferenceRequestImage,
     InstanceSegmentationInferenceRequest,
@@ -63,6 +65,7 @@ from inference.core.entities.responses.clip import (
 from inference.core.entities.responses.gaze import GazeDetectionInferenceResponse
 from inference.core.entities.responses.inference import (
     ClassificationInferenceResponse,
+    DepthEstimationResponse,
     InferenceResponse,
     InstanceSegmentationInferenceResponse,
     KeypointsDetectionInferenceResponse,
@@ -97,6 +100,7 @@ from inference.core.entities.responses.workflows import (
 from inference.core.env import (
     ALLOW_ORIGINS,
     API_KEY,
+    API_LOGGING_ENABLED,
     BUILDER_ORIGIN,
     CORE_MODEL_CLIP_ENABLED,
     CORE_MODEL_DOCTR_ENABLED,
@@ -108,7 +112,9 @@ from inference.core.env import (
     CORE_MODEL_TROCR_ENABLED,
     CORE_MODEL_YOLO_WORLD_ENABLED,
     CORE_MODELS_ENABLED,
+    CORRELATION_ID_HEADER,
     DEDICATED_DEPLOYMENT_WORKSPACE_URL,
+    DEPTH_ESTIMATION_ENABLED,
     DISABLE_WORKFLOW_ENDPOINTS,
     DOCKER_SOCKET_PATH,
     ENABLE_BUILDER,
@@ -266,39 +272,35 @@ def with_route_exceptions(route):
         try:
             return await route(*args, **kwargs)
         except ContentTypeInvalid as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
                     "message": "Invalid Content-Type header provided with request."
                 },
             )
-            traceback.print_exc()
         except ContentTypeMissing as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={"message": "Content-Type header not provided with request."},
             )
-            traceback.print_exc()
         except InputImageLoadError as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
                     "message": f"Could not load input image. Cause: {error.get_public_error_details()}"
                 },
             )
-            traceback.print_exc()
         except InvalidModelIDError as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={"message": "Invalid Model ID sent in request."},
             )
-            traceback.print_exc()
         except InvalidMaskDecodeArgument as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -306,9 +308,8 @@ def with_route_exceptions(route):
                     "mask_decode_mode: must be one of ['accurate', 'fast', 'tradeoff']"
                 },
             )
-            traceback.print_exc()
         except MissingApiKeyError as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -316,14 +317,13 @@ def with_route_exceptions(route):
                     "to learn how to retrieve one."
                 },
             )
-            traceback.print_exc()
         except (
             WorkflowSyntaxError,
             InvalidReferenceTargetError,
             ExecutionGraphStructureError,
             StepInputDimensionalityError,
         ) as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
@@ -343,7 +343,7 @@ def with_route_exceptions(route):
             WorkflowExecutionEngineVersionError,
             NotSupportedExecutionEngineError,
         ) as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -359,7 +359,7 @@ def with_route_exceptions(route):
             MalformedPayloadError,
             MessageToBigError,
         ) as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=400,
                 content={
@@ -372,7 +372,7 @@ def with_route_exceptions(route):
             RoboflowAPINotAuthorizedError,
             ProcessesManagerAuthorisationError,
         ) as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=401,
                 content={
@@ -381,9 +381,8 @@ def with_route_exceptions(route):
                     "to learn how to retrieve one."
                 },
             )
-            traceback.print_exc()
         except (RoboflowAPINotNotFoundError, InferenceModelNotFound) as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=404,
                 content={
@@ -391,9 +390,8 @@ def with_route_exceptions(route):
                     "you referred in request exists."
                 },
             )
-            traceback.print_exc()
         except ProcessesManagerNotFoundError as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=404,
                 content={
@@ -402,37 +400,33 @@ def with_route_exceptions(route):
                     "inner_error_type": error.inner_error_type,
                 },
             )
-            traceback.print_exc()
         except (
             InvalidEnvironmentVariableError,
             MissingServiceSecretError,
             ServiceConfigurationError,
         ) as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500, content={"message": "Service misconfiguration."}
             )
-            traceback.print_exc()
         except (
             PreProcessingError,
             PostProcessingError,
         ) as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500,
                 content={
                     "message": "Model configuration related to pre- or post-processing is invalid."
                 },
             )
-            traceback.print_exc()
         except ModelArtefactError as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500, content={"message": "Model package is broken."}
             )
-            traceback.print_exc()
         except OnnxProviderNotAvailable as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=501,
                 content={
@@ -440,39 +434,35 @@ def with_route_exceptions(route):
                     "the correct docker image on a supported device."
                 },
             )
-            traceback.print_exc()
         except (
             MalformedRoboflowAPIResponseError,
             RoboflowAPIUnsuccessfulRequestError,
             WorkspaceLoadError,
             MalformedWorkflowResponseError,
         ) as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=502,
                 content={"message": "Internal error. Request to Roboflow API failed."},
             )
-            traceback.print_exc()
         except RoboflowAPIConnectionError as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=503,
                 content={
                     "message": "Internal error. Could not connect to Roboflow API."
                 },
             )
-            traceback.print_exc()
         except RoboflowAPITimeoutError as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=504,
                 content={
                     "message": "Timeout when attempting to connect to Roboflow API."
                 },
             )
-            traceback.print_exc()
         except StepExecutionError as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             content = WorkflowErrorResponse(
                 message=str(error.public_message),
                 error_type=error.__class__.__name__,
@@ -490,9 +480,8 @@ def with_route_exceptions(route):
                 status_code=500,
                 content=content.model_dump(),
             )
-            traceback.print_exc()
         except WorkflowError as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500,
                 content={
@@ -503,12 +492,11 @@ def with_route_exceptions(route):
                     "inner_error_message": str(error.inner_error),
                 },
             )
-            traceback.print_exc()
         except (
             ProcessesManagerClientError,
             CommunicationProtocolError,
         ) as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(
                 status_code=500,
                 content={
@@ -517,11 +505,9 @@ def with_route_exceptions(route):
                     "inner_error_type": error.inner_error_type,
                 },
             )
-            traceback.print_exc()
         except Exception as error:
-            logger.error("%s: %s", type(error).__name__, error)
+            logger.exception("%s: %s", type(error).__name__, error)
             resp = JSONResponse(status_code=500, content={"message": "Internal error."})
-            traceback.print_exc()
         return resp
 
     return wrapped_route
@@ -630,7 +616,17 @@ class HttpInterface(BaseInterface):
                 strip_dirs=False,
                 sort_by="cumulative",
             )
-        app.add_middleware(asgi_correlation_id.CorrelationIdMiddleware)
+        if API_LOGGING_ENABLED:
+            app.add_middleware(
+                asgi_correlation_id.CorrelationIdMiddleware,
+                header_name=CORRELATION_ID_HEADER,
+                update_request_header=True,
+                generator=lambda: uuid4().hex,
+                validator=lambda a: True,
+                transformer=lambda a: a,
+            )
+        else:
+            app.add_middleware(asgi_correlation_id.CorrelationIdMiddleware)
 
         if METRICS_ENABLED:
 
@@ -922,6 +918,8 @@ class HttpInterface(BaseInterface):
 
         load_trocr_model = partial(load_core_model, core_model="trocr")
         """Loads the TrOCR model into the model manager.
+
+        
 
         Args:
         inference_request: The request containing version and other details.
@@ -2127,6 +2125,57 @@ class HttpInterface(BaseInterface):
                         trackUsage(gaze_model_id, actor)
                     return response
 
+            if DEPTH_ESTIMATION_ENABLED:
+
+                @app.post(
+                    "/infer/depth-estimation",
+                    response_model=DepthEstimationResponse,
+                    summary="Depth Estimation",
+                    description="Run the depth estimation model to generate a depth map.",
+                )
+                @with_route_exceptions
+                @usage_collector("request")
+                async def depth_estimation(
+                    inference_request: DepthEstimationRequest,
+                    request: Request,
+                    api_key: Optional[str] = Query(
+                        None,
+                        description="Roboflow API Key that will be passed to the model during initialization for artifact retrieval",
+                    ),
+                ):
+                    """
+                    Generate a depth map using the depth estimation model.
+
+                    Args:
+                        inference_request (DepthEstimationRequest): The request containing the image to estimate depth for.
+                        api_key (Optional[str], default None): Roboflow API Key passed to the model during initialization for artifact retrieval.
+                        request (Request, default Body()): The HTTP request.
+
+                    Returns:
+                        DepthEstimationResponse: The response containing the normalized depth map and optional visualization.
+                    """
+                    logger.debug(f"Reached /infer/depth-estimation")
+                    depth_model_id = inference_request.model_id
+                    self.model_manager.add_model(
+                        depth_model_id, inference_request.api_key
+                    )
+                    response = await self.model_manager.infer_from_request(
+                        depth_model_id, inference_request
+                    )
+                    if LAMBDA:
+                        actor = request.scope["aws.event"]["requestContext"][
+                            "authorizer"
+                        ]["lambda"]["actor"]
+                        trackUsage(depth_model_id, actor)
+
+                    # Extract data from nested response structure
+                    depth_data = response.response
+                    depth_response = DepthEstimationResponse(
+                        normalized_depth=depth_data["normalized_depth"].tolist(),
+                        image=depth_data["image"].numpy_image.tobytes().hex(),
+                    )
+                    return depth_response
+
             if CORE_MODEL_TROCR_ENABLED:
 
                 @app.post(
@@ -2551,3 +2600,18 @@ class HttpInterface(BaseInterface):
 
     def run(self):
         uvicorn.run(self.app, host="127.0.0.1", port=8080)
+
+
+def load_gaze_model(
+    inference_request: GazeDetectionInferenceRequest, api_key: Optional[str] = None
+) -> str:
+    """Loads the gaze detection model.
+
+    Args:
+        inference_request (GazeDetectionInferenceRequest): The inference request.
+        api_key (Optional[str], default None): The Roboflow API key.
+
+    Returns:
+        str: The model ID.
+    """
+    return inference_request.model_id

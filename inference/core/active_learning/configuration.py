@@ -55,7 +55,7 @@ def prepare_active_learning_configuration(
             cache=cache,
         )
     except Exception as e:
-        logger.warn(
+        logger.warning(
             f"Failed to initialise Active Learning configuration. Active Learning will not be enabled for this session. Cause: {str(e)}"
         )
         return None
@@ -267,7 +267,7 @@ def initialize_sampling_methods(
     for sampling_strategy_config in sampling_strategies_configs:
         sampling_type = sampling_strategy_config["type"]
         if sampling_type not in TYPE2SAMPLING_INITIALIZERS:
-            logger.warn(
+            logger.warning(
                 f"Could not identify sampling method `{sampling_type}` - skipping initialisation."
             )
             continue

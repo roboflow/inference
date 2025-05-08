@@ -1,5 +1,6 @@
 name: Static code analysis
-
+permissions:
+  contents: read
 on:
   pull_request:
     branches: [main]

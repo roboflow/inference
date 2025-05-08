@@ -1,5 +1,6 @@
 name: INTEGRATION TESTS - inference CLI
-
+permissions:
+  contents: read
 on:
   push:
     branches: [main]
