@@ -1,5 +1,6 @@
 name: Code Quality & Regression Tests - NVIDIA T4
-
+permissions:
+  contents: read
 on:
   push:
     branches: [main]

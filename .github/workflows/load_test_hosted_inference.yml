@@ -1,5 +1,6 @@
 name: LOAD TEST - hosted inference
-
+permissions:
+  contents: read
 on:
   workflow_dispatch:
     inputs:
