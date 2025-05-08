@@ -160,6 +160,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.annotatorCache = {}
+        self._color_cache = {}
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -177,47 +178,43 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         annotator_type: str,
         edges: List[Tuple[int, int]],
     ) -> sv.annotators.base.BaseAnnotator:
-        key = "_".join(
-            map(
-                str,
-                [
-                    color,
-                    text_color,
-                    text_scale,
-                    text_thickness,
-                    text_padding,
-                    thickness,
-                    radius,
-                    annotator_type,
-                ],
-            )
+        # Use a tuple as the cache key for performance & correctness (no list->str conversion)
+        key = (
+            color,
+            text_color,
+            text_scale,
+            text_thickness,
+            text_padding,
+            thickness,
+            radius,
+            annotator_type,
         )
 
         if key not in self.annotatorCache:
-            color = str_to_color(color)
-            text_color = str_to_color(text_color)
+            # Use fast color-string-to-color conversion with per-instance LRU cache.
+            color_obj = self._cached_str_to_color(color)
+            text_color_obj = self._cached_str_to_color(text_color)
 
             if annotator_type == "edge":
                 self.annotatorCache[key] = sv.EdgeAnnotator(
-                    color=color,
+                    color=color_obj,
                     thickness=thickness,
                     edges=edges,
                 )
             elif annotator_type == "vertex":
                 self.annotatorCache[key] = sv.VertexAnnotator(
-                    color=color,
+                    color=color_obj,
                     radius=radius,
                 )
             elif annotator_type == "vertex_label":
                 self.annotatorCache[key] = sv.VertexLabelAnnotator(
-                    color=color,
-                    text_color=text_color,
+                    color=color_obj,
+                    text_color=text_color_obj,
                     text_scale=text_scale,
                     text_thickness=text_thickness,
                     text_padding=text_padding,
                     border_radius=radius,
                 )
-
         return self.annotatorCache[key]
 
     # Function to convert detections to keypoints
@@ -275,3 +272,15 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
                 origin_image_data=image, numpy_image=annotated_image
             )
         }
+
+    def _cached_str_to_color(self, color: str) -> sv.Color:
+        # Use a fast cache to avoid recomputing conversions for frequently-used colors
+        cache = self._color_cache
+        if color in cache:
+            return cache[color]
+        result = str_to_color(color)
+        cache[color] = result
+        return result
+
+
+_SV_COLOR_ATTRS = set(attr for attr in dir(sv.Color) if not attr.startswith("__"))
