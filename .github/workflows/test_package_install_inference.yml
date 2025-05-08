@@ -1,6 +1,5 @@
 name: Test package install - inference
-permissions:
-  contents: read
+
 on:
   push:
     branches: [main]
@@ -8,6 +7,7 @@ on:
 
 permissions:
   id-token: write
+  contents: read
 
 jobs:
   call_is_mergeable:
