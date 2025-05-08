@@ -85,15 +85,22 @@ class DynamicZonesManifest(WorkflowBlockManifest):
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
-        return [
-            OutputDefinition(name=OUTPUT_KEY, kind=[LIST_OF_VALUES_KIND]),
-            OutputDefinition(
-                name=OUTPUT_KEY_DETECTIONS, kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
-            ),
-            OutputDefinition(
-                name=OUTPUT_KEY_SIMPLIFICATION_CONVERGED, kind=[BOOLEAN_KIND]
-            ),
-        ]
+        """
+        Returns a list of OutputDefinition for this block.
+        The result is cached on the class after the first call to avoid recreating the list.
+        """
+        if not hasattr(cls, "_outputs_cache"):
+            cls._outputs_cache = [
+                OutputDefinition(name=OUTPUT_KEY, kind=[LIST_OF_VALUES_KIND]),
+                OutputDefinition(
+                    name=OUTPUT_KEY_DETECTIONS,
+                    kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND],
+                ),
+                OutputDefinition(
+                    name=OUTPUT_KEY_SIMPLIFICATION_CONVERGED, kind=[BOOLEAN_KIND]
+                ),
+            ]
+        return cls._outputs_cache
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
