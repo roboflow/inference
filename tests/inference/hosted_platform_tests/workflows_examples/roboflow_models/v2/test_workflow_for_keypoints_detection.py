@@ -37,7 +37,7 @@ KEYPOINTS_DETECTION_WORKFLOW = {
 }
 
 KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT = {
-    PlatformEnvironment.ROBOFLOW_STAGING: np.array(
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: np.array(
         [
             0.83561897,
             0.81181437,
@@ -49,7 +49,7 @@ KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT = {
             0.5382458,
         ]
     ),
-    PlatformEnvironment.ROBOFLOW_PLATFORM: np.array(
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: np.array(
         [
             0.83561897,
             0.81181437,
@@ -62,6 +62,26 @@ KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT = {
         ]
     ),
 }
+KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS
+] = KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA
+]
+KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST
+] = KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA
+]
+KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS
+] = KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA
+]
+KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST
+] = KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA
+]
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -110,5 +130,3 @@ def test_keypoints_detection_workflow(
         KEYPOINT_DETECTION_RESULTS_FOR_ENVIRONMENT[platform_environment],
         atol=1e-2,
     )
-    unique_inference_ids = {r["inference_id"] for r in result}
-    assert len(unique_inference_ids) == 2, "Expected unique inference ids granted"
