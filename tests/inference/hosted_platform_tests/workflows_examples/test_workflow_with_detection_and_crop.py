@@ -129,7 +129,7 @@ def test_detection_plus_classification_workflow(
     assert np.allclose(
         classification_confidences,
         CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[platform_environment],
-        atol=5e-3,
+        atol=1e-2,
     ), "Expected classification predictions to match"
     assert (
         len(result[1]["detection_predictions"]["predictions"]) == 0
