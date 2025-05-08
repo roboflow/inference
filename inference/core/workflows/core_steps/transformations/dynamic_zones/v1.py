@@ -90,9 +90,7 @@ class DynamicZonesManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name=OUTPUT_KEY_DETECTIONS, kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
             ),
-            OutputDefinition(
-                name=OUTPUT_KEY_ALL_CONVERGED, kind=[BOOLEAN_KIND]
-            ),
+            OutputDefinition(name=OUTPUT_KEY_ALL_CONVERGED, kind=[BOOLEAN_KIND]),
         ]
 
     @classmethod
