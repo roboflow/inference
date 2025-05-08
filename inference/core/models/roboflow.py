@@ -26,6 +26,7 @@ from inference.core.env import (
     MAX_BATCH_SIZE,
     MODEL_CACHE_DIR,
     MODEL_VALIDATION_DISABLED,
+    MODELS_CACHE_AUTH_ENABLED,
     ONNXRUNTIME_EXECUTION_PROVIDERS,
     REQUIRED_ONNX_PROVIDERS,
     TENSORRT_CACHE_PATH,
@@ -55,10 +56,15 @@ from inference.core.entities.requests.inference import (
     InferenceRequestImage,
 )
 from inference.core.entities.responses.inference import InferenceResponse
-from inference.core.exceptions import ModelArtefactError, OnnxProviderNotAvailable
+from inference.core.exceptions import (
+    ModelArtefactError,
+    OnnxProviderNotAvailable,
+    RoboflowAPINotAuthorizedError,
+)
 from inference.core.models.base import Model
 from inference.core.models.utils.batching import create_batches
 from inference.core.models.utils.onnx import has_trt
+from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
 from inference.core.roboflow_api import (
     ModelEndpointType,
     get_from_url,
@@ -225,6 +231,15 @@ class RoboflowInferenceModel(Model):
 
         Downloads the model artifacts from S3 or the Roboflow API if they are not already cached.
         """
+        if MODELS_CACHE_AUTH_ENABLED:
+            if not _check_if_api_key_has_access_to_model(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.ORT,
+            ):
+                raise RoboflowAPINotAuthorizedError(
+                    f"API key {self.api_key} does not have access to model {self.endpoint}"
+                )
         self.cache_model_artefacts()
         self.load_model_artifacts_from_cache()
 
@@ -589,6 +604,15 @@ class RoboflowCoreModel(RoboflowInferenceModel):
 
         This method includes handling for AWS access keys and error handling.
         """
+        if MODELS_CACHE_AUTH_ENABLED:
+            if not _check_if_api_key_has_access_to_model(
+                api_key=self.api_key,
+                model_id=self.endpoint,
+                endpoint_type=ModelEndpointType.CORE_MODEL,
+            ):
+                raise RoboflowAPINotAuthorizedError(
+                    f"API key {self.api_key} does not have access to model {self.endpoint}"
+                )
         infer_bucket_files = self.get_infer_bucket_file_list()
         if are_all_files_cached(files=infer_bucket_files, model_id=self.endpoint):
             logger.debug("Model artifacts already downloaded, loading from cache")
