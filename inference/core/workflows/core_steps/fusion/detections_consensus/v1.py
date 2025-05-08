@@ -43,6 +43,7 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
     WorkflowBlockManifest,
 )
+from functools import lru_cache
 
 
 class AggregationMode(Enum):
@@ -158,11 +159,11 @@ class BlockManifest(WorkflowBlockManifest):
         return ["predictions_batches"]
 
     @classmethod
+    @lru_cache(maxsize=None)
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name="predictions",
-                kind=[OBJECT_DETECTION_PREDICTION_KIND],
+                name="predictions", kind=[OBJECT_DETECTION_PREDICTION_KIND]
             ),
             OutputDefinition(
                 name="object_present", kind=[BOOLEAN_KIND, DICTIONARY_KIND]
