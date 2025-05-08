@@ -1,4 +1,4 @@
-from typing import Literal, Optional, Type, Union
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 import supervision as sv
@@ -16,6 +16,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     KEYPOINT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    LIST_OF_VALUES_KIND,
     Selector,
 )
 from inference.core.workflows.prototypes.block import BlockResult, WorkflowBlockManifest
@@ -145,6 +146,10 @@ class KeypointManifest(VisualizationManifest):
             },
         },
     )
+    edges: Union[list, Selector(kind=[LIST_OF_VALUES_KIND])] = Field(  # type: ignore
+        description="Mapping of keypoints to edges. List of pairs of indices.",
+        examples=["$inputs.edges"],
+    )
 
     @classmethod
     def get_execution_engine_compatibility(cls) -> Optional[str]:
@@ -170,6 +175,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
         thickness: int,
         radius: int,
         annotator_type: str,
+        edges: List[Tuple[int, int]],
     ) -> sv.annotators.base.BaseAnnotator:
         key = "_".join(
             map(
@@ -195,6 +201,7 @@ class KeypointVisualizationBlockV1(VisualizationBlock):
                 self.annotatorCache[key] = sv.EdgeAnnotator(
                     color=color,
                     thickness=thickness,
+                    edges=edges,
                 )
             elif annotator_type == "vertex":
                 self.annotatorCache[key] = sv.VertexAnnotator(
