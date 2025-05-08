@@ -1,5 +1,6 @@
 name: INTEGRATION TESTS - Inference Server CPU x86
-
+permissions:
+  contents: read
 on:
   push:
     branches: [ main ]

@@ -1,4 +1,7 @@
 name: Docs Workflow
+permissions:
+  contents: read
+  pages: write
 
 on:
   release:
