@@ -14,6 +14,7 @@ from inference.core.entities.requests.gaze import GazeDetectionInferenceRequest
 from inference.core.entities.requests.sam2 import Sam2InferenceRequest
 from inference.core.entities.requests.yolo_world import YOLOWorldInferenceRequest
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.workflows.execution_engine.constants import (
     DETECTION_ID_KEY,
     HEIGHT_KEY,
@@ -65,7 +66,11 @@ def load_core_model(
     core_model_id = (
         f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
     )
-    model_manager.add_model(core_model_id, inference_request.api_key)
+    model_manager.add_model(
+        core_model_id,
+        inference_request.api_key,
+        endpoint_type=ModelEndpointType.CORE_MODEL,
+    )
     return core_model_id
 
 
