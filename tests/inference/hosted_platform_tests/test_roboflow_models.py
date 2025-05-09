@@ -18,6 +18,14 @@ from tests.inference.hosted_platform_tests.conftest import (
 EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT = {
     PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: 403,
     PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: 403,
+    PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS: 401,
+    PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS: 401,
+    PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST: 403,
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST: 403,
+}
+EXPECTED_MODEL_NOT_FOUND_ERROR_FOR_ENVIRONMENT = {
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: 403,
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: 403,
     PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS: 404,
     PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS: 404,
     PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST: 403,
@@ -81,7 +89,7 @@ def test_infer_from_object_detection_model_with_invalid_model_id(
     # then
     assert (
         response.status_code
-        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+        == EXPECTED_MODEL_NOT_FOUND_ERROR_FOR_ENVIRONMENT[platform_environment]
     ), "Expected to see unauthorised error, as there is no such model in workspace"
 
 
@@ -305,7 +313,7 @@ def test_infer_from_instance_segmentation_model_with_invalid_model_id(
     # then
     assert (
         response.status_code
-        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+        == EXPECTED_MODEL_NOT_FOUND_ERROR_FOR_ENVIRONMENT[platform_environment]
     ), "Expected to see unauthorised error, as there is no such model in workspace"
 
 
@@ -529,7 +537,7 @@ def test_infer_from_classification_model_with_invalid_model_id(
     # then
     assert (
         response.status_code
-        == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment]
+        == EXPECTED_MODEL_NOT_FOUND_ERROR_FOR_ENVIRONMENT[platform_environment]
     ), "Expected to see unauthorised error, as there is no such model in workspace"
 
 
