@@ -3,12 +3,27 @@ import requests
 
 from inference_sdk import InferenceHTTPClient
 from inference_sdk.http.errors import HTTPCallErrorError
-from tests.inference.hosted_platform_tests.conftest import IMAGE_URL, ROBOFLOW_API_KEY
+from tests.inference.hosted_platform_tests.conftest import (
+    IMAGE_URL,
+    ROBOFLOW_API_KEY,
+    PlatformEnvironment,
+)
+
+
+EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT = {
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: 403,
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: 403,
+    PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS: 401,
+    PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS: 401,
+    PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST: 403,
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST: 403,
+}
 
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_core_model_without_api_key(
     core_models_service_url: str,
+    platform_environment: PlatformEnvironment,
 ) -> None:
     # given
     client = InferenceHTTPClient(
@@ -20,12 +35,13 @@ def test_infer_from_core_model_without_api_key(
         _ = client.ocr_image(IMAGE_URL)
 
     # then
-    assert error.value.status_code == 403, "Expected to see unauthorised error"
+    assert error.value.status_code == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment], "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
 def test_infer_from_core_model_with_invalid_api_key(
     core_models_service_url: str,
+    platform_environment: PlatformEnvironment,
 ) -> None:
     # given
     client = InferenceHTTPClient(
@@ -37,7 +53,7 @@ def test_infer_from_core_model_with_invalid_api_key(
         _ = client.ocr_image(IMAGE_URL)
 
     # then
-    assert error.value.status_code == 403, "Expected to see unauthorised error"
+    assert error.value.status_code == EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT[platform_environment], "Expected to see unauthorised error"
 
 
 @pytest.mark.flaky(retries=4, delay=1)
