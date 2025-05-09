@@ -18,8 +18,8 @@ from tests.inference.hosted_platform_tests.conftest import (
 EXPECTED_AUTH_ERROR_FOR_ENVIRONMENT = {
     PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: 403,
     PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: 403,
-    PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS: 401,
-    PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS: 401,
+    PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS: 404,
+    PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS: 404,
     PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST: 403,
     PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST: 403,
 }
