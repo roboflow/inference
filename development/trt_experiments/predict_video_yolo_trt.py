@@ -242,7 +242,6 @@ def run_nms(
     return results
 
 
-
 def post_process_detections(
     output: torch.Tensor,
     conf_thresh: float = 0.25,
@@ -264,7 +263,6 @@ def post_process_detections(
         # export bug all of the elements other than first are zeroed!
         return [filtered.clone() for _ in range(output.shape[0])]
     return results
-
 
 
 def rescale_detections(detections: List[torch.Tensor], images_metadata: List[dict]) -> List[torch.Tensor]:
