@@ -252,6 +252,7 @@ if METLO_KEY:
 
 import time
 
+from inference.core.roboflow_api import ModelEndpointType
 from inference.core.version import __version__
 
 
@@ -833,7 +834,11 @@ class HttpInterface(BaseInterface):
             core_model_id = (
                 f"{core_model}/{inference_request.__getattribute__(version_id_field)}"
             )
-            self.model_manager.add_model(core_model_id, inference_request.api_key)
+            self.model_manager.add_model(
+                core_model_id,
+                inference_request.api_key,
+                endpoint_type=ModelEndpointType.CORE_MODEL,
+            )
             return core_model_id
 
         load_clip_model = partial(load_core_model, core_model="clip")

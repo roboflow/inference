@@ -15,6 +15,7 @@ from inference.core.env import NUM_PARALLEL_TASKS
 from inference.core.managers.base import ModelManager
 from inference.core.registries.base import ModelRegistry
 from inference.core.registries.roboflow import get_model_type
+from inference.core.roboflow_api import ModelEndpointType
 from inference.enterprise.parallel.tasks import preprocess
 from inference.enterprise.parallel.utils import FAILURE_STATE, SUCCESS_STATE
 
@@ -140,7 +141,11 @@ class DispatchModelManager(ModelManager):
         return responses[0]
 
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: str = None
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias: str = None,
+        endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
     ) -> None:
         pass
 
