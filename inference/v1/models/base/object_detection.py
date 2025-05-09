@@ -1,0 +1,46 @@
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import List, Optional
+
+import torch
+
+
+@dataclass
+class Detections:
+    xyxy: torch.Tensor  # (n_boxes, 4)
+    class_ids: torch.Tensor  # (n_boxes, )
+    confidence: torch.Tensor  # (n_boxes, )
+    image_metadata: Optional[dict] = None
+    bboxes_metadata: Optional[List[dict]] = None  # if given, list of size equal to # of bboxes
+
+
+class ObjectDetectionModel(ABC):
+
+    @classmethod
+    def from_pretrained(cls, model_name_or_path: str, *args, **kwargs) -> "ObjectDetectionModel":
+        pass
+
+    @property
+    @abstractmethod
+    def class_names(self) -> List[str]:
+        pass
+
+    def infer(self, images: torch.Tensor, *args, **kwargs) -> List[Detections]:
+        pre_processed_images = self.pre_process(images, *args, **kwargs)
+        model_results = self.forward(pre_processed_images, *args, **kwargs)
+        return self.post_process(model_results, *args, **kwargs)
+
+    @abstractmethod
+    def pre_process(self, images: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        pass
+
+    @abstractmethod
+    def forward(self, pre_processed_images: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        pass
+
+    @abstractmethod
+    def post_process(self, model_results: torch.Tensor, *args, **kwargs) -> List[Detections]:
+        pass
+
+    def __call__(self, images: torch.Tensor, *args, **kwargs) -> List[Detections]:
+        return self.infer(images, *args, **kwargs)
