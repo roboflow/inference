@@ -691,8 +691,6 @@ class UsageCollector:
                 t1 = time.time()
                 res = func(*args, **kwargs)
                 t2 = time.time()
-                if <check for serverless>
-                THEN do max(100,t2-t1)
                 self.record_usage(
                     **self._extract_usage_params_from_func_kwargs(
                         usage_fps=usage_fps,
@@ -701,7 +699,7 @@ class UsageCollector:
                         usage_workflow_preview=usage_workflow_preview,
                         usage_inference_test_run=usage_inference_test_run,
                         usage_billable=usage_billable,
-                        execution_duration=max(t2 - t1, 100),
+                        execution_duration=(t2 - t1),
                         func=func,
                         category=category,
                         args=args,
@@ -732,7 +730,7 @@ class UsageCollector:
                         usage_workflow_preview=usage_workflow_preview,
                         usage_inference_test_run=usage_inference_test_run,
                         usage_billable=usage_billable,
-                        execution_duration=max(t2 - t1, 100),
+                        execution_duration=(t2 - t1),
                         func=func,
                         category=category,
                         args=args,
