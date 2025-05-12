@@ -33,6 +33,7 @@ from inference.core.env import (
     REDIS_HOST,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
+    GCP_SERVERLESS,
 )
 from inference.core.logger import logger
 from inference.core.version import __version__ as inference_version
@@ -691,6 +692,10 @@ class UsageCollector:
                 t1 = time.time()
                 res = func(*args, **kwargs)
                 t2 = time.time()
+                if GCP_SERVERLESS == True:
+                    execution_duration = max(t2 - t1, 100)
+                else:
+                    execution_duration = t2 - t1
                 self.record_usage(
                     **self._extract_usage_params_from_func_kwargs(
                         usage_fps=usage_fps,
@@ -699,7 +704,7 @@ class UsageCollector:
                         usage_workflow_preview=usage_workflow_preview,
                         usage_inference_test_run=usage_inference_test_run,
                         usage_billable=usage_billable,
-                        execution_duration=(t2 - t1),
+                        execution_duration=execution_duration,
                         func=func,
                         category=category,
                         args=args,
@@ -722,6 +727,10 @@ class UsageCollector:
                 t1 = time.time()
                 res = await func(*args, **kwargs)
                 t2 = time.time()
+                if GCP_SERVERLESS == True:
+                    execution_duration = max(t2 - t1, 100)
+                else:
+                    execution_duration = t2 - t1
                 await self.async_record_usage(
                     **self._extract_usage_params_from_func_kwargs(
                         usage_fps=usage_fps,
@@ -730,7 +739,7 @@ class UsageCollector:
                         usage_workflow_preview=usage_workflow_preview,
                         usage_inference_test_run=usage_inference_test_run,
                         usage_billable=usage_billable,
-                        execution_duration=(t2 - t1),
+                        execution_duration=execution_duration,
                         func=func,
                         category=category,
                         args=args,
