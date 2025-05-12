@@ -1,6 +1,6 @@
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple, Union
 
 import torch
 
@@ -15,7 +15,9 @@ class ClassificationPrediction:
 class ClassificationModel(ABC):
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path: str, *args, **kwargs) -> "ClassificationModel":
+    def from_pretrained(
+        cls, model_name_or_path: str, *args, **kwargs
+    ) -> "ClassificationModel":
         pass
 
     @property
@@ -23,24 +25,36 @@ class ClassificationModel(ABC):
     def class_names(self) -> List[str]:
         pass
 
-    def infer(self, images: torch.Tensor, *args, **kwargs) -> ClassificationPrediction:
-        pre_processed_images = self.pre_process(images, *args, **kwargs)
+    def infer(
+        self, images: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs
+    ) -> ClassificationPrediction:
+        pre_processed_images, pre_processing_meta = self.pre_process(
+            images, *args, **kwargs
+        )
         model_results = self.forward(pre_processed_images, *args, **kwargs)
         return self.post_process(model_results, *args, **kwargs)
 
     @abstractmethod
-    def pre_process(self, images: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def pre_process(
+        self, images: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs
+    ) -> Tuple[torch.Tensor, Any]:
         pass
 
     @abstractmethod
-    def forward(self, pre_processed_images: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def forward(
+        self, pre_processed_images: torch.Tensor, *args, **kwargs
+    ) -> torch.Tensor:
         pass
 
     @abstractmethod
-    def post_process(self, model_results: torch.Tensor, *args, **kwargs) -> ClassificationPrediction:
+    def post_process(
+        self, model_results: torch.Tensor, *args, **kwargs
+    ) -> ClassificationPrediction:
         pass
 
-    def __call__(self, images: torch.Tensor, *args, **kwargs) -> ClassificationPrediction:
+    def __call__(
+        self, images: torch.Tensor, *args, **kwargs
+    ) -> ClassificationPrediction:
         return self.infer(images, *args, **kwargs)
 
 
@@ -54,7 +68,9 @@ class MultiLabelClassificationPrediction:
 class MultiLabelClassificationModel(ABC):
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path: str, *args, **kwargs) -> "MultiLabelClassificationModel":
+    def from_pretrained(
+        cls, model_name_or_path: str, *args, **kwargs
+    ) -> "MultiLabelClassificationModel":
         pass
 
     @property
@@ -62,22 +78,32 @@ class MultiLabelClassificationModel(ABC):
     def class_names(self) -> List[str]:
         pass
 
-    def infer(self, images: torch.Tensor, *args, **kwargs) -> List[MultiLabelClassificationPrediction]:
+    def infer(
+        self, images: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs
+    ) -> List[MultiLabelClassificationPrediction]:
         pre_processed_images = self.pre_process(images, *args, **kwargs)
         model_results = self.forward(pre_processed_images, *args, **kwargs)
         return self.post_process(model_results, *args, **kwargs)
 
     @abstractmethod
-    def pre_process(self, images: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def pre_process(
+        self, images: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs
+    ) -> Tuple[torch.Tensor, Any]:
         pass
 
     @abstractmethod
-    def forward(self, pre_processed_images: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def forward(
+        self, pre_processed_images: torch.Tensor, *args, **kwargs
+    ) -> torch.Tensor:
         pass
 
     @abstractmethod
-    def post_process(self, model_results: torch.Tensor, *args, **kwargs) -> List[MultiLabelClassificationPrediction]:
+    def post_process(
+        self, model_results: torch.Tensor, *args, **kwargs
+    ) -> List[MultiLabelClassificationPrediction]:
         pass
 
-    def __call__(self, images: torch.Tensor, *args, **kwargs) -> List[MultiLabelClassificationPrediction]:
+    def __call__(
+        self, images: torch.Tensor, *args, **kwargs
+    ) -> List[MultiLabelClassificationPrediction]:
         return self.infer(images, *args, **kwargs)

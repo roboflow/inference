@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
+from typing import Any, List, Optional, Tuple, Union
 
 import torch
 
@@ -13,13 +13,17 @@ class KeyPoints:
     class_id: torch.Tensor  # (instances, instance_key_points)
     confidence: torch.Tensor  # (instances, instance_key_points)
     image_metadata: Optional[dict] = None
-    key_points_metadata: Optional[List[dict]] = None  # if given, list of size equal to # of instances
+    key_points_metadata: Optional[List[dict]] = (
+        None  # if given, list of size equal to # of instances
+    )
 
 
 class KeyPointsDetectionModel(ABC):
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path: str, *args, **kwargs) -> "KeyPointsDetectionModel":
+    def from_pretrained(
+        cls, model_name_or_path: str, *args, **kwargs
+    ) -> "KeyPointsDetectionModel":
         pass
 
     @property
@@ -27,22 +31,34 @@ class KeyPointsDetectionModel(ABC):
     def class_names(self) -> List[str]:
         pass
 
-    def infer(self, images: torch.Tensor, *args, **kwargs) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
-        pre_processed_images = self.pre_process(images, *args, **kwargs)
+    def infer(
+        self, images: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs
+    ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
+        pre_processed_images, pre_processing_meta = self.pre_process(
+            images, *args, **kwargs
+        )
         model_results = self.forward(pre_processed_images, *args, **kwargs)
-        return self.post_process(model_results, *args, **kwargs)
+        return self.post_process(model_results, pre_processing_meta, *args, **kwargs)
 
     @abstractmethod
-    def pre_process(self, images: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def pre_process(
+        self, images: Union[torch.Tensor, List[torch.Tensor]], *args, **kwargs
+    ) -> Tuple[torch.Tensor, Any]:
         pass
 
     @abstractmethod
-    def forward(self, pre_processed_images: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def forward(
+        self, pre_processed_images: torch.Tensor, *args, **kwargs
+    ) -> torch.Tensor:
         pass
 
     @abstractmethod
-    def post_process(self, model_results: torch.Tensor, *args, **kwargs) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
+    def post_process(
+        self, model_results: torch.Tensor, pre_processing_meta: Any, *args, **kwargs
+    ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         pass
 
-    def __call__(self, images: torch.Tensor, *args, **kwargs) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
+    def __call__(
+        self, images: torch.Tensor, *args, **kwargs
+    ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         return self.infer(images, *args, **kwargs)
