@@ -33,7 +33,6 @@ from inference.core.env import (
     REDIS_HOST,
     ROBOFLOW_INTERNAL_SERVICE_NAME,
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
-    GCP_SERVERLESS,
 )
 from inference.core.logger import logger
 from inference.core.version import __version__ as inference_version
