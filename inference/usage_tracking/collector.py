@@ -692,7 +692,7 @@ class UsageCollector:
                 res = func(*args, **kwargs)
                 t2 = time.time()
                 if GCP_SERVERLESS is True:
-                    execution_duration = max(t2 - t1, 100)
+                    execution_duration = max(t2 - t1, 0.1)
                 else:
                     execution_duration = t2 - t1
                 self.record_usage(
@@ -727,7 +727,7 @@ class UsageCollector:
                 res = await func(*args, **kwargs)
                 t2 = time.time()
                 if GCP_SERVERLESS is True:
-                    execution_duration = max(t2 - t1, 100)
+                    execution_duration = max(t2 - t1, 0.1)
                 else:
                     execution_duration = t2 - t1
                 await self.async_record_usage(
