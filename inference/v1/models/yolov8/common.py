@@ -346,20 +346,23 @@ def rescale_detections(
     detections: List[torch.Tensor], images_metadata: List[PreProcessingMetadata]
 ) -> List[torch.Tensor]:
     for image_detections, metadata in zip(detections, images_metadata):
-        offsets = torch.tensor(
+        # Use torch.as_tensor with list to avoid unnecessary copy and only create once per input.
+        offsets = torch.as_tensor(
             [metadata.pad_left, metadata.pad_top, metadata.pad_left, metadata.pad_top],
             dtype=image_detections.dtype,
             device=image_detections.device,
         )
-        image_detections[:, :4] -= offsets
-        scale = torch.tensor(
+        image_detections[:, :4].sub_(offsets)  # in-place subtraction for speed/memory
+
+        scale = torch.as_tensor(
             [
                 metadata.scale_width,
                 metadata.scale_height,
                 metadata.scale_width,
                 metadata.scale_height,
             ],
+            dtype=image_detections.dtype,
             device=image_detections.device,
         )
-        image_detections[:, :4] *= 1 / scale
+        image_detections[:, :4].div_(scale)  # in-place division for speed/memory
     return detections
