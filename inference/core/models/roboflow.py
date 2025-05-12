@@ -790,6 +790,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             cache.set(
                 self.endpoint + "_validate_model_error_count",
                 validate_model_error_count + 1,
+                expire=60
             )
             raise ModelArtefactError(
                 "ONNX session not initialized. Check that the model weights are available."
@@ -800,6 +801,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             cache.set(
                 self.endpoint + "_validate_model_error_count",
                 validate_model_error_count + 1,
+                expire=60
             )
             raise ModelArtefactError(f"Unable to run test inference. Cause: {e}") from e
         try:
@@ -808,6 +810,7 @@ class OnnxRoboflowInferenceModel(RoboflowInferenceModel):
             cache.set(
                 self.endpoint + "_validate_model_error_count",
                 validate_model_error_count + 1,
+                expire=60
             )
             raise ModelArtefactError(
                 f"Unable to validate model classes. Cause: {e}"
