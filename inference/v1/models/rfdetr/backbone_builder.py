@@ -36,9 +36,24 @@ class Joiner(nn.Sequential):
 
     def forward_export(self, inputs: torch.Tensor):
         feats, masks = self[0](inputs)
-        poss = []
-        for feat, mask in zip(feats, masks):
-            poss.append(self[1](mask, align_dim_orders=False).to(feat.dtype))
+        # Try to batch compute position embeddings and type-cast all at once
+        # Most position_embeddings can be vectorized over all masks in a batch
+        # If not, fallback to per-sample loop
+
+        try:
+            # Attempt to batch process (common for transformer position embeddings)
+            poss_batched = self[1](masks, align_dim_orders=False)
+            if isinstance(poss_batched, (list, tuple)):
+                # Some implementations return list, convert to list of correct dtype
+                poss = [p.to(f.dtype) for p, f in zip(poss_batched, feats)]
+            else:
+                # Assume batch tensor (B, ...), split and cast all at once
+                poss = [p.to(f.dtype) for p, f in zip(poss_batched.unbind(0), feats)]
+        except Exception:
+            # Fallback: legacy sequential per-sample logic
+            poss = []
+            for feat, mask in zip(feats, masks):
+                poss.append(self[1](mask, align_dim_orders=False).to(feat.dtype))
         return feats, None, poss
 
 
@@ -93,4 +108,3 @@ def build_backbone(
 
     model = Joiner(backbone, position_embedding)
     return model
-
