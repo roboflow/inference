@@ -334,36 +334,34 @@ def run_nms(
     results = []
 
     for b in range(bs):
-        bboxes = boxes[b].T  # (8400, 4)
-        class_scores = scores[b].T  # (8400, 80)
-
-        class_conf, class_ids = class_scores.max(1)  # (8400,), (8400,)
-
+        # Combine transpose & max for efficiency
+        class_scores = scores[b]  # (80, 8400)
+        class_conf, class_ids = class_scores.max(0)  # (8400,), (8400,)
         mask = class_conf > conf_thresh
-        if mask.sum() == 0:
+        if not torch.any(mask):
             results.append(torch.zeros((0, 6), device=output.device))
             continue
-
-        bboxes = bboxes[mask]
+        bboxes = boxes[b][:, mask].T  # (num, 4) -- selects and then transposes
         class_conf = class_conf[mask]
         class_ids = class_ids[mask]
-        # Convert [x, y, w, h] -> [x1, y1, x2, y2]
-        xyxy = torch.zeros_like(bboxes)
-        xyxy[:, 0] = bboxes[:, 0] - bboxes[:, 2] / 2  # x1
-        xyxy[:, 1] = bboxes[:, 1] - bboxes[:, 3] / 2  # y1
-        xyxy[:, 2] = bboxes[:, 0] + bboxes[:, 2] / 2  # x2
-        xyxy[:, 3] = bboxes[:, 1] + bboxes[:, 3] / 2  # y2
+        # Vectorized [x, y, w, h] -> [x1, y1, x2, y2]
+        xy = bboxes[:, :2]
+        wh = bboxes[:, 2:]
+        half_wh = wh / 2
+        xyxy = torch.cat((xy - half_wh, xy + half_wh), 1)
         # Class-agnostic NMS -> use dummy class ids
         nms_class_ids = torch.zeros_like(class_ids) if class_agnostic else class_ids
+        # NMS and limiting max detections
         keep = torchvision.ops.batched_nms(xyxy, class_conf, nms_class_ids, iou_thresh)
-        keep = keep[:max_detections]
+        if keep.numel() > max_detections:
+            keep = keep[:max_detections]
         detections = torch.cat(
-            [
+            (
                 xyxy[keep],
-                class_conf[keep].unsqueeze(1),
-                class_ids[keep].unsqueeze(1).float(),
-            ],
-            dim=1,
+                class_conf[keep, None],  # unsqueeze(1) is replaced with None
+                class_ids[keep, None].float(),
+            ),
+            1,
         )  # [x1, y1, x2, y2, conf, cls]
 
         results.append(detections)
@@ -374,20 +372,21 @@ def rescale_detections(
     detections: List[torch.Tensor], images_metadata: List[PreProcessingMetadata]
 ) -> List[torch.Tensor]:
     for image_detections, metadata in zip(detections, images_metadata):
-        offsets = torch.tensor(
+        offsets = torch.as_tensor(
             [metadata.pad_left, metadata.pad_top, metadata.pad_left, metadata.pad_top],
             dtype=image_detections.dtype,
             device=image_detections.device,
         )
-        image_detections[:, :4] -= offsets
-        scale = torch.tensor(
+        image_detections[:, :4].sub_(offsets)  # in-place subtraction for speed/memory
+        scale = torch.as_tensor(
             [
                 metadata.scale_width,
                 metadata.scale_height,
                 metadata.scale_width,
                 metadata.scale_height,
             ],
+            dtype=image_detections.dtype,
             device=image_detections.device,
         )
-        image_detections[:, :4] *= 1 / scale
+        image_detections[:, :4].div_(scale)
     return detections
