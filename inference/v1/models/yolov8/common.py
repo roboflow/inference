@@ -104,7 +104,10 @@ def parse_model_characteristics(config_path: str) -> ModelCharacteristics:
     try:
         with open(config_path) as f:
             parsed_config = json.load(f)
-            if "project_task_type" not in parsed_config or "model_type" not in parsed_config:
+            if (
+                "project_task_type" not in parsed_config
+                or "model_type" not in parsed_config
+            ):
                 raise ValueError(
                     "could not find required entries in config - either "
                     "'project_task_type' or 'model_type' field is missing"
@@ -371,22 +374,19 @@ def run_nms(
 def rescale_detections(
     detections: List[torch.Tensor], images_metadata: List[PreProcessingMetadata]
 ) -> List[torch.Tensor]:
-    for image_detections, metadata in zip(detections, images_metadata):
-        offsets = torch.as_tensor(
-            [metadata.pad_left, metadata.pad_top, metadata.pad_left, metadata.pad_top],
-            dtype=image_detections.dtype,
-            device=image_detections.device,
+    for det, meta in zip(detections, images_metadata):
+        coords = det[:, :4]
+        # Construct the offset and scale tensors directly (small constant size; negligible overhead)
+        offsets = torch.tensor(
+            [meta.pad_left, meta.pad_top, meta.pad_left, meta.pad_top],
+            dtype=coords.dtype,
+            device=coords.device,
         )
-        image_detections[:, :4].sub_(offsets)  # in-place subtraction for speed/memory
-        scale = torch.as_tensor(
-            [
-                metadata.scale_width,
-                metadata.scale_height,
-                metadata.scale_width,
-                metadata.scale_height,
-            ],
-            dtype=image_detections.dtype,
-            device=image_detections.device,
+        scales = torch.tensor(
+            [meta.scale_width, meta.scale_height, meta.scale_width, meta.scale_height],
+            dtype=coords.dtype,
+            device=coords.device,
         )
-        image_detections[:, :4].div_(scale)
+        # Fused operation: (coords - offsets) / scales, done in-place
+        coords.sub_(offsets).div_(scales)
     return detections
