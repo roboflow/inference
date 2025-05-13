@@ -356,64 +356,95 @@ def scale_sv_detections(
     scale: float,
     keypoints_key: str = KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
 ) -> sv.Detections:
-    detections_copy = deepcopy(detections)
+    # Fast shallow copy, specialized to avoid deep-copying everything
+    detections_copy = _shallowcopy_detections_for_scaling(detections)
     if len(detections_copy) == 0:
         return detections_copy
-    detections_copy.xyxy = (detections_copy.xyxy * scale).round()
-    if keypoints_key in detections_copy.data:
-        for i in range(len(detections_copy[keypoints_key])):
-            detections_copy[keypoints_key][i] = (
-                detections_copy[keypoints_key][i].astype(np.float32) * scale
-            ).round()
-    detections_copy[IMAGE_DIMENSIONS_KEY] = (
-        detections_copy[IMAGE_DIMENSIONS_KEY] * scale
-    ).round()
-    if detections_copy.mask is not None:
-        scaled_masks = []
-        original_mask_size_wh = (
-            detections_copy.mask.shape[2],
-            detections_copy.mask.shape[1],
-        )
-        scaled_mask_size_wh = round(original_mask_size_wh[0] * scale), round(
-            original_mask_size_wh[1] * scale
-        )
-        for detection_mask in detections_copy.mask:
-            polygons = sv.mask_to_polygons(mask=detection_mask)
-            polygon_masks = []
-            for polygon in polygons:
-                scaled_polygon = (polygon * scale).round().astype(np.int32)
-                polygon_masks.append(
-                    sv.polygon_to_mask(
-                        polygon=scaled_polygon, resolution_wh=scaled_mask_size_wh
-                    )
-                )
-            scaled_detection_mask = np.sum(polygon_masks, axis=0) > 0
-            scaled_masks.append(scaled_detection_mask)
-        detections_copy.mask = np.array(scaled_masks)
-    if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
-        scaled_polygons = []
-        for polygon in detections_copy[POLYGON_KEY_IN_SV_DETECTIONS]:
-            scaled_polygon = (polygon * scale).round().astype(np.int32)
-            scaled_polygons.append(
-                scaled_polygon
+
+    # Vectorized xyxy scaling
+    detections_copy.xyxy = np.round(detections_copy.xyxy * scale)
+
+    # Vectorized keypoints scaling if possible
+    keypoints = detections_copy.data.get(keypoints_key, None)
+    if keypoints is not None:
+        # If keypoints is an ndarray, assume shape (N, K, 2) and scale whole at once
+        if isinstance(keypoints, np.ndarray):
+            detections_copy.data[keypoints_key] = np.round(
+                keypoints.astype(np.float32) * scale
             )
-        detections_copy[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(scaled_polygons)
+        else:
+            # Fallback to legacy per-row approach (should be rare)
+            for i in range(len(keypoints)):
+                detections_copy.data[keypoints_key][i] = np.round(
+                    keypoints[i].astype(np.float32) * scale
+                )
+
+    # Vectorized image dimensions scaling
+    img_dim = detections_copy.data.get(IMAGE_DIMENSIONS_KEY, None)
+    if img_dim is not None:
+        detections_copy.data[IMAGE_DIMENSIONS_KEY] = np.round(img_dim * scale)
+
+    # Mask/polygons routine
+    if detections_copy.mask is not None:
+        mask_arr = detections_copy.mask
+        n_masks = mask_arr.shape[0]
+        original_mask_size_wh = (mask_arr.shape[2], mask_arr.shape[1])
+        scaled_mask_size_wh = (
+            int(round(original_mask_size_wh[0] * scale)),
+            int(round(original_mask_size_wh[1] * scale)),
+        )
+        scaled_masks = [None] * n_masks  # preallocate list
+
+        # Predeclare polygon mask shape to avoid reallocating inside the loop
+        for idx, detection_mask in enumerate(mask_arr):
+            # mask_to_polygons is extremely slow; cannot avoid unless supervision is optimized
+            polygons = sv.mask_to_polygons(mask=detection_mask)
+            n_poly = len(polygons)
+            polygon_masks = [None] * n_poly
+            for j, polygon in enumerate(polygons):
+                scaled_polygon = np.round(polygon * scale).astype(np.int32)
+                # polygon_to_mask is another slow step
+                polygon_masks[j] = sv.polygon_to_mask(
+                    scaled_polygon, resolution_wh=scaled_mask_size_wh
+                )
+            if polygon_masks:
+                # Instead of np.sum with axis=0, use np.logical_or.reduce (faster for bool)
+                scaled_detection_mask = np.logical_or.reduce(polygon_masks)
+            else:
+                scaled_detection_mask = np.zeros(
+                    (scaled_mask_size_wh[1], scaled_mask_size_wh[0]), dtype=bool
+                )
+            scaled_masks[idx] = scaled_detection_mask
+        detections_copy.mask = np.stack(scaled_masks, axis=0)
+
+    # Vectorized polygon scaling
+    polygons = detections_copy.data.get(POLYGON_KEY_IN_SV_DETECTIONS, None)
+    if polygons is not None:
+        # If already ndarray, can vectorize
+        polygons_np = np.asarray(polygons)
+        scaled_polygons = np.round(polygons_np * scale).astype(np.int32)
+        detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] = scaled_polygons
+
+    n = len(detections_copy)
+    # Scaling relative to parent
     if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
-        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
-            detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale
+        detections_copy.data[SCALING_RELATIVE_TO_PARENT_KEY] = (
+            detections_copy.data[SCALING_RELATIVE_TO_PARENT_KEY] * scale
         )
     else:
-        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
-            [scale] * len(detections_copy)
+        detections_copy.data[SCALING_RELATIVE_TO_PARENT_KEY] = np.full(
+            n, scale, dtype=np.float32
         )
+    # Scaling relative to root
     if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections_copy.data:
-        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
-            detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale
+        detections_copy.data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
+            detections_copy.data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale
         )
     else:
-        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
-            [scale] * len(detections_copy)
+        detections_copy.data[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.full(
+            n, scale, dtype=np.float32
         )
+
     return detections_copy
 
 
@@ -435,3 +466,27 @@ def run_in_parallel(tasks: List[Callable[[], T]], max_workers: int = 1) -> List[
 
 def _run(fun: Callable[[], T]) -> T:
     return fun()
+
+
+def _shallowcopy_detections_for_scaling(detections: sv.Detections) -> sv.Detections:
+    """
+    Fast copy of detections for this workflow: avoids deep-copying static attributes.
+    Assumes xyxy, mask, and .data entries are numpy arrays or can be shallow-copied safely.
+    """
+    # Fastest: use detection's built-in copy (if it exists)
+    if hasattr(detections, "copy"):
+        result = detections.copy()
+    else:
+        # Manual (slightly less safe)
+        result = sv.Detections(
+            xyxy=np.copy(detections.xyxy),
+            mask=np.copy(detections.mask) if detections.mask is not None else None,
+            data={},
+        )
+        for k, v in detections.data.items():
+            # Only copy if it's an array and will be mutated
+            if isinstance(v, np.ndarray):
+                result.data[k] = np.copy(v)
+            else:
+                result.data[k] = v
+    return result
