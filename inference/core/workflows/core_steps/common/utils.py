@@ -394,9 +394,7 @@ def scale_sv_detections(
         scaled_polygons = []
         for polygon in detections_copy[POLYGON_KEY_IN_SV_DETECTIONS]:
             scaled_polygon = (polygon * scale).round().astype(np.int32)
-            scaled_polygons.append(
-                scaled_polygon
-            )
+            scaled_polygons.append(scaled_polygon)
         detections_copy[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(scaled_polygons)
     if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
         detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
