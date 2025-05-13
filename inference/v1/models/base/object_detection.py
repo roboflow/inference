@@ -19,6 +19,7 @@ class Detections:
 class ObjectDetectionModel(ABC):
 
     @classmethod
+    @abstractmethod
     def from_pretrained(
         cls, model_name_or_path: str, *args, **kwargs
     ) -> "ObjectDetectionModel":

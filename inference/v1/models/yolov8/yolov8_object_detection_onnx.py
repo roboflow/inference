@@ -120,20 +120,21 @@ class YOLOv8ForObjectDetectionOnnx(ObjectDetectionModel):
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        if self._input_batch_size is None:
-            return run_session_via_iobinding(
-                session=self._session, input_name="images", inputs=pre_processed_images
-            )[0]
-        results = []
-        for i in range(0, pre_processed_images.shape[0], self._input_batch_size):
-            batch_input = pre_processed_images[
-                i : i + self._input_batch_size
-            ].contiguous()
-            batch_results = run_session_via_iobinding(
-                session=self._session, input_name="images", inputs=batch_input
-            )[0]
-            results.append(batch_results)
-        return torch.cat(results, dim=0)
+        with self._session_thread_lock:
+            if self._input_batch_size is None:
+                return run_session_via_iobinding(
+                    session=self._session, input_name="images", inputs=pre_processed_images
+                )[0]
+            results = []
+            for i in range(0, pre_processed_images.shape[0], self._input_batch_size):
+                batch_input = pre_processed_images[
+                    i : i + self._input_batch_size
+                ].contiguous()
+                batch_results = run_session_via_iobinding(
+                    session=self._session, input_name="images", inputs=batch_input
+                )[0]
+                results.append(batch_results)
+            return torch.cat(results, dim=0)
 
     def post_process(
         self,
@@ -160,8 +161,8 @@ class YOLOv8ForObjectDetectionOnnx(ObjectDetectionModel):
         for result in rescaled_results:
             results.append(
                 Detections(
-                    xyxy=result[:, 4],
-                    class_ids=result[:, 4],
+                    xyxy=result[:, :4],
+                    class_ids=result[:, 4].int(),
                     confidence=result[:, 5],
                 )
             )

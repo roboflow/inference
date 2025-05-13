@@ -85,9 +85,37 @@ def parse_pre_processing_config(environment_file_path: str) -> PreProcessingConf
                     padding_value=padding_value,
                 )
         raise ValueError("could not determine resize method or padding color")
-    except (IOError, ValueError) as error:
+    except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
             f"Environment file located under path {environment_file_path} is malformed: "
+            f"{error}. In case that the package is "
+            f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
+            f"verify its consistency in docs."
+        )
+
+
+@dataclass
+class ModelCharacteristics:
+    task_type: str
+    model_type: str
+
+
+def parse_model_characteristics(config_path: str) -> ModelCharacteristics:
+    try:
+        with open(config_path) as f:
+            parsed_config = json.load(f)
+            if "project_task_type" not in parsed_config or "model_type" not in parsed_config:
+                raise ValueError(
+                    "could not find required entries in config - either "
+                    "'project_task_type' or 'model_type' field is missing"
+                )
+            return ModelCharacteristics(
+                task_type=parsed_config["project_task_type"],
+                model_type=parsed_config["model_type"],
+            )
+    except (IOError, OSError, ValueError) as error:
+        raise CorruptedModelPackageError(
+            f"Model type config file located under path {config_path} is malformed: "
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs."
