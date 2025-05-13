@@ -31,6 +31,7 @@ from inference.core.workflows.execution_engine.constants import (
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
+    POLYGON_KEY_IN_SV_DETECTIONS,
     PREDICTION_TYPE_KEY,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
@@ -389,6 +390,14 @@ def scale_sv_detections(
             scaled_detection_mask = np.sum(polygon_masks, axis=0) > 0
             scaled_masks.append(scaled_detection_mask)
         detections_copy.mask = np.array(scaled_masks)
+    if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
+        scaled_polygons = []
+        for polygon in detections_copy[POLYGON_KEY_IN_SV_DETECTIONS]:
+            scaled_polygon = (polygon * scale).round().astype(np.int32)
+            scaled_polygons.append(
+                scaled_polygon
+            )
+        detections_copy[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(scaled_polygons)
     if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
         detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
             detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale
