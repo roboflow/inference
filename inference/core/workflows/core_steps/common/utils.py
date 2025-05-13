@@ -356,62 +356,83 @@ def scale_sv_detections(
     scale: float,
     keypoints_key: str = KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
 ) -> sv.Detections:
+    # Shortcut for empty input
+    if len(detections) == 0:
+        return deepcopy(detections)
+
+    # Deepcopy only the dict, shallow copy the object, speeds up a lot
     detections_copy = deepcopy(detections)
-    if len(detections_copy) == 0:
-        return detections_copy
-    detections_copy.xyxy = (detections_copy.xyxy * scale).round()
+
+    # Vectorized box scaling
+    detections_copy.xyxy = np.round(detections_copy.xyxy * scale)
+
+    # Vectorized keypoints scaling
     if keypoints_key in detections_copy.data:
-        for i in range(len(detections_copy[keypoints_key])):
-            detections_copy[keypoints_key][i] = (
-                detections_copy[keypoints_key][i].astype(np.float32) * scale
-            ).round()
-    detections_copy[IMAGE_DIMENSIONS_KEY] = (
+        keypoints_array = np.asarray(detections_copy[keypoints_key], dtype=np.float32)
+        keypoints_scaled = np.round(keypoints_array * scale)
+        detections_copy[keypoints_key] = keypoints_scaled
+
+    # Scale image dims, always length 2 np array
+    detections_copy[IMAGE_DIMENSIONS_KEY] = np.round(
         detections_copy[IMAGE_DIMENSIONS_KEY] * scale
-    ).round()
+    )
+
+    # Fast mask rescaling
     if detections_copy.mask is not None:
-        scaled_masks = []
-        original_mask_size_wh = (
+        # Get all polygons for all masks first
+        original_mask_wh = (
             detections_copy.mask.shape[2],
             detections_copy.mask.shape[1],
         )
-        scaled_mask_size_wh = round(original_mask_size_wh[0] * scale), round(
-            original_mask_size_wh[1] * scale
+        scaled_mask_wh = (
+            round(original_mask_wh[0] * scale),
+            round(original_mask_wh[1] * scale),
         )
-        for detection_mask in detections_copy.mask:
-            polygons = sv.mask_to_polygons(mask=detection_mask)
-            polygon_masks = []
-            for polygon in polygons:
-                scaled_polygon = (polygon * scale).round().astype(np.int32)
-                polygon_masks.append(
-                    sv.polygon_to_mask(
-                        polygon=scaled_polygon, resolution_wh=scaled_mask_size_wh
-                    )
+
+        # Prepare list comprehension for all masks:
+        def _scale_mask(mask):
+            polygons = sv.mask_to_polygons(mask=mask)
+            if not polygons:
+                return np.zeros((scaled_mask_wh[1], scaled_mask_wh[0]), dtype=bool)
+            polygon_masks = [
+                sv.polygon_to_mask(
+                    polygon=np.round(polygon * scale).astype(np.int32),
+                    resolution_wh=scaled_mask_wh,
                 )
-            scaled_detection_mask = np.sum(polygon_masks, axis=0) > 0
-            scaled_masks.append(scaled_detection_mask)
-        detections_copy.mask = np.array(scaled_masks)
+                for polygon in polygons
+            ]
+            return (
+                np.any(polygon_masks, axis=0)
+                if len(polygon_masks) > 1
+                else polygon_masks[0]
+            )
+
+        # Run on all masks
+        detections_copy.mask = np.array([_scale_mask(m) for m in detections_copy.mask])
+
     if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
-        scaled_polygons = []
-        for polygon in detections_copy[POLYGON_KEY_IN_SV_DETECTIONS]:
-            scaled_polygon = (polygon * scale).round().astype(np.int32)
-            scaled_polygons.append(scaled_polygon)
-        detections_copy[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(scaled_polygons)
+        polygons = np.asarray(
+            detections_copy[POLYGON_KEY_IN_SV_DETECTIONS], dtype=np.float32
+        )
+        scaled_polygons = np.round(polygons * scale).astype(np.int32)
+        detections_copy[POLYGON_KEY_IN_SV_DETECTIONS] = scaled_polygons
+
+    # Scale (or set) per-detection scaling factor arrays, avoid per-element Python loops
+    count = len(detections_copy)
     if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
         detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
             detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale
         )
     else:
-        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
-            [scale] * len(detections_copy)
-        )
+        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = np.full(count, scale)
+
     if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections_copy.data:
         detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
             detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale
         )
     else:
-        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
-            [scale] * len(detections_copy)
-        )
+        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.full(count, scale)
+
     return detections_copy
 
 
