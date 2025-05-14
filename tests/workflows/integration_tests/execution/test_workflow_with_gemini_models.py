@@ -914,6 +914,90 @@ VLM_AS_SECONDARY_CLASSIFIER_WORKFLOW = {
     ],
 }
 
+CAPTION_WITH_VERSION_WORKFLOW = {
+    "version": "1.0",
+    "inputs": [
+        {"type": "WorkflowImage", "name": "image"},
+        {"type": "WorkflowParameter", "name": "api_key"},
+        {"type": "WorkflowParameter", "name": "model_version"},
+    ],
+    "steps": [
+        {
+            "type": "roboflow_core/google_gemini@v1",
+            "name": "gemini",
+            "images": "$inputs.image",
+            "task_type": "caption",
+            "api_key": "$inputs.api_key",
+            "model_version": "$inputs.model_version",
+        },
+    ],
+    "outputs": [
+        {
+            "type": "JsonField",
+            "name": "result",
+            "selector": "$steps.gemini.output",
+        },
+    ],
+}
+
+@add_to_workflows_gallery(
+    category="Workflows with Visual Language Models",
+    use_case_title="Using different versions of Google's Gemini for Image Captioning",
+    use_case_description="""
+    In this example, we test different Gemini model versions for image captioning.
+    This workflow allows specifying any supported Gemini model version as input parameter.
+    """,
+    workflow_definition=CAPTION_WITH_VERSION_WORKFLOW,
+    workflow_name_in_app="gemini-version-captioning",
+)
+@pytest.mark.skipif(
+    condition=GOOGLE_API_KEY is None, reason="Google API key not provided"
+)
+def test_workflow_with_different_gemini_versions(
+    model_manager: ModelManager,
+    license_plate_image: np.ndarray,
+) -> None:
+    # Test all available model versions
+    model_versions = [
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-exp",
+        "gemini-2.5-pro-preview-05-06",
+        "gemini-2.0-flash-lite"
+    ]
+    
+    # given
+    workflow_init_parameters = {
+        "workflows_core.model_manager": model_manager,
+        "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
+    }
+    execution_engine = ExecutionEngine.init(
+        workflow_definition=CAPTION_WITH_VERSION_WORKFLOW,
+        init_parameters=workflow_init_parameters,
+        max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
+    )
+    
+    # Test each model version
+    for version in model_versions:
+        print(version)
+        # when
+        result = execution_engine.run(
+            runtime_parameters={
+                "image": [license_plate_image],
+                "api_key": GOOGLE_API_KEY,
+                "model_version": version,
+            }
+        )
+        
+        # then
+        assert len(result) == 1, f"Single image given, expected single output for version {version}"
+        assert set(result[0].keys()) == {"result"}, f"Expected output key 'result' for version {version}"
+        assert (
+            isinstance(result[0]["result"], str) and len(result[0]["result"]) > 0
+        ), f"Expected non-empty string generated for version {version}"
+        
+        print(f"Successfully tested model version: {version}")
 
 @add_to_workflows_gallery(
     category="Workflows with Visual Language Models",
