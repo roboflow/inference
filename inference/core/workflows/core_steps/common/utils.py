@@ -361,10 +361,11 @@ def scale_sv_detections(
         return detections_copy
     detections_copy.xyxy = (detections_copy.xyxy * scale).round()
     if keypoints_key in detections_copy.data:
-        for i in range(len(detections_copy[keypoints_key])):
-            detections_copy[keypoints_key][i] = (
-                detections_copy[keypoints_key][i].astype(np.float32) * scale
-            ).round()
+        detections_copy.data[keypoints_key] = (
+            (detections_copy.data[keypoints_key].astype(np.float32) * scale)
+            .round()
+            .astype(np.int32)
+        )
     detections_copy[IMAGE_DIMENSIONS_KEY] = (
         detections_copy[IMAGE_DIMENSIONS_KEY] * scale
     ).round()
@@ -391,11 +392,11 @@ def scale_sv_detections(
             scaled_masks.append(scaled_detection_mask)
         detections_copy.mask = np.array(scaled_masks)
     if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
-        scaled_polygons = []
-        for polygon in detections_copy[POLYGON_KEY_IN_SV_DETECTIONS]:
-            scaled_polygon = (polygon * scale).round().astype(np.int32)
-            scaled_polygons.append(scaled_polygon)
-        detections_copy[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(scaled_polygons)
+        detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] = (
+            (detections_copy.data[POLYGON_KEY_IN_SV_DETECTIONS] * scale)
+            .round()
+            .astype(np.int32)
+        )
     if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
         detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
             detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale
