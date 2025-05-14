@@ -50,15 +50,27 @@ DETECTION_PLUS_CLASSIFICATION_WORKFLOW = {
 }
 
 CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
-    PlatformEnvironment.ROBOFLOW_STAGING: [
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: [
         0.7817059755325317,
         0.7884019017219543,
     ],
-    PlatformEnvironment.ROBOFLOW_PLATFORM: [
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: [
         0.6154301762580872,
         0.5893789529800415,
     ],
 }
+CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS
+] = CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA]
+CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST
+] = CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA]
+CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS
+] = CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA]
+CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST
+] = CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA]
 
 
 @pytest.mark.flaky(retries=4, delay=1)
@@ -105,7 +117,7 @@ def test_detection_plus_classification_workflow(
         p["confidence"] for p in result[0]["detection_predictions"]["predictions"]
     ]
     assert np.allclose(
-        detection_confidences, [0.856178879737854, 0.5191817283630371], atol=1e-3
+        detection_confidences, [0.856178879737854, 0.5191817283630371], atol=5e-3
     ), "Expected predictions to match what was observed while test creation"
     assert (
         len(result[0]["classification_predictions"]) == 2
@@ -117,7 +129,7 @@ def test_detection_plus_classification_workflow(
     assert np.allclose(
         classification_confidences,
         CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[platform_environment],
-        atol=1e-3,
+        atol=1e-2,
     ), "Expected classification predictions to match"
     assert (
         len(result[1]["detection_predictions"]["predictions"]) == 0

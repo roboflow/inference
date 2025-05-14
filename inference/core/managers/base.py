@@ -13,14 +13,22 @@ from inference.core.env import (
     DISABLE_INFERENCE_CACHE,
     METRICS_ENABLED,
     METRICS_INTERVAL,
+    MODELS_CACHE_AUTH_ENABLED,
     ROBOFLOW_SERVER_UUID,
 )
-from inference.core.exceptions import InferenceModelNotFound
+from inference.core.exceptions import (
+    InferenceModelNotFound,
+    RoboflowAPINotAuthorizedError,
+)
 from inference.core.logger import logger
 from inference.core.managers.entities import ModelDescription
 from inference.core.managers.pingback import PingbackInfo
 from inference.core.models.base import Model, PreprocessReturnMetadata
 from inference.core.registries.base import ModelRegistry
+from inference.core.registries.roboflow import (
+    ModelEndpointType,
+    _check_if_api_key_has_access_to_model,
+)
 
 
 class ModelManager:
@@ -40,14 +48,27 @@ class ModelManager:
             self.pingback.start()
 
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias: Optional[str] = None,
+        endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
     ) -> None:
         """Adds a new model to the manager.
 
         Args:
             model_id (str): The identifier of the model.
             model (Model): The model instance.
+            endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
+        if MODELS_CACHE_AUTH_ENABLED:
+            if not _check_if_api_key_has_access_to_model(
+                api_key=api_key, model_id=model_id, endpoint_type=endpoint_type
+            ):
+                raise RoboflowAPINotAuthorizedError(
+                    f"API key {api_key} does not have access to model {model_id}"
+                )
+
         logger.debug(
             f"ModelManager - Adding model with model_id={model_id}, model_id_alias={model_id_alias}"
         )

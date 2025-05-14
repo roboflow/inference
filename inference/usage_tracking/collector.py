@@ -691,6 +691,10 @@ class UsageCollector:
                 t1 = time.time()
                 res = func(*args, **kwargs)
                 t2 = time.time()
+                if GCP_SERVERLESS is True:
+                    execution_duration = max(t2 - t1, 0.1)
+                else:
+                    execution_duration = t2 - t1
                 self.record_usage(
                     **self._extract_usage_params_from_func_kwargs(
                         usage_fps=usage_fps,
@@ -699,7 +703,7 @@ class UsageCollector:
                         usage_workflow_preview=usage_workflow_preview,
                         usage_inference_test_run=usage_inference_test_run,
                         usage_billable=usage_billable,
-                        execution_duration=(t2 - t1),
+                        execution_duration=execution_duration,
                         func=func,
                         category=category,
                         args=args,
@@ -722,6 +726,10 @@ class UsageCollector:
                 t1 = time.time()
                 res = await func(*args, **kwargs)
                 t2 = time.time()
+                if GCP_SERVERLESS is True:
+                    execution_duration = max(t2 - t1, 0.1)
+                else:
+                    execution_duration = t2 - t1
                 await self.async_record_usage(
                     **self._extract_usage_params_from_func_kwargs(
                         usage_fps=usage_fps,
@@ -730,7 +738,7 @@ class UsageCollector:
                         usage_workflow_preview=usage_workflow_preview,
                         usage_inference_test_run=usage_inference_test_run,
                         usage_billable=usage_billable,
-                        execution_duration=(t2 - t1),
+                        execution_duration=execution_duration,
                         func=func,
                         category=category,
                         args=args,

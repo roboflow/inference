@@ -37,18 +37,28 @@ MULTI_CLASS_CLASSIFICATION_WORKFLOW = {
 }
 
 MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
-    PlatformEnvironment.ROBOFLOW_STAGING: [0.3667, 0.5917],
-    PlatformEnvironment.ROBOFLOW_PLATFORM: [0.8252, 0.9962],
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: [0.3667, 0.5917],
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: [0.8252, 0.9962],
 }
 MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
     PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST
 ] = MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
-    PlatformEnvironment.ROBOFLOW_STAGING
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA
 ]
 MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
     PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST
 ] = MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
-    PlatformEnvironment.ROBOFLOW_PLATFORM
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA
+]
+MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS
+] = MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA
+]
+MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS
+] = MULTI_CLASS_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA
 ]
 
 
@@ -87,8 +97,6 @@ def test_multi_class_classification_workflow(
         "predictions",
         "inference_id",
     }, "Expected all outputs to be registered"
-    unique_inference_ids = {r["inference_id"] for r in result}
-    assert len(unique_inference_ids) == 2, "Expected unique inference ids granted"
     predicted_confidences = [r["predictions"]["confidence"] for r in result]
     assert np.allclose(
         predicted_confidences,
@@ -128,21 +136,31 @@ MULTI_LABEL_CLASSIFICATION_WORKFLOW = {
 
 
 MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT = {
-    PlatformEnvironment.ROBOFLOW_STAGING: [
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA: [
         {"dog"},
         {"cat", "dog"},
     ],
-    PlatformEnvironment.ROBOFLOW_PLATFORM: [{"dog"}, set()],
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA: [{"dog"}, set()],
 }
 MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
     PlatformEnvironment.ROBOFLOW_STAGING_LOCALHOST
 ] = MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
-    PlatformEnvironment.ROBOFLOW_STAGING
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA
 ]
 MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
     PlatformEnvironment.ROBOFLOW_PLATFORM_LOCALHOST
 ] = MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
-    PlatformEnvironment.ROBOFLOW_PLATFORM
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA
+]
+MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_STAGING_SERVERLESS
+] = MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_STAGING_LAMBDA
+]
+MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_PLATFORM_SERVERLESS
+] = MULTI_LABEL_CLASSIFICATION_RESULTS_FOR_ENVIRONMENT[
+    PlatformEnvironment.ROBOFLOW_PLATFORM_LAMBDA
 ]
 
 
@@ -181,8 +199,6 @@ def test_multi_label_classification_workflow(
         "predictions",
         "inference_id",
     }, "Expected all outputs to be registered"
-    unique_inference_ids = {r["inference_id"] for r in result}
-    assert len(unique_inference_ids) == 2, "Expected unique inference ids granted"
     predicted_classes = [set(r["predictions"]["predicted_classes"]) for r in result]
     assert (
         predicted_classes

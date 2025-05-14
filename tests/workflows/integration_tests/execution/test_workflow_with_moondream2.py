@@ -26,7 +26,7 @@ MOONDREAM2_ZERO_SHOT_OBJECT_DETECTION_WORKFLOW_DEFINITION = {
             "type": "roboflow_core/moondream2@v1",
             "name": "model",
             "images": "$inputs.image",
-            "prompt": "dog"
+            "prompt": "dog",
         },
     ],
     "outputs": [
@@ -53,7 +53,8 @@ MOONDREAM2_ZERO_SHOT_OBJECT_DETECTION_WORKFLOW_DEFINITION = {
     workflow_definition=MOONDREAM2_ZERO_SHOT_OBJECT_DETECTION_WORKFLOW_DEFINITION,
 )
 @pytest.mark.skipif(
-    bool_env(os.getenv("SKIP_MOONDREAM2_TEST", False)), reason="Skipping Moondream 2 test"
+    bool_env(os.getenv("SKIP_MOONDREAM2_TEST", False)),
+    reason="Skipping Moondream 2 test",
 )
 @pytest.mark.parametrize("task_type", ["phrase-grounded-object-detection"])
 def test_moondream2_object_detection(
@@ -75,11 +76,7 @@ def test_moondream2_object_detection(
     )
 
     # when
-    result = execution_engine.run(
-        runtime_parameters={
-            "image": dogs_image
-        }
-    )
+    result = execution_engine.run(runtime_parameters={"image": dogs_image})
 
     assert isinstance(result, list), "Expected list to be delivered"
     assert len(result) == 1, "Expected 1 element in the output for one input image"

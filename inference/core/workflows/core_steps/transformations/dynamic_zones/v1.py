@@ -13,6 +13,7 @@ from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
 )
 from inference.core.workflows.execution_engine.entities.types import (
+    BOOLEAN_KIND,
     FLOAT_KIND,
     INSTANCE_SEGMENTATION_PREDICTION_KIND,
     INTEGER_KIND,
@@ -27,6 +28,7 @@ from inference.core.workflows.prototypes.block import (
 
 OUTPUT_KEY: str = "zones"
 OUTPUT_KEY_DETECTIONS: str = "predictions"
+OUTPUT_KEY_SIMPLIFICATION_CONVERGED: str = "simplification_converged"
 TYPE: str = "roboflow_core/dynamic_zone@v1"
 SHORT_DESCRIPTION = (
     "Simplify polygons so they are geometrically convex "
@@ -88,6 +90,9 @@ class DynamicZonesManifest(WorkflowBlockManifest):
             OutputDefinition(
                 name=OUTPUT_KEY_DETECTIONS, kind=[INSTANCE_SEGMENTATION_PREDICTION_KIND]
             ),
+            OutputDefinition(
+                name=OUTPUT_KEY_SIMPLIFICATION_CONVERGED, kind=[BOOLEAN_KIND]
+            ),
         ]
 
     @classmethod
@@ -97,7 +102,7 @@ class DynamicZonesManifest(WorkflowBlockManifest):
 
 def calculate_simplified_polygon(
     mask: np.ndarray, required_number_of_vertices: int, max_steps: int = 1000
-) -> np.array:
+) -> np.ndarray:
     contours = sv.mask_to_polygons(mask)
     largest_contour = max(contours, key=len)
 
@@ -172,6 +177,7 @@ class DynamicZonesBlockV1(WorkflowBlock):
             if detections.mask is None:
                 result.append({OUTPUT_KEY: []})
                 continue
+            all_converged = True
             for i, mask in enumerate(detections.mask):
                 # copy
                 updated_detection = detections[i]
@@ -180,28 +186,42 @@ class DynamicZonesBlockV1(WorkflowBlock):
                     mask=mask,
                     required_number_of_vertices=required_number_of_vertices,
                 )
+                vertices_count, _ = simplified_polygon.shape
+                if vertices_count < required_number_of_vertices:
+                    all_converged = False
+                    for _ in range(required_number_of_vertices - vertices_count):
+                        simplified_polygon = np.append(
+                            simplified_polygon,
+                            [simplified_polygon[-1]],
+                            axis=0,
+                        )
+                elif vertices_count > required_number_of_vertices:
+                    all_converged = False
+                    simplified_polygon = simplified_polygon[
+                        :required_number_of_vertices
+                    ]
                 updated_detection[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(
                     [simplified_polygon]
                 )
-                if len(simplified_polygon) == required_number_of_vertices:
-                    simplified_polygon = scale_polygon(
-                        polygon=simplified_polygon,
-                        scale=scale_ratio,
-                    )
-                    simplified_polygons.append(simplified_polygon)
-                    updated_detection.mask = np.array(
-                        [
-                            sv.polygon_to_mask(
-                                polygon=simplified_polygon,
-                                resolution_wh=mask.shape,
-                            )
-                        ]
-                    )
+                simplified_polygon = scale_polygon(
+                    polygon=simplified_polygon,
+                    scale=scale_ratio,
+                )
+                simplified_polygons.append(simplified_polygon)
+                updated_detection.mask = np.array(
+                    [
+                        sv.polygon_to_mask(
+                            polygon=simplified_polygon,
+                            resolution_wh=mask.shape[::-1],
+                        )
+                    ]
+                )
                 updated_detections.append(updated_detection)
             result.append(
                 {
                     OUTPUT_KEY: simplified_polygons,
                     OUTPUT_KEY_DETECTIONS: sv.Detections.merge(updated_detections),
+                    OUTPUT_KEY_SIMPLIFICATION_CONVERGED: all_converged,
                 }
             )
         return result

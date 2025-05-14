@@ -18,7 +18,7 @@ OVERLAP_WORKFLOW = {
             "type": "roboflow_core/roboflow_object_detection_model@v1",
             "name": "model",
             "images": "$inputs.image",
-            "model_id": "yolov8n-640"
+            "model_id": "yolov8n-640",
         },
         {
             "type": "roboflow_core/overlap@v1",
@@ -33,21 +33,21 @@ OVERLAP_WORKFLOW = {
             "predictions": "$steps.model.predictions",
             "overlap_class_name": "banana",
             "overlap_type": "Center Overlap",
-        }
+        },
     ],
     "outputs": [
         {
             "type": "JsonField",
             "name": "center_predictions",
             "coordinates_system": "own",
-            "selector": "$steps.center_overlap.overlaps"
+            "selector": "$steps.center_overlap.overlaps",
         },
         {
             "type": "JsonField",
             "name": "any_predictions",
             "coordinates_system": "own",
-            "selector": "$steps.any_overlap.overlaps"
-        }
+            "selector": "$steps.any_overlap.overlaps",
+        },
     ],
 }
 
@@ -63,6 +63,8 @@ Perspective correction is applied to the input image as well as to detected segm
     workflow_name_in_app="dynamic_zone_and_perspective_converter",
 )
 '''
+
+
 def test_workflow_with_overlap_all(
     model_manager: ModelManager,
     fruit_image: np.ndarray,
@@ -86,21 +88,20 @@ def test_workflow_with_overlap_all(
         }
     )
 
-    assert len(result)==1, "One set of images provided, so one output expected"
+    assert len(result) == 1, "One set of images provided, so one output expected"
 
     # if overlap_type is "Any Overlap", both the apples and orange will overlap the banana
-    any_redictions = result[0]["any_predictions"]    
-    assert len(any_redictions.class_id)==4
+    any_redictions = result[0]["any_predictions"]
+    assert len(any_redictions.class_id) == 4
     class_names = any_redictions.data["class_name"]
     assert "banana" not in class_names
     assert "apple" in class_names
     assert "orange" in class_names
 
     # if overlap_type is "Center Overlap" only the orange will overlap the banana
-    any_redictions = result[0]["center_predictions"]    
-    assert len(any_redictions.class_id)==1
+    any_redictions = result[0]["center_predictions"]
+    assert len(any_redictions.class_id) == 1
     class_names = any_redictions.data["class_name"]
     assert "banana" not in class_names
     assert "apple" not in class_names
     assert "orange" in class_names
-
