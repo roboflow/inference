@@ -1,0 +1,181 @@
+from typing import List, Tuple
+
+import torch
+import torchvision
+from torchvision.transforms import functional
+
+from inference.v1.entities import ImageDimensions
+from inference.v1.models.common.roboflow.model_packages import PreProcessingMetadata
+
+
+def run_nms_for_object_detection(
+    output: torch.Tensor,
+    conf_thresh: float = 0.25,
+    iou_thresh: float = 0.45,
+    max_detections: int = 100,
+    class_agnostic: bool = False,
+) -> List[torch.Tensor]:
+    bs = output.shape[0]
+    boxes = output[:, :4, :]  # (N, 4, 8400)
+    scores = output[:, 4:, :]  # (N, 80, 8400)
+    results = []
+    for b in range(bs):
+        # Combine transpose & max for efficiency
+        class_scores = scores[b]  # (80, 8400)
+        class_conf, class_ids = class_scores.max(0)  # (8400,), (8400,)
+        mask = class_conf > conf_thresh
+        if not torch.any(mask):
+            results.append(torch.zeros((0, 6), device=output.device))
+            continue
+        bboxes = boxes[b][:, mask].T  # (num, 4) -- selects and then transposes
+        class_conf = class_conf[mask]
+        class_ids = class_ids[mask]
+        # Vectorized [x, y, w, h] -> [x1, y1, x2, y2]
+        xy = bboxes[:, :2]
+        wh = bboxes[:, 2:]
+        half_wh = wh / 2
+        xyxy = torch.cat((xy - half_wh, xy + half_wh), 1)
+        # Class-agnostic NMS -> use dummy class ids
+        nms_class_ids = torch.zeros_like(class_ids) if class_agnostic else class_ids
+        # NMS and limiting max detections
+        keep = torchvision.ops.batched_nms(xyxy, class_conf, nms_class_ids, iou_thresh)
+        if keep.numel() > max_detections:
+            keep = keep[:max_detections]
+        detections = torch.cat(
+            (
+                xyxy[keep],
+                class_conf[keep, None],  # unsqueeze(1) is replaced with None
+                class_ids[keep, None].float(),
+            ),
+            1,
+        )  # [x1, y1, x2, y2, conf, cls]
+
+        results.append(detections)
+    return results
+
+
+def run_nms_for_instance_segmentation(
+    output: torch.Tensor,
+    conf_thresh: float = 0.25,
+    iou_thresh: float = 0.45,
+    max_detections: int = 100,
+    class_agnostic: bool = False,
+) -> List[torch.Tensor]:
+    bs = output.shape[0]
+    boxes = output[:, :4, :]  # (N, 4, 8400)
+    scores = output[:, 4:-32, :]  # (N, 80, 8400)
+    masks = output[:, -32:, :]
+    results = []
+
+    for b in range(bs):
+        bboxes = boxes[b].T  # (8400, 4)
+        class_scores = scores[b].T  # (8400, 80)
+        box_masks = masks[b].T
+        class_conf, class_ids = class_scores.max(1)  # (8400,), (8400,)
+        mask = class_conf > conf_thresh
+        if mask.sum() == 0:
+            results.append(torch.zeros((0, 38), device=output.device))
+            continue
+        bboxes = bboxes[mask]
+        class_conf = class_conf[mask]
+        class_ids = class_ids[mask]
+        box_masks = box_masks[mask]
+        # Convert [x, y, w, h] -> [x1, y1, x2, y2]
+        xyxy = torch.zeros_like(bboxes)
+        xyxy[:, 0] = bboxes[:, 0] - bboxes[:, 2] / 2  # x1
+        xyxy[:, 1] = bboxes[:, 1] - bboxes[:, 3] / 2  # y1
+        xyxy[:, 2] = bboxes[:, 0] + bboxes[:, 2] / 2  # x2
+        xyxy[:, 3] = bboxes[:, 1] + bboxes[:, 3] / 2  # y2
+        # Class-agnostic NMS -> use dummy class ids
+        nms_class_ids = torch.zeros_like(class_ids) if class_agnostic else class_ids
+        keep = torchvision.ops.batched_nms(xyxy, class_conf, nms_class_ids, iou_thresh)
+        keep = keep[:max_detections]
+        detections = torch.cat([
+            xyxy[keep],
+            class_conf[keep].unsqueeze(1),
+            class_ids[keep].unsqueeze(1).float(),
+            box_masks[keep]
+        ], dim=1)  # [x1, y1, x2, y2, conf, cls]
+        results.append(detections)
+    return results
+
+
+def rescale_detections(
+    detections: List[torch.Tensor], images_metadata: List[PreProcessingMetadata]
+) -> List[torch.Tensor]:
+    for image_detections, metadata in zip(detections, images_metadata):
+        offsets = torch.as_tensor(
+            [metadata.pad_left, metadata.pad_top, metadata.pad_left, metadata.pad_top],
+            dtype=image_detections.dtype,
+            device=image_detections.device,
+        )
+        image_detections[:, :4].sub_(offsets)  # in-place subtraction for speed/memory
+        scale = torch.as_tensor(
+            [
+                metadata.scale_width,
+                metadata.scale_height,
+                metadata.scale_width,
+                metadata.scale_height,
+            ],
+            dtype=image_detections.dtype,
+            device=image_detections.device,
+        )
+        image_detections[:, :4].div_(scale)
+    return detections
+
+
+def preprocess_segmentation_masks(
+    protos: torch.Tensor,
+    masks_in: torch.Tensor,
+    mask_threshold: float,
+) -> torch.Tensor:
+    masks_sum = torch.einsum('chw,nc->nhw', protos, masks_in)
+    masks_sigmoid = torch.sigmoid(masks_sum)
+    return masks_sigmoid > mask_threshold
+
+
+def crop_masks_to_boxes(
+    boxes: torch.Tensor,
+    masks: torch.Tensor,
+    scaling: float = 0.25,
+) -> torch.Tensor:
+    n, h, w = masks.shape
+    scaled_boxes = (boxes * scaling)
+    x1, y1, x2, y2 = scaled_boxes[:, 0][:, None, None], scaled_boxes[:, 1][:, None, None], \
+        scaled_boxes[:, 2][:, None, None], scaled_boxes[:, 3][:, None, None]
+    rows = torch.arange(w, device=masks.device)[None, None, :]  # shape: [1, 1, w]
+    cols = torch.arange(h, device=masks.device)[None, :, None]  # shape: [1, h, 1]
+    crop_mask = (rows >= x1) & (rows < x2) & (cols >= y1) & (cols < y2)
+    return masks * crop_mask
+
+
+def align_instance_segmentation_results(
+    image_bboxes: torch.Tensor,
+    masks: torch.Tensor,
+    padding: Tuple[int, int, int, int],
+    scale_width: float,
+    scale_height: float,
+    original_size: ImageDimensions,
+    inference_size: ImageDimensions,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    pad_left, pad_top, pad_right, pad_bottom = padding
+    offsets = torch.tensor(
+        [pad_left, pad_top, pad_left, pad_top],
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].sub_(offsets)
+    scale = torch.as_tensor(
+        [scale_width, scale_height, scale_width, scale_height],
+        dtype=image_bboxes.dtype,
+        device=image_bboxes.device,
+    )
+    image_bboxes[:, :4].div_(scale)
+    n, mh, mw = masks.shape
+    mask_h_scale = mh / inference_size.height
+    mask_w_scale = mw / inference_size.width
+    mask_pad_top, mask_pad_bottom, mask_pad_left, mask_pad_right = \
+        round(mask_h_scale * pad_top), round(mask_h_scale * pad_bottom), \
+        round(mask_w_scale * pad_left), round(mask_w_scale * pad_right)
+    masks = masks[:, mask_pad_top:mh-mask_pad_bottom, mask_pad_left:mw-mask_pad_right]
+    masks = functional.resize(masks, [original_size.height, original_size.width], interpolation=functional.InterpolationMode.BILINEAR)
+    return image_bboxes, masks

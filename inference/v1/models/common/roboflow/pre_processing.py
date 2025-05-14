@@ -102,6 +102,8 @@ def pre_process_images_tensor(
         metadata = PreProcessingMetadata(
             pad_left=0,
             pad_top=0,
+            pad_right=0,
+            pad_bottom=0,
             original_size=original_size,
             inference_size=pre_processing_config.target_size,
             scale_width=pre_processing_config.target_size.width / original_size.width,
@@ -144,13 +146,17 @@ def pre_process_images_tensor(
     final_batch[
         :, :, pad_top : pad_top + new_height, pad_left : pad_left + new_width
     ] = images
+    pad_right = pre_processing_config.target_size.width - pad_left - new_width
+    pad_bottom = pre_processing_config.target_size.height - pad_top - new_height
     metadata = PreProcessingMetadata(
         pad_left=pad_left,
         pad_top=pad_top,
+        pad_right=pad_right,
+        pad_bottom=pad_bottom,
         original_size=original_size,
         inference_size=pre_processing_config.target_size,
-        scale_width=new_width / original_size.width,
-        scale_height=new_height / original_size.height,
+        scale_width=scale,
+        scale_height=scale,
     )
     return (final_batch / normalization_constant).contiguous(), [
         metadata
@@ -202,6 +208,8 @@ def pre_process_images_tensor_list(
             image_metadata = PreProcessingMetadata(
                 pad_left=0,
                 pad_top=0,
+                pad_right=0,
+                pad_bottom=0,
                 original_size=original_size,
                 inference_size=pre_processing_config.target_size,
                 scale_width=pre_processing_config.target_size.width
@@ -253,13 +261,17 @@ def pre_process_images_tensor_list(
             final_batch[
                 i, :, pad_top_i : pad_top_i + new_h_i, pad_left_i : pad_left_i + new_w_i
             ] = resized_chw
+            pad_right = pre_processing_config.target_size.width - pad_left_i - new_w_i
+            pad_bottom = pre_processing_config.target_size.height - pad_top_i - new_h_i
             image_metadata = PreProcessingMetadata(
                 pad_left=pad_left_i,
                 pad_top=pad_top_i,
+                pad_right=pad_right,
+                pad_bottom=pad_bottom,
                 original_size=original_size,
                 inference_size=pre_processing_config.target_size,
-                scale_width=new_w_i / original_size.width,
-                scale_height=new_h_i / original_size.height,
+                scale_width=scales[i].item(),
+                scale_height=scales[i].item(),
             )
             images_metadata.append(image_metadata)
         return (final_batch / normalization_constant).contiguous(), images_metadata
@@ -325,6 +337,8 @@ def pre_process_numpy_image(
         image_metadata = PreProcessingMetadata(
             pad_left=0,
             pad_top=0,
+            pad_right=0,
+            pad_bottom=0,
             original_size=original_size,
             inference_size=pre_processing_config.target_size,
             scale_width=pre_processing_config.target_size.width / original_size.width,
@@ -359,13 +373,17 @@ def pre_process_numpy_image(
         ] = scaled_image_tensor
         if input_color_format != expected_network_color_format:
             final_batch = final_batch[:, [2, 1, 0], :, :]
+        pad_right = pre_processing_config.target_size.width - pad_left - new_width
+        pad_bottom = pre_processing_config.target_size.height - pad_top - new_height
         image_metadata = PreProcessingMetadata(
             pad_left=pad_left,
             pad_top=pad_top,
+            pad_right=pad_right,
+            pad_bottom=pad_bottom,
             original_size=original_size,
             inference_size=pre_processing_config.target_size,
-            scale_width=pre_processing_config.target_size.width / original_size.width,
-            scale_height=pre_processing_config.target_size.height / original_size.height,
+            scale_width=scale,
+            scale_height=scale,
         )
         return final_batch.contiguous(), [image_metadata]
     raise ModelRuntimeError(

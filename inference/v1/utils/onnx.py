@@ -68,7 +68,6 @@ def run_session_via_iobinding(
         shape=input_data.shape,
         buffer_ptr=input_data.data_ptr(),
     )
-
     binding.synchronize_inputs()
     session.run_with_iobinding(binding)
     return [torch.from_numpy(prediction).float() for prediction in predictions]

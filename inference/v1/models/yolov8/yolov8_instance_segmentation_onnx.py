@@ -1,15 +1,16 @@
 from threading import Lock
-from typing import Any, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import onnxruntime
 import torch
 
-from inference.v1 import Detections, ObjectDetectionModel
+from inference.v1 import InstanceSegmentationModel, InstanceDetections
 from inference.v1.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference.v1.entities import ColorFormat
 from inference.v1.errors import EnvironmentConfigurationError
-from inference.v1.models.common.post_processing import run_nms_for_object_detection, rescale_detections
+from inference.v1.models.common.post_processing import preprocess_segmentation_masks, \
+    crop_masks_to_boxes, align_instance_segmentation_results, run_nms_for_instance_segmentation
 from inference.v1.models.common.roboflow.pre_processing import pre_process_network_input
 from inference.v1.models.common.roboflow.model_packages import parse_class_names_file, PreProcessingConfig, \
     PreProcessingMetadata, parse_pre_processing_config
@@ -20,7 +21,9 @@ from inference.v1.utils.onnx import (
 )
 
 
-class YOLOv8ForObjectDetectionOnnx(ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]):
+class YOLOv8ForInstanceSegmentationOnnx(
+    InstanceSegmentationModel[torch.Tensor, PreProcessingMetadata, Tuple[torch.Tensor, torch.Tensor]]
+):
 
     @classmethod
     def from_pretrained(
@@ -30,7 +33,7 @@ class YOLOv8ForObjectDetectionOnnx(ObjectDetectionModel[torch.Tensor, PreProcess
         default_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "YOLOv8ForObjectDetectionOnnx":
+    ) -> "YOLOv8ForInstanceSegmentationOnnx":
         if execution_providers is None:
             execution_providers = ONNXRUNTIME_EXECUTION_PROVIDERS
         if not ONNXRUNTIME_EXECUTION_PROVIDERS:
@@ -108,51 +111,66 @@ class YOLOv8ForObjectDetectionOnnx(ObjectDetectionModel[torch.Tensor, PreProcess
             input_color_format=input_color_format,
         )
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
             if self._input_batch_size is None:
-                return run_session_via_iobinding(
+                instances, protos = run_session_via_iobinding(
                     session=self._session, input_name="images", inputs=pre_processed_images
-                )[0]
-            results = []
+                )
+                return instances, protos
+            instances, protos = [], []
             for i in range(0, pre_processed_images.shape[0], self._input_batch_size):
                 batch_input = pre_processed_images[
                     i : i + self._input_batch_size
                 ].contiguous()
-                batch_results = run_session_via_iobinding(
+                batch_instances, batch_protos = run_session_via_iobinding(
                     session=self._session, input_name="images", inputs=batch_input
-                )[0]
-                results.append(batch_results)
-            return torch.cat(results, dim=0)
+                )
+                instances.append(batch_instances)
+                protos.append(batch_protos)
+            return torch.cat(instances, dim=0), torch.cat(protos, dim=0)
 
     def post_process(
         self,
-        model_results: torch.Tensor,
+        model_results: Tuple[torch.Tensor, torch.Tensor],
         pre_processing_meta: List[PreProcessingMetadata],
         conf_thresh: float = 0.25,
         iou_thresh: float = 0.45,
         max_detections: int = 100,
+        mask_threshold: float = 0.5,
         class_agnostic: bool = False,
         **kwargs,
-    ) -> List[Detections]:
-        nms_results = run_nms_for_object_detection(
-            output=model_results,
+    ) -> List[InstanceDetections]:
+        instances, protos = model_results
+        nms_results = run_nms_for_instance_segmentation(
+            output=instances,
             conf_thresh=conf_thresh,
             iou_thresh=iou_thresh,
             max_detections=max_detections,
             class_agnostic=class_agnostic,
         )
-        rescaled_results = rescale_detections(
-            detections=nms_results,
-            images_metadata=pre_processing_meta,
-        )
-        results = []
-        for result in rescaled_results:
-            results.append(
-                Detections(
-                    xyxy=result[:, :4],
-                    class_id=result[:, 5].int(),
-                    confidence=result[:, 4],
-                )
+        final_results = []
+        for image_bboxes, image_protos, image_meta in zip(nms_results, protos, pre_processing_meta):
+            pre_processed_masks = preprocess_segmentation_masks(
+                protos=image_protos,
+                masks_in=image_bboxes[:, 6:],
+                mask_threshold=mask_threshold,
             )
-        return results
+            cropped_masks = crop_masks_to_boxes(image_bboxes[:, :4], pre_processed_masks)
+            padding = image_meta.pad_left, image_meta.pad_top, image_meta.pad_right, image_meta.pad_bottom
+            aligned_boxes, aligned_masks = align_instance_segmentation_results(
+                image_bboxes=image_bboxes,
+                masks=cropped_masks,
+                padding=padding,
+                scale_height=image_meta.scale_height,
+                scale_width=image_meta.scale_width,
+                original_size=image_meta.original_size,
+                inference_size=image_meta.inference_size,
+            )
+            final_results.append(InstanceDetections(
+                xyxy=aligned_boxes[:, :4],
+                class_id=aligned_boxes[:, 5].int(),
+                confidence=aligned_boxes[:, 4],
+                mask=aligned_masks,
+            ))
+        return final_results

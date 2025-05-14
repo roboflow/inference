@@ -22,7 +22,7 @@ CONFIG_FOR_MODEL_TYPE = {
 }
 
 
-class RFDetrForObjectDetectionTorch(ObjectDetectionModel):
+class RFDetrForObjectDetectionTorch((ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor])):
 
     @classmethod
     def from_pretrained(
@@ -96,7 +96,7 @@ class RFDetrForObjectDetectionTorch(ObjectDetectionModel):
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: ColorFormat = "bgr",
         **kwargs,
-    ) -> Tuple[torch.Tensor, Any]:
+    ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
             images=images,
             pre_processing_config=self._pre_processing_config,
@@ -106,8 +106,7 @@ class RFDetrForObjectDetectionTorch(ObjectDetectionModel):
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        with torch.inference_mode():
-            return self._model(pre_processed_images)
+        return self._model(pre_processed_images)
 
     def post_process(
         self,
@@ -136,7 +135,7 @@ class RFDetrForObjectDetectionTorch(ObjectDetectionModel):
             detections = Detections(
                 xyxy=boxes,
                 confidence=scores,
-                class_ids=labels,
+                class_id=labels,
             )
             detections_list.append(detections)
         return detections_list

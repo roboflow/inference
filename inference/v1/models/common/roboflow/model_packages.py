@@ -43,6 +43,8 @@ PreProcessingMetadata = namedtuple(
     [
         "pad_left",
         "pad_top",
+        "pad_right",
+        "pad_bottom",
         "original_size",
         "inference_size",
         "scale_width",
