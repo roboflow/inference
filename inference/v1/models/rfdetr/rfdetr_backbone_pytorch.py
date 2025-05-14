@@ -9,8 +9,10 @@ import torch.nn.functional as F
 from transformers import AutoBackbone
 import types
 
-from inference.v1.models.rfdetr.dinov2_with_windowed_attn import WindowedDinov2WithRegistersConfig, \
-    WindowedDinov2WithRegistersBackbone
+from inference.v1.models.rfdetr.dinov2_with_windowed_attn import (
+    WindowedDinov2WithRegistersConfig,
+    WindowedDinov2WithRegistersBackbone,
+)
 from inference.v1.models.rfdetr.misc import NestedTensor
 from inference.v1.models.rfdetr.projector import MultiScaleProjector
 
@@ -35,29 +37,49 @@ size_to_config_with_registers = {
 
 
 def get_config(size, use_registers):
+    cache_key = (size, use_registers)
+    if cache_key in _config_cache:
+        return _config_cache[cache_key]
+
     config_dict = size_to_config_with_registers if use_registers else size_to_config
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    configs_dir = os.path.join(current_dir, "dinov2_configs")
-    config_path = os.path.join(configs_dir, config_dict[size])
+    config_file = config_dict[size]
+    config_path = os.path.join(_configs_dir, config_file)
     with open(config_path, "r") as f:
         dino_config = json.load(f)
+    _config_cache[cache_key] = dino_config
     return dino_config
 
 
 class DinoV2(nn.Module):
-    def __init__(self, shape=(640, 640), out_feature_indexes=[2, 4, 5, 9], size="base", use_registers=True,
-                 use_windowed_attn=True, gradient_checkpointing=False, load_dinov2_weights=True):
+    def __init__(
+        self,
+        shape=(640, 640),
+        out_feature_indexes=[2, 4, 5, 9],
+        size="base",
+        use_registers=True,
+        use_windowed_attn=True,
+        gradient_checkpointing=False,
+        load_dinov2_weights=True,
+    ):
         super().__init__()
 
-        name = f"facebook/dinov2-with-registers-{size}" if use_registers else f"facebook/dinov2-{size}"
+        name = (
+            f"facebook/dinov2-with-registers-{size}"
+            if use_registers
+            else f"facebook/dinov2-{size}"
+        )
 
         self.shape = shape
 
         # Create the encoder
 
         if not use_windowed_attn:
-            assert not gradient_checkpointing, "Gradient checkpointing is not supported for non-windowed attention"
-            assert load_dinov2_weights, "Using non-windowed attention requires loading dinov2 weights from hub"
+            assert (
+                not gradient_checkpointing
+            ), "Gradient checkpointing is not supported for non-windowed attention"
+            assert (
+                load_dinov2_weights
+            ), "Using non-windowed attention requires loading dinov2 weights from hub"
             self.encoder = AutoBackbone.from_pretrained(
                 name,
                 out_features=[f"stage{i}" for i in out_feature_indexes],
@@ -88,10 +110,14 @@ class DinoV2(nn.Module):
                     num_register_tokens=0,
                     gradient_checkpointing=gradient_checkpointing,
                 )
-            self.encoder = WindowedDinov2WithRegistersBackbone.from_pretrained(
-                name,
-                config=windowed_dino_config,
-            ) if load_dinov2_weights else WindowedDinov2WithRegistersBackbone(windowed_dino_config)
+            self.encoder = (
+                WindowedDinov2WithRegistersBackbone.from_pretrained(
+                    name,
+                    config=windowed_dino_config,
+                )
+                if load_dinov2_weights
+                else WindowedDinov2WithRegistersBackbone(windowed_dino_config)
+            )
 
         self._out_feature_channels = [size_to_width[size]] * len(out_feature_indexes)
         self._export = False
@@ -103,7 +129,7 @@ class DinoV2(nn.Module):
         shape = self.shape
 
         def make_new_interpolated_pos_encoding(
-                position_embeddings, patch_size, height, width
+            position_embeddings, patch_size, height, width
         ):
 
             num_positions = position_embeddings.shape[1] - 1
@@ -154,13 +180,13 @@ class DinoV2(nn.Module):
 
         self.encoder.embeddings.position_embeddings = nn.Parameter(new_positions)
         self.encoder.embeddings.interpolate_pos_encoding = types.MethodType(
-            new_interpolate_pos_encoding,
-            self.encoder.embeddings
+            new_interpolate_pos_encoding, self.encoder.embeddings
         )
 
     def forward(self, x):
-        assert x.shape[2] % 14 == 0 and x.shape[
-            3] % 14 == 0, f"Dinov2 requires input shape to be divisible by 14, but got {x.shape}"
+        assert (
+            x.shape[2] % 14 == 0 and x.shape[3] % 14 == 0
+        ), f"Dinov2 requires input shape to be divisible by 14, but got {x.shape}"
         x = self.encoder(x)
         return list(x[0])
 
@@ -169,29 +195,31 @@ class BackboneBase(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def get_named_param_lr_pairs(self, args, prefix:str):
+    def get_named_param_lr_pairs(self, args, prefix: str):
         raise NotImplementedError
 
 
 class Backbone(BackboneBase):
     """backbone."""
-    def __init__(self,
-                 name: str,
-                 pretrained_encoder: str=None,
-                 window_block_indexes: list=None,
-                 drop_path=0.0,
-                 out_channels=256,
-                 out_feature_indexes: list=None,
-                 projector_scale: list=None,
-                 use_cls_token: bool = False,
-                 freeze_encoder: bool = False,
-                 layer_norm: bool = False,
-                 target_shape: tuple[int, int] = (640, 640),
-                 rms_norm: bool = False,
-                 backbone_lora: bool = False,
-                 gradient_checkpointing: bool = False,
-                 load_dinov2_weights: bool = True,
-                 ):
+
+    def __init__(
+        self,
+        name: str,
+        pretrained_encoder: str = None,
+        window_block_indexes: list = None,
+        drop_path=0.0,
+        out_channels=256,
+        out_feature_indexes: list = None,
+        projector_scale: list = None,
+        use_cls_token: bool = False,
+        freeze_encoder: bool = False,
+        layer_norm: bool = False,
+        target_shape: tuple[int, int] = (640, 640),
+        rms_norm: bool = False,
+        backbone_lora: bool = False,
+        gradient_checkpointing: bool = False,
+        load_dinov2_weights: bool = True,
+    ):
         super().__init__()
         # an example name here would be "dinov2_base" or "dinov2_registers_windowed_base"
         # if "registers" is in the name, then use_registers is set to True, otherwise it is set to False
@@ -209,7 +237,9 @@ class Backbone(BackboneBase):
         if "windowed" in name_parts:
             use_windowed_attn = True
             name_parts.remove("windowed")
-        assert len(name_parts) == 2, "name should be dinov2, then either registers, windowed, both, or none, then the size"
+        assert (
+            len(name_parts) == 2
+        ), "name should be dinov2, then either registers, windowed, both, or none, then the size"
         self.encoder = DinoV2(
             size=name_parts[-1],
             out_feature_indexes=out_feature_indexes,
@@ -326,6 +356,7 @@ def get_dinov2_lr_decay_rate(name, lr_decay_rate=1.0, num_layers=12):
             layer_id = int(name[name.find(".layer.") :].split(".")[2]) + 1
     return lr_decay_rate ** (num_layers + 1 - layer_id)
 
+
 def get_dinov2_weight_decay_rate(name, weight_decay_rate=1.0):
     if (
         ("gamma" in name)
@@ -337,3 +368,10 @@ def get_dinov2_weight_decay_rate(name, weight_decay_rate=1.0):
     ):
         weight_decay_rate = 0.0
     return weight_decay_rate
+
+
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+
+_configs_dir = os.path.join(_current_dir, "dinov2_configs")
+
+_config_cache = {}
