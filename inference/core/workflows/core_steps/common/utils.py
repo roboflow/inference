@@ -356,63 +356,97 @@ def scale_sv_detections(
     scale: float,
     keypoints_key: str = KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
 ) -> sv.Detections:
-    detections_copy = deepcopy(detections)
-    if len(detections_copy) == 0:
-        return detections_copy
-    detections_copy.xyxy = (detections_copy.xyxy * scale).round()
-    if keypoints_key in detections_copy.data:
-        for i in range(len(detections_copy[keypoints_key])):
-            detections_copy[keypoints_key][i] = (
-                detections_copy[keypoints_key][i].astype(np.float32) * scale
-            ).round()
-    detections_copy[IMAGE_DIMENSIONS_KEY] = (
-        detections_copy[IMAGE_DIMENSIONS_KEY] * scale
-    ).round()
-    if detections_copy.mask is not None:
-        scaled_masks = []
-        original_mask_size_wh = (
-            detections_copy.mask.shape[2],
-            detections_copy.mask.shape[1],
+    # Only copy fields that are mutated, do not deepcopy entire object
+    if len(detections) == 0:
+        # No detections, just return a (shallow) copy
+        return detections.__class__(**detections.__dict__)
+
+    # Create a new Detections object without using deepcopy
+    det = detections
+    det_class = detections.__class__
+    new_det = det_class(**det.__dict__)  # Shallow
+    # Now, copy only things we'll mutate
+
+    new_det.xyxy = (det.xyxy * scale).round()
+
+    # Scale keypoints if present and mutate in place
+    if keypoints_key in det.data:
+        kp = det[keypoints_key]
+        if isinstance(kp, np.ndarray):
+            new_det[keypoints_key] = (kp.astype(np.float32) * scale).round()
+        else:
+            # fallback: list of numpy arrays
+            new_det[keypoints_key] = [
+                (item.astype(np.float32) * scale).round() for item in kp
+            ]
+
+    # Scale image dimensions
+    new_det[IMAGE_DIMENSIONS_KEY] = (det[IMAGE_DIMENSIONS_KEY] * scale).round()
+
+    # Scale masks
+    if det.mask is not None:
+        mask = det.mask
+        n = mask.shape[0]
+        original_mask_size_wh = (mask.shape[2], mask.shape[1])
+        scaled_mask_size_wh = (
+            int(round(original_mask_size_wh[0] * scale)),
+            int(round(original_mask_size_wh[1] * scale)),
         )
-        scaled_mask_size_wh = round(original_mask_size_wh[0] * scale), round(
-            original_mask_size_wh[1] * scale
+        # Pre-allocate output for masks
+        scaled_masks = np.empty(
+            (n, scaled_mask_size_wh[1], scaled_mask_size_wh[0]), dtype=bool
         )
-        for detection_mask in detections_copy.mask:
-            polygons = sv.mask_to_polygons(mask=detection_mask)
-            polygon_masks = []
-            for polygon in polygons:
-                scaled_polygon = (polygon * scale).round().astype(np.int32)
-                polygon_masks.append(
+        for i in range(n):
+            polygons = sv.mask_to_polygons(mask=mask[i])
+            if polygons:
+                polygon_masks = [
                     sv.polygon_to_mask(
-                        polygon=scaled_polygon, resolution_wh=scaled_mask_size_wh
+                        polygon=(polygon * scale).round().astype(np.int32),
+                        resolution_wh=scaled_mask_size_wh,
                     )
+                    for polygon in polygons
+                ]
+                scaled_masks[i] = np.any(polygon_masks, axis=0)
+            else:
+                scaled_masks[i] = np.zeros(
+                    (scaled_mask_size_wh[1], scaled_mask_size_wh[0]), dtype=bool
                 )
-            scaled_detection_mask = np.sum(polygon_masks, axis=0) > 0
-            scaled_masks.append(scaled_detection_mask)
-        detections_copy.mask = np.array(scaled_masks)
-    if POLYGON_KEY_IN_SV_DETECTIONS in detections_copy.data:
-        scaled_polygons = []
-        for polygon in detections_copy[POLYGON_KEY_IN_SV_DETECTIONS]:
-            scaled_polygon = (polygon * scale).round().astype(np.int32)
-            scaled_polygons.append(scaled_polygon)
-        detections_copy[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(scaled_polygons)
-    if SCALING_RELATIVE_TO_PARENT_KEY in detections_copy.data:
-        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = (
-            detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] * scale
+        new_det.mask = scaled_masks
+
+    # Scale polygons in vectorized fashion
+    if POLYGON_KEY_IN_SV_DETECTIONS in det.data:
+        polygons = det[POLYGON_KEY_IN_SV_DETECTIONS]
+        # Accepts list or array
+        if isinstance(polygons, np.ndarray):
+            new_det[POLYGON_KEY_IN_SV_DETECTIONS] = (
+                (polygons * scale).round().astype(np.int32)
+            )
+        else:
+            new_det[POLYGON_KEY_IN_SV_DETECTIONS] = np.array(
+                [(polygon * scale).round().astype(np.int32) for polygon in polygons]
+            )
+
+    # Scale or create scaling-relative keys (avoid unnecessary arrays)
+    n_det = len(det)
+    if SCALING_RELATIVE_TO_PARENT_KEY in det.data:
+        new_det[SCALING_RELATIVE_TO_PARENT_KEY] = (
+            det[SCALING_RELATIVE_TO_PARENT_KEY] * scale
         )
     else:
-        detections_copy[SCALING_RELATIVE_TO_PARENT_KEY] = np.array(
-            [scale] * len(detections_copy)
+        new_det[SCALING_RELATIVE_TO_PARENT_KEY] = np.full(
+            n_det, scale, dtype=np.float32
         )
-    if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in detections_copy.data:
-        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
-            detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale
+
+    if SCALING_RELATIVE_TO_ROOT_PARENT_KEY in det.data:
+        new_det[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = (
+            det[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] * scale
         )
     else:
-        detections_copy[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.array(
-            [scale] * len(detections_copy)
+        new_det[SCALING_RELATIVE_TO_ROOT_PARENT_KEY] = np.full(
+            n_det, scale, dtype=np.float32
         )
-    return detections_copy
+
+    return new_det
 
 
 def remove_unexpected_keys_from_dictionary(
