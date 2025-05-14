@@ -58,21 +58,27 @@ def rescale_detections(
     detections: List[torch.Tensor], images_metadata: List[PreProcessingMetadata]
 ) -> List[torch.Tensor]:
     for image_detections, metadata in zip(detections, images_metadata):
-        offsets = torch.as_tensor(
-            [metadata.pad_left, metadata.pad_top, metadata.pad_left, metadata.pad_top],
-            dtype=image_detections.dtype,
-            device=image_detections.device,
+        # Extract reference dtype and device
+        dtype = image_detections.dtype
+        device = image_detections.device
+
+        # Create the offsets and scaling tensors once per image
+        pad_left = metadata.pad_left
+        pad_top = metadata.pad_top
+        scale_width = metadata.scale_width
+        scale_height = metadata.scale_height
+
+        # Use tensor construction directly, avoid as_tensor overhead
+        offsets = torch.tensor(
+            [pad_left, pad_top, pad_left, pad_top], dtype=dtype, device=device
         )
-        image_detections[:, :4].sub_(offsets)  # in-place subtraction for speed/memory
-        scale = torch.as_tensor(
-            [
-                metadata.scale_width,
-                metadata.scale_height,
-                metadata.scale_width,
-                metadata.scale_height,
-            ],
-            dtype=image_detections.dtype,
-            device=image_detections.device,
+        scales = torch.tensor(
+            [scale_width, scale_height, scale_width, scale_height],
+            dtype=dtype,
+            device=device,
         )
-        image_detections[:, :4].div_(scale)
+        # Use variable for detections slice to avoid repeated indexing
+        image_detections_4 = image_detections[:, :4]
+        image_detections_4.sub_(offsets)
+        image_detections_4.div_(scales)
     return detections
