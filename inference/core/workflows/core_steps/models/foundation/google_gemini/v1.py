@@ -173,7 +173,14 @@ class BlockManifest(WorkflowBlockManifest):
     )
     model_version: Union[
         Selector(kind=[STRING_KIND]),
-        Literal["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.5-pro-preview-05-06", "gemini-2.0-flash-lite"],
+        Literal[
+            "gemini-2.0-flash-exp",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
+            "gemini-2.0-flash",
+            "gemini-2.5-pro-preview-05-06",
+            "gemini-2.0-flash-lite",
+        ],
     ] = Field(
         default="gemini-2.0-flash",
         description="Model to be used",
