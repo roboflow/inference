@@ -131,7 +131,6 @@ def test_workflow_with_ocr_prompt(
     model_manager: ModelManager,
     license_plate_image: np.ndarray,
 ) -> None:
-    # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
@@ -142,7 +141,6 @@ def test_workflow_with_ocr_prompt(
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
 
-    # when
     result = execution_engine.run(
         runtime_parameters={
             "image": [license_plate_image],
@@ -150,7 +148,6 @@ def test_workflow_with_ocr_prompt(
         }
     )
 
-    # then
     assert len(result) == 1, "Single image given, expected single output"
     assert set(result[0].keys()) == {"result"}, "Expected all outputs to be delivered"
     assert (
