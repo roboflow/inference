@@ -116,3 +116,39 @@ def parse_model_characteristics(config_path: str) -> ModelCharacteristics:
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs."
         )
+
+
+def parse_key_points_metadata(key_points_metadata_path: str) -> List[List[str]]:
+    try:
+        with open(key_points_metadata_path) as f:
+            parsed_config = json.load(f)
+            if not isinstance(parsed_config, list):
+                raise ValueError("config should contain list of key points descriptions for each instance")
+            result: List[Optional[List[str]]] = [None] * len(parsed_config)
+            for instance_key_point_description in parsed_config:
+                if "object_class_id" not in instance_key_point_description:
+                    raise ValueError("instance key point description lack 'object_class_id' key")
+                object_class_id: int = instance_key_point_description["object_class_id"]
+                if not 0 <= object_class_id <= len(result):
+                    raise ValueError("`object_class_id` field point invalid class")
+                result[object_class_id] = _retrieve_key_points_names(
+                    instance_key_point_description=instance_key_point_description,
+                )
+            if any(e is None for e in result):
+                raise ValueError("config does not provide metadata describing each instance key points")
+            return result
+    except (IOError, OSError, ValueError) as error:
+        raise CorruptedModelPackageError(
+            f"Key points config file located under path {key_points_metadata_path} is malformed: "
+            f"{error}. In case that the package is "
+            f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
+            f"verify its consistency in docs."
+        )
+
+
+def _retrieve_key_points_names(instance_key_point_description: dict) -> List[str]:
+    key_points_dump = sorted(
+        [(int(k), v) for k, v in instance_key_point_description["keypoints"]],
+        key=lambda e: e[0]
+    )
+    return [e[1] for e in key_points_dump]

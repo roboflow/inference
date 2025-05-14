@@ -100,6 +100,55 @@ def run_nms_for_instance_segmentation(
     return results
 
 
+def run_nms_for_key_points_detection(
+    output: torch.Tensor,
+    num_classes: int,
+    conf_thresh: float = 0.25,
+    iou_thresh: float = 0.45,
+    max_detections: int = 100,
+    class_agnostic: bool = False,
+) -> List[torch.Tensor]:
+    bs = output.shape[0]
+    boxes = output[:, :4, :]
+    scores = output[:, 4:4+num_classes, :]
+    key_points = output[:, 4+num_classes:, :]
+    results = []
+    for b in range(bs):
+        # Combine transpose & max for efficiency
+        class_scores = scores[b]  # (80, 8400)
+        class_conf, class_ids = class_scores.max(0)  # (8400,), (8400,)
+        mask = class_conf > conf_thresh
+        if not torch.any(mask):
+            results.append(torch.zeros((0, 6), device=output.device))
+            continue
+        bboxes = boxes[b][:, mask].T  # (num, 4) -- selects and then transposes
+        class_conf = class_conf[mask]
+        class_ids = class_ids[mask]
+        # Vectorized [x, y, w, h] -> [x1, y1, x2, y2]
+        xy = bboxes[:, :2]
+        wh = bboxes[:, 2:]
+        half_wh = wh / 2
+        xyxy = torch.cat((xy - half_wh, xy + half_wh), 1)
+        # Class-agnostic NMS -> use dummy class ids
+        nms_class_ids = torch.zeros_like(class_ids) if class_agnostic else class_ids
+        # NMS and limiting max detections
+        keep = torchvision.ops.batched_nms(xyxy, class_conf, nms_class_ids, iou_thresh)
+        if keep.numel() > max_detections:
+            keep = keep[:max_detections]
+        detections = torch.cat(
+            (
+                xyxy[keep],
+                class_conf[keep, None],  # unsqueeze(1) is replaced with None
+                class_ids[keep, None].float(),
+                key_points[keep]
+            ),
+            1,
+        )  # [x1, y1, x2, y2, conf, cls, keypoints....]
+
+        results.append(detections)
+    return results
+
+
 def rescale_detections(
     detections: List[torch.Tensor], images_metadata: List[PreProcessingMetadata]
 ) -> List[torch.Tensor]:
