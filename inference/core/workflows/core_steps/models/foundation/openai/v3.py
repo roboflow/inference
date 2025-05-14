@@ -8,7 +8,10 @@ from openai import OpenAI
 from openai._types import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
 
-from inference.core.env import WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS, API_BASE_URL
+from inference.core.env import (
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
+    API_BASE_URL,
+)
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
@@ -81,7 +84,6 @@ TASKS_REQUIRING_CLASSES = {
 TASKS_REQUIRING_OUTPUT_STRUCTURE = {
     "structured-answering",
 }
-
 
 
 class BlockManifest(WorkflowBlockManifest):
@@ -329,7 +331,7 @@ def run_gpt_4v_llm_prompting(
 
 
 def execute_gpt_4v_requests(
-    roboflow_api_key:str,
+    roboflow_api_key: str,
     openai_api_key: str,
     gpt4_prompts: List[List[dict]],
     gpt_model_version: str,
@@ -368,6 +370,7 @@ def _execute_proxied_openai_request(
     temperature: Optional[float],
 ) -> str:
     """Executes OpenAI request via Roboflow proxy."""
+    # Build payload and endpoint outside error handling.
     payload = {
         "model": gpt_model_version,
         "messages": prompt,
@@ -377,14 +380,17 @@ def _execute_proxied_openai_request(
     if temperature is not None:
         payload["temperature"] = temperature
 
+    endpoint = f"{API_BASE_URL}/apiproxy/openai?api_key={roboflow_api_key}"
+
     try:
-        endpoint = f"{API_BASE_URL}/apiproxy/openai?api_key={roboflow_api_key}"
         response = requests.post(endpoint, json=payload)
         response.raise_for_status()
-        response_data = response.json()
-        return response_data["choices"][0]["message"]["content"]
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Failed to connect to Roboflow proxy: {e}") from e
+
+    try:
+        response_data = response.json()
+        return response_data["choices"][0]["message"]["content"]
     except (KeyError, IndexError) as e:
         raise RuntimeError(
             f"Invalid response structure from Roboflow proxy: {e} - Response: {response.text}"
@@ -399,9 +405,12 @@ def _execute_openai_request(
     temperature: Optional[float],
 ) -> str:
     """Executes OpenAI request directly."""
+    # Use NOT_GIVEN only if needed, right away.
     temp_value = temperature if temperature is not None else NOT_GIVEN
+
     try:
-        client = OpenAI(api_key=openai_api_key)
+        client = _get_openai_client(openai_api_key)
+        # Required params tight together
         response = client.chat.completions.create(
             model=gpt_model_version,
             messages=prompt,
@@ -410,6 +419,7 @@ def _execute_openai_request(
         )
         return response.choices[0].message.content
     except Exception as e:
+        # Don't do any extra logic except what is necessary.
         raise RuntimeError(f"OpenAI API request failed: {e}") from e
 
 
@@ -421,9 +431,8 @@ def execute_gpt_4v_request(
     max_tokens: int,
     temperature: Optional[float],
 ) -> str:
-    if openai_api_key.startswith("rf_key:account") or openai_api_key.startswith(
-        "rf_key:user:"
-    ):
+    # Tuple-of-prefixes is faster for multiple startswith checks
+    if openai_api_key.startswith(("rf_key:account", "rf_key:user:")):
         return _execute_proxied_openai_request(
             roboflow_api_key=roboflow_api_key,
             openai_api_key=openai_api_key,
@@ -641,6 +650,14 @@ def prepare_structured_answering_prompt(
     ]
 
 
+def _get_openai_client(api_key: str):
+    client = _openai_client_cache.get(api_key)
+    if client is None:
+        client = OpenAI(api_key=api_key)
+        _openai_client_cache[api_key] = client
+    return client
+
+
 PROMPT_BUILDERS = {
     "unconstrained": prepare_unconstrained_prompt,
     "ocr": prepare_ocr_prompt,
@@ -651,3 +668,5 @@ PROMPT_BUILDERS = {
     "multi-label-classification": prepare_multi_label_classification_prompt,
     "structured-answering": prepare_structured_answering_prompt,
 }
+
+_openai_client_cache = {}
