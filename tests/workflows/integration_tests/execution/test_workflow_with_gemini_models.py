@@ -971,10 +971,7 @@ def test_workflow_with_different_gemini_versions(
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
     
-    # Test each model version
     for version in model_versions:
-        print(version)
-        # when
         result = execution_engine.run(
             runtime_parameters={
                 "image": [license_plate_image],
@@ -983,15 +980,12 @@ def test_workflow_with_different_gemini_versions(
             }
         )
         
-        # then
         assert len(result) == 1, f"Single image given, expected single output for version {version}"
         assert set(result[0].keys()) == {"result"}, f"Expected output key 'result' for version {version}"
         assert (
             isinstance(result[0]["result"], str) and len(result[0]["result"]) > 0
         ), f"Expected non-empty string generated for version {version}"
         
-        print(f"Successfully tested model version: {version}")
-
 @add_to_workflows_gallery(
     category="Workflows with Visual Language Models",
     use_case_title="Using Google's Gemini as secondary classifier",
