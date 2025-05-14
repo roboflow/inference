@@ -61,7 +61,6 @@ def test_workflow_with_unconstrained_prompt(
     dogs_image: np.ndarray,
     license_plate_image: np.ndarray,
 ) -> None:
-    # given
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
         "workflows_core.step_execution_mode": StepExecutionMode.LOCAL,
@@ -71,8 +70,6 @@ def test_workflow_with_unconstrained_prompt(
         init_parameters=workflow_init_parameters,
         max_concurrent_steps=WORKFLOWS_MAX_CONCURRENT_STEPS,
     )
-
-    # when
     result = execution_engine.run(
         runtime_parameters={
             "image": [dogs_image, license_plate_image],
@@ -81,7 +78,6 @@ def test_workflow_with_unconstrained_prompt(
         }
     )
 
-    # then
     assert len(result) == 2, "Single image given, expected single output"
     assert set(result[0].keys()) == {"result"}, "Expected all outputs to be delivered"
     assert set(result[1].keys()) == {"result"}, "Expected all outputs to be delivered"
