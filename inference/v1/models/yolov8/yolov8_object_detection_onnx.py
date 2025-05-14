@@ -1,6 +1,7 @@
 from threading import Lock
 from typing import Any, List, Optional, Tuple, Union
 
+import numpy as np
 import onnxruntime
 import torch
 
@@ -9,15 +10,12 @@ from inference.v1.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PRO
 from inference.v1.entities import ColorFormat
 from inference.v1.errors import EnvironmentConfigurationError
 from inference.v1.models.yolov8.common import (
-    PreProcessingConfig,
-    PreProcessingMetadata,
-    parse_class_names_file,
-    parse_pre_processing_config,
-    pre_process_images_list,
-    pre_process_images_tensor,
     rescale_detections,
     run_nms,
 )
+from inference.v1.models.common.roboflow.pre_processing import pre_process_network_input
+from inference.v1.models.common.roboflow.model_packages import parse_class_names_file, PreProcessingConfig, \
+    PreProcessingMetadata, parse_pre_processing_config
 from inference.v1.utils.model_packages import get_model_package_contents
 from inference.v1.utils.onnx import (
     run_session_via_iobinding,
@@ -101,22 +99,16 @@ class YOLOv8ForObjectDetectionOnnx(ObjectDetectionModel):
 
     def pre_process(
         self,
-        images: Union[torch.Tensor, List[torch.Tensor]],
-        input_color_format: ColorFormat = "bgr",
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, Any]:
-        if isinstance(images, list):
-            return pre_process_images_list(
-                images=images,
-                pre_processing_config=self._pre_processing_config,
-                input_color_format=input_color_format,
-                target_device=self._device,
-            )
-        return pre_process_images_tensor(
+        return pre_process_network_input(
             images=images,
             pre_processing_config=self._pre_processing_config,
-            input_color_format=input_color_format,
+            expected_network_color_format="rgb",
             target_device=self._device,
+            input_color_format=input_color_format,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
@@ -162,8 +154,8 @@ class YOLOv8ForObjectDetectionOnnx(ObjectDetectionModel):
             results.append(
                 Detections(
                     xyxy=result[:, :4],
-                    class_ids=result[:, 4].int(),
-                    confidence=result[:, 5],
+                    class_ids=result[:, 5].int(),
+                    confidence=result[:, 4],
                 )
             )
         return results

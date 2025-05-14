@@ -8,9 +8,9 @@ from inference.v1.entities import ColorFormat
 from inference.v1.errors import CorruptedModelPackageError
 from inference.v1.models.rfdetr.post_processor import PostProcess
 from inference.v1.models.rfdetr.rfdetr_base_pytorch import RFDETRBaseConfig, RFDETRLargeConfig, build_model, LWDETR
-from inference.v1.models.yolov8.common import parse_class_names_file, parse_pre_processing_config, \
-    parse_model_characteristics, PreProcessingConfig, pre_process_images_list, pre_process_images_tensor, \
-    PreProcessingMetadata
+from inference.v1.models.common.roboflow.pre_processing import pre_process_images_tensor, pre_process_images_tensor_list
+from inference.v1.models.common.roboflow.model_packages import parse_class_names_file, PreProcessingConfig, \
+    PreProcessingMetadata, parse_pre_processing_config, parse_model_characteristics
 from inference.v1.utils.model_packages import get_model_package_contents
 
 
@@ -93,7 +93,7 @@ class RFDetrForObjectDetectionTorch(ObjectDetectionModel):
         **kwargs,
     ) -> Tuple[torch.Tensor, Any]:
         if isinstance(images, list):
-            return pre_process_images_list(
+            return pre_process_images_tensor_list(
                 images=images,
                 pre_processing_config=self._pre_processing_config,
                 input_color_format=input_color_format,
