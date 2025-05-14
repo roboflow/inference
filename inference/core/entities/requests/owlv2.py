@@ -54,7 +54,7 @@ class OwlV2InferenceRequest(BaseRequest):
     image: Union[List[InferenceRequestImage], InferenceRequestImage] = Field(
         description="Images to run the model on"
     )
-    training_data: List[TrainingImage] = Field(
+    training_data: Union[List[str], List[TrainingImage]] = Field(
         description="Training images for the owlvit model to learn form"
     )
     confidence: Optional[float] = Field(
