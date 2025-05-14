@@ -1,5 +1,6 @@
 from typing import Any, List, Union, Tuple
 
+import numpy as np
 import torch
 
 from inference.v1 import ObjectDetectionModel, Detections
@@ -8,11 +9,12 @@ from inference.v1.entities import ColorFormat
 from inference.v1.errors import CorruptedModelPackageError
 from inference.v1.models.rfdetr.post_processor import PostProcess
 from inference.v1.models.rfdetr.rfdetr_base_pytorch import RFDETRBaseConfig, RFDETRLargeConfig, build_model, LWDETR
-from inference.v1.models.common.roboflow.pre_processing import pre_process_images_tensor, pre_process_images_tensor_list
+from inference.v1.models.common.roboflow.pre_processing import pre_process_network_input
 from inference.v1.models.common.roboflow.model_packages import parse_class_names_file, PreProcessingConfig, \
     PreProcessingMetadata, parse_pre_processing_config, parse_model_characteristics
 from inference.v1.utils.model_packages import get_model_package_contents
 
+torch.set_float32_matmul_precision("high")
 
 CONFIG_FOR_MODEL_TYPE = {
     "rfdetr-base": RFDETRBaseConfig,
@@ -27,6 +29,7 @@ class RFDetrForObjectDetectionTorch(ObjectDetectionModel):
         cls,
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
+        compile_model: bool = False,
         **kwargs,
     ) -> "ObjectDetectionModel":
         model_package_content = get_model_package_contents(
@@ -59,6 +62,8 @@ class RFDetrForObjectDetectionTorch(ObjectDetectionModel):
         model = build_model(config=model_config)
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
+        if compile_model:
+            model = torch.compile(model)
         post_processor = PostProcess()
         return cls(
             model=model,
@@ -88,22 +93,16 @@ class RFDetrForObjectDetectionTorch(ObjectDetectionModel):
 
     def pre_process(
         self,
-        images: Union[torch.Tensor, List[torch.Tensor]],
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
         input_color_format: ColorFormat = "bgr",
         **kwargs,
     ) -> Tuple[torch.Tensor, Any]:
-        if isinstance(images, list):
-            return pre_process_images_tensor_list(
-                images=images,
-                pre_processing_config=self._pre_processing_config,
-                input_color_format=input_color_format,
-                target_device=self._device,
-            )
-        return pre_process_images_tensor(
+        return pre_process_network_input(
             images=images,
             pre_processing_config=self._pre_processing_config,
-            input_color_format=input_color_format,
+            expected_network_color_format="rgb",
             target_device=self._device,
+            input_color_format=input_color_format,
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
