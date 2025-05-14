@@ -361,11 +361,10 @@ def scale_sv_detections(
         return detections_copy
     detections_copy.xyxy = (detections_copy.xyxy * scale).round()
     if keypoints_key in detections_copy.data:
-        detections_copy.data[keypoints_key] = (
-            (detections_copy.data[keypoints_key].astype(np.float32) * scale)
-            .round()
-            .astype(np.int32)
-        )
+        for i in range(len(detections_copy[keypoints_key])):
+            detections_copy[keypoints_key][i] = (
+                detections_copy[keypoints_key][i].astype(np.float32) * scale
+            ).round()
     detections_copy[IMAGE_DIMENSIONS_KEY] = (
         detections_copy[IMAGE_DIMENSIONS_KEY] * scale
     ).round()
