@@ -20,7 +20,7 @@ TORCH_INPUT = bool(int(os.getenv("TORCH_INPUT", "0")))
 
 def main() -> None:
     if TORCH_INPUT:
-        image = torchvision.io.read_image(IMAGE_PATH)
+        image = torchvision.io.read_image(IMAGE_PATH).to(DEVICE)
     else:
         image = cv2.imread(IMAGE_PATH)
     print(f"Input image shape: {image.shape}")
