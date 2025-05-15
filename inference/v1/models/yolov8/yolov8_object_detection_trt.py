@@ -62,7 +62,14 @@ class YOLOv8ForObjectDetectionTRT(
         )
         engine = load_model(model_path=model_package_content["engine.plan"])
         context = engine.create_execution_context()
-        return cls()
+        return cls(
+            engine=engine,
+            context=context,
+            class_names=class_names,
+            pre_processing_config=pre_processing_config,
+            trt_config=trt_config,
+            device=device,
+        )
 
     def __init__(
         self,
