@@ -212,7 +212,7 @@ def pre_process_images_tensor_list(
             img = functional.resize(
                 img,
                 [target_height, target_width],
-                interpolation=functional.InterpolationMode.BILINEAR
+                interpolation=functional.InterpolationMode.BILINEAR,
             )
             img = img / normalization_constant
             processed.append(img.contiguous())
@@ -268,7 +268,7 @@ def pre_process_images_tensor_list(
             resized_chw = functional.resize(
                 image_hwc,
                 [new_h_i, new_w_i],
-                interpolation=functional.InterpolationMode.BILINEAR
+                interpolation=functional.InterpolationMode.BILINEAR,
             )
             pad_top_i, pad_left_i = pad_tops[i].item(), pad_lefts[i].item()
             final_batch[
