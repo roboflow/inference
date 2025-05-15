@@ -5,20 +5,21 @@ import numpy as np
 import tensorrt as trt
 import torch
 
-from inference.v1 import Detections, ObjectDetectionModel
+from inference.v1 import Detections, KeyPoints, KeyPointsDetectionModel
 from inference.v1.configuration import DEFAULT_DEVICE
 from inference.v1.entities import ColorFormat
 from inference.v1.errors import ModelRuntimeError
 from inference.v1.models.common.model_packages import get_model_package_contents
 from inference.v1.models.common.post_processing import (
-    rescale_detections,
-    run_nms_for_object_detection,
+    rescale_key_points_detections,
+    run_nms_for_key_points_detection,
 )
 from inference.v1.models.common.roboflow.model_packages import (
     PreProcessingConfig,
     PreProcessingMetadata,
     TRTConfig,
     parse_class_names_file,
+    parse_key_points_metadata,
     parse_pre_processing_config,
     parse_trt_config,
 )
@@ -26,8 +27,8 @@ from inference.v1.models.common.roboflow.pre_processing import pre_process_netwo
 from inference.v1.models.common.trt import infer_from_trt_engine, load_model
 
 
-class YOLOv8ForObjectDetectionTRT(
-    ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]
+class YOLOv8ForKeyPointsDetectionTRT(
+    KeyPointsDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]
 ):
 
     @classmethod
@@ -36,7 +37,7 @@ class YOLOv8ForObjectDetectionTRT(
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "YOLOv8ForObjectDetectionTRT":
+    ) -> "YOLOv8ForKeyPointsDetectionTRT":
         if device.type != "cuda":
             raise ModelRuntimeError(
                 f"TRT engine only runs on CUDA device - {device} device detected."
@@ -49,6 +50,7 @@ class YOLOv8ForObjectDetectionTRT(
                 "model_type.json",
                 "trt_config.json",
                 "engine.plan",
+                "keypoints_metadata.json",
             ],
         )
         class_names = parse_class_names_file(
@@ -60,6 +62,9 @@ class YOLOv8ForObjectDetectionTRT(
         trt_config = parse_trt_config(
             config_path=model_package_content["trt_config.json"]
         )
+        parsed_key_points_metadata = parse_key_points_metadata(
+            key_points_metadata_path=model_package_content["keypoints_metadata.json"]
+        )
         engine = load_model(model_path=model_package_content["engine.plan"])
         context = engine.create_execution_context()
         return cls(
@@ -67,6 +72,7 @@ class YOLOv8ForObjectDetectionTRT(
             context=context,
             class_names=class_names,
             pre_processing_config=pre_processing_config,
+            parsed_key_points_metadata=parsed_key_points_metadata,
             trt_config=trt_config,
             device=device,
         )
@@ -77,6 +83,7 @@ class YOLOv8ForObjectDetectionTRT(
         context: trt.IExecutionContext,
         class_names: List[str],
         pre_processing_config: PreProcessingConfig,
+        parsed_key_points_metadata: List[List[str]],
         trt_config: TRTConfig,
         device: torch.device,
     ):
@@ -84,13 +91,25 @@ class YOLOv8ForObjectDetectionTRT(
         self._context = context
         self._class_names = class_names
         self._pre_processing_config = pre_processing_config
+        self._parsed_key_points_metadata = parsed_key_points_metadata
         self._trt_config = trt_config
         self._device = device
         self._session_thread_lock = Lock()
+        self._parsed_key_points_metadata = parsed_key_points_metadata
+        self._key_points_classes_for_instances = torch.tensor(
+            [len(e) for e in self._parsed_key_points_metadata], device=device
+        )
+        self._key_points_slots_in_prediction = max(
+            len(e) for e in parsed_key_points_metadata
+        )
 
     @property
     def class_names(self) -> List[str]:
         return self._class_names
+
+    @property
+    def key_points_classes(self) -> List[List[str]]:
+        return self._parsed_key_points_metadata
 
     def pre_process(
         self,
@@ -135,26 +154,51 @@ class YOLOv8ForObjectDetectionTRT(
         iou_thresh: float = 0.45,
         max_detections: int = 100,
         class_agnostic: bool = False,
+        key_points_threshold: float = 0.3,
         **kwargs,
-    ) -> List[Detections]:
-        nms_results = run_nms_for_object_detection(
+    ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
+        nms_results = run_nms_for_key_points_detection(
             output=model_results,
+            num_classes=len(self._class_names),
+            key_points_slots_in_prediction=self._key_points_slots_in_prediction,
             conf_thresh=conf_thresh,
             iou_thresh=iou_thresh,
             max_detections=max_detections,
             class_agnostic=class_agnostic,
         )
-        rescaled_results = rescale_detections(
+        rescaled_results = rescale_key_points_detections(
             detections=nms_results,
             images_metadata=pre_processing_meta,
+            num_classes=len(self._class_names),
+            key_points_slots_in_prediction=self._key_points_slots_in_prediction,
         )
-        results = []
+        detections, all_key_points = [], []
         for result in rescaled_results:
-            results.append(
+            class_id = result[:, 5].int()
+            detections.append(
                 Detections(
                     xyxy=result[:, :4].round().int(),
-                    class_id=result[:, 5].int(),
+                    class_id=class_id,
                     confidence=result[:, 4],
                 )
             )
-        return results
+            key_points_reshaped = result[:, 6:].view(result.shape[0], -1, 3)
+            xy = key_points_reshaped[:, :, :2]
+            confidence = key_points_reshaped[:, :, 2]
+            key_points_classes_for_instance_class = (
+                self._key_points_classes_for_instances[class_id]
+            )
+            instances_class_mask = (
+                torch.arange(self._key_points_slots_in_prediction, device=result.device)
+                .unsqueeze(0)
+                .repeat(result.shape[0], 1)
+                < key_points_classes_for_instance_class
+            )
+            confidence_mask = confidence < key_points_threshold
+            mask = instances_class_mask & confidence_mask
+            xy[mask] = 0.0
+            confidence[mask] = 0.0
+            all_key_points.append(
+                KeyPoints(xy=xy.round().int(), class_id=class_id, confidence=confidence)
+            )
+        return all_key_points, detections

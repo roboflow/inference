@@ -25,7 +25,7 @@ from inference.v1.models.common.roboflow.model_packages import (
     parse_trt_config,
 )
 from inference.v1.models.common.roboflow.pre_processing import pre_process_network_input
-from inference.v1.models.common.trt import load_model, infer_from_trt_engine
+from inference.v1.models.common.trt import infer_from_trt_engine, load_model
 
 
 class YOLOv8ForInstanceSegmentationTRT(
@@ -130,7 +130,7 @@ class YOLOv8ForInstanceSegmentationTRT(
                 context=self._context,
                 device=self._device,
                 input_name="images",
-                outputs=["output0", "output1"]
+                outputs=["output0", "output1"],
             )
             return instances, protos
 
