@@ -16,6 +16,7 @@ PREDICT_PROCESS_CYCLES = int(os.getenv("PREDICT_PROCESS_CYCLES", "500"))
 POST_PROCESS_CYCLES = int(os.getenv("POST_PROCESS_CYCLES", "5000"))
 DEVICE = os.environ["DEVICE"]
 TORCH_INPUT = bool(int(os.getenv("TORCH_INPUT", "0")))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1"))
 
 
 def main() -> None:
@@ -24,6 +25,9 @@ def main() -> None:
     else:
         image = cv2.imread(IMAGE_PATH)
     print(f"Input image shape: {image.shape}")
+    if BATCH_SIZE > 1:
+        image = [image] * BATCH_SIZE
+    print(f"BS={BATCH_SIZE}")
     model = YOLOv8ForObjectDetectionTRT.from_pretrained(MODEL_PACKAGE, device=torch.device(DEVICE))
     pre_processed_image, pre_processed_metadata = model.pre_process(image)
     raw_predictions = model.forward(pre_processed_image)
