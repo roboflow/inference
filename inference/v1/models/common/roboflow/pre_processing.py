@@ -94,6 +94,8 @@ def pre_process_images_tensor(
         images = images.permute(0, 3, 1, 2)
     original_size = ImageDimensions(height=images.shape[2], width=images.shape[3])
     if pre_processing_config.mode is PreProcessingMode.STRETCH:
+        if images.device.type == "cuda":
+            images = images.float()
         images = torch.nn.functional.interpolate(
             images,
             [
@@ -130,6 +132,8 @@ def pre_process_images_tensor(
     new_height = int(original_height * scale)
     pad_top = int((pre_processing_config.target_size.height - new_height) / 2)
     pad_left = int((pre_processing_config.target_size.width - new_width) / 2)
+    if images.device.type == "cuda":
+        images = images.float()
     images = torch.nn.functional.interpolate(
         images,
         [new_height, new_width],
@@ -305,7 +309,7 @@ def pre_process_numpy_images_list(
         )
         result_tensors.append(tensor)
         result_metadata.extend(result_metadata)
-    return torch.concat(result_metadata, dim=0).contiguous(), result_metadata
+    return torch.concat(result_tensors, dim=0).contiguous(), result_metadata
 
 
 @torch.inference_mode()
