@@ -1,4 +1,4 @@
-from typing import Tuple, List, Optional
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -7,8 +7,11 @@ from torch.nn import functional as F
 
 from inference.v1.entities import ColorFormat, ImageDimensions
 from inference.v1.errors import ModelRuntimeError
-from inference.v1.models.common.roboflow.model_packages import PreProcessingConfig, PreProcessingMetadata, \
-    PreProcessingMode
+from inference.v1.models.common.roboflow.model_packages import (
+    PreProcessingConfig,
+    PreProcessingMetadata,
+    PreProcessingMode,
+)
 
 
 def pre_process_network_input(
@@ -38,7 +41,9 @@ def pre_process_network_input(
             normalization_constant=normalization_constant,
         )
     if not isinstance(images, list):
-        raise ModelRuntimeError("Pre-processing supports only np.array or torch.Tensor or list of above.")
+        raise ModelRuntimeError(
+            "Pre-processing supports only np.array or torch.Tensor or list of above."
+        )
     if not len(images):
         raise ModelRuntimeError("Detected empty input to the model")
     if isinstance(images[0], np.ndarray):
@@ -326,7 +331,10 @@ def pre_process_numpy_image(
     if pre_processing_config.mode is PreProcessingMode.STRETCH:
         resized_image = cv2.resize(
             image,
-            (pre_processing_config.target_size.width, pre_processing_config.target_size.height)
+            (
+                pre_processing_config.target_size.width,
+                pre_processing_config.target_size.height,
+            ),
         )
         tensor = torch.from_numpy(resized_image).to(device=target_device)
         tensor = tensor / normalization_constant
@@ -342,7 +350,8 @@ def pre_process_numpy_image(
             original_size=original_size,
             inference_size=pre_processing_config.target_size,
             scale_width=pre_processing_config.target_size.width / original_size.width,
-            scale_height=pre_processing_config.target_size.height / original_size.height,
+            scale_height=pre_processing_config.target_size.height
+            / original_size.height,
         )
         return tensor.contiguous(), [image_metadata]
     if pre_processing_config.mode is PreProcessingMode.LETTERBOX:
@@ -355,7 +364,9 @@ def pre_process_numpy_image(
         pad_top = int((pre_processing_config.target_size.height - new_height) / 2)
         pad_left = int((pre_processing_config.target_size.width - new_width) / 2)
         scaled_image = cv2.resize(image, (new_width, new_height))
-        scaled_image_tensor = torch.from_numpy(scaled_image).to(target_device) / normalization_constant
+        scaled_image_tensor = (
+            torch.from_numpy(scaled_image).to(target_device) / normalization_constant
+        )
         scaled_image_tensor = scaled_image_tensor.permute(2, 0, 1)
         final_batch = torch.full(
             (
@@ -369,7 +380,7 @@ def pre_process_numpy_image(
             device=target_device,
         )
         final_batch[
-            0, :, pad_top: pad_top + new_height, pad_left: pad_left + new_width
+            0, :, pad_top : pad_top + new_height, pad_left : pad_left + new_width
         ] = scaled_image_tensor
         if input_color_format != expected_network_color_format:
             final_batch = final_batch[:, [2, 1, 0], :, :]

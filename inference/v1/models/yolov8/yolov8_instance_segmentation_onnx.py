@@ -5,15 +5,23 @@ import numpy as np
 import onnxruntime
 import torch
 
-from inference.v1 import InstanceSegmentationModel, InstanceDetections
+from inference.v1 import InstanceDetections, InstanceSegmentationModel
 from inference.v1.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference.v1.entities import ColorFormat
 from inference.v1.errors import EnvironmentConfigurationError
-from inference.v1.models.common.post_processing import preprocess_segmentation_masks, \
-    crop_masks_to_boxes, align_instance_segmentation_results, run_nms_for_instance_segmentation
+from inference.v1.models.common.post_processing import (
+    align_instance_segmentation_results,
+    crop_masks_to_boxes,
+    preprocess_segmentation_masks,
+    run_nms_for_instance_segmentation,
+)
+from inference.v1.models.common.roboflow.model_packages import (
+    PreProcessingConfig,
+    PreProcessingMetadata,
+    parse_class_names_file,
+    parse_pre_processing_config,
+)
 from inference.v1.models.common.roboflow.pre_processing import pre_process_network_input
-from inference.v1.models.common.roboflow.model_packages import parse_class_names_file, PreProcessingConfig, \
-    PreProcessingMetadata, parse_pre_processing_config
 from inference.v1.utils.model_packages import get_model_package_contents
 from inference.v1.utils.onnx import (
     run_session_via_iobinding,
@@ -22,7 +30,9 @@ from inference.v1.utils.onnx import (
 
 
 class YOLOv8ForInstanceSegmentationOnnx(
-    InstanceSegmentationModel[torch.Tensor, PreProcessingMetadata, Tuple[torch.Tensor, torch.Tensor]]
+    InstanceSegmentationModel[
+        torch.Tensor, PreProcessingMetadata, Tuple[torch.Tensor, torch.Tensor]
+    ]
 ):
 
     @classmethod
@@ -111,11 +121,15 @@ class YOLOv8ForInstanceSegmentationOnnx(
             input_color_format=input_color_format,
         )
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, pre_processed_images: torch.Tensor, **kwargs
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         with self._session_thread_lock:
             if self._input_batch_size is None:
                 instances, protos = run_session_via_iobinding(
-                    session=self._session, input_name="images", inputs=pre_processed_images
+                    session=self._session,
+                    input_name="images",
+                    inputs=pre_processed_images,
                 )
                 return instances, protos
             instances, protos = [], []
@@ -150,14 +164,23 @@ class YOLOv8ForInstanceSegmentationOnnx(
             class_agnostic=class_agnostic,
         )
         final_results = []
-        for image_bboxes, image_protos, image_meta in zip(nms_results, protos, pre_processing_meta):
+        for image_bboxes, image_protos, image_meta in zip(
+            nms_results, protos, pre_processing_meta
+        ):
             pre_processed_masks = preprocess_segmentation_masks(
                 protos=image_protos,
                 masks_in=image_bboxes[:, 6:],
                 mask_threshold=mask_threshold,
             )
-            cropped_masks = crop_masks_to_boxes(image_bboxes[:, :4], pre_processed_masks)
-            padding = image_meta.pad_left, image_meta.pad_top, image_meta.pad_right, image_meta.pad_bottom
+            cropped_masks = crop_masks_to_boxes(
+                image_bboxes[:, :4], pre_processed_masks
+            )
+            padding = (
+                image_meta.pad_left,
+                image_meta.pad_top,
+                image_meta.pad_right,
+                image_meta.pad_bottom,
+            )
             aligned_boxes, aligned_masks = align_instance_segmentation_results(
                 image_bboxes=image_bboxes,
                 masks=cropped_masks,
@@ -167,10 +190,12 @@ class YOLOv8ForInstanceSegmentationOnnx(
                 original_size=image_meta.original_size,
                 inference_size=image_meta.inference_size,
             )
-            final_results.append(InstanceDetections(
-                xyxy=aligned_boxes[:, :4],
-                class_id=aligned_boxes[:, 5].int(),
-                confidence=aligned_boxes[:, 4],
-                mask=aligned_masks,
-            ))
+            final_results.append(
+                InstanceDetections(
+                    xyxy=aligned_boxes[:, :4].round().int(),
+                    class_id=aligned_boxes[:, 5].int(),
+                    confidence=aligned_boxes[:, 4],
+                    mask=aligned_masks,
+                )
+            )
         return final_results

@@ -90,12 +90,15 @@ def run_nms_for_instance_segmentation(
         nms_class_ids = torch.zeros_like(class_ids) if class_agnostic else class_ids
         keep = torchvision.ops.batched_nms(xyxy, class_conf, nms_class_ids, iou_thresh)
         keep = keep[:max_detections]
-        detections = torch.cat([
-            xyxy[keep],
-            class_conf[keep].unsqueeze(1),
-            class_ids[keep].unsqueeze(1).float(),
-            box_masks[keep]
-        ], dim=1)  # [x1, y1, x2, y2, conf, cls]
+        detections = torch.cat(
+            [
+                xyxy[keep],
+                class_conf[keep].unsqueeze(1),
+                class_ids[keep].unsqueeze(1).float(),
+                box_masks[keep],
+            ],
+            dim=1,
+        )  # [x1, y1, x2, y2, conf, cls]
         results.append(detections)
     return results
 
@@ -103,6 +106,7 @@ def run_nms_for_instance_segmentation(
 def run_nms_for_key_points_detection(
     output: torch.Tensor,
     num_classes: int,
+    key_points_slots_in_prediction: int,
     conf_thresh: float = 0.25,
     iou_thresh: float = 0.45,
     max_detections: int = 100,
@@ -110,21 +114,24 @@ def run_nms_for_key_points_detection(
 ) -> List[torch.Tensor]:
     bs = output.shape[0]
     boxes = output[:, :4, :]
-    scores = output[:, 4:4+num_classes, :]
-    key_points = output[:, 4+num_classes:, :]
+    scores = output[:, 4 : 4 + num_classes, :]
+    key_points = output[:, 4 + num_classes :, :]
     results = []
     for b in range(bs):
-        # Combine transpose & max for efficiency
-        class_scores = scores[b]  # (80, 8400)
-        class_conf, class_ids = class_scores.max(0)  # (8400,), (8400,)
+        class_scores = scores[b]
+        class_conf, class_ids = class_scores.max(0)
         mask = class_conf > conf_thresh
         if not torch.any(mask):
-            results.append(torch.zeros((0, 6), device=output.device))
+            results.append(
+                torch.zeros(
+                    (0, 6 + key_points_slots_in_prediction * 3), device=output.device
+                )
+            )
             continue
-        bboxes = boxes[b][:, mask].T  # (num, 4) -- selects and then transposes
+        bboxes = boxes[b][:, mask].T
+        image_key_points = key_points[b, :, mask].T
         class_conf = class_conf[mask]
         class_ids = class_ids[mask]
-        # Vectorized [x, y, w, h] -> [x1, y1, x2, y2]
         xy = bboxes[:, :2]
         wh = bboxes[:, 2:]
         half_wh = wh / 2
@@ -140,11 +147,10 @@ def run_nms_for_key_points_detection(
                 xyxy[keep],
                 class_conf[keep, None],  # unsqueeze(1) is replaced with None
                 class_ids[keep, None].float(),
-                key_points[keep]
+                image_key_points[keep],
             ),
             1,
         )  # [x1, y1, x2, y2, conf, cls, keypoints....]
-
         results.append(detections)
     return results
 
@@ -173,12 +179,51 @@ def rescale_detections(
     return detections
 
 
+def rescale_key_points_detections(
+    detections: List[torch.Tensor],
+    images_metadata: List[PreProcessingMetadata],
+    num_classes: int,
+    key_points_slots_in_prediction: int,
+) -> List[torch.Tensor]:
+    for image_detections, metadata in zip(detections, images_metadata):
+        offsets = torch.as_tensor(
+            [metadata.pad_left, metadata.pad_top, metadata.pad_left, metadata.pad_top],
+            dtype=image_detections.dtype,
+            device=image_detections.device,
+        )
+        image_detections[:, :4].sub_(offsets)  # in-place subtraction for speed/memory
+        scale = torch.as_tensor(
+            [
+                metadata.scale_width,
+                metadata.scale_height,
+                metadata.scale_width,
+                metadata.scale_height,
+            ],
+            dtype=image_detections.dtype,
+            device=image_detections.device,
+        )
+        image_detections[:, :4].div_(scale)
+        key_points_offsets = torch.as_tensor(
+            [metadata.pad_left, metadata.pad_top, 0],
+            dtype=image_detections.dtype,
+            device=image_detections.device,
+        ).repeat(key_points_slots_in_prediction)
+        image_detections[:, 5 + num_classes :].sub_(key_points_offsets)
+        key_points_scale = torch.as_tensor(
+            [metadata.scale_width, metadata.scale_height, 1.0],
+            dtype=image_detections.dtype,
+            device=image_detections.device,
+        ).repeat(key_points_slots_in_prediction)
+        image_detections[:, 5 + num_classes :].div_(key_points_scale)
+    return detections
+
+
 def preprocess_segmentation_masks(
     protos: torch.Tensor,
     masks_in: torch.Tensor,
     mask_threshold: float,
 ) -> torch.Tensor:
-    masks_sum = torch.einsum('chw,nc->nhw', protos, masks_in)
+    masks_sum = torch.einsum("chw,nc->nhw", protos, masks_in)
     masks_sigmoid = torch.sigmoid(masks_sum)
     return masks_sigmoid > mask_threshold
 
@@ -189,9 +234,13 @@ def crop_masks_to_boxes(
     scaling: float = 0.25,
 ) -> torch.Tensor:
     n, h, w = masks.shape
-    scaled_boxes = (boxes * scaling)
-    x1, y1, x2, y2 = scaled_boxes[:, 0][:, None, None], scaled_boxes[:, 1][:, None, None], \
-        scaled_boxes[:, 2][:, None, None], scaled_boxes[:, 3][:, None, None]
+    scaled_boxes = boxes * scaling
+    x1, y1, x2, y2 = (
+        scaled_boxes[:, 0][:, None, None],
+        scaled_boxes[:, 1][:, None, None],
+        scaled_boxes[:, 2][:, None, None],
+        scaled_boxes[:, 3][:, None, None],
+    )
     rows = torch.arange(w, device=masks.device)[None, None, :]  # shape: [1, 1, w]
     cols = torch.arange(h, device=masks.device)[None, :, None]  # shape: [1, h, 1]
     crop_mask = (rows >= x1) & (rows < x2) & (cols >= y1) & (cols < y2)
@@ -222,9 +271,18 @@ def align_instance_segmentation_results(
     n, mh, mw = masks.shape
     mask_h_scale = mh / inference_size.height
     mask_w_scale = mw / inference_size.width
-    mask_pad_top, mask_pad_bottom, mask_pad_left, mask_pad_right = \
-        round(mask_h_scale * pad_top), round(mask_h_scale * pad_bottom), \
-        round(mask_w_scale * pad_left), round(mask_w_scale * pad_right)
-    masks = masks[:, mask_pad_top:mh-mask_pad_bottom, mask_pad_left:mw-mask_pad_right]
-    masks = functional.resize(masks, [original_size.height, original_size.width], interpolation=functional.InterpolationMode.BILINEAR)
+    mask_pad_top, mask_pad_bottom, mask_pad_left, mask_pad_right = (
+        round(mask_h_scale * pad_top),
+        round(mask_h_scale * pad_bottom),
+        round(mask_w_scale * pad_left),
+        round(mask_w_scale * pad_right),
+    )
+    masks = masks[
+        :, mask_pad_top : mh - mask_pad_bottom, mask_pad_left : mw - mask_pad_right
+    ]
+    masks = functional.resize(
+        masks,
+        [original_size.height, original_size.width],
+        interpolation=functional.InterpolationMode.BILINEAR,
+    )
     return image_bboxes, masks

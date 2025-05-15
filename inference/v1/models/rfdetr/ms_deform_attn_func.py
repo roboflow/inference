@@ -14,9 +14,7 @@
 """
 ms_deform_attn_func
 """
-from __future__ import absolute_import
-from __future__ import print_function
-from __future__ import division
+from __future__ import absolute_import, division, print_function
 
 import torch
 import torch.nn.functional as F
@@ -24,9 +22,10 @@ from torch.autograd import Function
 from torch.autograd.function import once_differentiable
 
 
-def ms_deform_attn_core_pytorch(value, value_spatial_shapes, sampling_locations, attention_weights):
-    """"for debug and test only, need to use cuda version instead
-    """
+def ms_deform_attn_core_pytorch(
+    value, value_spatial_shapes, sampling_locations, attention_weights
+):
+    """ "for debug and test only, need to use cuda version instead"""
     # B, n_heads, head_dim, N
     B, n_heads, head_dim, _ = value.shape
     _, Len_q, n_heads, L, P, _ = sampling_locations.shape
@@ -39,12 +38,23 @@ def ms_deform_attn_core_pytorch(value, value_spatial_shapes, sampling_locations,
         # B, Len_q, n_heads, P, 2 -> B, n_heads, Len_q, P, 2 -> B*n_heads, Len_q, P, 2
         sampling_grid_l_ = sampling_grids[:, :, :, lid_].transpose(1, 2).flatten(0, 1)
         # B*n_heads, head_dim, Len_q, P
-        sampling_value_l_ = F.grid_sample(value_l_, sampling_grid_l_,
-                                          mode='bilinear', padding_mode='zeros', align_corners=False)
+        sampling_value_l_ = F.grid_sample(
+            value_l_,
+            sampling_grid_l_,
+            mode="bilinear",
+            padding_mode="zeros",
+            align_corners=False,
+        )
         sampling_value_list.append(sampling_value_l_)
     # (B, Len_q, n_heads, L * P) -> (B, n_heads, Len_q, L, P) -> (B*n_heads, 1, Len_q, L*P)
-    attention_weights = attention_weights.transpose(1, 2).reshape(B * n_heads, 1, Len_q, L * P)
+    attention_weights = attention_weights.transpose(1, 2).reshape(
+        B * n_heads, 1, Len_q, L * P
+    )
     # B*n_heads, head_dim, Len_q, L*P
     sampling_value_list = torch.stack(sampling_value_list, dim=-2).flatten(-2)
-    output = (sampling_value_list * attention_weights).sum(-1).view(B, n_heads * head_dim, Len_q)
+    output = (
+        (sampling_value_list * attention_weights)
+        .sum(-1)
+        .view(B, n_heads * head_dim, Len_q)
+    )
     return output.transpose(1, 2).contiguous()

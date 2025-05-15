@@ -1,10 +1,14 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple, Union, Generic
+from typing import Any, Generic, List, Optional, Tuple, Union
 
 import torch
 
-from inference.v1.models.base.types import PreprocessedInputs, PreprocessingMetadata, RawPrediction
+from inference.v1.models.base.types import (
+    PreprocessedInputs,
+    PreprocessingMetadata,
+    RawPrediction,
+)
 
 
 @dataclass
@@ -19,7 +23,9 @@ class InstanceDetections:
     )
 
 
-class InstanceSegmentationModel(ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]):
+class InstanceSegmentationModel(
+    ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
+):
 
     @classmethod
     def from_pretrained(
@@ -35,9 +41,7 @@ class InstanceSegmentationModel(ABC, Generic[PreprocessedInputs, PreprocessingMe
     def infer(
         self, images: Union[torch.Tensor, List[torch.Tensor]], **kwargs
     ) -> List[InstanceDetections]:
-        pre_processed_images, pre_processing_meta = self.pre_process(
-            images, **kwargs
-        )
+        pre_processed_images, pre_processing_meta = self.pre_process(images, **kwargs)
         model_results = self.forward(pre_processed_images, **kwargs)
         return self.post_process(model_results, pre_processing_meta, **kwargs)
 
@@ -55,11 +59,12 @@ class InstanceSegmentationModel(ABC, Generic[PreprocessedInputs, PreprocessingMe
 
     @abstractmethod
     def post_process(
-        self, model_results: RawPrediction, pre_processing_meta: PreprocessedInputs, **kwargs
+        self,
+        model_results: RawPrediction,
+        pre_processing_meta: PreprocessedInputs,
+        **kwargs
     ) -> List[InstanceDetections]:
         pass
 
-    def __call__(
-        self, images: torch.Tensor, **kwargs
-    ) -> List[InstanceDetections]:
+    def __call__(self, images: torch.Tensor, **kwargs) -> List[InstanceDetections]:
         return self.infer(images, **kwargs)

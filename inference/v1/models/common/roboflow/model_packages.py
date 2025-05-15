@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from inference.v1.entities import ImageDimensions
 from inference.v1.errors import CorruptedModelPackageError
-from inference.v1.utils.file_system import stream_file_lines, read_json
+from inference.v1.utils.file_system import read_json, stream_file_lines
 
 
 def parse_class_names_file(class_names_path: str) -> List[str]:
@@ -87,7 +87,7 @@ def parse_pre_processing_config(environment_file_path: str) -> PreProcessingConf
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs."
-        )
+        ) from error
 
 
 @dataclass
@@ -100,7 +100,10 @@ def parse_model_characteristics(config_path: str) -> ModelCharacteristics:
     try:
         with open(config_path) as f:
             parsed_config = json.load(f)
-            if "project_task_type" not in parsed_config or "model_type" not in parsed_config:
+            if (
+                "project_task_type" not in parsed_config
+                or "model_type" not in parsed_config
+            ):
                 raise ValueError(
                     "could not find required entries in config - either "
                     "'project_task_type' or 'model_type' field is missing"
@@ -115,7 +118,7 @@ def parse_model_characteristics(config_path: str) -> ModelCharacteristics:
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs."
-        )
+        ) from error
 
 
 def parse_key_points_metadata(key_points_metadata_path: str) -> List[List[str]]:
@@ -123,11 +126,15 @@ def parse_key_points_metadata(key_points_metadata_path: str) -> List[List[str]]:
         with open(key_points_metadata_path) as f:
             parsed_config = json.load(f)
             if not isinstance(parsed_config, list):
-                raise ValueError("config should contain list of key points descriptions for each instance")
+                raise ValueError(
+                    "config should contain list of key points descriptions for each instance"
+                )
             result: List[Optional[List[str]]] = [None] * len(parsed_config)
             for instance_key_point_description in parsed_config:
                 if "object_class_id" not in instance_key_point_description:
-                    raise ValueError("instance key point description lack 'object_class_id' key")
+                    raise ValueError(
+                        "instance key point description lack 'object_class_id' key"
+                    )
                 object_class_id: int = instance_key_point_description["object_class_id"]
                 if not 0 <= object_class_id <= len(result):
                     raise ValueError("`object_class_id` field point invalid class")
@@ -135,7 +142,9 @@ def parse_key_points_metadata(key_points_metadata_path: str) -> List[List[str]]:
                     instance_key_point_description=instance_key_point_description,
                 )
             if any(e is None for e in result):
-                raise ValueError("config does not provide metadata describing each instance key points")
+                raise ValueError(
+                    "config does not provide metadata describing each instance key points"
+                )
             return result
     except (IOError, OSError, ValueError) as error:
         raise CorruptedModelPackageError(
@@ -143,12 +152,12 @@ def parse_key_points_metadata(key_points_metadata_path: str) -> List[List[str]]:
             f"{error}. In case that the package is "
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs."
-        )
+        ) from error
 
 
 def _retrieve_key_points_names(instance_key_point_description: dict) -> List[str]:
     key_points_dump = sorted(
-        [(int(k), v) for k, v in instance_key_point_description["keypoints"]],
-        key=lambda e: e[0]
+        [(int(k), v) for k, v in instance_key_point_description["keypoints"].items()],
+        key=lambda e: e[0],
     )
     return [e[1] for e in key_points_dump]

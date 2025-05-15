@@ -1,17 +1,27 @@
-from typing import Any, List, Union, Tuple
+from typing import Any, List, Tuple, Union
 
 import numpy as np
 import torch
 
-from inference.v1 import ObjectDetectionModel, Detections
+from inference.v1 import Detections, ObjectDetectionModel
 from inference.v1.configuration import DEFAULT_DEVICE
 from inference.v1.entities import ColorFormat
 from inference.v1.errors import CorruptedModelPackageError
-from inference.v1.models.rfdetr.post_processor import PostProcess
-from inference.v1.models.rfdetr.rfdetr_base_pytorch import RFDETRBaseConfig, RFDETRLargeConfig, build_model, LWDETR
+from inference.v1.models.common.roboflow.model_packages import (
+    PreProcessingConfig,
+    PreProcessingMetadata,
+    parse_class_names_file,
+    parse_model_characteristics,
+    parse_pre_processing_config,
+)
 from inference.v1.models.common.roboflow.pre_processing import pre_process_network_input
-from inference.v1.models.common.roboflow.model_packages import parse_class_names_file, PreProcessingConfig, \
-    PreProcessingMetadata, parse_pre_processing_config, parse_model_characteristics
+from inference.v1.models.rfdetr.post_processor import PostProcess
+from inference.v1.models.rfdetr.rfdetr_base_pytorch import (
+    LWDETR,
+    RFDETRBaseConfig,
+    RFDETRLargeConfig,
+    build_model,
+)
 from inference.v1.utils.model_packages import get_model_package_contents
 
 torch.set_float32_matmul_precision("high")
@@ -22,7 +32,9 @@ CONFIG_FOR_MODEL_TYPE = {
 }
 
 
-class RFDetrForObjectDetectionTorch((ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor])):
+class RFDetrForObjectDetectionTorch(
+    (ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor])
+):
 
     @classmethod
     def from_pretrained(
@@ -52,13 +64,17 @@ class RFDetrForObjectDetectionTorch((ObjectDetectionModel[torch.Tensor, PreProce
             map_location=device,
             weights_only=False,
         )["model"]
-        model_characteristics = parse_model_characteristics(config_path=model_package_content["model_type.json"])
+        model_characteristics = parse_model_characteristics(
+            config_path=model_package_content["model_type.json"]
+        )
         if model_characteristics.model_type not in CONFIG_FOR_MODEL_TYPE:
             raise CorruptedModelPackageError(
                 f"Model package describes model_type as '{model_characteristics.model_type}' which is not supported. "
                 f"Supported model types: {list(CONFIG_FOR_MODEL_TYPE.keys())}."
             )
-        model_config = CONFIG_FOR_MODEL_TYPE[model_characteristics.model_type](device=device)
+        model_config = CONFIG_FOR_MODEL_TYPE[model_characteristics.model_type](
+            device=device
+        )
         model = build_model(config=model_config)
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
@@ -116,8 +132,7 @@ class RFDetrForObjectDetectionTorch((ObjectDetectionModel[torch.Tensor, PreProce
         **kwargs,
     ) -> List[Detections]:
         orig_sizes = [
-            (e.original_size.height, e.original_size.width)
-            for e in pre_processing_meta
+            (e.original_size.height, e.original_size.width) for e in pre_processing_meta
         ]
         target_sizes = torch.tensor(orig_sizes, device=self._device)
         results = self._post_processor(model_results, target_sizes=target_sizes)

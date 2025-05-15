@@ -1,13 +1,13 @@
 import argparse
 import copy
 import math
-from dataclasses import dataclass, asdict, field
-from typing import List, Optional, Callable, Literal, Union
+from dataclasses import asdict, dataclass, field
+from typing import Callable, List, Literal, Optional, Union
 
 import torch
-import torchvision
-from torch import nn, Tensor
 import torch.nn.functional as F
+import torchvision
+from torch import Tensor, nn
 
 from inference.v1.models.rfdetr.backbone_builder import build_backbone
 from inference.v1.models.rfdetr.misc import NestedTensor
@@ -39,43 +39,53 @@ class ModelConfig:
 
 @dataclass
 class RFDETRBaseConfig(ModelConfig):
-    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = field(default="dinov2_windowed_small")
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = field(
+        default="dinov2_windowed_small"
+    )
     hidden_dim: int = field(default=256)
     sa_nheads: int = field(default=8)
     ca_nheads: int = field(default=16)
     dec_n_points: int = field(default=2)
     num_queries: int = field(default=300)
     num_select: int = field(default=300)
-    projector_scale: List[Literal["P3", "P4", "P5"]] = field(default_factory=lambda: ["P4"])
+    projector_scale: List[Literal["P3", "P4", "P5"]] = field(
+        default_factory=lambda: ["P4"]
+    )
     out_feature_indexes: List[int] = field(default_factory=lambda: [2, 5, 8, 11])
     pretrain_weights: Optional[str] = field(default="rf-detr-base.pth")
 
 
 @dataclass
 class RFDETRLargeConfig(RFDETRBaseConfig):
-    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = field(default="dinov2_windowed_base")
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = field(
+        default="dinov2_windowed_base"
+    )
     hidden_dim: int = field(default=384)
     sa_nheads: int = field(default=12)
     ca_nheads: int = field(default=24)
     dec_n_points: int = field(default=4)
-    projector_scale: List[Literal["P3", "P4", "P5"]] = field(default_factory=lambda: ["P3", "P5"])
+    projector_scale: List[Literal["P3", "P4", "P5"]] = field(
+        default_factory=lambda: ["P3", "P5"]
+    )
     pretrain_weights: Optional[str] = field(default="rf-detr-large.pth")
 
 
 class LWDETR(nn.Module):
-    """ This is the Group DETR v3 module that performs object detection """
+    """This is the Group DETR v3 module that performs object detection"""
 
-    def __init__(self,
-                 backbone,
-                 transformer,
-                 num_classes,
-                 num_queries,
-                 aux_loss=False,
-                 group_detr=1,
-                 two_stage=False,
-                 lite_refpoint_refine=False,
-                 bbox_reparam=False):
-        """ Initializes the model.
+    def __init__(
+        self,
+        backbone,
+        transformer,
+        num_classes,
+        num_queries,
+        aux_loss=False,
+        group_detr=1,
+        two_stage=False,
+        lite_refpoint_refine=False,
+        bbox_reparam=False,
+    ):
+        """Initializes the model.
         Parameters:
             backbone: torch module of the backbone to be used. See backbone.py
             transformer: torch module of the transformer architecture. See transformer.py
@@ -124,9 +134,11 @@ class LWDETR(nn.Module):
         self.two_stage = two_stage
         if self.two_stage:
             self.transformer.enc_out_bbox_embed = nn.ModuleList(
-                [copy.deepcopy(self.bbox_embed) for _ in range(group_detr)])
+                [copy.deepcopy(self.bbox_embed) for _ in range(group_detr)]
+            )
             self.transformer.enc_out_class_embed = nn.ModuleList(
-                [copy.deepcopy(self.class_embed) for _ in range(group_detr)])
+                [copy.deepcopy(self.class_embed) for _ in range(group_detr)]
+            )
 
         self._export = False
 
@@ -142,31 +154,40 @@ class LWDETR(nn.Module):
 
         if self.two_stage:
             del self.transformer.enc_out_class_embed
-            self.transformer.add_module("enc_out_class_embed", nn.ModuleList(
-                [copy.deepcopy(self.class_embed) for _ in range(self.group_detr)]))
+            self.transformer.add_module(
+                "enc_out_class_embed",
+                nn.ModuleList(
+                    [copy.deepcopy(self.class_embed) for _ in range(self.group_detr)]
+                ),
+            )
 
     def export(self):
         self._export = True
         self._forward_origin = self.forward
         self.forward = self.forward_export
         for name, m in self.named_modules():
-            if hasattr(m, "export") and isinstance(m.export, Callable) and hasattr(m, "_export") and not m._export:
+            if (
+                hasattr(m, "export")
+                and isinstance(m.export, Callable)
+                and hasattr(m, "_export")
+                and not m._export
+            ):
                 m.export()
 
     def forward(self, samples: NestedTensor, targets=None):
-        """ The forward expects a NestedTensor, which consists of:
-               - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
-               - samples.mask: a binary mask of shape [batch_size x H x W], containing 1 on padded pixels
+        """The forward expects a NestedTensor, which consists of:
+           - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
+           - samples.mask: a binary mask of shape [batch_size x H x W], containing 1 on padded pixels
 
-            It returns a dict with the following elements:
-               - "pred_logits": the classification logits (including no-object) for all queries.
-                                Shape= [batch_size x num_queries x num_classes]
-               - "pred_boxes": The normalized boxes coordinates for all queries, represented as
-                               (center_x, center_y, width, height). These values are normalized in [0, 1],
-                               relative to the size of each individual image (disregarding possible padding).
-                               See PostProcess for information on how to retrieve the unnormalized bounding box.
-               - "aux_outputs": Optional, only returned when auxilary losses are activated. It is a list of
-                                dictionnaries containing the two above keys for each decoder layer.
+        It returns a dict with the following elements:
+           - "pred_logits": the classification logits (including no-object) for all queries.
+                            Shape= [batch_size x num_queries x num_classes]
+           - "pred_boxes": The normalized boxes coordinates for all queries, represented as
+                           (center_x, center_y, width, height). These values are normalized in [0, 1],
+                           relative to the size of each individual image (disregarding possible padding).
+                           See PostProcess for information on how to retrieve the unnormalized bounding box.
+           - "aux_outputs": Optional, only returned when auxilary losses are activated. It is a list of
+                            dictionnaries containing the two above keys for each decoder layer.
         """
         if isinstance(samples, (list, torch.Tensor)):
             samples = nested_tensor_from_tensor_list(samples)
@@ -185,55 +206,65 @@ class LWDETR(nn.Module):
             query_feat_weight = self.query_feat.weight
         else:
             # only use one group in inference
-            refpoint_embed_weight = self.refpoint_embed.weight[:self.num_queries]
-            query_feat_weight = self.query_feat.weight[:self.num_queries]
+            refpoint_embed_weight = self.refpoint_embed.weight[: self.num_queries]
+            query_feat_weight = self.query_feat.weight[: self.num_queries]
 
         hs, ref_unsigmoid, hs_enc, ref_enc = self.transformer(
-            srcs, masks, poss, refpoint_embed_weight, query_feat_weight)
+            srcs, masks, poss, refpoint_embed_weight, query_feat_weight
+        )
 
         if self.bbox_reparam:
             outputs_coord_delta = self.bbox_embed(hs)
-            outputs_coord_cxcy = outputs_coord_delta[..., :2] * ref_unsigmoid[..., 2:] + ref_unsigmoid[..., :2]
-            outputs_coord_wh = outputs_coord_delta[..., 2:].exp() * ref_unsigmoid[..., 2:]
-            outputs_coord = torch.concat(
-                [outputs_coord_cxcy, outputs_coord_wh], dim=-1
+            outputs_coord_cxcy = (
+                outputs_coord_delta[..., :2] * ref_unsigmoid[..., 2:]
+                + ref_unsigmoid[..., :2]
             )
+            outputs_coord_wh = (
+                outputs_coord_delta[..., 2:].exp() * ref_unsigmoid[..., 2:]
+            )
+            outputs_coord = torch.concat([outputs_coord_cxcy, outputs_coord_wh], dim=-1)
         else:
             outputs_coord = (self.bbox_embed(hs) + ref_unsigmoid).sigmoid()
 
         outputs_class = self.class_embed(hs)
 
-        out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
+        out = {"pred_logits": outputs_class[-1], "pred_boxes": outputs_coord[-1]}
         if self.aux_loss:
-            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
+            out["aux_outputs"] = self._set_aux_loss(outputs_class, outputs_coord)
 
         if self.two_stage:
             group_detr = self.group_detr if self.training else 1
             hs_enc_list = hs_enc.chunk(group_detr, dim=1)
             cls_enc = []
             for g_idx in range(group_detr):
-                cls_enc_gidx = self.transformer.enc_out_class_embed[g_idx](hs_enc_list[g_idx])
+                cls_enc_gidx = self.transformer.enc_out_class_embed[g_idx](
+                    hs_enc_list[g_idx]
+                )
                 cls_enc.append(cls_enc_gidx)
             cls_enc = torch.cat(cls_enc, dim=1)
-            out['enc_outputs'] = {'pred_logits': cls_enc, 'pred_boxes': ref_enc}
+            out["enc_outputs"] = {"pred_logits": cls_enc, "pred_boxes": ref_enc}
         return out
 
     def forward_export(self, tensors):
         srcs, _, poss = self.backbone(tensors)
         # only use one group in inference
-        refpoint_embed_weight = self.refpoint_embed.weight[:self.num_queries]
-        query_feat_weight = self.query_feat.weight[:self.num_queries]
+        refpoint_embed_weight = self.refpoint_embed.weight[: self.num_queries]
+        query_feat_weight = self.query_feat.weight[: self.num_queries]
 
         hs, ref_unsigmoid, hs_enc, ref_enc = self.transformer(
-            srcs, None, poss, refpoint_embed_weight, query_feat_weight)
+            srcs, None, poss, refpoint_embed_weight, query_feat_weight
+        )
 
         if self.bbox_reparam:
             outputs_coord_delta = self.bbox_embed(hs)
-            outputs_coord_cxcy = outputs_coord_delta[..., :2] * ref_unsigmoid[..., 2:] + ref_unsigmoid[..., :2]
-            outputs_coord_wh = outputs_coord_delta[..., 2:].exp() * ref_unsigmoid[..., 2:]
-            outputs_coord = torch.concat(
-                [outputs_coord_cxcy, outputs_coord_wh], dim=-1
+            outputs_coord_cxcy = (
+                outputs_coord_delta[..., :2] * ref_unsigmoid[..., 2:]
+                + ref_unsigmoid[..., :2]
             )
+            outputs_coord_wh = (
+                outputs_coord_delta[..., 2:].exp() * ref_unsigmoid[..., 2:]
+            )
+            outputs_coord = torch.concat([outputs_coord_cxcy, outputs_coord_wh], dim=-1)
         else:
             outputs_coord = (self.bbox_embed(hs) + ref_unsigmoid).sigmoid()
         outputs_class = self.class_embed(hs)
@@ -244,19 +275,27 @@ class LWDETR(nn.Module):
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
-        return [{'pred_logits': a, 'pred_boxes': b}
-                for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
+        return [
+            {"pred_logits": a, "pred_boxes": b}
+            for a, b in zip(outputs_class[:-1], outputs_coord[:-1])
+        ]
 
     def update_drop_path(self, drop_path_rate, vit_encoder_num_layers):
         """ """
-        dp_rates = [x.item() for x in torch.linspace(0, drop_path_rate, vit_encoder_num_layers)]
+        dp_rates = [
+            x.item() for x in torch.linspace(0, drop_path_rate, vit_encoder_num_layers)
+        ]
         for i in range(vit_encoder_num_layers):
-            if hasattr(self.backbone[0].encoder, 'blocks'):  # Not aimv2
-                if hasattr(self.backbone[0].encoder.blocks[i].drop_path, 'drop_prob'):
+            if hasattr(self.backbone[0].encoder, "blocks"):  # Not aimv2
+                if hasattr(self.backbone[0].encoder.blocks[i].drop_path, "drop_prob"):
                     self.backbone[0].encoder.blocks[i].drop_path.drop_prob = dp_rates[i]
             else:  # aimv2
-                if hasattr(self.backbone[0].encoder.trunk.blocks[i].drop_path, 'drop_prob'):
-                    self.backbone[0].encoder.trunk.blocks[i].drop_path.drop_prob = dp_rates[i]
+                if hasattr(
+                    self.backbone[0].encoder.trunk.blocks[i].drop_path, "drop_prob"
+                ):
+                    self.backbone[0].encoder.trunk.blocks[i].drop_path.drop_prob = (
+                        dp_rates[i]
+                    )
 
     def update_dropout(self, drop_rate):
         for module in self.transformer.modules():
@@ -265,13 +304,15 @@ class LWDETR(nn.Module):
 
 
 class MLP(nn.Module):
-    """ Very simple multi-layer perceptron (also called FFN)"""
+    """Very simple multi-layer perceptron (also called FFN)"""
 
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
         super().__init__()
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
-        self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
+        self.layers = nn.ModuleList(
+            nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim])
+        )
 
     def forward(self, x):
         for i, layer in enumerate(self.layers):
@@ -298,10 +339,11 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
         mask = torch.ones((b, h, w), dtype=torch.bool, device=device)
         for img, pad_img, m in zip(tensor_list, tensor, mask):
             pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
-            m[: img.shape[1], :img.shape[2]] = False
+            m[: img.shape[1], : img.shape[2]] = False
     else:
-        raise ValueError('not supported')
+        raise ValueError("not supported")
     return NestedTensor(tensor, mask)
+
 
 # _onnx_nested_tensor_from_tensor_list() is an implementation of
 # nested_tensor_from_tensor_list() that is supported by ONNX tracing.
@@ -309,7 +351,9 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
 def _onnx_nested_tensor_from_tensor_list(tensor_list: List[Tensor]) -> NestedTensor:
     max_size = []
     for i in range(tensor_list[0].dim()):
-        max_size_i = torch.max(torch.stack([img.shape[i] for img in tensor_list]).to(torch.float32)).to(torch.int64)
+        max_size_i = torch.max(
+            torch.stack([img.shape[i] for img in tensor_list]).to(torch.float32)
+        ).to(torch.int64)
         max_size.append(max_size_i)
     max_size = tuple(max_size)
 
@@ -321,11 +365,15 @@ def _onnx_nested_tensor_from_tensor_list(tensor_list: List[Tensor]) -> NestedTen
     padded_masks = []
     for img in tensor_list:
         padding = [(s1 - s2) for s1, s2 in zip(max_size, tuple(img.shape))]
-        padded_img = torch.nn.functional.pad(img, (0, padding[2], 0, padding[1], 0, padding[0]))
+        padded_img = torch.nn.functional.pad(
+            img, (0, padding[2], 0, padding[1], 0, padding[0])
+        )
         padded_imgs.append(padded_img)
 
         m = torch.zeros_like(img[0], dtype=torch.int, device=img.device)
-        padded_mask = torch.nn.functional.pad(m, (0, padding[2], 0, padding[1]), "constant", 1)
+        padded_mask = torch.nn.functional.pad(
+            m, (0, padding[2], 0, padding[1]), "constant", 1
+        )
         padded_masks.append(padded_mask.to(torch.bool))
 
     tensor = torch.stack(padded_imgs)
@@ -368,7 +416,15 @@ def build_model(config: ModelConfig) -> LWDETR:
         position_embedding=args.position_embedding,
         freeze_encoder=args.freeze_encoder,
         layer_norm=args.layer_norm,
-        target_shape=args.shape if hasattr(args, 'shape') else (args.resolution, args.resolution) if hasattr(args, 'resolution') else (640, 640),
+        target_shape=(
+            args.shape
+            if hasattr(args, "shape")
+            else (
+                (args.resolution, args.resolution)
+                if hasattr(args, "resolution")
+                else (640, 640)
+            )
+        ),
         rms_norm=args.rms_norm,
         backbone_lora=args.backbone_lora,
         force_no_pretrain=args.force_no_pretrain,
@@ -395,127 +451,116 @@ def build_model(config: ModelConfig) -> LWDETR:
 
 
 def populate_args(
-        # Basic training parameters
-        num_classes=2,
-        grad_accum_steps=1,
-        amp=False,
-        lr=1e-4,
-        lr_encoder=1.5e-4,
-        batch_size=2,
-        weight_decay=1e-4,
-        epochs=12,
-        lr_drop=11,
-        clip_max_norm=0.1,
-        lr_vit_layer_decay=0.8,
-        lr_component_decay=1.0,
-        do_benchmark=False,
-
-        # Drop parameters
-        dropout=0,
-        drop_path=0,
-        drop_mode='standard',
-        drop_schedule='constant',
-        cutoff_epoch=0,
-
-        # Model parameters
-        pretrained_encoder=None,
-        pretrain_weights=None,
-        pretrain_exclude_keys=None,
-        pretrain_keys_modify_to_load=None,
-        pretrained_distiller=None,
-
-        # Backbone parameters
-        encoder='vit_tiny',
-        vit_encoder_num_layers=12,
-        window_block_indexes=None,
-        position_embedding='sine',
-        out_feature_indexes=[-1],
-        freeze_encoder=False,
-        layer_norm=False,
-        rms_norm=False,
-        backbone_lora=False,
-        force_no_pretrain=False,
-
-        # Transformer parameters
-        dec_layers=3,
-        dim_feedforward=2048,
-        hidden_dim=256,
-        sa_nheads=8,
-        ca_nheads=8,
-        num_queries=300,
-        group_detr=13,
-        two_stage=False,
-        projector_scale='P4',
-        lite_refpoint_refine=False,
-        num_select=100,
-        dec_n_points=4,
-        decoder_norm='LN',
-        bbox_reparam=False,
-        freeze_batch_norm=False,
-
-        # Matcher parameters
-        set_cost_class=2,
-        set_cost_bbox=5,
-        set_cost_giou=2,
-
-        # Loss coefficients
-        cls_loss_coef=2,
-        bbox_loss_coef=5,
-        giou_loss_coef=2,
-        focal_alpha=0.25,
-        aux_loss=True,
-        sum_group_losses=False,
-        use_varifocal_loss=False,
-        use_position_supervised_loss=False,
-        ia_bce_loss=False,
-
-        # Dataset parameters
-        dataset_file='coco',
-        coco_path=None,
-        dataset_dir=None,
-        square_resize_div_64=False,
-
-        # Output parameters
-        output_dir='output',
-        dont_save_weights=False,
-        checkpoint_interval=10,
-        seed=42,
-        resume='',
-        start_epoch=0,
-        eval=False,
-        use_ema=False,
-        ema_decay=0.9997,
-        ema_tau=0,
-        num_workers=2,
-
-        # Distributed training parameters
-        device='cuda',
-        world_size=1,
-        dist_url='env://',
-        sync_bn=True,
-
-        # FP16
-        fp16_eval=False,
-
-        # Custom args
-        encoder_only=False,
-        backbone_only=False,
-        resolution=640,
-        use_cls_token=False,
-        multi_scale=False,
-        expanded_scales=False,
-        warmup_epochs=1,
-        lr_scheduler='step',
-        lr_min_factor=0.0,
-        # Early stopping parameters
-        early_stopping=True,
-        early_stopping_patience=10,
-        early_stopping_min_delta=0.001,
-        early_stopping_use_ema=False,
-        gradient_checkpointing=False,
-        # Additional
-        subcommand=None,
-        **extra_kwargs  # To handle any unexpected arguments
+    # Basic training parameters
+    num_classes=2,
+    grad_accum_steps=1,
+    amp=False,
+    lr=1e-4,
+    lr_encoder=1.5e-4,
+    batch_size=2,
+    weight_decay=1e-4,
+    epochs=12,
+    lr_drop=11,
+    clip_max_norm=0.1,
+    lr_vit_layer_decay=0.8,
+    lr_component_decay=1.0,
+    do_benchmark=False,
+    # Drop parameters
+    dropout=0,
+    drop_path=0,
+    drop_mode="standard",
+    drop_schedule="constant",
+    cutoff_epoch=0,
+    # Model parameters
+    pretrained_encoder=None,
+    pretrain_weights=None,
+    pretrain_exclude_keys=None,
+    pretrain_keys_modify_to_load=None,
+    pretrained_distiller=None,
+    # Backbone parameters
+    encoder="vit_tiny",
+    vit_encoder_num_layers=12,
+    window_block_indexes=None,
+    position_embedding="sine",
+    out_feature_indexes=[-1],
+    freeze_encoder=False,
+    layer_norm=False,
+    rms_norm=False,
+    backbone_lora=False,
+    force_no_pretrain=False,
+    # Transformer parameters
+    dec_layers=3,
+    dim_feedforward=2048,
+    hidden_dim=256,
+    sa_nheads=8,
+    ca_nheads=8,
+    num_queries=300,
+    group_detr=13,
+    two_stage=False,
+    projector_scale="P4",
+    lite_refpoint_refine=False,
+    num_select=100,
+    dec_n_points=4,
+    decoder_norm="LN",
+    bbox_reparam=False,
+    freeze_batch_norm=False,
+    # Matcher parameters
+    set_cost_class=2,
+    set_cost_bbox=5,
+    set_cost_giou=2,
+    # Loss coefficients
+    cls_loss_coef=2,
+    bbox_loss_coef=5,
+    giou_loss_coef=2,
+    focal_alpha=0.25,
+    aux_loss=True,
+    sum_group_losses=False,
+    use_varifocal_loss=False,
+    use_position_supervised_loss=False,
+    ia_bce_loss=False,
+    # Dataset parameters
+    dataset_file="coco",
+    coco_path=None,
+    dataset_dir=None,
+    square_resize_div_64=False,
+    # Output parameters
+    output_dir="output",
+    dont_save_weights=False,
+    checkpoint_interval=10,
+    seed=42,
+    resume="",
+    start_epoch=0,
+    eval=False,
+    use_ema=False,
+    ema_decay=0.9997,
+    ema_tau=0,
+    num_workers=2,
+    # Distributed training parameters
+    device="cuda",
+    world_size=1,
+    dist_url="env://",
+    sync_bn=True,
+    # FP16
+    fp16_eval=False,
+    # Custom args
+    encoder_only=False,
+    backbone_only=False,
+    resolution=640,
+    use_cls_token=False,
+    multi_scale=False,
+    expanded_scales=False,
+    warmup_epochs=1,
+    lr_scheduler="step",
+    lr_min_factor=0.0,
+    # Early stopping parameters
+    early_stopping=True,
+    early_stopping_patience=10,
+    early_stopping_min_delta=0.001,
+    early_stopping_use_ema=False,
+    gradient_checkpointing=False,
+    # Additional
+    subcommand=None,
+    **extra_kwargs  # To handle any unexpected arguments
 ):
     args = argparse.Namespace(
         num_classes=num_classes,

@@ -9,10 +9,17 @@ from inference.v1 import Detections, ObjectDetectionModel
 from inference.v1.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference.v1.entities import ColorFormat
 from inference.v1.errors import EnvironmentConfigurationError
-from inference.v1.models.common.post_processing import run_nms_for_object_detection, rescale_detections
+from inference.v1.models.common.post_processing import (
+    rescale_detections,
+    run_nms_for_object_detection,
+)
+from inference.v1.models.common.roboflow.model_packages import (
+    PreProcessingConfig,
+    PreProcessingMetadata,
+    parse_class_names_file,
+    parse_pre_processing_config,
+)
 from inference.v1.models.common.roboflow.pre_processing import pre_process_network_input
-from inference.v1.models.common.roboflow.model_packages import parse_class_names_file, PreProcessingConfig, \
-    PreProcessingMetadata, parse_pre_processing_config
 from inference.v1.utils.model_packages import get_model_package_contents
 from inference.v1.utils.onnx import (
     run_session_via_iobinding,
@@ -20,7 +27,9 @@ from inference.v1.utils.onnx import (
 )
 
 
-class YOLOv8ForObjectDetectionOnnx(ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]):
+class YOLOv8ForObjectDetectionOnnx(
+    ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]
+):
 
     @classmethod
     def from_pretrained(
@@ -112,7 +121,9 @@ class YOLOv8ForObjectDetectionOnnx(ObjectDetectionModel[torch.Tensor, PreProcess
         with self._session_thread_lock:
             if self._input_batch_size is None:
                 return run_session_via_iobinding(
-                    session=self._session, input_name="images", inputs=pre_processed_images
+                    session=self._session,
+                    input_name="images",
+                    inputs=pre_processed_images,
                 )[0]
             results = []
             for i in range(0, pre_processed_images.shape[0], self._input_batch_size):
@@ -150,7 +161,7 @@ class YOLOv8ForObjectDetectionOnnx(ObjectDetectionModel[torch.Tensor, PreProcess
         for result in rescaled_results:
             results.append(
                 Detections(
-                    xyxy=result[:, :4],
+                    xyxy=result[:, :4].round().int(),
                     class_id=result[:, 5].int(),
                     confidence=result[:, 4],
                 )

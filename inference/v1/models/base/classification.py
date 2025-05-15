@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple, Union, Generic
+from typing import Any, Generic, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -29,17 +29,19 @@ class ClassificationModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
         pass
 
     def infer(
-        self, images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]], **kwargs
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
     ) -> ClassificationPrediction:
-        pre_processed_images = self.pre_process(
-            images, **kwargs
-        )
+        pre_processed_images = self.pre_process(images, **kwargs)
         model_results = self.forward(pre_processed_images, **kwargs)
         return self.post_process(model_results, **kwargs)
 
     @abstractmethod
     def pre_process(
-        self, images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]], **kwargs
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
     ) -> PreprocessedInputs:
         pass
 
@@ -56,7 +58,9 @@ class ClassificationModel(ABC, Generic[PreprocessedInputs, RawPrediction]):
         pass
 
     def __call__(
-        self, images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]], **kwargs
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
     ) -> ClassificationPrediction:
         return self.infer(images, **kwargs)
 
@@ -82,7 +86,9 @@ class MultiLabelClassificationModel(ABC, Generic[PreprocessedInputs, RawPredicti
         pass
 
     def infer(
-        self, images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]], **kwargs
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
     ) -> List[MultiLabelClassificationPrediction]:
         pre_processed_images = self.pre_process(images, **kwargs)
         model_results = self.forward(pre_processed_images, **kwargs)
@@ -90,7 +96,9 @@ class MultiLabelClassificationModel(ABC, Generic[PreprocessedInputs, RawPredicti
 
     @abstractmethod
     def pre_process(
-        self, images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]], **kwargs
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
     ) -> PreprocessedInputs:
         pass
 
@@ -107,6 +115,8 @@ class MultiLabelClassificationModel(ABC, Generic[PreprocessedInputs, RawPredicti
         pass
 
     def __call__(
-        self, images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]], **kwargs
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
     ) -> List[MultiLabelClassificationPrediction]:
         return self.infer(images, **kwargs)

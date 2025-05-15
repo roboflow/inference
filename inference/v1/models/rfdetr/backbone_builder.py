@@ -93,4 +93,3 @@ def build_backbone(
 
     model = Joiner(backbone, position_embedding)
     return model
-

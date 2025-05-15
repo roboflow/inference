@@ -5,15 +5,23 @@ import numpy as np
 import onnxruntime
 import torch
 
-from inference.v1 import Detections, KeyPointsDetectionModel, KeyPoints
+from inference.v1 import Detections, KeyPoints, KeyPointsDetectionModel
 from inference.v1.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference.v1.entities import ColorFormat
 from inference.v1.errors import EnvironmentConfigurationError
-from inference.v1.models.common.post_processing import run_nms_for_object_detection, rescale_detections, \
-    run_nms_for_key_points_detection
+from inference.v1.models.common.post_processing import (
+    rescale_detections,
+    rescale_key_points_detections,
+    run_nms_for_key_points_detection,
+)
+from inference.v1.models.common.roboflow.model_packages import (
+    PreProcessingConfig,
+    PreProcessingMetadata,
+    parse_class_names_file,
+    parse_key_points_metadata,
+    parse_pre_processing_config,
+)
 from inference.v1.models.common.roboflow.pre_processing import pre_process_network_input
-from inference.v1.models.common.roboflow.model_packages import parse_class_names_file, PreProcessingConfig, \
-    PreProcessingMetadata, parse_pre_processing_config, parse_key_points_metadata
 from inference.v1.utils.model_packages import get_model_package_contents
 from inference.v1.utils.onnx import (
     run_session_via_iobinding,
@@ -21,7 +29,9 @@ from inference.v1.utils.onnx import (
 )
 
 
-class YOLOv8ForKeyPointsDetectionOnnx(KeyPointsDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]):
+class YOLOv8ForKeyPointsDetectionOnnx(
+    KeyPointsDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor]
+):
 
     @classmethod
     def from_pretrained(
@@ -53,7 +63,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(KeyPointsDetectionModel[torch.Tensor, PreP
                 "environment.json",
                 "model_type.json",
                 "weights.onnx",
-                "keypoints_metadata.json"
+                "keypoints_metadata.json",
             ],
         )
         class_names = parse_class_names_file(
@@ -78,7 +88,7 @@ class YOLOv8ForKeyPointsDetectionOnnx(KeyPointsDetectionModel[torch.Tensor, PreP
             pre_processing_config=pre_processing_config,
             device=device,
             input_batch_size=input_batch_size,
-            parsed_key_points_metadata=parsed_key_points_metadata
+            parsed_key_points_metadata=parsed_key_points_metadata,
         )
 
     def __init__(
@@ -97,7 +107,12 @@ class YOLOv8ForKeyPointsDetectionOnnx(KeyPointsDetectionModel[torch.Tensor, PreP
         self._input_batch_size = input_batch_size
         self._session_thread_lock = Lock()
         self._parsed_key_points_metadata = parsed_key_points_metadata
-        self._key_points_slots_in_prediction = max(len(e) for e in parsed_key_points_metadata)
+        self._key_points_classes_for_instances = torch.tensor(
+            [len(e) for e in self._parsed_key_points_metadata], device=device
+        )
+        self._key_points_slots_in_prediction = max(
+            len(e) for e in parsed_key_points_metadata
+        )
 
     @property
     def class_names(self) -> List[str]:
@@ -125,7 +140,9 @@ class YOLOv8ForKeyPointsDetectionOnnx(KeyPointsDetectionModel[torch.Tensor, PreP
         with self._session_thread_lock:
             if self._input_batch_size is None:
                 return run_session_via_iobinding(
-                    session=self._session, input_name="images", inputs=pre_processed_images
+                    session=self._session,
+                    input_name="images",
+                    inputs=pre_processed_images,
                 )[0]
             results = []
             for i in range(0, pre_processed_images.shape[0], self._input_batch_size):
@@ -146,28 +163,51 @@ class YOLOv8ForKeyPointsDetectionOnnx(KeyPointsDetectionModel[torch.Tensor, PreP
         iou_thresh: float = 0.45,
         max_detections: int = 100,
         class_agnostic: bool = False,
+        key_points_threshold: float = 0.3,
         **kwargs,
     ) -> Tuple[List[KeyPoints], Optional[List[Detections]]]:
         nms_results = run_nms_for_key_points_detection(
             output=model_results,
+            num_classes=len(self._class_names),
+            key_points_slots_in_prediction=self._key_points_slots_in_prediction,
             conf_thresh=conf_thresh,
             iou_thresh=iou_thresh,
             max_detections=max_detections,
             class_agnostic=class_agnostic,
-            num_classes=len(self._class_names),
         )
-        rescaled_results = rescale_detections(
+        rescaled_results = rescale_key_points_detections(
             detections=nms_results,
             images_metadata=pre_processing_meta,
+            num_classes=len(self._class_names),
+            key_points_slots_in_prediction=self._key_points_slots_in_prediction,
         )
         detections, all_key_points = [], []
         for result in rescaled_results:
+            class_id = result[:, 5].int()
             detections.append(
                 Detections(
-                    xyxy=result[:, :4],
-                    class_id=result[:, 5].int(),
+                    xyxy=result[:, :4].round().int(),
+                    class_id=class_id,
                     confidence=result[:, 4],
                 )
             )
-            all_key_points.append(None)
-        return results, all_key_points
+            key_points_reshaped = result[:, 6:].view(result.shape[0], -1, 3)
+            xy = key_points_reshaped[:, :, :2]
+            confidence = key_points_reshaped[:, :, 2]
+            key_points_classes_for_instance_class = (
+                self._key_points_classes_for_instances[class_id]
+            )
+            instances_class_mask = (
+                torch.arange(self._key_points_slots_in_prediction, device=result.device)
+                .unsqueeze(0)
+                .repeat(result.shape[0], 1)
+                < key_points_classes_for_instance_class
+            )
+            confidence_mask = confidence < key_points_threshold
+            mask = instances_class_mask & confidence_mask
+            xy[mask] = 0.0
+            confidence[mask] = 0.0
+            all_key_points.append(
+                KeyPoints(xy=xy.round().int(), class_id=class_id, confidence=confidence)
+            )
+        return all_key_points, detections

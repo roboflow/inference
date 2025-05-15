@@ -1,11 +1,15 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple, Union, Generic
+from typing import Any, Generic, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 
-from inference.v1.models.base.types import PreprocessedInputs, PreprocessingMetadata, RawPrediction
+from inference.v1.models.base.types import (
+    PreprocessedInputs,
+    PreprocessingMetadata,
+    RawPrediction,
+)
 
 
 @dataclass
@@ -19,7 +23,9 @@ class Detections:
     )
 
 
-class ObjectDetectionModel(ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]):
+class ObjectDetectionModel(
+    ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
+):
 
     @classmethod
     @abstractmethod
@@ -44,17 +50,24 @@ class ObjectDetectionModel(ABC, Generic[PreprocessedInputs, PreprocessingMetadat
 
     @abstractmethod
     def pre_process(
-        self, images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]], **kwargs
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
     ) -> Tuple[PreprocessedInputs, PreprocessingMetadata]:
         pass
 
     @abstractmethod
-    def forward(self, pre_processed_images: PreprocessedInputs, **kwargs) -> RawPrediction:
+    def forward(
+        self, pre_processed_images: PreprocessedInputs, **kwargs
+    ) -> RawPrediction:
         pass
 
     @abstractmethod
     def post_process(
-        self, model_results: RawPrediction, pre_processing_meta: PreprocessingMetadata, **kwargs
+        self,
+        model_results: RawPrediction,
+        pre_processing_meta: PreprocessingMetadata,
+        **kwargs,
     ) -> List[Detections]:
         pass
 
