@@ -23,7 +23,7 @@ from inference.v1.models.common.roboflow.model_packages import (
     parse_trt_config,
 )
 from inference.v1.models.common.roboflow.pre_processing import pre_process_network_input
-from inference.v1.models.common.trt import execute_trt_engine, load_model
+from inference.v1.models.common.trt import execute_trt_engine, load_model, infer_from_trt_engine
 
 
 class YOLOv8ForObjectDetectionTRT(
@@ -117,13 +117,15 @@ class YOLOv8ForObjectDetectionTRT(
 
             Nvidia 21, 37 (https://docs.nvidia.com/deeplearning/tensorrt/10.8.0/architecture/how-trt-works.html)
             """
-            if self._trt_config.static_batch_size is not None:
-                return self._forward_pass_static_batch_size(
-                    pre_processed_images=pre_processed_images
-                )
-            return self._forward_pass_dynamic_batch_size(
-                pre_processed_images=pre_processed_images
-            )
+            return infer_from_trt_engine(
+                pre_processed_images=pre_processed_images,
+                trt_config=self._trt_config,
+                engine=self._engine,
+                context=self._context,
+                device=self._device,
+                input_name="images",
+                outputs=["output0"]
+            )[0]
 
     def post_process(
         self,
@@ -156,97 +158,3 @@ class YOLOv8ForObjectDetectionTRT(
                 )
             )
         return results
-
-    def _forward_pass_static_batch_size(
-        self, pre_processed_images: torch.Tensor
-    ) -> torch.Tensor:
-        batch_pad_reminder = 0
-        if pre_processed_images.shape[0] < self._trt_config.static_batch_size:
-            batch_pad_reminder = (
-                self._trt_config.static_batch_size - pre_processed_images.shape[0]
-            )
-            pre_processed_images = torch.cat(
-                (
-                    pre_processed_images,
-                    torch.zeros(
-                        (batch_pad_reminder,) + pre_processed_images.shape[1:],
-                        dtype=pre_processed_images.dtype,
-                        device=pre_processed_images.device,
-                    ),
-                ),
-                dim=0,
-            )
-        result = execute_trt_engine(
-            pre_processed_image=pre_processed_images,
-            engine=self._engine,
-            context=self._context,
-            device=self._device,
-            input_name="images",
-            outputs=["output0"],
-        )[0]
-        if not batch_pad_reminder:
-            return result
-        return result[:-batch_pad_reminder]
-
-    def _forward_pass_dynamic_batch_size(
-        self, pre_processed_images: torch.Tensor
-    ) -> torch.Tensor:
-        if pre_processed_images.shape[0] <= self._trt_config.dynamic_batch_size_max:
-            reminder = (
-                self._trt_config.dynamic_batch_size_min - pre_processed_images.shape[0]
-            )
-            if reminder > 0:
-                pre_processed_images = torch.cat(
-                    (
-                        pre_processed_images,
-                        torch.zeros(
-                            (reminder,) + pre_processed_images.shape[1:],
-                            dtype=pre_processed_images.dtype,
-                            device=pre_processed_images.device,
-                        ),
-                    ),
-                    dim=0,
-                )
-            result = execute_trt_engine(
-                pre_processed_image=pre_processed_images,
-                engine=self._engine,
-                context=self._context,
-                device=self._device,
-                input_name="images",
-                outputs=["output0"],
-            )[0]
-            if reminder > 0:
-                result = result[:-reminder]
-            return result
-        results = []
-        for i in range(
-            0, pre_processed_images.shape[0], self._trt_config.dynamic_batch_size_max
-        ):
-            batch = pre_processed_images[
-                i : i + self._trt_config.dynamic_batch_size_max
-            ].contiguous()
-            reminder = self._trt_config.dynamic_batch_size_min - batch.shape[0]
-            if reminder > 0:
-                batch = torch.cat(
-                    (
-                        pre_processed_images,
-                        torch.zeros(
-                            (reminder,) + batch.shape[1:],
-                            dtype=pre_processed_images.dtype,
-                            device=pre_processed_images.device,
-                        ),
-                    ),
-                    dim=0,
-                )
-            result = execute_trt_engine(
-                pre_processed_image=batch,
-                engine=self._engine,
-                context=self._context,
-                device=self._device,
-                input_name="images",
-                outputs=["output0"],
-            )[0]
-            if reminder > 0:
-                result = result[:-reminder]
-            results.append(result)
-        return torch.cat(results, dim=0)
