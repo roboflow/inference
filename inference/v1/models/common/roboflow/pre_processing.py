@@ -246,9 +246,13 @@ def pre_process_images_tensor_list(
         original_shapes = torch.tensor(
             [[img.shape[0], img.shape[1]] for img in images], dtype=torch.float32
         )
+        print("original_shapes", original_shapes)
         scale_w = target_w / original_shapes[:, 1]
         scale_h = target_h / original_shapes[:, 0]
+        print("scale_w", scale_w)
+        print("scale_h", scale_h)
         scales = torch.minimum(scale_w, scale_h)
+        print("scales", scales)
         new_ws = (original_shapes[:, 1] * scales).int()
         new_hs = (original_shapes[:, 0] * scales).int()
         pad_tops = ((target_h - new_hs) / 2).int()
