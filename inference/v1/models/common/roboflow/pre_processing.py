@@ -3,7 +3,6 @@ from typing import List, Optional, Tuple
 import cv2
 import numpy as np
 import torch
-from torch.nn import functional as F
 from torchvision.transforms import functional
 
 from inference.v1.entities import ColorFormat, ImageDimensions
@@ -246,21 +245,13 @@ def pre_process_images_tensor_list(
         original_shapes = torch.tensor(
             [[img.shape[1], img.shape[2]] for img in images], dtype=torch.float32
         )
-        # print("original_shapes", original_shapes)
         scale_w = target_w / original_shapes[:, 1]
         scale_h = target_h / original_shapes[:, 0]
-        # print("scale_w", scale_w)
-        # print("scale_h", scale_h)
         scales = torch.minimum(scale_w, scale_h)
-        # print("scales", scales)
         new_ws = (original_shapes[:, 1] * scales).int()
         new_hs = (original_shapes[:, 0] * scales).int()
         pad_tops = ((target_h - new_hs) / 2).int()
         pad_lefts = ((target_w - new_ws) / 2).int()
-        # print("new_ws", new_ws)
-        # print("new_hs", new_hs)
-        # print("pad_tops", pad_tops)
-        # print("pad_lefts", pad_lefts)
         images_metadata = []
         for i in range(num_images):
             image_hwc = images[i].to(target_device)  # Ensure on correct device
@@ -280,9 +271,6 @@ def pre_process_images_tensor_list(
                 interpolation=functional.InterpolationMode.BILINEAR
             )
             pad_top_i, pad_left_i = pad_tops[i].item(), pad_lefts[i].item()
-            # print(resized_chw.shape)
-            # print(pad_top_i,  pad_top_i + new_h_i)
-            # print(pad_left_i, pad_left_i + new_w_i)
             final_batch[
                 i, :, pad_top_i : pad_top_i + new_h_i, pad_left_i : pad_left_i + new_w_i
             ] = resized_chw
