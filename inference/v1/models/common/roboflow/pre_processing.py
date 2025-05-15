@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import torch
 from torch.nn import functional as F
+from torchvision.transforms import functional
 
 from inference.v1.entities import ColorFormat, ImageDimensions
 from inference.v1.errors import ModelRuntimeError
@@ -209,8 +210,10 @@ def pre_process_images_tensor_list(
             if input_color_format != expected_network_color_format:
                 img = img[[2, 1, 0], :, :]
             img = img.unsqueeze(0)
-            img = F.interpolate(
-                img, size=(target_height, target_width), mode="bilinear"
+            img = functional.resize(
+                img,
+                [target_height, target_width],
+                interpolation=functional.InterpolationMode.BILINEAR
             )
             img = img / normalization_constant
             processed.append(img.contiguous())
@@ -263,8 +266,10 @@ def pre_process_images_tensor_list(
                 height=image_hwc.shape[1], width=image_hwc.shape[2]
             )
             new_h_i, new_w_i = new_hs[i].item(), new_ws[i].item()
-            resized_chw = F.interpolate(
-                image_hwc, size=(target_height, target_width), mode="bilinear"
+            resized_chw = functional.resize(
+                image_hwc,
+                [target_height, target_width],
+                interpolation=functional.InterpolationMode.BILINEAR
             )
             pad_top_i, pad_left_i = pad_tops[i].item(), pad_lefts[i].item()
             final_batch[
