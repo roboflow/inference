@@ -161,3 +161,49 @@ def _retrieve_key_points_names(instance_key_point_description: dict) -> List[str
         key=lambda e: e[0],
     )
     return [e[1] for e in key_points_dump]
+
+
+@dataclass
+class TRTConfig:
+    static_batch_size: Optional[int]
+    dynamic_batch_size_min: Optional[int]
+    dynamic_batch_size_opt: Optional[int]
+    dynamic_batch_size_max: Optional[int]
+
+
+def parse_trt_config(config_path: str) -> TRTConfig:
+    try:
+        with open(config_path) as f:
+            parsed_config = json.load(f)
+            config = TRTConfig(
+                static_batch_size=parsed_config.get("static_batch_size"),
+                dynamic_batch_size_min=parsed_config.get("dynamic_batch_size_min"),
+                dynamic_batch_size_opt=parsed_config.get("dynamic_batch_size_opt"),
+                dynamic_batch_size_max=parsed_config.get("dynamic_batch_size_max"),
+            )
+            if config.static_batch_size is not None:
+                if config.static_batch_size <= 0:
+                    raise ValueError(
+                        f"invalid static batch size - {config.static_batch_size}"
+                    )
+                return config
+            if (
+                config.dynamic_batch_size_min is None
+                or config.dynamic_batch_size_max is None
+            ):
+                raise ValueError(
+                    "configuration does not provide information about boundaries for dynamic batch size"
+                )
+            if (
+                config.dynamic_batch_size_min <= 0
+                or config.dynamic_batch_size_max < config.dynamic_batch_size_min
+            ):
+                raise ValueError(f"invalid dynamic batch size")
+            return config
+    except (IOError, OSError, ValueError) as error:
+        raise CorruptedModelPackageError(
+            f"TRT config file located under path {config_path} is malformed: "
+            f"{error}. In case that the package is "
+            f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
+            f"verify its consistency in docs."
+        ) from error

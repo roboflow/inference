@@ -1,5 +1,5 @@
 from threading import Lock
-from typing import Any, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import onnxruntime
@@ -9,8 +9,12 @@ from inference.v1 import Detections, KeyPoints, KeyPointsDetectionModel
 from inference.v1.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
 from inference.v1.entities import ColorFormat
 from inference.v1.errors import EnvironmentConfigurationError
+from inference.v1.models.common.model_packages import get_model_package_contents
+from inference.v1.models.common.onnx import (
+    run_session_via_iobinding,
+    set_execution_provider_defaults,
+)
 from inference.v1.models.common.post_processing import (
-    rescale_detections,
     rescale_key_points_detections,
     run_nms_for_key_points_detection,
 )
@@ -22,11 +26,6 @@ from inference.v1.models.common.roboflow.model_packages import (
     parse_pre_processing_config,
 )
 from inference.v1.models.common.roboflow.pre_processing import pre_process_network_input
-from inference.v1.utils.model_packages import get_model_package_contents
-from inference.v1.utils.onnx import (
-    run_session_via_iobinding,
-    set_execution_provider_defaults,
-)
 
 
 class YOLOv8ForKeyPointsDetectionOnnx(

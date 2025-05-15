@@ -1,4 +1,4 @@
-from typing import Any, List, Tuple, Union
+from typing import List, Tuple, Union
 
 import numpy as np
 import torch
@@ -7,6 +7,7 @@ from inference.v1 import Detections, ObjectDetectionModel
 from inference.v1.configuration import DEFAULT_DEVICE
 from inference.v1.entities import ColorFormat
 from inference.v1.errors import CorruptedModelPackageError
+from inference.v1.models.common.model_packages import get_model_package_contents
 from inference.v1.models.common.roboflow.model_packages import (
     PreProcessingConfig,
     PreProcessingMetadata,
@@ -22,7 +23,6 @@ from inference.v1.models.rfdetr.rfdetr_base_pytorch import (
     RFDETRLargeConfig,
     build_model,
 )
-from inference.v1.utils.model_packages import get_model_package_contents
 
 torch.set_float32_matmul_precision("high")
 
@@ -43,7 +43,7 @@ class RFDetrForObjectDetectionTorch(
         device: torch.device = DEFAULT_DEVICE,
         compile_model: bool = False,
         **kwargs,
-    ) -> "ObjectDetectionModel":
+    ) -> "RFDetrForObjectDetectionTorch":
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
