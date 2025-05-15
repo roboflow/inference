@@ -244,7 +244,7 @@ def pre_process_images_tensor_list(
             device=target_device,
         )
         original_shapes = torch.tensor(
-            [[img.shape[0], img.shape[1]] for img in images], dtype=torch.float32
+            [[img.shape[1], img.shape[2]] for img in images], dtype=torch.float32
         )
         print("original_shapes", original_shapes)
         scale_w = target_w / original_shapes[:, 1]
