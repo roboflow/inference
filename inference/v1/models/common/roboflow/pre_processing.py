@@ -272,6 +272,9 @@ def pre_process_images_tensor_list(
                 interpolation=functional.InterpolationMode.BILINEAR
             )
             pad_top_i, pad_left_i = pad_tops[i].item(), pad_lefts[i].item()
+            print(resized_chw.shape)
+            print(pad_top_i,  pad_top_i + new_h_i)
+            print(pad_left_i, pad_left_i + new_w_i)
             final_batch[
                 i, :, pad_top_i : pad_top_i + new_h_i, pad_left_i : pad_left_i + new_w_i
             ] = resized_chw
