@@ -253,6 +253,10 @@ def pre_process_images_tensor_list(
         new_hs = (original_shapes[:, 0] * scales).int()
         pad_tops = ((target_h - new_hs) / 2).int()
         pad_lefts = ((target_w - new_ws) / 2).int()
+        print("new_ws", new_ws)
+        print("new_hs", new_hs)
+        print("pad_tops", pad_tops)
+        print("pad_lefts", pad_lefts)
         images_metadata = []
         for i in range(num_images):
             image_hwc = images[i].to(target_device)  # Ensure on correct device
