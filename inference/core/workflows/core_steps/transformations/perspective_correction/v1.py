@@ -552,6 +552,8 @@ def generate_transformation_matrix(
     src_polygon = roll_polygon_vertices_to_start_from_leftmost_bottom(
         polygon=polygon_with_vertices_clockwise
     )
+    original_width = transformed_rect_width
+    original_height = transformed_rect_height
     extended_width = 0
     extended_height = 0
     if detections and detections_anchor:
