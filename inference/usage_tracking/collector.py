@@ -35,8 +35,8 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
 )
 from inference.core.logger import logger
-from inference.core.version import __version__ as inference_version
 from inference.core.roboflow_api import build_roboflow_api_headers
+from inference.core.version import __version__ as inference_version
 
 from .config import TelemetrySettings, get_telemetry_settings
 from .decorator_helpers import (
