@@ -4,6 +4,7 @@ from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
 import requests
 
 # NOTE: This module is used in isolation, no imports from inference are allowed
+# NOTE: Any change made to this file should be matched to changes in redis offloader
 
 
 ResourceID = str
