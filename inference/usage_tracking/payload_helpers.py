@@ -3,7 +3,8 @@ from typing import Any, DefaultDict, Dict, List, Optional, Set, Union
 
 import requests
 
-from inference.core.roboflow_api import build_roboflow_api_headers
+# NOTE: This module is used in isolation, no imports from inference are allowed
+
 
 ResourceID = str
 Usage = Union[DefaultDict[str, Any], Dict[str, Any]]
@@ -149,6 +150,7 @@ def send_usage_payload(
     api_usage_endpoint_url: str,
     hashes_to_api_keys: Optional[Dict[APIKeyHash, APIKey]] = None,
     ssl_verify: bool = False,
+    headers: Optional[Dict[str, str]] = None,
 ) -> Set[APIKeyHash]:
     hashes_to_api_keys = hashes_to_api_keys or {}
     api_keys_hashes_failed = set()
@@ -168,9 +170,6 @@ def send_usage_payload(
                 if "api_key_hash" in workflow_payload:
                     del workflow_payload["api_key_hash"]
                 workflow_payload["api_key"] = api_key
-            headers = build_roboflow_api_headers(
-                explicit_headers={"Authorization": f"Bearer {api_key}"}
-            )
             response = requests.post(
                 api_usage_endpoint_url,
                 json=complete_workflow_payloads,
