@@ -301,6 +301,12 @@ from inference.core.workflows.core_steps.transformations.byte_tracker.v2 import 
 from inference.core.workflows.core_steps.transformations.byte_tracker.v3 import (
     ByteTrackerBlockV3,
 )
+from inference.core.workflows.core_steps.trackers.deep_sort.v1 import (
+    DeepSortTrackerBlockV1,
+)
+from inference.core.workflows.core_steps.trackers.sort.v1 import (
+    SortTrackerBlockV1,
+)
 from inference.core.workflows.core_steps.transformations.camera_calibration.v1 import (
     CameraCalibrationBlockV1,
 )
@@ -626,6 +632,8 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         TraceVisualizationBlockV1,
         ReferencePathVisualizationBlockV1,
         ByteTrackerBlockV3,
+        DeepSortTrackerBlockV1,
+        SortTrackerBlockV1,
         WebhookSinkBlockV1,
         VelocityBlockV1,
         RoboflowInstanceSegmentationModelBlockV2,
