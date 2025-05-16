@@ -207,3 +207,27 @@ def parse_trt_config(config_path: str) -> TRTConfig:
             f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
             f"verify its consistency in docs."
         ) from error
+
+
+def parse_class_map_from_environment_file(environment_file_path: str) -> List[str]:
+    try:
+        with open(environment_file_path) as f:
+            parsed_config = json.load(f)
+            if "CLASS_MAP" not in parsed_config:
+                raise ValueError("config does not provide `CLASS_MAP` config")
+            class_map_dict = parsed_config["CLASS_MAP"]
+            class_map: List[Optional[str]] = [None] * len(class_map_dict)
+            for class_id, class_name in class_map_dict.items():
+                class_map[int(class_id)] = class_name
+            if any(c is None for c in class_map):
+                raise ValueError(
+                    "class mapping does not provide class name for every class id"
+                )
+            return class_map
+    except (IOError, OSError, ValueError) as error:
+        raise CorruptedModelPackageError(
+            f"Environment file located under path {environment_file_path} is malformed: "
+            f"{error}. In case that the package is "
+            f"hosted on the Roboflow platform - contact support. If you created model package manually, please "
+            f"verify its consistency in docs."
+        ) from error

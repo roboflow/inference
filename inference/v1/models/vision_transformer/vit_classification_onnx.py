@@ -1,0 +1,144 @@
+from threading import Lock
+from typing import List, Optional, Union
+
+import numpy as np
+import onnxruntime
+import torch
+
+from inference.v1 import ClassificationModel, ClassificationPrediction
+from inference.v1.configuration import DEFAULT_DEVICE, ONNXRUNTIME_EXECUTION_PROVIDERS
+from inference.v1.entities import ColorFormat
+from inference.v1.errors import EnvironmentConfigurationError
+from inference.v1.models.base.types import PreprocessedInputs, RawPrediction
+from inference.v1.models.common.model_packages import get_model_package_contents
+from inference.v1.models.common.onnx import (
+    run_session_via_iobinding,
+    set_execution_provider_defaults,
+)
+from inference.v1.models.common.roboflow.model_packages import (
+    PreProcessingConfig,
+    parse_class_map_from_environment_file,
+    parse_pre_processing_config,
+)
+from inference.v1.models.common.roboflow.pre_processing import pre_process_network_input
+
+
+class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        model_name_or_path: str,
+        execution_providers: Optional[List[Union[str, tuple]]] = None,
+        default_trt_options: bool = True,
+        device: torch.device = DEFAULT_DEVICE,
+        **kwargs,
+    ) -> "VITForClassificationOnnx":
+        if execution_providers is None:
+            execution_providers = ONNXRUNTIME_EXECUTION_PROVIDERS
+        if not ONNXRUNTIME_EXECUTION_PROVIDERS:
+            raise EnvironmentConfigurationError(
+                f"Could not initialize model - selected backend is ONNX which requires execution provider to "
+                f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
+                f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
+                f"contact the platform support."
+            )
+        execution_providers = set_execution_provider_defaults(
+            providers=execution_providers,
+            model_package_path=model_name_or_path,
+            device=device,
+        )
+        model_package_content = get_model_package_contents(
+            model_package_dir=model_name_or_path,
+            elements=[
+                "environment.json",
+                "model_type.json",
+                "best.onnx",
+            ],
+        )
+        class_names = parse_class_map_from_environment_file(
+            environment_file_path=model_package_content["environment.json"],
+        )
+        pre_processing_config = parse_pre_processing_config(
+            environment_file_path=model_package_content["environment.json"],
+        )
+        session = onnxruntime.InferenceSession(
+            path_or_bytes=model_package_content["best.onnx"],
+            providers=execution_providers,
+        )
+        input_batch_size = session.get_inputs()[0].shape[0]
+        if isinstance(input_batch_size, str):
+            input_batch_size = None
+        return cls(
+            session=session,
+            pre_processing_config=pre_processing_config,
+            class_names=class_names,
+            device=device,
+            input_batch_size=input_batch_size,
+        )
+
+    def __init__(
+        self,
+        session: onnxruntime.InferenceSession,
+        pre_processing_config: PreProcessingConfig,
+        class_names: List[str],
+        device: torch.device,
+        input_batch_size: Optional[int],
+    ):
+        self._session = session
+        self._pre_processing_config = pre_processing_config
+        self._class_names = class_names
+        self._device = device
+        self._input_batch_size = input_batch_size
+        self._session_thread_lock = Lock()
+
+    @property
+    def class_names(self) -> List[str]:
+        return self._class_names
+
+    def pre_process(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        input_color_format: Optional[ColorFormat] = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        return pre_process_network_input(
+            images=images,
+            pre_processing_config=self._pre_processing_config,
+            expected_network_color_format="rgb",
+            target_device=self._device,
+            input_color_format=input_color_format,
+        )[0]
+
+    def forward(
+        self, pre_processed_images: PreprocessedInputs, **kwargs
+    ) -> RawPrediction:
+        with self._session_thread_lock:
+            if self._input_batch_size is None:
+                results = run_session_via_iobinding(
+                    session=self._session,
+                    input_name="input.1",
+                    inputs=pre_processed_images,
+                )[0]
+                return results
+            all_results = []
+            for i in range(0, pre_processed_images.shape[0], self._input_batch_size):
+                batch_input = pre_processed_images[
+                    i : i + self._input_batch_size
+                ].contiguous()
+                results = run_session_via_iobinding(
+                    session=self._session, input_name="input.1", inputs=batch_input
+                )[0]
+                all_results.append(results)
+            return torch.cat(all_results, dim=0)
+
+    def post_process(
+        self,
+        model_results: torch.Tensor,
+        **kwargs,
+    ) -> ClassificationPrediction:
+        confidence = torch.nn.functional.softmax(model_results, dim=-1)
+        return ClassificationPrediction(
+            class_id=confidence.argmax(dim=-1),
+            confidence=confidence,
+        )

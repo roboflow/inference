@@ -28,6 +28,7 @@ class InstanceSegmentationModel(
 ):
 
     @classmethod
+    @abstractmethod
     def from_pretrained(
         cls, model_name_or_path: str, **kwargs
     ) -> "InstanceSegmentationModel":
