@@ -533,9 +533,7 @@ class UsageCollector:
                 api_usage_endpoint_url=self._settings.api_usage_endpoint_url,
                 hashes_to_api_keys=hashes_to_api_keys,
                 ssl_verify=ssl_verify,
-                headers=build_roboflow_api_headers(
-                    explicit_headers={"Authorization": f"Bearer {api_key}"}
-                ),
+                extra_headers=build_roboflow_api_headers(),
             )
             if api_keys_hashes_failed:
                 logger.debug(
