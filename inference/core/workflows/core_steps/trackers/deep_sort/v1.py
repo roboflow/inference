@@ -2,15 +2,16 @@ from typing import Literal, Union
 
 import supervision as sv
 
-from inference.core.workflows.execution_engine.entities.base import Selector, WorkflowImageData
+from inference.core.workflows.execution_engine.entities.base import (
+    Selector,
+    WorkflowImageData,
+)
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
 )
-from .trackers.base import (
-    BaseReIDTrackerBlock,
-    BaseReIDTrackerBlockManifest,
-)
+
+from .trackers.base import BaseReIDTrackerBlock, BaseReIDTrackerBlockManifest
 
 __all__ = ["DeepSortTrackerBlockV1"]
 

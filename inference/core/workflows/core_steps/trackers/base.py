@@ -56,6 +56,7 @@ class InstanceCache:
 # Base tracker (algorithm‑agnostic)
 # ---------------------------------------------------------------------------
 
+
 class BaseTrackerBlockManifest(WorkflowBlockManifest):
     """Common schema for any tracker workflow block."""
 
@@ -69,7 +70,9 @@ class BaseTrackerBlockManifest(WorkflowBlockManifest):
     detections: Selector(kind=[OBJECT_DETECTION_PREDICTION_KIND])
 
     # Shared params
-    track_activation_threshold: Union[float, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = 0.25
+    track_activation_threshold: Union[
+        float, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])
+    ] = 0.25
     lost_track_buffer: Union[int, Selector(kind=[INTEGER_KIND])] = 30
     minimum_consecutive_frames: Union[int, Selector(kind=[INTEGER_KIND])] = 3
     minimum_iou_threshold: Union[float, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = 0.3
@@ -181,6 +184,7 @@ class BaseTrackerBlock(WorkflowBlock):
 # Base for ReID‑based trackers (needs frame & embedding model)
 # ---------------------------------------------------------------------------
 
+
 class BaseReIDTrackerBlockManifest(BaseTrackerBlockManifest):
     type: Literal["roboflow_core/reid_tracker@v1"]
 
@@ -206,10 +210,14 @@ class BaseReIDTrackerBlock(BaseTrackerBlock):
         if self._reid_model is None or model_name != self._reid_model_name:
             from trackers.core.reid.model import ReIDModel
 
-            self._reid_model = ReIDModel.from_timm(model_name=model_name, device=device or "auto")
+            self._reid_model = ReIDModel.from_timm(
+                model_name=model_name, device=device or "auto"
+            )
             self._reid_model_name = model_name
         return self._reid_model
 
     # Override BaseTrackerBlock behaviour
-    def _update_tracker(self, tracker, detections: sv.Detections, image: WorkflowImageData):
+    def _update_tracker(
+        self, tracker, detections: sv.Detections, image: WorkflowImageData
+    ):
         return tracker.update(detections, image.numpy_image)

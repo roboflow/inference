@@ -5,9 +5,11 @@ from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
 )
+
 from .trackers.base import BaseTrackerBlock, BaseTrackerBlockManifest
 
 __all__ = ["SortTrackerBlockV1"]
+
 
 class SortTrackerBlockManifest(BaseTrackerBlockManifest):
     type: Literal["roboflow_core/sort_tracker@v1"]
@@ -26,9 +28,17 @@ class SortTrackerBlockV1(BaseTrackerBlock):
 
     # ------------------------------------------------------------------
 
-    def _instantiate_tracker(self, *, video_id: str, frame_rate: float, track_activation_threshold: float,
-                             lost_track_buffer: int, minimum_consecutive_frames: int, minimum_iou_threshold: float,
-                             **kwargs):
+    def _instantiate_tracker(
+        self,
+        *,
+        video_id: str,
+        frame_rate: float,
+        track_activation_threshold: float,
+        lost_track_buffer: int,
+        minimum_consecutive_frames: int,
+        minimum_iou_threshold: float,
+        **kwargs
+    ):
         from trackers.core.sort.tracker import SORTTracker
 
         return SORTTracker(
