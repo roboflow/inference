@@ -50,9 +50,7 @@ class BlockManifest(WorkflowBlockManifest):
             "name": "Moondream2",
             "version": "v1",
             "short_description": "Run Moondream2 on an image.",
-            "long_description": (
-                "This workflow block runs Moondream2, a multimodal vision-language model. You can use this block to run zero-shot object detection.",
-            ),
+            "long_description": "This workflow block runs Moondream2, a multimodal vision-language model. You can use this block to run zero-shot object detection.",
             "license": "Apache-2.0",
             "block_type": "model",
             "search_keywords": [

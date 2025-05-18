@@ -20,7 +20,7 @@ from inference_sdk.http.utils.iterables import make_batches
 from inference_sdk.http.utils.request_building import RequestData
 from inference_sdk.http.utils.requests import api_key_safe_raise_for_status
 
-RETRYABLE_STATUS_CODES = {429, 503}
+RETRYABLE_STATUS_CODES = {429, 503, 504}
 
 
 class RequestMethod(Enum):
