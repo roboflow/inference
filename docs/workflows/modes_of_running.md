@@ -1,12 +1,12 @@
 # What are the options for running workflows?
 
-There are few ways on how to run Workflow, including:
+There are several ways to run a Workflow, including:
 
-- Request to HTTP API (Roboflow Hosted API or self-hosted `inference` server) running Workflows Execution Engine
+- Request to the HTTP API (Roboflow Hosted API or a self-hosted `inference` server) running the Workflows Execution Engine
 
 - Video processing using [InferencePipeline](../using_inference/inference_pipeline.md)
 
-- `inference` Python package, where you can use Workflows Execution Engine directly in your Python app
+- the `inference` Python package, where you can use the Workflows Execution Engine directly in your Python app
 
 ## HTTP API request
 
@@ -22,12 +22,12 @@ This way of running Workflows is ideal for clients who:
 Roboflow offers a hosted HTTP API that clients can use without needing their own infrastructure. 
 Alternatively, the `inference` server (which can run Workflows) can be set up on-site if needed.
 
-Running Workflows with Roboflow Hosted API has several limitations:
+Running Workflows with the Roboflow Hosted API has several limitations:
 
-- Workflow runtime is limited to 20s
+- Workflow runtime is limited to 20 seconds.
 
-- Response payload is limited to 6MB, which means that some blocks (especially visualization ones) if used
-in too large numbers, or with input images that are too large may result in failed request
+- The response payload is limited to 6 MB. This means that some blocks—especially visualization blocks—may fail
+if you use too many of them or if the input images are too large.
 
 
 
@@ -341,3 +341,4 @@ Here you can find example on how to run simple workflow in Python code.
         }
     )
     ```
+

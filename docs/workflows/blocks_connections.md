@@ -8,16 +8,15 @@ blocks are possible, while others may not be.
 
 !!! Note 
     
-    Using the Workflows UI in the Roboflow APP you may find compatible connections between steps found
-    automatically without need for your input. This page explains briefly how to deduce if two 
-    blocks can be connected, making it possible to connect steps manually if needed. Logically,
-    the page must appear before a link to [blocks gallery](/workflows/blocks.md), as it explains 
-    how to effectively use these docs. At the same time, it introduces references to concepts 
-    further explained in the User and Developer Guide. Please continue reading those sections
-    if you find some concepts presented here needing further explanation.
+    Using the Workflows UI in the Roboflow app, you may find compatible connections between steps automatically,
+    without any input from you. This page briefly explains how to determine whether two
+    blocks can be connected, making it possible to connect steps manually if needed. This page appears
+    before the link to the [block gallery](/workflows/blocks.md) because it explains how to use those docs effectively.
+    It also introduces references to concepts covered in the User and Developer Guide. Please continue reading those sections
+    if you find some concepts presented here need further explanation.
 
 
-## Navigation the blocks documentation
+## Navigating the blocks documentation
 
 When you open the blocks documentation, you’ll see a list of all blocks supported by Roboflow. Each block entry 
 includes a name, brief description, category, and license for the block. You can click on any block to see more 
@@ -41,7 +40,7 @@ including their types, descriptions, and whether they can accept a dynamic selec
   (or `kind`) of data they pass.
 
   - output bindings are names and kinds for block outputs that can be used as inputs by steps defined in 
-  Workflow definition
+  the Workflow definition
 
 - An example of a Workflow step based on the documented block.
 
@@ -50,8 +49,8 @@ and this is further explained in the developer guide.
 
 ## What makes connections valid?
 
-Each block provides a manifest that lists the fields to be included in the Workflow Definition when creating a step. 
-The Values of these fields in a Workflow Definition may contain:
+Each block provides a manifest that lists the fields to be included in the Workflow definition when creating a step.
+The values of these fields in a Workflow definition may contain:
 
 - References ([selectors](/workflows/definitions.md)) to data the block will process, such as step outputs or 
 [batch-oriented workflow inputs](/workflows/workflow_execution.md)
