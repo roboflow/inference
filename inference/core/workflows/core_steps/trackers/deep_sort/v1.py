@@ -76,7 +76,7 @@ class DeepSortTrackerBlockV1(BaseReIDTrackerBlock):
         reid_model = self._get_reid_model(embedding_model, device)
 
         return DeepSORTTracker(
-            feature_extractor=reid_model,
+            reid_model=reid_model,
             lost_track_buffer=lost_track_buffer,
             frame_rate=frame_rate or 30.0,
             track_activation_threshold=track_activation_threshold,

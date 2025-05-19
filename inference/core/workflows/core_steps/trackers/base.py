@@ -188,7 +188,7 @@ class BaseTrackerBlock(WorkflowBlock):
 class BaseReIDTrackerBlockManifest(BaseTrackerBlockManifest):
     type: Literal["roboflow_core/reid_tracker@v1"]
 
-    embedding_model: Union[str, Selector(kind=[STRING_KIND])] = "clip/RN101"
+    embedding_model: Union[str, Selector(kind=[STRING_KIND])] = "resnetv2_50.a1h_in1k"
     appearance_threshold: Union[float, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = 0.7
     appearance_weight: Union[float, Selector(kind=[FLOAT_ZERO_TO_ONE_KIND])] = 0.5
     distance_metric: Union[str, Selector(kind=[STRING_KIND])] = "cosine"
@@ -211,7 +211,7 @@ class BaseReIDTrackerBlock(BaseTrackerBlock):
             from trackers.core.reid.model import ReIDModel
 
             self._reid_model = ReIDModel.from_timm(
-                model_name=model_name, device=device or "auto"
+                model_name_or_checkpoint_path=model_name, device=device or "auto"
             )
             self._reid_model_name = model_name
         return self._reid_model
