@@ -178,13 +178,27 @@ ROBOFLOW_PROJECT_KIND = Kind(
 
 ROBOFLOW_API_KEY_KIND_DOCS = """
 This kind represents API key that grants access to Roboflow platform.
-To learn more about Roboflow API keys visit [this](https://docs.roboflow.com/api-reference/authentication) 
+To learn more about Roboflow API keys visit [this](https://docs.roboflow.com/api-reference/authentication)
 page.
 """
 ROBOFLOW_API_KEY_KIND = Kind(
     name="roboflow_api_key",
     description="Roboflow API key",
     docs=ROBOFLOW_API_KEY_KIND_DOCS,
+    serialised_data_type="str",
+    internal_data_type="str",
+)
+
+OPENAI_API_KEY_KIND_DOCS = """
+This kind represents an OpenAI API key.
+It can also hold a special value signalling that the request should
+be proxied through Roboflow when set to ``rf_key:account`` or
+``rf_key:user:<id>``.
+"""
+OPENAI_API_KEY_KIND = Kind(
+    name="openai_api_key",
+    description="OpenAI API key",
+    docs=OPENAI_API_KEY_KIND_DOCS,
     serialised_data_type="str",
     internal_data_type="str",
 )
