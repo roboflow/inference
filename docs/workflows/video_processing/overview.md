@@ -24,7 +24,7 @@ you to focus on consuming the results.
 
 ## Video management API - comments and status update
 
-This is experimental feature, breaking changes may be introduced over time. There is a list of 
+This is an experimental feature, and breaking changes may be introduced over time. There is a list of
 [known issues](https://github.com/roboflow/inference/issues?q=is%3Aopen+is%3Aissue+label%3A%22Video+Management+API+issues%22).
 Please visit the page to raise new issues or comment on existing ones.
 
@@ -41,7 +41,7 @@ how to use the client and API to start processing videos today:
 
 !!! Note
 
-    Package in version `inference~=0.21.0` used in examlpe, due to experimental nature of the feature, the code
+    Package version `inference~=0.21.0` is used in this example. Because the feature is experimental, the code
     may evolve over time.
 
 ```python
@@ -105,9 +105,9 @@ client.consume_inference_pipeline_result(
 ```
 
 
-The client presented above, may be used preview workflow outputs in a very **naive** way. Let's assume
-that the Workflow you defined runs object-detection model and renders it's output using Workflows visualisation 
-blocks registering output image in `preview` field. You can use the following script to pool and display processed video
+The client presented above can be used to preview workflow outputs in a very **naive** way. Let's assume
+that the workflow you defined runs an object detection model and renders its output using Workflows visualization
+blocks that register the output image in the `preview` field. You can use the following script to poll and display processed video
 frames:
 
 ```python
