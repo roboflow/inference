@@ -189,3 +189,12 @@ def trt_dtype_to_torch(trt_dtype):
 def load_model(model_path: str, logger: trt.Logger = TRT_LOGGER) -> trt.ICudaEngine:
     with open(model_path, "rb") as f, trt.Runtime(logger) as runtime:
         return runtime.deserialize_cuda_engine(f.read())
+
+
+def get_output_tensor_names(engine: trt.ICudaEngine) -> List[str]:
+    output_names = []
+    for i in range(engine.num_io_tensors):
+        name = engine.get_tensor_name(i)
+        if engine.get_tensor_mode(name) == trt.TensorIOMode.OUTPUT:
+            output_names.append(name)
+    return output_names

@@ -36,6 +36,7 @@ def w_np_non_max_suppression(
     num_classes = prediction.shape[2] - 5 - num_masks
 
     if box_format == "xywh":
+        print("TRANSITION OF BOXES FORMAT")
         pred_view = prediction[:, :, :4]
 
         # Calculate all values without allocating a new array
@@ -73,7 +74,6 @@ def w_np_non_max_suppression(
             continue
 
         cls_confs = np_image_pred[:, 5 : num_classes + 5]
-
         # Check for empty classes after slicing
         if cls_confs.shape[1] == 0:
             batch_predictions.append([])
@@ -100,7 +100,6 @@ def w_np_non_max_suppression(
                 [np_image_pred[:, :5], np_class_conf, np_class_pred.astype(np.float32)],
                 axis=1,
             )
-
         filtered_predictions = []
         if class_agnostic:
             # Sort by confidence directly
