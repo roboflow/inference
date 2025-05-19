@@ -541,7 +541,6 @@ def _get_process_memory_usage_mb(process: Process) -> int:
 
 
 def start(expected_warmed_up_pipelines: int = 0) -> None:
-    print("Starting Stream Manager...")
     signal.signal(
         signal.SIGINT, partial(execute_termination, processes_table=PROCESSES_TABLE)
     )

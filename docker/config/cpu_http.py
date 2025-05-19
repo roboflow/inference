@@ -24,7 +24,6 @@ from inference.core.registries.roboflow import (
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
 if ENABLE_STREAM_API:
-    print("Starting Stream Manager...")
     stream_manager_process = Process(
         target=partial(start, expected_warmed_up_pipelines=STREAM_API_PRELOADED_PROCESSES),
     )
