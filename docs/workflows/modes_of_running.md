@@ -317,7 +317,7 @@ Here you can find example on how to run simple workflow in Python code.
         ],
     }
     
-    # example init paramaters for blocks - dependent on set of blocks 
+    # example init parameters for blocks - dependent on set of blocks
     # used in your workflow
     workflow_init_parameters = {
         "workflows_core.model_manager": model_manager,
