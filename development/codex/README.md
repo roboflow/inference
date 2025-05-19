@@ -13,3 +13,5 @@ chatgpt.com/codex is an AI-powered coding assistant from OpenAI that helps you w
     - ENABLE_STREAM_API=True
 - Add the secret `ROBOFLOW_API_KEY` with a production API key from Roboflow
 - Configure the setup script with the contents of [`development/codex/setup.sh`](setup.sh)
+
+![inference-codex-config](https://github.com/user-attachments/assets/38f39b04-1869-4af7-b2dc-02adc6fe309d)
