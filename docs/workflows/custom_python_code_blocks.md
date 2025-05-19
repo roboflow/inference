@@ -1,10 +1,10 @@
 # Dynamic Python blocks
 
-When the syntax for Workflow definitions was [outlined](/workflows/definitions.md), one key 
+When the syntax for Workflow definitions was [outlined](/workflows/definitions.md), one key
 aspect was not covered: the ability to define blocks directly within the Workflow definition itself. This section can
-include the manifest and Python code for blocks defined in-place, which are dynamically interpreted by the 
-Execution Engine. These in-place blocks function similarly to those statically defined in 
-[plugins](/workflows/blocks_bundling.md), yet provide much more flexibility.
+include the manifest and Python code for blocks defined in place, which are dynamically interpreted by the
+Execution Engine. These in-place blocks function similarly to those statically defined in
+[plugins](/workflows/blocks_bundling.md) yet provide much more flexibility.
 
 
 !!! Warning
@@ -24,10 +24,10 @@ The high-level overview of Dynamic Python blocks functionality:
 construct `WorkflowBlockManifest` and `WorkflowBlock` out of the 
 document
 
-* in runtime, Compiler turns definition into dynamically created 
-Python classes - exactly the same as statically defined blocks
+* At runtime, the Compiler turns the definition into dynamically created
+Python classes—exactly the same as statically defined blocks
 
-* In Workflow definition, you may declare steps that use dynamic blocks, 
+* In the Workflow definition, you may declare steps that use dynamic blocks,
 as if dynamic blocks were standard static ones
 
   
