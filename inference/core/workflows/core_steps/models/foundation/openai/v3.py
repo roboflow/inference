@@ -2,15 +2,15 @@ import base64
 import json
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Type, Union
-import requests
 
+import requests
 from openai import OpenAI
 from openai._types import NOT_GIVEN
 from pydantic import ConfigDict, Field, model_validator
 
 from inference.core.env import (
-    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
     API_BASE_URL,
+    WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
@@ -26,6 +26,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
+    OPENAI_API_KEY_KIND,
     SECRET_KIND,
     STRING_KIND,
     ImageInputField,
@@ -65,7 +66,8 @@ You can specify arbitrary text prompts or predefined ones, the block supports th
 
 {RELEVANT_TASKS_DOCS_DESCRIPTION}
 
-You need to provide your OpenAI API key to use the GPT-4 with Vision model. 
+Provide your OpenAI API key or set the value to ``rf_key:account`` (or
+``rf_key:user:<id>``) to proxy requests through Roboflow's API.
 """
 
 
@@ -159,7 +161,9 @@ class BlockManifest(WorkflowBlockManifest):
             },
         },
     )
-    api_key: Union[Selector(kind=[STRING_KIND, SECRET_KIND]), str] = Field(
+    api_key: Union[
+        Selector(kind=[STRING_KIND, SECRET_KIND, OPENAI_API_KEY_KIND]), str
+    ] = Field(
         description="Your OpenAI API key",
         examples=["xxx-xxx", "$inputs.openai_api_key"],
         private=True,
