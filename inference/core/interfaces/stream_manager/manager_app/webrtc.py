@@ -144,6 +144,7 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
         webrtc_video_transform_track: VideoTransformTrack,
         webrtc_peer_timeout: float,
     ):
+        print("Initializing WebRTCVideoFrameProducer...")
         self.to_inference_queue: "SyncAsyncQueue[VideoFrame]" = to_inference_queue
         self._stop_event = stop_event
         self._w: Optional[int] = None
@@ -153,6 +154,7 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
         self.webrtc_peer_timeout = webrtc_peer_timeout
 
     def grab(self) -> bool:
+        print("Grabbing frame...")
         if self._stop_event.is_set():
             logger.info("Received termination signal, closing.")
             self._is_opened = False
@@ -169,6 +171,7 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
         return True
 
     def retrieve(self) -> Tuple[bool, Optional[np.ndarray]]:
+        print("Retrieving frame...")
         if self._stop_event.is_set():
             logger.info("Received termination signal, closing.")
             self._is_opened = False
@@ -189,9 +192,11 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
         return True, img
 
     def release(self):
+        print("Releasing frame...")
         self._is_opened = False
 
     def isOpened(self) -> bool:
+        print("Checking if frame is opened...")
         return self._is_opened
 
     def discover_source_properties(self) -> SourceProperties:

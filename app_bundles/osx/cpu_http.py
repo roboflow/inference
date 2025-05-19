@@ -1,3 +1,6 @@
+
+print ("Initializing inference library")
+
 from functools import partial
 from multiprocessing import Process
 
@@ -23,16 +26,25 @@ from inference.core.registries.roboflow import (
 )
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 
+
+
+
+print("Starting Stream Manager")
 if ENABLE_STREAM_API:
-    print("Starting Stream Manager...")
     stream_manager_process = Process(
         target=partial(start, expected_warmed_up_pipelines=STREAM_API_PRELOADED_PROCESSES),
     )
     stream_manager_process.start()
+    print("Stream Manager started")
 
+
+print("Initializing model manager")
 model_registry = RoboflowModelRegistry(ROBOFLOW_MODEL_TYPES)
 
+
+
 if ACTIVE_LEARNING_ENABLED:
+    print("Initializing Active Learning")
     if LAMBDA or GCP_SERVERLESS:
         model_manager = ActiveLearningManager(
             model_registry=model_registry, cache=cache
@@ -44,7 +56,13 @@ if ACTIVE_LEARNING_ENABLED:
 else:
     model_manager = ModelManager(model_registry=model_registry)
 
+print("initializing model manager")
 model_manager = WithFixedSizeCache(model_manager, max_size=MAX_ACTIVE_MODELS)
 model_manager.init_pingback()
+
+print("initializing http interface")
 interface = HttpInterface(model_manager)
 app = interface.app
+
+
+

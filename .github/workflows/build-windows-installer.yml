@@ -1,0 +1,58 @@
+name: Build Windows Installer
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        # No 'path' means checkout to the root
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $installerUrl = "https://jrsoftware.org/download.php/is.exe"
+          $installerPath = "${{ runner.temp }}\isetup.exe"
+          echo "Downloading Inno Setup from $installerUrl..."
+          Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+          if (-not $?) { Write-Error "Failed to download Inno Setup installer"; exit 1 }
+          echo "Installing Inno Setup..."
+          Start-Process -FilePath $installerPath -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait
+          if (-not $?) { Write-Error "Failed to install Inno Setup"; exit 1 }
+          $innoPath = "C:\Program Files (x86)\Inno Setup 6"
+          echo "Adding Inno Setup directory to PATH: $innoPath"
+          Add-Content -Path $env:GITHUB_PATH -Value $innoPath
+          # Verify ISCC.exe exists
+          if (-not (Test-Path (Join-Path $innoPath "ISCC.exe"))) {
+            Write-Error "ISCC.exe not found at $innoPath after installation."
+            exit 1
+          }
+          echo "Inno Setup installed and added to PATH."
+
+      - name: Install local inference package
+        run: pip install -e .[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]
+
+      - name: Install PyInstaller and other build dependencies
+        working-directory: ./app_bundles/windows # Adjusted path
+        run: pip install -r requirements.txt # This now only installs pyinstaller
+
+      - name: Build Windows installer
+        working-directory: ./app_bundles/windows # Adjusted path
+        run: python build.py
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Roboflow-Inference-Windows-Installer
+          # The build.py script creates the installer in installer/inference-{version}-installer.exe
+          # We'll upload the whole installer directory, or use a wildcard if preferred.
+          path: app_bundles/windows/installer/ # Adjusted path
+          if-no-files-found: error # Fail the step if the installer directory is not found or empty 

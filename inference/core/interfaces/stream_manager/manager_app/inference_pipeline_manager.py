@@ -73,6 +73,7 @@ class InferencePipelineManager(Process):
 
     def __init__(self, pipeline_id: str, command_queue: Queue, responses_queue: Queue):
         super().__init__()
+        print("Initializing InferencePipelineManager...")
         self._pipeline_id = pipeline_id
         self._command_queue = command_queue
         self._responses_queue = responses_queue
@@ -88,6 +89,7 @@ class InferencePipelineManager(Process):
         )
 
     def run(self) -> None:
+        print("Running InferencePipelineManager...")
         signal.signal(signal.SIGINT, ignore_signal)
         signal.signal(signal.SIGTERM, self._handle_termination_signal)
 
@@ -104,6 +106,7 @@ class InferencePipelineManager(Process):
             self._handle_command(request_id=request_id, payload=payload)
 
     def _check_pipeline_timeout(self) -> None:
+        print("Checking pipeline timeout...")
         if self._inference_pipeline and self._consumption_timeout is not None:
             time_since_last_consume = time.monotonic() - self._last_consume_time
             if time_since_last_consume > self._consumption_timeout:
@@ -123,6 +126,7 @@ class InferencePipelineManager(Process):
                     )
 
     def _handle_command(self, request_id: str, payload: dict) -> None:
+        print("Handling command...", payload)
         try:
             logger.info(f"Processing request={request_id}...")
             command_type = CommandType(payload[TYPE_KEY])
@@ -167,6 +171,7 @@ class InferencePipelineManager(Process):
             )
 
     def _initialise_pipeline(self, request_id: str, payload: dict) -> None:
+        print("Initializing pipeline...")
         try:
             self._watchdog = BasePipelineWatchDog()
             parsed_payload = InitialisePipelinePayload.model_validate(payload)
@@ -239,6 +244,8 @@ class InferencePipelineManager(Process):
             )
 
     def _start_webrtc(self, request_id: str, payload: dict):
+        
+        print("Starting WebRTC pipeline...")
         try:
             self._watchdog = BasePipelineWatchDog()
             parsed_payload = InitialiseWebRTCPipelinePayload.model_validate(payload)
@@ -258,6 +265,8 @@ class InferencePipelineManager(Process):
             from_inference_queue = SyncAsyncQueue(loop=loop)
 
             stop_event = Event()
+
+            print("Initializing RTC peer connection...")
 
             future = asyncio.run_coroutine_threadsafe(
                 init_rtc_peer_connection(
@@ -506,6 +515,7 @@ class InferencePipelineManager(Process):
             )
 
     def _consume_results(self, request_id: str, payload: dict) -> None:
+        print("Consuming results...")
         try:
             if self._buffer_sink.empty():
                 response_payload = {

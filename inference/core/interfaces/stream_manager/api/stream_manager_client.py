@@ -242,6 +242,7 @@ async def send_command(
             inner_error=error,
         ) from error
     except (OSError, asyncio.TimeoutError) as error:
+        print(f"Could not communicate with InferencePipeline Manager. XXXX Error: {error}")
         raise ConnectivityError(
             private_message=f"Could not communicate with InferencePipeline Manager",
             public_message="Could not establish communication with InferencePipeline Manager",
