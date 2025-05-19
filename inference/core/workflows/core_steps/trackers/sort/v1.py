@@ -1,17 +1,41 @@
 from typing import Literal, Union
 
-from inference.core.workflows.execution_engine.entities.base import Selector
+from pydantic import ConfigDict, Field
+
 from inference.core.workflows.execution_engine.entities.types import (
+    Selector,
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
 )
 
-from .trackers.base import BaseTrackerBlock, BaseTrackerBlockManifest
+from ..base import BaseTrackerBlock, BaseTrackerBlockManifest
+
+SHORT_DESCRIPTION = "Track objects with the SORT algorithm."
+LONG_DESCRIPTION = (
+    "The `SortTrackerBlockV1` implements the classic SORT tracking algorithm "
+    "for associating object detections across video frames."
+)
 
 __all__ = ["SortTrackerBlockV1"]
 
 
 class SortTrackerBlockManifest(BaseTrackerBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "SORT Tracker",
+            "version": "v1",
+            "short_description": SHORT_DESCRIPTION,
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
+            "block_type": "transformation",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "mdi-target",
+                "blockPriority": 0,
+            },
+        },
+        protected_namespaces=(),
+    )
     type: Literal["roboflow_core/sort_tracker@v1"]
 
     # SORT defaults

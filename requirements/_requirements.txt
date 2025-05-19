@@ -44,4 +44,4 @@ pylogix==1.0.5
 pymodbus>=3.6.9,<=3.8.3
 backoff~=2.2.0
 filelock>=3.12.0,<=3.17.0
-trackers>=2.0.0,<2.1.0
+trackers==2.0.1

@@ -6,7 +6,6 @@ from pydantic import Field
 
 from inference.core.workflows.execution_engine.entities.base import (
     OutputDefinition,
-    Selector,
     WorkflowImageData,
 )
 from inference.core.workflows.execution_engine.entities.types import (
@@ -15,6 +14,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     INTEGER_KIND,
     OBJECT_DETECTION_PREDICTION_KIND,
     STRING_KIND,
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
@@ -163,7 +163,7 @@ class BaseTrackerBlock(WorkflowBlock):
             self._per_video_cache[video_id] = InstanceCache(size=instances_cache_size)
         cache = self._per_video_cache[video_id]
 
-        ids = tracked.tracker_id or []
+        ids = tracked.tracker_id.tolist() if tracked.tracker_id is not None else []
         new_mask, seen_mask = [], []
         for tid in ids:
             seen_before = cache.record(tid)

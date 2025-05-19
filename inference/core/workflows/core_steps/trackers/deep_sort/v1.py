@@ -1,22 +1,44 @@
 from typing import Literal, Union
 
+from pydantic import ConfigDict, Field
+
 import supervision as sv
 
-from inference.core.workflows.execution_engine.entities.base import (
-    Selector,
-    WorkflowImageData,
-)
+from inference.core.workflows.execution_engine.entities.base import WorkflowImageData
 from inference.core.workflows.execution_engine.entities.types import (
     FLOAT_ZERO_TO_ONE_KIND,
     INTEGER_KIND,
+    Selector,
 )
 
-from .trackers.base import BaseReIDTrackerBlock, BaseReIDTrackerBlockManifest
+from ..base import BaseReIDTrackerBlock, BaseReIDTrackerBlockManifest
+
+SHORT_DESCRIPTION = "Track objects with DeepSORT and appearance embeddings."
+LONG_DESCRIPTION = (
+    "The `DeepSortTrackerBlockV1` augments SORT tracking with a re-identification "
+    "model to compute appearance embeddings for improved object association."
+)
 
 __all__ = ["DeepSortTrackerBlockV1"]
 
 
 class DeepSortTrackerBlockManifest(BaseReIDTrackerBlockManifest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "name": "DeepSORT Tracker",
+            "version": "v1",
+            "short_description": SHORT_DESCRIPTION,
+            "long_description": LONG_DESCRIPTION,
+            "license": "Apache-2.0",
+            "block_type": "transformation",
+            "ui_manifest": {
+                "section": "video",
+                "icon": "mdi-target",
+                "blockPriority": 0,
+            },
+        },
+        protected_namespaces=(),
+    )
     type: Literal["roboflow_core/deep_sort_tracker@v1"]
 
     # DeepSORT defaults
@@ -54,7 +76,7 @@ class DeepSortTrackerBlockV1(BaseReIDTrackerBlock):
         reid_model = self._get_reid_model(embedding_model, device)
 
         return DeepSORTTracker(
-            reid_model=reid_model,
+            feature_extractor=reid_model,
             lost_track_buffer=lost_track_buffer,
             frame_rate=frame_rate or 30.0,
             track_activation_threshold=track_activation_threshold,
