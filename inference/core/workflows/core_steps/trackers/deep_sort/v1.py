@@ -123,7 +123,7 @@ class DeepSortTrackerBlockV1(BaseReIDTrackerBlock):
         # Attach appearance embeddings to tracked detections ----------------
         reid_model = self._get_reid_model(embedding_model, device)
         tracked_detections: sv.Detections = outputs["tracked_detections"]
-        embeddings = reid_model.extract_features(image.numpy_image, tracked_detections)
+        embeddings = reid_model.extract_features(tracked_detections, image.numpy_image)
         tracked_detections.embedding = embeddings  # type: ignore[attr-defined]
 
         return outputs
