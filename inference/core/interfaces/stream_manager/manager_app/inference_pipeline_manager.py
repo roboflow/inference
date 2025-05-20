@@ -254,8 +254,8 @@ class InferencePipelineManager(Process):
             webrtc_offer = parsed_payload.webrtc_offer
             webrtc_turn_config = parsed_payload.webrtc_turn_config
             webcam_fps = parsed_payload.webcam_fps
-            to_inference_queue = SyncAsyncQueue(loop=loop)
-            from_inference_queue = SyncAsyncQueue(loop=loop)
+            to_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
+            from_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
 
             stop_event = Event()
 
@@ -265,10 +265,11 @@ class InferencePipelineManager(Process):
                     webrtc_turn_config=webrtc_turn_config,
                     to_inference_queue=to_inference_queue,
                     from_inference_queue=from_inference_queue,
-                    webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
                     feedback_stop_event=stop_event,
                     asyncio_loop=loop,
                     webcam_fps=webcam_fps,
+                    processing_timeout=0.005,
+                    fps_probe_frames=10,
                 ),
                 loop,
             )
@@ -279,7 +280,6 @@ class InferencePipelineManager(Process):
                 to_inference_queue=to_inference_queue,
                 stop_event=stop_event,
                 webrtc_video_transform_track=peer_connection.video_transform_track,
-                webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
             )
 
             def webrtc_sink(

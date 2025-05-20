@@ -2,8 +2,9 @@ import asyncio
 import concurrent.futures
 import time
 from threading import Event
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
+import cv2 as cv
 import numpy as np
 from aiortc import (
     RTCConfiguration,
@@ -30,33 +31,59 @@ from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.utils.function import experimental
 
 
+FALLBACK_FPS: float = 10
+
+
+def overlay_text_on_frame(frame: VideoFrame, text: List[str]):
+    result_frame = frame.to_ndarray(format="bgr24")
+    for i, l in enumerate(text):
+        result_frame = cv.putText(
+            result_frame,
+            l,
+            (10, 20 + 30 * i),
+            cv.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 0),
+            2,
+        )
+    return result_frame
+
+
 class VideoTransformTrack(VideoStreamTrack):
     def __init__(
         self,
         to_inference_queue: "SyncAsyncQueue[VideoFrame]",
         from_inference_queue: "SyncAsyncQueue[np.ndarray]",
         asyncio_loop: asyncio.AbstractEventLoop,
-        webrtc_peer_timeout: float = 1,
+        processing_timeout: float = 0.2,
         fps_probe_frames: int = 10,
         webcam_fps: Optional[float] = None,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        if not webrtc_peer_timeout:
-            webrtc_peer_timeout = 1
-        self.webrtc_peer_timeout: float = webrtc_peer_timeout
+        if not processing_timeout:
+            processing_timeout = 0.005
+        self.processing_timeout: float = processing_timeout
 
         self.track: Optional[RemoteStreamTrack] = None
+        self._track_active: bool = True
+
         self._id = time.time_ns()
         self._processed = 0
+
         self.to_inference_queue: "SyncAsyncQueue[VideoFrame]" = to_inference_queue
         self.from_inference_queue: "SyncAsyncQueue[np.ndarray]" = from_inference_queue
+
         self._asyncio_loop = asyncio_loop
         self._pool = concurrent.futures.ThreadPoolExecutor()
-        self._track_active: bool = True
+
         self._fps_probe_frames = fps_probe_frames
+        self._fps_probe_t1: Optional[float] = None
+        self._fps_probe_t2: Optional[float] = None
         self.incoming_stream_fps: Optional[float] = webcam_fps
+
+        self._last_frame: Optional[VideoFrame] = None
 
     def set_track(self, track: RemoteStreamTrack):
         if not self.track:
@@ -66,69 +93,50 @@ class VideoTransformTrack(VideoStreamTrack):
         self._track_active = False
 
     async def recv(self):
+        frame = await self.track.recv()
+        self._processed += 1
         if not self.incoming_stream_fps:
-            logger.debug("Probing incoming stream FPS")
-            t1 = 0
-            t2 = 0
-            for i in range(self._fps_probe_frames):
-                try:
-                    frame: VideoFrame = await asyncio.wait_for(
-                        self.track.recv(), self.webrtc_peer_timeout
-                    )
-                except (asyncio.TimeoutError, MediaStreamError):
-                    logger.info(
-                        "Timeout while waiting to receive frames sent through webrtc peer connection; assuming peer disconnected."
-                    )
-                    self.close()
-                    raise MediaStreamError
-                # drop first frame
-                if i == 1:
-                    t1 = time.time()
-            t2 = time.time()
-            if t1 == t2:
-                logger.info(
-                    "All frames probed in the same time - could not calculate fps."
+            if not self._fps_probe_t1:
+                logger.debug("Probing incoming stream FPS")
+            if self._processed == 1:
+                self._fps_probe_t1 = time.time()
+            if self._processed == self._fps_probe_frames:
+                self._fps_probe_t2 = time.time()
+            if self._fps_probe_t1 == self._fps_probe_t2:
+                logger.warning(
+                    "All frames probed in the same time - could not calculate fps, assuming fallback %s FPS.",
+                    FALLBACK_FPS,
                 )
-                raise MediaStreamError
-            self.incoming_stream_fps = (self._fps_probe_frames - 1) / (t2 - t1)
-            logger.debug("Incoming stream fps: %s", self.incoming_stream_fps)
+                self.incoming_stream_fps = FALLBACK_FPS
+            elif self._fps_probe_t1 is not None and self._fps_probe_t2 is not None:
+                self.incoming_stream_fps = (self._fps_probe_frames - 1) / (
+                    self._fps_probe_t2 - self._fps_probe_t1
+                )
+                logger.info("Incoming stream fps: %s", self.incoming_stream_fps)
 
-        while self._track_active:
-            try:
-                frame: VideoFrame = await asyncio.wait_for(
-                    self.track.recv(), self.webrtc_peer_timeout
-                )
-            except (asyncio.TimeoutError, MediaStreamError):
-                logger.info(
-                    "Timeout while waiting to receive frames sent through webrtc peer connection; assuming peer disconnected."
-                )
-                self.close()
-                raise MediaStreamError
-
+        if not await self.to_inference_queue.async_full():
             await self.to_inference_queue.async_put(frame)
 
-            from_inference_queue_empty = await self.from_inference_queue.async_empty()
-            if not from_inference_queue_empty:
-                break
-
-        while self._track_active:
-            try:
-                res: np.ndarray = await asyncio.wait_for(
-                    self.from_inference_queue.async_get(), self.webrtc_peer_timeout
-                )
-                break
-            except asyncio.TimeoutError:
-                continue
-        if not self._track_active:
-            logger.info(
-                "Received close request while waiting to receive frames from inference pipeline; assuming termination."
+        try:
+            np_frame = await self.from_inference_queue.async_get(
+                timeout=self.processing_timeout
             )
-            raise MediaStreamError
-
-        new_frame = VideoFrame.from_ndarray(res, format="bgr24")
-        new_frame.pts = frame.pts
+            new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
+            self._last_frame = new_frame
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Timeout while waiting for inference result, serving last frame"
+            )
+            if self._last_frame:
+                new_frame = self._last_frame
+            else:
+                np_frame = overlay_text_on_frame(
+                    frame, ["Inference pipeline is starting..."]
+                )
+                new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
+        new_frame.pts = self._processed
         new_frame.time_base = frame.time_base
-        self._processed += 1
+
         return new_frame
 
 
@@ -142,7 +150,6 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
         to_inference_queue: "SyncAsyncQueue[VideoFrame]",
         stop_event: Event,
         webrtc_video_transform_track: VideoTransformTrack,
-        webrtc_peer_timeout: float,
     ):
         self.to_inference_queue: "SyncAsyncQueue[VideoFrame]" = to_inference_queue
         self._stop_event = stop_event
@@ -150,7 +157,6 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
         self._h: Optional[int] = None
         self._video_transform_track = webrtc_video_transform_track
         self._is_opened = True
-        self.webrtc_peer_timeout = webrtc_peer_timeout
 
     def grab(self) -> bool:
         if self._stop_event.is_set():
@@ -158,13 +164,9 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
             self._is_opened = False
             return False
 
-        try:
-            res = self.to_inference_queue.sync_get(timeout=self.webrtc_peer_timeout)
-            if res is None:
-                self._stop_event.set()
-                return False
-        except asyncio.TimeoutError:
-            logger.error("Timeout while grabbing frame, considering source depleted.")
+        res = self.to_inference_queue.sync_get()
+        if res is None:
+            self._stop_event.set()
             return False
         return True
 
@@ -174,15 +176,9 @@ class WebRTCVideoFrameProducer(VideoFrameProducer):
             self._is_opened = False
             return False, None
 
-        try:
-            frame: VideoFrame = self.to_inference_queue.sync_get(
-                timeout=self.webrtc_peer_timeout
-            )
-            if frame is None:
-                self._stop_event.set()
-                return False, None
-        except asyncio.TimeoutError:
-            logger.error("Timeout while retrieving frame, considering source depleted.")
+        frame: VideoFrame = self.to_inference_queue.sync_get()
+        if frame is None:
+            self._stop_event.set()
             return False, None
         img = frame.to_ndarray(format="bgr24")
 
@@ -218,20 +214,22 @@ class RTCPeerConnectionWithFPS(RTCPeerConnection):
 
 async def init_rtc_peer_connection(
     webrtc_offer: WebRTCOffer,
-    webrtc_turn_config: WebRTCTURNConfig,
     to_inference_queue: "SyncAsyncQueue[VideoFrame]",
     from_inference_queue: "SyncAsyncQueue[np.ndarray]",
-    webrtc_peer_timeout: float,
     feedback_stop_event: Event,
     asyncio_loop: asyncio.AbstractEventLoop,
+    webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
     webcam_fps: Optional[float] = None,
+    processing_timeout: float = 0.005,
+    fps_probe_frames: int = 10,
 ) -> RTCPeerConnectionWithFPS:
     video_transform_track = VideoTransformTrack(
         to_inference_queue=to_inference_queue,
         from_inference_queue=from_inference_queue,
         asyncio_loop=asyncio_loop,
-        webrtc_peer_timeout=webrtc_peer_timeout,
         webcam_fps=webcam_fps,
+        processing_timeout=processing_timeout,
+        fps_probe_frames=fps_probe_frames,
     )
 
     if webrtc_turn_config:
