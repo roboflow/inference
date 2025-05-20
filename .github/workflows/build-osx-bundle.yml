@@ -99,6 +99,8 @@ jobs:
           rm -f dist/*
           rm -rf build/*
           python .release/pypi/inference.setup.py bdist_wheel
+          echo "--- Contents of dist/ after building inference wheel ---"
+          ls -la dist/
 
       - name: Install inference from local wheel
         run: |
