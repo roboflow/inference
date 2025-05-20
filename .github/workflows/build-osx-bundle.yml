@@ -104,7 +104,9 @@ jobs:
 
       - name: Install inference from local wheel
         run: |
-          pip install dist/inference-*.whl[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]
+          WHEEL_FILE=$(ls dist/inference-*.whl)
+          echo "Found wheel: $WHEEL_FILE"
+          pip install "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
           pip show inference
 
       - name: Install PyInstaller and other build dependencies
