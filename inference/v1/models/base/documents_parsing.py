@@ -1,11 +1,15 @@
 from abc import ABC, abstractmethod
-from typing import Generic, List, Union, Tuple
+from typing import Generic, List, Tuple, Union
 
 import numpy as np
 import torch
 
 from inference.v1 import Detections
-from inference.v1.models.base.types import PreprocessedInputs, PreprocessingMetadata, RawPrediction
+from inference.v1.models.base.types import (
+    PreprocessedInputs,
+    PreprocessingMetadata,
+    RawPrediction,
+)
 
 
 class DocumentParsingModel(
@@ -37,7 +41,7 @@ class DocumentParsingModel(
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> Tuple[PreprocessedInputs, PreprocessingMetadata]:
         pass
 
@@ -52,13 +56,13 @@ class DocumentParsingModel(
         self,
         model_results: RawPrediction,
         pre_processing_meta: PreprocessingMetadata,
-        **kwargs
+        **kwargs,
     ) -> Tuple[List[str], List[Detections]]:
         pass
 
     def __call__(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        **kwargs
+        **kwargs,
     ) -> Tuple[List[str], List[Detections]]:
         return self.infer(images, **kwargs)

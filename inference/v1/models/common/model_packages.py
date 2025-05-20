@@ -1,3 +1,4 @@
+import os
 from typing import Dict, List
 
 from inference.v1.errors import CorruptedModelPackageError

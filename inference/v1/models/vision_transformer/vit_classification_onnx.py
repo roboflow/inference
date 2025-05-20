@@ -36,7 +36,7 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
     ) -> "VITForClassificationOnnx":
         if execution_providers is None:
             execution_providers = ONNXRUNTIME_EXECUTION_PROVIDERS
-        if not ONNXRUNTIME_EXECUTION_PROVIDERS:
+        if not execution_providers:
             raise EnvironmentConfigurationError(
                 f"Could not initialize model - selected backend is ONNX which requires execution provider to "
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
@@ -47,6 +47,7 @@ class VITForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor]):
             providers=execution_providers,
             model_package_path=model_name_or_path,
             device=device,
+            default_trt_options=default_trt_options,
         )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,

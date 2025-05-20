@@ -41,7 +41,9 @@ class InstanceSegmentationModel(
         pass
 
     def infer(
-        self, images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]], **kwargs
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs
     ) -> List[InstanceDetections]:
         pre_processed_images, pre_processing_meta = self.pre_process(images, **kwargs)
         model_results = self.forward(pre_processed_images, **kwargs)

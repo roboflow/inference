@@ -77,3 +77,61 @@ class ObjectDetectionModel(
         **kwargs,
     ) -> List[Detections]:
         return self.infer(images, **kwargs)
+
+
+class OpenVocabularyObjectDetectionModel(
+    ABC, Generic[PreprocessedInputs, PreprocessingMetadata, RawPrediction]
+):
+
+    @classmethod
+    @abstractmethod
+    def from_pretrained(
+        cls, model_name_or_path: str, **kwargs
+    ) -> "OpenVocabularyObjectDetectionModel":
+        pass
+
+    def infer(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        classes_or_caption: Union[str, List[str]],
+        **kwargs,
+    ) -> List[Detections]:
+        pre_processed_images, pre_processing_meta = self.pre_process(images, **kwargs)
+        model_results = self.forward(pre_processed_images, classes_or_caption, **kwargs)
+        return self.post_process(model_results, pre_processing_meta, **kwargs)
+
+    @abstractmethod
+    def pre_process(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        **kwargs,
+    ) -> Tuple[PreprocessedInputs, PreprocessingMetadata]:
+        pass
+
+    @abstractmethod
+    def forward(
+        self,
+        pre_processed_images: PreprocessedInputs,
+        classes_or_caption: Union[str, List[str]],
+        **kwargs,
+    ) -> RawPrediction:
+        pass
+
+    @abstractmethod
+    def post_process(
+        self,
+        model_results: RawPrediction,
+        pre_processing_meta: PreprocessingMetadata,
+        **kwargs,
+    ) -> List[Detections]:
+        pass
+
+    def __call__(
+        self,
+        images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+        classes_or_caption: Union[str, List[str]],
+        **kwargs,
+    ) -> List[Detections]:
+        return self.infer(
+            images=images, classes_or_caption=classes_or_caption, **kwargs
+        )
