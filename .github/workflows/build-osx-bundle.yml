@@ -91,8 +91,8 @@ jobs:
           xcrun notarytool store-credentials "${{ env.NOTARY_PROFILE_NAME }}" --apple-id "$NOTARY_APPLE_ID_SECRET" --team-id "$NOTARY_TEAM_ID_SECRET" --password "$NOTARY_APP_SPECIFIC_PASSWORD_SECRET"
           echo "Notarytool configured."
 
-      - name: Install wheel building tools and build-time dependencies
-        run: python -m pip install wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
+      # - name: Install wheel building tools and build-time dependencies
+      #   run: python -m pip install wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
 
       # - name: Build inference wheel
       #   run: |
@@ -110,7 +110,7 @@ jobs:
       #     pip show inference
 
 
-- name: Install inference from pypi
+      - name: Install inference from pypi
         run: |
           pip install inference[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]
           
