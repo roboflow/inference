@@ -41,8 +41,10 @@ jobs:
         run: python -m pip install wheel setuptools
 
       - name: Build inference_gpu wheel
+        shell: cmd
         run: |
-          if exist dist del /q dist\*.* & rmdir /s /q build
+          if exist dist del /q dist\*.* 
+          if exist build rmdir /s /q build
           python .release/pypi/inference.gpu.setup.py bdist_wheel
 
       - name: Install inference_gpu from local wheel
