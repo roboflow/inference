@@ -30,7 +30,6 @@ from inference.core.interfaces.stream_manager.manager_app.entities import (
 from inference.core.utils.async_utils import Queue as SyncAsyncQueue
 from inference.core.utils.function import experimental
 
-
 FALLBACK_FPS: float = 10
 
 
