@@ -108,32 +108,32 @@ os.environ.setdefault("ENABLE_BUILDER", "True")
 # swallowed in inference )
 
 # # Modules behind conditionals (force them in unconditionally)
-# import inference.models.clip as _clip
-# import inference.models.gaze as _gaze
-# import inference.models.sam as _sam
-# import inference.models.sam2 as _sam2
-# # import inference.models.doctr as _doctr
-# import inference.models.grounding_dino as _grounding_dino
-# import inference.models.yolo_world as _yolo_world
+import inference.models.clip as _clip
+import inference.models.gaze as _gaze
+import inference.models.sam as _sam
+import inference.models.sam2 as _sam2
+# import inference.models.doctr as _doctr
+import inference.models.grounding_dino as _grounding_dino
+import inference.models.yolo_world as _yolo_world
 
-# import inference.models.paligemma as _paligemma
-# import inference.models.florence2 as _florence2
-# import inference.models.qwen25vl as _qwen25vl
-# import inference.models.trocr as _trocr
+import inference.models.paligemma as _paligemma
+import inference.models.florence2 as _florence2
+import inference.models.qwen25vl as _qwen25vl
+import inference.models.trocr as _trocr
 
-# # Models that are always imported
-# import inference.models.resnet as _resnet
-# import inference.models.vit as _vit
-# import inference.models.yolact as _yolact
-# import inference.models.yolonas as _yolonas
-# import inference.models.yolov5 as _yolov5
-# import inference.models.yolov7 as _yolov7
-# import inference.models.yolov8 as _yolov8
-# import inference.models.yolov9 as _yolov9
-# import inference.models.yolov10 as _yolov10
-# import inference.models.yolov11 as _yolov11
-# import inference.models.yolov12 as _yolov12
-# import inference.models.rfdetr as _rfdetr
+# Models that are always imported
+import inference.models.resnet as _resnet
+import inference.models.vit as _vit
+import inference.models.yolact as _yolact
+import inference.models.yolonas as _yolonas
+import inference.models.yolov5 as _yolov5
+import inference.models.yolov7 as _yolov7
+import inference.models.yolov8 as _yolov8
+import inference.models.yolov9 as _yolov9
+import inference.models.yolov10 as _yolov10
+import inference.models.yolov11 as _yolov11
+import inference.models.yolov12 as _yolov12
+import inference.models.rfdetr as _rfdetr
 
 
 
