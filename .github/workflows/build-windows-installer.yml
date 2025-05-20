@@ -37,28 +37,28 @@ jobs:
           }
           echo "Inno Setup installed and added to PATH."
 
-      - name: Build local inference wheels
-        shell: bash # Ensures 'make' and 'rm -rf' work as expected
-        run: make create_wheels
-        # Add the ls/dir dist/* after this if you want to see the output
-        # For bash:
-        #   echo "--- Contents of dist/ after building all wheels ---"
-        #   ls -la dist/
+      # - name: Build local inference wheels
+      #   shell: bash # Ensures 'make' and 'rm -rf' work as expected
+      #   run: make create_wheels
+      #   # Add the ls/dir dist/* after this if you want to see the output
+      #   # For bash:
+      #   #   echo "--- Contents of dist/ after building all wheels ---"
+      #   #   ls -la dist/
 
-      - name: Install inference_gpu and dependencies from local wheels
-        shell: bash # Using bash for wildcard expansion in pip install
-        run: |
-          WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
-          echo "Found GPU wheel: $WHEEL_FILE"
-          pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
-          echo "--- Installed inference_gpu details ---"
-          pip show inference-gpu
-          echo "--- Installed inference-core details ---"
-          pip show inference-core
-          echo "--- Installed inference-sdk details ---"
-          pip show inference-sdk
-          echo "--- Installed inference-cli details ---"
-          pip show inference-cli
+      # - name: Install inference_gpu and dependencies from local wheels
+      #   shell: bash # Using bash for wildcard expansion in pip install
+      #   run: |
+      #     WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
+      #     echo "Found GPU wheel: $WHEEL_FILE"
+      #     pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
+      #     echo "--- Installed inference_gpu details ---"
+      #     pip show inference-gpu
+      #     echo "--- Installed inference-core details ---"
+      #     pip show inference-core
+      #     echo "--- Installed inference-sdk details ---"
+      #     pip show inference-sdk
+      #     echo "--- Installed inference-cli details ---"
+      #     pip show inference-cli
 
       - name: Install PyInstaller and other build dependencies
         working-directory: ./app_bundles/windows # Adjusted path
