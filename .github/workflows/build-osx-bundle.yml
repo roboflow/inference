@@ -94,20 +94,27 @@ jobs:
       - name: Install wheel building tools and build-time dependencies
         run: python -m pip install wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
 
-      - name: Build inference wheel
-        run: |
-          rm -f dist/*
-          rm -rf build/*
-          python .release/pypi/inference.setup.py bdist_wheel
-          echo "--- Contents of dist/ after building inference wheel ---"
-          ls -la dist/
+      # - name: Build inference wheel
+      #   run: |
+      #     rm -f dist/*
+      #     rm -rf build/*
+      #     python .release/pypi/inference.setup.py bdist_wheel
+      #     echo "--- Contents of dist/ after building inference wheel ---"
+      #     ls -la dist/
 
-      - name: Install inference from local wheel
+      # - name: Install inference from local wheel
+      #   run: |
+      #     WHEEL_FILE=$(ls dist/inference-*.whl)
+      #     echo "Found wheel: $WHEEL_FILE"
+      #     pip install "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
+      #     pip show inference
+
+
+- name: Install inference from pypi
         run: |
-          WHEEL_FILE=$(ls dist/inference-*.whl)
-          echo "Found wheel: $WHEEL_FILE"
-          pip install "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
-          pip show inference
+          pip install inference[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]
+          
+
 
       - name: Install PyInstaller and other build dependencies
         working-directory: ./app_bundles/osx # Adjusted path
