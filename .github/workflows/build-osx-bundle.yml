@@ -109,13 +109,6 @@ jobs:
       #     pip install "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
       #     pip show inference
 
-
-      - name: Install inference from pypi
-        run: |
-          pip install inference[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]
-          
-
-
       - name: Install PyInstaller and other build dependencies
         working-directory: ./app_bundles/osx # Adjusted path
         run: |
