@@ -37,8 +37,8 @@ jobs:
           }
           echo "Inno Setup installed and added to PATH."
 
-      - name: Install wheel building tools
-        run: python -m pip install wheel setuptools
+      - name: Install wheel building tools and build-time dependencies
+        run: python -m pip install wheel twine requests -r requirements/_requirements.txt -r requirements/requirements.cpu.txt -r requirements/requirements.http.txt -r requirements/requirements.sdk.http.txt
 
       - name: Build inference_gpu wheel
         shell: cmd
