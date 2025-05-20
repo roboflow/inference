@@ -137,9 +137,13 @@ jobs:
           echo "DEBUG: Checking for default OpenSSL (typically openssl@1.1 or similar from 'brew install openssl')..."
           ls -l /opt/homebrew/opt/openssl/lib/libssl.dylib || echo "default libssl.dylib not found"
           ls -l /opt/homebrew/opt/openssl/lib/libcrypto.dylib || echo "default libcrypto.dylib not found"
+          pip install --upgrade pip
+          pip install --upgrade pyinstaller pyinstaller-hooks-contrib
           pip install -r requirements.txt # This now only installs pyinstaller
           echo "DEBUG: PyInstaller version:"
           pip show pyinstaller
+          echo "DEBUG: pyinstaller-hooks-contrib version:"
+          pip show pyinstaller-hooks-contrib
 
       - name: Build macOS app and DMG
         working-directory: ./app_bundles/osx # Adjusted path

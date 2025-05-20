@@ -57,7 +57,14 @@ jobs:
 
       - name: Install PyInstaller and other build dependencies
         working-directory: ./app_bundles/windows # Adjusted path
-        run: pip install -r requirements.txt # This now only installs pyinstaller
+        run: |
+          pip install --upgrade pip
+          pip install --upgrade pyinstaller pyinstaller-hooks-contrib
+          pip install -r requirements.txt # This now only installs pyinstaller
+          echo "DEBUG: PyInstaller version:"
+          pip show pyinstaller
+          echo "DEBUG: pyinstaller-hooks-contrib version:"
+          pip show pyinstaller-hooks-contrib
 
       - name: Build Windows installer
         working-directory: ./app_bundles/windows # Adjusted path
