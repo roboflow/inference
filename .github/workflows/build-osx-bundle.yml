@@ -91,8 +91,19 @@ jobs:
           xcrun notarytool store-credentials "${{ env.NOTARY_PROFILE_NAME }}" --apple-id "$NOTARY_APPLE_ID_SECRET" --team-id "$NOTARY_TEAM_ID_SECRET" --password "$NOTARY_APP_SPECIFIC_PASSWORD_SECRET"
           echo "Notarytool configured."
 
-      - name: Install local inference package
-        run: pip install -e .[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]
+      - name: Install wheel building tools
+        run: python -m pip install wheel setuptools
+
+      - name: Build inference wheel
+        run: |
+          rm -f dist/*
+          rm -rf build/*
+          python .release/pypi/inference.setup.py bdist_wheel
+
+      - name: Install inference from local wheel
+        run: |
+          pip install dist/inference-*.whl[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]
+          pip show inference
 
       - name: Install PyInstaller and other build dependencies
         working-directory: ./app_bundles/osx # Adjusted path

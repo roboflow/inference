@@ -37,8 +37,22 @@ jobs:
           }
           echo "Inno Setup installed and added to PATH."
 
-      - name: Install local inference package
-        run: pip install -e .[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]
+      - name: Install wheel building tools
+        run: python -m pip install wheel setuptools
+
+      - name: Build inference_gpu wheel
+        run: |
+          if exist dist del /q dist\*.* & rmdir /s /q build
+          python .release/pypi/inference.gpu.setup.py bdist_wheel
+
+      - name: Install inference_gpu from local wheel
+        shell: bash # Using bash for wildcard expansion in pip install
+        run: |
+          pip install dist/inference_gpu-*.whl[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]
+          echo "--- Installed inference_gpu details ---"
+          pip show inference-gpu
+          echo "--- Installed inference (core) details ---"
+          pip show inference
 
       - name: Install PyInstaller and other build dependencies
         working-directory: ./app_bundles/windows # Adjusted path
