@@ -50,7 +50,9 @@ jobs:
       - name: Install inference_gpu from local wheel
         shell: bash # Using bash for wildcard expansion in pip install
         run: |
-          pip install dist/inference_gpu-*.whl[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]
+          WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
+          echo "Found wheel: $WHEEL_FILE"
+          pip install "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
           echo "--- Installed inference_gpu details ---"
           pip show inference-gpu
           echo "--- Installed inference (core) details ---"
