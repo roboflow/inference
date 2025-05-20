@@ -13,7 +13,7 @@ SPEC_FILE = f"{BUILD_NAME}.spec"
 
 # Paths
 BUILD_DIR = os.path.join("dist", BUILD_NAME)
-SOURCE_LANDING_DIR = "../../inference/inference/landing"
+SOURCE_LANDING_DIR = "../../inference/landing"
 DEST_LANDING_DIR = os.path.join(BUILD_DIR, "inference", "landing")
 
 

@@ -20,7 +20,7 @@ ZIP_PATH = f"{APP_NAME.replace(' ', '-')}.zip"
 DMG_PATH = f"{APP_NAME.replace(' ', '-')}.dmg"
 BACKGROUND_PNG = os.path.abspath("background.png")
 DS_STORE_SOURCE = os.path.abspath("DMG-DS_Store")
-SOURCE_LANDING_DIR = "../../inference/inference/landing"
+SOURCE_LANDING_DIR = "../../inference/landing"
 DEST_LANDING_DIR = os.path.join(BUILD_DIR, "inference", "landing")
 LAUNCHER_BINARY_PATH = os.path.abspath("launcher") #need to compile this first from launcher.c if its not already compiled
 
