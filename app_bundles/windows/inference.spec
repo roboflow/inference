@@ -53,6 +53,7 @@ binaries=[
         'peft',
         'Cython'
         'inference',
+        'pyvips',
         *inference_hidden,
     ],
     hookspath=['hooks'],     # place custom hooks here if you like
