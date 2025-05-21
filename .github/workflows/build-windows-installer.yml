@@ -22,6 +22,38 @@ jobs:
         with:
           python-version: '3.12'
 
+
+      - name: Determine Version
+        id: determine_version
+        shell: bash
+        run: |
+          VERSION=""
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            if [ -n "${{ inputs.manual_version }}" ]; then
+              VERSION="${{ inputs.manual_version }}"
+              VERSION=${VERSION#v}
+              echo "Manual run detected. Using provided version: $VERSION"
+            else
+              echo "Error: For manual runs (workflow_dispatch), the 'manual_version' input is required."
+              exit 1
+            fi
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=$(echo "${{ github.ref }}" | sed 's!refs/tags/v!!')
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=$(echo "${{ github.ref }}" | sed 's!refs/tags/!!')
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "Error: Could not determine installer version."
+            echo "  github.event_name: ${{ github.event_name }}"
+            echo "  github.ref: ${{ github.ref }}"
+            echo "  inputs.manual_version: ${{ inputs.manual_version }}"
+            exit 1
+          fi
+          echo "installer_version_out=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Installer version set to: $VERSION"
+
+
       - name: Install Inno Setup
         shell: pwsh
         run: |
@@ -43,46 +75,13 @@ jobs:
           }
           echo "Inno Setup installed and added to PATH."
 
-      - name: Build local inference wheels
-        shell: bash # Ensures 'make' and 'rm -rf' work as expected
-        run: make create_wheels
-        # Add the ls/dir dist/* after this if you want to see the output
-        # For bash:
-        #   echo "--- Contents of dist/ after building all wheels ---"
-        #   ls -la dist/
-
-      - name: Install inference_gpu and dependencies from local wheels
-        shell: bash # Using bash for wildcard expansion in pip install
-        run: |
-          WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
-          echo "Found GPU wheel: $WHEEL_FILE"
-          pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
-          echo "--- Installed inference_gpu details ---"
-          pip show inference-gpu
-          
-
-      - name: Install PyInstaller and other build dependencies
-        working-directory: ./app_bundles/windows # Adjusted path
-        run: |
-          pip install --upgrade pip
-          pip install --upgrade pyinstaller pyinstaller-hooks-contrib
-          pip install -r requirements.txt # This now only installs pyinstaller
-          echo "DEBUG: PyInstaller version:"
-          pip show pyinstaller
-          echo "DEBUG: pyinstaller-hooks-contrib version:"
-          pip show pyinstaller-hooks-contrib
-
-      - name: Build Windows installer
-        working-directory: ./app_bundles/windows # Adjusted path
-        env:
-          BUILD_VERSION: ${{ env.INSTALLER_VERSION }}
-        run: python build.py
 
       - name: Install DigiCert Client tools
         id: install_digicert_tools # Renamed for clarity
         uses: digicert/ssm-code-signing@v1.0.0
 
-      - name: Set up DigiCert certificate
+
+      - name: Set DigiCert certificate
         shell: bash
         run: |
           if [ -z "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}" ]; then
@@ -106,7 +105,7 @@ jobs:
           echo "SM_CLIENT_CERT_FILE_PATH=$CERT_PATH" >> $GITHUB_ENV
 
       - name: Set DigiCert environment variables
-        id: set_digicert_variables # Renamed for clarity
+        id: set_digicert_config_vars # Renamed for clarity, id might not be strictly needed anymore unless other steps reference it
         shell: bash
         run: |
           if [ -z "${{ secrets.SM_HOST }}" ] || \
@@ -118,47 +117,52 @@ jobs:
           fi
           echo "SM_HOST=${{ secrets.SM_HOST }}" >> "$GITHUB_ENV"
           echo "SM_API_KEY=${{ secrets.SM_API_KEY }}" >> "$GITHUB_ENV"
-          # Use the path set in the previous step
-          echo "SM_CLIENT_CERT_FILE=${{ env.SM_CLIENT_CERT_FILE_PATH }}" >> "$GITHUB_ENV"
+          echo "SM_CLIENT_CERT_FILE=${{ env.SM_CLIENT_CERT_FILE_PATH }}" >> "$GITHUB_ENV" # This comes from 'Set up DigiCert certificate' step
           echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.SM_CLIENT_CERT_PASSWORD }}" >> "$GITHUB_ENV"
+          # VERSION logic is now removed from this step
 
-          VERSION=""
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            if [ -n "${{ inputs.manual_version }}" ]; then
-              VERSION="${{ inputs.manual_version }}"
-              # Remove leading 'v' if present, as installer name format is inference-VERSION-installer.exe
-              VERSION=${VERSION#v}
-              echo "Manual run detected. Using provided version: $VERSION"
-            else
-              echo "Error: For manual runs (workflow_dispatch), the 'manual_version' input is required."
-              exit 1
-            fi
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION=$(echo "${{ github.ref }}" | sed 's!refs/tags/v!!')
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then # Handles tags like 1.0.0 directly
-            VERSION=$(echo "${{ github.ref }}" | sed 's!refs/tags/!!')
-          fi
+          - name: Install inference_gpu and dependencies from local wheels
+          shell: bash # Using bash for wildcard expansion in pip install
+          run: |
+            WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
+            echo "Found GPU wheel: $WHEEL_FILE"
+            pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
+            echo "--- Installed inference_gpu details ---"
+            pip show inference-gpu
+            
+      - name: Build local inference wheels
+        shell: bash # Ensures 'make' and 'rm -rf' work as expected
+        run: make create_wheels
 
-          if [ -z "$VERSION" ]; then
-            echo "Error: Could not determine installer version."
-            echo "  github.event_name: ${{ github.event_name }}"
-            echo "  github.ref: ${{ github.ref }}"
-            echo "  inputs.manual_version: ${{ inputs.manual_version }}"
-            exit 1
-          fi
+      - name: Install PyInstaller and other build dependencies
+        working-directory: ./app_bundles/windows # Adjusted path
+        run: |
+          pip install --upgrade pip
+          pip install --upgrade pyinstaller pyinstaller-hooks-contrib
+          pip install -r requirements.txt # This now only installs pyinstaller
+          echo "DEBUG: PyInstaller version:"
+          pip show pyinstaller
+          echo "DEBUG: pyinstaller-hooks-contrib version:"
+          pip show pyinstaller-hooks-contrib
+  
+      - name: Build Windows installer
+        working-directory: ./app_bundles/windows
+        env:
+          BUILD_VERSION: ${{ steps.determine_version.outputs.installer_version_out }} # Use output from new Determine Version step
+        run: python build.py
 
-          echo "INSTALLER_VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "Installer version set to: $VERSION"
 
       - name: Sign Windows Installer with DigiCert
-        shell: cmd # smctl is a windows executable, cmd is more natural
+        shell: cmd
+        env:
+          INSTALLER_VERSION_FROM_STEP: ${{ steps.determine_version.outputs.installer_version_out }} # Use output from new Determine Version step
         run: |
           echo "Starting installer signing process..."
           set PKCS11_CONFIG_PATH=%USERPROFILE%\AppData\Local\Temp\smtools-windows-x64\pkcs11properties.cfg
           echo "PKCS11 Config Path: %PKCS11_CONFIG_PATH%"
 
           set INSTALLER_BASE_PATH=app_bundles\windows\installer
-          set INSTALLER_VERSION=${{ env.INSTALLER_VERSION }}
+          set INSTALLER_VERSION=%INSTALLER_VERSION_FROM_STEP% # Use the env var
           REM The build.py script creates the installer in installer/inference-{version}-installer.exe
           set INSTALLER_FILENAME=inference-%INSTALLER_VERSION%-installer.exe
           set UNSIGNED_INSTALLER_PATH=%INSTALLER_BASE_PATH%\%INSTALLER_FILENAME%
@@ -198,12 +202,12 @@ jobs:
           if-no-files-found: error # Fail the step if the installer directory is not found or empty
 
       - name: Upload Installer to Release
-        if: github.event_name == 'release' # Only run for release events
+        if: github.event_name == 'release'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./app_bundles/windows/installer/inference-${{ env.INSTALLER_VERSION }}-installer.exe
-          asset_name: inference-${{ env.INSTALLER_VERSION }}-installer.exe
+          asset_path: ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.exe
+          asset_name: inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.exe
           asset_content_type: application/vnd.microsoft.portable-executable 

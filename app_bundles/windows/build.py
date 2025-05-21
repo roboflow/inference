@@ -90,6 +90,11 @@ def copy_static_files():
 if __name__ == "__main__":
 
     version = os.getenv("BUILD_VERSION")
+    if not version:
+        print("Error: BUILD_VERSION environment variable is not set or is empty.")
+        print("This is required to set AppVersion in the installer.")
+        sys.exit(1)
+
     print(f"Version: {version}")
     clean()
     convert_icon()
