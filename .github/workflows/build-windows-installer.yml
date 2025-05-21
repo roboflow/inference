@@ -156,14 +156,14 @@ jobs:
       - name: Sign Windows Installer with DigiCert
         shell: cmd
         env:
-          INSTALLER_VERSION_FROM_STEP: ${{ steps.determine_version.outputs.installer_version_out }} # Use output from new Determine Version step
+          INSTALLER_VERSION_FROM_STEP: ${{ steps.determine_version.outputs.installer_version_out }}
         run: |
           echo "Starting installer signing process..."
           set PKCS11_CONFIG_PATH=%USERPROFILE%\AppData\Local\Temp\smtools-windows-x64\pkcs11properties.cfg
           echo "PKCS11 Config Path: %PKCS11_CONFIG_PATH%"
 
           set INSTALLER_BASE_PATH=app_bundles\windows\installer
-          set INSTALLER_VERSION=%INSTALLER_VERSION_FROM_STEP% # Use the env var
+          set INSTALLER_VERSION=%INSTALLER_VERSION_FROM_STEP%
           REM The build.py script creates the installer in installer/inference-{version}-installer.exe
           set INSTALLER_FILENAME=inference-%INSTALLER_VERSION%-installer.exe
           set UNSIGNED_INSTALLER_PATH=%INSTALLER_BASE_PATH%\%INSTALLER_FILENAME%
