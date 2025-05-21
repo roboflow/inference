@@ -52,7 +52,7 @@ binaries=[
         'peft',
         'Cython'
         'inference'
-        inference_hidden,
+        *inference_hidden,
     ],
     hookspath=['hooks'],     # place custom hooks here if you like
     hooksconfig={},
