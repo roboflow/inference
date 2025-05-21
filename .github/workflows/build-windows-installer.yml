@@ -121,6 +121,10 @@ jobs:
           echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.SM_CLIENT_CERT_PASSWORD }}" >> "$GITHUB_ENV"
           # VERSION logic is now removed from this step
 
+      - name: Build local inference wheels
+        shell: bash # Ensures 'make' and 'rm -rf' work as expected
+        run: make create_wheels
+
       - name: Install inference_gpu and dependencies from local wheels
         shell: bash # Using bash for wildcard expansion in pip install
         run: |
@@ -129,10 +133,7 @@ jobs:
           pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
           echo "--- Installed inference_gpu details ---"
           pip show inference-gpu
-            
-      - name: Build local inference wheels
-        shell: bash # Ensures 'make' and 'rm -rf' work as expected
-        run: make create_wheels
+          
 
       - name: Install PyInstaller and other build dependencies
         working-directory: ./app_bundles/windows # Adjusted path
