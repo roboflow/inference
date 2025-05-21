@@ -1,2 +1,1 @@
-inference_gpu[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]
 pyinstaller
