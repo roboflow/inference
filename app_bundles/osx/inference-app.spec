@@ -5,14 +5,14 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 # ---------------------------------------------------------------------------
 # Wheel collections you already had
-rasterio_datas = collect_data_files('rasterio', include_py_files=False)
+rasterio_datas = collect_data_files('rasterio', include_py_files=True)
 
 clip_datas, clip_binaries, clip_hiddenimports                 = collect_all('clip')
-transformers_datas, transformers_bins, transformers_hiddenimports = collect_all('transformers')
+transformers_datas, transformers_bins, transformers_hiddenimports = collect_all('transformers', include_py_files=True)
 peft_datas, peft_bins, peft_hiddenimports                     = collect_all('peft')
 cython_datas, cython_bins, cython_hiddenimports               = collect_all('Cython')
 tldextract_datas, tldextract_binaries, tldextract_hidden      = collect_all("tldextract")
-inference_datas, inference_bins, inference_hidden = collect_all('inference')
+inference_datas, inference_bins, inference_hidden = collect_all('inference', include_py_files=True)
 
 # ---------------------------------------------------------------------------
 opensslnames = ("libcrypto.3.dylib", "libssl.3.dylib")
@@ -64,7 +64,7 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    noarchive=False,
+    noarchive=True,
     optimize=0,
 )
 

@@ -4,14 +4,15 @@ from PyInstaller.utils.hooks import collect_all
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
-rasterio_datas = collect_data_files('rasterio', include_py_files=False)
 
-clip_datas, clip_binaries, clip_hiddenimports = collect_all('clip')
-transformers_datas, transformers_bins, transformers_hiddenimports = collect_all('transformers')
-peft_datas, peft_bins, peft_hiddenimports = collect_all('peft')
-cython_datas, cython_bins, cython_hiddenimports = collect_all('Cython')
-tldextract_datas, tldextract_binaries, tldextract_hidden = collect_all("tldextract")
-inference_datas, inference_bins, inference_hidden = collect_all('inference') 
+rasterio_datas = collect_data_files('rasterio', include_py_files=True)
+
+clip_datas, clip_binaries, clip_hiddenimports                 = collect_all('clip')
+transformers_datas, transformers_bins, transformers_hiddenimports = collect_all('transformers', include_py_files=True)
+peft_datas, peft_bins, peft_hiddenimports                     = collect_all('peft')
+cython_datas, cython_bins, cython_hiddenimports               = collect_all('Cython')
+tldextract_datas, tldextract_binaries, tldextract_hidden      = collect_all("tldextract")
+inference_datas, inference_bins, inference_hidden = collect_all('inference', include_py_files=True)
 
 a = Analysis(
     ['run_inference.py'],
@@ -58,7 +59,7 @@ binaries=[
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    noarchive=False,
+    noarchive=True,
     optimize=0,
 )
 pyz = PYZ(a.pure)
