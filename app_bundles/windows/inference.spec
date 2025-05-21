@@ -52,7 +52,7 @@ binaries=[
         'transformers.models.__init__',
         'peft',
         'Cython'
-        'inference'
+        'inference',
         *inference_hidden,
     ],
     hookspath=['hooks'],     # place custom hooks here if you like
