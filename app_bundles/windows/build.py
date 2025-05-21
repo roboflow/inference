@@ -78,19 +78,6 @@ def build():
     subprocess.run(["pyinstaller", "--noconfirm", SPEC_FILE], check=True)
 
 
-def get_version_via_pip(pkg="inference"):
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "show", pkg],
-            check=True, stdout=subprocess.PIPE, text=True
-        )
-        for line in result.stdout.splitlines():
-            if line.startswith("Version:"):
-                return line.split(":")[1].strip()
-    except subprocess.CalledProcessError:
-        return None
-
-
 def copy_static_files():
     print(f"Copying static files from:\n  {SOURCE_LANDING_DIR}\n  to\n  {DEST_LANDING_DIR}")
     if not os.path.exists(SOURCE_LANDING_DIR):
@@ -102,7 +89,7 @@ def copy_static_files():
 
 if __name__ == "__main__":
 
-    version = get_version_via_pip()
+    version = os.getenv("BUILD_VERSION")
     print(f"Version: {version}")
     clean()
     convert_icon()

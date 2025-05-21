@@ -1,7 +1,13 @@
 name: Build Windows Installer
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      manual_version:
+        description: 'Version to build (e.g., 1.0.0 or v1.0.0). Required for manual runs.'
+        required: false # Set to false to allow an empty string check, but script will enforce it for manual runs
 
 jobs:
   build_windows:
@@ -68,7 +74,119 @@ jobs:
 
       - name: Build Windows installer
         working-directory: ./app_bundles/windows # Adjusted path
+        env:
+          BUILD_VERSION: ${{ env.INSTALLER_VERSION }}
         run: python build.py
+
+      - name: Install DigiCert Client tools
+        id: install_digicert_tools # Renamed for clarity
+        uses: digicert/ssm-code-signing@v1.0.0
+
+      - name: Set up DigiCert certificate
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}" ]; then
+            echo "Error: SM_CLIENT_CERT_FILE_B64 secret is not set."
+            exit 1
+          fi
+          # Ensure the D drive directory exists or create it if not
+          # This is usually available on Windows runners, but good to be safe.
+          # However, direct creation like this might be problematic if D: isn't guaranteed.
+          # The action creates /d/ which on Windows often means a temp drive.
+          # Let's stick to a path the DigiCert action might expect or a runner temp path.
+          # The DigiCert docs for GH Actions specify /d/Certificate_pkcs12.p12. On Windows, this might translate to a specific temp path.
+          # Let's try to use a known writable path like runner.temp
+          CERT_PATH="${{ runner.temp }}\\Certificate_pkcs12.p12"
+          echo "Decoding certificate to $CERT_PATH"
+          echo "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > "$CERT_PATH"
+          if [ ! -f "$CERT_PATH" ]; then
+            echo "Error: Failed to create certificate file at $CERT_PATH"
+            exit 1
+          fi
+          echo "SM_CLIENT_CERT_FILE_PATH=$CERT_PATH" >> $GITHUB_ENV
+
+      - name: Set DigiCert environment variables
+        id: set_digicert_variables # Renamed for clarity
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.SM_HOST }}" ] || \
+             [ -z "${{ secrets.SM_API_KEY }}" ] || \
+             [ -z "${{ secrets.SM_CLIENT_CERT_PASSWORD }}" ] || \
+             [ -z "${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}" ]; then
+            echo "Error: One or more DigiCert secrets (SM_HOST, SM_API_KEY, SM_CLIENT_CERT_PASSWORD, SM_CODE_SIGNING_CERT_SHA1_HASH) are not set."
+            exit 1
+          fi
+          echo "SM_HOST=${{ secrets.SM_HOST }}" >> "$GITHUB_ENV"
+          echo "SM_API_KEY=${{ secrets.SM_API_KEY }}" >> "$GITHUB_ENV"
+          # Use the path set in the previous step
+          echo "SM_CLIENT_CERT_FILE=${{ env.SM_CLIENT_CERT_FILE_PATH }}" >> "$GITHUB_ENV"
+          echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.SM_CLIENT_CERT_PASSWORD }}" >> "$GITHUB_ENV"
+
+          VERSION=""
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            if [ -n "${{ inputs.manual_version }}" ]; then
+              VERSION="${{ inputs.manual_version }}"
+              # Remove leading 'v' if present, as installer name format is inference-VERSION-installer.exe
+              VERSION=${VERSION#v}
+              echo "Manual run detected. Using provided version: $VERSION"
+            else
+              echo "Error: For manual runs (workflow_dispatch), the 'manual_version' input is required."
+              exit 1
+            fi
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=$(echo "${{ github.ref }}" | sed 's!refs/tags/v!!')
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then # Handles tags like 1.0.0 directly
+            VERSION=$(echo "${{ github.ref }}" | sed 's!refs/tags/!!')
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "Error: Could not determine installer version."
+            echo "  github.event_name: ${{ github.event_name }}"
+            echo "  github.ref: ${{ github.ref }}"
+            echo "  inputs.manual_version: ${{ inputs.manual_version }}"
+            exit 1
+          fi
+
+          echo "INSTALLER_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Installer version set to: $VERSION"
+
+      - name: Sign Windows Installer with DigiCert
+        shell: cmd # smctl is a windows executable, cmd is more natural
+        run: |
+          echo "Starting installer signing process..."
+          set PKCS11_CONFIG_PATH=%USERPROFILE%\AppData\Local\Temp\smtools-windows-x64\pkcs11properties.cfg
+          echo "PKCS11 Config Path: %PKCS11_CONFIG_PATH%"
+
+          set INSTALLER_BASE_PATH=app_bundles\windows\installer
+          set INSTALLER_VERSION=${{ env.INSTALLER_VERSION }}
+          REM The build.py script creates the installer in installer/inference-{version}-installer.exe
+          set INSTALLER_FILENAME=inference-%INSTALLER_VERSION%-installer.exe
+          set UNSIGNED_INSTALLER_PATH=%INSTALLER_BASE_PATH%\%INSTALLER_FILENAME%
+
+          echo "Looking for installer at: %UNSIGNED_INSTALLER_PATH%"
+          if not exist "%UNSIGNED_INSTALLER_PATH%" (
+            echo "Error: Unsigned installer not found at %UNSIGNED_INSTALLER_PATH%"
+            echo "Listing contents of %INSTALLER_BASE_PATH%:"
+            dir "%INSTALLER_BASE_PATH%"
+            exit /b 1
+          )
+
+          echo "Looking for PKCS11 config at: %PKCS11_CONFIG_PATH%"
+          if not exist "%PKCS11_CONFIG_PATH%" (
+            echo "Error: DigiCert PKCS11 config file not found at %PKCS11_CONFIG_PATH%"
+            echo "Please ensure the 'Install DigiCert Client tools' step ran successfully and created this file."
+            echo "Listing contents of %USERPROFILE%\AppData\Local\Temp\smtools-windows-x64\:"
+            dir "%USERPROFILE%\AppData\Local\Temp\smtools-windows-x64\"
+            exit /b 1
+          )
+          
+          echo "Attempting to sign: %UNSIGNED_INSTALLER_PATH%"
+          smctl sign --fingerprint ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }} --input "%UNSIGNED_INSTALLER_PATH%" --config-file "%PKCS11_CONFIG_PATH%"
+          if %ERRORLEVEL% neq 0 (
+            echo "Error: smctl sign command failed with error code %ERRORLEVEL%"
+            exit /b 1
+          )
+          echo "Installer signed successfully."
 
       - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
@@ -77,4 +195,15 @@ jobs:
           # The build.py script creates the installer in installer/inference-{version}-installer.exe
           # We'll upload the whole installer directory, or use a wildcard if preferred.
           path: app_bundles/windows/installer/ # Adjusted path
-          if-no-files-found: error # Fail the step if the installer directory is not found or empty 
+          if-no-files-found: error # Fail the step if the installer directory is not found or empty
+
+      - name: Upload Installer to Release
+        if: github.event_name == 'release' # Only run for release events
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./app_bundles/windows/installer/inference-${{ env.INSTALLER_VERSION }}-installer.exe
+          asset_name: inference-${{ env.INSTALLER_VERSION }}-installer.exe
+          asset_content_type: application/vnd.microsoft.portable-executable 
