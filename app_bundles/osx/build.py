@@ -275,7 +275,7 @@ if __name__ == "__main__":
     fix_app_permissions(APP_PATH)
     codesign_and_notarize(APP_PATH, ZIP_PATH)
     create_dmg(APP_PATH, DMG_PATH)
-    sign_dmg(DMG_PATH)
+    # sign_dmg(DMG_PATH) # Temporarily disabled DMG signing
 
     print("\n✅ macOS app built, signed, notarized, and packed into DMG!")
     print(f"   App: {APP_PATH}")
