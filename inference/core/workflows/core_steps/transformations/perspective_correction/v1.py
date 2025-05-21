@@ -706,7 +706,8 @@ class PerspectiveCorrectionBlockV1(WorkflowBlock):
         if not predictions:
             predictions = [None] * len(images)
 
-        if not self.perspective_transformers:
+        if not self.perspective_transformers or extend_perspective_polygon_by_detections_anchor:
+            self.perspective_transformers = []
             largest_perspective_polygons = pick_largest_perspective_polygons(
                 perspective_polygons
             )
