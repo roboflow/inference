@@ -253,6 +253,11 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
             )
             with PROCESSES_TABLE_LOCK:
                 # termination ended
+                if pipeline_id not in self._processes_table:
+                    logger.warning(
+                        f"Pipeline {pipeline_id} already removed from processes table."
+                    )
+                    return
                 pipeline = self._processes_table[pipeline_id]
                 pipeline.is_terminating = False
         serialised_response = prepare_response(
