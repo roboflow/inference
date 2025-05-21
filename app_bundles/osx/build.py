@@ -14,10 +14,18 @@ ICON_PNG = "../osx/app-icon.png"
 ICNS_PATH = "./app-icon.icns"
 SPEC_FILE = f"{BUILD_NAME}.spec"
 
+# Get version from environment variable, default if not set
+VERSION = os.getenv("BUILD_VERSION")
+if not VERSION:
+    print("Warning: BUILD_VERSION environment variable not set. Defaulting to 0.0.0-dev.")
+    VERSION = "0.0.0-dev"
+else:
+    print(f"Using version: {VERSION}")
+
 BUILD_DIR = os.path.join("dist", BUILD_NAME)
 APP_PATH = os.path.join("dist", f"{APP_NAME}.app")
-ZIP_PATH = f"{APP_NAME.replace(' ', '-')}.zip"
-DMG_PATH = f"{APP_NAME.replace(' ', '-')}.dmg"
+ZIP_PATH = f"{APP_NAME.replace(' ', '-')}-{VERSION}.zip"
+DMG_PATH = f"{APP_NAME.replace(' ', '-')}-{VERSION}.dmg"
 BACKGROUND_PNG = os.path.abspath("background.png")
 DS_STORE_SOURCE = os.path.abspath("DMG-DS_Store")
 SOURCE_LANDING_DIR = "../../inference/landing"
@@ -80,17 +88,7 @@ def copy_static_files():
     os.makedirs(DEST_LANDING_DIR, exist_ok=True)
     shutil.copytree(SOURCE_LANDING_DIR, DEST_LANDING_DIR, dirs_exist_ok=True)
 
-def get_version_via_pip(pkg="inference"):
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "show", pkg],
-            check=True, stdout=subprocess.PIPE, text=True
-        )
-        for line in result.stdout.splitlines():
-            if line.startswith("Version:"):
-                return line.split(":")[1].strip()
-    except subprocess.CalledProcessError:
-        return None
+
 
 def sign_app_bundle(app_path: str):
     print("🔒 Recursively signing all executables and libraries...")
@@ -225,7 +223,7 @@ def create_app_bundle_with_native_launcher(source_dir, app_bundle_path, launcher
     <key>CFBundleDisplayName</key>     <string>{app_name}</string>
     <key>CFBundleExecutable</key>      <string>launcher</string>
     <key>CFBundleIdentifier</key>      <string>com.example.{app_name.lower().replace(' ','')}</string>
-    <key>CFBundleVersion</key>         <string>1.0</string>
+    <key>CFBundleVersion</key>         <string>{VERSION}</string>
     <key>CFBundlePackageType</key>     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>  <string>10.13</string>
     <key>NSHighResolutionCapable</key> <true/>
