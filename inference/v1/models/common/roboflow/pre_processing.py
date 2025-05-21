@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -408,3 +408,35 @@ def pre_process_numpy_image(
     raise ModelRuntimeError(
         f"Unsupported pre-processing mode: {pre_processing_config.mode}"
     )
+
+
+def extract_input_images_dimensions(
+    images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+) -> List[ImageDimensions]:
+    if isinstance(images, np.ndarray):
+        return [ImageDimensions(height=images.shape[0], width=images.shape[1])]
+    if isinstance(images, torch.Tensor):
+        if len(images.shape) == 3:
+            images = torch.unsqueeze(images, dim=0)
+        image_dimensions = []
+        for image in images:
+            image_dimensions.append(
+                ImageDimensions(height=image.shape[2], width=image.shape[3])
+            )
+        return image_dimensions
+    if not isinstance(images, list):
+        raise ModelRuntimeError(
+            "Pre-processing supports only np.array or torch.Tensor or list of above."
+        )
+    if not len(images):
+        raise ModelRuntimeError("Detected empty input to the model")
+    if isinstance(images[0], np.ndarray):
+        return [ImageDimensions(height=i.shape[0], width=i.shape[1]) for i in images]
+    if isinstance(images[0], torch.Tensor):
+        image_dimensions = []
+        for image in images:
+            image_dimensions.append(
+                ImageDimensions(height=image.shape[2], width=image.shape[3])
+            )
+        return image_dimensions
+    raise ModelRuntimeError(f"Detected unknown input batch element: {type(images[0])}")

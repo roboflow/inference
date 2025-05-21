@@ -12,3 +12,7 @@ class EnvironmentConfigurationError(BaseInferenceError):
 
 class ModelRuntimeError(BaseInferenceError):
     pass
+
+
+class RetryError(BaseInferenceError):
+    pass

@@ -19,3 +19,8 @@ def stream_file_lines(path: str) -> Generator[str, None, None]:
 def read_json(path: str) -> Optional[Union[dict, list]]:
     with open(path) as f:
         return json.load(f)
+
+
+def ensure_parent_dir_exists(path: str) -> None:
+    parent_dir = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent_dir, exist_ok=True)

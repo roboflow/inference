@@ -93,11 +93,11 @@ class OpenVocabularyObjectDetectionModel(
     def infer(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        classes_or_caption: Union[str, List[str]],
+        classes: Union[str, List[str]],
         **kwargs,
     ) -> List[Detections]:
         pre_processed_images, pre_processing_meta = self.pre_process(images, **kwargs)
-        model_results = self.forward(pre_processed_images, classes_or_caption, **kwargs)
+        model_results = self.forward(pre_processed_images, classes, **kwargs)
         return self.post_process(model_results, pre_processing_meta, **kwargs)
 
     @abstractmethod
@@ -112,7 +112,7 @@ class OpenVocabularyObjectDetectionModel(
     def forward(
         self,
         pre_processed_images: PreprocessedInputs,
-        classes_or_caption: Union[str, List[str]],
+        classes: List[str],
         **kwargs,
     ) -> RawPrediction:
         pass
@@ -129,9 +129,7 @@ class OpenVocabularyObjectDetectionModel(
     def __call__(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        classes_or_caption: Union[str, List[str]],
+        classes: List[str],
         **kwargs,
     ) -> List[Detections]:
-        return self.infer(
-            images=images, classes_or_caption=classes_or_caption, **kwargs
-        )
+        return self.infer(images=images, classes=classes, **kwargs)
