@@ -186,11 +186,37 @@ jobs:
           )
           
           echo "Attempting to sign: %UNSIGNED_INSTALLER_PATH%"
-          smctl sign --fingerprint ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }} --input "%UNSIGNED_INSTALLER_PATH%" --config-file "%PKCS11_CONFIG_PATH%"
-          if %ERRORLEVEL% neq 0 (
-            echo "Error: smctl sign command failed with error code %ERRORLEVEL%"
+          
+          REM Create a temporary file for smctl output
+          set SMCTL_OUTPUT_TEMP_FILE=%TEMP%\smctl_output.txt
+
+          REM Run smctl and redirect stdout and stderr to the temp file
+          smctl sign --fingerprint ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }} --input "%UNSIGNED_INSTALLER_PATH%" --config-file "%PKCS11_CONFIG_PATH%" > "%SMCTL_OUTPUT_TEMP_FILE%" 2>&1
+          set SMCTL_EXIT_CODE=%ERRORLEVEL%
+
+          REM Display smctl output for debugging
+          echo "--- smctl output ---"
+          type "%SMCTL_OUTPUT_TEMP_FILE%"
+          echo "--- end of smctl output ---"
+          echo "smctl exit code: %SMCTL_EXIT_CODE%"
+
+          REM Check for the word "FAILED" in the output (case-insensitive)
+          findstr /I /C:"FAILED" "%SMCTL_OUTPUT_TEMP_FILE%"
+          set FINDSTR_EXIT_CODE=%ERRORLEVEL%
+
+          REM Clean up temp file
+          del "%SMCTL_OUTPUT_TEMP_FILE%"
+
+          if %SMCTL_EXIT_CODE% neq 0 (
+            echo "Error: smctl sign command failed with exit code %SMCTL_EXIT_CODE%."
             exit /b 1
           )
+          if %FINDSTR_EXIT_CODE% equ 0 (
+            REM String "FAILED" was found in the output
+            echo "Error: smctl output indicates failure (found 'FAILED' in output)."
+            exit /b 1
+          )
+          
           echo "Installer signed successfully."
 
       - name: Upload Windows Installer
