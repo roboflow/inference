@@ -188,8 +188,7 @@ def calculate_least_squares_polygon(
         y = a_1 * x + b_1
         return np.array([x, y])
 
-    pairs = list(zip(polygon[:-1], polygon[1:]))
-    pairs.append((polygon[-1], polygon[0]))
+    pairs = [polygon[-1], polygon[0]] + list(zip(polygon[:-1], polygon[1:]))
 
     lines = []
     for point_1, point_2 in pairs:
@@ -213,8 +212,6 @@ def calculate_least_squares_polygon(
         line_2 = lines[(i + 1) % len(lines)]
         pt = intersect_lines(line_1, line_2)
         intersections.append(pt)
-
-    intersections = [intersections[-1]] + intersections[:-1]
 
     return np.array(intersections, dtype=float).round().astype(int)
 
