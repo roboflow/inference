@@ -121,14 +121,14 @@ jobs:
           echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.SM_CLIENT_CERT_PASSWORD }}" >> "$GITHUB_ENV"
           # VERSION logic is now removed from this step
 
-          - name: Install inference_gpu and dependencies from local wheels
-          shell: bash # Using bash for wildcard expansion in pip install
-          run: |
-            WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
-            echo "Found GPU wheel: $WHEEL_FILE"
-            pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
-            echo "--- Installed inference_gpu details ---"
-            pip show inference-gpu
+      - name: Install inference_gpu and dependencies from local wheels
+        shell: bash # Using bash for wildcard expansion in pip install
+        run: |
+          WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
+          echo "Found GPU wheel: $WHEEL_FILE"
+          pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
+          echo "--- Installed inference_gpu details ---"
+          pip show inference-gpu
             
       - name: Build local inference wheels
         shell: bash # Ensures 'make' and 'rm -rf' work as expected
