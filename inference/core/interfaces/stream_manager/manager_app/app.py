@@ -257,9 +257,9 @@ class InferencePipelinesManagerHandler(BaseRequestHandler):
                     logger.warning(
                         f"Pipeline {pipeline_id} already removed from processes table."
                     )
-                    return
-                pipeline = self._processes_table[pipeline_id]
-                pipeline.is_terminating = False
+                else:
+                    pipeline = self._processes_table[pipeline_id]
+                    pipeline.is_terminating = False
         serialised_response = prepare_response(
             request_id=request_id, response=response, pipeline_id=pipeline_id
         )
