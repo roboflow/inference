@@ -1,4 +1,5 @@
-from typing import List, Tuple, Union
+from copy import deepcopy
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -6,7 +7,8 @@ import torch
 from inference.v1 import Detections, ObjectDetectionModel
 from inference.v1.configuration import DEFAULT_DEVICE
 from inference.v1.entities import ColorFormat
-from inference.v1.errors import CorruptedModelPackageError
+from inference.v1.errors import CorruptedModelPackageError, ModelRuntimeError
+from inference.v1.logger import logger
 from inference.v1.models.common.model_packages import get_model_package_contents
 from inference.v1.models.common.roboflow.model_packages import (
     PreProcessingConfig,
@@ -24,7 +26,10 @@ from inference.v1.models.rfdetr.rfdetr_base_pytorch import (
     build_model,
 )
 
-torch.set_float32_matmul_precision("high")
+try:
+    torch.set_float32_matmul_precision("high")
+except:
+    pass
 
 CONFIG_FOR_MODEL_TYPE = {
     "rfdetr-base": RFDETRBaseConfig,
@@ -33,17 +38,21 @@ CONFIG_FOR_MODEL_TYPE = {
 
 
 class RFDetrForObjectDetectionTorch(
-    (ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, torch.Tensor])
+    (ObjectDetectionModel[torch.Tensor, PreProcessingMetadata, dict])
 ):
 
     @classmethod
     def from_pretrained(
         cls,
         model_name_or_path: str,
-        device: torch.device = DEFAULT_DEVICE,
-        compile_model: bool = False,
+        device: Optional[torch.device] = None,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTorch":
+        if device is None:
+            if torch.backends.mps.is_available():
+                device = torch.device("mps")
+            else:
+                device = DEFAULT_DEVICE
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -75,11 +84,10 @@ class RFDetrForObjectDetectionTorch(
         model_config = CONFIG_FOR_MODEL_TYPE[model_characteristics.model_type](
             device=device
         )
+
         model = build_model(config=model_config)
         model.load_state_dict(weights_dict)
         model = model.eval().to(device)
-        if compile_model:
-            model = torch.compile(model)
         post_processor = PostProcess()
         return cls(
             model=model,
@@ -87,6 +95,7 @@ class RFDetrForObjectDetectionTorch(
             device=device,
             pre_processing_config=pre_processing_config,
             post_processor=post_processor,
+            resolution=model_config.resolution,
         )
 
     def __init__(
@@ -96,16 +105,56 @@ class RFDetrForObjectDetectionTorch(
         class_names: List[str],
         device: torch.device,
         post_processor: PostProcess,
+        resolution: int,
     ):
         self._model = model
         self._pre_processing_config = pre_processing_config
         self._class_names = class_names
         self._post_processor = post_processor
         self._device = device
+        self._resolution = resolution
+        self._has_warned_about_not_being_optimized_for_inference = False
+        self._inference_model: Optional[LWDETR] = None
+        self._optimized_has_been_compiled = False
+        self._optimized_batch_size = None
+        self._optimized_dtype = None
 
     @property
     def class_names(self) -> List[str]:
         return self._class_names
+
+    def optimize_for_inference(
+        self,
+        compile: bool = True,
+        batch_size: int = 1,
+        dtype: torch.dtype = torch.float32,
+    ) -> None:
+        self.remove_optimized_model()
+        self._inference_model = deepcopy(self._model)
+        self._inference_model.eval()
+        self._inference_model.export()
+        self._inference_model = self._inference_model.to(dtype=dtype)
+        self._optimized_dtype = dtype
+        if compile:
+            self._inference_model = torch.jit.trace(
+                self._inference_model,
+                torch.randn(
+                    batch_size,
+                    3,
+                    self._resolution,
+                    self._resolution,
+                    device=self._device,
+                    dtype=dtype,
+                ),
+            )
+            self._optimized_has_been_compiled = True
+            self._optimized_batch_size = batch_size
+
+    def remove_optimized_model(self) -> None:
+        self._has_warned_about_not_being_optimized_for_inference = False
+        self._inference_model = None
+        self._optimized_has_been_compiled = False
+        self._optimized_batch_size = None
 
     def pre_process(
         self,
@@ -121,12 +170,52 @@ class RFDetrForObjectDetectionTorch(
             input_color_format=input_color_format,
         )
 
-    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> torch.Tensor:
-        return self._model(pre_processed_images)
+    def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> dict:
+        if (
+            self._inference_model is None
+            and not self._has_warned_about_not_being_optimized_for_inference
+        ):
+            logger.warning(
+                "Model is not optimized for inference. "
+                "Latency may be higher than expected. "
+                "You can optimize the model for inference by calling model.optimize_for_inference()."
+            )
+            self._has_warned_about_not_being_optimized_for_inference = True
+        if self._inference_model is not None:
+            if (self._resolution, self._resolution) != tuple(
+                pre_processed_images.shape[2:]
+            ):
+                raise ModelRuntimeError(
+                    f"Resolution mismatch. Model was optimized for resolution {self._resolution}, "
+                    f"but got {tuple(pre_processed_images.shape[2:])}. "
+                    "You can explicitly remove the optimized model by calling model.remove_optimized_model()."
+                )
+            if self._optimized_has_been_compiled:
+                if self._optimized_batch_size != pre_processed_images.shape[0]:
+                    raise ModelRuntimeError(
+                        "Batch size mismatch. Optimized model was compiled for batch size "
+                        f"{self._optimized_batch_size}, but got {pre_processed_images.shape[0]}. "
+                        "You can explicitly remove the optimized model by calling model.remove_optimized_model(). "
+                        "Alternatively, you can recompile the optimized model for a different batch size "
+                        "by calling model.optimize_for_inference(batch_size=<new_batch_size>)."
+                    )
+        with torch.inference_mode():
+            if self._inference_model:
+                predictions = self._inference_model(
+                    pre_processed_images.to(dtype=self._optimized_dtype)
+                )
+            else:
+                predictions = self._model(pre_processed_images)
+            if isinstance(predictions, tuple):
+                predictions = {
+                    "pred_logits": predictions[1],
+                    "pred_boxes": predictions[0],
+                }
+            return predictions
 
     def post_process(
         self,
-        model_results: torch.Tensor,
+        model_results: dict,
         pre_processing_meta: List[PreProcessingMetadata],
         threshold: float = 0.5,
         **kwargs,
