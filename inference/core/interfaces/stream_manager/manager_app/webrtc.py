@@ -141,24 +141,35 @@ class VideoTransformTrack(VideoStreamTrack):
                     if self._consecutive_timeouts >= self._max_consecutive_timeouts:
                         self._consecutive_on_time = 0
 
-        workflow_too_slow_message = ["Workflow is too heavy to process all frames on time..."]
+        workflow_too_slow_message = [
+            "Workflow is too heavy to process all frames on time..."
+        ]
         if np_frame is None:
             if not self._last_frame:
                 np_frame = overlay_text_on_np_frame(
-                    frame.to_ndarray(format="bgr24"), ["Inference pipeline is starting..."]
+                    frame.to_ndarray(format="bgr24"),
+                    ["Inference pipeline is starting..."],
                 )
                 new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
-            elif self._max_consecutive_timeouts and self._consecutive_timeouts >= self._max_consecutive_timeouts:
+            elif (
+                self._max_consecutive_timeouts
+                and self._consecutive_timeouts >= self._max_consecutive_timeouts
+            ):
                 np_frame = overlay_text_on_np_frame(
-                    self._last_frame.to_ndarray(format="bgr24"), workflow_too_slow_message
+                    self._last_frame.to_ndarray(format="bgr24"),
+                    workflow_too_slow_message,
                 )
                 new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
             else:
                 new_frame = self._last_frame
         else:
-            if self._max_consecutive_timeouts and self._consecutive_timeouts >= self._max_consecutive_timeouts:
+            if (
+                self._max_consecutive_timeouts
+                and self._consecutive_timeouts >= self._max_consecutive_timeouts
+            ):
                 np_frame = overlay_text_on_np_frame(
-                    self._last_frame.to_ndarray(format="bgr24"), workflow_too_slow_message
+                    self._last_frame.to_ndarray(format="bgr24"),
+                    workflow_too_slow_message,
                 )
                 new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
             else:
