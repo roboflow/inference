@@ -121,6 +121,79 @@ jobs:
           echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.SM_CLIENT_CERT_PASSWORD }}" >> "$GITHUB_ENV"
           # VERSION logic is now removed from this step
 
+      - name: Test DigiCert Signing on Dummy File
+        shell: cmd
+        # This step runs even if previous steps failed if we want to test signing independently at some point
+        # but for now, it depends on secrets and tools setup, so it will fail if those did.
+        run: |
+          echo "Starting dummy file signing test..."
+          set SM_LOG_LEVEL=TRACE
+          echo "SM_LOG_LEVEL set to TRACE for dummy sign test"
+
+          REM Create a dummy file to sign
+          echo @echo Test script for signing > %TEMP%\dummy_sign_test.cmd
+          set DUMMY_FILE_TO_SIGN=%TEMP%\dummy_sign_test.cmd
+          echo "Dummy file created at: %DUMMY_FILE_TO_SIGN%"
+
+          set PKCS11_CONFIG_PATH_TEST=%USERPROFILE%\AppData\Local\Temp\smtools-windows-x64\pkcs11properties.cfg
+          echo "PKCS11 Config Path for test: %PKCS11_CONFIG_PATH_TEST%"
+          if not exist "%PKCS11_CONFIG_PATH_TEST%" (
+            echo "Error: PKCS11 config file not found for test signing at '%PKCS11_CONFIG_PATH_TEST%'. Ensure 'Install DigiCert Client tools' ran."
+            exit /b 1
+          )
+
+          echo "Attempting to sync certificates with local store (for dummy test)..."
+          smctl windows certsync
+          set CERTSYNC_EXIT_CODE_TEST=%ERRORLEVEL%
+          set SMCTL_LOG_FILE_PATH_TEST=%USERPROFILE%\.signingmanager\logs\smctl.log
+          echo "--- smctl.log content after certsync (dummy test from %SMCTL_LOG_FILE_PATH_TEST%) ---"
+          if exist "%SMCTL_LOG_FILE_PATH_TEST%" (
+            type "%SMCTL_LOG_FILE_PATH_TEST%"
+          ) else (
+            echo "smctl.log not found at %SMCTL_LOG_FILE_PATH_TEST% after certsync attempt (dummy test)."
+          )
+          echo "--- end of smctl.log content after certsync (dummy test) ---"
+          if %CERTSYNC_EXIT_CODE_TEST% neq 0 (
+            echo "Error: (Dummy Test) smctl windows certsync command failed with exit code %CERTSYNC_EXIT_CODE_TEST%."
+            exit /b 1
+          )
+          echo "(Dummy Test) smctl windows certsync completed successfully (exit code %CERTSYNC_EXIT_CODE_TEST%)."
+
+          echo "Attempting to sign dummy file: %DUMMY_FILE_TO_SIGN%"
+          set SMCTL_CLI_OUTPUT_TEMP_FILE_TEST=%TEMP%\smctl_cli_output_test.txt
+          smctl sign --fingerprint ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }} --input "%DUMMY_FILE_TO_SIGN%" --config-file "%PKCS11_CONFIG_PATH_TEST%" > "%SMCTL_CLI_OUTPUT_TEMP_FILE_TEST%" 2>&1
+          set SMCTL_EXIT_CODE_TEST=%ERRORLEVEL%
+
+          echo "--- smctl CLI output (dummy test) ---"
+          type "%SMCTL_CLI_OUTPUT_TEMP_FILE_TEST%"
+          echo "--- end of smctl CLI output (dummy test) ---"
+          echo "smctl CLI exit code (dummy test): %SMCTL_EXIT_CODE_TEST%"
+          
+          set TEMP_CLI_OUTPUT_FOR_FINDSTR_TEST=%SMCTL_CLI_OUTPUT_TEMP_FILE_TEST%
+
+          echo "--- smctl.log content after dummy sign attempt (from %SMCTL_LOG_FILE_PATH_TEST%) ---"
+          if exist "%SMCTL_LOG_FILE_PATH_TEST%" (
+            type "%SMCTL_LOG_FILE_PATH_TEST%"
+          ) else (
+            echo "smctl.log not found at %SMCTL_LOG_FILE_PATH_TEST% after dummy sign attempt."
+          )
+          echo "--- end of smctl.log content after dummy sign attempt ---"
+
+          findstr /I /C:"FAILED" "%TEMP_CLI_OUTPUT_FOR_FINDSTR_TEST%"
+          set FINDSTR_EXIT_CODE_TEST=%ERRORLEVEL%
+          del "%TEMP_CLI_OUTPUT_FOR_FINDSTR_TEST%"
+
+          if %SMCTL_EXIT_CODE_TEST% neq 0 (
+            echo "Error: (Dummy Test) smctl sign command failed with exit code %SMCTL_EXIT_CODE_TEST%."
+            exit /b 1
+          )
+          if %FINDSTR_EXIT_CODE_TEST% equ 0 (
+            echo "Error: (Dummy Test) smctl CLI output indicates failure (found 'FAILED' in output)."
+            exit /b 1
+          )
+          echo "(Dummy Test) Dummy file signed successfully. DigiCert signing seems configured correctly."
+          REM Do not delete the dummy file itself, it's in %TEMP% and will be cleaned up by runner eventually.
+
       - name: Build local inference wheels
         shell: bash # Ensures 'make' and 'rm -rf' work as expected
         run: make create_wheels
@@ -167,6 +240,25 @@ jobs:
           set PKCS11_CONFIG_PATH=%USERPROFILE%\AppData\Local\Temp\smtools-windows-x64\pkcs11properties.cfg
           echo "PKCS11 Config Path: %PKCS11_CONFIG_PATH%"
 
+          REM Sync KeyLocker certificates to the local Windows certificate store as per DigiCert docs
+          echo "Attempting to sync certificates with local store using 'smctl windows certsync'..."
+          smctl windows certsync
+          set CERTSYNC_EXIT_CODE=%ERRORLEVEL%
+          REM Always display smctl.log after certsync, as it might contain TRACE details for this operation
+          set SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC=%USERPROFILE%\.signingmanager\logs\smctl.log
+          echo "--- smctl.log content after certsync (from %SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC%) ---"
+          if exist "%SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC%" (
+            type "%SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC%"
+          ) else (
+            echo "smctl.log not found at %SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC% after certsync attempt."
+          )
+          echo "--- end of smctl.log content after certsync ---"
+          if %CERTSYNC_EXIT_CODE% neq 0 (
+            echo "Error: smctl windows certsync command failed with exit code %CERTSYNC_EXIT_CODE%."
+            exit /b 1
+          )
+          echo "smctl windows certsync completed successfully (exit code %CERTSYNC_EXIT_CODE%)."
+
           set INSTALLER_BASE_PATH=app_bundles\windows\installer
           set INSTALLER_VERSION=%INSTALLER_VERSION_FROM_STEP%
           set INSTALLER_FILENAME=inference-%INSTALLER_VERSION%-installer.exe
@@ -201,7 +293,9 @@ jobs:
           type "%SMCTL_CLI_OUTPUT_TEMP_FILE%"
           echo "--- end of smctl CLI output ---"
           echo "smctl CLI exit code: %SMCTL_EXIT_CODE%"
-          del "%SMCTL_CLI_OUTPUT_TEMP_FILE%"
+          
+          REM Temporarily store CLI output for findstr before deleting the file
+          set TEMP_CLI_OUTPUT_FOR_FINDSTR=%SMCTL_CLI_OUTPUT_TEMP_FILE%
 
           REM Display the detailed smctl.log file
           set SMCTL_LOG_FILE_PATH=%USERPROFILE%\.signingmanager\logs\smctl.log
@@ -213,27 +307,30 @@ jobs:
           )
           echo "--- end of smctl.log content ---"
 
-          REM Check for "FAILED" in the CLI output (as smctl exit code might be 0 on failure)
-          REM Re-run findstr on the original CLI output if needed, or rely on exit code if TRACE makes it reliable
-          REM For now, let's keep the findstr logic as a fallback, operating on the already captured CLI output
-          REM However, the detailed log might be more useful now.
           REM We need to re-capture CLI output or pass it if we want to search it again here.
           REM Let's assume for a moment that with TRACE logging, the exit code becomes more reliable,
           REM OR that the TRACE log itself will contain an undeniable error message we could search for.
           REM The original findstr logic was based on the brief "FAILED" message.
 
+          REM Check for "FAILED" in the originally captured CLI output
+          findstr /I /C:"FAILED" "%TEMP_CLI_OUTPUT_FOR_FINDSTR%"
+          set FINDSTR_EXIT_CODE=%ERRORLEVEL%
+          REM findstr returns 0 if string is found, 1 if not found (or error)
+
+          REM Now delete the temp CLI output file
+          del "%TEMP_CLI_OUTPUT_FOR_FINDSTR%"
+
           if %SMCTL_EXIT_CODE% neq 0 (
             echo "Error: smctl sign command failed with exit code %SMCTL_EXIT_CODE% (see smctl.log above for details)."
             exit /b 1
           )
+          if %FINDSTR_EXIT_CODE% equ 0 (
+            REM String "FAILED" was found in the CLI output
+            echo "Error: smctl CLI output indicates failure (found 'FAILED' in output). Review smctl.log for details."
+            exit /b 1
+          )
           
-          REM Optional: If smctl still returns 0 on some failures even with TRACE, 
-          REM we might need to parse the smctl.log content for specific error strings.
-          REM For now, let's see if TRACE + non-zero exit code is enough.
-          REM If the "signCommand ... FAILED" still appears in CLI output AND exit code is 0,
-          REM then we'd re-add the findstr check on SMCTL_CLI_OUTPUT_TEMP_FILE (but it's deleted).
-
-          echo "Installer signed successfully (based on smctl exit code). Review logs carefully."
+          echo "Installer signed successfully (based on smctl exit code and absence of 'FAILED' in CLI output). Review logs carefully."
 
       - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
