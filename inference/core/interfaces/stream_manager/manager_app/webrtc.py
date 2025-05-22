@@ -15,7 +15,8 @@ from aiortc import (
 )
 from aiortc.contrib.media import MediaRelay
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
-from av import logging as av_logging, VideoFrame
+from av import VideoFrame
+from av import logging as av_logging
 
 from inference.core import logger
 from inference.core.interfaces.camera.entities import (
