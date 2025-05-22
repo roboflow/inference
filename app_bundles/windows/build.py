@@ -50,7 +50,7 @@ SolidCompression=no
 Source: "dist\\inference\\*"; DestDir: "{{app}}"; Flags: recursesubdirs
 
 [Icons]
-Name: "{{autoprograms}}\\InferenceApp"; Filename: "{{app}}\\inference.exe"
+Name: "{{autoprograms}}\\Roboflow Inference"; Filename: "{{app}}\\inference.exe"
 
 [Run]
 Filename: "{{app}}\\inference.exe"; Description: "Launch Inference"; Flags: nowait postinstall skipifsilent
