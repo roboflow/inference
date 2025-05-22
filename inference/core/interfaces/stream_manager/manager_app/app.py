@@ -542,7 +542,10 @@ def spawn_managed_pipeline_process(
 
 
 def _get_process_memory_usage_mb(process: Process) -> int:
-    return psutil.Process(process.pid).memory_info().rss / (1024 * 1024)
+    try:
+        return psutil.Process(process.pid).memory_info().rss / (1024 * 1024)
+    except psutil.NoSuchProcess:
+        return 0
 
 
 def start(expected_warmed_up_pipelines: int = 0) -> None:
