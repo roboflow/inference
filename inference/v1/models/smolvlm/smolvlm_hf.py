@@ -17,7 +17,7 @@ class SmolVLMHF:
         model_name_or_path: str,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
-    ) -> "PaliGemmaHF":
+    ) -> "SmolVLMHF":
         torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
         model = AutoModelForImageTextToText.from_pretrained(
             model_name_or_path,
