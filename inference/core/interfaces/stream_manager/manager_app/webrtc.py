@@ -33,11 +33,10 @@ from inference.core.utils.function import experimental
 FALLBACK_FPS: float = 10
 
 
-def overlay_text_on_frame(frame: VideoFrame, text: List[str]):
-    result_frame = frame.to_ndarray(format="bgr24")
+def overlay_text_on_np_frame(frame: np.ndarray, text: List[str]):
     for i, l in enumerate(text):
-        result_frame = cv.putText(
-            result_frame,
+        frame = cv.putText(
+            frame,
             l,
             (10, 20 + 30 * i),
             cv.FONT_HERSHEY_SIMPLEX,
@@ -45,7 +44,7 @@ def overlay_text_on_frame(frame: VideoFrame, text: List[str]):
             (0, 255, 0),
             2,
         )
-    return result_frame
+    return frame
 
 
 class VideoTransformTrack(VideoStreamTrack):
@@ -56,6 +55,8 @@ class VideoTransformTrack(VideoStreamTrack):
         asyncio_loop: asyncio.AbstractEventLoop,
         processing_timeout: float,
         fps_probe_frames: int,
+        min_consecutive_on_time: int,
+        max_consecutive_timeouts: Optional[int] = None,
         webcam_fps: Optional[float] = None,
         *args,
         **kwargs,
@@ -81,6 +82,10 @@ class VideoTransformTrack(VideoStreamTrack):
         self.incoming_stream_fps: Optional[float] = webcam_fps
 
         self._last_frame: Optional[VideoFrame] = None
+        self._consecutive_timeouts: int = 0
+        self._consecutive_on_time: int = 0
+        self._max_consecutive_timeouts: Optional[int] = max_consecutive_timeouts
+        self._min_consecutive_on_time: int = min_consecutive_on_time
 
     def set_track(self, track: RemoteStreamTrack):
         if not self.track:
@@ -90,7 +95,7 @@ class VideoTransformTrack(VideoStreamTrack):
         self._track_active = False
 
     async def recv(self):
-        frame = await self.track.recv()
+        frame: VideoFrame = await self.track.recv()
         self._processed += 1
         if not self.incoming_stream_fps:
             if not self._fps_probe_t1:
@@ -117,23 +122,48 @@ class VideoTransformTrack(VideoStreamTrack):
             await self.to_inference_queue.async_get_nowait()
             await self.to_inference_queue.async_put_nowait(frame)
 
+        np_frame: Optional[np.ndarray] = None
         try:
             np_frame = await self.from_inference_queue.async_get(
                 timeout=self.processing_timeout
             )
             new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
             self._last_frame = new_frame
+
+            if self._max_consecutive_timeouts:
+                self._consecutive_on_time += 1
+                if self._consecutive_on_time >= self._min_consecutive_on_time:
+                    self._consecutive_timeouts = 0
         except asyncio.TimeoutError:
             if self._last_frame:
-                logger.warning(
-                    "Timeout while waiting for inference result, serving last frame"
-                )
-                new_frame = self._last_frame
-            else:
-                np_frame = overlay_text_on_frame(
-                    frame, ["Inference pipeline is starting..."]
+                if self._max_consecutive_timeouts:
+                    self._consecutive_timeouts += 1
+                    if self._consecutive_timeouts >= self._max_consecutive_timeouts:
+                        self._consecutive_on_time = 0
+
+        workflow_too_slow_message = ["Workflow is too heavy to process all frames on time..."]
+        if np_frame is None:
+            if not self._last_frame:
+                np_frame = overlay_text_on_np_frame(
+                    frame.to_ndarray(format="bgr24"), ["Inference pipeline is starting..."]
                 )
                 new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
+            elif self._max_consecutive_timeouts and self._consecutive_timeouts >= self._max_consecutive_timeouts:
+                np_frame = overlay_text_on_np_frame(
+                    self._last_frame.to_ndarray(format="bgr24"), workflow_too_slow_message
+                )
+                new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
+            else:
+                new_frame = self._last_frame
+        else:
+            if self._max_consecutive_timeouts and self._consecutive_timeouts >= self._max_consecutive_timeouts:
+                np_frame = overlay_text_on_np_frame(
+                    self._last_frame.to_ndarray(format="bgr24"), workflow_too_slow_message
+                )
+                new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
+            else:
+                new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
+
         new_frame.pts = self._processed
         new_frame.time_base = frame.time_base
 
@@ -220,6 +250,8 @@ async def init_rtc_peer_connection(
     asyncio_loop: asyncio.AbstractEventLoop,
     processing_timeout: float,
     fps_probe_frames: int,
+    max_consecutive_timeouts: int,
+    min_consecutive_on_time: int,
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
     webcam_fps: Optional[float] = None,
 ) -> RTCPeerConnectionWithFPS:
@@ -230,6 +262,8 @@ async def init_rtc_peer_connection(
         webcam_fps=webcam_fps,
         processing_timeout=processing_timeout,
         fps_probe_frames=fps_probe_frames,
+        max_consecutive_timeouts=max_consecutive_timeouts,
+        min_consecutive_on_time=min_consecutive_on_time,
     )
 
     if webrtc_turn_config:

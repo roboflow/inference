@@ -268,6 +268,8 @@ class InferencePipelineManager(Process):
                     feedback_stop_event=stop_event,
                     asyncio_loop=loop,
                     webcam_fps=webcam_fps,
+                    max_consecutive_timeouts=parsed_payload.max_consecutive_timeouts,
+                    min_consecutive_on_time=parsed_payload.min_consecutive_on_time,
                     processing_timeout=parsed_payload.processing_timeout,
                     fps_probe_frames=parsed_payload.fps_probe_frames,
                 ),
