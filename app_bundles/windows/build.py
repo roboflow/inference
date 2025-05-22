@@ -105,4 +105,4 @@ if __name__ == "__main__":
     
     write_inno_setup_file(version)
     run_inno_setup_compiler()
-    print("Installer built and ready in: installer/inference-installer.exe")
+    print(f"Installer built and ready in: installer/inference-{version}-installer.exe")

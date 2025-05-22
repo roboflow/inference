@@ -172,13 +172,20 @@ jobs:
           set INSTALLER_FILENAME=inference-%INSTALLER_VERSION%-installer.exe
           set UNSIGNED_INSTALLER_PATH=%INSTALLER_BASE_PATH%\%INSTALLER_FILENAME%
 
+          echo "Debug: Listing contents of app_bundles\windows"
+          dir app_bundles\windows
+          echo "Debug: Listing contents of %INSTALLER_BASE_PATH%"
+          dir "%INSTALLER_BASE_PATH%"
+
           echo "Looking for installer at: %UNSIGNED_INSTALLER_PATH%"
-          if not exist \"%UNSIGNED_INSTALLER_PATH%\" (
-            echo "Error: Unsigned installer not found..."
+          if not exist "%UNSIGNED_INSTALLER_PATH%" (
+            echo "Error: Unsigned installer not found at '%UNSIGNED_INSTALLER_PATH%'"
+            echo "Current directory for this step: "
+            cd
             exit /b 1
           )
           echo "Looking for PKCS11 config at: %PKCS11_CONFIG_PATH%"
-          if not exist \"%PKCS11_CONFIG_PATH%\" (
+          if not exist "%PKCS11_CONFIG_PATH%" (
             echo "Error: DigiCert PKCS11 config file not found..."
             exit /b 1
           )
@@ -187,20 +194,20 @@ jobs:
           
           set SMCTL_CLI_OUTPUT_TEMP_FILE=%TEMP%\smctl_cli_output.txt
 
-          smctl sign --fingerprint ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }} --input \"%UNSIGNED_INSTALLER_PATH%\" --config-file \"%PKCS11_CONFIG_PATH%\" > \"%SMCTL_CLI_OUTPUT_TEMP_FILE%\" 2>&1
+          smctl sign --fingerprint ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }} --input "%UNSIGNED_INSTALLER_PATH%" --config-file "%PKCS11_CONFIG_PATH%" > "%SMCTL_CLI_OUTPUT_TEMP_FILE%" 2>&1
           set SMCTL_EXIT_CODE=%ERRORLEVEL%
 
           echo "--- smctl CLI output ---"
-          type \"%SMCTL_CLI_OUTPUT_TEMP_FILE%\"
+          type "%SMCTL_CLI_OUTPUT_TEMP_FILE%"
           echo "--- end of smctl CLI output ---"
           echo "smctl CLI exit code: %SMCTL_EXIT_CODE%"
-          del \"%SMCTL_CLI_OUTPUT_TEMP_FILE%\"
+          del "%SMCTL_CLI_OUTPUT_TEMP_FILE%"
 
           REM Display the detailed smctl.log file
           set SMCTL_LOG_FILE_PATH=%USERPROFILE%\.signingmanager\logs\smctl.log
           echo "--- smctl.log content (from %SMCTL_LOG_FILE_PATH%) ---"
-          if exist \"%SMCTL_LOG_FILE_PATH%\" (
-            type \"%SMCTL_LOG_FILE_PATH%\"
+          if exist "%SMCTL_LOG_FILE_PATH%" (
+            type "%SMCTL_LOG_FILE_PATH%"
           ) else (
             echo "smctl.log not found at %SMCTL_LOG_FILE_PATH%."
           )
