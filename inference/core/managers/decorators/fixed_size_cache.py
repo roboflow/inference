@@ -14,7 +14,10 @@ from inference.core.exceptions import RoboflowAPINotAuthorizedError
 from inference.core.managers.base import Model, ModelManager
 from inference.core.managers.decorators.base import ModelManagerDecorator
 from inference.core.managers.entities import ModelDescription
-from inference.core.registries.roboflow import _check_if_api_key_has_access_to_model
+from inference.core.registries.roboflow import (
+    ModelEndpointType,
+    _check_if_api_key_has_access_to_model,
+)
 
 
 class WithFixedSizeCache(ModelManagerDecorator):
@@ -30,17 +33,22 @@ class WithFixedSizeCache(ModelManagerDecorator):
         self._key_queue = deque(self.model_manager.keys())
 
     def add_model(
-        self, model_id: str, api_key: str, model_id_alias: Optional[str] = None
+        self,
+        model_id: str,
+        api_key: str,
+        model_id_alias: Optional[str] = None,
+        endpoint_type: ModelEndpointType = ModelEndpointType.ORT,
     ) -> None:
         """Adds a model to the manager and evicts the least recently used if the cache is full.
 
         Args:
             model_id (str): The identifier of the model.
             model (Model): The model instance.
+            endpoint_type (ModelEndpointType, optional): The endpoint type to use for the model.
         """
         if MODELS_CACHE_AUTH_ENABLED:
             if not _check_if_api_key_has_access_to_model(
-                api_key=api_key, model_id=model_id
+                api_key=api_key, model_id=model_id, endpoint_type=endpoint_type
             ):
                 raise RoboflowAPINotAuthorizedError(
                     f"API key {api_key} does not have access to model {model_id}"
@@ -82,7 +90,12 @@ class WithFixedSizeCache(ModelManagerDecorator):
         logger.debug(f"Marking new model {queue_id} as most recently used.")
         self._key_queue.append(queue_id)
         try:
-            return super().add_model(model_id, api_key, model_id_alias=model_id_alias)
+            return super().add_model(
+                model_id,
+                api_key,
+                model_id_alias=model_id_alias,
+                endpoint_type=endpoint_type,
+            )
         except Exception as error:
             logger.debug(
                 f"Could not initialise model {queue_id}. Removing from WithFixedSizeCache models queue."

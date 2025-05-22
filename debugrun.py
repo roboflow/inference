@@ -1,13 +1,13 @@
 import sys
 import uvicorn
 from inference.core.cache import cache
-from inference.core.env import MAX_ACTIVE_MODELS
+from inference.core.env import MAX_ACTIVE_MODELS, ENABLE_STREAM_API
 from inference.models.utils import ROBOFLOW_MODEL_TYPES
 from inference.core.interfaces.http.http_api import HttpInterface
 from inference.core.managers.active_learning import BackgroundTaskActiveLearningManager
 from inference.core.managers.decorators.fixed_size_cache import WithFixedSizeCache
 from inference.core.registries.roboflow import RoboflowModelRegistry
-
+from inference.core.interfaces.stream_manager.manager_app.app import start
 
 """
 convenient script to run server in debug
@@ -33,9 +33,22 @@ model_manager.init_pingback()
 interface = HttpInterface(model_manager)
 app = interface.app
 
+from functools import partial
+from multiprocessing import Process
+
+
+
 if __name__ == "__main__":
+
+    print("Starting Stream Manager...")
+    stream_manager_process = Process(
+        target=partial(start, expected_warmed_up_pipelines=0),
+    )
+    stream_manager_process.start()
+
+    print("Starting server...")
     try:
-        uvicorn.run(app, host="127.0.0.1", port=9001)
+        uvicorn.run(app, host="0.0.0.0", port=9001)
     except Exception as e:
         print("Error starting server:", e)
         sys.exit(1)

@@ -72,7 +72,6 @@ def get_system_info() -> dict:
         info["ip_address"] = socket.gethostbyname(socket.gethostname())
         info["mac_address"] = ":".join(re.findall("..", "%012x" % uuid.getnode()))
         info["processor"] = platform.processor()
-        return info
     except Exception as e:
         logger.exception(e)
     finally:
