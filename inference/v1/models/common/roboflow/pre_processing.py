@@ -22,7 +22,8 @@ def pre_process_network_input(
     expected_network_color_format: ColorFormat,
     target_device: torch.device,
     input_color_format: Optional[ColorFormat] = None,
-    normalization_constant: float = 255.0,
+    rescaling_constant: Optional[float] = 255.0,
+    normalization: Optional[Tuple[List[float], List[float]]] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     if isinstance(images, np.ndarray):
         return pre_process_numpy_image(
@@ -31,7 +32,8 @@ def pre_process_network_input(
             input_color_format=input_color_format,
             expected_network_color_format=expected_network_color_format,
             target_device=target_device,
-            normalization_constant=normalization_constant,
+            rescaling_constant=rescaling_constant,
+            normalization=normalization,
         )
     if isinstance(images, torch.Tensor):
         return pre_process_images_tensor(
@@ -40,7 +42,8 @@ def pre_process_network_input(
             input_color_format=input_color_format,
             expected_network_color_format=expected_network_color_format,
             target_device=target_device,
-            normalization_constant=normalization_constant,
+            rescaling_constant=rescaling_constant,
+            normalization=normalization,
         )
     if not isinstance(images, list):
         raise ModelRuntimeError(
@@ -55,7 +58,8 @@ def pre_process_network_input(
             input_color_format=input_color_format,
             expected_network_color_format=expected_network_color_format,
             target_device=target_device,
-            normalization_constant=normalization_constant,
+            normalization_constant=rescaling_constant,
+            normalization=normalization,
         )
     if isinstance(images[0], torch.Tensor):
         return pre_process_images_tensor_list(
@@ -64,7 +68,8 @@ def pre_process_network_input(
             input_color_format=input_color_format,
             expected_network_color_format=expected_network_color_format,
             target_device=target_device,
-            normalization_constant=normalization_constant,
+            rescaling_constant=rescaling_constant,
+            normalization=normalization,
         )
     raise ModelRuntimeError(f"Detected unknown input batch element: {type(images[0])}")
 
@@ -76,7 +81,8 @@ def pre_process_images_tensor(
     expected_network_color_format: ColorFormat,
     target_device: torch.device,
     input_color_format: Optional[ColorFormat] = None,
-    normalization_constant: float = 255.0,
+    rescaling_constant: Optional[float] = 255.0,
+    normalization: Optional[Tuple[List[float], List[float]]] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     if (
         pre_processing_config.mode is PreProcessingMode.NONE
@@ -119,9 +125,13 @@ def pre_process_images_tensor(
             scale_height=pre_processing_config.target_size.height
             / original_size.height,
         )
-        return (images / normalization_constant).contiguous(), [
-            metadata
-        ] * images.shape[0]
+        if rescaling_constant is not None:
+            images = images / rescaling_constant
+        if normalization:
+            images = functional.normalize(
+                images, mean=normalization[0], std=normalization[0]
+            )
+        return images.contiguous(), [metadata] * images.shape[0]
     if pre_processing_config.mode is not PreProcessingMode.LETTERBOX:
         raise ModelRuntimeError(
             f"Cannot find implementation for pre-processing operation: {pre_processing_config.mode}"
@@ -150,7 +160,7 @@ def pre_process_images_tensor(
             pre_processing_config.target_size.height,
             pre_processing_config.target_size.width,
         ),
-        pre_processing_config.padding_value / normalization_constant,
+        pre_processing_config.padding_value,
         dtype=torch.float32,
         device=target_device,
     )
@@ -169,9 +179,13 @@ def pre_process_images_tensor(
         scale_width=scale,
         scale_height=scale,
     )
-    return (final_batch / normalization_constant).contiguous(), [
-        metadata
-    ] * final_batch.shape[0]
+    if rescaling_constant is not None:
+        final_batch = final_batch / rescaling_constant
+    if normalization:
+        final_batch = functional.normalize(
+            final_batch, mean=normalization[0], std=normalization[0]
+        )
+    return final_batch.contiguous(), [metadata] * final_batch.shape[0]
 
 
 @torch.inference_mode()
@@ -181,7 +195,8 @@ def pre_process_images_tensor_list(
     expected_network_color_format: ColorFormat,
     target_device: torch.device,
     input_color_format: Optional[ColorFormat] = None,
-    normalization_constant: float = 255.0,
+    rescaling_constant: Optional[float] = 255.0,
+    normalization: Optional[Tuple[List[float], List[float]]] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     if (
         pre_processing_config.mode is PreProcessingMode.NONE
@@ -216,7 +231,12 @@ def pre_process_images_tensor_list(
                 [target_height, target_width],
                 interpolation=functional.InterpolationMode.BILINEAR,
             )
-            img = img / normalization_constant
+            if rescaling_constant is not None:
+                img = img / rescaling_constant
+            if normalization:
+                img = functional.normalize(
+                    img, mean=normalization[0], std=normalization[0]
+                )
             processed.append(img.contiguous())
             image_metadata = PreProcessingMetadata(
                 pad_left=0,
@@ -289,7 +309,13 @@ def pre_process_images_tensor_list(
                 scale_height=scales[i].item(),
             )
             images_metadata.append(image_metadata)
-        return (final_batch / normalization_constant).contiguous(), images_metadata
+        if rescaling_constant is not None:
+            final_batch = final_batch / rescaling_constant
+        if normalization:
+            final_batch = functional.normalize(
+                final_batch, mean=normalization[0], std=normalization[0]
+            )
+        return final_batch.contiguous(), images_metadata
     raise ModelRuntimeError(
         f"Unsupported pre-processing mode: {pre_processing_config.mode}"
     )
@@ -302,6 +328,7 @@ def pre_process_numpy_images_list(
     target_device: torch.device,
     input_color_format: Optional[ColorFormat] = None,
     normalization_constant: float = 255.0,
+    normalization: Optional[Tuple[List[float], List[float]]] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     result_tensors, result_metadata = [], []
     for image in images:
@@ -311,7 +338,8 @@ def pre_process_numpy_images_list(
             expected_network_color_format=expected_network_color_format,
             target_device=target_device,
             input_color_format=input_color_format,
-            normalization_constant=normalization_constant,
+            rescaling_constant=normalization_constant,
+            normalization=normalization,
         )
         result_tensors.append(tensor)
         result_metadata.extend(result_metadata)
@@ -325,7 +353,8 @@ def pre_process_numpy_image(
     expected_network_color_format: ColorFormat,
     target_device: torch.device,
     input_color_format: Optional[ColorFormat] = None,
-    normalization_constant: float = 255.0,
+    rescaling_constant: Optional[float] = 255.0,
+    normalization: Optional[Tuple[List[float], List[float]]] = None,
 ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
     if (
         pre_processing_config.mode is PreProcessingMode.NONE
@@ -347,9 +376,14 @@ def pre_process_numpy_image(
             ),
         )
         tensor = torch.from_numpy(resized_image).to(device=target_device)
-        tensor = tensor / normalization_constant
+        if rescaling_constant is not None:
+            tensor = tensor / rescaling_constant
         tensor = torch.unsqueeze(tensor, 0)
         tensor = tensor.permute(0, 3, 1, 2)
+        if normalization:
+            tensor = functional.normalize(
+                tensor, mean=normalization[0], std=normalization[0]
+            )
         if input_color_format != expected_network_color_format:
             tensor = tensor[:, [2, 1, 0], :, :]
         image_metadata = PreProcessingMetadata(
@@ -374,9 +408,7 @@ def pre_process_numpy_image(
         pad_top = int((pre_processing_config.target_size.height - new_height) / 2)
         pad_left = int((pre_processing_config.target_size.width - new_width) / 2)
         scaled_image = cv2.resize(image, (new_width, new_height))
-        scaled_image_tensor = (
-            torch.from_numpy(scaled_image).to(target_device) / normalization_constant
-        )
+        scaled_image_tensor = torch.from_numpy(scaled_image).to(target_device)
         scaled_image_tensor = scaled_image_tensor.permute(2, 0, 1)
         final_batch = torch.full(
             (
@@ -385,7 +417,7 @@ def pre_process_numpy_image(
                 pre_processing_config.target_size.height,
                 pre_processing_config.target_size.width,
             ),
-            pre_processing_config.padding_value / normalization_constant,
+            pre_processing_config.padding_value,
             dtype=torch.float32,
             device=target_device,
         )
@@ -406,6 +438,12 @@ def pre_process_numpy_image(
             scale_width=scale,
             scale_height=scale,
         )
+        if rescaling_constant is not None:
+            final_batch = final_batch / rescaling_constant
+        if normalization:
+            final_batch = functional.normalize(
+                final_batch, mean=normalization[0], std=normalization[0]
+            )
         return final_batch.contiguous(), [image_metadata]
     raise ModelRuntimeError(
         f"Unsupported pre-processing mode: {pre_processing_config.mode}"

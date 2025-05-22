@@ -168,6 +168,7 @@ class RFDetrForObjectDetectionTorch(
             expected_network_color_format="rgb",
             target_device=self._device,
             input_color_format=input_color_format,
+            normalization=([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
         )
 
     def forward(self, pre_processed_images: torch.Tensor, **kwargs) -> dict:
