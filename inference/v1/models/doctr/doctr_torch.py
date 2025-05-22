@@ -148,7 +148,7 @@ class DocTR(DocumentParsingModel[List[np.ndarray], ImageDimensions, Document]):
                 dimensions.append(
                     ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
                 )
-            return images, dimensions
+            return result, dimensions
         raise ModelRuntimeError(
             f"Detected unknown input batch element: {type(images[0])}"
         )
