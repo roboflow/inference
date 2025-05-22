@@ -37,7 +37,7 @@ def write_inno_setup_file(version):
     print(f"Writing installer script for version {version}")
     installer_script = f"""
 [Setup]
-AppName=InferenceA
+AppName=Roboflow Inference
 AppVersion={version}
 DefaultDirName={{localappdata}}\\RoboflowInference
 DisableProgramGroupPage=yes
