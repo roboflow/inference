@@ -2,15 +2,14 @@ from dataclasses import dataclass
 from typing import Any, List, Literal, Optional, Tuple, Union
 
 import numpy as np
-import PIL
 import torch
-from PIL.Image import Image
 
 from inference.v1 import Detections
 from inference.v1.configuration import DEFAULT_DEVICE
 from inference.v1.entities import ColorFormat, ImageDimensions
 from inference.v1.errors import ModelRuntimeError
 from inference.v1.models.common.model_packages import get_model_package_contents
+from inference.v1.models.common.roboflow.pre_processing import images_to_pillow
 from inference.v1.utils.imports import import_class_from_file
 
 
@@ -192,7 +191,9 @@ class MoonDream2HF:
                 return [images]
             return images
         pillow_images, images_dimensions = images_to_pillow(
-            images=images, input_color_format=input_color_format
+            images=images,
+            input_color_format=input_color_format,
+            model_color_format="rgb",
         )
         result = []
         for image, image_dimensions in zip(pillow_images, images_dimensions):
@@ -221,62 +222,6 @@ def are_images_encoded(
             raise ModelRuntimeError("Detected empty input to the model")
         return isinstance(images[0], EncodedImage)
     return isinstance(images, EncodedImage)
-
-
-def images_to_pillow(
-    images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-    input_color_format: Optional[ColorFormat] = None,
-) -> Tuple[List[Image], List[ImageDimensions]]:
-    if isinstance(images, np.ndarray):
-        input_color_format = input_color_format or "bgr"
-        if input_color_format != "rgb":
-            images = images[:, :, ::-1]
-        h, w = images.shape[:2]
-        return [PIL.Image.fromarray(images)], [ImageDimensions(height=h, width=w)]
-    if isinstance(images, torch.Tensor):
-        input_color_format = input_color_format or "rgb"
-        if len(images.shape) == 3:
-            images = torch.unsqueeze(images, dim=0)
-        if input_color_format != "rgb":
-            images = images[:, [2, 1, 0], :, :]
-        result = []
-        dimensions = []
-        for image in images:
-            np_image = image.permute(1, 2, 0).cpu().numpy()
-            result.append(PIL.Image.fromarray(np_image))
-            dimensions.append(
-                ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
-            )
-        return result, dimensions
-    if not isinstance(images, list):
-        raise ModelRuntimeError(
-            "Pre-processing supports only np.array or torch.Tensor or list of above."
-        )
-    if not len(images):
-        raise ModelRuntimeError("Detected empty input to the model")
-    if isinstance(images[0], np.ndarray):
-        input_color_format = input_color_format or "bgr"
-        if input_color_format != "rgb":
-            images = [i[:, :, ::-1] for i in images]
-        dimensions = [
-            ImageDimensions(height=i.shape[0], width=i.shape[1]) for i in images
-        ]
-        images = [PIL.Image.fromarray(i) for i in images]
-        return images, dimensions
-    if isinstance(images[0], torch.Tensor):
-        result = []
-        dimensions = []
-        input_color_format = input_color_format or "rgb"
-        for image in images:
-            if input_color_format != "bgr":
-                image = image[[2, 1, 0], :, :]
-            np_image = image.permute(1, 2, 0).cpu().numpy()
-            result.append(PIL.Image.fromarray(np_image))
-            dimensions.append(
-                ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
-            )
-        return result, dimensions
-    raise ModelRuntimeError(f"Detected unknown input batch element: {type(images[0])}")
 
 
 def post_process_detections(

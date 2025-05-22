@@ -2,7 +2,9 @@ from typing import List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
+import PIL
 import torch
+from PIL.Image import Image
 from torchvision.transforms import functional
 
 from inference.v1.entities import ColorFormat, ImageDimensions
@@ -439,4 +441,61 @@ def extract_input_images_dimensions(
                 ImageDimensions(height=image.shape[2], width=image.shape[3])
             )
         return image_dimensions
+    raise ModelRuntimeError(f"Detected unknown input batch element: {type(images[0])}")
+
+
+def images_to_pillow(
+    images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
+    input_color_format: Optional[ColorFormat] = None,
+    model_color_format: ColorFormat = "rgb",
+) -> Tuple[List[Image], List[ImageDimensions]]:
+    if isinstance(images, np.ndarray):
+        input_color_format = input_color_format or "bgr"
+        if input_color_format != model_color_format:
+            images = images[:, :, ::-1]
+        h, w = images.shape[:2]
+        return [PIL.Image.fromarray(images)], [ImageDimensions(height=h, width=w)]
+    if isinstance(images, torch.Tensor):
+        input_color_format = input_color_format or "rgb"
+        if len(images.shape) == 3:
+            images = torch.unsqueeze(images, dim=0)
+        if input_color_format != model_color_format:
+            images = images[:, [2, 1, 0], :, :]
+        result = []
+        dimensions = []
+        for image in images:
+            np_image = image.permute(1, 2, 0).cpu().numpy()
+            result.append(PIL.Image.fromarray(np_image))
+            dimensions.append(
+                ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
+            )
+        return result, dimensions
+    if not isinstance(images, list):
+        raise ModelRuntimeError(
+            "Pre-processing supports only np.array or torch.Tensor or list of above."
+        )
+    if not len(images):
+        raise ModelRuntimeError("Detected empty input to the model")
+    if isinstance(images[0], np.ndarray):
+        input_color_format = input_color_format or "bgr"
+        if input_color_format != model_color_format:
+            images = [i[:, :, ::-1] for i in images]
+        dimensions = [
+            ImageDimensions(height=i.shape[0], width=i.shape[1]) for i in images
+        ]
+        images = [PIL.Image.fromarray(i) for i in images]
+        return images, dimensions
+    if isinstance(images[0], torch.Tensor):
+        result = []
+        dimensions = []
+        input_color_format = input_color_format or "rgb"
+        for image in images:
+            if input_color_format != model_color_format:
+                image = image[[2, 1, 0], :, :]
+            np_image = image.permute(1, 2, 0).cpu().numpy()
+            result.append(PIL.Image.fromarray(np_image))
+            dimensions.append(
+                ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
+            )
+        return result, dimensions
     raise ModelRuntimeError(f"Detected unknown input batch element: {type(images[0])}")
