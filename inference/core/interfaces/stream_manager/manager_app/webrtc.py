@@ -54,15 +54,13 @@ class VideoTransformTrack(VideoStreamTrack):
         to_inference_queue: "SyncAsyncQueue[VideoFrame]",
         from_inference_queue: "SyncAsyncQueue[np.ndarray]",
         asyncio_loop: asyncio.AbstractEventLoop,
-        processing_timeout: float = 0.2,
-        fps_probe_frames: int = 10,
+        processing_timeout: float,
+        fps_probe_frames: int,
         webcam_fps: Optional[float] = None,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        if not processing_timeout:
-            processing_timeout = 0.005
         self.processing_timeout: float = processing_timeout
 
         self.track: Optional[RemoteStreamTrack] = None
@@ -115,6 +113,9 @@ class VideoTransformTrack(VideoStreamTrack):
 
         if not await self.to_inference_queue.async_full():
             await self.to_inference_queue.async_put(frame)
+        elif not self._last_frame:
+            await self.to_inference_queue.async_get_nowait()
+            await self.to_inference_queue.async_put_nowait(frame)
 
         try:
             np_frame = await self.from_inference_queue.async_get(
@@ -123,10 +124,10 @@ class VideoTransformTrack(VideoStreamTrack):
             new_frame = VideoFrame.from_ndarray(np_frame, format="bgr24")
             self._last_frame = new_frame
         except asyncio.TimeoutError:
-            logger.warning(
-                "Timeout while waiting for inference result, serving last frame"
-            )
             if self._last_frame:
+                logger.warning(
+                    "Timeout while waiting for inference result, serving last frame"
+                )
                 new_frame = self._last_frame
             else:
                 np_frame = overlay_text_on_frame(
@@ -217,10 +218,10 @@ async def init_rtc_peer_connection(
     from_inference_queue: "SyncAsyncQueue[np.ndarray]",
     feedback_stop_event: Event,
     asyncio_loop: asyncio.AbstractEventLoop,
+    processing_timeout: float,
+    fps_probe_frames: int,
     webrtc_turn_config: Optional[WebRTCTURNConfig] = None,
     webcam_fps: Optional[float] = None,
-    processing_timeout: float = 0.005,
-    fps_probe_frames: int = 10,
 ) -> RTCPeerConnectionWithFPS:
     video_transform_track = VideoTransformTrack(
         to_inference_queue=to_inference_queue,
