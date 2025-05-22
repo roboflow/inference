@@ -299,7 +299,7 @@ def convert_sam2_segmentation_response_to_inference_instances_seg_response(
         prompt_class_names,
         prompt_detection_ids,
     ):
-        for mask in prediction.mask:
+        for mask in prediction.masks:
             if len(mask) < 3:
                 # skipping empty masks
                 continue

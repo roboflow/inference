@@ -36,7 +36,6 @@ def w_np_non_max_suppression(
     num_classes = prediction.shape[2] - 5 - num_masks
 
     if box_format == "xywh":
-        print("TRANSITION OF BOXES FORMAT")
         pred_view = prediction[:, :, :4]
 
         # Calculate all values without allocating a new array
