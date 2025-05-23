@@ -45,14 +45,9 @@ class RFDetrForObjectDetectionTorch(
     def from_pretrained(
         cls,
         model_name_or_path: str,
-        device: Optional[torch.device] = None,
+        device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "RFDetrForObjectDetectionTorch":
-        if device is None:
-            if torch.backends.mps.is_available():
-                device = torch.device("mps")
-            else:
-                device = DEFAULT_DEVICE
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
             elements=[
@@ -238,9 +233,9 @@ class RFDetrForObjectDetectionTorch(
             boxes = boxes[keep]
 
             detections = Detections(
-                xyxy=boxes,
+                xyxy=boxes.round().int(),
                 confidence=scores,
-                class_id=labels,
+                class_id=labels.int(),
             )
             detections_list.append(detections)
         return detections_list
