@@ -189,16 +189,16 @@ ROBOFLOW_API_KEY_KIND = Kind(
     internal_data_type="str",
 )
 
-OPENAI_API_KEY_KIND_DOCS = """
-This kind represents an OpenAI API key.
-It can also hold a special value signalling that the request should
-be proxied through Roboflow when set to ``rf_key:account`` or
-``rf_key:user:<id>``.
+ROBOFLOW_MANAGED_KEY_DOCS = """
+This kind represents a key or credential managed by Roboflow or stored in your Roboflow account.
+It can be used for for third party APIs that Roboflow can proxy requests on behalf of the user.
+
+If set to ``rf_key:account`` third party api calls will use Roboflow owned API key and proxied requests will be charged corosponding credits.  You can set the value to ``rf_key:user:<key_id>`` where key_id references a third party key you have stored in your Roboflow settigns.
 """
-OPENAI_API_KEY_KIND = Kind(
-    name="openai_api_key",
-    description="OpenAI API key",
-    docs=OPENAI_API_KEY_KIND_DOCS,
+ROBOFLOW_MANAGED_KEY = Kind(
+    name="ROBOFLOW_MANAGED_KEY",
+    description="Roboflow-managed key or credential",
+    docs=ROBOFLOW_MANAGED_KEY_DOCS,
     serialised_data_type="str",
     internal_data_type="str",
 )

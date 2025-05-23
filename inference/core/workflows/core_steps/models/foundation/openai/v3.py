@@ -26,7 +26,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     IMAGE_KIND,
     LANGUAGE_MODEL_OUTPUT_KIND,
     LIST_OF_VALUES_KIND,
-    OPENAI_API_KEY_KIND,
+    ROBOFLOW_MANAGED_KEY,
     SECRET_KIND,
     STRING_KIND,
     ImageInputField,
@@ -162,7 +162,7 @@ class BlockManifest(WorkflowBlockManifest):
         },
     )
     api_key: Union[
-        Selector(kind=[STRING_KIND, SECRET_KIND, OPENAI_API_KEY_KIND]), str
+        Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str
     ] = Field(
         description="Your OpenAI API key",
         examples=["xxx-xxx", "$inputs.openai_api_key"],
