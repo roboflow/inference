@@ -158,7 +158,7 @@ class RFDetrForObjectDetectionTRT(
             selected_boxes_xyxy = selected_boxes_xyxy_pct * inference_size_hwhw
             selected_boxes_xyxy = rescale_image_detections(
                 image_detections=selected_boxes_xyxy,
-                image_metadata=image_logits,
+                image_metadata=image_meta,
             )
             detections = Detections(
                 xyxy=selected_boxes_xyxy.round().int(),
