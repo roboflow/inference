@@ -12,6 +12,8 @@ on:
 jobs:
   build_osx:
     runs-on: macos-latest
+    permissions:
+      contents: write
     env:
       KEYCHAIN_NAME: "build-keychain.keychain"
       CODESIGN_IDENTITY_STRING: "Developer ID Application: Roboflow, LLC (7SBQ39NG7G)"
