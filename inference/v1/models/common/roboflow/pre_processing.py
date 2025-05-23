@@ -114,6 +114,12 @@ def pre_process_images_tensor(
         )
         if input_color_format != expected_network_color_format:
             images = images[:, [2, 1, 0], :, :]
+        if rescaling_constant is not None:
+            images = images / rescaling_constant
+        if normalization:
+            images = functional.normalize(
+                images, mean=normalization[0], std=normalization[1]
+            )
         metadata = PreProcessingMetadata(
             pad_left=0,
             pad_top=0,
@@ -125,12 +131,6 @@ def pre_process_images_tensor(
             scale_height=pre_processing_config.target_size.height
             / original_size.height,
         )
-        if rescaling_constant is not None:
-            images = images / rescaling_constant
-        if normalization:
-            images = functional.normalize(
-                images, mean=normalization[0], std=normalization[0]
-            )
         return images.contiguous(), [metadata] * images.shape[0]
     if pre_processing_config.mode is not PreProcessingMode.LETTERBOX:
         raise ModelRuntimeError(
@@ -183,7 +183,7 @@ def pre_process_images_tensor(
         final_batch = final_batch / rescaling_constant
     if normalization:
         final_batch = functional.normalize(
-            final_batch, mean=normalization[0], std=normalization[0]
+            final_batch, mean=normalization[0], std=normalization[1]
         )
     return final_batch.contiguous(), [metadata] * final_batch.shape[0]
 
@@ -235,7 +235,7 @@ def pre_process_images_tensor_list(
                 img = img / rescaling_constant
             if normalization:
                 img = functional.normalize(
-                    img, mean=normalization[0], std=normalization[0]
+                    img, mean=normalization[0], std=normalization[1]
                 )
             processed.append(img.contiguous())
             image_metadata = PreProcessingMetadata(
@@ -313,7 +313,7 @@ def pre_process_images_tensor_list(
             final_batch = final_batch / rescaling_constant
         if normalization:
             final_batch = functional.normalize(
-                final_batch, mean=normalization[0], std=normalization[0]
+                final_batch, mean=normalization[0], std=normalization[1]
             )
         return final_batch.contiguous(), images_metadata
     raise ModelRuntimeError(
@@ -376,16 +376,16 @@ def pre_process_numpy_image(
             ),
         )
         tensor = torch.from_numpy(resized_image).to(device=target_device)
-        if rescaling_constant is not None:
-            tensor = tensor / rescaling_constant
         tensor = torch.unsqueeze(tensor, 0)
         tensor = tensor.permute(0, 3, 1, 2)
-        if normalization:
-            tensor = functional.normalize(
-                tensor, mean=normalization[0], std=normalization[0]
-            )
         if input_color_format != expected_network_color_format:
             tensor = tensor[:, [2, 1, 0], :, :]
+        if rescaling_constant is not None:
+            tensor = tensor / rescaling_constant
+        if normalization:
+            tensor = functional.normalize(
+                tensor, mean=normalization[0], std=normalization[1]
+            )
         image_metadata = PreProcessingMetadata(
             pad_left=0,
             pad_top=0,
@@ -442,7 +442,7 @@ def pre_process_numpy_image(
             final_batch = final_batch / rescaling_constant
         if normalization:
             final_batch = functional.normalize(
-                final_batch, mean=normalization[0], std=normalization[0]
+                final_batch, mean=normalization[0], std=normalization[1]
             )
         return final_batch.contiguous(), [image_metadata]
     raise ModelRuntimeError(

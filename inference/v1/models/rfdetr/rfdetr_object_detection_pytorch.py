@@ -159,7 +159,7 @@ class RFDetrForObjectDetectionTorch(
     def pre_process(
         self,
         images: Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]],
-        input_color_format: ColorFormat = "bgr",
+        input_color_format: Optional[ColorFormat] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, List[PreProcessingMetadata]]:
         return pre_process_network_input(
