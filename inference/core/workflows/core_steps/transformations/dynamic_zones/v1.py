@@ -188,7 +188,7 @@ def calculate_least_squares_polygon(
         y = a_1 * x + b_1
         return np.array([x, y])
 
-    pairs = [polygon[-1], polygon[0]] + list(zip(polygon[:-1], polygon[1:]))
+    pairs = [[polygon[-1], polygon[0]]] + list(zip(polygon[:-1], polygon[1:]))
 
     lines = []
     for point_1, point_2 in pairs:
