@@ -1,7 +1,13 @@
 name: Build Windows Installer
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      manual_version:
+        description: 'Version to build (e.g., 1.0.0 or v1.0.0). Required for manual runs.'
+        required: false # Set to false to allow an empty string check, but script will enforce it for manual runs
 
 jobs:
   build_windows:
@@ -15,6 +21,38 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+
+      - name: Determine Version
+        id: determine_version
+        shell: bash
+        run: |
+          VERSION=""
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            if [ -n "${{ inputs.manual_version }}" ]; then
+              VERSION="${{ inputs.manual_version }}"
+              VERSION=${VERSION#v}
+              echo "Manual run detected. Using provided version: $VERSION"
+            else
+              echo "Error: For manual runs (workflow_dispatch), the 'manual_version' input is required."
+              exit 1
+            fi
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=$(echo "${{ github.ref }}" | sed 's!refs/tags/v!!')
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=$(echo "${{ github.ref }}" | sed 's!refs/tags/!!')
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "Error: Could not determine installer version."
+            echo "  github.event_name: ${{ github.event_name }}"
+            echo "  github.ref: ${{ github.ref }}"
+            echo "  inputs.manual_version: ${{ inputs.manual_version }}"
+            exit 1
+          fi
+          echo "installer_version_out=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Installer version set to: $VERSION"
+
 
       - name: Install Inno Setup
         shell: pwsh
@@ -37,16 +75,262 @@ jobs:
           }
           echo "Inno Setup installed and added to PATH."
 
-      - name: Install local inference package
-        run: pip install -e .[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]
+
+      - name: Install DigiCert Client tools
+        id: install_digicert_tools # Renamed for clarity
+        uses: digicert/ssm-code-signing@v1.0.0
+
+
+      - name: Set DigiCert certificate
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}" ]; then
+            echo "Error: SM_CLIENT_CERT_FILE_B64 secret is not set."
+            exit 1
+          fi
+          # Ensure the D drive directory exists or create it if not
+          # This is usually available on Windows runners, but good to be safe.
+          # However, direct creation like this might be problematic if D: isn't guaranteed.
+          # The action creates /d/ which on Windows often means a temp drive.
+          # Let's stick to a path the DigiCert action might expect or a runner temp path.
+          # The DigiCert docs for GH Actions specify /d/Certificate_pkcs12.p12. On Windows, this might translate to a specific temp path.
+          # Let's try to use a known writable path like runner.temp
+          CERT_PATH="${{ runner.temp }}\\Certificate_pkcs12.p12"
+          echo "Decoding certificate to $CERT_PATH"
+          echo "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > "$CERT_PATH"
+          if [ ! -f "$CERT_PATH" ]; then
+            echo "Error: Failed to create certificate file at $CERT_PATH"
+            exit 1
+          fi
+          echo "SM_CLIENT_CERT_FILE_PATH=$CERT_PATH" >> $GITHUB_ENV
+
+      - name: Set DigiCert environment variables
+        id: set_digicert_config_vars # Renamed for clarity, id might not be strictly needed anymore unless other steps reference it
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.SM_HOST }}" ] || \
+             [ -z "${{ secrets.SM_API_KEY }}" ] || \
+             [ -z "${{ secrets.SM_CLIENT_CERT_PASSWORD }}" ] || \
+             [ -z "${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}" ]; then
+            echo "Error: One or more DigiCert secrets (SM_HOST, SM_API_KEY, SM_CLIENT_CERT_PASSWORD, SM_CODE_SIGNING_CERT_SHA1_HASH) are not set."
+            exit 1
+          fi
+          echo "SM_HOST=${{ secrets.SM_HOST }}" >> "$GITHUB_ENV"
+          echo "SM_API_KEY=${{ secrets.SM_API_KEY }}" >> "$GITHUB_ENV"
+          echo "SM_CLIENT_CERT_FILE=${{ env.SM_CLIENT_CERT_FILE_PATH }}" >> "$GITHUB_ENV" # This comes from 'Set up DigiCert certificate' step
+          echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.SM_CLIENT_CERT_PASSWORD }}" >> "$GITHUB_ENV"
+          # VERSION logic is now removed from this step
+
+      - name: Test DigiCert Signing on Dummy File
+        shell: cmd
+        # This step runs even if previous steps failed if we want to test signing independently at some point
+        # but for now, it depends on secrets and tools setup, so it will fail if those did.
+        run: |
+          echo "Starting dummy file signing test..."
+          set SM_LOG_LEVEL=TRACE
+          echo "SM_LOG_LEVEL set to TRACE for dummy sign test"
+
+          REM Create a dummy file to sign
+          echo @echo Test script for signing > %TEMP%\dummy_sign_test.cmd
+          set DUMMY_FILE_TO_SIGN=%TEMP%\dummy_sign_test.cmd
+          echo "Dummy file created at: %DUMMY_FILE_TO_SIGN%"
+
+          set PKCS11_CONFIG_PATH_TEST=%USERPROFILE%\AppData\Local\Temp\smtools-windows-x64\pkcs11properties.cfg
+          echo "PKCS11 Config Path for test: %PKCS11_CONFIG_PATH_TEST%"
+          if not exist "%PKCS11_CONFIG_PATH_TEST%" (
+            echo "Error: PKCS11 config file not found for test signing at '%PKCS11_CONFIG_PATH_TEST%'. Ensure 'Install DigiCert Client tools' ran."
+            exit /b 1
+          )
+
+          echo "Attempting to sync certificates with local store (for dummy test)..."
+          smctl windows certsync
+          set CERTSYNC_EXIT_CODE_TEST=%ERRORLEVEL%
+          set SMCTL_LOG_FILE_PATH_TEST=%USERPROFILE%\.signingmanager\logs\smctl.log
+          echo "--- smctl.log content after certsync (dummy test from %SMCTL_LOG_FILE_PATH_TEST%) ---"
+          if exist "%SMCTL_LOG_FILE_PATH_TEST%" (
+            type "%SMCTL_LOG_FILE_PATH_TEST%"
+          ) else (
+            echo "smctl.log not found at %SMCTL_LOG_FILE_PATH_TEST% after certsync attempt (dummy test)."
+          )
+          echo "--- end of smctl.log content after certsync (dummy test) ---"
+          if %CERTSYNC_EXIT_CODE_TEST% neq 0 (
+            echo "Error: (Dummy Test) smctl windows certsync command failed with exit code %CERTSYNC_EXIT_CODE_TEST%."
+            exit /b 1
+          )
+          echo "(Dummy Test) smctl windows certsync completed successfully (exit code %CERTSYNC_EXIT_CODE_TEST%)."
+
+          echo "Attempting to sign dummy file: %DUMMY_FILE_TO_SIGN%"
+          set SMCTL_CLI_OUTPUT_TEMP_FILE_TEST=%TEMP%\smctl_cli_output_test.txt
+          smctl sign --fingerprint ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }} --input "%DUMMY_FILE_TO_SIGN%" --config-file "%PKCS11_CONFIG_PATH_TEST%" > "%SMCTL_CLI_OUTPUT_TEMP_FILE_TEST%" 2>&1
+          set SMCTL_EXIT_CODE_TEST=%ERRORLEVEL%
+
+          echo "--- smctl CLI output (dummy test) ---"
+          type "%SMCTL_CLI_OUTPUT_TEMP_FILE_TEST%"
+          echo "--- end of smctl CLI output (dummy test) ---"
+          echo "smctl CLI exit code (dummy test): %SMCTL_EXIT_CODE_TEST%"
+          
+          set TEMP_CLI_OUTPUT_FOR_FINDSTR_TEST=%SMCTL_CLI_OUTPUT_TEMP_FILE_TEST%
+
+          echo "--- smctl.log content after dummy sign attempt (from %SMCTL_LOG_FILE_PATH_TEST%) ---"
+          if exist "%SMCTL_LOG_FILE_PATH_TEST%" (
+            type "%SMCTL_LOG_FILE_PATH_TEST%"
+          ) else (
+            echo "smctl.log not found at %SMCTL_LOG_FILE_PATH_TEST% after dummy sign attempt."
+          )
+          echo "--- end of smctl.log content after dummy sign attempt ---"
+
+          findstr /I /C:"FAILED" "%TEMP_CLI_OUTPUT_FOR_FINDSTR_TEST%"
+          set FINDSTR_EXIT_CODE_TEST=%ERRORLEVEL%
+          del "%TEMP_CLI_OUTPUT_FOR_FINDSTR_TEST%"
+
+          if %SMCTL_EXIT_CODE_TEST% neq 0 (
+            echo "Error: (Dummy Test) smctl sign command failed with exit code %SMCTL_EXIT_CODE_TEST%."
+            exit /b 1
+          )
+          if %FINDSTR_EXIT_CODE_TEST% equ 0 (
+            echo "Error: (Dummy Test) smctl CLI output indicates failure (found 'FAILED' in output)."
+            exit /b 1
+          )
+          echo "(Dummy Test) Dummy file signed successfully. DigiCert signing seems configured correctly."
+          REM Do not delete the dummy file itself, it's in %TEMP% and will be cleaned up by runner eventually.
+
+      - name: Build local inference wheels
+        shell: bash # Ensures 'make' and 'rm -rf' work as expected
+        run: make create_wheels
+
+      - name: Install inference_gpu and dependencies from local wheels
+        shell: bash # Using bash for wildcard expansion in pip install
+        run: |
+          WHEEL_FILE=$(ls dist/inference_gpu-*.whl)
+          echo "Found GPU wheel: $WHEEL_FILE"
+          pip install --find-links=./dist/ "$WHEEL_FILE[sam,transformers,clip,http,yolo-world,gaze,grounding-dino]"
+          echo "--- Installed inference_gpu details ---"
+          pip show inference-gpu
+          
 
       - name: Install PyInstaller and other build dependencies
         working-directory: ./app_bundles/windows # Adjusted path
-        run: pip install -r requirements.txt # This now only installs pyinstaller
-
+        run: |
+          pip install --upgrade pip
+          pip install --upgrade pyinstaller pyinstaller-hooks-contrib
+          pip install -r requirements.txt # This now only installs pyinstaller
+          echo "DEBUG: PyInstaller version:"
+          pip show pyinstaller
+          echo "DEBUG: pyinstaller-hooks-contrib version:"
+          pip show pyinstaller-hooks-contrib
+  
       - name: Build Windows installer
-        working-directory: ./app_bundles/windows # Adjusted path
+        working-directory: ./app_bundles/windows
+        env:
+          BUILD_VERSION: ${{ steps.determine_version.outputs.installer_version_out }} # Use output from new Determine Version step
         run: python build.py
+
+
+      - name: Sign Windows Installer with DigiCert
+        shell: cmd
+        env:
+          INSTALLER_VERSION_FROM_STEP: ${{ steps.determine_version.outputs.installer_version_out }}
+        run: |
+          echo "Starting installer signing process..."
+          
+          REM Set smctl log level to TRACE for detailed logging
+          set SM_LOG_LEVEL=TRACE
+          echo "SM_LOG_LEVEL set to TRACE"
+
+          set PKCS11_CONFIG_PATH=%USERPROFILE%\AppData\Local\Temp\smtools-windows-x64\pkcs11properties.cfg
+          echo "PKCS11 Config Path: %PKCS11_CONFIG_PATH%"
+
+          REM Sync KeyLocker certificates to the local Windows certificate store as per DigiCert docs
+          echo "Attempting to sync certificates with local store using 'smctl windows certsync'..."
+          smctl windows certsync
+          set CERTSYNC_EXIT_CODE=%ERRORLEVEL%
+          REM Always display smctl.log after certsync, as it might contain TRACE details for this operation
+          set SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC=%USERPROFILE%\.signingmanager\logs\smctl.log
+          echo "--- smctl.log content after certsync (from %SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC%) ---"
+          if exist "%SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC%" (
+            type "%SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC%"
+          ) else (
+            echo "smctl.log not found at %SMCTL_LOG_FILE_PATH_AFTER_CERTSYNC% after certsync attempt."
+          )
+          echo "--- end of smctl.log content after certsync ---"
+          if %CERTSYNC_EXIT_CODE% neq 0 (
+            echo "Error: smctl windows certsync command failed with exit code %CERTSYNC_EXIT_CODE%."
+            exit /b 1
+          )
+          echo "smctl windows certsync completed successfully (exit code %CERTSYNC_EXIT_CODE%)."
+
+          set INSTALLER_BASE_PATH=app_bundles\windows\installer
+          set INSTALLER_VERSION=%INSTALLER_VERSION_FROM_STEP%
+          set INSTALLER_FILENAME=inference-%INSTALLER_VERSION%-installer.exe
+          set UNSIGNED_INSTALLER_PATH=%INSTALLER_BASE_PATH%\%INSTALLER_FILENAME%
+
+          echo "Debug: Listing contents of app_bundles\windows"
+          dir app_bundles\windows
+          echo "Debug: Listing contents of %INSTALLER_BASE_PATH%"
+          dir "%INSTALLER_BASE_PATH%"
+
+          echo "Looking for installer at: %UNSIGNED_INSTALLER_PATH%"
+          if not exist "%UNSIGNED_INSTALLER_PATH%" (
+            echo "Error: Unsigned installer not found at '%UNSIGNED_INSTALLER_PATH%'"
+            echo "Current directory for this step: "
+            cd
+            exit /b 1
+          )
+          echo "Looking for PKCS11 config at: %PKCS11_CONFIG_PATH%"
+          if not exist "%PKCS11_CONFIG_PATH%" (
+            echo "Error: DigiCert PKCS11 config file not found..."
+            exit /b 1
+          )
+          
+          echo "Attempting to sign: %UNSIGNED_INSTALLER_PATH%"
+          
+          set SMCTL_CLI_OUTPUT_TEMP_FILE=%TEMP%\smctl_cli_output.txt
+
+          smctl sign --fingerprint ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }} --input "%UNSIGNED_INSTALLER_PATH%" --config-file "%PKCS11_CONFIG_PATH%" > "%SMCTL_CLI_OUTPUT_TEMP_FILE%" 2>&1
+          set SMCTL_EXIT_CODE=%ERRORLEVEL%
+
+          echo "--- smctl CLI output ---"
+          type "%SMCTL_CLI_OUTPUT_TEMP_FILE%"
+          echo "--- end of smctl CLI output ---"
+          echo "smctl CLI exit code: %SMCTL_EXIT_CODE%"
+          
+          REM Temporarily store CLI output for findstr before deleting the file
+          set TEMP_CLI_OUTPUT_FOR_FINDSTR=%SMCTL_CLI_OUTPUT_TEMP_FILE%
+
+          REM Display the detailed smctl.log file
+          set SMCTL_LOG_FILE_PATH=%USERPROFILE%\.signingmanager\logs\smctl.log
+          echo "--- smctl.log content (from %SMCTL_LOG_FILE_PATH%) ---"
+          if exist "%SMCTL_LOG_FILE_PATH%" (
+            type "%SMCTL_LOG_FILE_PATH%"
+          ) else (
+            echo "smctl.log not found at %SMCTL_LOG_FILE_PATH%."
+          )
+          echo "--- end of smctl.log content ---"
+
+          REM We need to re-capture CLI output or pass it if we want to search it again here.
+          REM Let's assume for a moment that with TRACE logging, the exit code becomes more reliable,
+          REM OR that the TRACE log itself will contain an undeniable error message we could search for.
+          REM The original findstr logic was based on the brief "FAILED" message.
+
+          REM Check for "FAILED" in the originally captured CLI output
+          findstr /I /C:"FAILED" "%TEMP_CLI_OUTPUT_FOR_FINDSTR%"
+          set FINDSTR_EXIT_CODE=%ERRORLEVEL%
+          REM findstr returns 0 if string is found, 1 if not found (or error)
+
+          REM Now delete the temp CLI output file
+          del "%TEMP_CLI_OUTPUT_FOR_FINDSTR%"
+
+          if %SMCTL_EXIT_CODE% neq 0 (
+            echo "Error: smctl sign command failed with exit code %SMCTL_EXIT_CODE% (see smctl.log above for details)."
+            exit /b 1
+          )
+          if %FINDSTR_EXIT_CODE% equ 0 (
+            REM String "FAILED" was found in the CLI output
+            echo "Error: smctl CLI output indicates failure (found 'FAILED' in output). Review smctl.log for details."
+            exit /b 1
+          )
+          
+          echo "Installer signed successfully (based on smctl exit code and absence of 'FAILED' in CLI output). Review logs carefully."
 
       - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
@@ -55,4 +339,15 @@ jobs:
           # The build.py script creates the installer in installer/inference-{version}-installer.exe
           # We'll upload the whole installer directory, or use a wildcard if preferred.
           path: app_bundles/windows/installer/ # Adjusted path
-          if-no-files-found: error # Fail the step if the installer directory is not found or empty 
+          if-no-files-found: error # Fail the step if the installer directory is not found or empty
+
+      - name: Upload Installer to Release
+        if: github.event_name == 'release'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./app_bundles/windows/installer/inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.exe
+          asset_name: inference-${{ steps.determine_version.outputs.installer_version_out }}-installer.exe
+          asset_content_type: application/vnd.microsoft.portable-executable 

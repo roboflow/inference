@@ -13,7 +13,7 @@ SPEC_FILE = f"{BUILD_NAME}.spec"
 
 # Paths
 BUILD_DIR = os.path.join("dist", BUILD_NAME)
-SOURCE_LANDING_DIR = "../../inference/inference/landing"
+SOURCE_LANDING_DIR = "../../inference/landing"
 DEST_LANDING_DIR = os.path.join(BUILD_DIR, "inference", "landing")
 
 
@@ -37,7 +37,7 @@ def write_inno_setup_file(version):
     print(f"Writing installer script for version {version}")
     installer_script = f"""
 [Setup]
-AppName=InferenceA
+AppName=Roboflow Inference
 AppVersion={version}
 DefaultDirName={{localappdata}}\\RoboflowInference
 DisableProgramGroupPage=yes
@@ -50,7 +50,7 @@ SolidCompression=no
 Source: "dist\\inference\\*"; DestDir: "{{app}}"; Flags: recursesubdirs
 
 [Icons]
-Name: "{{autoprograms}}\\InferenceApp"; Filename: "{{app}}\\inference.exe"
+Name: "{{autoprograms}}\\Roboflow Inference"; Filename: "{{app}}\\inference.exe"
 
 [Run]
 Filename: "{{app}}\\inference.exe"; Description: "Launch Inference"; Flags: nowait postinstall skipifsilent
@@ -78,19 +78,6 @@ def build():
     subprocess.run(["pyinstaller", "--noconfirm", SPEC_FILE], check=True)
 
 
-def get_version_via_pip(pkg="inference"):
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "show", pkg],
-            check=True, stdout=subprocess.PIPE, text=True
-        )
-        for line in result.stdout.splitlines():
-            if line.startswith("Version:"):
-                return line.split(":")[1].strip()
-    except subprocess.CalledProcessError:
-        return None
-
-
 def copy_static_files():
     print(f"Copying static files from:\n  {SOURCE_LANDING_DIR}\n  to\n  {DEST_LANDING_DIR}")
     if not os.path.exists(SOURCE_LANDING_DIR):
@@ -102,7 +89,12 @@ def copy_static_files():
 
 if __name__ == "__main__":
 
-    version = get_version_via_pip()
+    version = os.getenv("BUILD_VERSION")
+    if not version:
+        print("Error: BUILD_VERSION environment variable is not set or is empty.")
+        print("This is required to set AppVersion in the installer.")
+        sys.exit(1)
+
     print(f"Version: {version}")
     clean()
     convert_icon()
@@ -113,4 +105,4 @@ if __name__ == "__main__":
     
     write_inno_setup_file(version)
     run_inno_setup_compiler()
-    print("Installer built and ready in: installer/inference-installer.exe")
+    print(f"Installer built and ready in: installer/inference-{version}-installer.exe")
