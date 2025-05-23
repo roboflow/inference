@@ -144,6 +144,7 @@ if API_LOGGING_ENABLED:
     handler = logging.StreamHandler()
     handler.setFormatter(NoTracebackFormatter("[%(levelname)s] %(message)s"))
     bounded_logger._logger.addHandler(handler)
+    bounded_logger._logger.propagate = False
 else:
     logger = logging.getLogger("inference")
     logger.setLevel(LOG_LEVEL)

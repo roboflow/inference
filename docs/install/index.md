@@ -1,4 +1,29 @@
-# Local Installation
+# 🚀 Native Desktop Apps
+
+You can now run Roboflow Inference Server on your Windows or macOS machine with our native desktop applications! This is the quickest and most effortless way to get up and running.
+
+Simply download the latest installer for your operating system.  You can find these attached to our **latest release on GitHub**.
+
+➡️ **[View Latest Release and Download Installers on Github](https://github.com/roboflow/inference/releases)**
+
+### Windows (x86)
+ - [Download the latest installer](https://github.com/roboflow/inference/releases) and run it to install Roboflow Inference
+ - When the install is finished it will offer to launch the Inference server after the setup completes
+ - To stop the inference server simply close the terminal window it opens
+ - To start it again later, you can find Roboflow Inference in your Start Menu
+
+### MacOS (Apple Silicon)
+ - [Download the Roboflow Inference DMG](https://github.com/roboflow/inference/releases) disk image
+ - Mount hte disk image by double clicking it
+ - Drag the Roboflow Inference App to the Application Folder
+ - Go to your Application Folder and double click the Roboflow Infernce App to start the server
+
+
+
+
+---
+
+# Local Installation using Docker
 
 Inference is built to be run at the edge. It loads and executes model
 weights and does computation locally. It can run fully offline (once
