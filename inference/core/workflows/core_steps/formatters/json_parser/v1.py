@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from typing import List, Literal, Optional, Tuple, Type
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 from pydantic import AfterValidator, ConfigDict, Field
 from typing_extensions import Annotated
@@ -68,9 +68,9 @@ class BlockManifest(WorkflowBlockManifest):
         }
     )
     type: Literal["roboflow_core/json_parser@v1"]
-    raw_json: Selector(kind=[LANGUAGE_MODEL_OUTPUT_KIND]) = Field(
+    raw_json: Union[str, Selector(kind=[LANGUAGE_MODEL_OUTPUT_KIND])] = Field(
         description="The string with raw JSON to parse.",
-        examples=[["$steps.lmm.output"]],
+        examples=[["$steps.lmm.output"], ['{"key": "value"}']],
     )
     expected_fields: Annotated[List[str], AfterValidator(validate_reserved_fields)] = (
         Field(
