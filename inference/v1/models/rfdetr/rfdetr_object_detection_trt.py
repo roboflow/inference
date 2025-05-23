@@ -20,20 +20,6 @@ from inference.v1.models.common.roboflow.model_packages import (
 )
 from inference.v1.models.common.roboflow.pre_processing import pre_process_network_input
 from inference.v1.models.common.trt import infer_from_trt_engine, load_model
-from inference.v1.models.rfdetr.rfdetr_base_pytorch import (
-    RFDETRBaseConfig,
-    RFDETRLargeConfig,
-)
-
-try:
-    torch.set_float32_matmul_precision("high")
-except:
-    pass
-
-CONFIG_FOR_MODEL_TYPE = {
-    "rfdetr-base": RFDETRBaseConfig,
-    "rfdetr-large": RFDETRLargeConfig,
-}
 
 
 class RFDetrForObjectDetectionTRT(
