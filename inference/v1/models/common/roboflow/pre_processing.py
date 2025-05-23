@@ -342,7 +342,7 @@ def pre_process_numpy_images_list(
             normalization=normalization,
         )
         result_tensors.append(tensor)
-        result_metadata.extend(result_metadata)
+        result_metadata.extend(metadata)
     return torch.concat(result_tensors, dim=0).contiguous(), result_metadata
 
 
