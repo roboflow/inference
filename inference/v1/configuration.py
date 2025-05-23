@@ -11,8 +11,9 @@ ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
     )
 )
 DEFAULT_DEVICE_STR = os.getenv(
+    "DEFAULT_DEVICE",
     (
-        "DEFAULT_DEVICE" "cuda"
+        "cuda"
         if torch.cuda.is_available()
         else "mps" if torch.backends.mps.is_available() else "cpu"
     ),
