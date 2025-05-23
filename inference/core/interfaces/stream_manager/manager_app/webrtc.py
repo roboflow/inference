@@ -14,9 +14,9 @@ from aiortc import (
     VideoStreamTrack,
 )
 from aiortc.contrib.media import MediaRelay
-from aiortc.mediastreams import MediaStreamError
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from av import VideoFrame
+from av import logging as av_logging
 
 from inference.core import logger
 from inference.core.interfaces.camera.entities import (
@@ -87,6 +87,8 @@ class VideoTransformTrack(VideoStreamTrack):
         self._max_consecutive_timeouts: Optional[int] = max_consecutive_timeouts
         self._min_consecutive_on_time: int = min_consecutive_on_time
 
+        self._av_logging_set: bool = False
+
     def set_track(self, track: RemoteStreamTrack):
         if not self.track:
             self.track = track
@@ -95,6 +97,10 @@ class VideoTransformTrack(VideoStreamTrack):
         self._track_active = False
 
     async def recv(self):
+        # Silencing swscaler warnings in multi-threading environment
+        if not self._av_logging_set:
+            av_logging.set_libav_level(av_logging.ERROR)
+            self._av_logging_set = True
         frame: VideoFrame = await self.track.recv()
         self._processed += 1
         if not self.incoming_stream_fps:
