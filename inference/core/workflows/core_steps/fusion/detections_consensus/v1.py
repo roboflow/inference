@@ -10,17 +10,30 @@ import supervision as sv
 from pydantic import AliasChoices, ConfigDict, Field, PositiveInt
 
 from inference.core.workflows.execution_engine.constants import (
+    BOUNDING_RECT_ANGLE_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_HEIGHT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_RECT_KEY_IN_SV_DETECTIONS,
+    BOUNDING_RECT_WIDTH_KEY_IN_SV_DETECTIONS,
+    DETECTED_CODE_KEY,
     DETECTION_ID_KEY,
     IMAGE_DIMENSIONS_KEY,
+    KEYPOINTS_CLASS_ID_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_CLASS_NAME_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_CONFIDENCE_KEY_IN_SV_DETECTIONS,
+    KEYPOINTS_XY_KEY_IN_SV_DETECTIONS,
     PARENT_COORDINATES_KEY,
     PARENT_DIMENSIONS_KEY,
     PARENT_ID_KEY,
+    PATH_DEVIATION_KEY_IN_SV_DETECTIONS,
+    POLYGON_KEY_IN_SV_DETECTIONS,
     PREDICTION_TYPE_KEY,
     ROOT_PARENT_COORDINATES_KEY,
     ROOT_PARENT_DIMENSIONS_KEY,
     ROOT_PARENT_ID_KEY,
     SCALING_RELATIVE_TO_PARENT_KEY,
     SCALING_RELATIVE_TO_ROOT_PARENT_KEY,
+    TIME_IN_ZONE_KEY_IN_SV_DETECTIONS,
+    TRACKER_ID_KEY,
 )
 from inference.core.workflows.execution_engine.entities.base import (
     Batch,
@@ -162,7 +175,10 @@ class BlockManifest(WorkflowBlockManifest):
         return [
             OutputDefinition(
                 name="predictions",
-                kind=[OBJECT_DETECTION_PREDICTION_KIND],
+                kind=[
+                    OBJECT_DETECTION_PREDICTION_KIND,
+                    INSTANCE_SEGMENTATION_PREDICTION_KIND,
+                ],
             ),
             OutputDefinition(
                 name="object_present", kind=[BOOLEAN_KIND, DICTIONARY_KIND]
