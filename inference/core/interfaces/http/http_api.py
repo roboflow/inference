@@ -1493,9 +1493,11 @@ class HttpInterface(BaseInterface):
             async def initialise_webrtc_inference_pipeline(
                 request: InitialiseWebRTCPipelinePayload,
             ) -> CommandResponse:
+                logger.debug("Received initialise webrtc inference pipeline request")
                 resp = await self.stream_manager_client.initialise_webrtc_pipeline(
                     initialisation_request=request
                 )
+                logger.debug("Returning initialise webrtc inference pipeline response")
                 return resp
 
             @app.post(
@@ -2283,7 +2285,7 @@ class HttpInterface(BaseInterface):
             app.include_router(builder_router, prefix="/build", tags=["builder"])
 
         if LEGACY_ROUTE_ENABLED:
-            # Legacy object detection inference path for backwards compatability
+            # Legacy object detection inference path for backwards compatibility
             @app.get(
                 "/{dataset_id}/{version_id:str}",
                 # Order matters in this response model Union. It will use the first matching model. For example, Object Detection Inference Response is a subset of Instance segmentation inference response, so instance segmentation must come first in order for the matching logic to work.
@@ -2551,7 +2553,7 @@ class HttpInterface(BaseInterface):
                     return orjson_response(inference_response)
 
         if not (LAMBDA or GCP_SERVERLESS):
-            # Legacy clear cache endpoint for backwards compatability
+            # Legacy clear cache endpoint for backwards compatibility
             @app.get("/clear_cache", response_model=str)
             async def legacy_clear_cache():
                 """
@@ -2566,7 +2568,7 @@ class HttpInterface(BaseInterface):
                 await model_clear()
                 return "Cache Cleared"
 
-            # Legacy add model endpoint for backwards compatability
+            # Legacy add model endpoint for backwards compatibility
             @app.get("/start/{dataset_id}/{version_id}")
             async def model_add_legacy(
                 dataset_id: str, version_id: str, api_key: str = None

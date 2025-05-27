@@ -35,10 +35,8 @@ from inference.core.env import (
     ROBOFLOW_INTERNAL_SERVICE_SECRET,
 )
 from inference.core.logger import logger
+from inference.core.roboflow_api import build_roboflow_api_headers
 from inference.core.version import __version__ as inference_version
-from inference.core.workflows.execution_engine.v1.compiler.entities import (
-    CompiledWorkflow,
-)
 
 from .config import TelemetrySettings, get_telemetry_settings
 from .decorator_helpers import (
@@ -55,7 +53,6 @@ from .payload_helpers import (
     APIKeyHash,
     APIKeyUsage,
     ResourceCategory,
-    ResourceDetails,
     ResourceID,
     SystemDetails,
     UsagePayload,
@@ -536,6 +533,7 @@ class UsageCollector:
                 api_usage_endpoint_url=self._settings.api_usage_endpoint_url,
                 hashes_to_api_keys=hashes_to_api_keys,
                 ssl_verify=ssl_verify,
+                extra_headers=build_roboflow_api_headers(),
             )
             if api_keys_hashes_failed:
                 logger.debug(
