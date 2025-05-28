@@ -254,8 +254,8 @@ class InferencePipelineManager(Process):
             webrtc_offer = parsed_payload.webrtc_offer
             webrtc_turn_config = parsed_payload.webrtc_turn_config
             webcam_fps = parsed_payload.webcam_fps
-            to_inference_queue = SyncAsyncQueue(loop=loop)
-            from_inference_queue = SyncAsyncQueue(loop=loop)
+            to_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
+            from_inference_queue = SyncAsyncQueue(loop=loop, maxsize=10)
 
             stop_event = Event()
 
@@ -265,21 +265,34 @@ class InferencePipelineManager(Process):
                     webrtc_turn_config=webrtc_turn_config,
                     to_inference_queue=to_inference_queue,
                     from_inference_queue=from_inference_queue,
-                    webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
                     feedback_stop_event=stop_event,
                     asyncio_loop=loop,
                     webcam_fps=webcam_fps,
+                    max_consecutive_timeouts=parsed_payload.max_consecutive_timeouts,
+                    min_consecutive_on_time=parsed_payload.min_consecutive_on_time,
+                    processing_timeout=parsed_payload.processing_timeout,
+                    fps_probe_frames=parsed_payload.fps_probe_frames,
                 ),
                 loop,
             )
             peer_connection: RTCPeerConnectionWithFPS = future.result()
+
+            self._responses_queue.put(
+                (
+                    request_id,
+                    {
+                        STATUS_KEY: OperationStatus.SUCCESS,
+                        "sdp": peer_connection.localDescription.sdp,
+                        "type": peer_connection.localDescription.type,
+                    },
+                )
+            )
 
             webrtc_producer = partial(
                 WebRTCVideoFrameProducer,
                 to_inference_queue=to_inference_queue,
                 stop_event=stop_event,
                 webrtc_video_transform_track=peer_connection.video_transform_track,
-                webrtc_peer_timeout=parsed_payload.webrtc_peer_timeout,
             )
 
             def webrtc_sink(
@@ -349,16 +362,6 @@ class InferencePipelineManager(Process):
                 decoding_buffer_size=parsed_payload.decoding_buffer_size,
             )
             self._inference_pipeline.start(use_main_thread=False)
-            self._responses_queue.put(
-                (
-                    request_id,
-                    {
-                        STATUS_KEY: OperationStatus.SUCCESS,
-                        "sdp": peer_connection.localDescription.sdp,
-                        "type": peer_connection.localDescription.type,
-                    },
-                )
-            )
             logger.info(f"WebRTC pipeline initialised. request_id={request_id}...")
         except (
             ValidationError,
