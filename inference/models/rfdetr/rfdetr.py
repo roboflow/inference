@@ -278,9 +278,9 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
             topk_labels = sorted_indices % num_classes
 
             if self.is_one_indexed:
-                class_filter_mask = topk_labels != background_class_index
+                class_filter_mask = topk_labels != self.background_class_index
 
-                topk_labels[topk_labels > background_class_index] -= 1
+                topk_labels[topk_labels > self.background_class_index] -= 1
                 topk_scores = topk_scores[class_filter_mask]
                 topk_labels = topk_labels[class_filter_mask]
                 topk_boxes = topk_boxes[class_filter_mask]
@@ -442,6 +442,7 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
         if ROBOFLOW_BACKGROUND_CLASS in self.class_names:
             self.is_one_indexed = True
             self.background_class_index = self.class_names.index(ROBOFLOW_BACKGROUND_CLASS)
+            self.class_names = self.class_names[:self.background_class_index] + self.class_names[self.background_class_index + 1:]
         else:
             self.is_one_indexed = False
         logger.debug("Model initialisation finished.")

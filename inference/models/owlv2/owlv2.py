@@ -620,7 +620,7 @@ class OwlV2(RoboflowInferenceModel):
                 all_predicted_classes, all_predicted_boxes, all_predicted_scores
             )
         ]
-
+    
     def infer(
         self,
         image: Any,
