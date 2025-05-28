@@ -164,6 +164,7 @@ class BlockManifest(WorkflowBlockManifest):
     api_key: Union[
         Selector(kind=[STRING_KIND, SECRET_KIND, ROBOFLOW_MANAGED_KEY]), str
     ] = Field(
+        default="rf_key:account",
         description="Your OpenAI API key",
         examples=["xxx-xxx", "$inputs.openai_api_key"],
         private=True,
@@ -266,12 +267,12 @@ class OpenAIBlockV3(WorkflowBlock):
         prompt: Optional[str],
         output_structure: Optional[Dict[str, str]],
         classes: Optional[List[str]],
-        api_key: str,
         model_version: str,
         image_detail: Literal["low", "high", "auto"],
         max_tokens: int,
         temperature: Optional[float],
         max_concurrent_requests: Optional[int],
+        api_key: str = "rf_key:account",
     ) -> BlockResult:
         inference_images = [i.to_inference_format() for i in images]
         raw_outputs = run_gpt_4v_llm_prompting(
