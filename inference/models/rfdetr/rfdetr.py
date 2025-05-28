@@ -32,6 +32,7 @@ if USE_PYTORCH_FOR_PREPROCESSING:
 
 ROBOFLOW_BACKGROUND_CLASS = "background_class83422"
 
+
 class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
     """Roboflow ONNX Object detection with the RFDETR model.
 
@@ -47,7 +48,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
     preprocess_means = [0.485, 0.456, 0.406]
     preprocess_stds = [0.229, 0.224, 0.225]
-
 
     @property
     def weights_file(self) -> str:
@@ -261,7 +261,6 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
         processed_predictions = []
 
-
         for batch_idx in range(batch_size):
             orig_h, orig_w = img_dims[batch_idx]
 
@@ -441,8 +440,13 @@ class RFDETRObjectDetection(ObjectDetectionBaseOnnxRoboflowInferenceModel):
 
         if ROBOFLOW_BACKGROUND_CLASS in self.class_names:
             self.is_one_indexed = True
-            self.background_class_index = self.class_names.index(ROBOFLOW_BACKGROUND_CLASS)
-            self.class_names = self.class_names[:self.background_class_index] + self.class_names[self.background_class_index + 1:]
+            self.background_class_index = self.class_names.index(
+                ROBOFLOW_BACKGROUND_CLASS
+            )
+            self.class_names = (
+                self.class_names[: self.background_class_index]
+                + self.class_names[self.background_class_index + 1 :]
+            )
         else:
             self.is_one_indexed = False
         logger.debug("Model initialisation finished.")
