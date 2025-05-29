@@ -2,6 +2,7 @@ import gc
 import os
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 import torch
 
@@ -427,7 +428,7 @@ def test_owlv2_model_unloaded_when_garbage_collected():
     assert len(Owlv2Singleton._instances) == 0
 
 
-def test_infer_with_numpy_image_uses_image_after_sizing(image_as_numpy):
+def test_infer_with_numpy_image_uses_image_after_sizing() -> None:
     """Ensure numpy images persist through compute_image_size and embed_image."""
 
     class DummyOwl:
@@ -441,6 +442,7 @@ def test_infer_with_numpy_image_uses_image_after_sizing(image_as_numpy):
 
         compute_image_size = OwlV2.compute_image_size
         infer = OwlV2.infer
+        infer_from_embedding_dict = OwlV2.infer_from_embedding_dict
 
         def embed_image(self, image):
             # Image should still be loaded when embed_image is called
@@ -461,6 +463,7 @@ def test_infer_with_numpy_image_uses_image_after_sizing(image_as_numpy):
             return {}
 
     owl = DummyOwl()
+    image_as_numpy = np.zeros((192, 168, 3), dtype=np.uint8)
     result = owl.infer(image_as_numpy, training_data=[{"image": image_as_numpy, "boxes": []}])
 
     assert result == []
