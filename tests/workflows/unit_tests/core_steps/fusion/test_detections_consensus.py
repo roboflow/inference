@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from inference.core.workflows.core_steps.fusion.detections_consensus import v1
 from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
     AggregationMode,
+    MaskAggregationMode,
     BlockManifest,
     aggregate_field_values,
     agree_on_consensus_for_all_detections_sources,
@@ -27,6 +28,10 @@ from inference.core.workflows.core_steps.fusion.detections_consensus.v1 import (
     get_majority_class,
     get_parent_id_of_detections_from_sources,
     get_smallest_bounding_box,
+    get_largest_mask,
+    get_smallest_mask,
+    get_intersection_mask,
+    get_union_mask,
     merge_detections,
 )
 
@@ -492,6 +497,49 @@ def test_get_largest_bounding_box_when_multiple_elements_provided() -> None:
     assert result == (85, 190, 135, 230)
 
 
+def test_get_largest_mask_when_single_element_provided() -> None:
+    # given
+    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
+    xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
+    detections = sv.Detections(
+        xyxy=np.array([xyxy1]),
+        confidence=np.array([0.5]),
+        class_id=np.array([1]),
+        data={"detection_id": ["a"], "class_name": ["a"]},
+        mask=np.array([mask1]),
+    )
+
+    # when
+    result = get_largest_mask(detections=detections)
+
+    # then
+    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5)
+
+
+def test_get_largest_mask() -> None:
+    # given
+    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
+    xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
+    polygon2 = np.array([[100, 100], [300, 100], [300, 300], [200, 300]])
+    mask2 = sv.polygon_to_mask(polygon=polygon2, resolution_wh=(600, 600))
+    xyxy2 = sv.mask_to_xyxy(np.array([mask2]))[0]
+    detections = sv.Detections(
+        xyxy=np.array([xyxy1, xyxy2]),
+        confidence=np.array([0.5, 0.5]),
+        class_id=np.array([1, 1]),
+        data={"detection_id": ["a", "a"], "class_name": ["a", "a"]},
+        mask=np.array([mask1, mask2]),
+    )
+
+    # when
+    result = get_largest_mask(detections=detections)
+
+    # then
+    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5)
+
+
 def test_get_smallest_bounding_box_when_single_element_provided() -> None:
     # given
     detections = sv.Detections(
@@ -524,6 +572,49 @@ def test_get_smallest_bounding_box_when_multiple_elements_provided() -> None:
     assert result == (80, 185, 120, 215)
 
 
+def test_get_smallest_mask_when_single_element_provided() -> None:
+    # given
+    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
+    xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
+    detections = sv.Detections(
+        xyxy=np.array([xyxy1]),
+        confidence=np.array([0.5]),
+        class_id=np.array([1]),
+        data={"detection_id": ["a"], "class_name": ["a"]},
+        mask=np.array([mask1]),
+    )
+
+    # when
+    result = get_smallest_mask(detections=detections)
+
+    # then
+    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5)
+
+
+def test_get_smallest_mask() -> None:
+    # given
+    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
+    xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
+    polygon2 = np.array([[100, 100], [300, 100], [300, 300], [200, 300]])
+    mask2 = sv.polygon_to_mask(polygon=polygon2, resolution_wh=(600, 600))
+    xyxy2 = sv.mask_to_xyxy(np.array([mask2]))[0]
+    detections = sv.Detections(
+        xyxy=np.array([xyxy1, xyxy2]),
+        confidence=np.array([0.5, 0.5]),
+        class_id=np.array([1, 1]),
+        data={"detection_id": ["a", "a"], "class_name": ["a", "a"]},
+        mask=np.array([mask1, mask2]),
+    )
+
+    # when
+    result = get_smallest_mask(detections=detections)
+
+    # then
+    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[100, 100, 300, 300]], atol=1e-5)
+
+
 def test_get_average_bounding_box_when_single_element_provided() -> None:
     # given
     detections = sv.Detections(
@@ -554,6 +645,92 @@ def test_get_average_bounding_box_when_multiple_elements_provided() -> None:
 
     # then
     assert result == (82.5, 187.5, 127.5, 222.5)
+
+
+def test_get_union_mask_when_single_element_provided() -> None:
+    # given
+    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
+    xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
+    detections = sv.Detections(
+        xyxy=np.array([xyxy1]),
+        confidence=np.array([0.5]),
+        class_id=np.array([1]),
+        data={"detection_id": ["a"], "class_name": ["a"]},
+        mask=np.array([mask1]),
+    )
+
+    # when
+    result = get_union_mask(detections=detections)
+
+    # then
+    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5)
+
+
+def test_get_union_mask() -> None:
+    # given
+    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
+    xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
+    polygon2 = np.array([[100, 100], [300, 100], [300, 300], [200, 300]])
+    mask2 = sv.polygon_to_mask(polygon=polygon2, resolution_wh=(600, 600))
+    xyxy2 = sv.mask_to_xyxy(np.array([mask2]))[0]
+    detections = sv.Detections(
+        xyxy=np.array([xyxy1, xyxy2]),
+        confidence=np.array([0.5, 0.5]),
+        class_id=np.array([1, 1]),
+        data={"detection_id": ["a", "a"], "class_name": ["a", "a"]},
+        mask=np.array([mask1, mask2]),
+    )
+
+    # when
+    result = get_union_mask(detections=detections)
+
+    # then
+    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[100, 100, 500, 500]], atol=1e-5)
+
+
+def test_get_intersection_mask_when_single_element_provided() -> None:
+    # given
+    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
+    xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
+    detections = sv.Detections(
+        xyxy=np.array([xyxy1]),
+        confidence=np.array([0.5]),
+        class_id=np.array([1]),
+        data={"detection_id": ["a"], "class_name": ["a"]},
+        mask=np.array([mask1]),
+    )
+
+    # when
+    result = get_intersection_mask(detections=detections)
+
+    # then
+    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[150, 150, 500, 500]], atol=1e-5)
+
+
+def test_get_intersection_mask() -> None:
+    # given
+    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [150, 350]])
+    mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
+    xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
+    polygon2 = np.array([[100, 100], [300, 100], [300, 300], [200, 300]])
+    mask2 = sv.polygon_to_mask(polygon=polygon2, resolution_wh=(600, 600))
+    xyxy2 = sv.mask_to_xyxy(np.array([mask2]))[0]
+    detections = sv.Detections(
+        xyxy=np.array([xyxy1, xyxy2]),
+        confidence=np.array([0.5, 0.5]),
+        class_id=np.array([1, 1]),
+        data={"detection_id": ["a", "a"], "class_name": ["a", "a"]},
+        mask=np.array([mask1, mask2]),
+    )
+
+    # when
+    result = get_intersection_mask(detections=detections)
+
+    # then
+    assert np.allclose(sv.mask_to_xyxy(np.array([result])), [[180, 150, 300, 300]], atol=1e-5)
 
 
 def test_get_majority_class() -> None:
@@ -605,7 +782,7 @@ def test_get_class_of_least_confident_detection() -> None:
 
 
 @mock.patch.object(v1, "uuid4")
-def test_merge_detections(uuid4_mock: MagicMock) -> None:
+def test_merge_detections_no_mask(uuid4_mock: MagicMock) -> None:
     # given
     uuid4_mock.return_value = "some_uuid"
     detections = sv.Detections(
@@ -630,6 +807,7 @@ def test_merge_detections(uuid4_mock: MagicMock) -> None:
         detections=detections,
         confidence_aggregation_mode=AggregationMode.AVERAGE,
         boxes_aggregation_mode=AggregationMode.MAX,
+        mask_aggregation_mode=MaskAggregationMode.UNION,
     )
 
     # then
@@ -652,6 +830,72 @@ def test_merge_detections(uuid4_mock: MagicMock) -> None:
             "image_dimensions": np.array([[192, 168]]),
         },
     )
+
+
+@mock.patch.object(v1, "uuid4")
+def test_merge_detections_with_masks(uuid4_mock: MagicMock) -> None:
+    # given
+    polygon1 = np.array([[200, 200], [300, 150], [400, 210], [500, 500], [350, 400], [100, 300]])
+    mask1 = sv.polygon_to_mask(polygon=polygon1, resolution_wh=(600, 600))
+    xyxy1 = sv.mask_to_xyxy(np.array([mask1]))[0]
+    polygon2 = np.array([[100, 100], [300, 100], [300, 300], [100, 300]])
+    mask2 = sv.polygon_to_mask(polygon=polygon2, resolution_wh=(600, 600))
+    xyxy2 = sv.mask_to_xyxy(np.array([mask2]))[0]
+    uuid4_mock.return_value = "some_uuid"
+    detections = sv.Detections(
+        xyxy=np.array([xyxy1, xyxy2]),
+        confidence=np.array([0.1, 0.3]),
+        class_id=np.array([0, 1]),
+        mask=np.array([mask1, mask2]),
+        data={
+            "detection_id": np.array(["a", "b"]),
+            "class_name": np.array(["a", "b"]),
+            "parent_id": np.array(["x", "x"]),
+            "parent_coordinates": np.array([[50, 60], [50, 60]]),
+            "parent_dimensions": np.array([[192, 168], [192, 168]]),
+            "root_parent_id": np.array(["root_x", "root_x"]),
+            "root_parent_coordinates": np.array([[150, 160], [150, 160]]),
+            "root_parent_dimensions": np.array([[1192, 1168], [1192, 1168]]),
+            "image_dimensions": np.array([[192, 168], [192, 168]]),
+        },
+    )
+
+    # when
+    result = merge_detections(
+        detections=detections,
+        confidence_aggregation_mode=AggregationMode.AVERAGE,
+        boxes_aggregation_mode=AggregationMode.MAX,
+        mask_aggregation_mode=MaskAggregationMode.UNION,
+    )
+
+    # then
+    expected_mask = sv.polygon_to_mask(polygon=np.array([[350, 400], [500, 500], [400, 210], [300, 150], [300, 100], [100, 100], [100, 300]]), resolution_wh=(600, 600))
+    expected = sv.Detections(
+        xyxy=np.array([sv.mask_to_xyxy(np.array([expected_mask]))[0]], dtype=np.float64),
+        confidence=np.array([0.2], dtype=np.float64),
+        class_id=np.array([0]),
+        data={
+            "detection_id": np.array(["some_uuid"]),
+            "class_name": np.array(["a"]),
+            "parent_id": np.array(["x"]),
+            "parent_coordinates": np.array([[50, 60]]),
+            "parent_dimensions": np.array([[192, 168]]),
+            "root_parent_id": np.array(["root_x"]),
+            "root_parent_coordinates": np.array([[150, 160]]),
+            "root_parent_dimensions": np.array([[1192, 1168]]),
+            "prediction_type": np.array(["object-detection"]),
+            "scaling_relative_to_parent": np.array([1.0]),
+            "scaling_relative_to_root_parent": np.array([1.0]),
+            "image_dimensions": np.array([[192, 168]]),
+        },
+        mask=np.array([expected_mask]),
+    )
+
+    diff_mask = np.logical_xor(expected.mask[0], result.mask[0])
+    assert np.sum(diff_mask) == 0, "resulting mask is expected to be union"
+    assert np.all(expected.xyxy == result.xyxy)
+    assert np.all(expected.confidence == result.confidence)
+    assert np.all(expected.class_id == result.class_id)
 
 
 def test_calculate_iou_when_detections_are_zero_size() -> None:
@@ -1313,6 +1557,7 @@ def test_get_consensus_for_single_detection_when_only_single_source_and_single_s
         confidence=0.5,
         detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
         detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+        detections_merge_mask_aggregation=MaskAggregationMode.UNION,
         detections_already_considered=detections_already_considered,
     )
 
@@ -1382,6 +1627,7 @@ def test_get_consensus_for_single_detection_when_only_single_source_and_single_s
         confidence=0.5,
         detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
         detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+        detections_merge_mask_aggregation=MaskAggregationMode.UNION,
         detections_already_considered=detections_already_considered,
     )
 
@@ -1453,6 +1699,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_a
         confidence=0.5,
         detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
         detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+        detections_merge_mask_aggregation=MaskAggregationMode.UNION,
         detections_already_considered=detections_already_considered,
     )
 
@@ -1548,6 +1795,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
         confidence=0.5,
         detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
         detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+        detections_merge_mask_aggregation=MaskAggregationMode.UNION,
         detections_already_considered=detections_already_considered,
     )
 
@@ -1619,6 +1867,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
         confidence=0.8,
         detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
         detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+        detections_merge_mask_aggregation=MaskAggregationMode.UNION,
         detections_already_considered=detections_already_considered,
     )
 
@@ -1690,6 +1939,7 @@ def test_get_consensus_for_single_detection_when_only_multiple_sources_matches_b
         confidence=0.5,
         detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
         detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+        detections_merge_mask_aggregation=MaskAggregationMode.UNION,
         detections_already_considered=detections_already_considered,
     )
 
@@ -1905,6 +2155,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_empty_predictions_gi
         presence_confidence_aggregation=AggregationMode.MAX,
         detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
         detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+        detections_merge_mask_aggregation=MaskAggregationMode.UNION,
     )
 
     # then
@@ -1947,6 +2198,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_do_not_m
         presence_confidence_aggregation=AggregationMode.MAX,
         detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
         detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+        detections_merge_mask_aggregation=MaskAggregationMode.UNION,
     )
 
     # then
@@ -1993,6 +2245,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_sin
         presence_confidence_aggregation=AggregationMode.MAX,
         detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
         detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+        detections_merge_mask_aggregation=MaskAggregationMode.UNION,
     )
 
     # then
@@ -2078,6 +2331,7 @@ def test_agree_on_consensus_for_all_detections_sources_when_predictions_from_mul
         presence_confidence_aggregation=AggregationMode.MAX,
         detections_merge_confidence_aggregation=AggregationMode.AVERAGE,
         detections_merge_coordinates_aggregation=AggregationMode.AVERAGE,
+        detections_merge_mask_aggregation=MaskAggregationMode.UNION,
     )
 
     # then
