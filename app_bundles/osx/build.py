@@ -14,13 +14,21 @@ ICON_PNG = "../osx/app-icon.png"
 ICNS_PATH = "./app-icon.icns"
 SPEC_FILE = f"{BUILD_NAME}.spec"
 
+# Get version from environment variable, default if not set
+VERSION = os.getenv("BUILD_VERSION")
+if not VERSION:
+    print("Warning: BUILD_VERSION environment variable not set. Defaulting to 0.0.0-dev.")
+    VERSION = "0.0.0-dev"
+else:
+    print(f"Using version: {VERSION}")
+
 BUILD_DIR = os.path.join("dist", BUILD_NAME)
 APP_PATH = os.path.join("dist", f"{APP_NAME}.app")
-ZIP_PATH = f"{APP_NAME.replace(' ', '-')}.zip"
-DMG_PATH = f"{APP_NAME.replace(' ', '-')}.dmg"
+ZIP_PATH = f"{APP_NAME.replace(' ', '-')}-{VERSION}.zip"
+DMG_PATH = f"{APP_NAME.replace(' ', '-')}-{VERSION}.dmg"
 BACKGROUND_PNG = os.path.abspath("background.png")
 DS_STORE_SOURCE = os.path.abspath("DMG-DS_Store")
-SOURCE_LANDING_DIR = "../../inference/inference/landing"
+SOURCE_LANDING_DIR = "../../inference/landing"
 DEST_LANDING_DIR = os.path.join(BUILD_DIR, "inference", "landing")
 LAUNCHER_BINARY_PATH = os.path.abspath("launcher") #need to compile this first from launcher.c if its not already compiled
 
@@ -80,17 +88,7 @@ def copy_static_files():
     os.makedirs(DEST_LANDING_DIR, exist_ok=True)
     shutil.copytree(SOURCE_LANDING_DIR, DEST_LANDING_DIR, dirs_exist_ok=True)
 
-def get_version_via_pip(pkg="inference"):
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "show", pkg],
-            check=True, stdout=subprocess.PIPE, text=True
-        )
-        for line in result.stdout.splitlines():
-            if line.startswith("Version:"):
-                return line.split(":")[1].strip()
-    except subprocess.CalledProcessError:
-        return None
+
 
 def sign_app_bundle(app_path: str):
     print("🔒 Recursively signing all executables and libraries...")
@@ -178,10 +176,30 @@ def create_dmg(app_path, dmg_path):
     # Make sure the script is executable
     subprocess.run(["chmod", "+x", script_path], check=True)
 
-    # Run the shell script
+    # Determine the likely unversioned output name from make_dmg.sh
+    # This is based on the global APP_NAME constant: "Roboflow Inference"
+    unversioned_dmg_filename = f"{APP_NAME.replace(' ', '-')}.dmg" # Should be "Roboflow-Inference.dmg"
+
+    print(f"Running {script_path}. Expecting it to create {unversioned_dmg_filename}, which will then be ensured to be {dmg_path}.")
     subprocess.run([script_path], check=True)
 
-    print(f"✅ Final DMG created: {dmg_path}")
+    # Check if make_dmg.sh created the unversioned file
+    if os.path.exists(unversioned_dmg_filename) and unversioned_dmg_filename != dmg_path:
+        print(f"DMG created as {unversioned_dmg_filename}. Renaming to versioned name: {dmg_path}")
+        shutil.move(unversioned_dmg_filename, dmg_path)
+    elif os.path.exists(dmg_path):
+        print(f"DMG successfully found at versioned path: {dmg_path} (make_dmg.sh might be version-aware or previous rename succeeded).")
+    else:
+        print(f"Error: DMG not found after running {script_path}. Expected {unversioned_dmg_filename} or {dmg_path}.")
+        print("Contents of current directory (app_bundles/osx/):")
+        try:
+            for item in os.listdir("."):
+                print(f"  - {item}")
+        except Exception as e:
+            print(f"    Could not list directory contents: {e}")
+        raise FileNotFoundError(f"DMG file not found. {script_path} did not produce {unversioned_dmg_filename} or {dmg_path}.")
+
+    print(f"✅ DMG preparation complete. Final DMG is at: {dmg_path}")
 
 
 
@@ -225,7 +243,7 @@ def create_app_bundle_with_native_launcher(source_dir, app_bundle_path, launcher
     <key>CFBundleDisplayName</key>     <string>{app_name}</string>
     <key>CFBundleExecutable</key>      <string>launcher</string>
     <key>CFBundleIdentifier</key>      <string>com.example.{app_name.lower().replace(' ','')}</string>
-    <key>CFBundleVersion</key>         <string>1.0</string>
+    <key>CFBundleVersion</key>         <string>{VERSION}</string>
     <key>CFBundlePackageType</key>     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>  <string>10.13</string>
     <key>NSHighResolutionCapable</key> <true/>
@@ -254,9 +272,10 @@ if __name__ == "__main__":
     build_app(ICNS_PATH)
     copy_static_files()
     create_app_bundle_with_native_launcher(BUILD_DIR, APP_PATH, LAUNCHER_BINARY_PATH, icon_path=ICNS_PATH)
-    fix_app_permissions(APP_PATH) # Keep commented unless needed
+    fix_app_permissions(APP_PATH)
     codesign_and_notarize(APP_PATH, ZIP_PATH)
     create_dmg(APP_PATH, DMG_PATH)
+    # sign_dmg(DMG_PATH) # Temporarily disabled DMG signing
 
     print("\n✅ macOS app built, signed, notarized, and packed into DMG!")
     print(f"   App: {APP_PATH}")

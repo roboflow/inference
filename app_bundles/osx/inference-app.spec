@@ -5,13 +5,14 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 # ---------------------------------------------------------------------------
 # Wheel collections you already had
-rasterio_datas = collect_data_files('rasterio', include_py_files=False)
+rasterio_datas = collect_data_files('rasterio', include_py_files=True)
 
 clip_datas, clip_binaries, clip_hiddenimports                 = collect_all('clip')
-transformers_datas, transformers_bins, transformers_hiddenimports = collect_all('transformers')
+transformers_datas, transformers_bins, transformers_hiddenimports = collect_all('transformers', include_py_files=True)
 peft_datas, peft_bins, peft_hiddenimports                     = collect_all('peft')
 cython_datas, cython_bins, cython_hiddenimports               = collect_all('Cython')
 tldextract_datas, tldextract_binaries, tldextract_hidden      = collect_all("tldextract")
+inference_datas, inference_bins, inference_hidden = collect_all('inference', include_py_files=True)
 
 # ---------------------------------------------------------------------------
 opensslnames = ("libcrypto.3.dylib", "libssl.3.dylib")
@@ -27,6 +28,7 @@ a = Analysis(
         *peft_bins,
         *cython_bins,
         *tldextract_binaries,
+        *inference_bins,
     ],
     datas=[
         *clip_datas,
@@ -35,6 +37,7 @@ a = Analysis(
         *peft_datas,
         *cython_datas,
         *tldextract_datas,
+        *inference_datas,
     ],
     hiddenimports=[
         *clip_hiddenimports,
@@ -49,14 +52,20 @@ a = Analysis(
         'rasterio.features',
         'tldextract',
         'transformers',
+        'transformers.models',
+        'transformers.models.auto',
+        'transformers.models.__init__',
         'peft',
         'Cython',
+        'inference',
+        'pyvips',
+        *inference_hidden,
     ],
     hookspath=['hooks'],     # place custom hooks here if you like
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    noarchive=False,
+    noarchive=True,
     optimize=0,
 )
 
