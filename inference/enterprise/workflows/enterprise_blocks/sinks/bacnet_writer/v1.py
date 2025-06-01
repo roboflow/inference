@@ -1,7 +1,8 @@
 import fcntl
 import struct
 import threading
-from typing import Dict, List, Optional, Type, Union
+import time
+from typing import Dict, List, Optional, Type, Union, Tuple
 
 import bacpypes
 
@@ -46,7 +47,7 @@ from inference.core.workflows.execution_engine.entities.types import (
     STRING_KIND,
     INTEGER_KIND,
     BOOLEAN_KIND,
-    Selector,    
+    Selector,
 )
 from inference.core.workflows.prototypes.block import (
     WorkflowBlock,
@@ -111,7 +112,7 @@ def get_netmask(interface):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         #return socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x891b, struct.pack('256s', interface.encode('utf-8')[:15]))[20:24])
         return socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x891b, struct.pack('256s', interface.encode('utf-8')[:15]))[20:24])
-    except OSError:        
+    except OSError:
         return None
 
 def get_ip_address(interface):
@@ -122,7 +123,7 @@ def get_ip_address(interface):
             0x8915,  # SIOCGIFADDR
             struct.pack('256s', interface.encode('utf-8')[:15])
         )[20:24])
-    except OSError:        
+    except OSError:
         return None
 
 class BacnetIpManifest(WorkflowBlockManifest):
@@ -200,112 +201,163 @@ class BacnetIpManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.0.0,<2.0.0"
 
+# collection of apps by device id, port and ethernet card
 # this is shared between all bacnet blocks
-bacnet_app = None
+bacnet_apps = {}
+
+# flag for whether bacpypes core has started
+core_started = False
+
+# queue for writes in cases where we don't have a device id bound yet
+# key is (nic,port,device_id) value is TTLHashMap()
+device_id_waits:Dict[Tuple[int,int,int],threading.Event] = {}
 
 class BacnetIpV1(WorkflowBlock):
 
-    """A BACnet IP communication block using bacpypes.
-    """
-
     iocb_responded = threading.Event()
-
 
     class BacnetApplication(BIPSimpleApplication):
         # dictionary of device id to source
         source_bindings = {}
+        bacnet_port = None
+        network_interface = None
 
         def __init__(self, *args):
             BIPSimpleApplication.__init__(self, *args)
 
         # this is a message from some other device, like an IAm
         def indication(self, apdu):
+            global device_id_waits
 
-            if isinstance(apdu, IAmRequest):                                
+            if isinstance(apdu, IAmRequest):
                 if apdu.iAmDeviceIdentifier:
+                    # iAmDeviceIdentifier is a bacoid, get the id
+                    device_id = apdu.iAmDeviceIdentifier[1]
+                    k = (self.network_interface,self.bacnet_port,device_id)
+                    # signal that we have this device id
+                    if k in device_id_waits:
+                        device_id_waits[k].set()
                     print(f"iam from {apdu.pduSource} is {apdu.iAmDeviceIdentifier}")
+                    # save address binding for this device
                     self.source_bindings[apdu.iAmDeviceIdentifier[1]] = apdu.pduSource
-                    
+
             BIPSimpleApplication.indication(self, apdu)
 
         # this is an ack (ex. write reply)
         def confirmation(self, apdu):
-            print("confirmation: {}", apdu)              
+            print("confirmation: {}", apdu)
             BIPSimpleApplication.confirmation(self, apdu)
+
 
     # static wrapper class
     class BacnetAppWrapper:
 
-        app_thread = None        
+        app = None
+        app_thread = None
         inference_device_id = None
         bacnet_port = None
         network_interface = None
         inference_device = None
+        app_created = threading.Event()
+        has_device_id = threading.Event()
 
+        # get the app for this config
         @classmethod
-        def get_app(cls,inference_device_id,bacnet_port,network_interface):
-            global bacnet_app
+        def get_app(cls,inference_device_id:int,bacnet_port:int,network_interface:str):
+            global bacnet_apps
 
-            if bacnet_app:
-                if inference_device_id!=bacnet_app.inference_device_id or bacnet_port!=bacnet_app.bacnet_port or network_interface!=bacnet_app.network_interface:
-                    try:
-                        bacpypes.core.stop()
-                    finally:
-                        pass
-                    bacnet_app = BacnetIpV1.BacnetAppWrapper(inference_device_id,bacnet_port,network_interface)
-                    return bacnet_app
-                else:
-                    return bacnet_app
-            
-            bacnet_app = BacnetIpV1.BacnetAppWrapper(inference_device_id,bacnet_port,network_interface)
-            return bacnet_app
+            k = (inference_device_id,bacnet_port,network_interface)
 
+            app = bacnet_apps.get(k)
 
-        def __init__(self,inference_device_id,bacnet_port,network_interface):
-            
-            global bacnet_app
+            if not app:
+                app = BacnetIpV1.BacnetAppWrapper(inference_device_id,bacnet_port,network_interface)
+                bacnet_apps[k] = app
+
+            return app
+
+        def __init__(self,inference_device_id:int,bacnet_port:int,network_interface:str):
 
             self.ip_bindings = []
-            self.app = None
 
             self.inference_device_id = inference_device_id
             self.bacnet_port = bacnet_port
-            self.network_interface = network_interface                        
-            self.app_created = threading.Event()           
+            self.network_interface = network_interface
+
+            self.app_created = threading.Event()
             self.app_thread = threading.Thread(target=self.start_app, args=())
             self.app_thread.daemon = True
             self.app_thread.start()
-            #self.start_app(inference_device_id,bacnet_port)
 
         # starts bacpypes device and app once
-        def start_app(self):                        
+
+        def start_app(self):
             print("starting bacnet app")
             self.inference_device = LocalDeviceObject(
                 objectIdentifier=self.inference_device_id,
                 objectName='Inference',
                 vendorIdentifier=9999,
                 segmentationSupported=True
-            )                
+            )
             nics = get_ip_and_subnet_info()
             address_str = f"{nics[self.network_interface]}:{self.bacnet_port}"
-            #address_str = f"{nics[self.network_interface]}"                
+            #address_str = f"{nics[self.network_interface]}"
             self.app = BacnetIpV1.BacnetApplication(self.inference_device, Address(address_str))
+            self.app.network_interface = self.network_interface
+            self.app.bacnet_port = self.bacnet_port
             print(f"BACnet app started and bound to address {address_str} for {self.network_interface}")
-            self.who_is()
+
+            global core_started
+            if not core_started:
+                if not bacpypes.core.running:
+                    core_started = True
+                    self.core_thread = threading.Thread(target=BacnetIpV1.BacnetAppWrapper.start_core(), args=())
+
+            #self.app_created = threading.Event()
             self.app_created.set()
+
+
+        @classmethod
+        def start_core(cls):
             bacpypes.core.run()
 
+        # wait for the app creation to finish
         def wait_for_app(self):
             self.app_created.wait()
 
         def app(self):
             return self.app
 
-        def who_is(self):            
-            print(f"whois {self.app.who_is(None, None, GlobalBroadcast())}")
+        # broadcast a whois
+        def who_is(self):
+            self.app.who_is(None, None, GlobalBroadcast())
+            print(f"whois broadcast on {self.network_interface}")
 
+        # broadcast a whois
+        def who_is_bounded_async(self,lower:int,upper:int,callback):
+            # Create a bounded Who-Is request
+            who_is_request = WhoIsRequest(
+                deviceInstanceRangeLowLimit=lower,
+                deviceInstanceRangeHighLimit=upper,
+                destination=GlobalBroadcast()
+            )
+            iocb = IOCB(who_is_request)
+            # response callback
+            iocb.add_callback(callback)
+
+            deferred(self.app.request_io, iocb)
+
+            #self.app.request(who_is_request)
+            #self.app.who_is(lower, upper, GlobalBroadcast())
+            #print(f"whois broadcast on {self.network_interface} with bounds ({lower},{upper})")
+
+        # broadcast a whois
+        def who_is_bounded(self,lower:int,upper:int):
+            self.app.who_is(lower, upper, GlobalBroadcast())
+            print(f"whois broadcast on {self.network_interface} with bounds ({lower},{upper})")
+
+        # send an outbound request (ex. a read or write)
         def request_io(self,request):
-            print("request")
             return self.app.request_io(request)
 
     @classmethod
@@ -322,43 +374,74 @@ class BacnetIpV1(WorkflowBlock):
     def __del__(self):
         pass
 
-    def write_value(self,device_id,write_bacoid,value,priority,fire_and_forget,response_timeout):
-        
+    def write_value(self,device_id,write_bacoid,value,priority,fire_and_forget,response_timeout) -> Optional[IOCB]:
+        global device_id_waits
+
         # make sure the app has started
-        self.bacnet_app.wait_for_app()
+        #self.bacnet_app.wait_for_app()
 
         # build a request
         request = WritePropertyRequest(
-            objectIdentifier=write_bacoid,            
+            objectIdentifier=write_bacoid,
             propertyIdentifier=BACNET_WRITE_PROPERTY
             )
+
+        # save the value
+        request.propertyValue = Any()
+        try:
+            request.propertyValue.cast_in(value) # TODO: we might need the right type here
+            request.priority = priority
+            print(f"request: {request} value: {request.propertyValue}")
+        except Exception as error:
+            raise ValueError(
+                f"Write property case error: {error}"
+            )
+
         # if it's a device id we have to reference bindings
         # if it's an ip address, just set the destination
         if is_valid_ip(device_id):
             request.pduDestination = Address(device_id)
             print(f"destination: {request.pduDestination}")
         else:
-            if device_id in self.app.source_bindings:
-                request.pduDestination = Address(self.app.source_bindings[device_id])                
-            else:
+            app = self.bacnet_app.app
+            device_id_int = 0
+            try:
+                device_id_int = int(device_id)
+            except Exception as e:
                 raise ValueError(
-                    f"BACnet device id binding unknown: {device_id}"
+                    f"BACnet device id is not an integer: {device_id}"
                 )
-            
-        # save the value
-        request.propertyValue = Any()
-        try:            
-            request.propertyValue.cast_in(value) # TODO: we might need the right type here
-            request.priority = priority
-            print(f"request: {request} value: {request.propertyValue}")
-        except Exception as error: 
-            raise ValueError(
-                f"Write property case error: {error}"
-            )
+
+            if device_id in app.source_bindings:
+                request.pduDestination = Address(app.source_bindings[device_id_int])
+            else:
+                # send out another whois and try to get the device id
+                k = (app.network_interface,app.bacnet_port,device_id)
+                # no need to reset this, it should only ever be set once
+                event = device_id_waits.get(k)
+                if not event:
+                    device_id_waits[k] = threading.Event()
+                    event = device_id_waits[k]
+
+                # send out a whois bound for this specific device
+
+                t = threading.Thread(target=self.bacnet_app.who_is_bounded, args=(device_id_int,device_id_int))
+                t.daemon = True
+                t.start()
+                t.join()
+                #self.bacnet_app.who_is_bounded(device_id_int,device_id_int)
+                event.wait(timeout=response_timeout)
+
+                if device_id in app.source_bindings:
+                    request.pduDestination = Address(app.source_bindings[device_id_int])
+                else:
+                    raise ValueError(
+                        f"BACnet device id not bound: {device_id}"
+                    )
 
         iocb = IOCB(request)
 
-        # response callback        
+        # response callback
         iocb.add_callback(self.on_response)
 
         # TODO: we need to make sure the response is the right device and invoke id
@@ -368,13 +451,16 @@ class BacnetIpV1(WorkflowBlock):
 
         if not fire_and_forget:
             self.iocb_responded.wait(timeout=response_timeout)
-        
+
         return iocb
+
+    def whois_response(self, iocb):
+        print("iam")
 
     # TODO: iostate here is what we want
     def on_response(self, iocb):
         self.iocb_responded.set()
-        print(f"iocb {iocb.ioComplete.is_set()} {iocb.ioState}")
+        print(f"iocb {iocb.ioComplete.is_set()} {iocb.ioState} {iocb.ioError} {iocb.ioResponse}")
 
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
@@ -395,33 +481,38 @@ class BacnetIpV1(WorkflowBlock):
         response_timeout: int
     ) -> dict:
 
+        # get or create the bacnet app for this block
         self.bacnet_app = BacnetIpV1.BacnetAppWrapper.get_app(inference_device_id,bacnet_port,network_interface)
 
         if self._step_execution_mode == StepExecutionMode.LOCAL:
 
+            if not self.bacnet_app:
+                raise ValueError(
+                    "could not get bacnet app for workflow block"
+                )
+
             # get the class id and data type for the class we want to write to
             (class_id,data_type) = BACNET_CLASSES[class_to_write]
-            
+
             # convert the value string into the datatype we want to write to
             encodable_value = data_type(value_to_write)
 
             # bacoid to write to
             write_bacoid = to_bacoid(class_id,object_id_to_write)
-            
 
             # write the value and wait for a response
             iocb = self.write_value(device_id_to_write,write_bacoid,encodable_value,priority,fire_and_forget,response_timeout)
 
-            # return the response            
+            # return the response
             if not isinstance(iocb.ioResponse, SimpleAckPDU):
                 return {"write_reply": ["write response is not an ack"], "success": False}
             if iocb.ioError:
                 print(f"iocb_err:{vars(iocb.ioError)}")
-                return {"write_reply": [vars(iocb.ioError)], "success": False}    
+                return {"write_reply": [vars(iocb.ioError)], "success": False}
             else:
                 print(f"iocb_success:{vars(iocb.ioResponse)}")
                 return {"write_reply": [vars(iocb.ioResponse)], "success": True}
-            
+
             #return {"write_reply": [str(f"{iocb}")]}
             #return {"write_reply": [None]}
 
