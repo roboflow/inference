@@ -13,6 +13,7 @@ from inference.core.env import (
     WORKFLOWS_REMOTE_EXECUTION_MAX_STEP_CONCURRENT_REQUESTS,
 )
 from inference.core.managers.base import ModelManager
+from inference.core.roboflow_api import post_to_roboflow_api
 from inference.core.utils.image_utils import encode_image_to_jpeg_bytes, load_image
 from inference.core.workflows.core_steps.common.utils import run_in_parallel
 from inference.core.workflows.core_steps.common.vlms import VLM_TASKS_METADATA
@@ -385,20 +386,23 @@ def _execute_proxied_openai_request(
     if temperature is not None:
         payload["temperature"] = temperature
 
-    endpoint = f"{API_BASE_URL}/apiproxy/openai?api_key={roboflow_api_key}"
+    endpoint = f"apiproxy/openai" # Use relative endpoint
 
     try:
-        response = requests.post(endpoint, json=payload)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Failed to connect to Roboflow proxy: {e}") from e
-
-    try:
-        response_data = response.json()
+        # Use the Roboflow API post function (this enures proper auth headers used based on invocation context)
+        response_data = post_to_roboflow_api(
+            endpoint=endpoint,
+            api_key=roboflow_api_key,
+            payload=payload,
+        )
         return response_data["choices"][0]["message"]["content"]
+    except requests.exceptions.RequestException as e: # Keep existing broad exception for now
+        raise RuntimeError(f"Failed to connect to Roboflow proxy: {e}") from e
     except (KeyError, IndexError) as e:
+        # Consider if specific error from post_to_roboflow_api should be caught
+        # or if current error handling is sufficient
         raise RuntimeError(
-            f"Invalid response structure from Roboflow proxy: {e} - Response: {response.text}"
+            f"Invalid response structure from Roboflow proxy: {e} - Response: {response_data if 'response_data' in locals() else 'Unknown (request failed)'}"
         ) from e
 
 
