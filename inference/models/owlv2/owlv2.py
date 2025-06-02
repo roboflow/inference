@@ -818,9 +818,11 @@ class SerializedOwlV2(RoboflowInferenceModel):
 
         if previous_embeddings_file is not None:
             if DEVICE == "cpu":
-                model_data = torch.load(previous_embeddings_file, map_location="cpu")
+                model_data = torch.load(
+                    previous_embeddings_file, map_location="cpu", weights_only=False
+                )
             else:
-                model_data = torch.load(previous_embeddings_file)
+                model_data = torch.load(previous_embeddings_file, weights_only=False)
 
             train_data_dict = model_data["train_data_dict"]
             owlv2.cpu_image_embed_cache = model_data["image_embeds"]
