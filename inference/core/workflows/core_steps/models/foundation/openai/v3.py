@@ -386,7 +386,7 @@ def _execute_proxied_openai_request(
     if temperature is not None:
         payload["temperature"] = temperature
 
-    endpoint = f"apiproxy/openai" # Use relative endpoint
+    endpoint = f"apiproxy/openai"  # Use relative endpoint
 
     try:
         # Use the Roboflow API post function (this enures proper auth headers used based on invocation context)
@@ -396,7 +396,9 @@ def _execute_proxied_openai_request(
             payload=payload,
         )
         return response_data["choices"][0]["message"]["content"]
-    except requests.exceptions.RequestException as e: # Keep existing broad exception for now
+    except (
+        requests.exceptions.RequestException
+    ) as e:  # Keep existing broad exception for now
         raise RuntimeError(f"Failed to connect to Roboflow proxy: {e}") from e
     except (KeyError, IndexError) as e:
         # Consider if specific error from post_to_roboflow_api should be caught
