@@ -286,6 +286,7 @@ from inference.core.workflows.core_steps.sinks.twilio.sms.v1 import (
     TwilioSMSNotificationBlockV1,
 )
 from inference.core.workflows.core_steps.sinks.webhook.v1 import WebhookSinkBlockV1
+from inference.core.workflows.core_steps.sinks.onvif_movement.v1 import ONVIFSinkBlockV1
 from inference.core.workflows.core_steps.transformations.absolute_static_crop.v1 import (
     AbsoluteStaticCropBlockV1,
 )
@@ -647,6 +648,7 @@ def load_blocks() -> List[Type[WorkflowBlock]]:
         SmolVLM2BlockV1,
         Moondream2BlockV1,
         OverlapBlockV1,
+        ONVIFSinkBlockV1
     ]
 
 
