@@ -36,11 +36,11 @@ def test_benchmark_equivalent_yolov8n_seg(benchmark, dataset_reference):
 
     model = get_model(model_id="yolov8n-seg-640", api_key=None)
 
-    benchmark(model.infer, images[0])
+    benchmark(model.infer, images)
 
 def test_benchmark_equivalent_yolov8n(benchmark, dataset_reference):
     images, image_sizes = dataset_reference
 
     model = get_model(model_id="yolov8n-640", api_key=None)
 
-    benchmark(model.infer, images[0])
+    benchmark(model.infer, images)
