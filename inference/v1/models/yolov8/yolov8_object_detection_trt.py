@@ -46,7 +46,6 @@ class YOLOv8ForObjectDetectionTRT(
             elements=[
                 "class_names.txt",
                 "environment.json",
-                "model_type.json",
                 "trt_config.json",
                 "engine.plan",
             ],

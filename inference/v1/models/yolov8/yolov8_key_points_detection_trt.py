@@ -47,7 +47,6 @@ class YOLOv8ForKeyPointsDetectionTRT(
             elements=[
                 "class_names.txt",
                 "environment.json",
-                "model_type.json",
                 "trt_config.json",
                 "engine.plan",
                 "keypoints_metadata.json",
