@@ -1,4 +1,4 @@
-from typing import Dict, List, Literal, Optional, Type, Union
+from typing import Dict, List, Literal, Optional, Type, Union, Tuple
 import supervision as sv
 
 from onvif import ONVIFCamera
@@ -124,18 +124,17 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+async def limits(s):
+    return (s.XRange.Min,s.XRange.Max,s.YRange.Min,s.YRange.Max)
+
 class CameraWrapper:
     camera:ONVIFCamera
     media_profile = None
     configuration_options = None
     _active:bool = False
-    x_min:float
-    x_max:float
-    y_min:float
-    y_max:float
     config_token = None
     media_profile_token = None
-    abs_pan_tilt_position_space = None
+    velocity_limits: Union[Tuple[float,float,float,float],None] = None
 
     def __init__(self,camera:ONVIFCamera):
         self.camera = camera
@@ -153,57 +152,73 @@ class CameraWrapper:
     def is_active(self):
         return self._active
 
-    async def get_limits(self):
-        s = self.abs_pan_tilt_position_space
-        self.x_min = s.XRange.Min
-        self.x_max = s.XRange.Max
-        self.y_min = s.YRange.Min
-        self.y_max = s.YRange.Max
-
     async def configure(self):
-        await self.camera.get_capabilities()
+        await self.camera.update_xaddrs()
+        capabilities = await self.camera.get_capabilities()
+        #print(f"Camera capabilities: {capabilities}")
         media = await self.media_service()
         self.media_profile = (await media.GetProfiles())[0]
         ptz = await self.ptz_service()
-
         request = ptz.create_type('GetConfigurationOptions')
         self.media_profile_token = self.media_profile.token
         self.config_token = self.media_profile.PTZConfiguration.token
         request.ConfigurationToken = self.config_token
         self.configuration_options = ptz.GetConfigurationOptions(request)
-        self.abs_pan_tilt_position_space = (await self.configuration_options).Spaces.AbsolutePanTiltPositionSpace[0]
-        await self.get_limits()
+        config_options = (await self.configuration_options)
+        #self.abs_pan_tilt_position_space = config_options.Spaces.AbsolutePanTiltPositionSpace[0]
+        self.velocity_limits = limits(config_options.Spaces.ContinuousPanTiltVelocitySpace[0])
+        #self.pan_tilt_speed_space = config_options.Spaces.PanTiltSpeedSpace[0]
 
-    async def move_by_percent(self,x:float,y:float):
+
+    async def continuous_move(self,x:float,y:float):
+        if self.media_profile_token is None:
+            await self.configure()
+
         ptz = await self.ptz_service()
 
-        request = ptz.create_type('AbsoluteMove')
+        #nodes = await ptz.GetNodes()
+        #print(nodes)
 
-        request = {
-            'ProfileToken':self.media_profile_token,
-            #'ConfigurationToken':media_profile.PTZConfiguration.token,
-            'Position': {
-                #'Zoom': {
-                #    'x': 2.0,
-                #}
-                'PanTilt': {
-                    'space':self.abs_pan_tilt_position_space.URI,
-                    'x': 0.5,
-                    'y': 0.5
-                }
+
+        #https://www.onvif.org/onvif/ver20/ptz/wsdl/ptz.wsdl#op.AbsoluteMove
+        '''
+        request = ptz.create_type('AbsoluteMove')
+        request.ProfileToken = self.media_profile_token
+
+        request.Position = {
+            'ProfileToken': self.media_profile_token,
+            'PanTilt': {
+                'x': 0.5,
+                'y': 0.5
             },
-            #'Speed': {
-            #    'Zoom': 1.0
-            #}
+            'Zoom': {
+                'x':1.0
+            }
         }
 
-        print(f"move request {self.abs_pan_tilt_position_space.URI}")
-        # Move the camera to the new zoom position
-        await ptz.AbsoluteMove(request)
+        # Execute the movement
+        print(await ptz.AbsoluteMove(request))
+        '''
+
+        request = ptz.create_type('ContinuousMove')
+        request.ProfileToken = self.media_profile_token
+
+        request.Velocity = {
+            'PanTilt': {
+                'x': x, # TODO: should be % of velocity limits
+                'y': y
+            },
+            'Zoom': {
+                'x':1.0
+            }
+        }
+
+        # Execute the movement
+        await ptz.ContinuousMove(request)
 
 
 # pool of camera services can can be used across blocks
-cameras: Dict[str,CameraWrapper] = {}
+cameras: Dict[Tuple[str,int],CameraWrapper] = {}
 
 class ONVIFSinkBlockV1(WorkflowBlock):
 
@@ -239,8 +254,6 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                 return {OUTPUT_KEY:False}
 
             asyncio.run(self.async_zoom(predictions.xyxy[0]))
-            #self.async_zoom(predictions.xyxy[0])
-
 
         return {OUTPUT_KEY:False}
 
@@ -248,17 +261,17 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
         global cameras
         mycam = None
-        if self.camera_ip not in cameras:
+        camera_key = (self.camera_ip,self.camera_port)
+        if camera_key not in cameras:
             mycam = ONVIFCamera(self.camera_ip, self.camera_port, self.camera_username, self.camera_password, "/usr/local/lib/python3.9/site-packages/onvif/wsdl")
-            cameras[self.camera_ip] = CameraWrapper(mycam)
-            await cameras[self.camera_ip].configure()
-        camera = cameras[self.camera_ip]
+            cameras[camera_key] = CameraWrapper(mycam)
+            await cameras[camera_key].configure()
+        camera = cameras[camera_key]
 
-        try:
-            await camera.move_by_percent(0.5,0.5)
+        # use as stop command, more generic
+        await camera.continuous_move(0,0)
 
-        except Exception as e:
-            print(f"ONVIF Error: {e}")
-        #finally:
-        #    if mycam is not None:
-        #        await mycam.close()
+        # goal here will be to have the workflow do a continuous move & iterate to get the bounding box in position
+        # might be necessary to start slow & calibrate x/y translation from pixel to speed
+        # once it's in position, this speed should change to 0,0
+        await camera.continuous_move(0.5,0.5)
