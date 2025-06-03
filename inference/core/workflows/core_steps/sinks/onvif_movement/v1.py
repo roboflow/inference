@@ -44,8 +44,8 @@ The object it follows is the maximum confidence prediction out of all prediction
 a specific object, use the appropriate filters on the predictiion object to specify the object you want to
 follow.
 
-The camera can also move to a defined preset, which should be done when there are no objects within a field
-of view.
+The camera can also move to a defined preset position. This is done automatically when there are no objects
+in the prediction.
 
 The block returns booleans indicating success (it's communicating with the camera), whether or not it's
 moving, and whether or not it's currently tracking an object.
@@ -120,8 +120,14 @@ class BlockManifest(WorkflowBlockManifest):
     camera_password: Union[Selector(kind=[SECRET_KIND]), str] = Field(
         description="Camera Password",
     )
+    zoom_if_able: Union[Selector(kind=[BOOLEAN_KIND]), str] = Field(
+        description="Zoom If Able",
+    )
     movement_type: Literal["Follow Tracker", "Go To Preset"] = Field(
-        description="Zoom into object or reset",
+        description="Follow Tracker or Go To Preset On Execution",
+    )
+    default_position_preset: Union[Selector(kind=[STRING_KIND]), str] = Field(
+        description="Preset Name for Default Position",
     )
 
     @classmethod
@@ -157,9 +163,10 @@ class CameraWrapper:
     media_profile = None
     configuration_options = None
     _active:bool = False
-    config_token = None
+    #config_token = None
     media_profile_token = None
     velocity_limits: Union[Tuple[float,float,float,float],None] = None
+    presets = None
 
     def __init__(self,camera:ONVIFCamera):
         self.camera = camera
@@ -184,18 +191,37 @@ class CameraWrapper:
         media = await self.media_service()
         self.media_profile = (await media.GetProfiles())[0]
         ptz = await self.ptz_service()
-        request = ptz.create_type('GetConfigurationOptions')
-        self.media_profile_token = self.media_profile.token
-        self.config_token = self.media_profile.PTZConfiguration.token
-        request.ConfigurationToken = self.config_token
-        self.configuration_options = ptz.GetConfigurationOptions(request)
+        config_request = ptz.create_type('GetConfigurationOptions')
+        config_request.ConfigurationToken = self.media_profile.PTZConfiguration.token
+        self.configuration_options = ptz.GetConfigurationOptions(config_request)
         config_options = (await self.configuration_options)
         #self.abs_pan_tilt_position_space = config_options.Spaces.AbsolutePanTiltPositionSpace[0]
         self.velocity_limits = limits(config_options.Spaces.ContinuousPanTiltVelocitySpace[0])
         #self.pan_tilt_speed_space = config_options.Spaces.PanTiltSpeedSpace[0]
+        self.media_profile_token = self.media_profile.token
+        presets = (await ptz.GetPresets({'ProfileToken':self.media_profile_token}))
+        # reconfigure into a dict keyed by preset name
+        self.presets = {preset['Name']:preset for preset in presets}
+        print(self.presets)
 
+    async def go_to_preset(self, preset_name:str):
+        if self.media_profile_token is None:
+            await self.configure()
 
-    async def continuous_move(self,x:float,y:float):
+        preset = self.presets.get(preset_name)
+        if not preset:
+            raise ValueError(
+                f"Camera does not have preset \"{preset_name}\" - valid presets are {list(self.presets.keys())}"
+            )
+
+        ptz = await self.ptz_service()
+        request = ptz.create_type('GotoPreset')
+        request.ProfileToken = self.media_profile_token
+        request.PresetToken = preset['token']
+
+        await ptz.GotoPreset(request)
+
+    async def continuous_move(self,x:float,y:float,zoom_if_able:bool):
         if self.media_profile_token is None:
             await self.configure()
 
@@ -247,11 +273,6 @@ cameras: Dict[Tuple[str,int],CameraWrapper] = {}
 
 class ONVIFSinkBlockV1(WorkflowBlock):
 
-    camera_ip = None
-    camera_port = None
-    camera_username = None
-    camera_password = None
-
     @classmethod
     def get_manifest(cls) -> Type[WorkflowBlockManifest]:
         return BlockManifest
@@ -264,40 +285,31 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         camera_username: str,
         camera_password: str,
         movement_type: str,
+        default_position_preset: str,
+        zoom_if_able: bool
     ) -> BlockResult:
-
-        self.camera_ip = camera_ip
-        self.camera_port = camera_port
-        self.camera_username = camera_username
-        self.camera_password = camera_password
-
 
         if movement_type=="Follow Tracker":
 
             if not predictions:
-                # TODO: move to a preset here
-                print("No predictions to move the camera to")
+                asyncio.run(self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset))
+                print("No predictions to move the camera to, moving to preset")
                 return {OUTPUT_KEY:False}
 
             # get max confidence prediction
             max_confidence = predictions.confidence.max()
             max_confidence_prediction = any(predictions[predictions.confidence==max_confidence])
-
-            if max_confidence_prediction:
-                asyncio.run(self.async_move(max_confidence_prediction))
-            else:
-                # TODO: move to a preset here
-                print("No max confidence prediction")
-                return {OUTPUT_KEY:False}
+            print(max_confidence_prediction)
+            asyncio.run(self.async_move(camera_ip, camera_port, camera_username, camera_password, max_confidence_prediction,zoom_if_able,default_position_preset))
 
         elif movement_type=="Go To Preset":
-            asyncio.run(self.async_move(predictions.xyxy[0]))
+            asyncio.run(self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset))
 
         return {OUTPUT_KEY:False}
 
-    async def async_move(self,xyxy):
+    async def async_move(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,xyxy:list[int],zoom_if_able:bool,preset:str):
 
-        camera = await get_camera(self.camera_ip,self.camera_port,self.camera_username,self.camera_password)
+        camera = await get_camera(camera_ip,camera_port,camera_username,camera_password)
 
         # use as stop command, more generic
         #await camera.continuous_move(0,0)
@@ -305,4 +317,8 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         # goal here will be to have the workflow do a continuous move & iterate to get the bounding box in position
         # might be necessary to start slow & calibrate x/y translation from pixel to speed
         # once it's in position, this speed should change to 0,0
-        await camera.continuous_move(-0.5,-0.5)
+        await camera.continuous_move(-0.5,-0.5,zoom_if_able)
+
+    async def go_to_preset(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,preset:str):
+        camera = await get_camera(camera_ip,camera_port,camera_username,camera_password)
+        await camera.go_to_preset(preset)
