@@ -262,6 +262,7 @@ def get_driver_version() -> Optional[Version]:
 def is_trt_python_package_available() -> bool:
     try:
         import tensorrt
+
         return True
     except ImportError:
         return False
@@ -271,6 +272,7 @@ def is_trt_python_package_available() -> bool:
 def is_torch_available() -> bool:
     try:
         import torch
+
         return True
     except ImportError:
         return False
@@ -280,6 +282,7 @@ def is_torch_available() -> bool:
 def is_onnxruntime_available() -> bool:
     try:
         import onnxruntime
+
         return True
     except ImportError:
         return False
@@ -289,6 +292,7 @@ def is_onnxruntime_available() -> bool:
 def is_hf_transformers_available() -> bool:
     try:
         import transformers
+
         return True
     except ImportError:
         return False
@@ -298,6 +302,7 @@ def is_hf_transformers_available() -> bool:
 def is_ultralytics_available() -> bool:
     try:
         import ultralytics
+
         return True
     except ImportError:
         return False

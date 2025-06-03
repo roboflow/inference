@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Union, Tuple
+from typing import List, Optional, Tuple, Union
 
 from packaging.version import Version
 
@@ -36,8 +36,10 @@ class ServerEnvironmentRequirements:
     os_version: Optional[str]
 
     def __str__(self) -> str:
-        return f"gpu={self.gpu_type} driver={self.driver_version} trt={self.trt_version}" \
-               f"cu={self.cuda_version} os={self.os_version}"
+        return (
+            f"gpu={self.gpu_type} driver={self.driver_version} trt={self.trt_version}"
+            f"cu={self.cuda_version} os={self.os_version}"
+        )
 
 
 @dataclass(frozen=True)
@@ -48,8 +50,10 @@ class JetsonEnvironmentRequirements:
     trt_version: Optional[Version]
 
     def __str__(self) -> str:
-        return f"jetson={self.jetson_type} jetpack={self.jetpack_version} trt={self.trt_version}" \
-               f"cu={self.cuda_version}"
+        return (
+            f"jetson={self.jetson_type} jetpack={self.jetpack_version} trt={self.trt_version}"
+            f"cu={self.cuda_version}"
+        )
 
 
 @dataclass(frozen=True)
@@ -68,11 +72,13 @@ class ModelPackageMetadata:
     ] = field(default=None)
 
     def get_summary(self) -> str:
-        return f"package_id={self.package_id}, backend={self.backend.value} quantization={self.quantization} " \
-            f"dynamic_batch_size_supported={self.dynamic_batch_size_supported} " \
-            f"static_batch_size={self.static_batch_size} dynamic_batch_size[min/opt/max]={self.min_dynamic_batch_size}/" \
-            f"{self.opt_dynamic_batch_size}/{self.max_dynamic_batch_size} "\
+        return (
+            f"package_id={self.package_id}, backend={self.backend.value} quantization={self.quantization} "
+            f"dynamic_batch_size_supported={self.dynamic_batch_size_supported} "
+            f"static_batch_size={self.static_batch_size} dynamic_batch_size[min/opt/max]={self.min_dynamic_batch_size}/"
+            f"{self.opt_dynamic_batch_size}/{self.max_dynamic_batch_size} "
             f"environment_requirements: {self.environment_requirements}"
+        )
 
     def get_dynamic_batch_boundaries(self) -> Tuple[int, int]:
         if not self.specifies_dynamic_batch_boundaries():
@@ -91,8 +97,11 @@ class ModelPackageMetadata:
     def specifies_dynamic_batch_boundaries(self) -> bool:
         if not self.dynamic_batch_size_supported:
             return False
-        return self.min_dynamic_batch_size is not None or self.opt_dynamic_batch_size is not None or self.max_dynamic_batch_size is not None
-
+        return (
+            self.min_dynamic_batch_size is not None
+            or self.opt_dynamic_batch_size is not None
+            or self.max_dynamic_batch_size is not None
+        )
 
 
 @dataclass(frozen=True)

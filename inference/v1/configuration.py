@@ -24,7 +24,9 @@ API_CALLS_TIMEOUT = int(os.getenv("API_CALLS_TIMEOUT", "5"))
 API_CALLS_MAX_RETRIES = int(os.getenv("API_CALLS_MAX_RETRIES", "3"))
 IDEMPOTENT_API_REQUEST_CODES_TO_RETRY = set(
     int(e.strip())
-    for e in os.getenv("IDEMPOTENT_API_REQUEST_CODES_TO_RETRY", "408,429,502,503,504").split(",")
+    for e in os.getenv(
+        "IDEMPOTENT_API_REQUEST_CODES_TO_RETRY", "408,429,502,503,504"
+    ).split(",")
 )
 ROBOFLOW_ENVIRONMENT = os.getenv("ROBOFLOW_ENVIRONMENT", "prod")
 ROBOFLOW_API_HOST = os.getenv(

@@ -1,7 +1,7 @@
 import importlib
 import os
 import sys
-from typing import Optional, Any
+from typing import Any, Optional
 
 
 class LazyClass:
@@ -18,8 +18,9 @@ class LazyClass:
         return self._symbol
 
 
-
-def import_class_from_file(file_path: str, class_name: str, alias_name: Optional[str] = None) -> type:
+def import_class_from_file(
+    file_path: str, class_name: str, alias_name: Optional[str] = None
+) -> type:
     """
     Emulates what huggingface transformers does to load remote code with trust_remote_code=True,
     but allows us to use the class directly so that we don't have to load untrusted code.
@@ -45,4 +46,3 @@ def import_class_from_file(file_path: str, class_name: str, alias_name: Optional
         return cls
     finally:
         sys.path.pop(0)
-

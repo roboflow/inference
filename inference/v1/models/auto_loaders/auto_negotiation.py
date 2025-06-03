@@ -1,20 +1,42 @@
-from typing import List, Optional, Union, Tuple, Set
+from typing import List, Optional, Set, Tuple, Union
 
-from inference.v1.errors import NoModelPackagesAvailableError, AmbiguousModelPackageResolutionError, \
-    UnknownBackendTypeError, InvalidRequestedBatchSizeError, UnknownQuantizationError, ModelPackageNegotiationError
-from inference.v1.runtime_introspection.core import x_ray_runtime_environment, RuntimeXRayResult
-from inference.v1.weights_providers.entities import ModelPackageMetadata, BackendType, Quantization, \
-    JetsonEnvironmentRequirements, ServerEnvironmentRequirements
+from inference.v1.errors import (
+    AmbiguousModelPackageResolutionError,
+    InvalidRequestedBatchSizeError,
+    ModelPackageNegotiationError,
+    NoModelPackagesAvailableError,
+    UnknownBackendTypeError,
+    UnknownQuantizationError,
+)
+from inference.v1.runtime_introspection.core import (
+    RuntimeXRayResult,
+    x_ray_runtime_environment,
+)
+from inference.v1.weights_providers.entities import (
+    BackendType,
+    JetsonEnvironmentRequirements,
+    ModelPackageMetadata,
+    Quantization,
+    ServerEnvironmentRequirements,
+)
 
-DEFAULT_ALLOWED_QUANTIZATION = [Quantization.UNKNOWN, Quantization.FP32, Quantization.FP16]
+DEFAULT_ALLOWED_QUANTIZATION = [
+    Quantization.UNKNOWN,
+    Quantization.FP32,
+    Quantization.FP16,
+]
 
 
 def negotiate_model_packages(
     model_packages: List[ModelPackageMetadata],
     requested_model_package_id: Optional[str] = None,
-    requested_backends: Optional[Union[str, BackendType, List[Union[str, BackendType]]]] = None,
+    requested_backends: Optional[
+        Union[str, BackendType, List[Union[str, BackendType]]]
+    ] = None,
     requested_batch_size: Optional[Union[int, Tuple[int, int]]] = None,
-    requested_quantization: Optional[Union[str, Quantization, List[Union[str, Quantization]]]] = None,
+    requested_quantization: Optional[
+        Union[str, Quantization, List[Union[str, Quantization]]]
+    ] = None,
     verbose: bool = False,
 ) -> List[ModelPackageMetadata]:
     if requested_quantization is None:
@@ -87,7 +109,9 @@ def select_model_package_by_id(
     requested_model_package_id: str,
     verbose: bool = False,
 ) -> ModelPackageMetadata:
-    matching_packages = [p for p in model_packages if p.package_id == requested_model_package_id]
+    matching_packages = [
+        p for p in model_packages if p.package_id == requested_model_package_id
+    ]
     if not matching_packages:
         raise NoModelPackagesAvailableError(
             f"Requested model package ID: {requested_model_package_id} cannot be resolved among "
@@ -124,7 +148,9 @@ def filter_model_packages_by_requested_backend(
         if model_package.backend not in requested_backends_set:
             continue
         if verbose:
-            print(f"Model package with id `{model_package.package_id}` matches requested backends.")
+            print(
+                f"Model package with id `{model_package.package_id}` matches requested backends."
+            )
         filtered_packages.append(model_package)
     if not filtered_packages:
         raise NoModelPackagesAvailableError(
@@ -140,9 +166,13 @@ def filter_model_packages_by_requested_batch_size(
     requested_batch_size: Union[int, Tuple[int, int]],
     verbose: bool = False,
 ) -> List[ModelPackageMetadata]:
-    min_batch_size, max_batch_size = _parse_batch_size(requested_batch_size=requested_batch_size)
+    min_batch_size, max_batch_size = _parse_batch_size(
+        requested_batch_size=requested_batch_size
+    )
     if verbose:
-        print(f"Filtering model packages by supported batch sizes min={min_batch_size} max={max_batch_size}")
+        print(
+            f"Filtering model packages by supported batch sizes min={min_batch_size} max={max_batch_size}"
+        )
     filtered_packages = []
     for model_package in model_packages:
         if model_package_matches_batch_size_request(
@@ -168,12 +198,16 @@ def filter_model_packages_by_requested_quantization(
 ) -> List[ModelPackageMetadata]:
     requested_quantization = _parse_requested_quantization(value=requested_quantization)
     if verbose:
-        print(f"Filtering model packages by quantization - allowed values: {requested_quantization}")
+        print(
+            f"Filtering model packages by quantization - allowed values: {requested_quantization}"
+        )
     filtered_packages = []
     for model_package in model_packages:
         if model_package.quantization in requested_quantization:
             if verbose:
-                print(f"Model package with id `{model_package.package_id}` matches requested quantization.")
+                print(
+                    f"Model package with id `{model_package.package_id}` matches requested quantization."
+                )
             filtered_packages.append(model_package)
     if not filtered_packages:
         raise NoModelPackagesAvailableError(
@@ -192,13 +226,17 @@ def model_package_matches_batch_size_request(
 ) -> bool:
     if model_package.dynamic_batch_size_supported:
         if model_package.specifies_dynamic_batch_boundaries():
-            declared_min_batch_size, declared_max_batch_size = model_package.get_dynamic_batch_boundaries()
+            declared_min_batch_size, declared_max_batch_size = (
+                model_package.get_dynamic_batch_boundaries()
+            )
             ranges_match = _range_within_other(
                 external_range=(declared_min_batch_size, declared_max_batch_size),
                 internal_range=(min_batch_size, max_batch_size),
             )
             if verbose:
-                match_str = "matches criteria" if ranges_match else "does not match criteria"
+                match_str = (
+                    "matches criteria" if ranges_match else "does not match criteria"
+                )
                 print(
                     f"Model package with id `{model_package.package_id}` declared to support dynamic batch sizes: "
                     f"[{declared_min_batch_size}, {declared_max_batch_size}] and requested batch size was: "
@@ -223,7 +261,9 @@ def model_package_matches_runtime_environment(
             f"Model package negotiation protocol not implemented for model backend {model_package.backend}. "
             f"This is `inference` bug - raise issue: https://github.com/roboflow/inference/issues"
         )
-    return MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS[model_package.backend](model_package, runtime_x_ray, verbose)
+    return MODEL_TO_RUNTIME_COMPATIBILITY_MATCHERS[model_package.backend](
+        model_package, runtime_x_ray, verbose
+    )
 
 
 def onnx_package_matches_runtime_environment(
@@ -232,7 +272,9 @@ def onnx_package_matches_runtime_environment(
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.onnxruntime_available:
-        print(f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime not detected")
+        print(
+            f"Mode package with id '{model_package.package_id}' filtered out as onnxruntime not detected"
+        )
     return runtime_x_ray.onnxruntime_available
 
 
@@ -242,7 +284,9 @@ def torch_package_matches_runtime_environment(
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.torch_available:
-        print(f"Mode package with id '{model_package.package_id}' filtered out as torch not detected")
+        print(
+            f"Mode package with id '{model_package.package_id}' filtered out as torch not detected"
+        )
     return runtime_x_ray.torch_available
 
 
@@ -252,7 +296,9 @@ def hf_transformers_package_matches_runtime_environment(
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.hf_transformers_available:
-        print(f"Mode package with id '{model_package.package_id}' filtered out as transformers not detected")
+        print(
+            f"Mode package with id '{model_package.package_id}' filtered out as transformers not detected"
+        )
     return runtime_x_ray.hf_transformers_available
 
 
@@ -262,7 +308,9 @@ def ultralytics_package_matches_runtime_environment(
     verbose: bool = False,
 ) -> bool:
     if verbose and not runtime_x_ray.ultralytics_available:
-        print(f"Mode package with id '{model_package.package_id}' filtered out as ultralytics not detected")
+        print(
+            f"Mode package with id '{model_package.package_id}' filtered out as ultralytics not detected"
+        )
     return runtime_x_ray.ultralytics_available
 
 
@@ -273,15 +321,21 @@ def trt_package_matches_runtime_environment(
 ) -> bool:
     if not runtime_x_ray.trt_version:
         if verbose:
-            print(f"Mode package with id '{model_package.package_id}' filtered out as TRT libraries not detected")
+            print(
+                f"Mode package with id '{model_package.package_id}' filtered out as TRT libraries not detected"
+            )
         return False
     if not runtime_x_ray.trt_python_package_available:
         if verbose:
-            print(f"Mode package with id '{model_package.package_id}' filtered out as TRT python package not available")
+            print(
+                f"Mode package with id '{model_package.package_id}' filtered out as TRT python package not available"
+            )
         return False
     if not runtime_x_ray.cuda_version:
         if verbose:
-            print(f"Mode package with id '{model_package.package_id}' filtered out as cuda libraries not detected")
+            print(
+                f"Mode package with id '{model_package.package_id}' filtered out as cuda libraries not detected"
+            )
         return False
     if model_package.environment_requirements is None:
         if verbose:
@@ -294,7 +348,9 @@ def trt_package_matches_runtime_environment(
     if isinstance(model_environment, JetsonEnvironmentRequirements):
         if model_environment.trt_version is None:
             if verbose:
-                print(f"Mode package with id '{model_package.package_id}' filtered out as model TRT version not provided by backend")
+                print(
+                    f"Mode package with id '{model_package.package_id}' filtered out as model TRT version not provided by backend"
+                )
             return False
         if runtime_x_ray.jetson_type != model_environment.jetson_type:
             if verbose:
@@ -383,7 +439,9 @@ def _range_within_other(
     return external_min <= internal_min <= internal_max <= external_max
 
 
-def _parse_batch_size(requested_batch_size: Union[int, Tuple[int, int]]) -> Tuple[int, int]:
+def _parse_batch_size(
+    requested_batch_size: Union[int, Tuple[int, int]]
+) -> Tuple[int, int]:
     if isinstance(requested_batch_size, tuple):
         if len(requested_batch_size) != 2:
             raise InvalidRequestedBatchSizeError(
@@ -423,7 +481,9 @@ def _parse_backend_type(value: str) -> BackendType:
         ) from error
 
 
-def _parse_requested_quantization(value: Union[str, Quantization, List[Union[str, Quantization]]]) -> Set[Quantization]:
+def _parse_requested_quantization(
+    value: Union[str, Quantization, List[Union[str, Quantization]]]
+) -> Set[Quantization]:
     if not isinstance(value, list):
         value = [value]
     result = set()

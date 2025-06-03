@@ -1,23 +1,29 @@
 import os.path
-from typing import List, Optional, Union, Tuple
+from typing import List, Optional, Tuple, Union
 
 import torch
 
+from inference.v1.configuration import DEFAULT_DEVICE
 from inference.v1.errors import ModelLoadingError
 from inference.v1.logger import logger
 from inference.v1.models.auto_loaders.auto_negotiation import negotiate_model_packages
 from inference.v1.models.auto_loaders.models_registry import ModelArchitecture, TaskType
-from inference.v1.models.base.classification import (ClassificationModel, MultiLabelClassificationModel)
-from inference.v1.models.base.instance_segmentation import InstanceSegmentationModel
-from inference.v1.models.base.keypoints_detection import KeyPointsDetectionModel
-from inference.v1.models.base.object_detection import ObjectDetectionModel
+from inference.v1.models.base.classification import (
+    ClassificationModel,
+    MultiLabelClassificationModel,
+)
 from inference.v1.models.base.depth_estimation import DepthEstimationModel
 from inference.v1.models.base.documents_parsing import DocumentParsingModel
 from inference.v1.models.base.embeddings import TextImageEmbeddingModel
+from inference.v1.models.base.instance_segmentation import InstanceSegmentationModel
+from inference.v1.models.base.keypoints_detection import KeyPointsDetectionModel
+from inference.v1.models.base.object_detection import ObjectDetectionModel
 from inference.v1.weights_providers.core import get_model_from_provider
-from inference.v1.weights_providers.entities import BackendType, Quantization, ModelPackageMetadata
-from inference.v1.configuration import DEFAULT_DEVICE
-
+from inference.v1.weights_providers.entities import (
+    BackendType,
+    ModelPackageMetadata,
+    Quantization,
+)
 
 AnyModel = Union[
     ClassificationModel,
@@ -40,9 +46,13 @@ class AutoModel:
         weights_provider: str = "roboflow",
         api_key: Optional[str] = None,
         requested_model_package_id: Optional[str] = None,
-        requested_backends: Optional[Union[str, BackendType, List[Union[str, BackendType]]]] = None,
+        requested_backends: Optional[
+            Union[str, BackendType, List[Union[str, BackendType]]]
+        ] = None,
         requested_batch_size: Optional[Union[int, Tuple[int, int]]] = None,
-        requested_quantization: Optional[Union[str, Quantization, List[Union[str, Quantization]]]] = None,
+        requested_quantization: Optional[
+            Union[str, Quantization, List[Union[str, Quantization]]]
+        ] = None,
         onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
         device: torch.device = DEFAULT_DEVICE,
         default_onnx_trt_options: bool = True,

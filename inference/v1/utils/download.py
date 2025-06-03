@@ -1,24 +1,39 @@
 import os
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_EXCEPTION
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from threading import Lock
-from typing import List, Tuple, Optional, Set, Callable
+from typing import Callable, List, Optional, Set, Tuple
 from uuid import uuid4
 
 import backoff
 import requests
 from filelock import FileLock
-from requests import Timeout, Response
-from rich.progress import Progress, BarColumn, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn, TaskID
+from requests import Response, Timeout
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    TaskID,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+)
 
-from inference.v1.configuration import IDEMPOTENT_API_REQUEST_CODES_TO_RETRY, API_CALLS_MAX_RETRIES, API_CALLS_TIMEOUT
+from inference.v1.configuration import (
+    API_CALLS_MAX_RETRIES,
+    API_CALLS_TIMEOUT,
+    IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
+)
 from inference.v1.errors import RetryError
 from inference.v1.logger import logger
-from inference.v1.utils.file_system import ensure_parent_dir_exists, remove_file_if_exists, pre_allocate_file
+from inference.v1.utils.file_system import (
+    ensure_parent_dir_exists,
+    pre_allocate_file,
+    remove_file_if_exists,
+)
 
 FileName = str
 DownloadUrl = str
 
-DEFAULT_THREAD_CHUNK_SIZE = 1 * 1024 * 1024  # 32MB
+DEFAULT_THREAD_CHUNK_SIZE = 32 * 1024 * 1024  # 32MB
 DEFAULT_STREAM_DOWNLOAD_CHUNK = 128 * 1024  # 128kB
 
 
@@ -32,7 +47,9 @@ def download_files_to_directory(
     thread_chunk_size: int = DEFAULT_THREAD_CHUNK_SIZE,
     file_lock_acquire_timeout: int = 10,
 ) -> None:
-    files_specs = exclude_existing_files(target_dir=target_path, files_specs=files_specs)
+    files_specs = exclude_existing_files(
+        target_dir=target_path, files_specs=files_specs
+    )
     if not files_specs:
         return None
     if response_codes_to_retry is None:
@@ -105,7 +122,9 @@ def safe_download_file(
     ensure_parent_dir_exists(path=target_file_path)
     target_file_dir, target_file_name = os.path.split(target_file_path)
     lock_path = os.path.join(target_file_dir, f".{target_file_name}.lock")
-    tmp_download_file = os.path.abspath(os.path.join(target_dir, f"{file_name}.{download_id}"))
+    tmp_download_file = os.path.abspath(
+        os.path.join(target_dir, f"{file_name}.{download_id}")
+    )
     try:
         with FileLock(lock_path, timeout=file_lock_acquire_timeout):
             safe_execute_download(
@@ -135,8 +154,14 @@ def safe_execute_download(
     thread_chunk_size: int,
     original_file_name: str,
 ) -> None:
-    expected_file_size = safe_check_range_download_option(url=download_url, timeout=request_timeout, response_codes_to_retry=response_codes_to_retry)
-    progress_task = progress.add_task(original_file_name, total=expected_file_size, start=True, visible=True)
+    expected_file_size = safe_check_range_download_option(
+        url=download_url,
+        timeout=request_timeout,
+        response_codes_to_retry=response_codes_to_retry,
+    )
+    progress_task = progress.add_task(
+        original_file_name, total=expected_file_size, start=True, visible=True
+    )
     progress_task_lock = Lock()
 
     def on_chunk_downloaded(bytes_num: int) -> None:
@@ -165,9 +190,13 @@ def safe_execute_download(
     os.rename(tmp_download_file, target_file_path)
 
 
-def safe_check_range_download_option(url: str, timeout: int, response_codes_to_retry: Set[int]) -> Optional[int]:
+def safe_check_range_download_option(
+    url: str, timeout: int, response_codes_to_retry: Set[int]
+) -> Optional[int]:
     try:
-        return check_range_download_option(url=url, timeout=timeout, response_codes_to_retry=response_codes_to_retry)
+        return check_range_download_option(
+            url=url, timeout=timeout, response_codes_to_retry=response_codes_to_retry
+        )
     except Exception:
         logger.warning(f"Cannot use range requests for {url}")
         return None
@@ -179,13 +208,17 @@ def safe_check_range_download_option(url: str, timeout: int, response_codes_to_r
     max_tries=API_CALLS_MAX_RETRIES,
     interval=1,
 )
-def check_range_download_option(url: str, timeout: int, response_codes_to_retry: Set[int]) -> Optional[int]:
+def check_range_download_option(
+    url: str, timeout: int, response_codes_to_retry: Set[int]
+) -> Optional[int]:
     try:
         response = requests.head(url, timeout=timeout)
     except (OSError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(f"Connectivity error for URL: {url}")
     if response.status_code in response_codes_to_retry:
-        raise RetryError(f"Remote server returned response code {response.status_code} for URL {url}")
+        raise RetryError(
+            f"Remote server returned response code {response.status_code} for URL {url}"
+        )
     response.raise_for_status()
     accept_ranges = response.headers.get("accept-ranges", "none")
     content_length = response.headers.get("content-length")
@@ -206,7 +239,9 @@ def threaded_download_file(
     thread_chunk_size: int,
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
 ) -> None:
-    chunks_boundaries = generate_chunks_boundaries(file_size=file_size, chunk_size=thread_chunk_size)
+    chunks_boundaries = generate_chunks_boundaries(
+        file_size=file_size, chunk_size=thread_chunk_size
+    )
     pre_allocate_file(path=target_path, file_size=file_size)
     futures = []
     for start, end in chunks_boundaries:
@@ -231,7 +266,9 @@ def threaded_download_file(
             raise future_exception
 
 
-def generate_chunks_boundaries(file_size: int, chunk_size: int) -> List[Tuple[int, int]]:
+def generate_chunks_boundaries(
+    file_size: int, chunk_size: int
+) -> List[Tuple[int, int]]:
     if file_size <= 0:
         return []
     ranges = []
@@ -318,5 +355,3 @@ def _handle_stream_download(
             file.write(chunk)
             if on_chunk_downloaded:
                 on_chunk_downloaded(len(chunk))
-
-

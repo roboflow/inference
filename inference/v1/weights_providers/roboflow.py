@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field, ValidationError
 from requests import Response, Timeout
 
 from inference.v1.configuration import (
-    ROBOFLOW_API_CALLS_MAX_RETRIES,
     API_CALLS_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
+    ROBOFLOW_API_CALLS_MAX_RETRIES,
     ROBOFLOW_API_HOST,
     ROBOFLOW_API_KEY,
 )

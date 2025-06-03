@@ -1,9 +1,8 @@
-from typing import Dict, Tuple, Optional
+from typing import Dict, Optional, Tuple
 
 from inference.v1.errors import ModelImplementationLoaderError
 from inference.v1.utils.imports import LazyClass
 from inference.v1.weights_providers.entities import BackendType
-
 
 ModelArchitecture = str
 TaskType = Optional[str]
@@ -12,12 +11,12 @@ TaskType = Optional[str]
 REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyClass] = {
     ("yolov8", "object-detection", BackendType.ONNX): LazyClass(
         module_name="inference.v1.models.yolov8.yolov8_object_detection_onnx",
-        class_name="YOLOv8ForObjectDetectionOnnx"
+        class_name="YOLOv8ForObjectDetectionOnnx",
     ),
     ("yolov8", "object-detection", BackendType.TRT): LazyClass(
         module_name="inference.v1.models.yolov8.yolov8_object_detection_trt",
-        class_name="YOLOv8ForObjectDetectionTRT"
-    )
+        class_name="YOLOv8ForObjectDetectionTRT",
+    ),
 }
 
 
@@ -45,4 +44,3 @@ def model_implementation_exists(
 ) -> bool:
     lookup_key = (model_architecture, task_type, backend)
     return lookup_key in REGISTERED_MODELS
-
