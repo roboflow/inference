@@ -9,8 +9,8 @@ from requests import Response, Timeout
 
 from inference.v1.configuration import (
     ROBOFLOW_API_CALLS_MAX_RETRIES,
-    ROBOFLOW_API_CALLS_TIMEOUT,
-    ROBOFLOW_API_CODES_TO_RETRY,
+    API_CALLS_TIMEOUT,
+    IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
     ROBOFLOW_API_HOST,
     ROBOFLOW_API_KEY,
 )
@@ -124,11 +124,11 @@ def get_one_page_of_model_metadata(
         response = requests.get(
             f"{ROBOFLOW_API_HOST}/models/v1/external/weights",
             params=query,
-            timeout=ROBOFLOW_API_CALLS_TIMEOUT,
+            timeout=API_CALLS_TIMEOUT,
         )
     except (OSError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(f"Connectivity error")
-    if response.status_code in ROBOFLOW_API_CODES_TO_RETRY:
+    if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
         raise RetryError(f"Roboflow API responded with {response.status_code}")
     handle_response_errors(response=response, operation_name="get model weights")
     try:
@@ -141,7 +141,7 @@ def get_one_page_of_model_metadata(
 
 
 def handle_response_errors(response: Response, operation_name: str) -> None:
-    if response.status_code in ROBOFLOW_API_CODES_TO_RETRY:
+    if response.status_code in IDEMPOTENT_API_REQUEST_CODES_TO_RETRY:
         raise RetryError(
             f"Roboflow API returned invalid response code for {operation_name} operation "
             f"{response.status_code}. If that problem is not ephemeral - contact Roboflow."

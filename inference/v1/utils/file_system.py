@@ -21,6 +21,17 @@ def read_json(path: str) -> Optional[Union[dict, list]]:
         return json.load(f)
 
 
+def pre_allocate_file(path: str, file_size: int) -> None:
+    ensure_parent_dir_exists(path=path)
+    with open(path, "wb") as f:
+        f.truncate(file_size)
+
+
 def ensure_parent_dir_exists(path: str) -> None:
     parent_dir = os.path.dirname(os.path.abspath(path))
     os.makedirs(parent_dir, exist_ok=True)
+
+
+def remove_file_if_exists(path: str) -> None:
+    if os.path.isfile(path):
+        os.remove(path)

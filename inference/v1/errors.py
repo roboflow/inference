@@ -2,10 +2,6 @@ class BaseInferenceError(Exception):
     pass
 
 
-class CorruptedModelPackageError(BaseInferenceError):
-    pass
-
-
 class EnvironmentConfigurationError(BaseInferenceError):
     pass
 
@@ -63,4 +59,20 @@ class NoModelPackagesAvailableError(ModelPackageNegotiationError):
 
 
 class AmbiguousModelPackageResolutionError(ModelPackageNegotiationError):
+    pass
+
+
+class ModelLoadingError(BaseInferenceError):
+    pass
+
+
+class ModelImplementationLoaderError(ModelLoadingError):
+    pass
+
+
+class MissingModelDependencyError(ModelLoadingError):
+    pass
+
+
+class CorruptedModelPackageError(ModelLoadingError):
     pass
