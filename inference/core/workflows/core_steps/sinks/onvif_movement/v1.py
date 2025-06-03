@@ -38,7 +38,22 @@ from inference.core.workflows.prototypes.block import (
 OUTPUT_KEY: str = "success"
 
 LONG_DESCRIPTION = """
-This **ONVIF** block allows a workflow to control an ONVIF capable PTZ camera to zoom into a detected region
+This **ONVIF** block allows a workflow to control an ONVIF capable PTZ camera to follow a detected object.
+
+The object it follows is the maximum confidence prediction out of all predictions passed into it. To follow
+a specific object, use the appropriate filters on the predictiion object to specify the object you want to
+follow.
+
+The camera can also move to a defined preset, which should be done when there are no objects within a field
+of view.
+
+The block returns booleans indicating success (it's communicating with the camera), whether or not it's
+moving, and whether or not it's currently tracking an object.
+
+Note that the tracking block uses the ONVIF continuous movement service. Tracking is adjusted on each successive
+workflow execution. If workflow execution stops, and the camera is currently moving, the camera will continue
+moving until it reaches the limits and will no longer be following an object.
+
 """
 
 QUERY_PARAMS_KIND = [
@@ -71,7 +86,7 @@ class BlockManifest(WorkflowBlockManifest):
         json_schema_extra={
             "name": "ONVIF Control",
             "version": "v1",
-            "short_description": "Control a PTZ camera using workflow results",
+            "short_description": "Control a PTZ camera to follow an object",
             "long_description": LONG_DESCRIPTION,
             "license": "Apache-2.0",
             "block_type": "sink",
@@ -105,7 +120,7 @@ class BlockManifest(WorkflowBlockManifest):
     camera_password: Union[Selector(kind=[SECRET_KIND]), str] = Field(
         description="Camera Password",
     )
-    movement_type: Literal["To Bounding Box", "Follow Tracker", "Go To Position"] = Field(
+    movement_type: Literal["Follow Tracker", "Go To Preset"] = Field(
         description="Zoom into object or reset",
     )
 
@@ -124,7 +139,17 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
-async def limits(s):
+async def get_camera(camera_ip:str,camera_port:int,camera_username:str,camera_password:str):
+    global cameras
+    mycam = None
+    camera_key = (camera_ip,camera_port)
+    if camera_key not in cameras:
+        mycam = ONVIFCamera(camera_ip, camera_port, camera_username, camera_password, "/usr/local/lib/python3.9/site-packages/onvif/wsdl")
+        cameras[camera_key] = CameraWrapper(mycam)
+        await cameras[camera_key].configure()
+    return cameras[camera_key]
+
+def limits(s):
     return (s.XRange.Min,s.XRange.Max,s.YRange.Min,s.YRange.Max)
 
 class CameraWrapper:
@@ -247,31 +272,37 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         self.camera_password = camera_password
 
 
-        if movement_type=="To Bounding Box" or movement_type=="Follow Tracker":
+        if movement_type=="Follow Tracker":
 
-            if len(predictions)!=1:
-                print("Prediction length for ONVIF input must be 1")
+            if not predictions:
+                # TODO: move to a preset here
+                print("No predictions to move the camera to")
                 return {OUTPUT_KEY:False}
 
-            asyncio.run(self.async_zoom(predictions.xyxy[0]))
+            # get max confidence prediction
+            max_confidence = predictions.confidence.max()
+            max_confidence_prediction = any(predictions[predictions.confidence==max_confidence])
+
+            if max_confidence_prediction:
+                asyncio.run(self.async_move(max_confidence_prediction))
+            else:
+                # TODO: move to a preset here
+                print("No max confidence prediction")
+                return {OUTPUT_KEY:False}
+
+        elif movement_type=="Go To Preset":
+            asyncio.run(self.async_move(predictions.xyxy[0]))
 
         return {OUTPUT_KEY:False}
 
-    async def async_zoom(self,xyxy):
+    async def async_move(self,xyxy):
 
-        global cameras
-        mycam = None
-        camera_key = (self.camera_ip,self.camera_port)
-        if camera_key not in cameras:
-            mycam = ONVIFCamera(self.camera_ip, self.camera_port, self.camera_username, self.camera_password, "/usr/local/lib/python3.9/site-packages/onvif/wsdl")
-            cameras[camera_key] = CameraWrapper(mycam)
-            await cameras[camera_key].configure()
-        camera = cameras[camera_key]
+        camera = await get_camera(self.camera_ip,self.camera_port,self.camera_username,self.camera_password)
 
         # use as stop command, more generic
-        await camera.continuous_move(0,0)
+        #await camera.continuous_move(0,0)
 
         # goal here will be to have the workflow do a continuous move & iterate to get the bounding box in position
         # might be necessary to start slow & calibrate x/y translation from pixel to speed
         # once it's in position, this speed should change to 0,0
-        await camera.continuous_move(0.5,0.5)
+        await camera.continuous_move(-0.5,-0.5)
