@@ -61,7 +61,6 @@ class YOLOv8ForKeyPointsDetectionOnnx(
             elements=[
                 "class_names.txt",
                 "environment.json",
-                "model_type.json",
                 "weights.onnx",
                 "keypoints_metadata.json",
             ],

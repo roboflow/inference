@@ -12,11 +12,7 @@ ONNXRUNTIME_EXECUTION_PROVIDERS = parse_comma_separated_values(
 )
 DEFAULT_DEVICE_STR = os.getenv(
     "DEFAULT_DEVICE",
-    (
-        "cuda"
-        if torch.cuda.is_available()
-        else "mps" if torch.backends.mps.is_available() else "cpu"
-    ),
+    ("cuda" if torch.cuda.is_available() else "cpu"),
 )
 DEFAULT_DEVICE = torch.device(DEFAULT_DEVICE_STR)
 ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY")
@@ -39,3 +35,4 @@ ROBOFLOW_API_HOST = os.getenv(
 )
 RUNNING_ON_JETSON = os.getenv("RUNNING_ON_JETSON")
 JETPACK_VERSION = os.getenv("JETSON_L4T")
+INFERENCE_HOME = os.getenv("INFERENCE_HOME", "/tmp/cache")

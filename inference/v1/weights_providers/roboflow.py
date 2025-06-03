@@ -1,5 +1,5 @@
 import json
-from typing import Callable, Dict, List, Literal, Optional, Union
+from typing import Annotated, Callable, Dict, List, Literal, Optional, Union
 
 import backoff
 import requests
@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field, ValidationError
 from requests import Response, Timeout
 
 from inference.v1.configuration import (
+    API_CALLS_MAX_RETRIES,
     API_CALLS_TIMEOUT,
     IDEMPOTENT_API_REQUEST_CODES_TO_RETRY,
-    ROBOFLOW_API_CALLS_MAX_RETRIES,
     ROBOFLOW_API_HOST,
     ROBOFLOW_API_KEY,
 )
@@ -44,7 +44,7 @@ class RoboflowModelPackageFile(BaseModel):
 
 
 class RoboflowModelPackageV1(BaseModel):
-    type: Literal["external-model-metadata-v1"]
+    type: Literal["external-model-package-v1"]
     package_id: str = Field(alias="packageId")
     package_manifest: dict = Field(alias="packageManifest")
     package_files: List[RoboflowModelPackageFile] = Field(alias="packageFiles")
@@ -56,7 +56,7 @@ class RoboflowModelMetadata(BaseModel):
     model_architecture: str = Field(alias="modelArchitecture")
     task_type: Optional[str] = Field(alias="taskType", default=None)
     model_packages: List[Union[RoboflowModelPackageV1, dict]] = Field(
-        alias="modelPackages"
+        alias="modelPackages",
     )
     next_page: Optional[str] = Field(alias="nextPage")
 
@@ -103,7 +103,7 @@ def get_model_metadata(model_id: str, api_key: Optional[str]) -> RoboflowModelMe
 @backoff.on_exception(
     backoff.expo,
     exception=RetryError,
-    max_tries=ROBOFLOW_API_CALLS_MAX_RETRIES,
+    max_tries=API_CALLS_MAX_RETRIES,
 )
 def get_one_page_of_model_metadata(
     model_id: str,
@@ -132,8 +132,8 @@ def get_one_page_of_model_metadata(
         raise RetryError(f"Roboflow API responded with {response.status_code}")
     handle_response_errors(response=response, operation_name="get model weights")
     try:
-        return RoboflowModelMetadata.model_validate(response.json())
-    except (ValueError, ValidationError) as error:
+        return RoboflowModelMetadata.model_validate(response.json()["modelMetadata"])
+    except (ValueError, ValidationError, KeyError) as error:
         raise ModelRetrievalError(
             f"Could not decode Roboflow API response when trying to retrieve model {model_id}. If that problem "
             f"is not ephemeral - contact Roboflow."
@@ -171,6 +171,7 @@ def parse_model_package_metadata(
     metadata: Union[Union[RoboflowModelPackageV1, dict]]
 ) -> Optional[ModelPackageMetadata]:
     if isinstance(metadata, dict):
+        print(metadata)
         metadata_type = metadata.get("type", "unknown")
         model_package_id = metadata.get("packageId", "unknown")
         logger.warning(

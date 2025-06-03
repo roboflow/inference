@@ -57,17 +57,17 @@ class RuntimeXRayResult:
 
 @cache
 def x_ray_runtime_environment(verbose: bool = False) -> RuntimeXRayResult:
-    trt_version = get_trt_version(verbose=verbose)
-    cuda_version = get_cuda_version(verbose=verbose)
+    trt_version = get_trt_version()
+    cuda_version = get_cuda_version()
     jetson_type, jetpack_version, os_version, driver_version = None, None, None, None
     if is_running_on_jetson():
-        jetson_type = get_jetson_type(verbose=verbose)
-        jetpack_version = get_jetpack_version(verbose=verbose)
-        gpu_devices = get_available_gpu_devices(verbose=verbose)
+        jetson_type = get_jetson_type()
+        jetpack_version = get_jetpack_version()
+        gpu_devices = get_available_gpu_devices()
     else:
-        os_version = get_os_version(verbose=verbose)
-        driver_version = get_driver_version(verbose=verbose)
-        gpu_devices = get_available_gpu_devices(verbose=verbose)
+        os_version = get_os_version()
+        driver_version = get_driver_version()
+        gpu_devices = get_available_gpu_devices()
     torch_available = is_torch_available()
     onnxruntime_available = is_onnxruntime_available()
     hf_transformers_available = is_hf_transformers_available()

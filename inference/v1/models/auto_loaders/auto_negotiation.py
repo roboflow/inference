@@ -8,6 +8,7 @@ from inference.v1.errors import (
     UnknownBackendTypeError,
     UnknownQuantizationError,
 )
+from inference.v1.models.auto_loaders.ranking import rank_model_packages
 from inference.v1.runtime_introspection.core import (
     RuntimeXRayResult,
     x_ray_runtime_environment,
@@ -93,13 +94,13 @@ def negotiate_model_packages(
             f"detected runtime environment. That may indicate that the 'inference' installation lacks additional "
             f"dependencies or the model is not registered with packages that would allow `inference` to run."
         )
-    return results
+    return rank_model_packages(model_packages=results)
 
 
 def print_model_packages(model_packages: List[ModelPackageMetadata]) -> None:
     print("The following model packages were exposed by weights provider:")
     for i, model_package in enumerate(model_packages):
-        print(f"{i+1}. {model_package}")
+        print(f"{i+1}. {model_package.get_summary()}")
     if not model_packages:
         print("No model packages!")
 

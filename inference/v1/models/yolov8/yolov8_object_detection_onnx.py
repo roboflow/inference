@@ -60,7 +60,6 @@ class YOLOv8ForObjectDetectionOnnx(
             elements=[
                 "class_names.txt",
                 "environment.json",
-                "model_type.json",
                 "weights.onnx",
             ],
         )

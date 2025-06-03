@@ -12,7 +12,6 @@ from rich.progress import (
     BarColumn,
     DownloadColumn,
     Progress,
-    TaskID,
     TimeRemainingColumn,
     TransferSpeedColumn,
 )

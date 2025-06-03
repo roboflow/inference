@@ -3,11 +3,15 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 
-from inference.v1.configuration import DEFAULT_DEVICE
+from inference.v1.configuration import DEFAULT_DEVICE, INFERENCE_HOME
 from inference.v1.errors import ModelLoadingError
 from inference.v1.logger import logger
 from inference.v1.models.auto_loaders.auto_negotiation import negotiate_model_packages
-from inference.v1.models.auto_loaders.models_registry import ModelArchitecture, TaskType
+from inference.v1.models.auto_loaders.models_registry import (
+    ModelArchitecture,
+    TaskType,
+    resolve_model_class,
+)
 from inference.v1.models.base.classification import (
     ClassificationModel,
     MultiLabelClassificationModel,
@@ -18,6 +22,7 @@ from inference.v1.models.base.embeddings import TextImageEmbeddingModel
 from inference.v1.models.base.instance_segmentation import InstanceSegmentationModel
 from inference.v1.models.base.keypoints_detection import KeyPointsDetectionModel
 from inference.v1.models.base.object_detection import ObjectDetectionModel
+from inference.v1.utils.download import download_files_to_directory
 from inference.v1.weights_providers.core import get_model_from_provider
 from inference.v1.weights_providers.entities import (
     BackendType,
@@ -58,6 +63,7 @@ class AutoModel:
         default_onnx_trt_options: bool = True,
         max_package_loading_attempts: Optional[int] = None,
         verbose: bool = False,
+        model_download_file_lock_acquire_timeout: int = 10,
         **kwargs,
     ) -> AnyModel:
         if not os.path.isdir(model_name_or_path):
@@ -72,6 +78,22 @@ class AutoModel:
                 requested_backends=requested_backends,
                 requested_batch_size=requested_batch_size,
                 requested_quantization=requested_quantization,
+                verbose=verbose,
+            )
+            model_init_kwargs = {
+                "onnx_execution_providers": onnx_execution_providers,
+                "device": device,
+                "default_onnx_trt_options": default_onnx_trt_options,
+            }
+            model_init_kwargs.update(kwargs)
+            return attempt_loading_matching_model_packages(
+                model_id=model_metadata.model_id,
+                model_architecture=model_metadata.model_architecture,
+                task_type=model_metadata.task_type,
+                matching_model_packages=matching_model_packages,
+                model_init_kwargs=model_init_kwargs,
+                max_package_loading_attempts=max_package_loading_attempts,
+                model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
             )
         else:
             pass
@@ -82,7 +104,10 @@ def attempt_loading_matching_model_packages(
     model_architecture: ModelArchitecture,
     task_type: Optional[TaskType],
     matching_model_packages: List[ModelPackageMetadata],
+    model_init_kwargs: dict,
     max_package_loading_attempts: Optional[int] = None,
+    model_download_file_lock_acquire_timeout: int = 10,
+    verbose: bool = True,
 ) -> AnyModel:
     if max_package_loading_attempts is not None:
         matching_model_packages = matching_model_packages[:max_package_loading_attempts]
@@ -99,6 +124,9 @@ def attempt_loading_matching_model_packages(
                 model_architecture=model_architecture,
                 task_type=task_type,
                 model_package=model_package,
+                model_download_file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+                model_init_kwargs=model_init_kwargs,
+                verbose=verbose,
             )
         except Exception as error:
             logger.warning(
@@ -131,5 +159,25 @@ def initialize_model(
     model_architecture: ModelArchitecture,
     task_type: Optional[TaskType],
     model_package: ModelPackageMetadata,
+    model_init_kwargs: dict,
+    model_download_file_lock_acquire_timeout: int = 10,
+    verbose: bool = True,
 ) -> AnyModel:
-    pass
+    model_class = resolve_model_class(
+        model_architecture=model_architecture,
+        task_type=task_type,
+        backend=model_package.backend,
+    )
+    model_package_cache_dir = os.path.join(
+        INFERENCE_HOME, model_id, model_package.package_id
+    )
+    files_specs = [
+        (a.file_name, a.download_url) for a in model_package.package_artefacts
+    ]
+    download_files_to_directory(
+        target_path=model_package_cache_dir,
+        files_specs=files_specs,
+        file_lock_acquire_timeout=model_download_file_lock_acquire_timeout,
+        verbose=verbose,
+    )
+    return model_class.from_pretrained(model_package_cache_dir, **model_init_kwargs)

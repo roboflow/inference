@@ -64,7 +64,6 @@ class YOLOv8ForInstanceSegmentationOnnx(
             elements=[
                 "class_names.txt",
                 "environment.json",
-                "model_type.json",
                 "weights.onnx",
             ],
         )
