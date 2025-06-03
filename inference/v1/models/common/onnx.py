@@ -10,14 +10,14 @@ def set_execution_provider_defaults(
     model_package_path: str,
     device: torch.device,
     enable_fp16: bool = True,
-    default_trt_options: bool = True,
+    default_onnx_trt_options: bool = True,
 ) -> List[Union[str, tuple]]:
     result = []
     device_id_options = {}
     if device.index is not None:
         device_id_options["device_id"] = device.index
     for provider in providers:
-        if provider == "TensorrtExecutionProvider" and default_trt_options:
+        if provider == "TensorrtExecutionProvider" and default_onnx_trt_options:
             provider = (
                 "TensorrtExecutionProvider",
                 {

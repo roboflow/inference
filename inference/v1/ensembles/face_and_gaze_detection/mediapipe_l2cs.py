@@ -24,8 +24,8 @@ class FaceAndGazeDetectionMPAndL2CS:
         cls,
         face_detection_model_name_or_path: str,
         gaze_detection_model_name_or_path: str,
-        execution_providers: Optional[List[Union[str, tuple]]] = None,
-        default_trt_options: bool = True,
+        onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+        default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         max_batch_size: int = DEFAULT_GAZE_MAX_BATCH_SIZE,
         **kwargs,
@@ -35,8 +35,8 @@ class FaceAndGazeDetectionMPAndL2CS:
         )
         gaze_detector = L2CSNetOnnx.from_pretrained(
             model_name_or_path=gaze_detection_model_name_or_path,
-            execution_providers=execution_providers,
-            default_trt_options=default_trt_options,
+            onnx_execution_providers=onnx_execution_providers,
+            default_onnx_trt_options=default_onnx_trt_options,
             device=device,
             max_batch_size=max_batch_size,
         )

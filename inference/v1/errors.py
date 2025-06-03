@@ -34,9 +34,33 @@ class InvalidEnvVariable(BaseInferenceError):
     pass
 
 
-class RuntimeIntrospectionError(BaseInferenceError):
+class ModelPackageNegotiationError(BaseInferenceError):
+    pass
+
+
+class UnknownBackendTypeError(ModelPackageNegotiationError):
+    pass
+
+
+class UnknownQuantizationError(ModelPackageNegotiationError):
+    pass
+
+
+class InvalidRequestedBatchSizeError(ModelPackageNegotiationError):
+    pass
+
+
+class RuntimeIntrospectionError(ModelPackageNegotiationError):
     pass
 
 
 class JetsonTypeResolutionError(RuntimeIntrospectionError):
+    pass
+
+
+class NoModelPackagesAvailableError(ModelPackageNegotiationError):
+    pass
+
+
+class AmbiguousModelPackageResolutionError(ModelPackageNegotiationError):
     pass

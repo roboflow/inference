@@ -30,25 +30,25 @@ class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
     def from_pretrained(
         cls,
         model_name_or_path: str,
-        execution_providers: Optional[List[Union[str, tuple]]] = None,
-        default_trt_options: bool = True,
+        onnx_execution_providers: Optional[List[Union[str, tuple]]] = None,
+        default_onnx_trt_options: bool = True,
         device: torch.device = DEFAULT_DEVICE,
         **kwargs,
     ) -> "ResNetForClassificationOnnx":
-        if execution_providers is None:
-            execution_providers = ONNXRUNTIME_EXECUTION_PROVIDERS
-        if not execution_providers:
+        if onnx_execution_providers is None:
+            onnx_execution_providers = ONNXRUNTIME_EXECUTION_PROVIDERS
+        if not onnx_execution_providers:
             raise EnvironmentConfigurationError(
                 f"Could not initialize model - selected backend is ONNX which requires execution provider to "
                 f"be specified - explicitly in `from_pretrained(...)` method or via env variable "
                 f"`ONNXRUNTIME_EXECUTION_PROVIDERS`. If you run model locally - adjust your setup, otherwise "
                 f"contact the platform support."
             )
-        execution_providers = set_execution_provider_defaults(
-            providers=execution_providers,
+        onnx_execution_providers = set_execution_provider_defaults(
+            providers=onnx_execution_providers,
             model_package_path=model_name_or_path,
             device=device,
-            default_trt_options=default_trt_options,
+            default_onnx_trt_options=default_onnx_trt_options,
         )
         model_package_content = get_model_package_contents(
             model_package_dir=model_name_or_path,
@@ -63,7 +63,7 @@ class ResNetForClassificationOnnx(ClassificationModel[torch.Tensor, torch.Tensor
         )
         session = onnxruntime.InferenceSession(
             path_or_bytes=model_package_content["best.onnx"],
-            providers=execution_providers,
+            providers=onnx_execution_providers,
         )
         input_shape = session.get_inputs()[0].shape
         input_batch_size = input_shape[0]

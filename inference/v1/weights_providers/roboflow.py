@@ -221,6 +221,7 @@ def parse_onnx_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMe
         package_artefacts=metadata.package_files
     )
     return ModelPackageMetadata(
+        package_id=metadata.package_id,
         backend=BackendType.ONNX,
         quantization=parsed_manifest.quantization,
         dynamic_batch_size_supported=parsed_manifest.dynamic_batch_size,
@@ -288,6 +289,7 @@ def parse_trt_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMet
             trt_version=Version(parsed_manifest.trt_version),
         )
     return ModelPackageMetadata(
+        package_id=metadata.package_id,
         backend=BackendType.TRT,
         quantization=parsed_manifest.quantization,
         dynamic_batch_size_supported=parsed_manifest.dynamic_batch_size,
@@ -323,6 +325,7 @@ def parse_torch_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageM
         package_artefacts=metadata.package_files
     )
     return ModelPackageMetadata(
+        package_id=metadata.package_id,
         backend=BackendType.TORCH,
         quantization=parsed_manifest.quantization,
         dynamic_batch_size_supported=parsed_manifest.dynamic_batch_size,
@@ -343,6 +346,7 @@ def parse_hf_model_package(metadata: RoboflowModelPackageV1) -> ModelPackageMeta
         package_artefacts=metadata.package_files
     )
     return ModelPackageMetadata(
+        package_id=metadata.package_id,
         backend=BackendType.HF,
         quantization=parsed_manifest.quantization,
         package_artefacts=package_artefacts,
@@ -356,8 +360,10 @@ def parse_ultralytics_model_package(
         package_artefacts=metadata.package_files
     )
     return ModelPackageMetadata(
+        package_id=metadata.package_id,
         backend=BackendType.ULTRALYTICS,
         package_artefacts=package_artefacts,
+        quantization=Quantization.UNKNOWN,
     )
 
 

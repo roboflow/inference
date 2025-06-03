@@ -36,22 +36,44 @@ class RuntimeXRayResult:
     jetson_type: Optional[str]
     jetpack_version: Optional[str]
     os_version: Optional[str]
+    torch_available: bool
+    onnxruntime_available: bool
+    hf_transformers_available: bool
+    ultralytics_available: bool
+    trt_python_package_available: bool
+
+    def __str__(self) -> str:
+        gpu_devices_str = ", ".join(self.gpu_devices)
+        return (
+            f"Runtime X-Ray: gpu_available={self.gpu_available} gpu_devices=[{gpu_devices_str}] "
+            f"gpu_driver={self.driver_version} cuda_version={self.cuda_version} trt_version={self.trt_version} "
+            f"jetson_type={self.jetson_type} jetpack_version={self.jetpack_version} os_version={self.os_version} "
+            f"torch_available={self.torch_available} onnxruntime_available={self.onnxruntime_available} "
+            f"hf_transformers_available={self.hf_transformers_available} "
+            f"ultralytics_available={self.ultralytics_available} "
+            f"trt_python_package_available={self.trt_python_package_available}"
+        )
 
 
 @cache
-def x_ray_runtime_environment() -> RuntimeXRayResult:
-    trt_version = get_trt_version()
-    cuda_version = get_cuda_version()
+def x_ray_runtime_environment(verbose: bool = False) -> RuntimeXRayResult:
+    trt_version = get_trt_version(verbose=verbose)
+    cuda_version = get_cuda_version(verbose=verbose)
     jetson_type, jetpack_version, os_version, driver_version = None, None, None, None
     if is_running_on_jetson():
-        jetson_type = get_jetson_type()
-        jetpack_version = get_jetpack_version()
-        gpu_devices = get_available_gpu_devices()
+        jetson_type = get_jetson_type(verbose=verbose)
+        jetpack_version = get_jetpack_version(verbose=verbose)
+        gpu_devices = get_available_gpu_devices(verbose=verbose)
     else:
-        os_version = get_os_version()
-        driver_version = get_driver_version()
-        gpu_devices = get_available_gpu_devices()
-    return RuntimeXRayResult(
+        os_version = get_os_version(verbose=verbose)
+        driver_version = get_driver_version(verbose=verbose)
+        gpu_devices = get_available_gpu_devices(verbose=verbose)
+    torch_available = is_torch_available()
+    onnxruntime_available = is_onnxruntime_available()
+    hf_transformers_available = is_hf_transformers_available()
+    ultralytics_available = is_ultralytics_available()
+    trt_python_package_available = is_trt_python_package_available()
+    result = RuntimeXRayResult(
         gpu_available=len(gpu_devices) > 0,
         gpu_devices=gpu_devices,
         driver_version=driver_version,
@@ -60,7 +82,15 @@ def x_ray_runtime_environment() -> RuntimeXRayResult:
         jetson_type=jetson_type,
         jetpack_version=jetpack_version,
         os_version=os_version,
+        torch_available=torch_available,
+        onnxruntime_available=onnxruntime_available,
+        hf_transformers_available=hf_transformers_available,
+        ultralytics_available=ultralytics_available,
+        trt_python_package_available=trt_python_package_available,
     )
+    if verbose:
+        print(result)
+    return result
 
 
 @cache
@@ -226,3 +256,48 @@ def get_driver_version() -> Optional[Version]:
             return Version(match.group(1))
     except Exception:
         return None
+
+
+@cache
+def is_trt_python_package_available() -> bool:
+    try:
+        import tensorrt
+        return True
+    except ImportError:
+        return False
+
+
+@cache
+def is_torch_available() -> bool:
+    try:
+        import torch
+        return True
+    except ImportError:
+        return False
+
+
+@cache
+def is_onnxruntime_available() -> bool:
+    try:
+        import onnxruntime
+        return True
+    except ImportError:
+        return False
+
+
+@cache
+def is_hf_transformers_available() -> bool:
+    try:
+        import transformers
+        return True
+    except ImportError:
+        return False
+
+
+@cache
+def is_ultralytics_available() -> bool:
+    try:
+        import ultralytics
+        return True
+    except ImportError:
+        return False
