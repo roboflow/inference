@@ -143,8 +143,8 @@ class BlockManifest(WorkflowBlockManifest):
         description="Percent of maximum speed to move camera at (0-100)",
     )
     proportional_constant: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=0.2,
-        description="0-1 speed reduction constant and bias to avoid hunting (0=full stop, 1=disable). Only applies when the object is close to the tolerance. Bias is hard coded at 50%",
+        default=30,
+        description="Speed is further reduced by this percentage (0-100) as the object gets closer to the tolerance to avoid hunting",
     )
 
     @classmethod
@@ -317,7 +317,7 @@ class CameraWrapper:
         if self._moving or self._moving is None:
             print("stopping camera")
             # make sure movement speed percent is 100% in this case for zoom
-            await self.continuous_move(0,0,-0.2 if zoom_out else 0,100)
+            await self.continuous_move(0,0,-1 if zoom_out else 0,100)
             # not all cameras support stop
             if not zoom_out:
                 try:
@@ -405,9 +405,9 @@ class CameraWrapper:
         y_limit = limits.y.min if x<0 else limits.y.max
         z_limit = limits.z.min if x<0 else limits.z.max
 
-        x = abs(x_limit) * x * movement_speed_percent/100.0
-        y = abs(y_limit) * y * movement_speed_percent/100.0
-        z = abs(z_limit) * z * movement_speed_percent/100.0
+        x = abs(x_limit) * x * movement_speed_percent
+        y = abs(y_limit) * y * movement_speed_percent
+        z = abs(z_limit) * z * movement_speed_percent
 
         request.Velocity = {
             'PanTilt': {
@@ -471,7 +471,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             # get max confidence prediction
             max_confidence = predictions.confidence.max()
             max_confidence_prediction = predictions[predictions.confidence==max_confidence][0]
-            asyncio.run(self.async_move(camera_ip, camera_port, camera_username, camera_password, max_confidence_prediction,zoom_if_able,center_tolerance,default_position_preset,camera_update_rate_limit,flip_x_movement,flip_y_movement,movement_speed_percent,proportional_constant))
+            asyncio.run(self.async_move(camera_ip, camera_port, camera_username, camera_password, max_confidence_prediction,zoom_if_able,center_tolerance,default_position_preset,camera_update_rate_limit,flip_x_movement,flip_y_movement,movement_speed_percent/100.0,proportional_constant/100.0))
 
         elif movement_type=="Go To Preset":
             asyncio.run(self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit))
@@ -505,31 +505,43 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
         #print(f"delta:{delta}")
         if np.all(np.abs(delta) < center_tolerance):
-            await camera.stop_camera(False)
+            #await camera.stop_camera(False)
+            # zoom is only allowed if the camera is stopped - helps to minimize hunting
+            # this could be integrated into the pan/tilt movement with better motion control
+            if zoom_if_able:
+                '''
+                z_reduction_factor = 0 if proportional_constant==0 else max(min(0.5,abs((zoom_delta-center_tolerance)/zoom_delta)),0)*proportional_constant
+                z = (1-z_reduction_factor) if abs(zoom_delta)>center_tolerance else 1
+                if zoom_delta>center_tolerance:
+                    print(f"z movement speeds:{z} factor: {z_reduction_factor}")
+
+                    await camera.continuous_move(0,0,z,movement_speed_percent)
+                else:
+                '''
+                await camera.stop_camera(False)
+            else:
+                await camera.stop_camera(False)
         else:
             # larger axis moves at max speed, so normalize to 100%
             speeds = delta/np.abs(delta).max()
 
-            # not exactly a pure P controller, but seems to do the job well (only kicks in close to the tolerance)
-            # the constant is basically also the bias
+            # This is simple psuedo-P controller, but could be improved a lot
             # v2 of this block should focus on motion control
-            x_proportional_factor = 0 if proportional_constant==0 else max(min(1,abs((delta[0]-center_tolerance)/delta[0])),0.5)*proportional_constant
-            y_proportional_factor = 0 if proportional_constant==0 else max(min(1,abs((delta[1]-center_tolerance)/delta[1])),0.5)*proportional_constant
-            z_proportional_factor = 0 if proportional_constant==0 else max(min(1,abs((zoom_delta-center_tolerance)/zoom_delta)),0.5)*proportional_constant
+            x_multiplier = delta[0]/center_tolerance
+            y_multiplier = delta[1]/center_tolerance
+            x_reduction_factor = 0 if proportional_constant==0 or x_multiplier>2 else min(max(abs((x_multiplier-1)*proportional_constant),0),0.5)
+            y_reduction_factor = 0 if proportional_constant==0 or y_multiplier>2 else min(max(abs((y_multiplier-1)*proportional_constant),0),0.5)
 
-            x = speeds[0]*(1-x_proportional_factor) if abs(delta[0])>center_tolerance else 0
-            y = speeds[1]*(1-y_proportional_factor) if abs(delta[1])>center_tolerance else 0
-            z = speeds[1]*(1-z_proportional_factor) if abs(zoom_delta)>center_tolerance else 0
+            x = speeds[0]*(1-x_reduction_factor)
+            y = speeds[1]*(1-y_reduction_factor)
 
-            z = 1 if zoom_delta>center_tolerance else 0
-
-            print(f"movement speeds:{speeds} {x} {y} {z} factor: {x_proportional_factor} {y_proportional_factor} {z_proportional_factor}")
+            print(f"xy movement speeds:{speeds} {x} {y} factor: {x_reduction_factor} {y_reduction_factor}")
 
             # flip movement as necessary
             x_modifier = -1 if flip_x_movement else 1
             y_modifier = -1 if flip_y_movement else 1
 
-            await camera.continuous_move(x*x_modifier,y*y_modifier,0 if not zoom_if_able else z,movement_speed_percent)
+            await camera.continuous_move(x*x_modifier,y*y_modifier,0,movement_speed_percent)
 
 
     async def go_to_preset(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,preset:str,max_update_rate:int):
