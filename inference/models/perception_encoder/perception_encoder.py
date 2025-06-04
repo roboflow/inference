@@ -214,10 +214,10 @@ class PerceptionEncoder(RoboflowCoreModel):
             # Use float32 for CPU, bfloat16 for CUDA
             if self.device == "cpu":
                 with torch.no_grad():
-                    _, text_features, _ = self.model(None, tokenized_batch)
+                    _, text_features, _ = self.model(None, tokenized)
             else:
                 with torch.no_grad(), torch.autocast(self.device):
-                    _, text_features, _ = self.model(None, tokenized_batch)
+                    _, text_features, _ = self.model(None, tokenized)
 
             # Convert to float32 before converting to numpy
             embeddings = text_features.float().cpu().numpy()
