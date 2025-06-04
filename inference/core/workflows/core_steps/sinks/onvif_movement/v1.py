@@ -211,6 +211,7 @@ class CameraWrapper:
         config_options = (await self.configuration_options)
         #self.abs_pan_tilt_position_space = config_options.Spaces.AbsolutePanTiltPositionSpace[0]
         self.velocity_limits = limits(config_options.Spaces.ContinuousPanTiltVelocitySpace[0])
+        print(f"camera velocity limits: {self.velocity_limits}")
         #self.pan_tilt_speed_space = config_options.Spaces.PanTiltSpeedSpace[0]
         self.media_profile_token = self.media_profile.token
         presets = (await ptz.GetPresets({'ProfileToken':self.media_profile_token}))
@@ -228,6 +229,8 @@ class CameraWrapper:
                 ptz.stop()
             except Exception as e:
                 pass
+        else:
+            print("not moving")
         self._moving = False
 
     async def go_to_preset(self, preset_name:str):
@@ -263,6 +266,7 @@ class CameraWrapper:
         await ptz.GotoPreset(request)
         self._moving = True
 
+    # x and y are velocities from -1 to 1
     async def continuous_move(self,x:float,y:float,zoom_if_able:bool,movement_speed_percent:float):
         if self.media_profile_token is None:
             await self.configure()
@@ -277,13 +281,23 @@ class CameraWrapper:
         request = ptz.create_type('ContinuousMove')
         request.ProfileToken = self.media_profile_token
 
+        limits = self.velocity_limits
+
+        print(f"x:{x} y:{y} limits:{limits}")
+        # normalize to camera's velocity limits
+        x_limit = limits[0] if x<0 else limits[1]
+        y_limit = limits[2] if x<0 else limits[3]
+
+        x = abs(x_limit) * x * movement_speed_percent
+        y = abs(y_limit) * y * movement_speed_percent
+
         request.Velocity = {
             'PanTilt': {
-                'x': x, # TODO: should be % of velocity limits
+                'x': x,
                 'y': y
             },
             'Zoom': {
-                'x':1.0
+                'x':0.0
             }
         }
 
@@ -328,10 +342,15 @@ class ONVIFSinkBlockV1(WorkflowBlock):
 
         if movement_type=="Follow":
 
+
             if len(predictions.xyxy)==0:
-                asyncio.run(self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit))
-                print(f"No predictions to move the camera to, moving to preset \"{default_position_preset}\"")
+                # TODO: going to a preset is ok, but we don't want to do that if just one frame is missing a prediction - maybe add some time factor (ex. no prediction in 10 seconds?)
+                #asyncio.run(self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit))
+                #print(f"No predictions to move the camera to, moving to preset \"{default_position_preset}\"")
+                print(f"No predictions to move the camera to")
+                asyncio.run(self.stop_camera(camera_ip, camera_port, camera_username, camera_password,camera_update_rate_limit))
                 return {OUTPUT_KEY:False}
+
 
             # get max confidence prediction
             max_confidence = predictions.confidence.max()
@@ -342,6 +361,10 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             asyncio.run(self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit))
 
         return {OUTPUT_KEY:False}
+
+    async def stop_camera(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,max_update_rate:int):
+        camera = await get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate)
+        await camera.stop_camera()
 
     async def async_move(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,preset:str,max_update_rate:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float):
 
@@ -354,28 +377,32 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         image_dimensions = prediction.data['root_parent_dimensions']
         image_center = image_dimensions/2
         xyxy = prediction.xyxy
-        centers = (xyxy[:, :2] + xyxy[:, 2:]) / 2
-        center_point = centers[0]
+        (x1,y1,x2,y2) = tuple(xyxy[0])
+        center_point = np.array([x1-(x2-x1)/2,y1-(y2-y1)/2])
+        print(f"object center: {center_point}")
 
 
-        delta = image_center-center_point
+        delta = (image_center-center_point)[0]
 
         print(f"delta:{delta}")
-        if abs(delta[0][0])<center_tolerance and abs(delta[0][1])<center_tolerance:
-            camera.stop_camera()
+        if np.all(np.abs(delta) < center_tolerance):
+            await camera.stop_camera()
         else:
             # larger axis moves at max speed, so normalize to 100%
-            speeds = delta[0]/delta.max()
+            speeds = delta/np.abs(delta).max()
+            x = speeds[0] if abs(delta[0])>center_tolerance else 0
+            y = speeds[1] if abs(delta[1])>center_tolerance else 0
 
-
-            print(f"movement speeds:{speeds}")
+            print(f"movement speeds:{speeds} {x} {y}")
 
             # goal here will be to have the workflow do a continuous move & iterate to get the bounding box in position
             # might be necessary to start slow & calibrate x/y translation from pixel to speed
             # once it's in position, this speed should change to 0,0
             x_modifier = -1 if flip_x_movement else 1
             y_modifier = -1 if flip_y_movement else 1
-            await camera.continuous_move(speeds[0]*x_modifier,speeds[1]*y_modifier,zoom_if_able,movement_speed_percent)
+
+            y = 0 # temporary for testing
+            await camera.continuous_move(x*x_modifier,y*y_modifier,zoom_if_able,movement_speed_percent)
 
 
     async def go_to_preset(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,preset:str,max_update_rate:int):
