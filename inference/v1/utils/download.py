@@ -1,3 +1,4 @@
+import math
 import os
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from threading import Lock
@@ -32,8 +33,9 @@ from inference.v1.utils.file_system import (
 FileName = str
 DownloadUrl = str
 
-DEFAULT_THREAD_CHUNK_SIZE = 256 * 1024 * 1024  # 32MB
-DEFAULT_STREAM_DOWNLOAD_CHUNK = 8 * 1024 * 1024  # 8MB
+MIN_SIZE_FOR_THREADED_DOWNLOAD = 32 * 1024 * 1024  # 32MB
+MIN_THREAD_CHUNK_SIZE = 16 * 1024 * 1024  # 16MB
+DEFAULT_STREAM_DOWNLOAD_CHUNK = 1 * 1024 * 1024  # 1MB
 
 
 def download_files_to_directory(
@@ -42,8 +44,8 @@ def download_files_to_directory(
     verbose: bool = True,
     response_codes_to_retry: Optional[Set[int]] = None,
     request_timeout: Optional[int] = None,
-    max_threads: Optional[int] = 32,
-    thread_chunk_size: int = DEFAULT_THREAD_CHUNK_SIZE,
+    max_parallel_downloads: int = 8,
+    max_threads_per_download: int = 8,
     file_lock_acquire_timeout: int = 10,
 ) -> None:
     files_specs = exclude_existing_files(
@@ -66,7 +68,7 @@ def download_files_to_directory(
     )
     download_id = str(uuid4())
     with progress:
-        with ThreadPoolExecutor(max_workers=max_threads) as executor:
+        with ThreadPoolExecutor(max_workers=max_parallel_downloads) as executor:
             futures = []
             for file_name, download_url in files_specs:
                 future = executor.submit(
@@ -75,11 +77,10 @@ def download_files_to_directory(
                     file_name=file_name,
                     download_url=download_url,
                     download_id=download_id,
-                    executor=executor,
                     progress=progress,
                     response_codes_to_retry=response_codes_to_retry,
                     request_timeout=request_timeout,
-                    thread_chunk_size=thread_chunk_size,
+                    max_threads_per_download=max_threads_per_download,
                     file_lock_acquire_timeout=file_lock_acquire_timeout,
                 )
                 futures.append(future)
@@ -110,11 +111,10 @@ def safe_download_file(
     file_name: str,
     download_url: str,
     download_id: str,
-    executor: ThreadPoolExecutor,
     progress: Progress,
     response_codes_to_retry: Set[int],
     request_timeout: int,
-    thread_chunk_size: int,
+    max_threads_per_download: int,
     file_lock_acquire_timeout: int,
 ) -> None:
     target_file_path = os.path.abspath(os.path.join(target_dir, file_name))
@@ -130,11 +130,10 @@ def safe_download_file(
                 download_url=download_url,
                 tmp_download_file=tmp_download_file,
                 target_file_path=target_file_path,
-                executor=executor,
                 progress=progress,
                 response_codes_to_retry=response_codes_to_retry,
                 request_timeout=request_timeout,
-                thread_chunk_size=thread_chunk_size,
+                max_threads_per_download=max_threads_per_download,
                 original_file_name=file_name,
             )
     except Exception as error:
@@ -146,11 +145,10 @@ def safe_execute_download(
     download_url: str,
     tmp_download_file: str,
     target_file_path: str,
-    executor: ThreadPoolExecutor,
     progress: Progress,
     response_codes_to_retry: Set[int],
     request_timeout: int,
-    thread_chunk_size: int,
+    max_threads_per_download: int,
     original_file_name: str,
 ) -> None:
     expected_file_size = safe_check_range_download_option(
@@ -167,7 +165,10 @@ def safe_execute_download(
         with progress_task_lock:
             progress.advance(progress_task, bytes_num)
 
-    if expected_file_size is None or expected_file_size < thread_chunk_size:
+    if (
+        expected_file_size is None
+        or expected_file_size < MIN_SIZE_FOR_THREADED_DOWNLOAD
+    ):
         stream_download(
             url=download_url,
             target_path=tmp_download_file,
@@ -180,10 +181,9 @@ def safe_execute_download(
             url=download_url,
             target_path=tmp_download_file,
             file_size=expected_file_size,
-            executor=executor,
             response_codes_to_retry=response_codes_to_retry,
             request_timeout=request_timeout,
-            thread_chunk_size=thread_chunk_size,
+            max_threads_per_download=max_threads_per_download,
             on_chunk_downloaded=on_chunk_downloaded,
         )
     os.rename(tmp_download_file, target_file_path)
@@ -232,46 +232,54 @@ def threaded_download_file(
     url: str,
     target_path: str,
     file_size: int,
-    executor: ThreadPoolExecutor,
     response_codes_to_retry: Set[int],
     request_timeout: int,
-    thread_chunk_size: int,
+    max_threads_per_download: int,
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
 ) -> None:
     chunks_boundaries = generate_chunks_boundaries(
-        file_size=file_size, chunk_size=thread_chunk_size
+        file_size=file_size,
+        max_threads=max_threads_per_download,
+        min_chunk_size=MIN_THREAD_CHUNK_SIZE,
     )
     pre_allocate_file(path=target_path, file_size=file_size)
     futures = []
-    with Session() as session:
-        for start, end in chunks_boundaries:
-            future = executor.submit(
-                download_chunk,
-                url=url,
-                start=start,
-                end=end,
-                target_path=target_path,
-                timeout=request_timeout,
-                response_codes_to_retry=response_codes_to_retry,
-                on_chunk_downloaded=on_chunk_downloaded,
-                session=session,
-            )
-            futures.append(future)
-        done_futures, pending_futures = wait(futures, return_when=FIRST_EXCEPTION)
-        for pending_future in pending_futures:
-            pending_future.cancel()
-        _ = wait(pending_futures)
-        for future in done_futures:
-            future_exception = future.exception()
-            if future_exception:
-                raise future_exception
+    max_workers = min(len(chunks_boundaries), max_threads_per_download)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with Session() as session:
+            for start, end in chunks_boundaries:
+                future = executor.submit(
+                    download_chunk,
+                    url=url,
+                    start=start,
+                    end=end,
+                    target_path=target_path,
+                    timeout=request_timeout,
+                    response_codes_to_retry=response_codes_to_retry,
+                    on_chunk_downloaded=on_chunk_downloaded,
+                    session=session,
+                )
+                futures.append(future)
+            done_futures, pending_futures = wait(futures, return_when=FIRST_EXCEPTION)
+            for pending_future in pending_futures:
+                pending_future.cancel()
+            _ = wait(pending_futures)
+            for future in done_futures:
+                future_exception = future.exception()
+                if future_exception:
+                    raise future_exception
 
 
 def generate_chunks_boundaries(
-    file_size: int, chunk_size: int
+    file_size: int,
+    max_threads: int,
+    min_chunk_size: int,
 ) -> List[Tuple[int, int]]:
     if file_size <= 0:
         return []
+    chunk_size = math.ceil(file_size / max_threads)
+    if chunk_size < min_chunk_size:
+        chunk_size = min_chunk_size
     ranges = []
     accumulated_size = 0
     while accumulated_size < file_size:
