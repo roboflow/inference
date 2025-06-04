@@ -210,7 +210,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         for texts_batch in create_batches(
             sequence=texts, batch_size=CLIP_MAX_BATCH_SIZE
         ):
-            tokenized = self.tokenizer(texts_batch, return_tensors="pt", padding=True)
+            tokenized = self.tokenizer(texts_batch)
             tokenized_batch = tokenized["input_ids"].to(self.device)
             attention_mask = tokenized["attention_mask"].to(self.device)
 
