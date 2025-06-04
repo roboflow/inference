@@ -36,9 +36,32 @@ class Joiner(nn.Sequential):
 
     def forward_export(self, inputs: torch.Tensor):
         feats, masks = self[0](inputs)
-        poss = []
-        for feat, mask in zip(feats, masks):
-            poss.append(self[1](mask, align_dim_orders=False).to(feat.dtype))
+
+        # Optimization: Try batch-processing masks if possible
+        # If feats and masks are lists/tuples of tensors, stack them if feasible
+        if isinstance(masks, (list, tuple)):
+            try:
+                # Try to stack masks for batch processing
+                masks_batch = torch.stack(masks, dim=0)
+                poss_batch = self[1](masks_batch, align_dim_orders=False)
+                if not isinstance(poss_batch, torch.Tensor):
+                    # Fallback to original for-loop if output is not batched
+                    raise Exception("Output is not a batch")
+                # If position embedding returns a single tensor for batch
+                # Convert once to feats[0].dtype and split accordingly
+                poss_batch = poss_batch.to(feats[0].dtype)
+                poss = [p for p in poss_batch]
+            except Exception:
+                # If stacking or batch processing fails, fallback to for-loop
+                poss = [
+                    self[1](mask, align_dim_orders=False).to(feat.dtype)
+                    for feat, mask in zip(feats, masks)
+                ]
+        else:
+            # Not a sequence, fallback to original logic
+            poss = [
+                self[1](masks, align_dim_orders=False).to(feats.dtype) for feat in feats
+            ]
         return feats, None, poss
 
 
