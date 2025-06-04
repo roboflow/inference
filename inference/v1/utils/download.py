@@ -33,7 +33,7 @@ FileName = str
 DownloadUrl = str
 
 DEFAULT_THREAD_CHUNK_SIZE = 256 * 1024 * 1024  # 32MB
-DEFAULT_STREAM_DOWNLOAD_CHUNK = 128 * 1024  # 128kB
+DEFAULT_STREAM_DOWNLOAD_CHUNK = 8 * 1024 * 1024  # 128kB
 
 
 def download_files_to_directory(
