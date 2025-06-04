@@ -34,13 +34,17 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
-OUTPUT_KEY: str = "success"
+PREDICTIONS_OUTPUT_KEY: str = "predictions"
+MOVING_OUTPUT_KEY: str = "moving"
 
 LONG_DESCRIPTION = """
 This **ONVIF** block allows a workflow to control an ONVIF capable PTZ camera to follow a detected object.
 
-The block returns booleans indicating success (meaning it's communicating with the camera) and whether or not
-it's currently tracking an object.
+The block returns two booleans:
+* predictions - indicates whether or not it's following a valid prediction
+* moving - indicates whether or not the camera is currently moving
+
+Note that since the camera runs independently of the block, both booleans might not be updated immediately
 
 There are two modes:
 
@@ -107,7 +111,7 @@ class BlockManifest(WorkflowBlockManifest):
     follow_tracker: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         examples=[True, False],
-        description="Follow the track of the highest confidence prediction (if available)",
+        description="Follow the track of the highest confidence prediction (Byte Tracker must be added to the workflow)",
     )
     center_tolerance: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=100,
@@ -134,16 +138,22 @@ class BlockManifest(WorkflowBlockManifest):
         examples=[True, False],
         description="Flip Y movement if image is mirrored vertically",
     )
-    movement_speed_percent: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=1.0,
-        description="Percent of maximum speed to move camera at",
+    movement_speed_percent: Union[int, Selector(kind=[INTEGER_KIND])] = Field(
+        default=100,
+        description="Percent of maximum speed to move camera at (0-100)",
     )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
         return [
             OutputDefinition(
-                name=OUTPUT_KEY,
+                name=PREDICTIONS_OUTPUT_KEY,
+                kind=[
+                    BOOLEAN_KIND,
+                ],
+            ),
+            OutputDefinition(
+                name=MOVING_OUTPUT_KEY,
                 kind=[
                     BOOLEAN_KIND,
                 ],
@@ -154,6 +164,7 @@ class BlockManifest(WorkflowBlockManifest):
     def get_execution_engine_compatibility(cls) -> Optional[str]:
         return ">=1.3.0,<2.0.0"
 
+# gets the CameraWrapper from the static cameras collection
 async def get_camera(camera_ip:str,camera_port:int,camera_username:str,camera_password:str,max_update_rate:int):
     global cameras
     mycam = None
@@ -173,52 +184,74 @@ async def get_camera(camera_ip:str,camera_port:int,camera_username:str,camera_pa
             )
     return cameras[camera_key]
 
-def limits(s):
+def camera_moving(camera_ip:str,camera_port:int) -> bool:
+    global cameras
+    camera_key = (camera_ip,camera_port)
+    camera = cameras.get(camera_key)
+    if not camera:
+        return False
+    return camera.moving()
+
+# TODO: might just be easier to save XRange/YRange
+def limits(s) -> Tuple[float]:
     return (s.XRange.Min,s.XRange.Max,s.YRange.Min,s.YRange.Max)
 
-def now():
+# primarily used for rate limiting
+def now() -> int:
     return int(round(time.time() * 1000))
 
+# camera wrapper is used to store config info so that we don't have
+# to keep querying it from the camera on successive commands
 class CameraWrapper:
     camera:ONVIFCamera
     media_profile = None
     configuration_options = None
-    #config_token = None
     media_profile_token = None
     velocity_limits: Union[Tuple[float,float,float,float],None] = None
     presets = None
     last_update_ms:Union[int,None] = None
     max_update_rate:int = 0
     _moving: bool = False
-    prev_x:float = 0
-    prev_y:float = 0
+    _prev_x:float = 0
+    _prev_y:float = 0
 
     def __init__(self,camera:ONVIFCamera,max_update_rate:int):
         self.camera = camera
         self.max_update_rate = max_update_rate
-        #self.media = media
 
     # true if movement update hasn't happened within max_update_rate
     def _can_update(self):
         return self.last_update_ms is None or now()-self.last_update_ms>self.max_update_rate
 
+    # this is mainly used to allow stop commands through on new zero speeds
     def save_last_speeds(self,x,y) -> Tuple[bool,bool]:
-        x_changed = x!=self.prev_x
-        y_changed = y!=self.prev_y
-        self.prev_x = 0
-        self.prev_y = 0
+        x_changed = x!=self._prev_x
+        y_changed = y!=self._prev_y
+        self._prev_x = x
+        self._prev_y = y
         return (x_changed,y_changed)
 
     async def ptz_service(self):
+        """
+        Creates the ONVIF PTZ service
+        This has to run on every command requiring the service - a service can't be awaited twice
+        """
         return await self.camera.create_ptz_service()
 
     async def media_service(self):
+        """
+        Creates the ONVIF media service
+        This is primarily used to get the media token
+        """
         return await self.camera.create_media_service()
 
     async def configure(self):
+        """
+        Does initial configuration and gathers all camera info
+        Doesn't currently run in init since it needs to be awaited
+        """
         await self.camera.update_xaddrs()
-        capabilities = await self.camera.get_capabilities()
-        #print(f"Camera capabilities: {capabilities}")
+        # capabilities = await self.camera.get_capabilities() # <- could be useful in the future
         media = await self.media_service()
         self.media_profile = (await media.GetProfiles())[0]
         ptz = await self.ptz_service()
@@ -226,19 +259,21 @@ class CameraWrapper:
         config_request.ConfigurationToken = self.media_profile.PTZConfiguration.token
         self.configuration_options = ptz.GetConfigurationOptions(config_request)
         config_options = (await self.configuration_options)
-        #self.abs_pan_tilt_position_space = config_options.Spaces.AbsolutePanTiltPositionSpace[0]
         self.velocity_limits = limits(config_options.Spaces.ContinuousPanTiltVelocitySpace[0])
         print(f"camera velocity limits: {self.velocity_limits}")
-        #self.pan_tilt_speed_space = config_options.Spaces.PanTiltSpeedSpace[0]
         self.media_profile_token = self.media_profile.token
         presets = (await ptz.GetPresets({'ProfileToken':self.media_profile_token}))
         # reconfigure into a dict keyed by preset name
         self.presets = {preset['Name']:preset for preset in presets}
-        #print(self.presets)
 
+    def moving(self):
+        return self._moving
+
+    # stops the camera movement
     async def stop_camera(self):
         # don't stop if already stopped as stop commands aren't rate limited
         if self._moving:
+            print("stopping camera")
             await self.continuous_move(0,0,False,0)
             # not all cameras support stop
             try:
@@ -246,16 +281,20 @@ class CameraWrapper:
                 ptz.stop()
             except Exception as e:
                 pass
-        else:
-            print("not moving")
+
         self._moving = False
 
     async def go_to_preset(self, preset_name:str):
+        """
+        Tells the camera to move to a preset
+        This is not rate limited - all commands will be sent to the camera
+
+        Args:
+            preset_name: The preset name to move to (this varies by camera)
+        """
+
         if self.media_profile_token is None:
             await self.configure()
-
-        if not self._can_update():
-            return
 
         preset = self.presets.get(preset_name)
         if not preset:
@@ -265,7 +304,6 @@ class CameraWrapper:
 
         ptz = await self.ptz_service()
         request = ptz.create_type('GotoPreset')
-        #request = ptz.create_type('GotoHomePosition')
         request.ProfileToken = self.media_profile_token
         request.PresetToken = preset['token']
         request.Speed = {
@@ -278,19 +316,31 @@ class CameraWrapper:
             }
         }
 
-        #print(request)
-
         await ptz.GotoPreset(request)
         self._moving = True
 
+    # tells the camera to move at a continuous velocity
+
     # x and y are velocities from -1 to 1
-    async def continuous_move(self,x:float,y:float,zoom_if_able:bool,movement_speed_percent:float):
+    async def continuous_move(self,x:float,y:float,z:float,movement_speed_percent:float):
+        """
+        Tells the camera to move at a continuous velocity, or 0 to stop
+        Note this is rate limited, some commands will be ignored
+
+        Args:
+            x: The x velocity as -1 to 1 where -1 and 1 are maximums
+            y: The y velocity as -1 to 1 where -1 and 1 are maximums
+            z: The zoom velocity as -1 to 1 where -1 and 1 are maximums
+            movement_speed_percent: percent of maximum movement speed as 0-1
+        """
+
         if self.media_profile_token is None:
             await self.configure()
 
         # try to avoid hunting by allowing immediate stop
         x_changed, y_changed = self.save_last_speeds(x,y)
         if (x==0 and x_changed) or (y==0 and y_changed):
+            print("forcing stop")
             pass
         elif not self._can_update():
             return
@@ -309,8 +359,8 @@ class CameraWrapper:
         x_limit = limits[0] if x<0 else limits[1]
         y_limit = limits[2] if x<0 else limits[3]
 
-        x = abs(x_limit) * x * movement_speed_percent
-        y = abs(y_limit) * y * movement_speed_percent
+        x = abs(x_limit) * x * movement_speed_percent/100.0
+        y = abs(y_limit) * y * movement_speed_percent/100.0
 
         request.Velocity = {
             'PanTilt': {
@@ -322,17 +372,14 @@ class CameraWrapper:
             }
         }
 
+        #self.save_last_speeds(x,y)
+
         print(f"ptz continuous move update: {x},{y}")
 
         # Execute the movement
         await ptz.ContinuousMove(request)
         self.last_update_ms = now()
         self._moving = True
-
-    # TODO: this doesn't work - need to move outside of event loop
-    #def __del__(self):
-    #    asyncio.run(self.stop_camera())
-
 
 # pool of camera services can can be used across blocks
 cameras: Dict[Tuple[str,int],CameraWrapper] = {}
@@ -371,7 +418,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                 #print(f"No predictions to move the camera to, moving to preset \"{default_position_preset}\"")
                 print(f"No predictions to move the camera to")
                 asyncio.run(self.stop_camera(camera_ip, camera_port, camera_username, camera_password,camera_update_rate_limit))
-                return {OUTPUT_KEY:False}
+                return {PREDICTIONS_OUTPUT_KEY:False,MOVING_OUTPUT_KEY:camera_moving(camera_ip,camera_port)}
 
 
             # get max confidence prediction
@@ -382,7 +429,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         elif movement_type=="Go To Preset":
             asyncio.run(self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit))
 
-        return {OUTPUT_KEY:False}
+        return {PREDICTIONS_OUTPUT_KEY:True,MOVING_OUTPUT_KEY:camera_moving(camera_ip,camera_port)}
 
     async def stop_camera(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,max_update_rate:int):
         camera = await get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate)
@@ -438,4 +485,6 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         await camera.stop_camera()
         await camera.go_to_preset(preset)
 
-
+    # if the block is destroyed, don't let the camera keep drifting
+    def __del__(self):
+        asyncio.run(self.stop_camera())
