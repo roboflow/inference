@@ -39,15 +39,19 @@ OUTPUT_KEY: str = "success"
 LONG_DESCRIPTION = """
 This **ONVIF** block allows a workflow to control an ONVIF capable PTZ camera to follow a detected object.
 
+The block returns booleans indicating success (meaning it's communicating with the camera) and whether or not
+it's currently tracking an object.
+
+There are two modes:
+
+Follow:
 The object it follows is the maximum confidence prediction out of all predictions passed into it. To follow
 a specific object, use the appropriate filters on the predictiion object to specify the object you want to
-follow.
+follow. Additionally if a tracker is used, the camera will follow the tracked object until it disappears.
+Additionally, zoom can be toggled to get the camera to zoom into a position.
 
-The camera can also move to a defined preset position. This is done automatically when there are no objects
-in the prediction.
-
-The block returns booleans indicating success (it's communicating with the camera), whether or not it's
-moving, and whether or not it's currently tracking an object.
+Move to Preset:
+The camera can also move to a defined preset position. The camera must support the GotoPreset service.
 
 Note that the tracking block uses the ONVIF continuous movement service. Tracking is adjusted on each successive
 workflow execution. If workflow execution stops, and the camera is currently moving, the camera will continue
@@ -92,6 +96,9 @@ class BlockManifest(WorkflowBlockManifest):
     camera_password: Union[Selector(kind=[SECRET_KIND]), str] = Field(
         description="Camera Password",
     )
+    movement_type: Literal["Follow", "Go To Preset"] = Field(
+        description="Follow Object or Go To Preset On Execution",
+    )
     zoom_if_able: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
         examples=[True, False],
@@ -106,11 +113,12 @@ class BlockManifest(WorkflowBlockManifest):
         default=100,
         description="Camera will stop once bounding box is within this many pixels of FoV center (or border for zoom)",
     )
-    movement_type: Literal["Follow", "Go To Preset"] = Field(
-        description="Follow Object or Go To Preset On Execution",
-    )
     default_position_preset: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Preset Name for Default Position",
+    )
+    move_to_position_after_idle_seconds: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
+        default=0,
+        description="Move to the default position after this many seconds if idle (0 to disable)",
     )
     camera_update_rate_limit: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=1000,
@@ -182,6 +190,8 @@ class CameraWrapper:
     last_update_ms:Union[int,None] = None
     max_update_rate:int = 0
     _moving: bool = False
+    prev_x:float = 0
+    prev_y:float = 0
 
     def __init__(self,camera:ONVIFCamera,max_update_rate:int):
         self.camera = camera
@@ -191,6 +201,13 @@ class CameraWrapper:
     # true if movement update hasn't happened within max_update_rate
     def _can_update(self):
         return self.last_update_ms is None or now()-self.last_update_ms>self.max_update_rate
+
+    def save_last_speeds(self,x,y) -> Tuple[bool,bool]:
+        x_changed = x!=self.prev_x
+        y_changed = y!=self.prev_y
+        self.prev_x = 0
+        self.prev_y = 0
+        return (x_changed,y_changed)
 
     async def ptz_service(self):
         return await self.camera.create_ptz_service()
@@ -271,7 +288,11 @@ class CameraWrapper:
         if self.media_profile_token is None:
             await self.configure()
 
-        if not self._can_update():
+        # try to avoid hunting by allowing immediate stop
+        x_changed, y_changed = self.save_last_speeds(x,y)
+        if (x==0 and x_changed) or (y==0 and y_changed):
+            pass
+        elif not self._can_update():
             return
 
         ptz = await self.ptz_service()
@@ -337,7 +358,8 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         camera_update_rate_limit:int,
         flip_y_movement:int,
         flip_x_movement:int,
-        movement_speed_percent:float
+        movement_speed_percent:float,
+        move_to_position_after_idle_seconds:int
     ) -> BlockResult:
 
         if movement_type=="Follow":
@@ -378,13 +400,15 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         image_center = image_dimensions/2
         xyxy = prediction.xyxy
         (x1,y1,x2,y2) = tuple(xyxy[0])
-        center_point = np.array([x1-(x2-x1)/2,y1-(y2-y1)/2])
-        print(f"object center: {center_point}")
+        center_point = np.array([x1+(x2-x1)/2,y1+(y2-y1)/2])
 
 
-        delta = (image_center-center_point)[0]
+        # delta represents the amount of relative movement to get the object to the center
+        delta = (center_point-image_center)[0]
 
-        print(f"delta:{delta}")
+        print(f"object center: xyxy:{tuple(xyxy[0])} {center_point} {image_dimensions} {image_center} delta:{delta}")
+
+        #print(f"delta:{delta}")
         if np.all(np.abs(delta) < center_tolerance):
             await camera.stop_camera()
         else:
@@ -393,7 +417,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             x = speeds[0] if abs(delta[0])>center_tolerance else 0
             y = speeds[1] if abs(delta[1])>center_tolerance else 0
 
-            print(f"movement speeds:{speeds} {x} {y}")
+            #print(f"movement speeds:{speeds} {x} {y}")
 
             # goal here will be to have the workflow do a continuous move & iterate to get the bounding box in position
             # might be necessary to start slow & calibrate x/y translation from pixel to speed
@@ -401,7 +425,11 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             x_modifier = -1 if flip_x_movement else 1
             y_modifier = -1 if flip_y_movement else 1
 
-            y = 0 # temporary for testing
+            if abs(delta[0])<center_tolerance:
+                print("x is set")
+            if abs(delta[1])<center_tolerance:
+                print("y is set")
+
             await camera.continuous_move(x*x_modifier,y*y_modifier,zoom_if_able,movement_speed_percent)
 
 
