@@ -7,7 +7,7 @@ from uuid import uuid4
 import backoff
 import requests
 from filelock import FileLock
-from requests import Response, Timeout
+from requests import Response, Timeout, Session
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -33,7 +33,7 @@ FileName = str
 DownloadUrl = str
 
 DEFAULT_THREAD_CHUNK_SIZE = 256 * 1024 * 1024  # 32MB
-DEFAULT_STREAM_DOWNLOAD_CHUNK = 8 * 1024 * 1024  # 128kB
+DEFAULT_STREAM_DOWNLOAD_CHUNK = 8 * 1024 * 1024  # 8MB
 
 
 def download_files_to_directory(
@@ -243,26 +243,28 @@ def threaded_download_file(
     )
     pre_allocate_file(path=target_path, file_size=file_size)
     futures = []
-    for start, end in chunks_boundaries:
-        future = executor.submit(
-            download_chunk,
-            url=url,
-            start=start,
-            end=end,
-            target_path=target_path,
-            timeout=request_timeout,
-            response_codes_to_retry=response_codes_to_retry,
-            on_chunk_downloaded=on_chunk_downloaded,
-        )
-        futures.append(future)
-    done_futures, pending_futures = wait(futures, return_when=FIRST_EXCEPTION)
-    for pending_future in pending_futures:
-        pending_future.cancel()
-    _ = wait(pending_futures)
-    for future in done_futures:
-        future_exception = future.exception()
-        if future_exception:
-            raise future_exception
+    with Session() as session:
+        for start, end in chunks_boundaries:
+            future = executor.submit(
+                download_chunk,
+                url=url,
+                start=start,
+                end=end,
+                target_path=target_path,
+                timeout=request_timeout,
+                response_codes_to_retry=response_codes_to_retry,
+                on_chunk_downloaded=on_chunk_downloaded,
+                session=session,
+            )
+            futures.append(future)
+        done_futures, pending_futures = wait(futures, return_when=FIRST_EXCEPTION)
+        for pending_future in pending_futures:
+            pending_future.cancel()
+        _ = wait(pending_futures)
+        for future in done_futures:
+            future_exception = future.exception()
+            if future_exception:
+                raise future_exception
 
 
 def generate_chunks_boundaries(
@@ -294,10 +296,12 @@ def download_chunk(
     response_codes_to_retry: Set[int],
     file_chunk: int = DEFAULT_STREAM_DOWNLOAD_CHUNK,
     on_chunk_downloaded: Optional[Callable[[int], None]] = None,
+    session: Optional[Session] = None,
 ) -> None:
     headers = {"Range": f"bytes={start}-{end}"}
+    transport = session if session else requests
     try:
-        response = requests.get(url, headers=headers, stream=True, timeout=timeout)
+        response = transport.get(url, headers=headers, stream=True, timeout=timeout)
     except (ConnectionError, Timeout, requests.exceptions.ConnectionError):
         raise RetryError(f"Connectivity error")
     if response.status_code in response_codes_to_retry:
