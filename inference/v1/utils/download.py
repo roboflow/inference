@@ -32,7 +32,7 @@ from inference.v1.utils.file_system import (
 FileName = str
 DownloadUrl = str
 
-DEFAULT_THREAD_CHUNK_SIZE = 32 * 1024 * 1024  # 32MB
+DEFAULT_THREAD_CHUNK_SIZE = 256 * 1024 * 1024  # 32MB
 DEFAULT_STREAM_DOWNLOAD_CHUNK = 128 * 1024  # 128kB
 
 
@@ -42,7 +42,7 @@ def download_files_to_directory(
     verbose: bool = True,
     response_codes_to_retry: Optional[Set[int]] = None,
     request_timeout: Optional[int] = None,
-    max_threads: Optional[int] = 16,
+    max_threads: Optional[int] = 32,
     thread_chunk_size: int = DEFAULT_THREAD_CHUNK_SIZE,
     file_lock_acquire_timeout: int = 10,
 ) -> None:
