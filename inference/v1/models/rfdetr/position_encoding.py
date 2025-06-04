@@ -134,23 +134,22 @@ class PositionEmbeddingLearned(nn.Module):
     def forward(self, tensor_list: NestedTensor):
         x = tensor_list.tensors
         h, w = x.shape[:2]
-        i = torch.arange(w, device=x.device)
-        j = torch.arange(h, device=x.device)
-        x_emb = self.col_embed(i)
-        y_emb = self.row_embed(j)
-        pos = (
-            torch.cat(
-                [
-                    x_emb.unsqueeze(0).repeat(h, 1, 1),
-                    y_emb.unsqueeze(1).repeat(1, w, 1),
-                ],
-                dim=-1,
-            )
-            .unsqueeze(2)
-            .repeat(1, 1, x.shape[2], 1)
-        )
-        # return: (H, W, bs, C)
-        return pos
+        device = x.device
+
+        # Avoids redundant tensor creation by using broadcasting instead of repeat
+        i = torch.arange(w, device=device)
+        j = torch.arange(h, device=device)
+        x_emb = self.col_embed(i)  # (W, C)
+        y_emb = self.row_embed(j)  # (H, C)
+
+        # Use broadcasting to avoid repeat/unsqueeze chains
+        x_emb_broadcasted = x_emb.unsqueeze(0).expand(h, -1, -1)  # (H, W, C)
+        y_emb_broadcasted = y_emb.unsqueeze(1).expand(-1, w, -1)  # (H, W, C)
+        pos = torch.cat((x_emb_broadcasted, y_emb_broadcasted), dim=-1)  # (H, W, 2C)
+
+        # Expand for batch if needed (for now we maintain the last behavior exactly)
+        pos = pos.unsqueeze(2).expand(h, w, x.shape[2], pos.shape[-1])  # (H, W, bs, 2C)
+        return pos  # (H, W, bs, C)
 
 
 def build_position_encoding(hidden_dim, position_embedding):
