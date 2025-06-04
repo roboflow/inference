@@ -17,6 +17,10 @@ REGISTERED_MODELS: Dict[Tuple[ModelArchitecture, TaskType, BackendType], LazyCla
         module_name="inference.v1.models.yolov8.yolov8_object_detection_trt",
         class_name="YOLOv8ForObjectDetectionTRT",
     ),
+    ("paligemma", "vlm", BackendType.HF): LazyClass(
+        module_name="inference.v1.models.paligemma.paligemma_hf",
+        class_name="PaliGemmaHF",
+    ),
 }
 
 
