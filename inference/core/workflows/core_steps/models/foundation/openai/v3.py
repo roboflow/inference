@@ -171,7 +171,7 @@ class BlockManifest(WorkflowBlockManifest):
         private=True,
     )
     model_version: Union[
-        Selector(kind=[STRING_KIND]), Literal["gpt-4o", "gpt-4o-mini"]
+        Selector(kind=[STRING_KIND]), Literal["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"]
     ] = Field(
         default="gpt-4o",
         description="Model to be used",
@@ -380,7 +380,7 @@ def _execute_proxied_openai_request(
     payload = {
         "model": gpt_model_version,
         "messages": prompt,
-        "max_tokens": max_tokens,
+        "max_completion_tokens": max_tokens,
         "openai_api_key": openai_api_key,
     }
     if temperature is not None:
@@ -425,7 +425,7 @@ def _execute_openai_request(
         response = client.chat.completions.create(
             model=gpt_model_version,
             messages=prompt,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
             temperature=temp_value,
         )
         return response.choices[0].message.content
