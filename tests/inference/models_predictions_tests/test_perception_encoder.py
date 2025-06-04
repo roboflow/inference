@@ -145,7 +145,7 @@ def test_invalid_prompt_type(model, test_image):
 
 def test_large_batch_size(model):
     """Test handling of batch size exceeding maximum."""
-    large_batch = ["text"] * 100  # Assuming CLIP_MAX_BATCH_SIZE is less than 100
+    large_batch = ["text"] * 100
     with pytest.raises(ValueError):
         request = ClipTextEmbeddingRequest(text=large_batch)
         model.infer_from_request(request)

@@ -28,9 +28,9 @@ from inference.core.utils.postprocess import cosine_similarity
 
 
 class PerceptionEncoder(RoboflowCoreModel):
-    """Roboflow PE-CLIP model implementation.
+    """Roboflow Perception Encoder model implementation.
 
-    This class is responsible for handling the PE-CLIP model, including
+    This class is responsible for handling the Percpetion Encoder model, including
     loading the model, preprocessing the input, and performing inference.
 
     Attributes:
@@ -62,7 +62,6 @@ class PerceptionEncoder(RoboflowCoreModel):
         self.preprocessor = transforms.get_image_transform(self.model.image_size)
         self.tokenizer = transforms.get_text_tokenizer(self.model.context_length)
 
-        self.log(f"PE-CLIP model loaded in {perf_counter() - t1:.2f} seconds")
         self.task_type = "embedding"
 
     def get_infer_bucket_file_list(self) -> List[str]:
