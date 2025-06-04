@@ -210,13 +210,21 @@ class PerceptionEncoder(RoboflowCoreModel):
         for texts_batch in create_batches(
             sequence=texts, batch_size=CLIP_MAX_BATCH_SIZE
         ):
-            tokenized_batch = self.tokenizer(texts_batch).to(self.device)
+            tokenized = self.tokenizer(texts_batch, return_tensors="pt", padding=True)
+            tokenized_batch = tokenized["input_ids"].to(self.device)
+            attention_mask = tokenized["attention_mask"].to(self.device)
 
-            with torch.no_grad(), torch.autocast(self.device):
-                _, text_features, _ = self.model(None, tokenized_batch)
-                # Convert to float32 before converting to numpy
-                embeddings = text_features.float().cpu().numpy()
-                results.append(embeddings)
+            # Use float32 for CPU, bfloat16 for CUDA
+            if self.device == "cpu":
+                with torch.no_grad():
+                    _, text_features, _ = self.model(None, tokenized_batch, attention_mask=attention_mask)
+            else:
+                with torch.no_grad(), torch.autocast(self.device):
+                    _, text_features, _ = self.model(None, tokenized_batch, attention_mask=attention_mask)
+
+            # Convert to float32 before converting to numpy
+            embeddings = text_features.float().cpu().numpy()
+            results.append(embeddings)
 
         return np.concatenate(results, axis=0)
 

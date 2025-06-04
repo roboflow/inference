@@ -67,6 +67,12 @@ def test_text_embedding(model):
     assert isinstance(response.embeddings[0], list)
     assert isinstance(response.embeddings[0][0], float)
 
+def test_text_embedding_directly(model):
+    prompt = "can"
+    text_embed = model.embed_text(prompt)
+    assert text_embed is not None
+
+
 
 def test_batch_text_embedding(model):
     """Test batch text embedding functionality."""
