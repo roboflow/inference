@@ -142,6 +142,10 @@ class BlockManifest(WorkflowBlockManifest):
         default=100,
         description="Percent of maximum speed to move camera at (0-100)",
     )
+    proportional_constant: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
+        default=0.2,
+        description="0-1 speed reduction constant and bias to avoid hunting (0=full stop, 1=disable). Only applies when the object is close to the tolerance. Bias is hard coded at 50%",
+    )
 
     @classmethod
     def describe_outputs(cls) -> List[OutputDefinition]:
@@ -200,6 +204,30 @@ def limits(s) -> Tuple[float]:
 def now() -> int:
     return int(round(time.time() * 1000))
 
+class Limits:
+    min:float
+    max:float
+
+    def __init__(self,range):
+        self.min = range.Min
+        self.max = range.Max
+
+    def __repr__(self):
+        return f"({self.min},{self.max})"
+
+class VelocityLimits:
+    x:Limits
+    y:Limits
+    z:Union[Limits,None]
+
+    def __init__(self,x:Limits,y:Limits,z:limits):
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def __repr__(self):
+        return f"x:{self.x} y:{self.y} z:{self.z}"
+
 # camera wrapper is used to store config info so that we don't have
 # to keep querying it from the camera on successive commands
 class CameraWrapper:
@@ -207,13 +235,15 @@ class CameraWrapper:
     media_profile = None
     configuration_options = None
     media_profile_token = None
-    velocity_limits: Union[Tuple[float,float,float,float],None] = None
+    #velocity_limits: Union[Tuple[float,float,float,float],None] = None
+    velocity_limits:Union[VelocityLimits,None]
     presets = None
     last_update_ms:Union[int,None] = None
     max_update_rate:int = 0
-    _moving: bool = False
-    _prev_x:float = 0
-    _prev_y:float = 0
+    _moving:Union[bool,None] = None
+    _prev_x:float = 100
+    _prev_y:float = 100
+    _prev_z:float = 100
 
     def __init__(self,camera:ONVIFCamera,max_update_rate:int):
         self.camera = camera
@@ -224,12 +254,14 @@ class CameraWrapper:
         return self.last_update_ms is None or now()-self.last_update_ms>self.max_update_rate
 
     # this is mainly used to allow stop commands through on new zero speeds
-    def save_last_speeds(self,x,y) -> Tuple[bool,bool]:
+    def save_last_speeds(self,x,y,z) -> Tuple[bool,bool]:
         x_changed = x!=self._prev_x
         y_changed = y!=self._prev_y
+        z_changed = y!=self._prev_z
         self._prev_x = x
         self._prev_y = y
-        return (x_changed,y_changed)
+        self._prev_z = z
+        return (x_changed,y_changed,z_changed)
 
     async def ptz_service(self):
         """
@@ -259,8 +291,18 @@ class CameraWrapper:
         config_request.ConfigurationToken = self.media_profile.PTZConfiguration.token
         self.configuration_options = ptz.GetConfigurationOptions(config_request)
         config_options = (await self.configuration_options)
-        self.velocity_limits = limits(config_options.Spaces.ContinuousPanTiltVelocitySpace[0])
-        print(f"camera velocity limits: {self.velocity_limits}")
+        #print(config_options.Spaces.__dict__)
+        pan_tilt_space = config_options.Spaces.ContinuousPanTiltVelocitySpace[0]
+        zoom_space = config_options.Spaces.ContinuousZoomVelocitySpace[0] if hasattr(config_options.Spaces, 'ContinuousZoomVelocitySpace') else None
+        self.velocity_limits = VelocityLimits(
+            x = Limits(pan_tilt_space.XRange),
+            y = Limits(pan_tilt_space.YRange),
+            z = Limits(zoom_space.XRange if zoom_space else None)
+        )
+
+        #self.velocity_limits = limits(config_options.Spaces.ContinuousPanTiltVelocitySpace[0])
+        #self.zoom_velocity_limits = limits(config_options.Spaces.ContinuousZoomVelocitySpace[0])
+        #print(f"camera velocity limits: {self.velocity_limits}")
         self.media_profile_token = self.media_profile.token
         presets = (await ptz.GetPresets({'ProfileToken':self.media_profile_token}))
         # reconfigure into a dict keyed by preset name
@@ -270,17 +312,19 @@ class CameraWrapper:
         return self._moving
 
     # stops the camera movement
-    async def stop_camera(self):
+    async def stop_camera(self,zoom_out:bool):
         # don't stop if already stopped as stop commands aren't rate limited
-        if self._moving:
+        if self._moving or self._moving is None:
             print("stopping camera")
-            await self.continuous_move(0,0,False,0)
+            # make sure movement speed percent is 100% in this case for zoom
+            await self.continuous_move(0,0,-0.2 if zoom_out else 0,100)
             # not all cameras support stop
-            try:
-                ptz = await self.ptz_service()
-                ptz.stop()
-            except Exception as e:
-                pass
+            if not zoom_out:
+                try:
+                    ptz = await self.ptz_service()
+                    ptz.stop()
+                except Exception as e:
+                    pass
 
         self._moving = False
 
@@ -338,9 +382,10 @@ class CameraWrapper:
             await self.configure()
 
         # try to avoid hunting by allowing immediate stop
-        x_changed, y_changed = self.save_last_speeds(x,y)
-        if (x==0 and x_changed) or (y==0 and y_changed):
-            print("forcing stop")
+        x_changed, y_changed, z_changed = self.save_last_speeds(x,y,z)
+        #print(f"changed: {x_changed} {y_changed} {z_changed} {x} {y} {z}")
+        if (x==0 and x_changed) or (y==0 and y_changed) or (y==z and z_changed):
+            #print(f"forcing stop {self._can_update()}")
             pass
         elif not self._can_update():
             return
@@ -354,13 +399,15 @@ class CameraWrapper:
 
         limits = self.velocity_limits
 
-        print(f"x:{x} y:{y} limits:{limits}")
+        print(f"x:{x} y:{y} z:{z} limits:{limits} speed_percent:{movement_speed_percent}")
         # normalize to camera's velocity limits
-        x_limit = limits[0] if x<0 else limits[1]
-        y_limit = limits[2] if x<0 else limits[3]
+        x_limit = limits.x.min if x<0 else limits.x.max
+        y_limit = limits.y.min if x<0 else limits.y.max
+        z_limit = limits.z.min if x<0 else limits.z.max
 
         x = abs(x_limit) * x * movement_speed_percent/100.0
         y = abs(y_limit) * y * movement_speed_percent/100.0
+        z = abs(z_limit) * z * movement_speed_percent/100.0
 
         request.Velocity = {
             'PanTilt': {
@@ -368,13 +415,13 @@ class CameraWrapper:
                 'y': y
             },
             'Zoom': {
-                'x':0.0
+                'x':z
             }
         }
 
         #self.save_last_speeds(x,y)
 
-        print(f"ptz continuous move update: {x},{y}")
+        print(f"ptz continuous move update: {x},{y},{z}")
 
         # Execute the movement
         await ptz.ContinuousMove(request)
@@ -406,7 +453,8 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         flip_y_movement:int,
         flip_x_movement:int,
         movement_speed_percent:float,
-        move_to_position_after_idle_seconds:int
+        move_to_position_after_idle_seconds:int,
+        proportional_constant:float
     ) -> BlockResult:
 
         if movement_type=="Follow":
@@ -416,26 +464,25 @@ class ONVIFSinkBlockV1(WorkflowBlock):
                 # TODO: going to a preset is ok, but we don't want to do that if just one frame is missing a prediction - maybe add some time factor (ex. no prediction in 10 seconds?)
                 #asyncio.run(self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit))
                 #print(f"No predictions to move the camera to, moving to preset \"{default_position_preset}\"")
-                print(f"No predictions to move the camera to")
-                asyncio.run(self.stop_camera(camera_ip, camera_port, camera_username, camera_password,camera_update_rate_limit))
+                asyncio.run(self.stop_camera(camera_ip, camera_port, camera_username, camera_password,camera_update_rate_limit,True if zoom_if_able else False))
                 return {PREDICTIONS_OUTPUT_KEY:False,MOVING_OUTPUT_KEY:camera_moving(camera_ip,camera_port)}
 
 
             # get max confidence prediction
             max_confidence = predictions.confidence.max()
             max_confidence_prediction = predictions[predictions.confidence==max_confidence][0]
-            asyncio.run(self.async_move(camera_ip, camera_port, camera_username, camera_password, max_confidence_prediction,zoom_if_able,center_tolerance,default_position_preset,camera_update_rate_limit,flip_x_movement,flip_y_movement,movement_speed_percent))
+            asyncio.run(self.async_move(camera_ip, camera_port, camera_username, camera_password, max_confidence_prediction,zoom_if_able,center_tolerance,default_position_preset,camera_update_rate_limit,flip_x_movement,flip_y_movement,movement_speed_percent,proportional_constant))
 
         elif movement_type=="Go To Preset":
             asyncio.run(self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit))
 
         return {PREDICTIONS_OUTPUT_KEY:True,MOVING_OUTPUT_KEY:camera_moving(camera_ip,camera_port)}
 
-    async def stop_camera(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,max_update_rate:int):
+    async def stop_camera(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,max_update_rate:int,zoom_out:bool):
         camera = await get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate)
-        await camera.stop_camera()
+        await camera.stop_camera(zoom_out)
 
-    async def async_move(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,preset:str,max_update_rate:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float):
+    async def async_move(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,preset:str,max_update_rate:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float,proportional_constant:float):
 
         camera = await get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate)
 
@@ -449,42 +496,47 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         (x1,y1,x2,y2) = tuple(xyxy[0])
         center_point = np.array([x1+(x2-x1)/2,y1+(y2-y1)/2])
 
-
         # delta represents the amount of relative movement to get the object to the center
+        zoom_delta = min([x1,image_dimensions[0][0]-x1,y1,image_dimensions[0][1]-y1])
+        # make the deltas x, y, zoom
         delta = (center_point-image_center)[0]
 
         print(f"object center: xyxy:{tuple(xyxy[0])} {center_point} {image_dimensions} {image_center} delta:{delta}")
 
         #print(f"delta:{delta}")
         if np.all(np.abs(delta) < center_tolerance):
-            await camera.stop_camera()
+            await camera.stop_camera(False)
         else:
             # larger axis moves at max speed, so normalize to 100%
             speeds = delta/np.abs(delta).max()
-            x = speeds[0] if abs(delta[0])>center_tolerance else 0
-            y = speeds[1] if abs(delta[1])>center_tolerance else 0
 
-            #print(f"movement speeds:{speeds} {x} {y}")
+            # not exactly a pure P controller, but seems to do the job well (only kicks in close to the tolerance)
+            # the constant is basically also the bias
+            # v2 of this block should focus on motion control
+            x_proportional_factor = 0 if proportional_constant==0 else max(min(1,abs((delta[0]-center_tolerance)/delta[0])),0.5)*proportional_constant
+            y_proportional_factor = 0 if proportional_constant==0 else max(min(1,abs((delta[1]-center_tolerance)/delta[1])),0.5)*proportional_constant
+            z_proportional_factor = 0 if proportional_constant==0 else max(min(1,abs((zoom_delta-center_tolerance)/zoom_delta)),0.5)*proportional_constant
 
-            # goal here will be to have the workflow do a continuous move & iterate to get the bounding box in position
-            # might be necessary to start slow & calibrate x/y translation from pixel to speed
-            # once it's in position, this speed should change to 0,0
+            x = speeds[0]*(1-x_proportional_factor) if abs(delta[0])>center_tolerance else 0
+            y = speeds[1]*(1-y_proportional_factor) if abs(delta[1])>center_tolerance else 0
+            z = speeds[1]*(1-z_proportional_factor) if abs(zoom_delta)>center_tolerance else 0
+
+            z = 1 if zoom_delta>center_tolerance else 0
+
+            print(f"movement speeds:{speeds} {x} {y} {z} factor: {x_proportional_factor} {y_proportional_factor} {z_proportional_factor}")
+
+            # flip movement as necessary
             x_modifier = -1 if flip_x_movement else 1
             y_modifier = -1 if flip_y_movement else 1
 
-            if abs(delta[0])<center_tolerance:
-                print("x is set")
-            if abs(delta[1])<center_tolerance:
-                print("y is set")
-
-            await camera.continuous_move(x*x_modifier,y*y_modifier,zoom_if_able,movement_speed_percent)
+            await camera.continuous_move(x*x_modifier,y*y_modifier,0 if not zoom_if_able else z,movement_speed_percent)
 
 
     async def go_to_preset(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,preset:str,max_update_rate:int):
         camera = await get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate)
-        await camera.stop_camera()
+        await camera.stop_camera(False)
         await camera.go_to_preset(preset)
 
     # if the block is destroyed, don't let the camera keep drifting
     def __del__(self):
-        asyncio.run(self.stop_camera())
+        asyncio.run(self.stop_camera(False))
