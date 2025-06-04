@@ -7,7 +7,7 @@ from uuid import uuid4
 import backoff
 import requests
 from filelock import FileLock
-from requests import Response, Timeout, Session
+from requests import Response, Session, Timeout
 from rich.progress import (
     BarColumn,
     DownloadColumn,
