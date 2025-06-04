@@ -37,12 +37,14 @@ size_to_config_with_registers = {
 
 
 def get_config(size, use_registers):
+    key = (size, use_registers)
+    if key in _config_cache:
+        return _config_cache[key]
     config_dict = size_to_config_with_registers if use_registers else size_to_config
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    configs_dir = os.path.join(current_dir, "dinov2_configs")
-    config_path = os.path.join(configs_dir, config_dict[size])
+    config_path = os.path.join(_CONFIGS_DIR, config_dict[size])
     with open(config_path, "r") as f:
         dino_config = json.load(f)
+    _config_cache[key] = dino_config
     return dino_config
 
 
@@ -364,3 +366,10 @@ def get_dinov2_weight_decay_rate(name, weight_decay_rate=1.0):
     ):
         weight_decay_rate = 0.0
     return weight_decay_rate
+
+
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+_CONFIGS_DIR = os.path.join(_CURRENT_DIR, "dinov2_configs")
+
+_config_cache = {}
