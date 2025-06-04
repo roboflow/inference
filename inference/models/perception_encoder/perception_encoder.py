@@ -1,12 +1,11 @@
 from time import perf_counter
 from typing import Any, Dict, List, Tuple, Union
 
-import torch
-import numpy as np
-from PIL import Image
-
 import core.vision_encoder.pe as pe
 import core.vision_encoder.transforms as transforms
+import numpy as np
+import torch
+from PIL import Image
 
 from inference.core.entities.requests.clip import (
     ClipCompareRequest,
@@ -51,7 +50,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         """Initializes the PerceptionEncoder with the given arguments and keyword arguments."""
         t1 = perf_counter()
         super().__init__(model_id=model_id, *args, **kwargs)
-        
+
         self.device = device
         self.log("Creating PE-CLIP model")
         # Parse model config from model_id (format: perception-encoder/PE-Core-L14-336)
@@ -59,10 +58,10 @@ class PerceptionEncoder(RoboflowCoreModel):
         self.model = pe.CLIP.from_config(model_config, pretrained=True)
         self.model = self.model.to(device)
         self.model.eval()
-        
+
         self.preprocessor = transforms.get_image_transform(self.model.image_size)
         self.tokenizer = transforms.get_text_tokenizer(self.model.context_length)
-        
+
         self.log(f"PE-CLIP model loaded in {perf_counter() - t1:.2f} seconds")
         self.task_type = "embedding"
 
@@ -209,9 +208,11 @@ class PerceptionEncoder(RoboflowCoreModel):
             texts = [text]
 
         results = []
-        for texts_batch in create_batches(sequence=texts, batch_size=CLIP_MAX_BATCH_SIZE):
+        for texts_batch in create_batches(
+            sequence=texts, batch_size=CLIP_MAX_BATCH_SIZE
+        ):
             tokenized_batch = self.tokenizer(texts_batch).to(self.device)
-            
+
             with torch.no_grad(), torch.autocast(self.device):
                 _, text_features, _ = self.model(None, tokenized_batch)
                 # Convert to float32 before converting to numpy
@@ -227,9 +228,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         response = ClipEmbeddingResponse(embeddings=embeddings.tolist())
         return response
 
-    def make_embed_text_response(
-        self, embeddings: np.ndarray
-    ) -> ClipEmbeddingResponse:
+    def make_embed_text_response(self, embeddings: np.ndarray) -> ClipEmbeddingResponse:
         """Converts the given text embeddings into a ClipEmbeddingResponse object."""
         response = ClipEmbeddingResponse(embeddings=embeddings.tolist())
         return response
@@ -270,4 +269,4 @@ class PerceptionEncoder(RoboflowCoreModel):
 
     def infer(self, image: Any, **kwargs) -> Any:
         """Embeds an image"""
-        return super().infer(image, **kwargs) 
+        return super().infer(image, **kwargs)
