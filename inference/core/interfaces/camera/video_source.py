@@ -1110,16 +1110,19 @@ def get_from_queue(
     queue.task_done() and on_successful_read(...) will be called on each received element.
     """
     result = None
-    if queue.empty() or not purge:
+    if queue.empty() and not purge:
         try:
             result = queue.get(timeout=timeout)
             queue.task_done()
             on_successful_read()
         except Empty:
             pass
-    result = queue.get()
-    queue.task_done()
-    on_successful_read()
+    while not queue.empty():
+        result = queue.get()
+        queue.task_done()
+        on_successful_read()
+        if not purge:
+            break
     return result
 
 
