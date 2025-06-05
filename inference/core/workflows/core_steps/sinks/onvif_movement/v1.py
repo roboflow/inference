@@ -5,12 +5,11 @@ from threading import Thread
 import threading
 import time
 from typing import Dict, List, Literal, Optional, Type, Union, Tuple
-from onvif2 import ONVIFService
 import supervision as sv
 import numpy as np
 
 
-from onvif import ONVIFCamera
+from onvif import ONVIFCamera, ONVIFService
 import asyncio
 
 from pydantic import ConfigDict, Field
@@ -110,28 +109,33 @@ class BlockManifest(WorkflowBlockManifest):
         description="Camera Password",
     )
     movement_type: Literal["Follow", "Go To Preset"] = Field(
+        default="Follow",
         description="Follow Object or Go To Preset On Execution",
+        examples=["Follow","Go To Preset","$inputs.movement_type"],
     )
     zoom_if_able: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
-        default=True,
-        examples=[True, False],
+        default=False,
         description="Zoom If Able",
+        examples=[True,False,"$inputs.zoom_if_able"],
     )
     follow_tracker: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
         default=True,
-        examples=[True, False],
         description="Follow the track of the highest confidence prediction (Byte Tracker must be added to the workflow)",
+        examples=[True,False,"$inputs.follow_tracker"],
     )
     center_tolerance: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=100,
         description="Camera will stop once bounding box is within this many pixels of FoV center (or border for zoom)",
+        examples=[100,"$inputs.center_tolerance"],
     )
     default_position_preset: Union[Selector(kind=[STRING_KIND]), str] = Field(
         description="Preset Name for Default Position",
+        default="",
+        examples=["","$inputs.default_position_preset"],
     )
     move_to_position_after_idle_seconds: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=0,
-        description="Move to the default position after this many seconds if idle (0 to disable)",
+        description="Move to the default position after this many seconds of not seeking (0 to disable)",
     )
     camera_update_rate_limit: Union[Selector(kind=[INTEGER_KIND]), int] = Field(
         default=1000,
