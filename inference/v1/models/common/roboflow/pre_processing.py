@@ -487,27 +487,13 @@ def images_to_pillow(
     input_color_format: Optional[ColorFormat] = None,
     model_color_format: ColorFormat = "rgb",
 ) -> Tuple[List[Image], List[ImageDimensions]]:
+    # Fast type dispatch to correct backend
     if isinstance(images, np.ndarray):
         input_color_format = input_color_format or "bgr"
-        if input_color_format != model_color_format:
-            images = images[:, :, ::-1]
-        h, w = images.shape[:2]
-        return [PIL.Image.fromarray(images)], [ImageDimensions(height=h, width=w)]
+        return _ndarray_to_pillow(images, input_color_format, model_color_format)
     if isinstance(images, torch.Tensor):
         input_color_format = input_color_format or "rgb"
-        if len(images.shape) == 3:
-            images = torch.unsqueeze(images, dim=0)
-        if input_color_format != model_color_format:
-            images = images[:, [2, 1, 0], :, :]
-        result = []
-        dimensions = []
-        for image in images:
-            np_image = image.permute(1, 2, 0).cpu().numpy()
-            result.append(PIL.Image.fromarray(np_image))
-            dimensions.append(
-                ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
-            )
-        return result, dimensions
+        return _torch_to_pillow(images, input_color_format, model_color_format)
     if not isinstance(images, list):
         raise ModelRuntimeError(
             "Pre-processing supports only np.array or torch.Tensor or list of above."
@@ -516,24 +502,79 @@ def images_to_pillow(
         raise ModelRuntimeError("Detected empty input to the model")
     if isinstance(images[0], np.ndarray):
         input_color_format = input_color_format or "bgr"
-        if input_color_format != model_color_format:
-            images = [i[:, :, ::-1] for i in images]
-        dimensions = [
-            ImageDimensions(height=i.shape[0], width=i.shape[1]) for i in images
-        ]
-        images = [PIL.Image.fromarray(i) for i in images]
-        return images, dimensions
+        return _list_ndarray_to_pillow(images, input_color_format, model_color_format)
     if isinstance(images[0], torch.Tensor):
-        result = []
-        dimensions = []
         input_color_format = input_color_format or "rgb"
-        for image in images:
-            if input_color_format != model_color_format:
-                image = image[[2, 1, 0], :, :]
-            np_image = image.permute(1, 2, 0).cpu().numpy()
-            result.append(PIL.Image.fromarray(np_image))
-            dimensions.append(
-                ImageDimensions(height=np_image.shape[0], width=np_image.shape[1])
-            )
-        return result, dimensions
+        return _list_torch_to_pillow(images, input_color_format, model_color_format)
     raise ModelRuntimeError(f"Detected unknown input batch element: {type(images[0])}")
+
+
+def _convert_bgr_to_rgb_np(imgs):
+    """Convert one or batched BGR ndarray(s) to RGB in-place when possible."""
+    if imgs.ndim == 3:
+        return (
+            imgs[:, :, ::-1].copy()
+            if not imgs.flags["C_CONTIGUOUS"]
+            else imgs[:, :, ::-1]
+        )
+    # Possible support for batch if used in future
+    raise ValueError("Only 3D ndarray supported for color conversion.")
+
+
+def _ndarray_to_pillow(images, input_color_format, model_color_format):
+    if input_color_format != model_color_format:
+        images = _convert_bgr_to_rgb_np(images)
+    h, w = images.shape[:2]
+    return [PIL.Image.fromarray(images)], [ImageDimensions(height=h, width=w)]
+
+
+def _torch_to_pillow(images, input_color_format, model_color_format):
+    # Always work on 4D batch for unified handling; don't trigger unnecessary copies
+    if images.dim() == 3:
+        images = images.unsqueeze(0)
+
+    # Efficient BGR<->RGB conversion via indexing if needed
+    if input_color_format != model_color_format:
+        images = images.index_select(1, torch.tensor([2, 1, 0], device=images.device))
+
+    # Pre-allocate lists for batch conversion, avoid append in loop
+    num_imgs = images.shape[0]
+    pil_images = [None] * num_imgs
+    dims = [None] * num_imgs
+
+    # Batched transfer to cpu avoids re-launching kernel for each image (if not on cpu)
+    if not images.device.type == "cpu":
+        images = images.cpu()
+
+    np_images = images.permute(0, 2, 3, 1).contiguous().numpy()  # (N,H,W,C)
+
+    for i in range(num_imgs):
+        arr = np_images[i]
+        pil_images[i] = PIL.Image.fromarray(arr)
+        dims[i] = ImageDimensions(height=arr.shape[0], width=arr.shape[1])
+    return pil_images, dims
+
+
+def _list_ndarray_to_pillow(images, input_color_format, model_color_format):
+    if input_color_format != model_color_format:
+        images = [i[:, :, ::-1] for i in images]
+    dims = [ImageDimensions(height=i.shape[0], width=i.shape[1]) for i in images]
+    # List comprehension is fastest for this use
+    pil_images = [PIL.Image.fromarray(i) for i in images]
+    return pil_images, dims
+
+
+def _list_torch_to_pillow(images, input_color_format, model_color_format):
+    num_imgs = len(images)
+    pil_images = [None] * num_imgs
+    dims = [None] * num_imgs
+    idx = None
+    if input_color_format != model_color_format:
+        idx = torch.tensor([2, 1, 0])
+    for i, img in enumerate(images):
+        if idx is not None:
+            img = img.index_select(0, idx.to(img.device))
+        arr = img.permute(1, 2, 0).cpu().numpy()
+        pil_images[i] = PIL.Image.fromarray(arr)
+        dims[i] = ImageDimensions(height=arr.shape[0], width=arr.shape[1])
+    return pil_images, dims
