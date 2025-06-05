@@ -165,10 +165,42 @@ def run_nms_for_key_points_detection(
 def rescale_detections(
     detections: List[torch.Tensor], images_metadata: List[PreProcessingMetadata]
 ) -> List[torch.Tensor]:
-    for image_detections, metadata in zip(detections, images_metadata):
-        _ = rescale_image_detections(
-            image_detections=image_detections, image_metadata=metadata
+    # Precompute batch offsets/scale for all images as tensors on the same device/dtype as detections
+    # This avoids constructing same-shaped tensors each call
+
+    offsets_list = []
+    scale_list = []
+
+    # Use first detection tensor to get device/dtype (assume at least one item)
+    sample = None
+    for d in detections:
+        if d.numel() > 0:
+            sample = d
+            break
+    if sample is None:  # fallback if all are empty, use CPU float32
+        device = "cpu"
+        dtype = torch.float32
+    else:
+        device = sample.device
+        dtype = sample.dtype
+
+    # Precompute per-image offsets and scale as arrays, then stack as Nx4 tensors
+    for meta in images_metadata:
+        offsets_list.append([meta.pad_left, meta.pad_top, meta.pad_left, meta.pad_top])
+        scale_list.append(
+            [meta.scale_width, meta.scale_height, meta.scale_width, meta.scale_height]
         )
+
+    offsets = torch.tensor(offsets_list, dtype=dtype, device=device)
+    scales = torch.tensor(scale_list, dtype=dtype, device=device)
+
+    # Now for each detection tensor, do (in-place) adjust with its corresponding offsets/scales
+    for idx, image_detections in enumerate(detections):
+        if image_detections.numel() == 0:
+            continue
+        # Instead of as_tensor each time, slice from big offsets/scales
+        image_detections[:, :4].sub_(offsets[idx])
+        image_detections[:, :4].div_(scales[idx])
     return detections
 
 
@@ -176,8 +208,8 @@ def rescale_image_detections(
     image_detections: torch.Tensor,
     image_metadata: PreProcessingMetadata,
 ) -> torch.Tensor:
-    # in-place processing
-    offsets = torch.as_tensor(
+    # Optimized single-image version: avoid torch.as_tensor overhead
+    offsets = torch.tensor(
         [
             image_metadata.pad_left,
             image_metadata.pad_top,
@@ -187,8 +219,8 @@ def rescale_image_detections(
         dtype=image_detections.dtype,
         device=image_detections.device,
     )
-    image_detections[:, :4].sub_(offsets)  # in-place subtraction for speed/memory
-    scale = torch.as_tensor(
+    image_detections[:, :4].sub_(offsets)
+    scales = torch.tensor(
         [
             image_metadata.scale_width,
             image_metadata.scale_height,
@@ -198,7 +230,7 @@ def rescale_image_detections(
         dtype=image_detections.dtype,
         device=image_detections.device,
     )
-    image_detections[:, :4].div_(scale)
+    image_detections[:, :4].div_(scales)
     return image_detections
 
 
