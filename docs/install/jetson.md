@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Jetson is NVIDIA’s line of compact, power-efficient modules designed for running AI and deep learning workloads at the edge. They combine a GPU, CPU, and neural accelerators on a single board, making them ideal for robotics, drones, smart cameras, and other embedded applications where you need real-time computer vision or inference without a cloud connection. For more details, see NVIDIA’s official Jetson overview:  
+Jetson is NVIDIA’s line of compact, power-efficient modules designed to run AI and deep learning workloads at the edge. They combine a GPU, CPU, and neural accelerators on a single board, making them ideal for robotics, drones, smart cameras, and other embedded applications where you need real-time computer vision or inference without a cloud connection. For more details, see NVIDIA’s official Jetson overview:  
 https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/
 
 ## Prerequisites
@@ -20,7 +20,7 @@ https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/
       https://docs.docker.com/engine/install/ubuntu/  
     - **NVIDIA Container Toolkit:**  
       https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
-      
+
 We have specialized containers built with support for hardware acceleration on JetPack L4T.
 To automatically detect your JetPack version and use the right container with good default settings
 run:
