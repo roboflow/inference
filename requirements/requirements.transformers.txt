@@ -9,3 +9,4 @@ num2words~=0.5.14
 bitsandbytes>=0.42.0,<0.46.0
 num2words~=0.5.14
 pyvips>=2.2.3
+git+https://github.com/roboflow/perception_models
