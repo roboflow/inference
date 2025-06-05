@@ -171,7 +171,7 @@ class BlockManifest(WorkflowBlockManifest):
         private=True,
     )
     model_version: Union[
-        Selector(kind=[STRING_KIND]), Literal["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"]
+        Selector(kind=[STRING_KIND]), Literal["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o3", "o4-mini", ]
     ] = Field(
         default="gpt-4o",
         description="Model to be used",
