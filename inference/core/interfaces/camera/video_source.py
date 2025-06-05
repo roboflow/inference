@@ -553,7 +553,10 @@ class VideoSource:
         if not self._is_file:
             current_timestamp = time.time_ns()
             if (current_timestamp - self._last_frame_timestamp) / 1e9 < 1 / self._fps:
-                time.sleep((1 / self._fps) - (current_timestamp - self._last_frame_timestamp) / 1e9)
+                time.sleep(
+                    (1 / self._fps)
+                    - (current_timestamp - self._last_frame_timestamp) / 1e9
+                )
         video_frame: Optional[Union[VideoFrame, str]] = get_from_queue(
             queue=self._frames_buffer,
             on_successful_read=self._video_consumer.notify_frame_consumed,
@@ -1121,7 +1124,7 @@ def get_from_queue(
         result = queue.get()
         queue.task_done()
         on_successful_read()
-        if not purge:
+        if purge:
             break
     return result
 
