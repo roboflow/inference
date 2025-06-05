@@ -505,20 +505,32 @@ def parse_object_detection_prediction(
     labels = prediction.get(
         "labels", prediction.get("bboxes_labels", [""] * len(bboxes))
     )
+
+    num_boxes = len(bboxes)
+
     if not expected_classes:
-        class_ids = [0] * len(bboxes)
+        # No expected_classes: zero class_id for all, and metadata with class_name
+        class_ids = torch.zeros(num_boxes, dtype=torch.int32, device=device)
+        bboxes_metadata = [{"class_name": label} for label in labels]
     else:
+        # Build class_name -> index map once
         class_name2idx = {c: i for i, c in enumerate(expected_classes)}
         unknown_class_id = len(expected_classes)
-        class_ids = []
-        for label in labels:
-            class_ids.append(class_name2idx.get(label, unknown_class_id))
-    xyxy = torch.tensor(bboxes, device=device).round().int()
-    class_ids = torch.tensor(class_ids, device=device).int()
-    confidence = torch.tensor([1.0] * len(labels), device=device)
-    bboxes_metadata = None
-    if not expected_classes:
-        bboxes_metadata = [{"class_name": label} for label in labels]
+        # Vectorized mapping for class_ids: build a lookup table
+        label_to_idx = torch.full((num_boxes,), unknown_class_id, dtype=torch.int32)
+        # For fast mapping: Use numpy for massive speed if labels and expected_classes are many.
+        # But torch does not support string tensors, so we need to use list + map.
+        # Optimize with list comprehension:
+        class_ids_lst = [
+            class_name2idx.get(label, unknown_class_id) for label in labels
+        ]
+        class_ids = torch.tensor(class_ids_lst, dtype=torch.int32, device=device)
+        bboxes_metadata = None  # Not needed if expected_classes present
+
+    # Vectorized tensor construction
+    xyxy = torch.as_tensor(bboxes, dtype=torch.int32, device=device).round()
+    confidence = torch.ones(num_boxes, dtype=torch.float32, device=device)
+
     return Detections(
         xyxy=xyxy,
         class_id=class_ids,
