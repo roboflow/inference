@@ -8,6 +8,8 @@ from transformers import AutoModelForImageTextToText
 from transformers.utils import is_flash_attn_2_available
 
 from inference.core.env import DEVICE, MODEL_CACHE_DIR
+if DEVICE is None:
+    DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 from inference.models.transformers import LoRATransformerModel, TransformerModel
 
 
