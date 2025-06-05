@@ -19,13 +19,12 @@ from inference.core.entities.responses.clip import (
     ClipEmbeddingResponse,
 )
 from inference.core.entities.responses.inference import InferenceResponse
-from inference.core.env import CLIP_MAX_BATCH_SIZE, PERCEPTION_ENCODER_MODEL_ID, DEVICE
+from inference.core.env import CLIP_MAX_BATCH_SIZE, DEVICE, PERCEPTION_ENCODER_MODEL_ID
 from inference.core.models.roboflow import RoboflowCoreModel
 from inference.core.models.types import PreprocessReturnMetadata
 from inference.core.models.utils.batching import create_batches
 from inference.core.utils.image_utils import load_image_rgb
 from inference.core.utils.postprocess import cosine_similarity
-
 
 if DEVICE is None:
     if torch.cuda.is_available():
@@ -34,6 +33,7 @@ if DEVICE is None:
         DEVICE = "mps"
     else:
         DEVICE = "cpu"
+
 
 class PerceptionEncoder(RoboflowCoreModel):
     """Roboflow Perception Encoder model implementation.
