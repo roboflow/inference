@@ -34,6 +34,9 @@ from inference.core.workflows.prototypes.block import (
     WorkflowBlockManifest,
 )
 
+# speed will start to be reduced this many tolerances from tolerance zone
+SPEED_REDUCTION_TOLERANCE_MULTIPLIER = 2
+
 PREDICTIONS_OUTPUT_KEY: str = "predictions"
 MOVING_OUTPUT_KEY: str = "moving"
 
@@ -142,9 +145,10 @@ class BlockManifest(WorkflowBlockManifest):
         default=100,
         description="Percent of maximum speed to move camera at (0-100)",
     )
-    proportional_constant: Union[float, Selector(kind=[FLOAT_KIND])] = Field(
-        default=30,
-        description="Speed is further reduced by this percentage (0-100) as the object gets closer to the tolerance to avoid hunting",
+    reduce_speed_near_zone: Union[bool, Selector(kind=[BOOLEAN_KIND])] = Field(
+        default=True,
+        examples=[True, False],
+        description="Reduce speed near the tolerance zone to avoid hunting in cases of RTSP lag",
     )
 
     @classmethod
@@ -454,7 +458,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         flip_x_movement:int,
         movement_speed_percent:float,
         move_to_position_after_idle_seconds:int,
-        proportional_constant:float
+        reduce_speed_near_zone:bool
     ) -> BlockResult:
 
         if movement_type=="Follow":
@@ -471,7 +475,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             # get max confidence prediction
             max_confidence = predictions.confidence.max()
             max_confidence_prediction = predictions[predictions.confidence==max_confidence][0]
-            asyncio.run(self.async_move(camera_ip, camera_port, camera_username, camera_password, max_confidence_prediction,zoom_if_able,center_tolerance,default_position_preset,camera_update_rate_limit,flip_x_movement,flip_y_movement,movement_speed_percent/100.0,proportional_constant/100.0))
+            asyncio.run(self.async_move(camera_ip, camera_port, camera_username, camera_password, max_confidence_prediction,zoom_if_able,center_tolerance,default_position_preset,camera_update_rate_limit,flip_x_movement,flip_y_movement,movement_speed_percent/100.0,reduce_speed_near_zone))
 
         elif movement_type=="Go To Preset":
             asyncio.run(self.go_to_preset(camera_ip, camera_port, camera_username, camera_password, default_position_preset,camera_update_rate_limit))
@@ -482,7 +486,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         camera = await get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate)
         await camera.stop_camera(zoom_out)
 
-    async def async_move(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,preset:str,max_update_rate:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float,proportional_constant:float):
+    async def async_move(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,preset:str,max_update_rate:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float,reduce_speed_near_zone:bool):
 
         camera = await get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate)
 
@@ -509,33 +513,23 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             # zoom is only allowed if the camera is stopped - helps to minimize hunting
             # this could be integrated into the pan/tilt movement with better motion control
             if zoom_if_able:
-                '''
-                z_reduction_factor = 0 if proportional_constant==0 else max(min(0.5,abs((zoom_delta-center_tolerance)/zoom_delta)),0)*proportional_constant
-                z = (1-z_reduction_factor) if abs(zoom_delta)>center_tolerance else 1
                 if zoom_delta>center_tolerance:
-                    print(f"z movement speeds:{z} factor: {z_reduction_factor}")
-
-                    await camera.continuous_move(0,0,z,movement_speed_percent)
+                    print(f"zoom delta: {zoom_delta}")
+                    z_speed = 0.5 if delta[1]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1
+                    await camera.continuous_move(0,0,z_speed,movement_speed_percent)
                 else:
-                '''
-                await camera.stop_camera(False)
+                    await camera.stop_camera(False)
             else:
                 await camera.stop_camera(False)
         else:
             # larger axis moves at max speed, so normalize to 100%
             speeds = delta/np.abs(delta).max()
 
-            # This is simple psuedo-P controller, but could be improved a lot
-            # v2 of this block should focus on motion control
-            x_multiplier = delta[0]/center_tolerance
-            y_multiplier = delta[1]/center_tolerance
-            x_reduction_factor = 0 if proportional_constant==0 or x_multiplier>2 else min(max(abs((x_multiplier-1)*proportional_constant),0),0.5)
-            y_reduction_factor = 0 if proportional_constant==0 or y_multiplier>2 else min(max(abs((y_multiplier-1)*proportional_constant),0),0.5)
+            x_reduction_factor = 0.5 if delta[0]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1
+            y_reduction_factor = 0.5 if delta[1]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1
 
-            x = speeds[0]*(1-x_reduction_factor)
-            y = speeds[1]*(1-y_reduction_factor)
-
-            print(f"xy movement speeds:{speeds} {x} {y} factor: {x_reduction_factor} {y_reduction_factor}")
+            x = speeds[0]*x_reduction_factor
+            y = speeds[1]*y_reduction_factor
 
             # flip movement as necessary
             x_modifier = -1 if flip_x_movement else 1
