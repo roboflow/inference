@@ -246,7 +246,9 @@ def preprocess_segmentation_masks(
     masks_in: torch.Tensor,
     mask_threshold: float,
 ) -> torch.Tensor:
-    masks_sum = torch.einsum("chw,nc->nhw", protos, masks_in)
+    # Optimized: tensordot is faster than einsum for this contraction
+    # protos: (C, H, W), masks_in: (N, C)
+    masks_sum = torch.tensordot(masks_in, protos, dims=([1], [0]))  # (N, H, W)
     masks_sigmoid = torch.sigmoid(masks_sum)
     return masks_sigmoid > mask_threshold
 
