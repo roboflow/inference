@@ -671,7 +671,7 @@ class VideoSource:
 
     def _set_stream_mode_consumption_strategies(self) -> None:
         if self._buffer_consumption_strategy is None:
-            self._buffer_consumption_strategy = BufferConsumptionStrategy.EAGER
+            self._buffer_consumption_strategy = BufferConsumptionStrategy.LAZY
 
     def _consume_video(self) -> None:
         send_video_source_status_update(
@@ -926,7 +926,7 @@ class VideoConsumer:
 
     def _set_stream_mode_buffering_strategies(self) -> None:
         if self._buffer_filling_strategy is None:
-            self._buffer_filling_strategy = BufferFillingStrategy.ADAPTIVE_DROP_OLDEST
+            self._buffer_filling_strategy = BufferFillingStrategy.WAIT
 
     def _video_fps_should_be_sub_sampled(self) -> bool:
         if self._desired_fps is None:
