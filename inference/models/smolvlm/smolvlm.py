@@ -4,13 +4,13 @@ import os
 import torch
 from peft import LoraConfig, PeftModel
 from PIL import Image
-from transformers import (
-    AutoModelForImageTextToText,
-)
+from transformers import AutoModelForImageTextToText
+from transformers.utils import is_flash_attn_2_available
 
 from inference.core.env import DEVICE, MODEL_CACHE_DIR
 from inference.models.transformers import LoRATransformerModel, TransformerModel
-from transformers.utils import is_flash_attn_2_available
+
+
 class SmolVLM(TransformerModel):
     generation_includes_input = True
     transformers_class = AutoModelForImageTextToText
@@ -53,6 +53,7 @@ class SmolVLM(TransformerModel):
         )
         return generated_texts
 
+
 class LoRASmolVLM(LoRATransformerModel):
     load_base_from_roboflow = True
     generation_includes_input = True
@@ -71,7 +72,13 @@ class LoRASmolVLM(LoRATransformerModel):
         with open(config_file, "r") as file:
             config = json.load(file)
 
-        keys_to_remove = ["eva_config", "corda_config", "lora_bias", "exclude_modules", "trainable_token_indices"]
+        keys_to_remove = [
+            "eva_config",
+            "corda_config",
+            "lora_bias",
+            "exclude_modules",
+            "trainable_token_indices",
+        ]
 
         for key in keys_to_remove:
             config.pop(key, None)
@@ -94,7 +101,11 @@ class LoRASmolVLM(LoRATransformerModel):
         if os.path.exists(rm_weights):
             os.remove(rm_weights)
 
-        attn_implementation = "flash_attention_2" if (is_flash_attn_2_available() and "cuda" in DEVICE) else "eager"
+        attn_implementation = (
+            "flash_attention_2"
+            if (is_flash_attn_2_available() and "cuda" in DEVICE)
+            else "eager"
+        )
 
         self.base_model = self.transformers_class.from_pretrained(
             model_load_id,
@@ -114,28 +125,38 @@ class LoRASmolVLM(LoRATransformerModel):
         self.model.merge_and_unload()
 
         self.processor = self.processor_class.from_pretrained(
-            os.path.join(
-            MODEL_CACHE_DIR, "lora-bases/smolvlm2/main")
+            os.path.join(MODEL_CACHE_DIR, "lora-bases/smolvlm2/main")
         )
 
     def predict(self, image_in: Image.Image, prompt="", **kwargs):
 
         conversation = [
-            {"role": "user", "content": [{"type": "text", "text": "Answer briefly."}, {"type": "image"}, {"type": "text", "text": prompt}]}
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Answer briefly."},
+                    {"type": "image"},
+                    {"type": "text", "text": prompt},
+                ],
+            }
         ]
 
-        text_prompt = self.processor.apply_chat_template(conversation, add_generation_prompt=True)
+        text_prompt = self.processor.apply_chat_template(
+            conversation, add_generation_prompt=True
+        )
 
-        model_inputs = self.processor(text=text_prompt, images=image_in, return_tensors="pt", padding=True)
+        model_inputs = self.processor(
+            text=text_prompt, images=image_in, return_tensors="pt", padding=True
+        )
 
         for k, v in model_inputs.items():
             if isinstance(v, torch.Tensor):
                 model_inputs[k] = v.to(self.model.device)
-                if (v.dtype != torch.int64 and v.dtype != torch.int32):
+                if v.dtype != torch.int64 and v.dtype != torch.int32:
                     model_inputs[k] = v.to(self.model.device, dtype=self.dtype)
 
         input_len = model_inputs["input_ids"].shape[-1]
-        
+
         with torch.inference_mode():
             generation = self.model.generate(
                 **model_inputs,
