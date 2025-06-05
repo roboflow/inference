@@ -435,9 +435,14 @@ def _range_within_other(
     external_range: Tuple[int, int],
     internal_range: Tuple[int, int],
 ) -> bool:
-    external_min, external_max = external_range
-    internal_min, internal_max = internal_range
-    return external_min <= internal_min <= internal_max <= external_max
+    # Use direct tuple indexing and early exit for faster checks
+    if external_range[0] > internal_range[0]:
+        return False
+    if internal_range[0] > internal_range[1]:
+        return False
+    if internal_range[1] > external_range[1]:
+        return False
+    return True
 
 
 def _parse_batch_size(
