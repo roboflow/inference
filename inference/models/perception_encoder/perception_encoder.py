@@ -248,7 +248,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         else:
             with torch.inference_mode(), torch.autocast(self.device):
                 image_features, _, _ = self.model(img_in, None)
-        
+
         embeddings = image_features.float().cpu().numpy()
         return (embeddings,)
 
