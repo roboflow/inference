@@ -179,7 +179,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         else:
             img_in = self.preproc_image(image).to(self.device)
 
-        if self.device == "cpu":
+        if self.device == "cpu" or self.device == "mps":
             with torch.inference_mode():
                 image_features, _, _ = self.model(img_in, None)
                 # Convert to float32 before converting to numpy
@@ -218,7 +218,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         ):
             tokenized = self.tokenizer(texts_batch)
             # Use float32 for CPU, bfloat16 for CUDA
-            if self.device == "cpu":
+            if self.device == "cpu" or self.device == "mps":
                 with torch.no_grad():
                     _, text_features, _ = self.model(None, tokenized)
             else:
@@ -241,7 +241,7 @@ class PerceptionEncoder(RoboflowCoreModel):
         Returns:
             Tuple[np.ndarray]: A tuple containing the embeddings as a numpy array.
         """
-        if self.device == "cpu":
+        if self.device == "cpu" or self.device == "mps":
             with torch.inference_mode():
                 image_features, _, _ = self.model(img_in, None)
         else:
