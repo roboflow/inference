@@ -180,12 +180,12 @@ class PerceptionEncoder(RoboflowCoreModel):
             img_in = self.preproc_image(image).to(self.device)
 
         if self.device == "cpu":
-            with torch.no_grad():
+            with torch.inference_mode():
                 image_features, _, _ = self.model(img_in, None)
                 # Convert to float32 before converting to numpy
                 embeddings = image_features.float().cpu().numpy()
         else:
-            with torch.no_grad(), torch.autocast(self.device):
+            with torch.inference_mode(), torch.autocast(self.device):
                 image_features, _, _ = self.model(img_in, None)
                 # Convert to float32 before converting to numpy
                 embeddings = image_features.float().cpu().numpy()
@@ -222,7 +222,7 @@ class PerceptionEncoder(RoboflowCoreModel):
                 with torch.no_grad():
                     _, text_features, _ = self.model(None, tokenized)
             else:
-                with torch.no_grad(), torch.autocast(self.device):
+                with torch.inference_mode(), torch.autocast(self.device):
                     _, text_features, _ = self.model(None, tokenized)
 
             # Convert to float32 before converting to numpy
@@ -242,10 +242,10 @@ class PerceptionEncoder(RoboflowCoreModel):
             Tuple[np.ndarray]: A tuple containing the embeddings as a numpy array.
         """
         if self.device == "cpu":
-            with torch.no_grad():
+            with torch.inference_mode():
                 image_features, _, _ = self.model(img_in, None)
         else:
-            with torch.no_grad(), torch.autocast(self.device):
+            with torch.inference_mode(), torch.autocast(self.device):
                 image_features, _, _ = self.model(img_in, None)
         
         embeddings = image_features.float().cpu().numpy()
