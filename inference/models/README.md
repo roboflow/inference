@@ -30,7 +30,6 @@ The models supported by Roboflow Inference have their own licenses. View the lic
 | `inference/models/depth_estimation`        | [Apache 2.0](https://huggingface.co/depth-anything/Depth-Anything-V2-Small)          | 👍 |
 | `inference/models/rfdetr`         | [Apache 2.0](https://github.com/roboflow/rf-detr/blob/main/LICENSE)                  | 👍 |
 | `inference/models/moondream2`        | [Apache 2.0](https://github.com/vikhyat/moondream/blob/main/LICENSE)          | 👍 |
-| `inference/models/perception_encoder` | [Apache 2.0](https://github.com/facebookresearch/perception_models/blob/main/LICENSE.PE) | 👍 |
 
 ## Commercial Licenses
 
