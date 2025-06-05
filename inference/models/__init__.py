@@ -41,6 +41,7 @@ OPTIONAL_MODELS = {
     "LoRAQwen25VL": "inference.models.qwen25vl",
     "TrOCR": "inference.models.trocr",
     "SmolVLM": "inference.models.smolvlm",
+    "LoRASmolVLM": "inference.models.smolvlm",
     "Moondream2": "inference.models.moondream2",
 }
 
