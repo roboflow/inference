@@ -42,6 +42,10 @@ from inference.core.workflows.prototypes.block import (
 # speed will start to be reduced this many tolerances from tolerance zone
 SPEED_REDUCTION_TOLERANCE_MULTIPLIER = 2
 
+# number of seconds to switch to zoom only (no xy movement)
+# will also turn off if bounding box goes all the way to the edge
+ZOOM_MODE_SECONDS = 5
+
 PREDICTIONS_OUTPUT_KEY: str = "predictions"
 MOVING_OUTPUT_KEY: str = "moving"
 
@@ -265,6 +269,7 @@ class CameraWrapper:
     _prev_x:float = 100
     _prev_y:float = 100
     _prev_z:float = 100
+    _zooming:bool=False # don't allow xy movements, zoom only
 
     # create a new camera wrapper with an asyncio event loop
     def __init__(self,max_update_rate:int,move_to_position_after_idle_seconds:int):
@@ -292,9 +297,12 @@ class CameraWrapper:
     def schedule_next_reset(self,preset_name:str):
         self.schedule(self.next_reset(preset_name))
 
-    async def next_reset(self,preset_name:str):
+    def clear_next_reset(self):
         if self.existing_preset_task:
             self.existing_preset_task.cancel()
+
+    async def next_reset(self,preset_name:str):
+        self.clear_next_reset()
         self.existing_preset_task = asyncio.create_task(self.reset_task(preset_name))
 
     async def reset_task(self,preset_name:str):
@@ -375,6 +383,7 @@ class CameraWrapper:
 
     # stops the camera movement
     def stop_camera(self,preset_name:Union[None,str]):
+        self._zooming = False
         # don't stop if already stopped as stop commands aren't rate limited
         if self._seeking or self._seeking is None:
             self.continuous_move(0,0,0,0)
@@ -429,6 +438,13 @@ class CameraWrapper:
         self._seeking = False
         await ptz.GotoPreset(request)
 
+    def zoom(self,z:float,movement_speed_percent:float):
+        self._zooming=True
+        self.schedule(self.continuous_move_async(0,0,z,movement_speed_percent))
+
+    def zooming(self) -> bool:
+        return self._zooming
+
     # tells the camera to move at a continuous velocity
     def continuous_move(self,x:float,y:float,z:float,movement_speed_percent:float):
         self.schedule(self.continuous_move_async(x,y,z,movement_speed_percent))
@@ -448,6 +464,10 @@ class CameraWrapper:
 
         if self.media_profile_token is None:
             await self.configure_async()
+
+        # clear out any scheduled position resets
+        # they'll be rescheduled on the next stop
+        self.clear_next_reset()
 
         # try to avoid hunting by allowing immediate stop
         x_changed, y_changed, z_changed = self.save_last_speeds(x,y,z)
@@ -572,7 +592,7 @@ class ONVIFSinkBlockV1(WorkflowBlock):
             camera.stop_camera(stop_preset)
 
     def async_move(self,camera_ip:str,camera_port:int,camera_username:str,camera_password:str,prediction:OBJECT_DETECTION_PREDICTION_KIND,zoom_if_able:bool,center_tolerance:int,preset:str,max_update_rate:int,move_to_position_after_idle_seconds:int,flip_x_movement:bool,flip_y_movement:bool,movement_speed_percent:float,reduce_speed_near_zone:bool,stop_preset:str):
-
+        global zoom
         camera = get_camera(camera_ip,camera_port,camera_username,camera_password,max_update_rate,move_to_position_after_idle_seconds)
 
         # use as stop command, more generic
@@ -586,27 +606,34 @@ class ONVIFSinkBlockV1(WorkflowBlock):
         center_point = np.array([x1+(x2-x1)/2,y1+(y2-y1)/2])
 
         # delta represents the amount of relative movement to get the object to the center
-        zoom_delta = min([x1,image_dimensions[0][0]-x1,y1,image_dimensions[0][1]-y1])
+        zoom_delta = min([x1,image_dimensions[0][0]-x2,y1,image_dimensions[0][1]-y2])
         # make the deltas x, y, zoom
         delta = (center_point-image_center)[0]
 
         print(f"object center:{center_point} delta:{delta}")
 
+        box_at_edge = (x1==0 or y1==0 or x2==image_dimensions[0][0] or y2==image_dimensions[0][1])
+
+        # if we're locked into zoom only mode, and the object goes to the edge, unlock it and go back to pan/tilt
+        if camera.zooming() and zoom_delta<center_tolerance:
+            print(f"stop zooming: {xyxy[0]}")
+            camera.stop_camera(stop_preset)
+
         #print(f"delta:{delta}")
         abs_delta = np.abs(delta)
-        if np.all(abs_delta < center_tolerance):
-            #await camera.stop_camera(False)
-            # zoom is only allowed if the camera is stopped - helps to minimize hunting
-            # this could be integrated into the pan/tilt movement with better motion control
+        if (np.all(abs_delta < center_tolerance) or camera.zooming()) and not box_at_edge:
             if zoom_if_able:
                 if zoom_delta>center_tolerance:
                     print(f"zoom delta: {zoom_delta}")
-                    z_speed = 0.5 if delta[1]<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1
-                    camera.continuous_move(0,0,z_speed,movement_speed_percent)
+                    z = (0.5 if zoom_delta<SPEED_REDUCTION_TOLERANCE_MULTIPLIER*center_tolerance and reduce_speed_near_zone else 1) if zoom_if_able else 0
+                    #camera.continuous_move(0,0,z,movement_speed_percent)
+                    camera.zoom(z,movement_speed_percent)
                 else:
                     camera.stop_camera(stop_preset)
             else:
                 camera.stop_camera(stop_preset)
+        elif box_at_edge or camera.zooming():
+            camera.zoom(-1,movement_speed_percent)
         else:
             # larger axis moves at max speed, so normalize to 100%
             speeds = delta/abs_delta.max()
