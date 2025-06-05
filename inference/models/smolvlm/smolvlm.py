@@ -10,6 +10,7 @@ from transformers import (
 
 from inference.core.env import DEVICE, MODEL_CACHE_DIR
 from inference.models.transformers import LoRATransformerModel, TransformerModel
+from transformers.utils import is_flash_attn_2_available
 class SmolVLM(TransformerModel):
     generation_includes_input = True
     transformers_class = AutoModelForImageTextToText
@@ -70,7 +71,7 @@ class LoRASmolVLM(LoRATransformerModel):
         with open(config_file, "r") as file:
             config = json.load(file)
 
-        keys_to_remove = ["corda_config", "lora_bias", "exclude_modules", "trainable_token_indices"]
+        keys_to_remove = ["eva_config", "corda_config", "lora_bias", "exclude_modules", "trainable_token_indices"]
 
         for key in keys_to_remove:
             config.pop(key, None)
@@ -93,12 +94,15 @@ class LoRASmolVLM(LoRATransformerModel):
         if os.path.exists(rm_weights):
             os.remove(rm_weights)
 
+        attn_implementation = "flash_attention_2" if (is_flash_attn_2_available() and "cuda" in DEVICE) else "eager"
+
         self.base_model = self.transformers_class.from_pretrained(
             model_load_id,
             revision=revision,
             device_map=DEVICE,
             cache_dir=cache_dir,
             token=token,
+            attn_implementation=attn_implementation,
         )
 
         self.model = (
@@ -131,7 +135,7 @@ class LoRASmolVLM(LoRATransformerModel):
                     model_inputs[k] = v.to(self.model.device, dtype=self.dtype)
 
         input_len = model_inputs["input_ids"].shape[-1]
-
+        
         with torch.inference_mode():
             generation = self.model.generate(
                 **model_inputs,
@@ -140,7 +144,6 @@ class LoRASmolVLM(LoRATransformerModel):
                 pad_token_id=self.processor.tokenizer.pad_token_id,
                 eos_token_id=self.processor.tokenizer.eos_token_id,
             )
-            
         if self.generation_includes_input:
             generation = generation[:, input_len:]
 
