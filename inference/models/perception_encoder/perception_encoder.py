@@ -179,10 +179,16 @@ class PerceptionEncoder(RoboflowCoreModel):
         else:
             img_in = self.preproc_image(image).to(self.device)
 
-        with torch.no_grad(), torch.autocast(self.device):
-            image_features, _, _ = self.model(img_in, None)
-            # Convert to float32 before converting to numpy
-            embeddings = image_features.float().cpu().numpy()
+        if self.device == "cpu":
+            with torch.no_grad():
+                image_features, _, _ = self.model(img_in, None)
+                # Convert to float32 before converting to numpy
+                embeddings = image_features.float().cpu().numpy()
+        else:
+            with torch.no_grad(), torch.autocast(self.device):
+                image_features, _, _ = self.model(img_in, None)
+                # Convert to float32 before converting to numpy
+                embeddings = image_features.float().cpu().numpy()
 
         return embeddings
 
@@ -224,6 +230,26 @@ class PerceptionEncoder(RoboflowCoreModel):
             results.append(embeddings)
 
         return np.concatenate(results, axis=0)
+
+    def predict(self, img_in: torch.Tensor, **kwargs) -> Tuple[np.ndarray]:
+        """Predict embeddings for an input tensor.
+
+        Args:
+            img_in (torch.Tensor): The input tensor to get embeddings for.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            Tuple[np.ndarray]: A tuple containing the embeddings as a numpy array.
+        """
+        if self.device == "cpu":
+            with torch.no_grad():
+                image_features, _, _ = self.model(img_in, None)
+        else:
+            with torch.no_grad(), torch.autocast(self.device):
+                image_features, _, _ = self.model(img_in, None)
+        
+        embeddings = image_features.float().cpu().numpy()
+        return (embeddings,)
 
     def make_embed_image_response(
         self, embeddings: np.ndarray
